@@ -14,6 +14,51 @@ rule() {
   ns_rules_get "$f" "$2"
 }
 
+# ns_archive <project-dir> <field> — one field of the archive block, or empty.
+ns_archive() {
+  local f="$1/.nightshift/rules.json"
+  [ -f "$f" ] || return 0
+  ns_rules_get_in "$f" archive "$2"
+}
+
+# ns_archive_root <project-dir> — the directory dated archives live in, as an absolute path.
+# The name is the owner's; where it may sit is not. It stays inside the Nightshift state area:
+# an absolute path, a path that climbs out with .., or a symlink is refused with status 2, and
+# the caller says so rather than writing the owner's records somewhere they cannot find them.
+# Writing outside the state area is an unsupported request, not a setting.
+ns_archive_root() {
+  local ns="$1/.nightshift" name resolved
+  name="$(ns_archive "$1" root)"
+  [ -n "$name" ] || name=archive
+  case "$name" in
+    /* | ~*) return 2 ;;
+    *..*) return 2 ;;
+  esac
+  resolved="$ns/$name"
+  [ ! -L "$resolved" ] || return 2
+  printf '%s' "$resolved"
+}
+
+# ns_archive_dir <project-dir> <date> <shift-id> — the directory one shift is filed into.
+# The date layout groups a night together; the shift layout gives each shift its own directory.
+# The shift id names the files inside either way, so two shifts on one day never collide.
+ns_archive_dir() {
+  local root layout
+  root="$(ns_archive_root "$1")" || return 2
+  layout="$(ns_archive "$1" layout)"
+  if [ "$layout" = shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
+    printf '%s/shift-%s' "$root" "$3"
+    return 0
+  fi
+  printf '%s/%s' "$root" "$2"
+}
+
+# ns_archive_automatic <project-dir> — status 0 when the owner asked for filing at clock-out.
+# Filing is a copy; it never implies deleting anything.
+ns_archive_automatic() {
+  [ "$(ns_archive "$1" automatic)" = true ]
+}
+
 # ns_handoff <project-dir> <field> — one field of the handoff block, or empty when the file says
 # nothing. Presentation only: none of it decides whether a check ran.
 ns_handoff() {

@@ -75,7 +75,18 @@ case "$DATE" in
 esac
 
 src="$(ns_receipts_dir "$WORKSPACE")"
-dest="$NS/archive/$DATE/receipts"
+# Where a shift is filed is the owner's, inside the state area. A root that would climb out of it,
+# or reach through a symlink, is refused rather than followed.
+if ! root="$(ns_archive_root "$WORKSPACE")"; then
+  printf 'archive-receipts: archive.root must name a directory inside .nightshift/ — an absolute path, a path with .., or a symlink is not supported\n' >&2
+  exit 2
+fi
+shift_id="$(ns_policy_shift_id "$WORKSPACE" 2>/dev/null)" || shift_id=""
+if ! group="$(ns_archive_dir "$WORKSPACE" "$DATE" "$shift_id")"; then
+  printf 'archive-receipts: archive.root must name a directory inside .nightshift/\n' >&2
+  exit 2
+fi
+dest="$group/receipts"
 if [ -L "$src" ]; then
   printf 'archive-receipts: refuse to write through a symlink receipts path\n' >&2
   exit 2
@@ -84,12 +95,12 @@ if [ -e "$src" ] && [ ! -d "$src" ]; then
   printf 'archive-receipts: receipts path is not a directory\n' >&2
   exit 2
 fi
-if [ -L "$NS/archive" ] || [ -L "$NS/archive/$DATE" ] || [ -L "$dest" ]; then
+if [ -L "$root" ] || [ -L "$group" ] || [ -L "$dest" ]; then
   printf 'archive-receipts: refuse to write through a symlink archive path\n' >&2
   exit 2
 fi
-if { [ -e "$NS/archive" ] && [ ! -d "$NS/archive" ]; } \
-  || { [ -e "$NS/archive/$DATE" ] && [ ! -d "$NS/archive/$DATE" ]; } \
+if { [ -e "$root" ] && [ ! -d "$root" ]; } \
+  || { [ -e "$group" ] && [ ! -d "$group" ]; } \
   || { [ -e "$dest" ] && [ ! -d "$dest" ]; }; then
   printf 'archive-receipts: refuse to write through a non-directory archive path\n' >&2
   exit 2

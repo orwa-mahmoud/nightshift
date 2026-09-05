@@ -288,7 +288,9 @@ cmd_archive() {
     *) die "invalid shift-policy.json: $out" 2 ;;
   esac
   shift_id="$(ns_policy_shift_id "$WORKSPACE")" || die 'shift-policy.json carries no shiftId' 2
-  dated="$NS/archive/$(date '+%Y-%m-%d')"
+  # The owner chooses where and how a shift is filed; the shift id names the file either way.
+  dated="$(ns_archive_dir "$WORKSPACE" "$(date '+%Y-%m-%d')" "$shift_id")" ||
+    die 'archive.root must name a directory inside .nightshift/' 2
   mkdir -p "$dated" || die "cannot create $dated" 2
   dest="$dated/shift-policy-$shift_id.json"
   mv "$POLICY" "$dest" || die "cannot archive $POLICY" 2

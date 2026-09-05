@@ -178,3 +178,111 @@ new_artifact() {
   run pwsh -NoProfile -NonInteractive -File "$ARCHIVE_LOGIC"
   [ "$status" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------------------------
+# Where a shift is filed is the owner's; that it stays inside the state area is not. The shift id
+# names the files either way, so nothing collides and an old default-path history stays findable.
+
+arch_rules() { # <project> <jq-expression>
+  jq "$2" "$1/.nightshift/rules.json" >"$1/r.json"
+  mv "$1/r.json" "$1/.nightshift/rules.json"
+}
+
+@test "a custom archive root is honoured and stays inside the state area" {
+  p="$(new_project arch-root)"
+  arch_rules "$p" '.archive.root = "history"'
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'one\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/history/2026-09-05/receipts/morning-2026-09-05-abc.md" ]
+  [ ! -d "$p/.nightshift/archive/2026-09-05" ]
+  # The live copy stays where progress and recovery still look for it.
+  [ -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+}
+
+@test "the shift layout gives each shift its own directory" {
+  p="$(new_project arch-layout)"
+  arch_rules "$p" '.archive.layout = "shift"'
+  printf '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T00:00:00Z","source":"composition","verificationLevel":"none","toolingPolicy":"existing-tools"}\n' \
+    >"$p/.nightshift/shift-policy.json"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'one\n' >"$p/.nightshift/receipts/morning-2026-09-05-9f2c40ab77e51d63.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ -d "$p/.nightshift/archive/shift-9f2c40ab77e51d63/receipts" ]
+  [ ! -d "$p/.nightshift/archive/2026-09-05" ]
+}
+
+@test "a root that would leave the state area is refused, not followed" {
+  for bad in "../escape" "/tmp/elsewhere" "sub/../../out"; do
+    p="$(new_project "arch-escape-$(printf '%s' "$bad" | tr -c 'a-z' -)")"
+    arch_rules "$p" ".archive.root = \"$bad\""
+    mkdir -p "$p/.nightshift/receipts"
+    printf 'one\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+    run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+    [ "$status" -eq 2 ] || { echo "$bad was not refused"; return 1; }
+    printf '%s\n' "$output" | grep -qF 'inside .nightshift/'
+  done
+}
+
+@test "a symlinked archive root is refused" {
+  p="$(new_project arch-symlink)"
+  arch_rules "$p" '.archive.root = "linked"'
+  mkdir -p "$BATS_TEST_TMPDIR/outside"
+  ln -s "$BATS_TEST_TMPDIR/outside" "$p/.nightshift/linked"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'one\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 2 ]
+  [ -z "$(ls -A "$BATS_TEST_TMPDIR/outside")" ]
+}
+
+@test "filing the same day twice adds nothing twice and overwrites no earlier record" {
+  p="$(new_project arch-twice)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'first\n' >"$p/.nightshift/receipts/morning-2026-09-05-aaa.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  # A second shift the same day files beside the first, not over it.
+  printf 'second\n' >"$p/.nightshift/receipts/morning-2026-09-05-bbb.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  d="$p/.nightshift/archive/2026-09-05/receipts"
+  [ "$(cat "$d/morning-2026-09-05-aaa.md")" = first ]
+  [ "$(cat "$d/morning-2026-09-05-bbb.md")" = second ]
+  [ "$(find "$d" -name 'morning-*' | wc -l | tr -d ' ')" -eq 2 ]
+}
+
+@test "a history filed under the default root is still there after the root changes" {
+  p="$(new_project arch-both)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'old\n' >"$p/.nightshift/receipts/morning-2026-09-04-old.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-04
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/archive/2026-09-04/receipts/morning-2026-09-04-old.md" ]
+  # The owner moves the root; nothing already filed is touched or lost.
+  arch_rules "$p" '.archive.root = "history"'
+  printf 'new\n' >"$p/.nightshift/receipts/morning-2026-09-05-new.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/history/2026-09-05/receipts/morning-2026-09-05-new.md" ]
+  [ -f "$p/.nightshift/archive/2026-09-04/receipts/morning-2026-09-04-old.md" ]
+}
+
+@test "the ledger and the policy are filed where the receipts are" {
+  p="$(new_project arch-together)"
+  arch_rules "$p" '.archive.root = "history"'
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T00:00:00Z","source":"composition","verificationLevel":"none","toolingPolicy":"existing-tools"}\n' \
+    >"$p/.nightshift/shift-policy.json"
+  bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh" --project "$p" init >/dev/null
+  printf '{"schemaVersion":1}\n' >>"$p/.nightshift/evidence/findings.jsonl"
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence-archive.sh" \
+    --project "$p" --shift-id 9f2c40ab77e51d63
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF '/.nightshift/history/'
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/shift-policy.sh" --project "$p" archive
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF '/.nightshift/history/'
+}

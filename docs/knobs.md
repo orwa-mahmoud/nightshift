@@ -289,8 +289,12 @@ paths and asking.
 | Key | Default | Values |
 |---|---|---|
 | `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
-| `root` | `archive` | Directory for dated archives, relative to `.nightshift/`, and inside it |
+| `root` | `archive` | Directory for dated archives, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
 | `layout` | `date` | `date` groups a night under `YYYY-MM-DD`; `shift` gives each shift its own directory. The shift id names the files either way, so two shifts in a day never collide |
+
+Changing `root` never moves or hides what is already filed: an older history under the previous
+root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live
+ones in place, so a shift still in progress keeps the receipts its own progress checks read.
 | `templatePath` | `""` | A Markdown template for the archive summary |
 
 Every rule above is **shift-scoped**: it applies to the bound session while `.shift-armed` exists,

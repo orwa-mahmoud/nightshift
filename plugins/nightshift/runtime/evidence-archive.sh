@@ -57,7 +57,9 @@ if [ -z "$SHIFT_ID" ]; then
 fi
 [ -n "$SHIFT_ID" ] || SHIFT_ID=unknown
 
-dated="$NS/archive/$(date '+%Y-%m-%d')"
+# The owner chooses where and how a shift is filed; the shift id names the file either way.
+dated="$(ns_archive_dir "$WORKSPACE" "$(date '+%Y-%m-%d')" "$SHIFT_ID")" ||
+  die 'archive.root must name a directory inside .nightshift/' 2
 dest="$dated/findings-$SHIFT_ID.jsonl"
 mkdir -p "$dated" || die "cannot create $dated" 2
 cp "$JSONL" "$dest" || die "cannot copy $JSONL to $dest" 2
