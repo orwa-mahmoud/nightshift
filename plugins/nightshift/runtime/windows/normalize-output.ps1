@@ -672,14 +672,14 @@ function Get-NODecontented {
             [void]$out.Append($rest.Substring(0, $cdata))
             $rest = $rest.Substring($cdata + 9)
             $close = $rest.IndexOf(']]>', [StringComparison]::Ordinal)
-            if ($close -lt 0) { return $out.ToString() }
+            if ($close -lt 0) { $script:JunitTorn = 'an unterminated CDATA section'; return $out.ToString() }
             $rest = $rest.Substring($close + 3)
         }
         else {
             [void]$out.Append($rest.Substring(0, $comment))
             $rest = $rest.Substring($comment + 4)
             $close = $rest.IndexOf('-->', [StringComparison]::Ordinal)
-            if ($close -lt 0) { return $out.ToString() }
+            if ($close -lt 0) { $script:JunitTorn = 'an unterminated comment'; return $out.ToString() }
             $rest = $rest.Substring($close + 3)
         }
     }
@@ -740,7 +740,17 @@ function Read-NOJunit {
     # same tests twice, once on the outer suite and once on each suite inside it,
     # and adding both reports every test twice.
     $stack = New-Object 'Collections.Generic.List[object]'
-    foreach ($record in (Get-NODecontented $text).Split('<')) {
+    $script:JunitTorn = ''
+    $bad = ''
+    $cases = 0
+    $body = Get-NODecontented $text
+    # The last element of a finished report closes. A document whose final bracket
+    # opens a tag and never shuts it was cut off while the writer was still writing.
+    $lastOpen = $body.LastIndexOf('<', [StringComparison]::Ordinal)
+    if ($lastOpen -ge 0 -and $body.IndexOf('>', $lastOpen, [StringComparison]::Ordinal) -lt 0) {
+        $bad = 'a tag that never closes'
+    }
+    foreach ($record in $body.Split('<')) {
         if ($record -eq '') { continue }
         $tag = Get-NOTagText $record
         $name = $tag
@@ -753,6 +763,7 @@ function Read-NOJunit {
         if ($cut -ge 0) { $name = $name.Substring(0, $cut) }
         if ($name -ceq 'testsuite') {
             if ($closing) {
+                if ($stack.Count -le 0) { $bad = 'a testsuite that closes without opening' }
                 $popped = Pop-NOSuite $stack
                 if ($null -ne $popped) {
                     $suites++
@@ -784,14 +795,20 @@ function Read-NOJunit {
             }
             continue
         }
-        if ($closing) { continue }
         if ($name -ceq 'testcase') {
+            if ($closing) {
+                $cases--
+                if ($cases -lt 0) { $bad = 'a testcase that closes without opening' }
+                continue
+            }
             $className = Get-NOAttribute $tag 'classname'
             $caseName = Get-NOAttribute $tag 'name'
             if ($className -eq '') { $className = '-' }
             if ($caseName -eq '') { $caseName = '-' }
+            if (-not $tag.EndsWith('/', [StringComparison]::Ordinal)) { $cases++ }
             continue
         }
+        if ($closing) { continue }
         if ($name -ceq 'failure' -or $name -ceq 'error') {
             $type = Get-NOAttribute $tag 'type'
             $detail = $caseName
@@ -800,16 +817,12 @@ function Read-NOJunit {
             continue
         }
     }
-    while ($stack.Count -gt 0) {
-        $popped = Pop-NOSuite $stack
-        if ($null -ne $popped) {
-            $suites++
-            $tests += $popped.Tests
-            $failures += $popped.Failures
-            $errors += $popped.Errors
-            $skipped += $popped.Skipped
-        }
-    }
+    # A reader that closes elements nobody closed is answering about a document
+    # nobody wrote. An unfinished report is unavailable, with the reason named.
+    if ($script:JunitTorn -ne '') { Write-NOUnavailable ('the report ends inside ' + $script:JunitTorn) }
+    if ($bad -ne '') { Write-NOUnavailable ('the report holds ' + $bad) }
+    if ($stack.Count -gt 0) { Write-NOUnavailable 'the report ends with an unclosed testsuite element' }
+    if ($cases -gt 0) { Write-NOUnavailable 'the report ends with an unclosed testcase element' }
     if (-not $saw) { Write-NOUnavailable 'the input holds no JUnit testsuite element' }
     $script:Files = $suites
     $script:Headline = 'junit: ' + (Get-NOPlural $tests 'test') + ', ' +

@@ -25,7 +25,7 @@ all_cases() {
     tsc) printf '%s continuation pretty colour summary-only partial watch clean' "$CASES" ;;
     coverage-summary) printf '%s unmeasured' "$CASES" ;;
     sarif) printf '%s wide' "$CASES" ;;
-    junit) printf '%s nested cdata' "$CASES" ;;
+    junit) printf '%s nested cdata truncated cut mismatched torn-cdata torn-comment empty-suite no-counts' "$CASES" ;;
     lcov) printf '%s unmeasured' "$CASES" ;;
     *) printf '%s' "$CASES" ;;
   esac
@@ -572,4 +572,57 @@ digest_of() {
   normalize --format tsc --input tests/fixtures/normalize/tsc/clean.txt --json
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | jq -e '.counts.errors == 0 and .counts.warnings == 0' >/dev/null
+}
+
+# A reader that closes elements nobody closed is answering about a document nobody wrote. The
+# JUnit reader stays a bounded format reader: it refuses what it cannot finish, naming the reason,
+# and never returns a confident summary of a report that was cut off.
+@test "an unfinished JUnit report is unavailable, never a clean run" {
+  cd "$ROOT"
+  normalize --format junit --input tests/fixtures/normalize/junit/truncated.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report ends with an unclosed testsuite element' ]
+
+  normalize --format junit --input tests/fixtures/normalize/junit/cut.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report holds a tag that never closes' ]
+
+  normalize --format junit --input tests/fixtures/normalize/junit/mismatched.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report holds a testsuite that closes without opening' ]
+}
+
+@test "a payload section that never ends is unavailable, not a shorter document" {
+  cd "$ROOT"
+  normalize --format junit --input tests/fixtures/normalize/junit/torn-cdata.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report ends inside an unterminated CDATA section' ]
+
+  normalize --format junit --input tests/fixtures/normalize/junit/torn-comment.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report ends inside an unterminated comment' ]
+}
+
+@test "a finished JUnit report still reads, counts and all" {
+  cd "$ROOT"
+  # A suite that closes with nothing in it ran nothing, and says so.
+  normalize --format junit --input tests/fixtures/normalize/junit/empty-suite.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 0 and .files == 1' >/dev/null
+
+  # A suite that states no counts is read as the zeros it states, not refused.
+  normalize --format junit --input tests/fixtures/normalize/junit/no-counts.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 0 and .files == 1' >/dev/null
+
+  # Nesting, escaped text and a valid CDATA payload are unchanged by any of this.
+  normalize --format junit --input tests/fixtures/normalize/junit/nested.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 5 and .files == 2' >/dev/null
+  normalize --format junit --input tests/fixtures/normalize/junit/cdata.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 2 and .counts.failures == 1' >/dev/null
+  normalize --format junit --input tests/fixtures/normalize/junit/sample.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 14 and .counts.failures == 3' >/dev/null
 }

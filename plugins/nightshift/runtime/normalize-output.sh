@@ -415,7 +415,8 @@ function nt(s) { gsub(/[\t\r\n]/, " ", s); return s }
 BEGIN {
   doc = ""
   suites = 0; tests = 0; failures = 0; errs = 0; skipped = 0
-  depth = 0
+  depth = 0; cases = 0
+  torn = ""; bad = ""
   cls = "-"; nm = "-"
   SQ = sprintf("%c", 39)
 }
@@ -449,13 +450,13 @@ function decontent(s,   out, ci, mi, j) {
       out = out substr(s, 1, ci - 1)
       s = substr(s, ci + 9)
       j = index(s, "]]>")
-      if (j == 0) return out
+      if (j == 0) { torn = "an unterminated CDATA section"; return out }
       s = substr(s, j + 3)
     } else {
       out = out substr(s, 1, mi - 1)
       s = substr(s, mi + 4)
       j = index(s, "-->")
-      if (j == 0) return out
+      if (j == 0) { torn = "an unterminated comment"; return out }
       s = substr(s, j + 3)
     }
   }
@@ -481,7 +482,7 @@ function tagtext(rec,   i, c, q) {
 # suites states the same tests twice, once on the outer suite and once on each
 # suite inside it, and adding both reports every test twice.
 function pop(   d) {
-  if (depth <= 0) return
+  if (depth <= 0) { bad = "a testsuite that closes without opening"; return }
   d = depth
   depth--
   if (!leaf[d]) return
@@ -493,7 +494,15 @@ function pop(   d) {
 }
 { doc = doc $0 "\n" }
 END {
-  n = split(decontent(doc), rec, "<")
+  body = decontent(doc)
+  # The last element of a finished report closes. A document whose final bracket
+  # opens a tag and never shuts it was cut off while the writer was still writing.
+  lt = 0
+  for (i = length(body); i > 0; i--) {
+    if (substr(body, i, 1) == "<") { lt = i; break }
+  }
+  if (lt > 0 && index(substr(body, lt), ">") == 0) bad = "a tag that never closes"
+  n = split(body, rec, "<")
   for (r = 1; r <= n; r++) {
     if (rec[r] == "") continue
     tag = tagtext(rec[r])
@@ -515,14 +524,20 @@ END {
       if (substr(tag, length(tag), 1) == "/") pop()
       continue
     }
-    if (closing) continue
     if (name == "testcase") {
+      if (closing) {
+        cases--
+        if (cases < 0) bad = "a testcase that closes without opening"
+        continue
+      }
       cls = att(tag, "classname")
       nm = att(tag, "name")
       if (cls == "") cls = "-"
       if (nm == "") nm = "-"
+      if (substr(tag, length(tag), 1) != "/") cases++
       continue
     }
+    if (closing) continue
     if (name == "failure" || name == "error") {
       t = att(tag, "type")
       printf "item\terror\t%s\t0\t%s\t%s%s\n", \
@@ -530,7 +545,24 @@ END {
       continue
     }
   }
-  while (depth > 0) pop()
+  # A reader that closes elements nobody closed is answering about a document
+  # nobody wrote. An unfinished report is unavailable, with the reason named.
+  if (torn != "") {
+    print "error\tthe report ends inside " torn
+    exit 0
+  }
+  if (bad != "") {
+    print "error\tthe report holds " bad
+    exit 0
+  }
+  if (depth > 0) {
+    print "error\tthe report ends with an unclosed testsuite element"
+    exit 0
+  }
+  if (cases > 0) {
+    print "error\tthe report ends with an unclosed testcase element"
+    exit 0
+  }
   if (!saw) {
     print "error\tthe input holds no JUnit testsuite element"
     exit 0
