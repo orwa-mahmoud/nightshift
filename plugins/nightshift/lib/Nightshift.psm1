@@ -5815,6 +5815,7 @@ $script:NSCompareRowFormat = '| {0} | {1} | {2} | {3} | {4} |'
 $script:NSCompareEmptyLocator = 'empty'
 $script:NSCompareBaselineFormat = 'Baseline: {0} {1} {2} {1} `{3}`'
 $script:NSCompareModeFormat = 'Mode: {0}'
+$script:NSCompareSourceFormat = 'Source: {0}'
 $script:NSCompareResultFormat = 'Result: {0}'
 $script:NSComparePassLabel = 'pass'
 $script:NSCompareFailLabel = 'fail'
@@ -6143,6 +6144,20 @@ function Get-NSEvidenceComparison {
         if (-not ($other -ceq $environment)) { $environmentMoved = $true }
     }
 
+    # The source speaks for itself, above every row. A baseline of this source taken at or after
+    # the chosen one that reports itself unavailable means the tool did not run: nothing it did
+    # not say can be read as an improvement, and an empty answer is not a clean one.
+    $sourceUnavailable = $false
+    $reached = $false
+    foreach ($record in (Get-NSCompareBaselineRecords $all)) {
+        if ((Get-NSRecordText $record 'id') -ceq $Baseline) { $reached = $true }
+        if (-not $reached) { continue }
+        if (-not ((Get-NSCompareBaselineSourceClass $record) -ceq $sourceClass)) { continue }
+        if ($script:NSCompareUnavailableStatuses -ccontains (Get-NSRecordText $record 'status')) {
+            $sourceUnavailable = $true
+        }
+    }
+
     $current = New-NSOrdinalMap
     foreach ($record in @($all)) {
         if ($script:NSEvidenceLifecycleDomains -ccontains (Get-NSRecordText $record 'domain')) { continue }
@@ -6195,6 +6210,7 @@ function Get-NSEvidenceComparison {
             $row['locator'] = ''
             $row['sources'] = Get-NSUniqueSorted ([string[]]@($command))
         }
+        if ($sourceUnavailable) { $row['class'] = 'unavailable' }
         $rows.Add($row)
     }
 
@@ -6223,6 +6239,7 @@ function Get-NSEvidenceComparison {
         if ($outstanding.Count -gt 0) { $pass = $false }
     }
     else {
+        if ($sourceUnavailable -or $environmentMoved) { $pass = $false }
         foreach ($row in $rows) {
             if ($script:NSCompareOutstandingClasses -ccontains ([string]$row['class'])) { $pass = $false }
         }
@@ -6240,6 +6257,7 @@ function Get-NSEvidenceComparison {
     $document['pass'] = $pass
     $document['rows'] = $rows.ToArray()
     $document['schemaVersion'] = 1
+    $document['sourceStatus'] = if ($sourceUnavailable -or $environmentMoved) { 'unavailable' } else { 'available' }
     $document['summary'] = $summary
 
     $result = New-NSOrdinalMap
@@ -6268,7 +6286,7 @@ function Get-NSCompareRowLine {
 }
 
 function Get-NSCompareTableLines {
-    param($Rows)
+    param($Rows, [string]$SourceStatus = 'available')
     $lines = New-Object Collections.Generic.List[string]
     $lines.Add($script:NSCompareTableHeader)
     $lines.Add($script:NSCompareTableRule)
@@ -6278,8 +6296,12 @@ function Get-NSCompareTableLines {
         $count++
     }
     if ($count -eq 0) {
+        # An empty table says why it is empty: a source that ran and found nothing is not the
+        # same answer as a source that never ran.
         $dash = Get-NSEvidenceDash
-        $lines.Add(($script:NSCompareRowFormat -f $dash, $dash, $dash, $dash, $script:NSCompareEmptyLocator))
+        $why = $script:NSCompareEmptyLocator
+        if ($SourceStatus -ceq 'unavailable') { $why = 'unavailable' }
+        $lines.Add(($script:NSCompareRowFormat -f $dash, $dash, $dash, $dash, $why))
     }
     return , $lines.ToArray()
 }
@@ -6317,9 +6339,10 @@ function Get-NSCompareMarkdown {
     $lines.Add(($script:NSCompareBaselineFormat -f ([string]$document['baseline']), $dash, `
         ([string]$Comparison['sourceClass']), ([string]$Comparison['command'])))
     $lines.Add(($script:NSCompareModeFormat -f ([string]$document['mode'])))
+    $lines.Add(($script:NSCompareSourceFormat -f ([string]$document['sourceStatus'])))
     $lines.Add(($script:NSCompareResultFormat -f (Get-NSCompareResultLabel $document['pass'])))
     $lines.Add('')
-    foreach ($line in (Get-NSCompareTableLines $document['rows'])) { $lines.Add($line) }
+    foreach ($line in (Get-NSCompareTableLines $document['rows'] ([string]$document['sourceStatus']))) { $lines.Add($line) }
     $lines.Add('')
     $summary = $document['summary']
     foreach ($line in (Get-NSCompareSummaryLines $summary $summary['selectedDebtOutstanding'])) { $lines.Add($line) }

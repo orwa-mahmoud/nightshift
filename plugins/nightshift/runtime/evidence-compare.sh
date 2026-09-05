@@ -37,7 +37,10 @@
 # Dedupe never erases an originating tool either: a row's sources[] is the union of the record's
 # sources[] and its own sourceClass, in byte order.
 #
-# Modes: clear-all passes when no row is new, unchanged, regressed or unavailable.
+# Modes: clear-all passes when the source itself is available and no row is new, unchanged,
+# regressed or unavailable. The source is judged on its own, not through its rows, so a tool that
+# failed or an environment that moved fails the mode even when the baseline had seen nothing to
+# report. `sourceStatus` carries that answer in both renderings; no row is invented to hold it.
 # no-regression-plus-selected-debt passes when no row is regressed and every selected debt id
 # this baseline covers is cleared; an id it does not cover is scored by that source's own
 # comparison.
@@ -692,13 +695,20 @@ _ec_rows() {
 # ---------------------------------------------------------------- the verdict
 
 # _ec_verdict -> PASS. clear-all wants every measured finding cleared, so an unavailable source
-# fails it: not knowing is not the same as being clean. no-regression-plus-selected-debt wants no
-# regression and the owner's selected ids cleared, and an unavailable source clears nothing.
+# fails it: not knowing is not the same as being clean. That holds however many rows the source
+# carries — a tool that could not run, or an environment that moved, reports nothing whether or
+# not the baseline had seen anything, and an empty answer from a source that never spoke is not a
+# clean one. A source that did run and genuinely found nothing keeps its pass.
+# no-regression-plus-selected-debt wants no regression and the owner's selected ids cleared, and
+# an unavailable source clears nothing, so its own rule already covers what it promises.
 _ec_verdict() {
   local i idj found cleared
   PASS=true
   NOUT=0
   if [ "$MODE" = clear-all ]; then
+    if [ "$SOURCE_UNAVAILABLE" -eq 1 ] || [ "$ENV_MOVED" -eq 1 ]; then
+      PASS=false
+    fi
     i=0
     while [ "$i" -lt "$NROW" ]; do
       case "${ROW_CLASS[$i]}" in
@@ -741,6 +751,17 @@ _ec_verdict() {
 
 # ---------------------------------------------------------------- rendering
 
+# _ec_source_status — the source's own answer, which no row can carry when there are no rows.
+# A tool that failed and an environment that moved both mean nothing looked; everything else
+# means the source spoke, even if what it said was that it found nothing.
+_ec_source_status() {
+  if [ "$SOURCE_UNAVAILABLE" -eq 1 ] || [ "$ENV_MOVED" -eq 1 ]; then
+    printf 'unavailable'
+  else
+    printf 'available'
+  fi
+}
+
 # _ec_render_json — sorted keys, compact, one trailing newline. Every id, digest, locator and
 # tool is spliced in as the compact JSON the ledger holds, so the document needs no escaper.
 _ec_render_json() {
@@ -752,7 +773,7 @@ _ec_render_json() {
     out="$out,\"locator\":${ROW_LOCJ[$i]},\"sources\":${ROW_SRCJ[$i]}}"
     i=$((i + 1))
   done
-  out="$out],\"schemaVersion\":1,\"summary\":{"
+  out="$out],\"schemaVersion\":1,\"sourceStatus\":\"$(_ec_source_status)\",\"summary\":{"
   first=1
   while IFS= read -r class; do
     [ -n "$class" ] || continue
@@ -785,6 +806,7 @@ _ec_render_md() {
   md="# Comparison$EC_NL$EC_NL"
   md="${md}Baseline: ${BIDT} ${dash} ${BCLASST} ${dash} \`${BCOMMANDT}\`${EC_NL}"
   md="${md}Mode: ${MODE}${EC_NL}"
+  md="${md}Source: $(_ec_source_status)${EC_NL}"
   md="${md}Result: ${word}${EC_NL}${EC_NL}"
   md="${md}| ID | Class | Digest | Sources | Locator |${EC_NL}"
   md="${md}| --- | --- | --- | --- | --- |${EC_NL}"
@@ -801,7 +823,7 @@ _ec_render_md() {
     i=$((i + 1))
   done
   if [ "$NROW" -eq 0 ]; then
-    md="${md}| — | — | — | — | empty |${EC_NL}"
+    md="${md}| — | — | — | — | $(_ec_source_status | sed 's/^available$/empty/') |${EC_NL}"
   fi
   md="${md}${EC_NL}Summary: "
   for class in new cleared unchanged regressed unavailable rejected-duplicate parked human-only; do

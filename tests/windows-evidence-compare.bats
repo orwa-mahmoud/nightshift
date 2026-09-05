@@ -114,3 +114,11 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   run pwsh -NoProfile -NonInteractive -File "$LOGIC"
   [ "$status" -eq 0 ]
 }
+
+@test "Windows comparison logic covers a source that answered unavailable with no rows" {
+  grep -qF 'an unavailable source with no rows never passes clear-all' "$LOGIC"
+  grep -qF 'the source reports its own status' "$LOGIC"
+  grep -qF 'no row is invented to carry the status' "$LOGIC"
+  grep -qF 'the Markdown carries the source status' "$LOGIC"
+  grep -qF 'a source that ran and found nothing still passes' "$LOGIC"
+}

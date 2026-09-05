@@ -221,7 +221,7 @@ class_of() {
   run compare "$p" b1 --json
   [ "$status" -eq 3 ]
   [ "$(printf '%s\n' "$output" | jq -r 'keys_unsorted | join(",")')" \
-    = "baseline,mode,pass,rows,schemaVersion,summary" ]
+    = "baseline,mode,pass,rows,schemaVersion,sourceStatus,summary" ]
   [ "$(printf '%s\n' "$output" | jq -r '.rows[0] | keys_unsorted | join(",")')" \
     = "class,digest,id,locator,sources" ]
   [ "$(printf '%s\n' "$output" | jq -r '.summary | keys_unsorted | join(",")')" \
@@ -504,4 +504,95 @@ COMPARE_TOOLSET_NO_JQ="bash sh git sed grep find sort ls awk cat tr head tail wc
 @test "compare temps are created mode 700" {
   grep -qF 'mktemp -d' "$EC"
   grep -qF 'chmod 700' "$EC"
+}
+
+# ---------------------------------------------------------------------------------------------
+# The source answers for itself. A tool that could not run reports nothing whether or not the
+# baseline had seen anything, so clear-all cannot read its silence as a clean sheet — and the
+# answer travels as sourceStatus rather than as an invented row.
+
+@test "an unavailable source with nothing to report never passes clear-all" {
+  p="$(new_project ec-unavailable-empty)"
+  ledger "$p"
+  append "$p" "$(baseline_json b1 unavailable env-1)"
+  run compare "$p" b1 --json
+  [ "$status" -eq 3 ]
+  printf '%s\n' "$output" | jq -e '.pass == false' >/dev/null
+  printf '%s\n' "$output" | jq -e '.sourceStatus == "unavailable"' >/dev/null
+  # No row is manufactured to carry the status, so the counts stay honest.
+  printf '%s\n' "$output" | jq -e '.rows == [] and .summary.total == 0' >/dev/null
+}
+
+@test "a source that ran and found nothing is still a pass" {
+  p="$(new_project ec-clean-empty)"
+  ledger "$p"
+  append "$p" "$(baseline_json b1 open env-1)"
+  run compare "$p" b1 --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.pass == true and .sourceStatus == "available"' >/dev/null
+}
+
+@test "a clean empty measurement followed by a failed recheck stops passing" {
+  p="$(new_project ec-empty-then-failed)"
+  ledger "$p"
+  append "$p" "$(baseline_json b1 open env-1)"
+  run compare "$p" b1 --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.pass == true' >/dev/null
+  # The next run of the same source could not complete.
+  append "$p" "$(baseline_json b2 unavailable env-1)"
+  run compare "$p" b1 --json
+  [ "$status" -eq 3 ]
+  printf '%s\n' "$output" | jq -e '.pass == false and .sourceStatus == "unavailable"' >/dev/null
+}
+
+@test "an environment that moved with nothing to report fails clear-all too" {
+  p="$(new_project ec-env-empty)"
+  ledger "$p"
+  append "$p" "$(baseline_json b1 open env-1)"
+  append "$p" "$(baseline_json b2 open env-2)"
+  run compare "$p" b1 --json
+  [ "$status" -eq 3 ]
+  printf '%s\n' "$output" | jq -e '.pass == false and .sourceStatus == "unavailable"' >/dev/null
+}
+
+@test "no-regression keeps its own rule when a source with no rows is unavailable" {
+  # This mode promises no regression and the owner's selected ids cleared. It carries no debt
+  # here and nothing regressed, so its verdict is unchanged — the status is still reported.
+  p="$(new_project ec-noreg-empty)"
+  ledger "$p"
+  policy_mode "$p" no-regression-plus-selected-debt
+  append "$p" "$(baseline_json b1 unavailable env-1)"
+  run compare "$p" b1 --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.pass == true and .sourceStatus == "unavailable"' >/dev/null
+}
+
+@test "no-regression still refuses to clear selected debt an unavailable source never measured" {
+  p="$(new_project ec-noreg-debt)"
+  ledger "$p"
+  policy_mode "$p" no-regression-plus-selected-debt d1
+  append "$p" "$(baseline_json b1 unavailable env-1 d1=dd1)"
+  run compare "$p" b1 --json
+  [ "$status" -eq 3 ]
+  printf '%s\n' "$output" | jq -e '.pass == false' >/dev/null
+  printf '%s\n' "$output" | jq -e '.summary.selectedDebtOutstanding == ["d1"]' >/dev/null
+}
+
+@test "both renderings carry the same source status" {
+  p="$(new_project ec-status-md)"
+  ledger "$p"
+  append "$p" "$(baseline_json b1 unavailable env-1)"
+  bash "$EC" --project "$p" --baseline b1 --md >"$BATS_TEST_TMPDIR/status.md" || { [ $? -eq 3 ]; }
+  grep -qF 'Source: unavailable' "$BATS_TEST_TMPDIR/status.md"
+  grep -qF 'Result: fail' "$BATS_TEST_TMPDIR/status.md"
+  # The placeholder row says why the table is empty rather than calling the source clean.
+  grep -qF '| — | — | — | — | unavailable |' "$BATS_TEST_TMPDIR/status.md"
+
+  q="$(new_project ec-status-md-ok)"
+  ledger "$q"
+  append "$q" "$(baseline_json b1 open env-1)"
+  bash "$EC" --project "$q" --baseline b1 --md >"$BATS_TEST_TMPDIR/ok.md"
+  grep -qF 'Source: available' "$BATS_TEST_TMPDIR/ok.md"
+  grep -qF '| — | — | — | — | empty |' "$BATS_TEST_TMPDIR/ok.md"
 }

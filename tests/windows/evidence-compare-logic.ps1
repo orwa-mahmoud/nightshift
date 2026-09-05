@@ -508,6 +508,32 @@ try {
     Expect-Equal 'unavailable' (Get-RowClass $toolDocument 'F-cleared') 'an unavailable tool is reported as unavailable'
     Expect-Equal 0 $toolDocument.summary.cleared 'an unavailable tool clears nothing'
 
+    # A source that reported itself unavailable and saw nothing still answers unavailable:
+    # the verdict follows the source, not the number of rows it happens to carry.
+    $emptyProject = Join-Path $root 'tool-unavailable-empty'
+    $emptyNs = New-EvidenceProject $emptyProject
+    $null = Add-Finding -Project $emptyProject -Json (New-BaselineJson -Id 'B1' -Environment 'env-1' -Status 'unavailable')
+    Write-PolicyFile -NightshiftDir $emptyNs -CompletionMode 'clear-all'
+    $emptyRun = Invoke-Script -Path $compareHelper -Arguments @('-Project', $emptyProject, '-Baseline', 'B1', '-Json')
+    Expect-Equal 3 $emptyRun.ExitCode 'an unavailable source with no rows never passes clear-all'
+    $emptyDocument = $emptyRun.StdoutText | ConvertFrom-Json
+    Expect-Equal 'unavailable' ([string]$emptyDocument.sourceStatus) 'the source reports its own status'
+    Expect-Equal 0 $emptyDocument.summary.total 'no row is invented to carry the status'
+    Expect-Equal $false ([bool]$emptyDocument.pass) 'the empty unavailable source does not pass'
+    $emptyMd = Invoke-Script -Path $compareHelper -Arguments @('-Project', $emptyProject, '-Baseline', 'B1', '-Md')
+    Expect-True $emptyMd.StdoutText.Contains('Source: unavailable') 'the Markdown carries the source status'
+    Expect-True $emptyMd.StdoutText.Contains('| unavailable |') 'the empty table says why it is empty'
+
+    # A source that did run and genuinely found nothing keeps its pass.
+    $cleanProject = Join-Path $root 'tool-clean-empty'
+    $cleanNs = New-EvidenceProject $cleanProject
+    $null = Add-Finding -Project $cleanProject -Json (New-BaselineJson -Id 'B1' -Environment 'env-1')
+    Write-PolicyFile -NightshiftDir $cleanNs -CompletionMode 'clear-all'
+    $cleanRun = Invoke-Script -Path $compareHelper -Arguments @('-Project', $cleanProject, '-Baseline', 'B1', '-Json')
+    Expect-Equal 0 $cleanRun.ExitCode 'a source that ran and found nothing still passes'
+    $cleanDocument = $cleanRun.StdoutText | ConvertFrom-Json
+    Expect-Equal 'available' ([string]$cleanDocument.sourceStatus) 'a source that ran reports available'
+
     # === 5. A moved environment digest is not a comparison ===
     $envProject = Join-Path $root 'environment'
     $null = New-EvidenceProject $envProject
