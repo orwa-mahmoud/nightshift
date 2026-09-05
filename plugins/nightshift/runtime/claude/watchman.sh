@@ -393,16 +393,21 @@ errored_tail() {
     END { exit wedge ? 0 : 1 }'
 }
 
-# The outage tell, read after a whole ladder of attempts has failed: the last error in the
-# transcript names the thing that refused the work. A rate or usage limit, a 429, a 529, or an
-# api error is an account or a service the next knock cannot argue with either — worth waiting
+# The outage tell, read after a whole ladder of attempts has failed: the last error the host
+# itself recorded names the thing that refused the work. A rate or usage limit, a 429, a 529, or
+# an api error is an account or a service the next knock cannot argue with either — worth waiting
 # out. Anything else (a broken transcript, a bad agent command) is not, and keeps the interval.
+#
+# Only a line the host marked as its own API error counts. The same words typed by a person, or
+# quoted back inside a tool result, are text about a failure and not a failure: without that
+# marker the watchman keeps its ordinary interval rather than standing down for an hour on
+# something it read in a message.
 api_limited_tail() {
   local t
   t="$(resolve_transcript)"
   [ -n "$t" ] || return 1
   tail -n 25 "$t" 2>/dev/null | awk '
-    tolower($0) ~ /error|(rate|usage)[ _-]?limit/ { last = tolower($0) }
+    /[^\\]"isApiErrorMessage"[[:space:]]*:[[:space:]]*true/ { last = tolower($0) }
     END {
       exit (last ~ /(rate|usage)[ _-]?limit/ ||
             last ~ /(^|[^0-9])(429|529)([^0-9]|$)/ ||

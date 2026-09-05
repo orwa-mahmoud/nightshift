@@ -1085,7 +1085,7 @@ function parse_top_value(key,    c) {
       parse_retention()
       return
     }
-    if (key == "shift" || key == "handoff" || key == "archive") {
+    if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery") {
       emit(key, "", "", "o", "")
       parse_settings_object(key)
       return

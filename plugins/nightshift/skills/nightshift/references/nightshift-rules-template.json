@@ -62,6 +62,9 @@
     "layout": "date",
     "templatePath": ""
   },
+  "recovery": {
+    "launchScope": "host-grant"
+  },
   "retention": {
     "runtimeLogDays": 0,
     "archiveDays": 0

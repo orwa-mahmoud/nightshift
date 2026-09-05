@@ -454,6 +454,10 @@ function Start-NSAgent {
         $sessionId = $workerId
     }
     $fresh = $Attempt -ge $TotalAttempts -and $TotalAttempts -gt 1
+    # The permission scope a revived session starts under is the owner's, and it never widens
+    # between rungs: a failed revival is retried at the same scope, never a broader one.
+    $launchScope = Get-NSRecoveryLaunchScope $workspace
+    Write-NSLogLine ('watchman: reviving under launch scope ' + $launchScope)
     $prompt = if ($fresh) { $freshPrompt } else { $revivalPrompt }
     if ($HostName -eq 'cursor' -and -not $hadCursorWorker) {
         $prompt = $freshPrompt
@@ -486,8 +490,10 @@ function Start-NSAgent {
         $commandName = 'agent'
         $commandArguments.Add("--resume=$sessionId")
         $commandArguments.Add('-p')
-        $commandArguments.Add('--trust')
-        $commandArguments.Add('--yolo')
+        if ($launchScope -ne 'host-default') {
+            $commandArguments.Add('--trust')
+            $commandArguments.Add('--yolo')
+        }
         $commandArguments.Add('--workspace')
         $commandArguments.Add($workspace)
         $commandArguments.Add($prompt)
@@ -514,15 +520,19 @@ function Start-NSAgent {
         if ($Attempt -eq 1 -and $kind -eq 'resumable') {
             $commandArguments.Add('exec')
             $commandArguments.Add('resume')
-            $commandArguments.Add('-c')
-            $commandArguments.Add('sandbox_mode="danger-full-access"')
+            if ($launchScope -ne 'host-default') {
+                $commandArguments.Add('-c')
+                $commandArguments.Add('sandbox_mode="danger-full-access"')
+            }
             $commandArguments.Add($sessionId)
             $commandArguments.Add($prompt)
         }
         else {
             $commandArguments.Add('exec')
-            $commandArguments.Add('-s')
-            $commandArguments.Add('danger-full-access')
+            if ($launchScope -ne 'host-default') {
+                $commandArguments.Add('-s')
+                $commandArguments.Add('danger-full-access')
+            }
             $commandArguments.Add($freshPrompt)
         }
     }

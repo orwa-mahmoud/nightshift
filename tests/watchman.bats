@@ -1363,3 +1363,75 @@ STUB
   grep -qF 'watchman: another watchman owns this site — standing down' "$P/.nightshift/shift-log.md"
   [ "$(sed -n 1p "$P/.nightshift/.watchman")" = "999999" ] # the other claim survives the exit
 }
+
+# ---------------------------------------------------------------------------------------------
+# What a revived session is allowed to do is the owner's, and the same words in a message are not
+# the host reporting a failure.
+
+@test "the launch scope a revival uses is the owner's, and never widens between rungs" {
+  p="$(new_project watch-scope)"
+  # Shipped: the documented grant for the host.
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-grant ]
+  # The narrower choice, taken from the file.
+  jq '.recovery.launchScope = "host-default"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-default ]
+  # A value nobody documents is the shipped grant, not a guess and not a wider one.
+  jq '.recovery.launchScope = "host-grant"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-grant ]
+}
+
+@test "the Codex and Cursor revivals ask for the scope rather than assuming one" {
+  codex="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/codex/watchman.sh"
+  cursor="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh"
+  win="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/watchman.ps1"
+  for f in "$codex" "$cursor"; do
+    grep -qF 'ns_recovery_launch_scope' "$f" || { echo "$f assumes a scope"; return 1; }
+    grep -qF 'reviving under launch scope' "$f" || { echo "$f does not say which scope"; return 1; }
+  done
+  grep -qF 'Get-NSRecoveryLaunchScope' "$win"
+  grep -qF 'reviving under launch scope' "$win"
+  # Every escalating flag now sits behind the check, on both hosts and on Windows.
+  grep -qF 'if [ "$scope" = host-default ]' "$codex"
+  grep -qF 'if [ "$scope" = host-default ]' "$cursor"
+  [ "$(grep -c "if (\$launchScope -ne 'host-default')" "$win")" -eq 3 ]
+}
+
+@test "a quoted API error is text about a failure, not the host reporting one" {
+  # The shipped tell requires the host's own marker on the line, so the check below is the
+  # program that actually runs and not a copy of it that could drift.
+  W="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/claude/watchman.sh"
+  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'isApiErrorMessage' \
+    || { echo "the outage tell no longer requires the host marker"; return 1; }
+  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'tolower($0) ~ /error' \
+    && { echo "the outage tell still reads any line that mentions an error"; return 1; }
+
+  # The same words a person can type, with no marker from the host: the ordinary interval stands.
+  T="$BATS_TEST_TMPDIR/quoted"
+  mkdir -p "$T"
+  printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","content":"API Error: 429 rate_limit_error"}]}}' >"$T/shift.jsonl"
+  run bash -c '
+    tail -n 25 "$1" | awk "
+      /[^\\\\]\"isApiErrorMessage\"[[:space:]]*:[[:space:]]*true/ { last = tolower(\$0) }
+      END {
+        exit (last ~ /(rate|usage)[ _-]?limit/ ||
+              last ~ /(^|[^0-9])(429|529)([^0-9]|\$)/ ||
+              last ~ /(^|[^a-z])api([^a-z]|\$)/) ? 0 : 1
+      }"' _ "$T/shift.jsonl"
+  [ "$status" -ne 0 ]
+  # The host marking its own API error is evidence, and still is.
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"API Error: 429 rate_limit_error"}]},"isApiErrorMessage":true,"apiErrorStatus":429}' >>"$T/shift.jsonl"
+  run bash -c '
+    tail -n 25 "$1" | awk "
+      /[^\\\\]\"isApiErrorMessage\"[[:space:]]*:[[:space:]]*true/ { last = tolower(\$0) }
+      END {
+        exit (last ~ /(rate|usage)[ _-]?limit/ ||
+              last ~ /(^|[^0-9])(429|529)([^0-9]|\$)/ ||
+              last ~ /(^|[^a-z])api([^a-z]|\$)/) ? 0 : 1
+      }"' _ "$T/shift.jsonl"
+  [ "$status" -eq 0 ]
+}

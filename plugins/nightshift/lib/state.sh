@@ -14,6 +14,23 @@ rule() {
   ns_rules_get "$f" "$2"
 }
 
+# ns_recovery_launch_scope <project-dir> — the permission scope a revived session starts under.
+# host-grant is the documented grant for the host; host-default adds no permission argument and
+# takes whatever the host gives. Anything else, or an unreadable file, is host-grant: recovery
+# keeps working, and the scope in force is logged either way. The watchman never widens it.
+ns_recovery_launch_scope() {
+  local f="$1/.nightshift/rules.json" v=""
+  if [ -n "${NIGHTSHIFT_LAUNCH_SCOPE:-}" ]; then
+    v="$NIGHTSHIFT_LAUNCH_SCOPE"
+  elif [ -f "$f" ]; then
+    v="$(ns_rules_get_in "$f" recovery launchScope)"
+  fi
+  case "$v" in
+    host-default) printf 'host-default' ;;
+    *) printf 'host-grant' ;;
+  esac
+}
+
 # toolDeny requires exact key matching. The shipped reader accepts the template's
 # object-of-strings shape and nothing else. Malformed input fails closed.
 ns_tool_map_ok() { # stdin = a JSON object of string values

@@ -208,7 +208,7 @@ ensure_worker() {
 
 # $1 = 1 resume the stored CLI worker · 2 fresh CLI worker (same id, fresh prompt)
 spawn() {
-  local worker prompt rc freshly
+  local worker prompt rc freshly scope
   freshly=0
   if ! ns_cursor_worker_present "$NS"; then
     freshly=1
@@ -224,9 +224,17 @@ spawn() {
     ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
       CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$prompt"
   else
-    ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" \
-      agent --resume="$worker" -p --trust --yolo --workspace "$PROJECT" "$prompt"
+    scope="$(ns_recovery_launch_scope "$PROJECT")"
+    log_line "watchman: reviving under launch scope $scope"
+    if [ "$scope" = host-default ]; then
+      ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
+        CURSOR_PROJECT_DIR "$PROJECT" \
+        agent --resume="$worker" -p --workspace "$PROJECT" "$prompt"
+    else
+      ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
+        CURSOR_PROJECT_DIR "$PROJECT" \
+        agent --resume="$worker" -p --trust --yolo --workspace "$PROJECT" "$prompt"
+    fi
   fi
   rc=$?
   if [ "$rc" -eq 3 ]; then

@@ -349,6 +349,21 @@
         }
       }
     },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the night watchman is allowed to do when it revives a session the host killed. It decides the permission scope a revived session starts under; it never widens what the host itself permits, and it never lifts a rule in this file.",
+      "properties": {
+        "launchScope": {
+          "type": "string",
+          "enum": [
+            "host-grant",
+            "host-default"
+          ],
+          "description": "host-grant starts a revived session with the documented grant for that host, which is what lets it finish the item it was working: on Codex the workspace-write sandbox protects .git, so a revived session could edit but never commit. host-default adds no permission argument at all and takes whatever the host gives it, which is the narrower choice and may leave a revived session unable to commit. Claude Code inherits its own launch either way. The scope in force is named in the shift log on every revival, and the watchman never retries with a broader one."
+        }
+      }
+    },
     "retention": {
       "type": "object",
       "additionalProperties": false,

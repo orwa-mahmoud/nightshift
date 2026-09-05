@@ -4212,6 +4212,32 @@ function Merge-NSShiftBlockDefaults {
 }
 
 # Get-NSShiftBlock <workspace> — the shift object of the owner rules file, or $null.
+# Get-NSRecoveryLaunchScope <workspace> - the permission scope a revived session starts under.
+# host-grant is the documented grant for the host; host-default adds no permission argument and
+# takes whatever the host gives. Anything else, or an unreadable file, is host-grant.
+function Get-NSRecoveryLaunchScope {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_LAUNCH_SCOPE)) {
+        if ($env:NIGHTSHIFT_LAUNCH_SCOPE -ceq 'host-default') { return 'host-default' }
+        return 'host-grant'
+    }
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'host-grant' }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return 'host-grant'
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return 'host-grant' }
+    if (-not $document.Contains('recovery')) { return 'host-grant' }
+    $block = $document['recovery']
+    if (-not ($block -is [Collections.IDictionary])) { return 'host-grant' }
+    if ((Get-NSMapValue $block 'launchScope') -ceq 'host-default') { return 'host-default' }
+    return 'host-grant'
+}
+
 function Get-NSShiftBlock {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $path = (Get-NSPolicyPaths $Workspace)['rules']

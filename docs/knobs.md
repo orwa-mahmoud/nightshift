@@ -268,6 +268,20 @@ cannot turn an unavailable check into a passed one.
 | `sections` | `[]` | Any of `shift`, `baseline`, `changed`, `parked`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
 
+`recovery` decides what a session the watchman revives is allowed to do. It never widens what your
+host permits, and it never lifts a rule in this file.
+
+| Key | Default | Values |
+|---|---|---|
+| `launchScope` | `host-grant` | `host-grant` starts a revived session with the documented grant for that host — on Codex that is `danger-full-access`, on Cursor `--trust --yolo`. `host-default` passes no permission argument at all and takes whatever the host gives |
+
+Claude Code inherits its own launch either way. `host-grant` exists because a narrower sandbox
+protects `.git`: a revived Codex session could edit but never commit, and one commit per item is
+the contract in repository mode. `host-default` is the narrower choice and may leave a revived
+session unable to finish its item — it will say so rather than widen. Whichever is in force is
+named in `shift-log.md` on every revival, and a failed revival is retried at the same scope, never
+a broader one. `watchAgent` remains the advanced override for the whole command.
+
 `archive` decides where finished shift state is filed. Filing is a copy: `retention` above is the
 only setting that removes anything, and only Nightshift Archive prunes, after showing you the exact
 paths and asking.

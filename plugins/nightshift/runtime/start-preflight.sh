@@ -93,6 +93,27 @@ NS="$WORKSPACE/.nightshift"
 ok "host $HOST_NAME"
 ok "workspace $WORKSPACE"
 
+# The hooks answer for whatever directory the host opened, and the markers this start is about to
+# write land under the workspace resolved above. When a host was launched in a parent folder and
+# the working directory moved afterwards, those are two different places: the shift would arm in
+# one and its session and lease would be recorded against the other. Nightshift does not guess
+# which was meant — it names both and refuses before anything is armed.
+HOST_PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-}}"
+if [ -n "$HOST_PROJECT" ]; then
+  HOST_PROJECT_ABS="$(cd -P "$HOST_PROJECT" 2>/dev/null && pwd)" || HOST_PROJECT_ABS=""
+  if [ -n "$HOST_PROJECT_ABS" ] && [ "$HOST_PROJECT_ABS" != "$HOST_ROOT" ]; then
+    BOUND="$HOST_PROJECT_ABS"
+    if [ -e "$HOST_PROJECT_ABS/.nightshift-link" ] || [ -L "$HOST_PROJECT_ABS/.nightshift-link" ]; then
+      BOUND="$(ns_workspace_root "$HOST_PROJECT_ABS" 2>/dev/null)" || BOUND="$HOST_PROJECT_ABS"
+    fi
+    if [ "$BOUND" != "$WORKSPACE" ]; then
+      refuse "binding the host opened $HOST_PROJECT_ABS and this start was given $HOST_ROOT, which resolve to different workspaces ($BOUND and $WORKSPACE)"
+      repair "reopen the host on the project you mean and run Start there, or point one at the other with a .nightshift-link holding that absolute path; Nightshift never arms in one workspace and records its session in another"
+      exit 1
+    fi
+  fi
+fi
+
 if [ ! -d "$NS" ] || [ -L "$NS" ]; then
   refuse "workspace no usable .nightshift/ at $WORKSPACE"
   repair "run Nightshift setup in this project before starting a shift"

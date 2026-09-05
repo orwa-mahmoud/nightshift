@@ -17,9 +17,13 @@
 # Before either spawn, the watchman advances a process lease and passes its generation/nonce to
 # the child. An older Desktop or terminal process on that conversation then loses observed tools.
 #
-# The sandbox grant is danger-full-access because the workspace-write sandbox protects .git —
-# a revived session could edit but never commit (verified live: "Git cannot create
-# .git/index.lock"), and one commit per item IS the contract in repository mode.
+# The sandbox grant is the owner's to choose, in rules.json under recovery.launchScope. The
+# shipped host-grant starts a revived session with danger-full-access, because the workspace-write
+# sandbox protects .git — a revived session could edit but never commit (verified live: "Git
+# cannot create .git/index.lock"), and one commit per item IS the contract in repository mode.
+# host-default passes no sandbox argument at all and takes whatever the host gives, which is
+# narrower and may leave a revived session unable to commit. Whichever is in force is named in the
+# shift log on every revival, and a failed rung is retried at the same scope, never a broader one.
 # Artifact mode writes a receipt instead. The fence around that access is
 # nightshift's own guards: the hardhat denies what the owner forbade, in every mode — the same
 # trade Claude Code makes with bypassPermissions.
@@ -212,8 +216,24 @@ rollout_grew() {
 # headless run with the punch list as its handover.
 # A non-resumable recorded id is never passed to `codex exec resume` and never treated as a
 # successful resume of that thread.
+# A fresh headless run at the scope the owner configured. The scope never widens between rungs:
+# a revival that failed is retried at the same permissions, never at broader ones.
+spawn_fresh() {
+  log_line "watchman: reviving under launch scope $1"
+  if [ "$1" = host-default ]; then
+    ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+      CODEX_PROJECT_DIR "$PROJECT" \
+      codex exec "$PROMPT_FRESH"
+    return $?
+  fi
+  ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+    CODEX_PROJECT_DIR "$PROJECT" \
+    codex exec -s danger-full-access "$PROMPT_FRESH"
+}
+
 spawn() { # $1 = rung (1|2)
-  local prompt kind rc
+  local prompt kind rc scope
+  scope="$(ns_recovery_launch_scope "$PROJECT")"
   if [ -n "$AGENT" ]; then
     if [ "$1" -eq 1 ]; then prompt="$PROMPT_RESUME"; else prompt="$PROMPT_FRESH"; fi
     # shellcheck disable=SC2086 # owner-provided command line; splitting is intentional
@@ -222,18 +242,21 @@ spawn() { # $1 = rung (1|2)
   elif [ "$1" -eq 1 ]; then
     kind="$(ns_codex_identity_kind "$(sid)")"
     if [ "$kind" = "resumable" ]; then
-      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-        CODEX_PROJECT_DIR "$PROJECT" \
-        codex exec resume -c 'sandbox_mode="danger-full-access"' "$(sid)" "$PROMPT_RESUME"
+      log_line "watchman: reviving under launch scope $scope"
+      if [ "$scope" = host-default ]; then
+        ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+          CODEX_PROJECT_DIR "$PROJECT" \
+          codex exec resume "$(sid)" "$PROMPT_RESUME"
+      else
+        ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+          CODEX_PROJECT_DIR "$PROJECT" \
+          codex exec resume -c 'sandbox_mode="danger-full-access"' "$(sid)" "$PROMPT_RESUME"
+      fi
     else
-      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-        CODEX_PROJECT_DIR "$PROJECT" \
-        codex exec -s danger-full-access "$PROMPT_FRESH"
+      spawn_fresh "$scope"
     fi
   else
-    ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-      CODEX_PROJECT_DIR "$PROJECT" \
-      codex exec -s danger-full-access "$PROMPT_FRESH"
+    spawn_fresh "$scope"
   fi
   rc=$?
   if [ "$rc" -eq 3 ]; then

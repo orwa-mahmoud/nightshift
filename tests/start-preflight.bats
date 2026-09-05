@@ -335,3 +335,55 @@ setup_site() { # <name> [punch-body]
   run pwsh -NoProfile -NonInteractive -File "$BATS_TEST_DIRNAME/windows/start-preflight-logic.ps1"
   [ "$status" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------------------------
+# A host launched in a parent folder, with the working directory moved afterwards, would arm the
+# shift in one workspace and record its session against another. Nightshift names both and stops.
+
+@test "a host opened on one project and a start given another refuses before arming" {
+  parent="$BATS_TEST_TMPDIR/parent"
+  mkdir -p "$parent"
+  p="$(setup_site bind-mismatch)"
+  run env CLAUDE_PROJECT_DIR="$parent" bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q '^refuse binding '
+  printf '%s\n' "$output" | grep -qF "$parent"
+  printf '%s\n' "$output" | grep -qF "$p"
+  printf '%s\n' "$output" | grep -q '^repair '
+  # Nothing was armed, and no marker was left behind in either place.
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+  [ ! -e "$parent/.nightshift" ]
+}
+
+@test "the ordinary direct launch is unaffected" {
+  p="$(setup_site bind-direct)"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -q '^refuse binding '; then
+    echo "a direct launch was refused"
+    return 1
+  fi
+}
+
+@test "a linked workspace is a binding, not a mismatch" {
+  ws="$(setup_site bind-linked)"
+  opened="$BATS_TEST_TMPDIR/opened-elsewhere"
+  mkdir -p "$opened"
+  printf '%s\n' "$ws" >"$opened/.nightshift-link"
+  run env CLAUDE_PROJECT_DIR="$opened" bash "$PREFLIGHT" --project "$ws" --host claude
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -q '^refuse binding '; then
+    echo "a linked workspace was read as a mismatch"
+    return 1
+  fi
+}
+
+@test "a host that names no project at all still starts" {
+  p="$(setup_site bind-no-env)"
+  run env -u CLAUDE_PROJECT_DIR -u CODEX_PROJECT_DIR bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -q '^refuse binding '; then
+    echo "a host with no project variable was refused"
+    return 1
+  fi
+}
