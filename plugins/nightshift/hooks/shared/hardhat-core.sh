@@ -383,7 +383,65 @@ ns_hardhat_payload_targets_lease() {
   esac
 }
 
+NS_HARDHAT_NL='
+'
+NS_HARDHAT_STRIPPED=""
+
+# ns_hardhat_strip_quoted_heredocs <command> — the same command with the body of every quoted
+# here-document replaced by a placeholder.
+#
+# A quoted delimiter means the shell expands nothing in the body, runs nothing in it, and the
+# words inside are the file being written rather than a command. Reading that body as code makes
+# the product unwritable from inside a shift: a page explaining the elevation categories reads as
+# a request for one, and a note naming a control file reads as an attempt to rewrite it.
+#
+# The line that opens the heredoc is kept, so the redirection target is inspected exactly as
+# before — writing a protected file is caught by where it writes, not by what it says. An
+# unquoted delimiter is left alone, because that body is expanded and a command substitution in
+# it really does run. So is an unterminated one: a body with no visible end is not skipped.
+ns_hardhat_strip_quoted_heredocs() {
+  local input="$1" out="" line delim="" body_open=0 found stripped
+  NS_HARDHAT_STRIPPED="$input"
+  case "$input" in
+    *'<<'*) ;;
+    *) return 0 ;;
+  esac
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$body_open" -eq 1 ]; then
+      stripped="${line#"${line%%[! 	]*}"}"
+      if [ "$stripped" = "$delim" ] || [ "$line" = "$delim" ]; then
+        body_open=0
+        out="$out$line$NS_HARDHAT_NL"
+      fi
+      continue
+    fi
+    out="$out$line$NS_HARDHAT_NL"
+    found="$(printf '%s' "$line" | sed -n \
+      -e "s/.*<<-\{0,1\}[[:space:]]*'\([^']*\)'.*/\1/p" \
+      -e 's/.*<<-\{0,1\}[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    if [ -n "$found" ]; then
+      delim="$found"
+      body_open=1
+      out="${out}NIGHTSHIFT_HEREDOC_BODY$NS_HARDHAT_NL"
+    fi
+  done <<NS_HEREDOC_SCAN
+$input
+NS_HEREDOC_SCAN
+  if [ "$body_open" -eq 1 ]; then
+    return 0
+  fi
+  case "$input" in
+    *"$NS_HARDHAT_NL") NS_HARDHAT_STRIPPED="$out" ;;
+    *) NS_HARDHAT_STRIPPED="${out%"$NS_HARDHAT_NL"}" ;;
+  esac
+}
+
 ns_hardhat_scrub() {
+  ns_hardhat_strip_quoted_heredocs "$1"
+  ns_hardhat_scrub_options "$NS_HARDHAT_STRIPPED"
+}
+
+ns_hardhat_scrub_options() {
   local input="$1" output="" length i=0 j k option_length quote char previous next dynamic closed start
   length="${#input}"
   while [ "$i" -lt "$length" ]; do
