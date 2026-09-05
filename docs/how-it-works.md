@@ -40,6 +40,13 @@ not activate hooks: Start, or a Hunt or Quality path that starts immediately, cr
 exists and the shift has not ended. A `STOP` order keeps hardhat on until clock-out writes
 `.nightshift/.ended`; open boxes stay as the record. Reset is the manual escape.
 
+**A shift that ended stays ended.** Adding an unchecked item afterwards does not put you back on
+shift: the gate releases, your rules stop applying, and the watchman will not revive it — the
+punch list is an ordinary to-do file again, whatever leftover `STOP`, deadline, policy or stall
+file is still lying about. Working those items as a shift takes an explicit Start, which arms a
+new marker and a new identity. That is the same boundary as the first time: a list is not a shift
+until someone starts one.
+
 Archive files ticked items and never resets the leftover Shift contract or Gates. An empty
 `## Items` section still binds the next Hunt or Start cut — review those sections before
 composing a new campaign. Status and Doctor report the leftover; Archive writes a Notes reminder
