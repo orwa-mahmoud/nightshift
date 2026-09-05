@@ -141,20 +141,26 @@ with open(p,"w") as f: json.dump(d,f)
   gates_block "$p/.nightshift/punch-list.md" | grep -qF '_None configured._'
 }
 
-@test "apply fast writes shift-defaults.json and an empty Gates placeholder" {
+# A profile writes the remembered choices where they are read from, so applying one cannot leave
+# the same setting in two files that disagree.
+@test "apply fast writes the shift block and an empty Gates placeholder" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"
   cp "$PUNCHLIST_TEMPLATE" "$p/.nightshift/punch-list.md"
   run bash "$APPLY" --project "$p" --profile fast --mode fill --apply
   [ "$status" -eq 0 ]
   jq -e '
-    .schemaVersion == 1
-    and .verificationProfile == "fast"
-    and .hours == null
-    and .toolingPolicy == "existing-tools"
-    and .execution == "run-direct"
-    and (.updatedAt | type) == "string"
-  ' "$p/.nightshift/shift-defaults.json" >/dev/null
+    .shift.verificationProfile == "fast"
+    and .shift.hours == null
+    and .shift.toolingPolicy == "existing-tools"
+    and .shift.execution == "run-direct"
+  ' "$p/.nightshift/rules.json" >/dev/null
+  # And the legacy file is not resurrected beside it.
+  [ ! -f "$p/.nightshift/shift-defaults.json" ]
+  # What the profile wrote is what composition reads back.
+  run bash -c '. "$1"; ns_policy_read_defaults "$2"' \
+    _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  printf '%s' "$output" | jq -e '.verificationProfile == "fast" and .execution == "run-direct"' >/dev/null
   gates_block "$p/.nightshift/punch-list.md" | grep -qF '_None configured._'
 }
 
@@ -167,24 +173,24 @@ with open(p,"w") as f: json.dump(d,f)
   run bash "$APPLY" --project "$p" --profile strict --mode fill --apply
   [ "$status" -eq 0 ]
   jq -e '
-    .verificationProfile == "strict"
-    and .toolingPolicy == "existing-tools"
-    and .execution == "run-direct"
-  ' "$p/.nightshift/shift-defaults.json" >/dev/null
+    .shift.verificationProfile == "strict"
+    and .shift.toolingPolicy == "existing-tools"
+    and .shift.execution == "run-direct"
+  ' "$p/.nightshift/rules.json" >/dev/null
   [ "$(cksum "$p/.nightshift/punch-list.md")" = "$before_gates" ]
 }
 
-@test "apply of a v1 profile changes only rules.json; defaults and Gates stay untouched" {
+@test "apply of a v1 profile changes only the guards; the shift block and Gates stay untouched" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"
   cp "$PUNCHLIST_TEMPLATE" "$p/.nightshift/punch-list.md"
   bash "$APPLY" --project "$p" --profile fast --mode fill --apply >/dev/null
-  before_defaults="$(cksum "$p/.nightshift/shift-defaults.json")"
+  before_shift="$(jq -cS '.shift' "$p/.nightshift/rules.json")"
   before_gates="$(cksum "$p/.nightshift/punch-list.md")"
   run bash "$APPLY" --project "$p" --profile no-push --mode replace --apply
   [ "$status" -eq 0 ]
   jq -e '.forbiddenCommands == "git .*push"' "$p/.nightshift/rules.json" >/dev/null
-  [ "$(cksum "$p/.nightshift/shift-defaults.json")" = "$before_defaults" ]
+  [ "$(jq -cS '.shift' "$p/.nightshift/rules.json")" = "$before_shift" ]
   [ "$(cksum "$p/.nightshift/punch-list.md")" = "$before_gates" ]
 }
 

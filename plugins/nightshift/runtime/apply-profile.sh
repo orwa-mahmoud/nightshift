@@ -7,8 +7,8 @@
 #
 # Default is preview. --apply writes only while unarmed.
 # Profile schema v2 (name, version 2, risk, use, rules, shiftDefaults, gates) additionally
-# previews/writes .nightshift/shift-defaults.json (merged over whatever is already there — only
-# the profile's own fields change) and rewrites the punch list's `## Gates` block (the text
+# previews/writes the shift block of .nightshift/rules.json, which is where the remembered
+# choices live (merged over whatever is already there — only the profile's own fields change) and rewrites the punch list's `## Gates` block (the text
 # between the `## Gates` heading and the next `## ` heading): an empty itemGate writes the
 # template placeholder, a non-empty one renders the item gate and site inspection commands.
 # `shiftDefaults: null` or `gates: null` leaves that file/block untouched. Version-1 profiles
@@ -244,7 +244,14 @@ proposed="$(PROFILE_MODE="$MODE" jq -n --argjson cur "$current" \
         then {"$schema": $cur["$schema"]}
         else {}
         end
-      );
+      )
+    # Replace rebuilds the guards from the shipped template. It does not reach into the owner
+    # preference blocks, which no guard profile is asking about: a profile that forbids a push
+    # has nothing to say about the verification cadence or where archives are filed, and
+    # resetting those would take away a choice nobody made here.
+    + (["shift", "handoff", "archive", "recovery", "report"]
+       | map(select($cur[.] != null) | {(.): $cur[.]})
+       | add // {});
   if env.PROFILE_MODE == "fill" then fill else replace end
 ')"
 
@@ -261,10 +268,21 @@ if ! printf '%s' "$proposed" | jq -e '
   exit 2
 fi
 
-# shift-defaults.json base: the current file when it parses and matches the shape, else the
-# built-in defaults (a missing or malformed file decides nothing).
+# The base a profile merges over: what the owner file's shift block already holds, else the older
+# defaults file where a workspace still has one, else the built-ins. Reading the canonical block
+# first is what makes "only the profile's own fields change" true — merging over the built-ins
+# would quietly reset a field the last profile set.
 shift_defaults_base() {
   builtin='{"schemaVersion":1,"verificationProfile":"fast","hours":null,"toolingPolicy":"existing-tools","execution":"review-first"}'
+  block=""
+  if [ -f "$RULES" ]; then
+    block="$(jq -c 'if (.shift | type) == "object" then (.shift + {schemaVersion: 1}) else empty end' \
+      "$RULES" 2>/dev/null)" || block=""
+  fi
+  if [ -n "$block" ]; then
+    printf '%s' "$builtin" | jq -c --argjson over "$block" '. + $over'
+    return 0
+  fi
   if [ -f "$DEFAULTS_PATH" ] && jq -e '
       type == "object"
       and .schemaVersion == 1
@@ -358,18 +376,26 @@ mv "$tmp" "$RULES" || {
 printf 'Wrote %s\n' "$RULES"
 
 if [ "$SD_TYPE" = "object" ]; then
+  # The remembered choices live in the shift block of the owner file. A profile writes them where
+  # they are read from, so applying one cannot split the same setting across two files.
   base="$(shift_defaults_base)"
   merged="$(merged_shift_defaults "$base")"
-  tmp_sd="$NS/.shift-defaults.json.$$"
-  printf '%s\n' "$merged" | jq -S . >"$tmp_sd" || {
+  block="$(printf '%s' "$merged" | jq -c 'del(.schemaVersion, .updatedAt)')" || exit 2
+  tmp_sd="$NS/.rules-with-shift.json.$$"
+  ns_rules_set_block "$RULES" shift "$block" >"$tmp_sd" || {
     rm -f "$tmp_sd"
     exit 2
   }
-  mv "$tmp_sd" "$DEFAULTS_PATH" || {
+  ns_rules_load "$tmp_sd" >/dev/null 2>&1 || {
+    rm -f "$tmp_sd"
+    printf 'apply-profile: the updated owner file would not load\n' >&2
+    exit 2
+  }
+  mv "$tmp_sd" "$RULES" || {
     rm -f "$tmp_sd"
     exit 2
   }
-  printf 'Wrote %s\n' "$DEFAULTS_PATH"
+  printf 'Wrote the shift block of %s\n' "$RULES"
 fi
 
 if [ "$GATES_TYPE" = "object" ]; then
