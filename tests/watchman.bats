@@ -1368,21 +1368,65 @@ STUB
 # What a revived session is allowed to do is the owner's, and the same words in a message are not
 # the host reporting a failure.
 
-@test "the launch scope a revival uses is the owner's, and never widens between rungs" {
+@test "a revival inherits the scope the shift was started under, and never widens it" {
   p="$(new_project watch-scope)"
-  # Shipped: the documented grant for the host.
+  # Shipped: inherit whatever the shift itself was running under.
   run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
-  [ "$output" = host-grant ]
-  # The narrower choice, taken from the file.
-  jq '.recovery.launchScope = "host-default"' "$p/.nightshift/rules.json" >"$p/r.json"
-  mv "$p/r.json" "$p/.nightshift/rules.json"
-  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = inherit-recorded-scope ]
+
+  # With nothing recorded, inheriting cannot mean the broad grant: it falls back to the host's
+  # own default. A scope nobody observed is never assumed.
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
   [ "$output" = host-default ]
-  # A value nobody documents is the shipped grant, not a guess and not a wider one.
+
+  # With the scope the arming session actually reported, that is what a revival asks for.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools",
+          launchScope: "workspace-write", launchProvenance: "observed"}' \
+    >"$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "recorded:workspace-write" ]
+
+  # A scope the host never reported stays unavailable, and the fallback is still the narrow one.
+  jq '.launchProvenance = "unavailable" | .launchScope = "unknown"' \
+    "$p/.nightshift/shift-policy.json" >"$p/pol.json"
+  mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-default ]
+
+  # The broad grant happens only because the owner wrote it in their own file.
   jq '.recovery.launchScope = "host-grant"' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
-  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
   [ "$output" = host-grant ]
+
+  # And the narrowest choice is still available by name.
+  jq '.recovery.launchScope = "host-default"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-default ]
+}
+
+@test "a workspace that predates the setting is not read as having chosen the broad grant" {
+  p="$(new_project watch-scope-legacy)"
+  # A rules file from before recovery.launchScope existed. Its old behaviour was the built-in
+  # broad launch, but that was a default nobody chose — so it inherits rather than escalates.
+  jq 'del(.recovery)' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = inherit-recorded-scope ]
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-default ]
+}
+
+@test "what the host reports is what gets recorded, and silence is not a scope" {
+  run bash -c '. "$1"; CODEX_SANDBOX_MODE=workspace-write ns_launch_observed codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  [ "$output" = "$(printf 'workspace-write\tobserved')" ]
+  run bash -c '. "$1"; unset CODEX_SANDBOX_MODE CODEX_SANDBOX; ns_launch_observed codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  [ "$output" = "$(printf 'unknown\tunavailable')" ]
+  # Claude Code and Cursor hand a session its permissions at launch and name none of it.
+  run bash -c '. "$1"; ns_launch_observed claude' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  [ "$output" = "$(printf 'inherited\tobserved')" ]
 }
 
 @test "the Codex and Cursor revivals ask for the scope rather than assuming one" {
@@ -1390,15 +1434,13 @@ STUB
   cursor="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh"
   win="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/watchman.ps1"
   for f in "$codex" "$cursor"; do
-    grep -qF 'ns_recovery_launch_scope' "$f" || { echo "$f assumes a scope"; return 1; }
+    grep -qF 'ns_recovery_effective_scope' "$f" || { echo "$f assumes a scope"; return 1; }
     grep -qF 'reviving under launch scope' "$f" || { echo "$f does not say which scope"; return 1; }
   done
+  # The recorded scope is passed through rather than replaced by the broad one.
+  grep -qF 'recorded:*' "$codex"
   grep -qF 'Get-NSRecoveryLaunchScope' "$win"
   grep -qF 'reviving under launch scope' "$win"
-  # Every escalating flag now sits behind the check, on both hosts and on Windows.
-  grep -qF 'if [ "$scope" = host-default ]' "$codex"
-  grep -qF 'if [ "$scope" = host-default ]' "$cursor"
-  [ "$(grep -c "if (\$launchScope -ne 'host-default')" "$win")" -eq 3 ]
 }
 
 @test "a quoted API error is text about a failure, not the host reporting one" {

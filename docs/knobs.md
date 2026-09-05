@@ -296,14 +296,20 @@ host permits, and it never lifts a rule in this file.
 
 | Key | Default | Values |
 |---|---|---|
-| `launchScope` | `host-grant` | `host-grant` starts a revived session with the documented grant for that host — on Codex that is `danger-full-access`, on Cursor `--trust --yolo`. `host-default` passes no permission argument at all and takes whatever the host gives |
+| `launchScope` | `inherit-recorded-scope` | Revive with the permissions the shift was started under, as recorded when it armed. `host-grant` starts a revived session with the documented grant for that host — on Codex `danger-full-access`, on Cursor `--trust --yolo`. `host-default` passes no permission argument at all |
 
-Claude Code inherits its own launch either way. `host-grant` exists because a narrower sandbox
-protects `.git`: a revived Codex session could edit but never commit, and one commit per item is
-the contract in repository mode. `host-default` is the narrower choice and may leave a revived
-session unable to finish its item — it will say so rather than widen. Whichever is in force is
-named in `shift-log.md` on every revival, and a failed revival is retried at the same scope, never
-a broader one. `watchAgent` remains the advanced override for the whole command.
+**A revival never gets more than the session it is replacing had.** The shipped choice reads what
+the shift recorded about itself when it armed and asks for exactly that. Where the host reported no
+scope — or the shift predates the recording — it falls back to the host's own default and says so
+in `shift-log.md`, rather than reaching for the broader grant. That is narrower than Nightshift
+used to be: a revived Codex session under `workspace-write` can edit but not commit, and it will
+report that honestly instead of widening to make a commit possible.
+
+`host-grant` is how you say you want the broad grant anyway, and it happens only because you wrote
+it here — a workspace that predates this setting has not chosen it. Whichever scope is in force is
+named on every revival, and a failed revival is retried at the same one, never a broader one.
+Claude Code inherits its own launch in every case. `watchAgent` remains the advanced override for
+the whole command.
 
 `archive` decides where finished shift state is filed. Filing is a copy: `retention` above is the
 only setting that removes anything, and only Nightshift Archive prunes, after showing you the exact

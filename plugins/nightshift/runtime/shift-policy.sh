@@ -175,7 +175,7 @@ cmd_get() {
 }
 
 cmd_set() {
-  local tmpd candidate out rc
+  local tmpd candidate out rc observed scope provenance
   [ -n "$FROM" ] || usage
   [ -d "$NS" ] || die "no .nightshift/ at $WORKSPACE — run setup first" 2
   refuse_while_armed
@@ -199,6 +199,18 @@ cmd_set() {
       4) die 'JSON parser unavailable; composition writes shift-policy.json and Start already has rules.json' 2 ;;
       *) die "invalid shift-policy.json: $out" 2 ;;
     esac
+  fi
+  # Record what this session is actually running under, so a revival can reproduce it instead of
+  # guessing. It grants nothing — it is a note of what the shift already had — and a candidate
+  # that states it already is left exactly as the owner wrote it.
+  if ! printf '%s' "$(cat "$candidate")" | grep -q '"launchScope"'; then
+    observed="$(ns_launch_observed "$(ns_policy_host_name)")"
+    scope="${observed%%	*}"
+    provenance="${observed#*	}"
+    ns_rules_set_block "$candidate" launchScope "\"$scope\"" >"$tmpd/with-scope.json" &&
+      ns_rules_set_block "$tmpd/with-scope.json" launchProvenance "\"$provenance\"" \
+        >"$tmpd/with-launch.json" &&
+      mv "$tmpd/with-launch.json" "$candidate" || :
   fi
   ns_policy_pretty_text <"$candidate" >"$tmpd/pretty.json" || {
     rm -rf "$tmpd"

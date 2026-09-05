@@ -68,7 +68,8 @@ def shift_policy:
   else . as $P
   | ($P | ks(".")),
     ($P | sc("."; ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
-                   "verificationLevel", "toolingPolicy", "completionMode", "gatesDigest"])),
+                   "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
+                   "completionMode", "gatesDigest"])),
     ($P.budgets | ty("budgets")),
     ($P.budgets | obj | to_entries[] | "b\t" + (.key | scrub) + "\t" + (.value | tojson)),
     ($P.selectedDebt | ty("selectedDebt")),

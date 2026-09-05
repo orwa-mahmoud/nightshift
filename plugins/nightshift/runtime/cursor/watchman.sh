@@ -224,9 +224,11 @@ spawn() {
     ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
       CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$prompt"
   else
-    scope="$(ns_recovery_launch_scope "$PROJECT")"
+    scope="$(ns_recovery_effective_scope "$PROJECT" cursor)"
     log_line "watchman: reviving under launch scope $scope"
-    if [ "$scope" = host-default ]; then
+    # Cursor exposes no name for a session's permissions, so an inherited scope is the CLI
+    # worker's own launch: the broad grant is only used when the owner asked for it by name.
+    if [ "$scope" != host-grant ]; then
       ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
         CURSOR_PROJECT_DIR "$PROJECT" \
         agent --resume="$worker" -p --workspace "$PROJECT" "$prompt"

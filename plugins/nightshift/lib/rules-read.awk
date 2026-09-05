@@ -318,7 +318,7 @@ function emit_policy(    j, k, ap, cs, ws, cnt, val) {
     return
   }
   emit_keys(".", ".")
-  emit_scalars(".", ".", "schemaVersion shiftId createdAt source deadlineEpoch verificationLevel toolingPolicy completionMode gatesDigest")
+  emit_scalars(".", ".", "schemaVersion shiftId createdAt source deadlineEpoch verificationLevel toolingPolicy launchScope launchProvenance completionMode gatesDigest")
 
   put("ty\tbudgets\t" ptype("budgets"))
   if (ptype("budgets") == "object") {

@@ -120,8 +120,73 @@ ns_recovery_launch_scope() {
   fi
   case "$v" in
     host-default) printf 'host-default' ;;
-    *) printf 'host-grant' ;;
+    host-grant) printf 'host-grant' ;;
+    *) printf 'inherit-recorded-scope' ;;
   esac
+}
+
+# ns_policy_host_name — which host this session is, from what the host itself sets.
+ns_policy_host_name() {
+  if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
+    printf 'cursor'
+  elif [ -n "${CODEX_PROJECT_DIR:-}${CODEX_SANDBOX:-}${CODEX_SANDBOX_MODE:-}" ]; then
+    printf 'codex'
+  elif [ -n "${CLAUDE_PLUGIN_ROOT:-}${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf 'claude'
+  else
+    printf 'unknown'
+  fi
+}
+
+# ns_launch_observed <host> — the execution scope this session is running under, in the host's own
+# words, and whether the host actually told us. Read only from what the host already exposes; a
+# scope nobody reported is unavailable, never assumed.
+ns_launch_observed() {
+  case "$1" in
+    codex)
+      if [ -n "${CODEX_SANDBOX_MODE:-}" ]; then
+        printf '%s\tobserved' "$CODEX_SANDBOX_MODE"
+        return 0
+      fi
+      if [ -n "${CODEX_SANDBOX:-}" ]; then
+        printf '%s\tobserved' "$CODEX_SANDBOX"
+        return 0
+      fi
+      ;;
+    claude | cursor)
+      # These hosts hand a session its permissions at launch and expose no name for them, so
+      # what a revival inherits is the launch itself rather than a flag.
+      printf 'inherited\tobserved'
+      return 0
+      ;;
+  esac
+  printf 'unknown\tunavailable'
+}
+
+# ns_recovery_effective_scope <project-dir> <host> — what a revival may actually ask for.
+#
+# The shipped choice inherits the scope the shift was started under, so recovery reproduces the
+# session rather than improving on it. Where that scope was never recorded, or the host never
+# reported one, the fallback is the host's own default: narrower than the built-in grant used to
+# be, and honest about why. Nothing here ever widens what the original session had — an owner who
+# wants the documented broad grant writes host-grant in their own file, and that is the only way
+# it happens. The answer is one word, and the caller logs it.
+ns_recovery_effective_scope() {
+  local configured recorded provenance
+  configured="$(ns_recovery_launch_scope "$1")"
+  case "$configured" in
+    host-default | host-grant)
+      printf '%s' "$configured"
+      return 0
+      ;;
+  esac
+  recorded="$(ns_policy_launch "$1" scope 2>/dev/null)" || recorded=""
+  provenance="$(ns_policy_launch "$1" provenance 2>/dev/null)" || provenance=""
+  if [ "$provenance" = observed ] && [ -n "$recorded" ] && [ "$recorded" != unknown ]; then
+    printf 'recorded:%s' "$recorded"
+    return 0
+  fi
+  printf 'host-default'
 }
 
 # toolDeny requires exact key matching. The shipped reader accepts the template's

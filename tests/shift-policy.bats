@@ -80,9 +80,26 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$output" = "$(jq -caS . "$p/candidate.json")" ]
+  # Everything the candidate stated comes back exactly as it was written.
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance)')" \
+    = "$(jq -caS . "$p/candidate.json")" ]
+  # And the snapshot also notes the scope this session was running under, so a revival can
+  # reproduce it rather than reach for a broader one.
+  printf '%s' "$output" | jq -e 'has("launchScope") and has("launchProvenance")' >/dev/null
+  printf '%s' "$output" | jq -e '.launchProvenance | IN("observed", "unavailable")' >/dev/null
   # The file on disk stays readable for the owner who opens it.
   grep -q '"shiftId": "9f2c40ab77e51d63"' "$p/.nightshift/shift-policy.json"
+}
+
+@test "a policy that already states its launch scope is written exactly as the owner wrote it" {
+  p="$(unarmed sp-launch-explicit)"
+  policy_json | jq '.launchScope = "read-only" | .launchProvenance = "observed"' \
+    >"$p/candidate.json"
+  run sp "$p" set --from-json "$p/candidate.json"
+  [ "$status" -eq 0 ]
+  run sp "$p" get
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(jq -caS . "$p/candidate.json")" ]
 }
 
 @test "set reads the policy from stdin" {

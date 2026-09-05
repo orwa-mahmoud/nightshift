@@ -38,6 +38,8 @@ source
 deadlineEpoch
 verificationLevel
 toolingPolicy
+launchScope
+launchProvenance
 budgets
 completionMode
 selectedDebt
@@ -259,7 +261,8 @@ NS_POLICY_SHIFT_PY='
 import json, re, sys
 
 SCALARS = ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
-           "verificationLevel", "toolingPolicy", "completionMode", "gatesDigest"]
+           "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
+           "completionMode", "gatesDigest"]
 out = []
 
 
@@ -785,6 +788,22 @@ _ns_policy_validate_shift() {
       return 1
       ;;
   esac
+  # The launch record is optional — a snapshot written before it existed is still valid — but a
+  # value that is there has to be readable, because a revival inherits from it.
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchScope)" in
+    null | '"'*'"') ;;
+    *)
+      _ns_policy_shift_fail launchScope "must be the host's own name for the scope, as a string"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchProvenance)" in
+    null | '"observed"' | '"unavailable"') ;;
+    *)
+      _ns_policy_shift_fail launchProvenance "must be observed or unavailable"
+      return 1
+      ;;
+  esac
   val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" deadlineEpoch)"
   if [ "$val" != null ] && ! _ns_json_uint "$val"; then
     _ns_policy_shift_fail deadlineEpoch "must be a UNIX epoch or null"
@@ -925,6 +944,26 @@ EOF
 
 _ns_policy_load_shift() {
   _ns_policy_load_shift_file "$1/.nightshift/shift-policy.json"
+}
+
+# ns_policy_launch <workspace> <scope|provenance> — what the snapshot recorded about the scope the
+# shift was started under, or empty when it recorded nothing.
+ns_policy_launch() {
+  local raw
+  _ns_policy_load_shift "$1"
+  [ "$NS_POLICY_SHIFT_STATE" = ok ] || return 1
+  case "$2" in
+    scope) raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchScope)" ;;
+    provenance) raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchProvenance)" ;;
+    *) return 1 ;;
+  esac
+  case "$raw" in
+    '"'*'"')
+      raw="${raw#\"}"
+      printf '%s' "${raw%\"}"
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # ns_policy_validate_shift_file <file>

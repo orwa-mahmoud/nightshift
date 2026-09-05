@@ -216,16 +216,26 @@ rollout_grew() {
 # headless run with the punch list as its handover.
 # A non-resumable recorded id is never passed to `codex exec resume` and never treated as a
 # successful resume of that thread.
-# A fresh headless run at the scope the owner configured. The scope never widens between rungs:
-# a revival that failed is retried at the same permissions, never at broader ones.
+# A fresh headless run at the resolved scope. The scope never widens between rungs: a revival that
+# failed is retried at the same permissions, never at broader ones.
 spawn_fresh() {
+  local mode
   log_line "watchman: reviving under launch scope $1"
-  if [ "$1" = host-default ]; then
-    ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-      CODEX_PROJECT_DIR "$PROJECT" \
-      codex exec "$PROMPT_FRESH"
-    return $?
-  fi
+  case "$1" in
+    host-default)
+      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+        CODEX_PROJECT_DIR "$PROJECT" \
+        codex exec "$PROMPT_FRESH"
+      return $?
+      ;;
+    recorded:*)
+      mode="${1#recorded:}"
+      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+        CODEX_PROJECT_DIR "$PROJECT" \
+        codex exec -s "$mode" "$PROMPT_FRESH"
+      return $?
+      ;;
+  esac
   ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
     CODEX_PROJECT_DIR "$PROJECT" \
     codex exec -s danger-full-access "$PROMPT_FRESH"
@@ -233,7 +243,7 @@ spawn_fresh() {
 
 spawn() { # $1 = rung (1|2)
   local prompt kind rc scope
-  scope="$(ns_recovery_launch_scope "$PROJECT")"
+  scope="$(ns_recovery_effective_scope "$PROJECT" codex)"
   if [ -n "$AGENT" ]; then
     if [ "$1" -eq 1 ]; then prompt="$PROMPT_RESUME"; else prompt="$PROMPT_FRESH"; fi
     # shellcheck disable=SC2086 # owner-provided command line; splitting is intentional
@@ -243,15 +253,23 @@ spawn() { # $1 = rung (1|2)
     kind="$(ns_codex_identity_kind "$(sid)")"
     if [ "$kind" = "resumable" ]; then
       log_line "watchman: reviving under launch scope $scope"
-      if [ "$scope" = host-default ]; then
-        ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-          CODEX_PROJECT_DIR "$PROJECT" \
-          codex exec resume "$(sid)" "$PROMPT_RESUME"
-      else
-        ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-          CODEX_PROJECT_DIR "$PROJECT" \
-          codex exec resume -c 'sandbox_mode="danger-full-access"' "$(sid)" "$PROMPT_RESUME"
-      fi
+      case "$scope" in
+        host-default)
+          ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+            CODEX_PROJECT_DIR "$PROJECT" \
+            codex exec resume "$(sid)" "$PROMPT_RESUME"
+          ;;
+        recorded:*)
+          ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+            CODEX_PROJECT_DIR "$PROJECT" \
+            codex exec resume -c "sandbox_mode=\"${scope#recorded:}\"" "$(sid)" "$PROMPT_RESUME"
+          ;;
+        *)
+          ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+            CODEX_PROJECT_DIR "$PROJECT" \
+            codex exec resume -c 'sandbox_mode="danger-full-access"' "$(sid)" "$PROMPT_RESUME"
+          ;;
+      esac
     else
       spawn_fresh "$scope"
     fi

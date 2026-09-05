@@ -404,10 +404,11 @@
         "launchScope": {
           "type": "string",
           "enum": [
+            "inherit-recorded-scope",
             "host-grant",
             "host-default"
           ],
-          "description": "host-grant starts a revived session with the documented grant for that host, which is what lets it finish the item it was working: on Codex the workspace-write sandbox protects .git, so a revived session could edit but never commit. host-default adds no permission argument at all and takes whatever the host gives it, which is the narrower choice and may leave a revived session unable to commit. Claude Code inherits its own launch either way. The scope in force is named in the shift log on every revival, and the watchman never retries with a broader one."
+          "description": "inherit-recorded-scope revives a session with the permissions the shift was started under, as they were recorded when it armed. It is the shipped choice, and it never widens what the original session had: where the scope could not be recorded, revival falls back to the host's own default and says so rather than reaching for more. host-grant starts a revived session with the documented grant for that host — on Codex danger-full-access, on Cursor --trust --yolo — which is broader than a restricted session had and is only ever used because the owner wrote it here. host-default adds no permission argument at all. Claude Code inherits its own launch in every case. The scope in force is named in the shift log on every revival, and a failed revival is retried at the same scope, never a broader one."
         }
       }
     },

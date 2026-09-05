@@ -16,7 +16,9 @@
   "properties": {
     "schemaVersion": {
       "type": "integer",
-      "enum": [1],
+      "enum": [
+        1
+      ],
       "description": "Policy schema version. Only 1 is supported; a higher number fails closed."
     },
     "shiftId": {
@@ -31,22 +33,50 @@
     },
     "source": {
       "type": "string",
-      "enum": ["composition", "start-defaults"],
+      "enum": [
+        "composition",
+        "start-defaults"
+      ],
       "description": "Who wrote the snapshot: a composition step that asked once, or Start arming with safe defaults."
     },
     "deadlineEpoch": {
-      "type": ["integer", "null"],
+      "type": [
+        "integer",
+        "null"
+      ],
       "description": "Quitting time as a UNIX epoch, or null for a finite shift with no clock. The .nightshift/deadline file is a derived projection of this value; the policy is authoritative."
     },
     "verificationLevel": {
       "type": "string",
-      "enum": ["none", "final", "per-item", "custom"],
+      "enum": [
+        "none",
+        "final",
+        "per-item",
+        "custom"
+      ],
       "description": "Cadence for the ## Gates block: never, once before clock-out, before every tick, or the owner's own cadence. The block itself stays the only list of commands."
     },
     "toolingPolicy": {
       "type": "string",
-      "enum": ["existing-tools", "review-missing", "auto-add"],
+      "enum": [
+        "existing-tools",
+        "review-missing",
+        "auto-add"
+      ],
       "description": "How the shift treats missing development tooling. Artifact mode is always existing-tools."
+    },
+    "launchScope": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The execution scope this shift was started under, in the host's own words — a Codex sandbox mode, or `inherited` where the host exposes no name and the session simply keeps what it was launched with. Recorded when the snapshot is written so a revival can reproduce it instead of guessing. It grants nothing: it is a record of what the session already had."
+    },
+    "launchProvenance": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "unavailable"
+      ],
+      "description": "observed means the host reported that scope to the arming session. unavailable means it did not, and a revival set to inherit falls back to the host's own default and records the limitation rather than assuming the broader scope."
     },
     "budgets": {
       "type": "object",
@@ -58,7 +88,10 @@
     },
     "completionMode": {
       "type": "string",
-      "enum": ["clear-all", "no-regression-plus-selected-debt"],
+      "enum": [
+        "clear-all",
+        "no-regression-plus-selected-debt"
+      ],
       "description": "How the evidence comparison scores tonight against its baselines. clear-all passes only when every measured finding is cleared; no-regression-plus-selected-debt passes when nothing regressed and every id in selectedDebt is cleared. Absent means clear-all. It never weakens the item gate, and a finding of an unavailable source is never cleared."
     },
     "selectedDebt": {
@@ -75,7 +108,11 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["category", "scope", "provenance"],
+        "required": [
+          "category",
+          "scope",
+          "provenance"
+        ],
         "properties": {
           "category": {
             "type": "string",
@@ -90,18 +127,28 @@
           },
           "scope": {
             "type": "string",
-            "enum": ["category", "exact-plan"],
+            "enum": [
+              "category",
+              "exact-plan"
+            ],
             "description": "category permits everything in the category; exact-plan permits only the listed commands. Both present for one category means the category applies."
           },
           "provenance": {
             "type": "string",
-            "enum": ["rules", "one-shift"],
+            "enum": [
+              "rules",
+              "one-shift"
+            ],
             "description": "rules mirrors a permanent allow the owner keeps in rules.json; one-shift expires when this shift ends."
           },
           "plan": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["commands", "workTarget", "digest"],
+            "required": [
+              "commands",
+              "workTarget",
+              "digest"
+            ],
             "description": "Required for scope exact-plan and forbidden otherwise. Hardhat matches the normalized command, the resolved work target, the shift, the expiry, and the digest before the command runs.",
             "properties": {
               "commands": {
@@ -131,7 +178,10 @@
                 "description": "Paths the approved commands may create or change. The provisioning transaction compares the actual diff with this list and rolls back an escape."
               },
               "expiry": {
-                "type": ["integer", "null"],
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "description": "UNIX epoch after which the plan is refused, whatever the shift deadline says. Absent or null leaves the shift deadline as the plan's only clock. It is not part of the digest: shortening an approval the owner already signed does not make it a different approval."
               }
             }
