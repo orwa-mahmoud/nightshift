@@ -37,7 +37,17 @@ decide the value in force, in this order:
 
 `.nightshift/shift-defaults.json` sits outside this order on purpose. It remembers the choices a
 composition step would otherwise ask for again — execution mode, hours, tooling policy,
-verification profile — and is never itself the source of an effective value.
+verification profile — and is never itself the source of an effective value. Those four now live
+in the `shift` block below. To move a workspace that still has the older file:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PWD" migrate --dry-run
+```
+
+The dry run prints what it would write and touches nothing; drop `--dry-run` to do it. It keeps a
+`.bak` of what it read, refuses while a shift is armed, and does nothing the second time. If a
+value you set in the rules file disagrees with one the older file remembers, it names both and
+changes neither — delete whichever you do not want and run it again.
 
 Some rows are not negotiable by an allowance at all. Protected paths, never-commit patterns, the
 expected commit identity, and `forbiddenCommands` come from the rules file alone; a one-shift

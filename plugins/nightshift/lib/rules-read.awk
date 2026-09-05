@@ -9,6 +9,7 @@
 #   defaults the remembered composition choices, as the same kind of fact stream
 #   canon    one JSON document as compact canonical JSON: sorted keys, one line
 #   pretty   the same document sorted and indented, for a file the owner reads
+#   setblock the same, with one top-level key set to -v value; every other key survives
 #   unquote  one JSON string on stdin, decoded text on stdout
 
 {
@@ -31,13 +32,19 @@ END {
   if (i > n) {
     fail("empty document")
   }
-  if (mode == "canon" || mode == "pretty") {
+  if (mode == "canon" || mode == "pretty" || mode == "setblock") {
     jparse(".")
     skip_ws()
     if (i <= n) {
       fail("unexpected nesting")
     }
-    if (mode == "pretty") {
+    if (mode == "setblock") {
+      if (key == "") {
+        fail("setblock needs a key")
+      }
+      setblock(key, value)
+      printf "%s\n", pretty(".", "")
+    } else if (mode == "pretty") {
       printf "%s\n", pretty(".", "")
     } else {
       printf "%s\n", canon(".")
@@ -521,6 +528,59 @@ function cenc(s,    j, c, o, b, cb, code, len, k, ok, hi, lo) {
 
 # pretty(path, indent) — the same sorted document a person reads: two spaces a level, one entry
 # a line, and a string left as the UTF-8 it arrived as.
+# setblock(k, text) — replace one top-level key with the document `text` holds, adding the key
+# when the file does not carry it. Every other key keeps its own value, including one this
+# version has never heard of: a plugin update fills settings in, it never takes them away.
+function setblock(k, text,    save_src, save_n, save_i, keys, count, j, found) {
+  drop_subtree(k)
+  save_src = src
+  save_n = n
+  save_i = i
+  src = text
+  n = length(src)
+  i = 1
+  jparse(k)
+  skip_ws()
+  if (i <= n) {
+    fail("the replacement value is not one JSON document")
+  }
+  src = save_src
+  n = save_n
+  i = save_i
+  count = split(V_KEYS["."], keys, "\t")
+  if (V_KEYS["."] == "") {
+    count = 0
+  }
+  found = 0
+  for (j = 1; j <= count; j++) {
+    if (keys[j] == k) {
+      found = 1
+    }
+  }
+  if (!found) {
+    if (V_KEYS["."] == "") {
+      V_KEYS["."] = k
+    } else {
+      V_KEYS["."] = V_KEYS["."] "\t" k
+    }
+  }
+}
+
+# Everything the old value owned goes with it, so a shorter replacement cannot leave a field
+# of the previous one behind.
+function drop_subtree(k,    path) {
+  for (path in V_TYPE) {
+    if (path == k || substr(path, 1, length(k) + 1) == k "." ||
+        substr(path, 1, length(k) + 1) == k "[") {
+      delete V_TYPE[path]
+      delete V_RAW[path]
+      delete V_STR[path]
+      delete V_KEYS[path]
+      delete V_LEN[path]
+    }
+  }
+}
+
 function pretty(path, pad,    t, out, keys, count, j, child, inner) {
   t = ptype(path)
   inner = pad "  "

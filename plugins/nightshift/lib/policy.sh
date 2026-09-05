@@ -1097,6 +1097,29 @@ EOF
   [ "$bad" -eq 0 ]
 }
 
+# ns_policy_defaults_stated <workspace> <field> — the value the legacy file explicitly states
+# for that field, as compact JSON. Status 1 when the file says nothing about it, which is what
+# separates a remembered choice from a built-in default during a migration.
+ns_policy_defaults_stated() {
+  local f facts line
+  f="$1/.nightshift/shift-defaults.json"
+  [ -f "$f" ] || return 1
+  facts="$(_ns_policy_facts defaults "$NS_POLICY_DEFAULTS_PY" "$f")" || return 1
+  facts="$(printf '%s' "$facts" | tr -d '\r')"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    _ns_pf_split "$line"
+    [ "$NS_PF1" = d ] || continue
+    [ "$NS_PF2" = "$2" ] || continue
+    [ "$NS_PF3" = 1 ] || return 1
+    printf '%s' "$NS_PF4"
+    return 0
+  done <<EOF
+$facts
+EOF
+  return 1
+}
+
 # ns_policy_defaults_json — the NS_POLICY_DEF_* fields as compact canonical JSON.
 ns_policy_defaults_json() {
   printf '{"execution":%s,"hours":%s,"schemaVersion":1,"toolingPolicy":%s,"updatedAt":%s,"verificationProfile":%s}\n' \

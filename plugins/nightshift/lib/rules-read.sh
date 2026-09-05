@@ -178,6 +178,15 @@ _ns_rules_array() {
   printf '[%s]' "$out"
 }
 
+# ns_rules_set_block <file> <key> <compact-json> — the same document with one top-level key set
+# to that value, sorted and indented, on stdout. Every other key survives byte for byte, including
+# one this version does not know: a plugin update fills settings in, it never takes them away.
+ns_rules_set_block() {
+  local bin
+  bin="$(ns_rules_awk_bin)" || return 1
+  LC_ALL=C "$bin" -v mode=setblock -v key="$2" -v value="$3" -f "$_NS_RULES_AWK_FILE" <"$1"
+}
+
 # ns_rules_get_in <file> <block> <key> — one field of a settings block, as the
 # effective scalar, null, or compact JSON for an array. Empty when absent.
 ns_rules_get_in() {

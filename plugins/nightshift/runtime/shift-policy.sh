@@ -8,7 +8,14 @@
 #                                             [--hours N|null] [--execution review-first|run-direct]
 #                                             [--toolingPolicy existing-tools|review-missing|auto-add]
 #   shift-policy.sh --project DIR resolve [--json|--table]
+#   shift-policy.sh --project DIR migrate [--dry-run]
 #   shift-policy.sh --project DIR archive
+#
+# migrate moves the remembered composition choices out of shift-defaults.json into the shift block
+# of rules.json, the one file the owner edits. It refuses an armed workspace, validates the whole
+# destination before replacing anything, keeps a lossless backup of what it read, and does nothing
+# the second time. Two explicit values that disagree are the owner's to settle: it names both and
+# changes neither. --dry-run prints the same report and writes nothing.
 #
 # Writes only .nightshift/shift-policy.json, .nightshift/shift-defaults.json, and the dated
 # archive directory the clock-out gate files the snapshot into. Both writes are refused while the
@@ -40,6 +47,7 @@ SET_PROFILE=""
 SET_HOURS=""
 SET_TOOLING=""
 SET_EXECUTION=""
+DRY_RUN=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -82,7 +90,11 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     -h | --help) usage ;;
-    get | set | defaults-get | defaults-set | resolve | archive)
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    get | set | defaults-get | defaults-set | resolve | migrate | archive)
       [ -z "$CMD" ] || usage
       CMD="$1"
       shift
@@ -104,6 +116,7 @@ fi
 NS="$WORKSPACE/.nightshift"
 POLICY="$NS/shift-policy.json"
 DEFAULTS="$NS/shift-defaults.json"
+RULES="$NS/rules.json"
 
 # The snapshot is where tonight's deadline, verification level and elevation allowances live.
 # A host with no jq and no python3 still reads and writes it through the bounded reader; only a
@@ -260,11 +273,147 @@ cmd_archive() {
   exit 0
 }
 
+
+# _mig_check <field> <compact-json> — status 0 when that value is one the field takes. The
+# bounded reader answers about shape; this answers about the value, which is what a migration
+# must know before it carries one forward.
+_mig_check() {
+  case "$1" in
+    verificationProfile)
+      case "$2" in
+        '"fast"' | '"balanced"' | '"strict"' | '"custom"') return 0 ;;
+        *) die "shift.verificationProfile: must be fast, balanced, strict, or custom" 2 ;;
+      esac
+      ;;
+    execution)
+      case "$2" in
+        '"review-first"' | '"run-direct"') return 0 ;;
+        *) die "shift.execution: must be review-first or run-direct" 2 ;;
+      esac
+      ;;
+    toolingPolicy)
+      case "$2" in
+        '"existing-tools"' | '"review-missing"' | '"auto-add"') return 0 ;;
+        *) die "shift.toolingPolicy: must be existing-tools, review-missing, or auto-add" 2 ;;
+      esac
+      ;;
+    hours)
+      case "$2" in
+        null) return 0 ;;
+        '' | *[!0-9]*) die "shift.hours: must be a whole number of hours or null" 2 ;;
+        *) return 0 ;;
+      esac
+      ;;
+  esac
+  return 0
+}
+
+# The four remembered choices, named once so the reader, the writer and the conflict report
+# cannot disagree about the list. schemaVersion and updatedAt are bookkeeping and stay behind.
+MIGRATE_FIELDS="verificationProfile hours execution toolingPolicy"
+
+# _mig_canonical <field> — what the owner file already states, as compact JSON, or nothing.
+_mig_canonical() {
+  local v
+  v="$(ns_rules_get_in "$RULES" shift "$1")"
+  [ -n "$v" ] || return 1
+  case "$v" in
+    null | true | false) printf '%s' "$v" ;;
+    '' | *[!0-9]*) printf '"%s"' "$v" ;;
+    *) printf '%s' "$v" ;;
+  esac
+}
+
+cmd_migrate() {
+  local field legacy canonical conflicts="" block="" first=1 value tmpd why
+
+  [ -f "$RULES" ] || die "no owner rules file at $RULES — run setup first" 3
+
+  # An armed shift keeps the contract it started under; changing it underneath the running agent
+  # would leave the shift and its policy describing different nights.
+  if [ -e "$NS/.shift-armed" ] || [ -L "$NS/.shift-armed" ]; then
+    die 'refuse to migrate while the shift is armed — stop the shift, migrate, then start again' 4
+  fi
+
+  # The destination is read before anything is computed from it, so a file that does not load is
+  # named rather than half-migrated.
+  why="$(ns_rules_check "$WORKSPACE" 2>&1)" || die "$RULES is not readable: $why" 2
+
+  for field in $MIGRATE_FIELDS; do
+    legacy="$(ns_policy_defaults_stated "$WORKSPACE" "$field")" || legacy=""
+    canonical="$(_mig_canonical "$field")" || canonical=""
+    value=""
+    [ -z "$canonical" ] || _mig_check "$field" "$canonical"
+    [ -z "$legacy" ] || _mig_check "$field" "$legacy"
+    if [ -n "$canonical" ] && [ -n "$legacy" ] && [ "$canonical" != "$legacy" ]; then
+      conflicts="$conflicts  shift.$field: this file says $canonical, the legacy file says $legacy
+"
+      continue
+    fi
+    [ -n "$canonical" ] && value="$canonical"
+    [ -n "$value" ] || value="$legacy"
+    [ -n "$value" ] || continue
+    [ "$first" -eq 1 ] || block="$block,"
+    first=0
+    block="$block\"$field\":$value"
+  done
+
+  if [ -n "$conflicts" ]; then
+    printf 'refused: two explicit values disagree, and nothing here decides between them\n' >&2
+    printf '%s' "$conflicts" >&2
+    printf 'keep one value, delete the other from %s, then run migrate again\n' "$DEFAULTS" >&2
+    return 2
+  fi
+
+
+  if [ ! -f "$DEFAULTS" ] && [ -n "$(ns_rules_get "$RULES" shift)" ]; then
+    printf 'no-op: every remembered choice already lives in %s\n' "$RULES"
+    return 0
+  fi
+
+  tmpd="$(mktemp -d "${TMPDIR:-/tmp}/nightshift-migrate.XXXXXX")" ||
+    die 'no writable temporary directory' 2
+  ns_rules_set_block "$RULES" shift "{$block}" >"$tmpd/next.json" || {
+    rm -rf "$tmpd"
+    die 'cannot compose the migrated file' 2
+  }
+  # The complete destination must load before it replaces one that already does.
+  why="$(ns_rules_load "$tmpd/next.json" 2>&1)" || {
+    rm -rf "$tmpd"
+    die "the migrated file would not load: $why" 2
+  }
+
+  _mig_report "$block"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'dry run: nothing was written\n'
+    rm -rf "$tmpd"
+    return 0
+  fi
+
+  if [ -f "$DEFAULTS" ]; then
+    cp "$DEFAULTS" "$DEFAULTS.bak" || {
+      rm -rf "$tmpd"
+      die 'cannot keep a backup of the legacy file' 2
+    }
+  fi
+  atomic_write "$RULES" <"$tmpd/next.json"
+  rm -rf "$tmpd"
+  rm -f "$DEFAULTS"
+  printf '%s\n' "$RULES"
+}
+
+# _mig_report <block> — what the shift block will hold, in the owner's terms.
+_mig_report() {
+  printf 'migrating into %s:\n' "$RULES"
+  printf '  shift = %s\n' "{$1}"
+}
+
 case "$CMD" in
   get) cmd_get ;;
   set) cmd_set ;;
   defaults-get) cmd_defaults_get ;;
   defaults-set) cmd_defaults_set ;;
   resolve) cmd_resolve ;;
+  migrate) cmd_migrate ;;
   archive) cmd_archive ;;
 esac
