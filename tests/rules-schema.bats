@@ -16,7 +16,7 @@ validate() {
   jq -e '.additionalProperties == false' "$SCHEMA" >/dev/null
   for k in toolDeny forbiddenCommands neverCommitPatterns expectedEmail protectedDirs elevation \
     stallMax stallWarnEvery longUnitWarnMinutes watchMinutes watchRetrySeconds watchAgent receiptsAutoCommit \
-    notifyCommand revivalPrompt freshRevivalPrompt clockOutMessage retention; do
+    notifyCommand revivalPrompt freshRevivalPrompt clockOutMessage shift handoff archive retention; do
     jq -e --arg k "$k" '.properties | has($k)' "$SCHEMA" >/dev/null \
       || { echo "schema missing $k"; return 1; }
   done

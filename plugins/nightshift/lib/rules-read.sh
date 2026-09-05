@@ -154,6 +154,45 @@ ns_json_text() {
   esac
 }
 
+# _ns_rules_array <p1> <p2> — the string array at that path as compact JSON.
+_ns_rules_array() {
+  local rest="$NS_RULES_ROWS" line p1 p2 p3 typ val out="" first=1
+  while [ -n "$rest" ]; do
+    line="${rest%%"$_NS_RULES_NL"*}"
+    case "$rest" in *"$_NS_RULES_NL"*) rest="${rest#*"$_NS_RULES_NL"}" ;; *) rest="" ;; esac
+    [ -n "$line" ] || continue
+    p1="${line%%"$_NS_RULES_TAB"*}"
+    line="${line#*"$_NS_RULES_TAB"}"
+    p2="${line%%"$_NS_RULES_TAB"*}"
+    line="${line#*"$_NS_RULES_TAB"}"
+    p3="${line%%"$_NS_RULES_TAB"*}"
+    line="${line#*"$_NS_RULES_TAB"}"
+    typ="${line%%"$_NS_RULES_TAB"*}"
+    val="${line#*"$_NS_RULES_TAB"}"
+    [ "$p1" = "$1" ] && [ "$p2" = "$2" ] && [ -n "$p3" ] || continue
+    case "$typ" in s | n | b) ;; *) continue ;; esac
+    [ "$first" -eq 1 ] || out="$out,"
+    first=0
+    out="$out$val"
+  done
+  printf '[%s]' "$out"
+}
+
+# ns_rules_get_in <file> <block> <key> — one field of a settings block, as the
+# effective scalar, null, or compact JSON for an array. Empty when absent.
+ns_rules_get_in() {
+  local row typ val
+  ns_rules_load "$1" || return 0
+  row="$(_ns_rules_row "$2" "$3" "")" || return 0
+  typ="${row%%"$_NS_RULES_TAB"*}"
+  val="${row#*"$_NS_RULES_TAB"}"
+  case "$typ" in
+    s | n | b) ns_json_text "$val" ;;
+    z) printf 'null' ;;
+    a) _ns_rules_array "$2" "$3" ;;
+  esac
+}
+
 # ns_rules_get <file> <key> — the effective scalar (or compact JSON for an
 # object/array). Empty when the key is absent or the file fails closed.
 ns_rules_get() {
@@ -164,6 +203,7 @@ ns_rules_get() {
   val="${row#*"$_NS_RULES_TAB"}"
   case "$typ" in
     s | n | b) ns_json_text "$val" ;;
+    z) printf 'null' ;;
     o | a)
       parts=""
       rest="$NS_RULES_ROWS"
@@ -183,7 +223,15 @@ ns_rules_get() {
         if [ -z "$p2" ] || [ -n "$p3" ]; then
           continue
         fi
-        case "$child_typ" in s | n | b) ;; *) continue ;; esac
+        # A field is carried whatever it holds. Skipping a shape here would drop
+        # it from the object silently, which reads as a setting the owner never
+        # wrote rather than one this reader could not render.
+        case "$child_typ" in
+          s | n | b) ;;
+          z) child_val=null ;;
+          a) child_val="$(_ns_rules_array "$2" "$p2")" ;;
+          *) continue ;;
+        esac
         if [ "$typ" = a ]; then
           [ "$first" -eq 1 ] || parts="$parts,"
           first=0

@@ -74,11 +74,16 @@
           "$comment": "Root escalation.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["policy"],
+          "required": [
+            "policy"
+          ],
           "properties": {
             "policy": {
               "type": "string",
-              "enum": ["deny", "allow"]
+              "enum": [
+                "deny",
+                "allow"
+              ]
             },
             "pattern": {
               "type": "string",
@@ -90,11 +95,16 @@
           "$comment": "Starting or creating container resources.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["policy"],
+          "required": [
+            "policy"
+          ],
           "properties": {
             "policy": {
               "type": "string",
-              "enum": ["deny", "allow"]
+              "enum": [
+                "deny",
+                "allow"
+              ]
             },
             "pattern": {
               "type": "string",
@@ -106,11 +116,16 @@
           "$comment": "Installing tools outside the project.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["policy"],
+          "required": [
+            "policy"
+          ],
           "properties": {
             "policy": {
               "type": "string",
-              "enum": ["deny", "allow"]
+              "enum": [
+                "deny",
+                "allow"
+              ]
             },
             "pattern": {
               "type": "string",
@@ -122,11 +137,16 @@
           "$comment": "Starting services, servers, or database engines.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["policy"],
+          "required": [
+            "policy"
+          ],
           "properties": {
             "policy": {
               "type": "string",
-              "enum": ["deny", "allow"]
+              "enum": [
+                "deny",
+                "allow"
+              ]
             },
             "pattern": {
               "type": "string",
@@ -138,11 +158,16 @@
           "$comment": "Creating accounts, logins, and paid services.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["policy"],
+          "required": [
+            "policy"
+          ],
           "properties": {
             "policy": {
               "type": "string",
-              "enum": ["deny", "allow"]
+              "enum": [
+                "deny",
+                "allow"
+              ]
             },
             "pattern": {
               "type": "string",
@@ -200,6 +225,129 @@
     "clockOutMessage": {
       "type": "string",
       "description": "Text the Stop hook re-injects when open punch-list items remain."
+    },
+    "shift": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Remembered composition choices. These decide what a shift is composed with when nothing overrides them for the night; the resolved snapshot for a running shift is .nightshift/shift-policy.json, which is a record rather than a second settings file. Absent keys keep the documented default.",
+      "properties": {
+        "verificationProfile": {
+          "type": "string",
+          "enum": [
+            "fast",
+            "balanced",
+            "strict",
+            "custom"
+          ],
+          "description": "How often the punch list's ## Gates block runs. fast means never, balanced once before clock-out, strict before every tick and once at the end, and custom is the cadence the owner names in the punch list itself. A fresh workspace is fast, so the gates a new owner has not written yet cannot fail a shift; an explicit choice is kept exactly as written."
+        },
+        "hours": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Remembered time budget for a composed shift, in whole hours, or null to leave composition to ask. A whole number of at least one; a finite punch list may still end at its last tick with no clock at all."
+        },
+        "execution": {
+          "type": "string",
+          "enum": [
+            "review-first",
+            "run-direct"
+          ],
+          "description": "Whether a composed shift is shown for review before it runs, or started directly. It never widens what the shift may do: the host permission boundary and every rule in this file still apply."
+        },
+        "toolingPolicy": {
+          "type": "string",
+          "enum": [
+            "existing-tools",
+            "review-missing",
+            "auto-add"
+          ],
+          "description": "What a shift does about development tooling the project does not have. existing-tools uses only what is installed, review-missing reports the gap, auto-add may add a tool the project itself selects. Artifact mode is always existing-tools."
+        }
+      }
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The morning receipt: the one page waiting when the shift ends. Presentation only — it never decides whether a check ran, and a section with nothing to report is omitted whatever this says.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render the receipt at clock-out. false leaves the factual records — the ledger, the archive, the shift log — untouched and writes no page."
+        },
+        "view": {
+          "type": "string",
+          "enum": [
+            "owner",
+            "reviewer",
+            "release",
+            "artifact"
+          ],
+          "description": "Which reader the page is written for. owner is every section, reviewer the baseline and the comparison, release the shift line with regressions only, and artifact the sections that make sense for a site rather than a repository."
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Language for the prose the receipt writes. auto follows the language of the conversation that ran the shift. Facts, paths, commands and identifiers are never translated."
+        },
+        "detail": {
+          "type": "string",
+          "enum": [
+            "concise",
+            "detailed"
+          ],
+          "description": "How much each section carries. concise is the shipped page; detailed keeps the longer per-row explanation where a section has one."
+        },
+        "sections": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "shift",
+              "baseline",
+              "changed",
+              "parked",
+              "unsupported",
+              "next"
+            ]
+          },
+          "description": "The documented factual sections to render, in the order given. An empty array means the built-in order for the chosen view. These name sections, not prose: wording belongs in templatePath."
+        },
+        "templatePath": {
+          "type": "string",
+          "description": "Path to a Markdown template for the page, relative to the workspace. Empty means the built-in layout. The file is an asset carrying presentation instructions only — it is never a second place to set policy, and it cannot turn an unavailable check into a passed one."
+        }
+      }
+    },
+    "archive": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where finished shift state is filed and how those directories are named. Filing is a copy, never a deletion: retention is the only setting that removes anything, it keeps forever by default, and only Nightshift Archive may prune after a printed preview and an explicit yes.",
+      "properties": {
+        "automatic": {
+          "type": "boolean",
+          "description": "File the finished shift automatically when it ends. false leaves filing to Nightshift Archive, which the owner runs after reading the night. Enabling it never implies pruning."
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Directory the dated archives live in, relative to .nightshift/. Must stay inside the state directory."
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "date",
+            "shift"
+          ],
+          "description": "How an archive directory is named: date groups a night under YYYY-MM-DD, shift gives each shift its own directory named for its id. Two shifts on one day never collide either way, because the shift id names the files inside."
+        },
+        "templatePath": {
+          "type": "string",
+          "description": "Path to a Markdown template for the archive summary, relative to the workspace. Empty means the built-in summary."
+        }
+      }
     },
     "retention": {
       "type": "object",

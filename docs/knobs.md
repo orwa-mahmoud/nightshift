@@ -229,6 +229,46 @@ read only by Nightshift Archive. Both `runtimeLogDays` and `archiveDays` default
 eligible paths first; deletion needs an explicit yes and never runs from a hook, start,
 status, Doctor, or recovery.
 
+## Shift, handoff and archive
+
+Three blocks group the settings that are not guards. They are all optional, and an absent key keeps
+the default in the table.
+
+`shift` holds the choices a composition step would otherwise ask for every time.
+
+| Key | Default | Values |
+|---|---|---|
+| `verificationProfile` | `fast` | `fast` never runs the punch list's `## Gates`, `balanced` runs them once before clock-out, `strict` before every tick and once at the end, `custom` is the cadence the punch list itself names |
+| `hours` | `null` | A whole number of hours for a composed shift, or `null` to be asked. A finite punch list can still end at its last tick with no clock |
+| `execution` | `review-first` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
+| `toolingPolicy` | `existing-tools` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
+
+A new workspace verifies nothing, because the gates a new owner has not written yet should not fail
+a shift. Set a profile once you have commands worth running.
+
+`handoff` is the morning receipt — presentation only. It never decides whether a check ran, and it
+cannot turn an unavailable check into a passed one.
+
+| Key | Default | Values |
+|---|---|---|
+| `enabled` | `true` | `false` writes no page and leaves the ledger, the archive and the shift log exactly as they are |
+| `view` | `owner` | `owner`, `reviewer`, `release`, `artifact` |
+| `language` | `auto` | Follows the language of the conversation that ran the shift. Paths, commands and identifiers are never translated |
+| `detail` | `concise` | `concise` or `detailed` |
+| `sections` | `[]` | Any of `shift`, `baseline`, `changed`, `parked`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view |
+| `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
+
+`archive` decides where finished shift state is filed. Filing is a copy: `retention` above is the
+only setting that removes anything, and only Nightshift Archive prunes, after showing you the exact
+paths and asking.
+
+| Key | Default | Values |
+|---|---|---|
+| `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
+| `root` | `archive` | Directory for dated archives, relative to `.nightshift/`, and inside it |
+| `layout` | `date` | `date` groups a night under `YYYY-MM-DD`; `shift` gives each shift its own directory. The shift id names the files either way, so two shifts in a day never collide |
+| `templatePath` | `""` | A Markdown template for the archive summary |
+
 Every rule above is **shift-scoped**: it applies to the bound session while `.shift-armed` exists,
 `.nightshift/punch-list.md` has an open `- [ ]`, and the gate has not ended the shift. With no
 armed shift, or once the last box is ticked, your session is ordinary again and none of them are

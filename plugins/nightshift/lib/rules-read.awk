@@ -456,6 +456,11 @@ function parse_top_value(key,    c) {
       parse_retention()
       return
     }
+    if (key == "shift" || key == "handoff" || key == "archive") {
+      emit(key, "", "", "o", "")
+      parse_settings_object(key)
+      return
+    }
     fail("unexpected nesting")
   }
   if (c == "n") {
@@ -628,6 +633,128 @@ function parse_named_string_object_pair(p1, p2,    c, key, first) {
       continue
     }
     if (c == "}") {
+      i++
+      return
+    }
+    fail("truncated JSON")
+  }
+}
+
+function parse_null() {
+  if (substr(src, i, 4) != "null") {
+    fail("unknown type")
+  }
+  i += 4
+}
+
+# A settings block: one level of named values, each a string, integer, bool, null,
+# or the string array the schema declares. Deeper nesting still fails closed - this
+# reads the shape the schema describes, never arbitrary JSON.
+function parse_settings_object(p1,    c, key, first) {
+  i++
+  skip_ws()
+  if (peek() == "}") {
+    i++
+    return
+  }
+  first = 1
+  while (1) {
+    skip_ws()
+    c = peek()
+    if (c == "}") {
+      if (first == 0) {
+        fail("trailing comma")
+      }
+      i++
+      return
+    }
+    if (c != "\"") {
+      fail("not a JSON object")
+    }
+    parse_string_raw()
+    key = decoded
+    if (index(key, "\t") || index(key, "\n")) {
+      fail("unexpected nesting")
+    }
+    skip_ws()
+    if (peek() != ":") {
+      fail("truncated JSON")
+    }
+    i++
+    skip_ws()
+    c = peek()
+    if (c == "\"") {
+      parse_string_raw()
+      emit(p1, key, "", "s", jenc(decoded))
+    } else if (c == "t" || c == "f") {
+      emit(p1, key, "", "b", parse_bool())
+    } else if (c >= "0" && c <= "9") {
+      emit(p1, key, "", "n", parse_number())
+    } else if (c == "n") {
+      parse_null()
+      emit(p1, key, "", "z", "null")
+    } else if (c == "[") {
+      parse_settings_array(p1, key)
+    } else {
+      fail("unexpected nesting")
+    }
+    first = 0
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      i++
+      skip_ws()
+      if (peek() == "}") {
+        fail("trailing comma")
+      }
+      continue
+    }
+    if (c == "}") {
+      i++
+      return
+    }
+    fail("truncated JSON")
+  }
+}
+
+function parse_settings_array(p1, p2,    c, idx, first) {
+  i++
+  skip_ws()
+  emit(p1, p2, "", "a", "")
+  if (peek() == "]") {
+    i++
+    return
+  }
+  idx = 0
+  first = 1
+  while (1) {
+    skip_ws()
+    c = peek()
+    if (c == "]") {
+      if (first == 0) {
+        fail("trailing comma")
+      }
+      i++
+      return
+    }
+    if (c != "\"") {
+      fail("unknown type")
+    }
+    parse_string_raw()
+    emit(p1, p2, idx, "s", jenc(decoded))
+    idx++
+    first = 0
+    skip_ws()
+    c = peek()
+    if (c == ",") {
+      i++
+      skip_ws()
+      if (peek() == "]") {
+        fail("trailing comma")
+      }
+      continue
+    }
+    if (c == "]") {
       i++
       return
     }

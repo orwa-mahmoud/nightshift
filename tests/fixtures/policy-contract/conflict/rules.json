@@ -43,9 +43,9 @@
   "freshRevivalPrompt": "Resume the nightshift. Read .nightshift/punch-list.md and work its open items per the contract, one at a time; run the item gate before each commit or artifact receipt; tick what you finish. Leave pushing to the owner unless the punch list says otherwise. Park owner decisions in parking-lot.md. Stop only when every box is ticked or a stop-work order exists.",
   "clockOutMessage": "DO NOT STOP — the punch list (.nightshift/punch-list.md) still has open items. Work them top to bottom, ONE at a time, each to its own Verify. Per item: implement fully — no stubs, no deferrals, no 'documented for later'; effort is never a reason to defer, and this IS the focused session; run the item gate right before its commit or artifact receipt and require it GREEN; make ONE conventional commit in repository mode or ONE artifact receipt under .nightshift/receipts/ in artifact mode; then tick the box to '- [x]'. Never fake a tick. Deletion is not completion — never remove an item or edit the contract above '## Items'. Park any decision that is genuinely the owner's in .nightshift/parking-lot.md with a sensible default chosen, and KEEP WORKING — never ask, never wait. A walkthrough cycle that finds nothing new is SUCCESS, not idleness. You may stop only when zero '- [ ]' remain, or the owner issues a stop-work order (.nightshift/STOP).",
   "shift": {
-    "verificationProfile": "fast",
-    "hours": null,
-    "execution": "review-first",
+    "verificationProfile": "strict",
+    "hours": 6,
+    "execution": "run-direct",
     "toolingPolicy": "existing-tools"
   },
   "handoff": {

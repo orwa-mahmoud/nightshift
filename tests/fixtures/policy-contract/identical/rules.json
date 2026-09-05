@@ -46,7 +46,7 @@
     "verificationProfile": "fast",
     "hours": null,
     "execution": "review-first",
-    "toolingPolicy": "existing-tools"
+    "toolingPolicy": "review-missing"
   },
   "handoff": {
     "enabled": true,

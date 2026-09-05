@@ -171,3 +171,63 @@ no_json_bin() {
     return 1
   fi
 }
+
+# The three settings blocks are one level of named values: a string, an integer, a bool, a null,
+# or a string array. The reader carries every one of them, because a field it quietly skipped
+# would read as a setting the owner never wrote.
+@test "the settings blocks read back exactly as written" {
+  run bash -c '. "$1"; ns_rules_get "$2" shift' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"verificationProfile":"fast","hours":null,"execution":"review-first","toolingPolicy":"existing-tools"}' ]
+  run bash -c '. "$1"; ns_rules_get "$2" handoff' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"enabled":true,"view":"owner","language":"auto","detail":"concise","sections":[],"templatePath":""}' ]
+  run bash -c '. "$1"; ns_rules_get "$2" archive' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"automatic":false,"root":"archive","layout":"date","templatePath":""}' ]
+}
+
+@test "one field of a settings block reads on its own" {
+  run bash -c '. "$1"; ns_rules_get_in "$2" shift verificationProfile' _ "$LIB" "$TEMPLATE"
+  [ "$output" = fast ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" shift hours' _ "$LIB" "$TEMPLATE"
+  [ "$output" = null ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff enabled' _ "$LIB" "$TEMPLATE"
+  [ "$output" = true ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff sections' _ "$LIB" "$TEMPLATE"
+  [ "$output" = '[]' ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" archive root' _ "$LIB" "$TEMPLATE"
+  [ "$output" = archive ]
+  # A field nobody wrote reads as nothing, never as a guess.
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff nosuchfield' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "a populated section list and an owner value survive the round trip" {
+  f="$BATS_TEST_TMPDIR/populated.json"
+  printf '%s\n' '{"toolDeny":{"AskUserQuestion":"","request_user_input":"","AskQuestion":""},"shift":{"verificationProfile":"strict","hours":6},"handoff":{"sections":["shift","changed","next"],"language":"de"}}' >"$f"
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff sections' _ "$LIB" "$f"
+  [ "$output" = '["shift","changed","next"]' ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" shift hours' _ "$LIB" "$f"
+  [ "$output" = 6 ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff language' _ "$LIB" "$f"
+  [ "$output" = de ]
+  run bash -c '. "$1"; ns_rules_get "$2" shift' _ "$LIB" "$f"
+  [ "$output" = '{"verificationProfile":"strict","hours":6}' ]
+}
+
+@test "a settings block still refuses a shape the schema does not describe" {
+  d="$BATS_TEST_TMPDIR/deep"
+  mkdir -p "$d/.nightshift"
+  base='{"toolDeny":{"AskUserQuestion":"","request_user_input":"","AskQuestion":""},'
+  printf '%s\n' "$base"'"handoff":{"view":{"nested":"deeper"}}}' >"$d/.nightshift/deep.json"
+  run bash -c '. "$1"; ns_rules_load "$2"' _ "$LIB" "$d/.nightshift/deep.json"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$base"'"handoff":{"sections":[["nested"]]}}' >"$d/.nightshift/arr.json"
+  run bash -c '. "$1"; ns_rules_load "$2"' _ "$LIB" "$d/.nightshift/arr.json"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$base"'"shift":{"hours":nul}}' >"$d/.nightshift/nul.json"
+  run bash -c '. "$1"; ns_rules_load "$2"' _ "$LIB" "$d/.nightshift/nul.json"
+  [ "$status" -ne 0 ]
+}
