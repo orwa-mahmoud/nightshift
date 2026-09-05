@@ -120,10 +120,11 @@ These refusals carry a repair the owner must read word for word:
   `terminal clock-out failed without releasing the shift` do not run the stale-lease reset at all —
   reopen the recorded conversation.
 
-Two warnings shape the night without stopping it. `warn policy` with no JSON parser means
-arm using `$NS/rules.json` alone — the subset reader has already run. `warn permissions` means a
-prompt mid-shift could freeze the night: say the cost once and proceed, because the choice stays
-the owner's.
+Tonight's snapshot reads the same on every host, with or without `jq` and `python3`, so a
+verification level, a tooling policy or an elevation allowance the owner recorded still applies.
+`refuse policy` means this host has no reader for it at all, and a shift does not arm on a policy
+nobody can read. `warn permissions` means a prompt mid-shift could freeze the night: say the cost
+once and proceed, because the choice stays the owner's.
 
 **Artifact mode completes with receipts, not commits.** When the verdict is
 `ok work-mode artifact`, complete each item with

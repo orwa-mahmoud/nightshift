@@ -105,7 +105,11 @@ NS="$WORKSPACE/.nightshift"
 POLICY="$NS/shift-policy.json"
 DEFAULTS="$NS/shift-defaults.json"
 
-ns_policy_json_tool >/dev/null || die 'JSON parser unavailable; composition writes shift-policy.json and Start already has rules.json' 2
+# The snapshot is where tonight's deadline, verification level and elevation allowances live.
+# A host with no jq and no python3 still reads and writes it through the bounded reader; only a
+# host with no awk either has nothing left to read it with.
+ns_policy_json_tool >/dev/null || ns_rules_awk_bin >/dev/null ||
+  die 'no JSON reader on this host: install jq, python3, or awk' 2
 
 # Every write lands by rename, so a reader never sees half a policy.
 atomic_write() { # <destination> — content on stdin

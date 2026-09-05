@@ -21,7 +21,7 @@ chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
   grep -qF 'stay in this skill' "$QUALITY"
   grep -qF 'use the next 20 hours adding features and enhancing existing ones' "$HUNT"
   grep -qF '8 hours clear lint and test debt' "$HUNT"
-  grep -qF 'arm using `$NS/rules.json` alone' "$START"
+  grep -qF 'reads the same on every host, with or without `jq` and `python3`' "$START"
   if grep -qF 'python3' "$QUALITY"; then
     return 1
   fi
@@ -53,7 +53,9 @@ chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
   [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
   printf '%s\n' "$output" | grep -qF 'PATH has neither python3 nor jq'
   printf '%s\n' "$output" | grep -qF 'ns_rules_check → 0'
-  printf '%s\n' "$output" | grep -qF 'arm from rules.json alone'
+  printf '%s\n' "$output" | grep -qF 'shift-policy set → wrote tonight-s snapshot with no parser'
+  printf '%s\n' "$output" | grep -qF 'shift-policy get → read it back'
+  printf '%s\n' "$output" | grep -qF 'resolve → the chosen level, tooling and one-shift allowance all survive with no parser'
   printf '%s\n' "$output" | grep -qF 'hardhat /usr/bin/sudo → deny'
   printf '%s\n' "$output" | grep -qF 'hardhat .nightshift//shift-policy.json write → deny'
   printf '%s\n' "$output" | grep -qF 'clock-out unreadable punch list → block (no release)'

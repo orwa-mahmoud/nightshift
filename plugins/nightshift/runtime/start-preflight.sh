@@ -372,7 +372,9 @@ else
 fi
 
 # ---------------------------------------------------------- tonight's policy
-if ns_policy_json_tool >/dev/null 2>&1; then
+# The snapshot reads the same on every host: jq or python3 where one is installed, and the
+# bounded reader where neither is. Only a host without awk either has nothing left to read it.
+if ns_policy_json_tool >/dev/null 2>&1 || ns_rules_awk_bin >/dev/null 2>&1; then
   POLICY_OUT="$(ns_policy_read_shift "$WORKSPACE")"
   case "$?" in
     2)
@@ -387,7 +389,8 @@ if ns_policy_json_tool >/dev/null 2>&1; then
       ;;
   esac
 else
-  warn "policy no JSON parser is installed, so arm using $NS/rules.json alone; never install Python or jq for this"
+  refuse "policy no reader for tonight's snapshot on this host"
+  repair "restore a POSIX text environment, or install jq or python3; a shift never arms on a policy nothing here can read"
 fi
 
 # ------------------------------------------------------- work and deadline

@@ -250,8 +250,12 @@ setup_site() { # <name> [punch-body]
   done
   run env -i HOME="$HOME" PATH="$bin" bash "$PREFLIGHT" --project "$p" --host claude
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qF 'warn policy no JSON parser is installed, so arm using'
-  printf '%s\n' "$output" | grep -qF 'never install Python or jq for this'
+  # The snapshot is read either way, so the preflight never downgrades to the rules file alone.
+  if printf '%s\n' "$output" | grep -qF 'no JSON parser is installed'; then
+    echo "the preflight still bypasses tonight's policy without a parser"
+    return 1
+  fi
+  printf '%s\n' "$output" | grep -qE '^(ok|warn) policy '
 }
 
 @test "the dry run reports without touching the site" {

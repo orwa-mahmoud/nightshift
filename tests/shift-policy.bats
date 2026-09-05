@@ -219,18 +219,81 @@ write_policy() { # <project> [extra JSON]
   [ "$output" = "$jq_out" ]
 }
 
-@test "without jq and without python3 every verb says what is missing and stops" {
+# The snapshot is where tonight's deadline, verification level and elevation allowances live.
+# None of that may quietly stop applying because a host has no jq and no python3, so the same
+# bounded reader that reads the rules file reads this one too.
+@test "without jq and without python3 the answer is the same one" {
   bin="$(build_toolset_bin no-json bash sh sed tr sort grep cut awk cat mktemp uname date \
     rm mv cp ln printf head tail wc find test dirname)"
+  [ ! -e "$bin/jq" ]
+  [ ! -e "$bin/python3" ]
   p="$(unarmed sp-noparser)"
   write_policy "$p"
   for verb in get resolve defaults-get; do
+    with="$(bash "$SP" --project "$p" "$verb")" || { echo "$verb failed with a parser"; return 1; }
     run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
       bash "$SP" --project "$p" "$verb"
-    [ "$status" -eq 2 ] || { echo "$verb exited $status"; return 1; }
-    printf '%s\n' "$output" | grep -qF 'JSON parser unavailable' \
-      || { echo "$verb said: $output"; return 1; }
+    [ "$status" -eq 0 ] || { echo "$verb exited $status: $output"; return 1; }
+    [ "$output" = "$with" ] || { echo "$verb drifted without a parser"; return 1; }
   done
+}
+
+@test "a snapshot written without a parser is the one a parser reads back" {
+  bin="$(build_toolset_bin no-json-write bash sh sed tr sort grep cut awk cat mktemp uname date \
+    rm mv cp ln printf head tail wc find test dirname)"
+  p="$(unarmed sp-noparser-write)"
+  policy_json >"$BATS_TEST_TMPDIR/candidate.json"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" set --from-json "$BATS_TEST_TMPDIR/candidate.json"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -f "$p/.nightshift/shift-policy.json" ]
+  # A parser reads the file back and agrees about every field.
+  run bash "$SP" --project "$p" get
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.schemaVersion == 1' >/dev/null
+  # And the resolved view is the same whichever engine produced it.
+  with="$(bash "$SP" --project "$p" resolve --table)"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" resolve --table
+  [ "$output" = "$with" ]
+}
+
+@test "an owner choice recorded for the night still applies with no parser" {
+  bin="$(build_toolset_bin no-json-choice bash sh sed tr sort grep cut awk cat mktemp uname date \
+    rm mv cp ln printf head tail wc find test dirname)"
+  p="$(unarmed sp-noparser-choice)"
+  # A one-shift allowance and a non-default level, exactly as composition would record them.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", deadlineEpoch: 1788000000, verificationLevel: "per-item",
+          toolingPolicy: "auto-add",
+          allowances: [{category: "containers", scope: "category", provenance: "one-shift"}]}' \
+    >"$p/.nightshift/shift-policy.json"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" resolve --table
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'verificationLevel=per-item (one-shift, shift)'
+  printf '%s\n' "$output" | grep -qxF 'toolingPolicy=auto-add (one-shift, shift)'
+  printf '%s\n' "$output" | grep -qxF 'deadlineEpoch=1788000000 (one-shift, shift)'
+  printf '%s\n' "$output" | grep -qxF 'elevation.containers=allow (one-shift, shift)'
+  # The allowance the owner granted is honoured, and the ones they did not are still denied.
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash -c '. "$1"; ns_policy_allowed "$2" containers "docker run alpine"' _ "$LIB" "$p"
+  [ "$status" -eq 0 ]
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash -c '. "$1"; ns_policy_allowed "$2" daemons "systemctl start x"' _ "$LIB" "$p"
+  [ "$status" -eq 1 ]
+}
+
+@test "a host with no reader at all says what is missing and stops" {
+  bin="$(build_toolset_bin no-reader bash sh sed tr sort grep cut cat mktemp uname date \
+    rm mv cp ln printf head tail wc find test dirname)"
+  [ ! -e "$bin/awk" ]
+  p="$(unarmed sp-noreader)"
+  write_policy "$p"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" get
+  [ "$status" -eq 2 ]
+  printf '%s\n' "$output" | grep -qF 'no JSON reader on this host'
 }
 
 @test "the helper writes nothing outside .nightshift/" {

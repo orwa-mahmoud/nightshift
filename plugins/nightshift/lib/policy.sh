@@ -384,8 +384,20 @@ sys.stdout.write("".join(
 # _ns_policy_facts <operation> <python-program> <file> — the fact stream on stdout.
 # Status 1 when the file is not JSON, 2 when no parser is installed.
 _ns_policy_facts() {
-  local tool win
-  tool="$(ns_policy_json_tool)" || return 2
+  local tool win bin mode
+  tool="$(ns_policy_json_tool)" || {
+    # The snapshot carries what the owner chose for tonight — a deadline, a verification
+    # level, an elevation allowance. None of that may quietly stop applying because a host
+    # has no jq and no python3, so the bounded reader emits the same fact stream.
+    case "$1" in
+      shift) mode=policy ;;
+      defaults) mode=defaults ;;
+      *) return 2 ;;
+    esac
+    bin="$(ns_rules_awk_bin)" || return 2
+    "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" <"$3" 2>/dev/null || return 1
+    return 0
+  }
   # Bash opens the document. jq -f still needs a path the jq binary can open:
   # Git's jq wants /d/..., native jq.exe wants D:\...
   if [ "$tool" = jq ]; then
@@ -398,11 +410,27 @@ _ns_policy_facts() {
   python3 -c "$2" "$(ns_native_display_path "$3")" 2>/dev/null || return 1
 }
 
+# _ns_policy_awk_json <mode> [file] — the bounded reader as the third engine behind the two
+# canonical writers. LC_ALL=C so the reader sees bytes, which is what its UTF-8 escaping needs.
+_ns_policy_awk_json() {
+  local bin mode="$1"
+  bin="$(ns_rules_awk_bin)" || return 2
+  shift
+  if [ "$#" -ge 1 ]; then
+    LC_ALL=C "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" <"$1" 2>/dev/null || return 1
+  else
+    LC_ALL=C "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" 2>/dev/null || return 1
+  fi
+}
+
 # ns_policy_canon_json <file> — the document as compact canonical JSON: sorted keys, \uXXXX
 # escaping. The one wire form the bash and PowerShell resolvers both emit.
 ns_policy_canon_json() {
   local tool
-  tool="$(ns_policy_json_tool)" || return 2
+  tool="$(ns_policy_json_tool)" || {
+    _ns_policy_awk_json canon "$1"
+    return $?
+  }
   if [ "$tool" = jq ]; then
     jq -caS . <"$1" 2>/dev/null || return 1
   else
@@ -415,7 +443,10 @@ sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",
 # ns_policy_canon_text — compact canonical JSON of the document on stdin.
 ns_policy_canon_text() {
   local tool
-  tool="$(ns_policy_json_tool)" || return 2
+  tool="$(ns_policy_json_tool)" || {
+    _ns_policy_awk_json canon
+    return $?
+  }
   if [ "$tool" = jq ]; then
     jq -caS . 2>/dev/null || return 1
   else
@@ -429,7 +460,10 @@ sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",
 # opens and edits by hand.
 ns_policy_pretty_text() {
   local tool
-  tool="$(ns_policy_json_tool)" || return 2
+  tool="$(ns_policy_json_tool)" || {
+    _ns_policy_awk_json pretty
+    return $?
+  }
   if [ "$tool" = jq ]; then
     jq -S . 2>/dev/null || return 1
   else
@@ -1149,14 +1183,7 @@ _ns_policy_setting() {
 ns_policy_resolve() {
   local ws="$1" out name first=1
   _ns_policy_load_rules "$ws"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    _ns_policy_load_shift "$ws"
-  else
-    NS_POLICY_SHIFT_STATE=absent
-    NS_POLICY_SHIFT_ALLOW=""
-    NS_POLICY_SHIFT_PLAN=""
-    NS_POLICY_SHIFT_PLANIDX=""
-  fi
+  _ns_policy_load_shift "$ws"
   if [ "$NS_POLICY_SHIFT_STATE" != ok ]; then
     NS_POLICY_SHIFT_ALLOW=""
     NS_POLICY_SHIFT_PLAN=""
@@ -1173,11 +1200,7 @@ ns_policy_resolve() {
 $(ns_policy_settings)
 EOF
   out="$out}}"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    printf '%s\n' "$out" | ns_policy_canon_text || return 2
-  else
-    printf '%s\n' "$out"
-  fi
+  printf '%s\n' "$out" | ns_policy_canon_text || return 2
 }
 
 # ns_policy_resolve_table <workspace>
@@ -1187,14 +1210,7 @@ EOF
 ns_policy_resolve_table() {
   local ws="$1" name text
   _ns_policy_load_rules "$ws"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    _ns_policy_load_shift "$ws"
-  else
-    NS_POLICY_SHIFT_STATE=absent
-    NS_POLICY_SHIFT_ALLOW=""
-    NS_POLICY_SHIFT_PLAN=""
-    NS_POLICY_SHIFT_PLANIDX=""
-  fi
+  _ns_policy_load_shift "$ws"
   if [ "$NS_POLICY_SHIFT_STATE" != ok ]; then
     NS_POLICY_SHIFT_ALLOW=""
     NS_POLICY_SHIFT_PLAN=""
@@ -1289,14 +1305,7 @@ ns_policy_allowed() {
   local ws="$1" category="$2" norm rest line
   ns_policy_default_pattern "$category" >/dev/null || return 1
   _ns_policy_load_rules "$ws"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    _ns_policy_load_shift "$ws"
-  else
-    NS_POLICY_SHIFT_STATE=absent
-    NS_POLICY_SHIFT_ALLOW=""
-    NS_POLICY_SHIFT_PLAN=""
-    NS_POLICY_SHIFT_PLANIDX=""
-  fi
+  _ns_policy_load_shift "$ws"
   if [ "$NS_POLICY_SHIFT_STATE" != ok ]; then
     NS_POLICY_SHIFT_ALLOW=""
     NS_POLICY_SHIFT_PLAN=""
