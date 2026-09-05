@@ -101,9 +101,13 @@ These refusals carry a repair the owner must read word for word:
   writes a new UNIX epoch to `$NS/deadline` or runs Reset then Start.
 - `refuse binding` — the host opened one project and this Start was given another, and the two
   resolve to different workspaces. A shift would arm in one and record its session and lease
-  against the other, so nothing is armed. Print the two paths the verdict names. The repair is the
-  owner's: reopen the host on the project they mean, or point one at the other with a
-  `.nightshift-link` holding that absolute path. Never pick one of the two yourself.
+  against the other, so nothing is armed. Print the two paths the verdict names and both ways
+  forward. Relaunching is not the only one: when the owner's own Start request named the workspace
+  they meant, link it from this very session with `runtime/link-workspace.sh` as the repair line
+  spells out, then run the preflight and the binding probe again — the conversation continues.
+  Say plainly that the link binds the host root rather than this one conversation. Without the
+  owner naming it, never pick one of the two yourself, never search for a target, and never
+  overwrite a binding that is already there.
 - `refuse provision` — recover before any product work with
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/provision.sh" --project "$NIGHTSHIFT_WORKSPACE" recover`
   (native Windows: `provision.ps1 -Project "$NIGHTSHIFT_WORKSPACE" recover`). When recovery exits

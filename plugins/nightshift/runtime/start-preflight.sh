@@ -108,7 +108,10 @@ if [ -n "$HOST_PROJECT" ]; then
     fi
     if [ "$BOUND" != "$WORKSPACE" ]; then
       refuse "binding the host opened $HOST_PROJECT_ABS and this start was given $HOST_ROOT, which resolve to different workspaces ($BOUND and $WORKSPACE)"
-      repair "reopen the host on the project you mean and run Start there, or point one at the other with a .nightshift-link holding that absolute path; Nightshift never arms in one workspace and records its session in another"
+      # Relaunching is not the only way out. When the owner named the workspace they meant, the
+      # link is made from here and this conversation carries on; the link binds the host root
+      # rather than this one conversation, which is why it takes their say-so.
+      repair "if $WORKSPACE is the workspace you meant, link it from this session with runtime/link-workspace.sh --host-root \"$HOST_PROJECT_ABS\" --workspace \"$WORKSPACE\" (native Windows: runtime\\windows\\link-workspace.ps1 -HostRoot -Workspace), then run Start again; otherwise reopen the host on the project you mean. Nightshift never guesses which of the two you meant, and never arms in one workspace while recording its session in another"
       exit 1
     fi
   fi
