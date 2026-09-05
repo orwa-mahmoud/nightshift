@@ -60,6 +60,12 @@ naming every effective setting with its source (`built-in`, `rules`, `defaults`,
 `exact-plan`) and expiry (`shift`, `permanent` or `-`); and a `preflight` fact naming which items
 need an elevation category the resolved policy does not grant.
 
+Staged work is reported, never offered, while the punch list has open items. Doctor suggests
+promoting a draft or a parked Hunt order only when no `- [ ]` remains under `## Items` and no shift
+is armed — the same precedence Start applies. With open work, say what is staged and say plainly
+that Start works the current list; do not read a count as an invitation to widen the approved
+scope, and never promote anything from this read-only skill.
+
 The `work mode` fact is `repository` or `artifact`. When `$NS/work-mode` is missing and Setup
 would propose artifact, Doctor warns `work mode is unset; Setup would propose artifact` and offers
 `persist the proposed artifact mode with Setup; Doctor does not write work-mode`. When work-mode is

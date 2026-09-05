@@ -1024,7 +1024,7 @@ ns_policy_selected_debt() {
 # valid, 1 when it is malformed — either way the built-in defaults are printed, because these
 # choices only prefill a question and must never decide anything.
 ns_policy_read_defaults() {
-  local ws="$1" f facts line rc bad=0
+  local ws="$1" f facts line rc bad=0 canon v
   local profile='"fast"' hours=null tooling='"existing-tools"'
   local execution='"review-first"' updated=null
   f="$ws/.nightshift/shift-defaults.json"
@@ -1087,6 +1087,30 @@ EOF
     tooling='"existing-tools"'
     execution='"review-first"'
     updated=null
+  fi
+  # The shift block of the owner file is where these live now. A value stated there is the
+  # owner's answer and wins over the older file, which stays readable only so a workspace that
+  # has not migrated yet still reports the choice it remembers.
+  canon="$ws/.nightshift/rules.json"
+  if [ -f "$canon" ]; then
+    v="$(ns_rules_get_in "$canon" shift verificationProfile)"
+    case "$v" in
+      fast | balanced | strict | custom) profile="\"$v\"" ;;
+    esac
+    v="$(ns_rules_get_in "$canon" shift hours)"
+    case "$v" in
+      null) hours=null ;;
+      '' | *[!0-9]*) ;;
+      *) hours="$v" ;;
+    esac
+    v="$(ns_rules_get_in "$canon" shift toolingPolicy)"
+    case "$v" in
+      existing-tools | review-missing | auto-add) tooling="\"$v\"" ;;
+    esac
+    v="$(ns_rules_get_in "$canon" shift execution)"
+    case "$v" in
+      review-first | run-direct) execution="\"$v\"" ;;
+    esac
   fi
   NS_POLICY_DEF_PROFILE="$profile"
   NS_POLICY_DEF_HOURS="$hours"

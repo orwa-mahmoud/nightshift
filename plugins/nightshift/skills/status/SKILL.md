@@ -79,7 +79,10 @@ and never re-derive the state behind it.
   orders in `$NS/work-orders.md`. Count drafting-table boxes only after the first markdown `---`
   rule so the fenced item-shape example is not a staged draft. Count open `- [ ]` boxes in
   `work-orders.md` as parked Hunt orders. If either count is non-zero and the punch list is empty,
-  say Start will offer them.
+  say Start will offer them. **With any open item under `## Items`, both counts are informational
+  and nothing else:** Start works the punch list exactly as the owner left it, and drafts and Hunt
+  orders stay where they are. Never offer to promote, and never present staged work as the next
+  action while approved work is open.
 - **Snag log** — the last few dispositions from `$NS/snag-log.md`, if any.
 - **Product evolution** — when `$NS/product-research.md` or `$NS/opportunity-map.md` contains more
   than its template headings, report the most recent research entry and the counts of candidate,

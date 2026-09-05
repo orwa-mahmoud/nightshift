@@ -55,8 +55,15 @@ write_policy() { # <project> [extra JSON]
   run sp "$p" set --from-json "$p/.nightshift/shift-policy.json"
   [ "$status" -eq 0 ]
   python3 "$VALIDATOR" "$SCHEMAS/shift-policy.json" "$p/.nightshift/shift-policy.json"
+  # The remembered choices live in the shift block of the owner file, so that is what has to
+  # validate — and the whole file still does, not just the block that changed.
   sp "$p" defaults-set --verificationProfile strict --hours 8 >/dev/null
-  python3 "$VALIDATOR" "$SCHEMAS/shift-defaults.json" "$p/.nightshift/shift-defaults.json"
+  python3 "$VALIDATOR" \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json" \
+    "$p/.nightshift/rules.json"
+  [ "$(jq -r '.shift.verificationProfile' "$p/.nightshift/rules.json")" = strict ]
+  [ "$(jq -r '.shift.hours' "$p/.nightshift/rules.json")" = 8 ]
+  [ ! -f "$p/.nightshift/shift-defaults.json" ]
 }
 
 @test "get prints an empty object and exits 3 when there is no policy yet" {

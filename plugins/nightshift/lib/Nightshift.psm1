@@ -3781,6 +3781,7 @@ function Get-NSPolicyPaths {
     $paths['punch'] = Join-NSPath $ns 'punch-list.md'
     $paths['orders'] = Join-NSPath $ns 'work-orders.md'
     $paths['parking'] = Join-NSPath $ns 'parking-lot.md'
+    $paths['rules'] = Join-NSPath $ns 'rules.json'
     return $paths
 }
 
@@ -4158,15 +4159,21 @@ function Get-NSShiftDefaults {
     $paths = Get-NSPolicyPaths $Workspace
     $defaults = New-NSShiftDefaultsDocument
     $path = $paths['defaults']
-    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $defaults }
+    # Every way out of the legacy file goes through the shift block, so a workspace that has
+    # already migrated - and so has no legacy file at all - still reports what the owner chose.
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
+    }
     $document = $null
     try {
         $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
     }
     catch {
-        return $defaults
+        return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
     }
-    if (-not ($document -is [Collections.IDictionary])) { return $defaults }
+    if (-not ($document -is [Collections.IDictionary])) {
+        return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
+    }
     $storedProfile = Get-NSMapValue $document 'verificationProfile'
     if (Test-NSEvidenceEnum $storedProfile $script:NSPolicyProfiles) { $defaults['verificationProfile'] = $storedProfile }
     $tooling = Get-NSMapValue $document 'toolingPolicy'
@@ -4177,7 +4184,79 @@ function Get-NSShiftDefaults {
     if ((Test-NSJsonInteger $hours) -and [long]$hours -ge 0) { $defaults['hours'] = [long]$hours }
     $updated = Get-NSMapValue $document 'updatedAt'
     if ($updated -is [string]) { $defaults['updatedAt'] = $updated }
-    return $defaults
+    return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
+}
+
+# The shift block of the owner file is where these live now. A value stated there is the owner's
+# answer and wins over the older file, which stays readable only so a workspace that has not
+# migrated yet still reports the choice it remembers.
+function Merge-NSShiftBlockDefaults {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)]$Defaults
+    )
+    $block = Get-NSShiftBlock $Workspace
+    if ($null -eq $block) { return $Defaults }
+    $stored = Get-NSMapValue $block 'verificationProfile'
+    if (Test-NSEvidenceEnum $stored $script:NSPolicyProfiles) { $Defaults['verificationProfile'] = $stored }
+    $stored = Get-NSMapValue $block 'toolingPolicy'
+    if (Test-NSEvidenceEnum $stored $script:NSPolicyToolingPolicies) { $Defaults['toolingPolicy'] = $stored }
+    $stored = Get-NSMapValue $block 'execution'
+    if (Test-NSEvidenceEnum $stored $script:NSPolicyExecutions) { $Defaults['execution'] = $stored }
+    if ($block.Contains('hours')) {
+        $stored = Get-NSMapValue $block 'hours'
+        if ($null -eq $stored) { $Defaults['hours'] = $null }
+        elseif ((Test-NSJsonInteger $stored) -and [long]$stored -ge 0) { $Defaults['hours'] = [long]$stored }
+    }
+    return $Defaults
+}
+
+# Get-NSShiftBlock <workspace> — the shift object of the owner rules file, or $null.
+function Get-NSShiftBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return $null
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return $null }
+    if (-not $document.Contains('shift')) { return $null }
+    $block = $document['shift']
+    if (-not ($block -is [Collections.IDictionary])) { return $null }
+    return $block
+}
+
+# Set-NSShiftBlock <workspace> <block> — the owner file with its shift block replaced. Every other
+# key survives, including one a later version added.
+function Set-NSShiftBlock {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)]$Block
+    )
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Write-NSPolicyError ('shift-policy: no owner rules file at ' + $path + ' - run setup first')
+        return 2
+    }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        Write-NSPolicyError ('shift-policy: ' + $path + ' is not readable')
+        return 2
+    }
+    if (-not ($document -is [Collections.IDictionary])) {
+        Write-NSPolicyError ('shift-policy: ' + $path + ' is not a JSON object')
+        return 2
+    }
+    $document['shift'] = $Block
+    Write-NSEvidenceFileAtomic -Path $path -Text ((ConvertTo-NSCanonicalJson $document) + "`n")
+    return 0
 }
 
 function Set-NSShiftDefaults {
@@ -4231,9 +4310,17 @@ function Set-NSShiftDefaults {
             return 2
         }
     }
-    $document['updatedAt'] = Get-NSPolicyNow
-    Write-NSEvidenceFileAtomic -Path $paths['defaults'] -Text ((ConvertTo-NSCanonicalJson $document) + "`n")
-    return 0
+    # These live in the shift block of the owner file, which is the one place a preference is
+    # kept. Writing them anywhere else would leave the value that is read and the value that was
+    # set in two files that can disagree.
+    $block = New-NSOrdinalMap
+    $block['verificationProfile'] = $document['verificationProfile']
+    $block['hours'] = $document['hours']
+    $block['execution'] = $document['execution']
+    $block['toolingPolicy'] = $document['toolingPolicy']
+    $rc = Set-NSShiftBlock -Workspace $Workspace -Block $block
+    if ($rc -eq 0) { Write-NSPolicyOut (Get-NSPolicyPaths $Workspace)['rules'] }
+    return $rc
 }
 
 # ---------------------------------------------------------------------------
@@ -4820,6 +4907,117 @@ function Invoke-NSShiftPolicyArchive {
     return 0
 }
 
+# The migration onto the one-file shape. Same contract as the POSIX helper: refuse while armed,
+# name an invalid value by its key, validate the destination before replacing one that loads,
+# keep a lossless backup, do nothing the second time, and refuse a disagreeing pair by naming
+# both sides rather than choosing one.
+function Invoke-NSPolicyMigrate {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [switch]$DryRun
+    )
+    $paths = Get-NSPolicyPaths $Workspace
+    $rules = $paths['rules']
+    $legacy = $paths['defaults']
+    if (-not (Test-Path -LiteralPath $rules -PathType Leaf)) {
+        Write-NSPolicyError ('shift-policy: no owner rules file at ' + $rules + ' - run setup first')
+        return 3
+    }
+    if (Test-NSPolicyArmed $Workspace) {
+        Write-NSPolicyError 'shift-policy: refuse to migrate while the shift is armed - stop the shift, migrate, then start again'
+        return 4
+    }
+    $canonical = Get-NSShiftBlock $Workspace
+    $stated = $null
+    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+        try {
+            $stated = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($legacy, $script:NSUtf8NoBom))
+        }
+        catch {
+            $stated = $null
+        }
+        if (-not ($stated -is [Collections.IDictionary])) { $stated = $null }
+    }
+
+    $fields = @(
+        @{ Name = 'verificationProfile'; Enum = $script:NSPolicyProfiles },
+        @{ Name = 'hours'; Enum = $null },
+        @{ Name = 'execution'; Enum = $script:NSPolicyExecutions },
+        @{ Name = 'toolingPolicy'; Enum = $script:NSPolicyToolingPolicies })
+
+    $block = New-NSOrdinalMap
+    $conflicts = New-Object Collections.Generic.List[string]
+    foreach ($field in $fields) {
+        $name = [string]$field['Name']
+        $here = $null
+        $there = $null
+        $haveHere = ($null -ne $canonical) -and $canonical.Contains($name)
+        $haveThere = ($null -ne $stated) -and $stated.Contains($name)
+        if ($haveHere) { $here = $canonical[$name] }
+        if ($haveThere) { $there = $stated[$name] }
+        foreach ($pair in @(@($haveHere, $here), @($haveThere, $there))) {
+            if (-not $pair[0]) { continue }
+            if (-not (Test-NSMigrateValue $name $pair[1] $field['Enum'])) { return 2 }
+        }
+        if ($haveHere -and $haveThere -and ((ConvertTo-NSCanonicalJson @{ v = $here }) -cne (ConvertTo-NSCanonicalJson @{ v = $there }))) {
+            $conflicts.Add('  shift.' + $name + ': this file says ' + (ConvertTo-NSJsonScalar $here) +
+                ', the legacy file says ' + (ConvertTo-NSJsonScalar $there))
+            continue
+        }
+        if ($haveHere) { $block[$name] = $here }
+        elseif ($haveThere) { $block[$name] = $there }
+    }
+
+    if ($conflicts.Count -gt 0) {
+        Write-NSPolicyError 'shift-policy: refused: two explicit values disagree, and nothing here decides between them'
+        foreach ($line in $conflicts) { Write-NSPolicyError $line }
+        Write-NSPolicyError ('shift-policy: keep one value, delete the other from ' + $legacy + ', then run migrate again')
+        return 2
+    }
+
+    if (-not (Test-Path -LiteralPath $legacy -PathType Leaf) -and $null -ne $canonical) {
+        Write-NSPolicyOut ('no-op: every remembered choice already lives in ' + $rules)
+        return 0
+    }
+
+    Write-NSPolicyOut ('migrating into ' + $rules + ':')
+    Write-NSPolicyOut ('  shift = ' + (ConvertTo-NSCanonicalJson $block))
+    if ($DryRun) {
+        Write-NSPolicyOut 'dry run: nothing was written'
+        return 0
+    }
+    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+        Copy-Item -LiteralPath $legacy -Destination ($legacy + '.bak') -Force
+    }
+    $rc = Set-NSShiftBlock -Workspace $Workspace -Block $block
+    if ($rc -ne 0) { return $rc }
+    Remove-Item -LiteralPath $legacy -Force -ErrorAction SilentlyContinue
+    Write-NSPolicyOut $rules
+    return 0
+}
+
+# The bounded reader answers about shape; this answers about the value, which is what a migration
+# must know before it carries one forward.
+function Test-NSMigrateValue {
+    param([string]$Name, $Value, $Enum)
+    if ($Name -ceq 'hours') {
+        if ($null -eq $Value) { return $true }
+        if ((Test-NSJsonInteger $Value) -and [long]$Value -ge 0) { return $true }
+        Write-NSPolicyError 'shift-policy: shift.hours: must be a whole number of hours or null'
+        return $false
+    }
+    if (Test-NSEvidenceEnum $Value $Enum) { return $true }
+    Write-NSPolicyError ('shift-policy: shift.' + $Name + ': must be ' + ($Enum -join ', '))
+    return $false
+}
+
+function ConvertTo-NSJsonScalar {
+    param($Value)
+    if ($null -eq $Value) { return 'null' }
+    if ($Value -is [string]) { return ('"' + $Value + '"') }
+    return ([string]$Value)
+}
+
 function Invoke-NSShiftPolicyCommand {
     param(
         [AllowEmptyString()][string]$Project = '',
@@ -4831,7 +5029,8 @@ function Invoke-NSShiftPolicyCommand {
         [AllowEmptyString()][string]$Execution = '',
         [AllowEmptyString()][string]$Date = '',
         [switch]$Json,
-        [switch]$Table
+        [switch]$Table,
+        [switch]$DryRun
     )
     if ([string]::IsNullOrEmpty($Project) -or [string]::IsNullOrEmpty($Command)) { return (Write-NSShiftPolicyUsage) }
     $workspace = Get-NSAbsolutePath $Project
@@ -4877,6 +5076,9 @@ function Invoke-NSShiftPolicyCommand {
             }
             Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Json)
             return 0
+        }
+        'migrate' {
+            return (Invoke-NSPolicyMigrate -Workspace $workspace -DryRun:$DryRun)
         }
         'archive' {
             $day = $Date

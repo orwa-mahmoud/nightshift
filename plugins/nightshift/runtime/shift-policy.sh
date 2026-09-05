@@ -7,6 +7,11 @@
 #   shift-policy.sh --project DIR defaults-set [--verificationProfile fast|balanced|strict|custom]
 #                                             [--hours N|null] [--execution review-first|run-direct]
 #                                             [--toolingPolicy existing-tools|review-missing|auto-add]
+#
+# defaults-get and defaults-set read and write the shift block of rules.json, which is where a
+# remembered choice lives. A workspace that still carries the older shift-defaults.json is read
+# from it until `migrate` moves it, so upgrading loses nothing.
+#
 #   shift-policy.sh --project DIR resolve [--json|--table]
 #   shift-policy.sh --project DIR migrate [--dry-run]
 #   shift-policy.sh --project DIR archive
@@ -239,9 +244,27 @@ cmd_defaults_set() {
       *) die 'execution must be review-first or run-direct' 2 ;;
     esac
   fi
-  NS_POLICY_DEF_UPDATED="\"$(now_utc)\""
-  ns_policy_defaults_json | ns_policy_pretty_text | atomic_write "$DEFAULTS"
-  printf '%s\n' "$DEFAULTS"
+  # These live in the shift block of the owner file, which is the one place a preference is
+  # kept. Writing them anywhere else would leave the value that is read and the value that was
+  # set in two files that can disagree.
+  [ -f "$RULES" ] || die "no owner rules file at $RULES — run setup first" 2
+  local tmpd block
+  block="$(printf '{"verificationProfile":%s,"hours":%s,"execution":%s,"toolingPolicy":%s}' \
+    "$NS_POLICY_DEF_PROFILE" "$NS_POLICY_DEF_HOURS" \
+    "$NS_POLICY_DEF_EXECUTION" "$NS_POLICY_DEF_TOOLING")"
+  tmpd="$(mktemp -d "${TMPDIR:-/tmp}/nightshift-defaults.XXXXXX")" ||
+    die 'no writable temporary directory' 2
+  ns_rules_set_block "$RULES" shift "$block" >"$tmpd/next.json" || {
+    rm -rf "$tmpd"
+    die 'cannot write the shift block' 2
+  }
+  ns_rules_load "$tmpd/next.json" >/dev/null 2>&1 || {
+    rm -rf "$tmpd"
+    die 'the updated owner file would not load' 2
+  }
+  atomic_write "$RULES" <"$tmpd/next.json"
+  rm -rf "$tmpd"
+  printf '%s\n' "$RULES"
   exit 0
 }
 

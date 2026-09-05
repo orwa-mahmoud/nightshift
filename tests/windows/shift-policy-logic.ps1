@@ -625,6 +625,53 @@ try {
     Expect-Equal 0 $migrateRun.ExitCode "migrate-state exits 0 ($($migrateRun.StderrText))"
     Expect-True (-not $migrateRun.StdoutText.Contains('is retired')) `
         'migrate-state retires nothing but the state marker'
+
+    # === 13. The migration onto the one-file shape, against the frozen cases ===
+    # The same fixtures the POSIX suite runs, so both hosts are held to one contract.
+    $fixtures = Join-Path $PSScriptRoot '../fixtures/policy-contract'
+    $ownerName = 'rules' + '.json'
+    $legacyName = 'shift-defaults' + '.json'
+    foreach ($case in @('fresh', 'legacy', 'conflict', 'identical', 'repeat', 'malformed', 'armed',
+                        'new-settings-absent')) {
+        $caseDir = Join-Path $fixtures $case
+        $casePath = Join-Path $root ('migrate-' + $case)
+        $caseNs = Join-Path $casePath '.nightshift'
+        $null = New-Item -ItemType Directory -Force -Path $caseNs
+        Copy-Item (Join-Path $caseDir $ownerName) (Join-Path $caseNs $ownerName)
+        $legacySource = Join-Path $caseDir $legacyName
+        if (Test-Path -LiteralPath $legacySource) {
+            Copy-Item $legacySource (Join-Path $caseNs $legacyName)
+        }
+        $expected = Get-Content (Join-Path $caseDir 'expected.json') -Raw | ConvertFrom-Json
+        if ($expected.PSObject.Properties['armed'] -and $expected.armed) {
+            [IO.File]::WriteAllText((Join-Path $caseNs '.shift-armed'), '', $utf8)
+        }
+        $migrateRun = Invoke-Script -Path $helper -Arguments @('-Project', $casePath, '-Command', 'migrate')
+        Expect-Equal ([int]$expected.exit) $migrateRun.ExitCode `
+            "migrate $case exits the way the contract says ($($migrateRun.StderrText))"
+    }
+
+    # The value lands, the owner's own keys survive, and the legacy file is retired behind a backup.
+    $movedPath = Join-Path $root 'migrate-legacy'
+    $movedNs = Join-Path $movedPath '.nightshift'
+    $moved = Get-Content (Join-Path $movedNs $ownerName) -Raw | ConvertFrom-Json
+    Expect-Equal 'review-missing' ([string]$moved.shift.toolingPolicy) 'the explicit legacy value survives the move'
+    Expect-Equal 10 ([int]$moved.watchMinutes) 'an owner value the migration never touched is unchanged'
+    Expect-True (Test-Path -LiteralPath (Join-Path $movedNs ($legacyName + '.bak'))) 'a lossless backup is kept'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $movedNs $legacyName))) 'the legacy file is retired'
+
+    # A second run changes nothing, and a dry run writes nothing.
+    $againRun = Invoke-Script -Path $helper -Arguments @('-Project', $movedPath, '-Command', 'migrate')
+    Expect-Equal 0 $againRun.ExitCode 'a migration that already ran is a no-op'
+    Expect-True $againRun.StdoutText.Contains('no-op') 'the second run says it did nothing'
+
+    # What defaults-set writes is what defaults-get reads, because there is one place for it.
+    $setRun = Invoke-Script -Path $helper -Arguments @('-Project', $movedPath, '-Command', 'defaults-set',
+        '-ToolingPolicy', 'auto-add')
+    Expect-Equal 0 $setRun.ExitCode 'defaults-set writes the shift block'
+    $getRun = Invoke-Script -Path $helper -Arguments @('-Project', $movedPath, '-Command', 'defaults-get')
+    Expect-True $getRun.StdoutText.Contains('"toolingPolicy": "auto-add"') `
+        'defaults-get reads the block defaults-set wrote'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

@@ -724,3 +724,150 @@ stalled_provision() { # <project> <stage> — a transaction whose baseline is re
     grep -qF 'provision-transaction.json is malformed (stage); Start will refuse to arm'
   printf '%s' "$output" | grep -qF '[confirm] inspect .nightshift/provision-transaction.json'
 }
+
+# ---------------------------------------------------------------------------------------------
+# Staged work is only an offer when there is nothing already approved to do. An open checkbox
+# under ## Items is the shift — Start says so, and Doctor and Status must not say otherwise.
+
+# staged_site <name> <open-items> <orders> <drafts> — an unarmed site with that much of each.
+staged_site() {
+  local p open="$2" orders="$3" drafts="$4" j
+  p="$(new_project "$1")"
+  rm -f "$p/.nightshift/.shift-armed"
+  {
+    printf '## Items\n\n'
+    j=0
+    while [ "$j" -lt "$open" ]; do
+      j=$((j + 1))
+      printf -- '- [ ] **%d. open work the owner approved.**\n' "$j"
+    done
+    printf -- '- [x] **done already.**\n'
+  } >"$p/.nightshift/punch-list.md"
+  {
+    printf '# Work Orders\n\n'
+    j=0
+    while [ "$j" -lt "$orders" ]; do
+      j=$((j + 1))
+      printf '## Work order — parked %d\nHours: 2\n\n- [ ] **Coverage hunt %d.**\n\n' "$j" "$j"
+    done
+  } >"$p/.nightshift/work-orders.md"
+  {
+    printf '# Drafting Table\n\n---\n\n'
+    j=0
+    while [ "$j" -lt "$drafts" ]; do
+      j=$((j + 1))
+      printf -- '- [ ] **Draft %d.**\n' "$j"
+    done
+  } >"$p/.nightshift/drafting-table.md"
+  printf '%s' "$p"
+}
+
+offers_promotion() { # <output>
+  printf '%s' "$1" | grep -qE '\[confirm\].*(promote a parked Hunt order|promote agreed drafting-table)'
+}
+
+@test "open punch-list work is never interrupted by a draft" {
+  p="$(staged_site doc-open-drafts 3 0 2)"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'staged drafting-table items=2'
+  printf '%s' "$output" | grep -qF 'staged work is informational while 3 punch-list items are open'
+  if offers_promotion "$output"; then
+    echo "Doctor offered promotion with open work"
+    return 1
+  fi
+}
+
+@test "open punch-list work is never interrupted by a parked Hunt order" {
+  p="$(staged_site doc-open-orders 2 1 0)"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'pending Hunt work orders=1'
+  printf '%s' "$output" | grep -qF 'staged work is informational while 2 punch-list items are open'
+  if offers_promotion "$output"; then
+    echo "Doctor offered promotion with open work"
+    return 1
+  fi
+}
+
+@test "both staged sources together still lose to one open item" {
+  p="$(staged_site doc-open-both 1 2 3)"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'pending Hunt work orders=2'
+  printf '%s' "$output" | grep -q 'staged drafting-table items=3'
+  printf '%s' "$output" | grep -qF 'staged work is informational while 1 punch-list items are open'
+  if offers_promotion "$output"; then
+    echo "Doctor offered promotion with open work"
+    return 1
+  fi
+}
+
+@test "an all-ticked punch list is free, so staged work is offered again" {
+  p="$(staged_site doc-all-ticked 0 1 1)"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q '\[confirm\].*promote a parked Hunt order'
+  printf '%s' "$output" | grep -q '\[confirm\].*promote agreed drafting-table'
+  if printf '%s' "$output" | grep -qF 'staged work is informational'; then
+    echo "Doctor withheld an offer it should have made"
+    return 1
+  fi
+}
+
+@test "an empty punch list with nothing staged offers no promotion at all" {
+  p="$(staged_site doc-empty-nothing 0 0 0)"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  if offers_promotion "$output"; then
+    echo "Doctor offered promotion with nothing staged"
+    return 1
+  fi
+}
+
+@test "an armed shift is never offered staged work, open or not" {
+  p="$(staged_site doc-armed 2 1 1)"
+  : >"$p/.nightshift/.shift-armed"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  if offers_promotion "$output"; then
+    echo "Doctor offered promotion during an armed shift"
+    return 1
+  fi
+  q="$(staged_site doc-armed-done 0 1 1)"
+  : >"$q/.nightshift/.shift-armed"
+  run doctor "$q"
+  [ "$status" -eq 0 ]
+  if offers_promotion "$output"; then
+    echo "Doctor offered promotion during an armed shift"
+    return 1
+  fi
+}
+
+@test "Start leaves the staged files exactly as they were when work is open" {
+  p="$(staged_site doc-start-untouched 2 1 1)"
+  before_orders="$(cksum <"$p/.nightshift/work-orders.md")"
+  before_drafts="$(cksum <"$p/.nightshift/drafting-table.md")"
+  before_punch="$(cksum <"$p/.nightshift/punch-list.md")"
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh" \
+    --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'ok punch-list open=2'
+  printf '%s' "$output" | grep -q 'ok staged orders=1 drafts=1'
+  [ "$(cksum <"$p/.nightshift/work-orders.md")" = "$before_orders" ]
+  [ "$(cksum <"$p/.nightshift/drafting-table.md")" = "$before_drafts" ]
+  [ "$(cksum <"$p/.nightshift/punch-list.md")" = "$before_punch" ]
+}
+
+@test "Doctor and Status say the same thing about staged work" {
+  # Both skills must state the precedence explicitly, so a summary cannot invert it.
+  grep -qF 'Staged work is reported, never offered, while the punch list has open items' "$SKILL"
+  grep -qF 'both counts are informational' "$STATUS"
+  grep -qF 'Start works the punch list exactly as the owner left it' "$STATUS"
+}
+
+@test "the Windows Doctor applies the same condition" {
+  grep -qF '$orders -gt 0 -and $armed -eq 0 -and $open -eq 0' "$DOCTOR_PS1"
+  grep -qF '$drafts -gt 0 -and $armed -eq 0 -and $open -eq 0' "$DOCTOR_PS1"
+  grep -qF 'staged work is informational while $open punch-list items are open' "$DOCTOR_PS1"
+}

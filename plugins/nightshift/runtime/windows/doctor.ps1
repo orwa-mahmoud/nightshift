@@ -356,11 +356,17 @@ if ((Test-Path -LiteralPath $punch -PathType Leaf) -and $open -eq 0) {
         Add-NSAct confirm 'review punch-list.md contract and Gates before composing a new campaign; Archive files ticked items but never resets them'
     }
 }
-if ($orders -gt 0 -and $armed -eq 0) {
+# Staged work is only an offer when there is nothing already approved to do. An open checkbox
+# under ## Items is the shift, so Doctor reports what is staged and stops there - the same
+# precedence Start applies, said the same way.
+if ($orders -gt 0 -and $armed -eq 0 -and $open -eq 0) {
     Add-NSAct confirm 'start to promote a parked Hunt order, or hunt to compose a new one'
 }
-if ($drafts -gt 0 -and $armed -eq 0) {
+if ($drafts -gt 0 -and $armed -eq 0 -and $open -eq 0) {
     Add-NSAct confirm 'promote agreed drafting-table items into punch-list.md, or start to be offered them'
+}
+if ($open -gt 0 -and ($orders -gt 0 -or $drafts -gt 0)) {
+    Add-NSFact "staged work is informational while $open punch-list items are open - start works the current list, and drafts and Hunt orders stay staged for a later shift"
 }
 
 $rulesPath = Join-Path $ns 'rules.json'

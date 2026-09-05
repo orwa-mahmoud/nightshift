@@ -149,3 +149,45 @@ want() { jq -r "$2" "$FIX/$1/expected.json"; }
   [ "$(jq -r '.shift.toolingPolicy' "$p/.nightshift/rules.json")" = review-missing ]
   [ -f "$p/.nightshift/shift-defaults.json.bak" ]
 }
+
+# After the move, composition reads the choice where it now lives. A workspace that has not
+# migrated yet still reports what it remembers, so nobody loses a setting by upgrading.
+@test "the remembered choices are read from the owner file once they live there" {
+  p="$BATS_TEST_TMPDIR/read-canonical"
+  mkdir -p "$p/.nightshift"
+  jq '.shift = {verificationProfile: "strict", hours: 6,
+                execution: "run-direct", toolingPolicy: "auto-add"}' \
+    "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_policy_read_defaults "$2"' _ "$ROOT/plugins/nightshift/lib/lib.sh" "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.verificationProfile == "strict" and .hours == 6' >/dev/null
+  printf '%s' "$output" | jq -e '.execution == "run-direct" and .toolingPolicy == "auto-add"' >/dev/null
+}
+
+@test "a workspace that has not migrated still reports what it remembers" {
+  p="$BATS_TEST_TMPDIR/read-legacy"
+  mkdir -p "$p/.nightshift"
+  jq 'del(.shift)' "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
+  jq -n '{execution: "run-direct", hours: 3, schemaVersion: 1, toolingPolicy: "review-missing",
+          updatedAt: "2026-09-05T10:42:17Z", verificationProfile: "balanced"}' \
+    >"$p/.nightshift/shift-defaults.json"
+  run bash -c '. "$1"; ns_policy_read_defaults "$2"' _ "$ROOT/plugins/nightshift/lib/lib.sh" "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.verificationProfile == "balanced" and .hours == 3' >/dev/null
+  printf '%s' "$output" | jq -e '.toolingPolicy == "review-missing"' >/dev/null
+}
+
+@test "the owner file wins over a legacy file that disagrees" {
+  p="$BATS_TEST_TMPDIR/read-both"
+  mkdir -p "$p/.nightshift"
+  jq '.shift = {verificationProfile: "strict", hours: 6,
+                execution: "run-direct", toolingPolicy: "auto-add"}' \
+    "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
+  jq -n '{execution: "review-first", hours: 3, schemaVersion: 1, toolingPolicy: "review-missing",
+          updatedAt: "2026-09-05T10:42:17Z", verificationProfile: "balanced"}' \
+    >"$p/.nightshift/shift-defaults.json"
+  run bash -c '. "$1"; ns_policy_read_defaults "$2"' _ "$ROOT/plugins/nightshift/lib/lib.sh" "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.verificationProfile == "strict" and .hours == 6' >/dev/null
+  printf '%s' "$output" | jq -e '.toolingPolicy == "auto-add"' >/dev/null
+}

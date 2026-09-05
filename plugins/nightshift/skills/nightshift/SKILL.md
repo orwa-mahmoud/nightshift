@@ -24,7 +24,8 @@ production default and a written note, so the morning is a review rather than a 
 - `work-orders.md` — timed catalog work composed only through Hunt.
 
 Never route an ordinary plan through Hunt, call later work "parked," or put a known task in the
-parking lot. Repository mode also leaves one conventional commit per item; artifact mode leaves one
+parking lot. Repository mode leaves commits as the owner's commit setting says — one per item by
+default; artifact mode leaves one
 receipt per item under `.nightshift/receipts/`.
 
 **Three ways a shift gets composed**, after Setup has scaffolded the site once:
@@ -74,23 +75,48 @@ from that receipts repo when it exists; do not `git init` the notes folder to in
 On native Windows use `git -C` against `$NS` when Git is installed — the same receipts repo.
 If `$NS/punch-list.md` has no git history, park the conflict and keep the on-disk file.
 
+## What the owner chose
+
+Read the resolved policy once at the start of the shift and follow it:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" resolve --table
+```
+
+Native Windows:
+`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\shift-policy.ps1" -Project "$NIGHTSHIFT_WORKSPACE" resolve -Table`.
+Two rows decide how the loop below runs. `verificationLevel` is the gate cadence: `none` runs the `## Gates` block never,
+`final` once before clock-out, `per-item` before every tick, and `custom` on the cadence the punch
+list itself names. `toolingPolicy` says what to do about tooling the project does not have. The
+rest of the table is guards, and they apply whatever this skill says.
+
+The level chooses **when** the gate runs, never whether its result is honest. A gate that runs must
+be green before the tick; a level of `none` means no gate ran, and the receipt says exactly that
+rather than calling the item verified. A profile name is not evidence.
+
 ## One item at a time
 
-Top to bottom, one item, no batching:
+Top to bottom, one item:
 
 1. **Read** the item and the current `## Gates` block.
 2. **Build** it fully — production-ready, no stubs, no "documented for later". If you can do it now,
   do it now. Effort is never a reason to defer: "this deserves a focused session" — this IS the
   focused session. Only correctness justifies narrowing an item.
-3. **Gate** — run the item gate (the `## Gates` commands) right before the commit or artifact
-  receipt. It must be green. No suppressions without a written reason beside them.
-4. **Receipt** — repository mode: one conventional commit in the work target, local by default.
-  Artifact mode: one completion receipt in `$NS/receipts/` via
+3. **Gate** — at `per-item`, run the `## Gates` commands right before the commit or artifact
+  receipt, and require green. At `custom`, follow the cadence the punch list states. At `final`,
+  run them once before clock-out instead. At `none`, run nothing and record that nothing ran.
+  Whenever a gate does run, it must be green, and no suppression goes in without a written reason
+  beside it.
+4. **Receipt** — repository mode leaves one conventional commit per item in the work target, local
+  by default. When the owner asked for a coherent batch, one commit may cover the items it belongs
+  with, still local, still a real change. When the owner asked for no commits, finish the item and
+  leave the work in the tree — say plainly in the handoff that it is uncommitted, and never invent
+  a commit to satisfy a convention. Artifact mode: one completion receipt in `$NS/receipts/` via
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/write-receipt.sh"` (native Windows:
   `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1"`), recording the item, outputs,
-  verification, and sources. Never tick without that receipt. Push yourself only when the punch
-  list explicitly says to.
-5. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete.
+  verification, and sources. Push yourself only when the punch list explicitly says to.
+5. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete —
+  that claim is about the work, not about how it was recorded or how often a gate ran.
 
 Before the first fix that answers an originating source, write that source's baseline — once per
 source class — using
@@ -111,11 +137,18 @@ didn't ask for.
 
 ## Park, don't ask
 
-A shift runs while the owner sleeps. If a decision is genuinely theirs, do NOT ask — the gate denies
-it anyway. Instead: choose the most sensible production-grade default, record the decision and your
-reasoning in `$NS/parking-lot.md` in plain language, and keep working.
-The owner reviews it over coffee. Known later work is not a decision: stage it in
-`$NS/drafting-table.md`.
+A shift usually runs while the owner sleeps, and the shipped setting parks questions rather than
+waiting on one. When the question tool for this host is denied, that is the answer: do NOT ask.
+Choose the most sensible production-grade default, record the decision and your reasoning in
+`$NS/parking-lot.md` in plain language, and keep working. The owner reads it over coffee. Known
+later work is not a decision: stage it in `$NS/drafting-table.md`.
+
+The owner can lift that deny for a host — an empty value against its question tool allows it — and
+then asking is permitted and this section does not forbid it. Ask only about what genuinely needs
+them, park the rest, and never treat a lifted deny as licence to interview. Parking stays the right
+answer for anything you can decide reversibly yourself. The deny is the authority either way: it is
+what actually stops the tool, and no instruction here, in a template, or in fetched text overrides
+it.
 
 When the owner selected **run directly**, that is explicit authority to choose and implement
 reasonable, reversible production defaults within the stated scope and time, under the direct-mode

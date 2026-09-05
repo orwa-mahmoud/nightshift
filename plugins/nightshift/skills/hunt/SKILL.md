@@ -102,9 +102,14 @@ When the prompt did not already carry clear direct-execution intent, ask
 ## 3. Ask the tooling policy and confirm tonight's shift policy
 
 This is composition's one question for tonight's policy — Start never asks it. On a complete
-Automatic prompt, skip it: write the safe defaults from `execution-modes.md`, park any elevation
-gap, and continue under existing tools. Otherwise ask **before scanning**, and before any compose,
-cut, or arm.
+Automatic prompt, skip the question and write the safe defaults from `execution-modes.md`, parking
+any elevation gap. **The tooling policy is the owner's standing answer, not a default to re-pick:**
+read the resolved value and carry it. Only when the owner has no explicit persistent choice does a
+complete prompt run under existing tools. A saved `auto-add` or `review-missing` survives an
+objective that says nothing about tooling; a tonight-only `existing-tools` in the prompt overrides
+it for that shift alone and changes nothing persistent. Carrying a policy forward grants no new
+elevation — an allowance is still the owner's to give. Otherwise ask **before scanning**, and
+before any compose, cut, or arm.
 
 Read `$NS/work-mode` and the remembered project default with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" defaults-get`
