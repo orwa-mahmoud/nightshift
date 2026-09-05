@@ -73,6 +73,21 @@ foreach ($p in @((Join-Path $ns 'archive'), (Join-Path $ns "archive/$Date"), $de
     }
 }
 
+# The archived copy is read back and compared, so a copy that silently truncated or landed on
+# another filesystem is never mistaken for a safe one.
+function Test-NSSameBytes {
+    param([string]$A, [string]$B)
+    if (-not (Test-Path -LiteralPath $A -PathType Leaf)) { return $false }
+    if (-not (Test-Path -LiteralPath $B -PathType Leaf)) { return $false }
+    $left = [IO.File]::ReadAllBytes($A)
+    $right = [IO.File]::ReadAllBytes($B)
+    if ($left.Length -ne $right.Length) { return $false }
+    for ($i = 0; $i -lt $left.Length; $i++) {
+        if ($left[$i] -ne $right[$i]) { return $false }
+    }
+    return $true
+}
+
 $copied = 0
 if (Test-Path -LiteralPath $src -PathType Container) {
     $files = @(Get-ChildItem -LiteralPath $src -File -Force -ErrorAction SilentlyContinue |
@@ -87,15 +102,44 @@ if (Test-Path -LiteralPath $src -PathType Container) {
             Write-NSArchiveReceiptsError 'archive-receipts: refuse to write through a symlink archive path'
             exit 2
         }
+        # A closed record leaves live storage only when the shift has ended and the archived
+        # copy has been read back and matches. While a shift is armed nothing is removed: its
+        # receipts are what its own progress checks read. Which file it is never decides this -
+        # a name is not evidence that a record is finished with.
+        $armed = Test-Path -LiteralPath (Join-Path $ns '.shift-armed')
+        $endedMarker = Join-Path $ns '.ended'
+        $ended = (Test-Path -LiteralPath $endedMarker -PathType Leaf) -and
+            -not ((Get-Item -LiteralPath $endedMarker -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)
+        $rotate = (-not $armed) -and $ended
+        $kept = New-Object Collections.Generic.List[string]
         foreach ($file in $files) {
-            Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $dest $file.Name) -Force
-            $copied++
-            # Artifact receipts stay live so stall progress still sees them. The morning
-            # receipt belongs to one shift and is read once, so it moves: the archive keeps
-            # it and the next shift starts with a receipts folder of its own work.
-            if ($file.Name -like 'morning-*.md') {
-                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+            $target = Join-Path $dest $file.Name
+            if (Test-Path -LiteralPath $target) {
+                if (-not (Test-NSSameBytes $file.FullName $target)) {
+                    # Two different records under one name. Neither is worth losing, so the one
+                    # already filed stands and the live one stays where it is.
+                    $kept.Add($file.Name + ' (a different record is already filed under that name)')
+                    continue
+                }
             }
+            else {
+                Copy-Item -LiteralPath $file.FullName -Destination $target -Force
+                $copied++
+            }
+            if (-not (Test-NSSameBytes $file.FullName $target)) {
+                $kept.Add($file.Name + ' (the archived copy does not match the source)')
+                continue
+            }
+            if ($rotate) {
+                Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue
+                if (Test-Path -LiteralPath $file.FullName) {
+                    $kept.Add($file.Name + ' (could not be removed from live storage)')
+                }
+            }
+        }
+        if ($kept.Count -gt 0) {
+            Write-NSArchiveReceiptsError 'archive-receipts: kept in live storage:'
+            foreach ($line in $kept) { Write-NSArchiveReceiptsError $line }
         }
     }
 }

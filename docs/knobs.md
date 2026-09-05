@@ -6,10 +6,10 @@ for the owner.
 
 The contract itself is a knob too: the punch-list text above `## Items` and the rules file's
 `clockOutMessage` are the owner's words. The shipped default asks one commit per item in
-repository mode, or one artifact receipt per item in artifact mode — the
-receipts story — but the gate releases on ticks, and the stall guard counts a tick as progress
-on its own, so a contract with the commit rule stripped runs a full night with no commits at
-all (on Codex, such a night needs only the `workspace-write` sandbox).
+repository mode, and in artifact mode completes an item with its section in the shift report — but
+the gate releases on ticks, and the stall guard counts a tick as progress on its own, so a contract
+with the commit rule stripped runs a full night with no commits at all (on Codex, such a night
+needs only the `workspace-write` sandbox).
 
 **One file drives them all:** setup copies a ready template to `.nightshift/rules.json` —
 clean JSON, yours to edit: the tool-deny map, the guard patterns, the cadences, the watchman's
@@ -267,6 +267,29 @@ cannot turn an unavailable check into a passed one.
 | `detail` | `concise` | `concise` or `detailed` |
 | `sections` | `[]` | Any of `shift`, `baseline`, `changed`, `parked`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
+
+`report` is the shift report — one page the night writes as it goes, a section per punch-list
+item, saying what was delivered and why. It never reaches a public commit message.
+
+| Key | Default | Values |
+|---|---|---|
+| `enabled` | `true` | `false` writes no report. Punch status, real outputs, continuity and your selected verification are all still kept, and no per-item receipt comes back in its place |
+| `progressMode` | `time` | `completion-only` writes a section once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first |
+| `progressMinutes` | `20` | Minutes of work on the current item before an update is due. Checked when a tool returns, so it never interrupts a running command |
+| `progressTokens` | `100000` | Tokens of work before an update is due. A starting value to tune, not a host limit |
+| `usage` | `when-available` | Record what each item cost, from the numbers your host already exposes. `off` records none. Input, output and cached input are reported separately by name; a dimension the host does not report reads `unavailable`, never zero |
+| `legacyItemReceipts` | `false` | Artifact items are completed by their report section. `true` also writes the older per-item receipt file. Baseline, checkpoint and source receipts are unaffected |
+| `templatePath` | `""` | A Markdown template for the report, on the same terms as the handoff template: wording only |
+
+Per-item accounting is Nightshift's own work, not something a host has to support: it records a
+baseline when an item starts, tracks while the item is active, calculates the item's consumption
+when it finishes, and resets so the next item starts from its own baseline. Where a host exposes
+cumulative counters that is a delta; where it emits usage events instead, they are summed for the
+active item. The shift total adds the shared overhead that belongs to no single item and says
+whether the coverage is complete or partial. No token count is ever turned into a price.
+
+[`examples/shift-report.md`](../examples/shift-report.md) shows the shape, including an item still
+in progress and usage that is only partly available.
 
 `recovery` decides what a session the watchman revives is allowed to do. It never widens what your
 host permits, and it never lifts a rule in this file.

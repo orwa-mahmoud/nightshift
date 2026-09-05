@@ -9,7 +9,7 @@ SKILLS="$PLUGIN/skills"
 
 # Files under .nightshift/ that the owner's workspace holds, not the plugin.
 STATE_FILES="punch-list.md drafting-table.md parking-lot.md work-orders.md snag-log.md
-shift-log.md product-research.md opportunity-map.md shipped.md"
+shift-log.md shift-report.md product-research.md opportunity-map.md shipped.md"
 
 # Names the references quote in order to forbid them: the model is told these are not Nightshift
 # commands and must not look for them. A name here must never become a shipped helper.

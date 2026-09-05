@@ -529,20 +529,22 @@ SH
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
 }
 
-@test "an artifact receipt resets the stall counter" {
+# A receipt is the shift describing what it did, not the doing. In artifact mode progress is a
+# tick or a substantive checkpoint; tests/artifact-receipts.bats holds the full contract.
+@test "an artifact receipt is not stall progress on its own" {
   p="$(new_project art-stall)"
   printf 'artifact\n' >"$p/.nightshift/work-mode"
   punch_open "$p"
-  run gate "$p"
-  run gate "$p"
+  run gate "$p" NIGHTSHIFT_STALL_WARN=20
+  run gate "$p" NIGHTSHIFT_STALL_WARN=20
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "2" ]
   printf 'ok\n' >"$p/note.md"
   run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/write-receipt.sh" \
     --project "$p" --item 'x' --verify 'ok' --output "$p/note.md"
   [ "$status" -eq 0 ]
-  run gate "$p"
+  run gate "$p" NIGHTSHIFT_STALL_WARN=20
   is_block "$output"
-  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
+  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "3" ]
 }
 
 @test "a symlink work-mode does not treat receipts as stall progress" {

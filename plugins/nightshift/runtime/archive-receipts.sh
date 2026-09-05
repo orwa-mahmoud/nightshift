@@ -3,10 +3,14 @@
 #
 # Every regular file directly under receipts/ travels: the artifact receipts an item wrote and
 # the shift's own morning-<YYYY-MM-DD>-<shiftId>.md, or morning-<YYYY-MM-DD>.md when the shift
-# wrote no policy to take an id from.
-# Leaves live copies in place so stall progress still sees them. Skips hidden
-# files and does not follow symlinks. Missing or empty receipts is success and
-# does not create an empty dated folder.
+# wrote no policy to take an id from. The shift report travels with them.
+#
+# A record leaves live storage only when the shift has ended and the archived copy has been read
+# back and matches byte for byte. While a shift is armed, or when the copy cannot be verified,
+# the live file stays and the reason is printed. Two different records under one name never
+# overwrite each other: the filed one stands and the live one is kept. Skips hidden files and
+# does not follow symlinks. Missing or empty receipts is success and does not create an empty
+# dated folder.
 # Archive-only. Hooks, start, status, Doctor, and recovery must never invoke this.
 #
 #   archive-receipts.sh [--project DIR] [--date YYYY-MM-DD]
@@ -106,38 +110,105 @@ if { [ -e "$root" ] && [ ! -d "$root" ]; } \
   exit 2
 fi
 
+# A closed record leaves live storage only when a shift has actually ended and the archived copy
+# has been read back and matches. While a shift is armed nothing is removed at all: its receipts
+# are what its own progress checks read, and a half-filed night is worse than an unfiled one.
+ARMED=0
+{ [ -e "$NS/.shift-armed" ] || [ -L "$NS/.shift-armed" ]; } && ARMED=1
+ENDED=0
+{ [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; } && ENDED=1
+ROTATE=0
+[ "$ARMED" -eq 0 ] && [ "$ENDED" -eq 1 ] && ROTATE=1
+
+# same_bytes <a> <b> — the archived copy is read back and compared, so a copy that silently
+# truncated or landed on another filesystem is never mistaken for a safe one.
+same_bytes() {
+  [ -f "$1" ] && [ -f "$2" ] || return 1
+  cmp -s "$1" "$2"
+}
+
 copied=0
-if [ -d "$src" ]; then
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    [ -f "$f" ] || continue
-    [ -L "$f" ] && continue
-    base="${f##*/}"
-    case "$base" in
-      .* | '') continue ;;
-    esac
-    if [ "$copied" -eq 0 ]; then
-      mkdir -p "$dest" || {
-        printf 'archive-receipts: cannot create %s\n' "$dest" >&2
-        exit 2
-      }
-      if [ -L "$dest" ]; then
-        printf 'archive-receipts: refuse to write through a symlink archive path\n' >&2
-        exit 2
-      fi
+removed=0
+kept=""
+ensure_dest() {
+  mkdir -p "$dest" || {
+    printf 'archive-receipts: cannot create %s\n' "$dest" >&2
+    exit 2
+  }
+  if [ -L "$dest" ]; then
+    printf 'archive-receipts: refuse to write through a symlink archive path\n' >&2
+    exit 2
+  fi
+}
+
+# file_one <path> — copy one record, verify it, and retire the source when this shift is closed.
+file_one() {
+  local f="$1" base
+  base="${f##*/}"
+  case "$base" in
+    .* | '') return 0 ;;
+  esac
+  ensure_dest
+  if [ -e "$dest/$base" ] || [ -L "$dest/$base" ]; then
+    if same_bytes "$f" "$dest/$base"; then
+      : # already filed, byte for byte — retiring the source below is safe
+    else
+      # Two different records under one name. Neither is worth losing, so the one already
+      # filed stands and the live one stays exactly where it is.
+      kept="$kept$base (a different record is already filed under that name)
+"
+      return 0
     fi
+  else
     cp "$f" "$dest/$base" || {
       printf 'archive-receipts: failed to copy %s\n' "$base" >&2
       exit 2
     }
     copied=$((copied + 1))
+  fi
+  if ! same_bytes "$f" "$dest/$base"; then
+    kept="$kept$base (the archived copy does not match the source)
+"
+    return 0
+  fi
+  if [ "$ROTATE" -eq 1 ]; then
+    rm -f "$f" || {
+      kept="$kept$base (could not be removed from live storage)
+"
+      return 0
+    }
+    removed=$((removed + 1))
+  fi
+}
+
+if [ -d "$src" ]; then
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ -f "$f" ] || continue
+    [ -L "$f" ] && continue
+    file_one "$f"
   done <<FIND
 $(find "$src" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
 FIND
 fi
 
-if [ "$copied" -eq 0 ]; then
+# The shift report travels with the receipts it describes.
+report="$(ns_report_path "$WORKSPACE")"
+if [ -f "$report" ] && [ ! -L "$report" ]; then
+  src_dir="$dest"
+  dest="$group"
+  file_one "$report"
+  dest="$src_dir"
+fi
+
+if [ -n "$kept" ]; then
+  printf 'archive-receipts: kept in live storage:\n' >&2
+  printf '%s' "$kept" >&2
+fi
+
+if [ "$copied" -eq 0 ] && [ "$removed" -eq 0 ]; then
   exit 0
 fi
 printf '%s\n' "$dest"
+[ "$removed" -eq 0 ] || printf 'archive-receipts: retired %s closed record(s) from live storage\n' "$removed"
 exit 0

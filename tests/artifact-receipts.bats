@@ -351,18 +351,75 @@ new_artifact() {
   fi
 }
 
-@test "an artifact receipt resets the stall counter" {
-  p="$(new_artifact stall)"
-  punch_open "$p"
+# Writing about the work is not doing it. A record the shift produced about itself — a receipt, a
+# report section, a usage line, a rendered morning page — must not read as progress, or a shift
+# that only ever describes itself would never look stuck.
+
+# stall_site <name> — an artifact site whose stall warning is far enough away to watch the
+# counter climb, and whose punch list has room for a tick to change something.
+stall_site() {
+  local p
+  p="$(new_artifact "$1")"
+  jq '.stallWarnEvery = 20' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  printf '## Items\n- [ ] **1. first.**\n- [ ] **2. second.**\n- [x] **3. done.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '%s' "$p"
+}
+
+stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
+
+@test "a record the shift wrote about itself is not stall progress" {
+  p="$(stall_site stall)"
   run gate "$p"
   run gate "$p"
-  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "2" ]
+  [ "$(stall_count "$p")" = "2" ]
+  # A completion receipt, and a report section about the work: both are the shift describing
+  # itself, and neither is the work moving.
   printf 'ok\n' >"$p/out/topic.md"
   run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/topic.md"
   [ "$status" -eq 0 ]
+  printf '# Shift report\n\n## item 1\n\nstill going.\n' >"$p/.nightshift/shift-report.md"
   run gate "$p"
   is_block "$output"
-  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
+  [ "$(stall_count "$p")" = "3" ]
+  # And again, with only the report changing.
+  printf '# Shift report\n\n## item 1\n\nstill going, more words.\n' >"$p/.nightshift/shift-report.md"
+  run gate "$p"
+  is_block "$output"
+  [ "$(stall_count "$p")" = "4" ]
+}
+
+@test "a tick is stall progress in artifact mode" {
+  p="$(stall_site stall-tick)"
+  run gate "$p"
+  run gate "$p"
+  [ "$(stall_count "$p")" = "2" ]
+  # The item is finished, which is what a tick claims.
+  printf '## Items\n- [x] **1. first.**\n- [ ] **2. second.**\n- [x] **3. done.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  run gate "$p"
+  is_block "$output"
+  [ "$(stall_count "$p")" = "1" ]
+}
+
+@test "a substantive checkpoint is stall progress in artifact mode" {
+  p="$(stall_site stall-checkpoint)"
+  run gate "$p"
+  run gate "$p"
+  [ "$(stall_count "$p")" = "2" ]
+  bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh" --project "$p" init >/dev/null
+  bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh" --project "$p" append \
+    --record "$(jq -nc '{
+      schemaVersion: 1, id: "c1", domain: "checkpoint", sourceClass: "migration",
+      source: "codemod", scope: "src/", severity: "info", confidence: "high",
+      impact: "developer", status: "open", ladder: "measured", locator: "src/",
+      digest: "dc1", firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z",
+      action: "", host: "claude", workTarget: "/repo"
+    }')" >/dev/null
+  run gate "$p"
+  is_block "$output"
+  [ "$(stall_count "$p")" = "1" ]
 }
 
 @test "repository mode still treats a commit as stall progress" {

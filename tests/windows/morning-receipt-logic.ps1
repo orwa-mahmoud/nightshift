@@ -572,19 +572,50 @@ try {
         }
     }
 
-    # === 7. The archive moves the morning receipt and copies the rest ===
+    # === 7. A record is retired because its shift closed, not because of its name ===
+    # While a shift is still armed nothing leaves live storage, whatever the file is called.
     $archiveProject = Join-Path $root 'archive'
     $archiveNs = New-ReceiptProject -Path $archiveProject
     $morning = Join-Path $archiveNs ('receipts/morning-2026-09-02-' + $shiftId + '.md')
     [IO.File]::WriteAllText($morning, "# Morning receipt`n", $utf8)
     $artifactReceipt = Join-Path $archiveNs 'receipts/2026-09-02-quiet-the-rule.md'
     [IO.File]::WriteAllText($artifactReceipt, "# Receipt`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $archiveNs '.shift-armed'), '', $utf8)
     $archiveRun = Invoke-Script -Path $archiveHelper -Arguments @('-Project', $archiveProject, '-Date', '2026-09-02')
     Expect-Equal 0 $archiveRun.ExitCode "archive-receipts exits 0 ($($archiveRun.StderrText))"
     $archivedMorning = Join-Path $archiveNs ('archive/2026-09-02/receipts/morning-2026-09-02-' + $shiftId + '.md')
     Expect-True (Test-Path -LiteralPath $archivedMorning -PathType Leaf) 'the morning receipt lands in the dated archive'
-    Expect-True (-not (Test-Path -LiteralPath $morning -PathType Leaf)) 'the morning receipt moves rather than copies'
-    Expect-True (Test-Path -LiteralPath $artifactReceipt -PathType Leaf) 'artifact receipts stay live for stall progress'
+    Expect-True (Test-Path -LiteralPath $morning -PathType Leaf) `
+        'an armed shift keeps every live record, whatever it is called'
+    Expect-True (Test-Path -LiteralPath $artifactReceipt -PathType Leaf) `
+        'an armed shift keeps its artifact receipts live'
+
+    # Once the shift has ended, the verified copies are retired together.
+    Remove-Item -LiteralPath (Join-Path $archiveNs '.shift-armed') -Force
+    [IO.File]::WriteAllText((Join-Path $archiveNs '.ended'), '', $utf8)
+    $closeRun = Invoke-Script -Path $archiveHelper -Arguments @('-Project', $archiveProject, '-Date', '2026-09-02')
+    Expect-Equal 0 $closeRun.ExitCode "archive-receipts exits 0 on a closed shift ($($closeRun.StderrText))"
+    Expect-True (-not (Test-Path -LiteralPath $morning -PathType Leaf)) `
+        'a closed and verified record leaves live storage'
+    Expect-True (-not (Test-Path -LiteralPath $artifactReceipt -PathType Leaf)) `
+        'the artifact receipt is retired on the same terms, not by its name'
+    Expect-True (Test-Path -LiteralPath $archivedMorning -PathType Leaf) 'the archived copy is still there'
+
+    # A different record under a name already filed is never overwritten, and never removed.
+    $clashProject = Join-Path $root 'archive-clash'
+    $clashNs = New-ReceiptProject -Path $clashProject
+    $clashLive = Join-Path $clashNs 'receipts/2026-09-02-same-name.md'
+    [IO.File]::WriteAllText($clashLive, "live content`n", $utf8)
+    $clashDest = Join-Path $clashNs 'archive/2026-09-02/receipts'
+    $null = New-Item -ItemType Directory -Path $clashDest -Force
+    [IO.File]::WriteAllText((Join-Path $clashDest '2026-09-02-same-name.md'), "filed content`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $clashNs '.ended'), '', $utf8)
+    $clashRun = Invoke-Script -Path $archiveHelper -Arguments @('-Project', $clashProject, '-Date', '2026-09-02')
+    Expect-Equal 0 $clashRun.ExitCode "archive-receipts exits 0 on a name clash ($($clashRun.StderrText))"
+    Expect-True (Test-Path -LiteralPath $clashLive -PathType Leaf) `
+        'a live record whose name is already filed with other content is kept'
+    Expect-Equal "filed content`n" ([IO.File]::ReadAllText((Join-Path $clashDest '2026-09-02-same-name.md'))) `
+        'the record already filed is never overwritten'
     Expect-True (Test-Path -LiteralPath (Join-Path $archiveNs 'archive/2026-09-02/receipts/2026-09-02-quiet-the-rule.md') -PathType Leaf) `
         'artifact receipts are archived beside the morning receipt'
 

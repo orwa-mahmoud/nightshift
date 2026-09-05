@@ -22,11 +22,11 @@ production default and a written note, so the morning is a review rather than a 
 - `snag-log.md` — findings with dispositions, so a later pass never re-reports an earlier one.
 - `drafting-table.md` — known work staged for a later shift.
 - `work-orders.md` — timed catalog work composed only through Hunt.
+- `shift-report.md` — what the night delivered, a section per item, written as the work happens.
 
 Never route an ordinary plan through Hunt, call later work "parked," or put a known task in the
 parking lot. Repository mode leaves commits as the owner's commit setting says — one per item by
-default; artifact mode leaves one
-receipt per item under `.nightshift/receipts/`.
+default; artifact mode completes an item with its section in `shift-report.md`.
 
 **Three ways a shift gets composed**, after Setup has scaffolded the site once:
 
@@ -107,16 +107,69 @@ Top to bottom, one item:
   run them once before clock-out instead. At `none`, run nothing and record that nothing ran.
   Whenever a gate does run, it must be green, and no suppression goes in without a written reason
   beside it.
-4. **Receipt** — repository mode leaves one conventional commit per item in the work target, local
-  by default. When the owner asked for a coherent batch, one commit may cover the items it belongs
-  with, still local, still a real change. When the owner asked for no commits, finish the item and
-  leave the work in the tree — say plainly in the handoff that it is uncommitted, and never invent
-  a commit to satisfy a convention. Artifact mode: one completion receipt in `$NS/receipts/` via
+4. **Record it** — repository mode leaves one conventional commit per item in the work target,
+  local by default. When the owner asked for a coherent batch, one commit may cover the items it
+  belongs with, still local, still a real change. When the owner asked for no commits, finish the
+  item and leave the work in the tree — say plainly in the handoff that it is uncommitted, and
+  never invent a commit to satisfy a convention. Artifact mode leaves the item's section in the
+  shift report, with links to what it produced. A separate per-item receipt file is written only
+  when the owner set `report.legacyItemReceipts`, and then through
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/write-receipt.sh"` (native Windows:
   `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1"`), recording the item, outputs,
-  verification, and sources. Push yourself only when the punch list explicitly says to.
-5. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete —
+  verification, and sources. Push yourself only when the punch list says to.
+5. **Finalize the section** in `$NS/shift-report.md` before the tick, however long or short the
+  item was.
+6. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete —
   that claim is about the work, not about how it was recorded or how often a gate ran.
+
+## The shift report
+
+`$NS/shift-report.md` is the narrative of the night, written as you go rather than reconstructed
+at the end. It says what was delivered and why; the shift log stays the execution journal, the
+snag log the findings, the parking lot the decisions. Link to those rather than copying them, and
+keep it out of public commit messages — a commit says what the change does, not how the night
+went.
+
+Read the `report` block of the resolved policy once. `enabled: false` means write no report; every
+other record stays exactly as honest, and no per-item receipt quietly comes back in its place.
+
+The shape of every block is in
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift-report-template.md`; read it once when
+the first item starts.
+
+**One section per punch-list item**, headed by that item's own id. A section carries the item's
+state, what a user gets from it, the changes that mattered and why they were made that way, the
+verification that actually ran with its result and its limits, where the outputs or commits are,
+and any snag or parked decision it touched. With `report.usage` at `when-available`, add what the item cost.
+
+Per-item accounting is Nightshift's own job, not something the host has to support: **record the
+baseline when the item starts, track while it is active, calculate its consumption when it
+finishes, write that into the section before the tick, then reset — the next item starts from its
+own baseline.** Where the host exposes cumulative counters the item's cost is the delta against
+its baseline; where it emits individual usage events instead, sum the events belonging to the
+active item. Report **input, output and cached input each by name**, never collapsed into one
+figure, and say whether cached input is already inside the input number so nothing is counted
+twice. Any dimension the host does not report is `unavailable` on its own — never zero, never an
+estimate dressed as a measurement, and never a price. The shift total at clock-out is the measured
+item totals plus the shared overhead that belongs to no single item, and it says whether that
+coverage is complete or partial.
+
+**Start the section when substantive work on the item starts.** While it is running, keep one
+short paragraph on where it has got to and what is left. Update that paragraph rather than
+appending another status snapshot under it, and never write it as though the item were finished.
+`report.progressMode` says when an update is due: `completion-only` only at the end, `time` after
+`report.progressMinutes` of work on that item, `tokens` after `report.progressTokens`, `either` at
+whichever comes first. Check when a tool returns — this is a cadence, not a promise to interrupt a
+running command — and start the clock again after each update. When the item completes, replace
+the progress paragraph with the finished result and drop that item's counters; the next item
+starts its own. If a later item changes an earlier result, correct that section and leave one line
+saying what changed.
+
+**At clock-out** add a short overall outcome and the owner's next steps, built from the sections
+you already wrote and whatever is still unresolved. Do not re-read the whole commit history or
+the conversation to reconstruct the night; go back to the original evidence only for a specific
+gap. If the shift ends before you can, the built-in page still gets written and the report stands
+as far as it got — a missing summary never holds up a stop or a deadline.
 
 Before the first fix that answers an originating source, write that source's baseline — once per
 source class — using

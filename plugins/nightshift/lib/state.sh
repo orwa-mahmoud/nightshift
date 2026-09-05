@@ -14,6 +14,30 @@ rule() {
   ns_rules_get "$f" "$2"
 }
 
+# ns_report <project-dir> <field> — one field of the report block, or empty.
+ns_report() {
+  local f="$1/.nightshift/rules.json"
+  [ -f "$f" ] || return 0
+  ns_rules_get_in "$f" report "$2"
+}
+
+# ns_report_enabled <project-dir> — status 0 unless the owner turned the report off. A shift that
+# writes no report still keeps its punch status, its outputs, its continuity and its verification.
+ns_report_enabled() {
+  [ "$(ns_report "$1" enabled)" != false ]
+}
+
+# ns_report_legacy_receipts <project-dir> — status 0 when the owner still wants the separate
+# per-item receipt file beside the report section. Off by default: the section completes the item.
+ns_report_legacy_receipts() {
+  [ "$(ns_report "$1" legacyItemReceipts)" = true ]
+}
+
+# ns_report_path <project-dir> — the one report for the current shift.
+ns_report_path() {
+  printf '%s/.nightshift/shift-report.md' "$1"
+}
+
 # ns_archive <project-dir> <field> — one field of the archive block, or empty.
 ns_archive() {
   local f="$1/.nightshift/rules.json"

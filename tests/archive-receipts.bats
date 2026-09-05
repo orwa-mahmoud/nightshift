@@ -286,3 +286,90 @@ arch_rules() { # <project> <jq-expression>
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF '/.nightshift/history/'
 }
+
+# ---------------------------------------------------------------------------------------------
+# A record leaves live storage because its shift is closed and its archived copy verified — never
+# because of what it is called, and never while the shift is still running.
+
+closed() { # <project> — the shift ended
+  rm -f "$1/.nightshift/.shift-armed"
+  : >"$1/.nightshift/.ended"
+}
+
+@test "an armed shift keeps every live record" {
+  p="$(new_project rot-armed)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'morning\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  printf 'item\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  printf '# Shift report\n' >"$p/.nightshift/shift-report.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  # Filed, and still live: a running shift reads its own receipts.
+  [ -f "$p/.nightshift/archive/2026-09-05/receipts/morning-2026-09-05-abc.md" ]
+  [ -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+  [ -f "$p/.nightshift/shift-report.md" ]
+}
+
+@test "a closed shift retires its verified records, report and all" {
+  p="$(new_project rot-closed)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'morning\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  printf 'item\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  printf '# Shift report\n\n## P01\n\ndone.\n' >"$p/.nightshift/shift-report.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  d="$p/.nightshift/archive/2026-09-05"
+  [ -f "$d/receipts/morning-2026-09-05-abc.md" ]
+  [ -f "$d/receipts/2026-09-05-an-item.md" ]
+  [ -f "$d/shift-report.md" ]
+  # The archived copies are what the live ones were.
+  [ "$(cat "$d/receipts/2026-09-05-an-item.md")" = item ]
+  [ "$(cat "$d/shift-report.md" | head -1)" = '# Shift report' ]
+  # And live storage is clear for the next shift.
+  [ ! -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+  [ ! -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+  [ ! -f "$p/.nightshift/shift-report.md" ]
+}
+
+@test "a different record under a filed name is never overwritten and never removed" {
+  p="$(new_project rot-clash)"
+  mkdir -p "$p/.nightshift/receipts" "$p/.nightshift/archive/2026-09-05/receipts"
+  printf 'live\n' >"$p/.nightshift/receipts/2026-09-05-same.md"
+  printf 'already filed\n' >"$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-same.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'a different record is already filed under that name'
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-same.md")" = 'already filed' ]
+  [ "$(cat "$p/.nightshift/receipts/2026-09-05-same.md")" = live ]
+}
+
+@test "filing a closed shift twice is safe" {
+  p="$(new_project rot-repeat)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'item\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ ! -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+  before="$(cksum <"$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-an-item.md")"
+  # Nothing left to file, and the archived record is untouched.
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ "$(cksum <"$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-an-item.md")" = "$before" ]
+}
+
+@test "a record whose archived copy does not match is kept live" {
+  p="$(new_project rot-mismatch)"
+  mkdir -p "$p/.nightshift/receipts" "$p/.nightshift/archive/2026-09-05/receipts"
+  printf 'the real record\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  # A copy that was truncated by an interrupted earlier run.
+  printf 'the real\n' >"$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-an-item.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+  [ "$(cat "$p/.nightshift/receipts/2026-09-05-an-item.md")" = 'the real record' ]
+}

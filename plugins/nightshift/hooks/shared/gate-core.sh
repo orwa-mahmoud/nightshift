@@ -35,13 +35,16 @@ ns_gate_project_head() {
   fi
 }
 
-# Stall progress token: repository mode uses the work-target HEAD; artifact mode uses
-# completion receipts so a missing git repo cannot pretend a commit landed.
+# Stall progress token: repository mode uses the work-target HEAD. Artifact mode has no HEAD to
+# read, and hashing what the shift wrote about itself would make writing about the work look like
+# doing it — a report update, a usage line, a rendered morning page or an archive pass would all
+# read as progress. So artifact mode leans on the two signals that mean work actually moved: the
+# tick count, which the caller already folds into this fingerprint, and a substantive checkpoint.
 ns_gate_progress_token() {
   local mode mark ckpt
   mode="$(ns_work_mode "$PROJECT_DIR" 2>/dev/null)" || mode=repository
   if [ "$mode" = artifact ]; then
-    mark="$(ns_receipts_fingerprint "$PROJECT_DIR")"
+    mark=artifact
   else
     mark="$(ns_gate_project_head)"
   fi

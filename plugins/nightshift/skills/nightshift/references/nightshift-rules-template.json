@@ -62,6 +62,15 @@
     "layout": "date",
     "templatePath": ""
   },
+  "report": {
+    "enabled": true,
+    "progressMode": "time",
+    "progressMinutes": 20,
+    "progressTokens": 100000,
+    "usage": "when-available",
+    "legacyItemReceipts": false,
+    "templatePath": ""
+  },
   "recovery": {
     "launchScope": "host-grant"
   },
