@@ -106,9 +106,11 @@ release_lease() {
     || log_line "process lease release deferred: lease mutex remained busy"
 }
 
-# The morning receipt — the one page the owner reads over coffee. Rendered from records only.
-# Best effort: an absent or failing renderer leaves one line in the shift log and the release
-# stands. $1 is tonight's shiftId, empty when no policy was written.
+# The morning receipt — the one page the owner reads over coffee. It renders from the live ledger,
+# so it runs before the archive truncates it. Best effort: an absent or failing renderer leaves one
+# line in the shift log and the release stands, and the archive still runs, so a night whose
+# receipt could not be written still keeps its evidence. $1 is tonight's shiftId, empty when no
+# policy was written.
 render_morning_receipt() {
   local renderer="$_here/../../runtime/morning-receipt.sh" dir="$NS/receipts" err
   if [ ! -f "$renderer" ]; then
@@ -153,8 +155,8 @@ end_shift() {
   release_lease
   # A shift that never wrote a policy has no id, and its receipt is named for the date alone.
   shift_id="$(ns_policy_shift_id "$PROJECT_DIR" 2>/dev/null)" || shift_id=""
-  archive_findings_ledger "${shift_id:-unknown}"
   render_morning_receipt "$shift_id"
+  archive_findings_ledger "${shift_id:-unknown}"
   receipts_commit "$1"
   whistle "$1"
 }

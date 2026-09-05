@@ -134,10 +134,11 @@ archive_shift_policy() {
   log_line "shift policy archive failed: $(printf '%s' "$err" | head -n1)"
 }
 
-# The morning receipt — the one page the owner reads over coffee. Rendered from records only, so
-# it can be written after the policy is filed. Best effort, exactly like the archive above: an
-# absent or failing renderer leaves one line in the shift log and the release stands. $1 is
-# tonight's shiftId, read before the policy moved, and empty when no policy was written.
+# The morning receipt — the one page the owner reads over coffee. It renders from the live ledger
+# and the live policy, so it runs before either archive moves them. Best effort: an absent or
+# failing renderer leaves one line in the shift log, and both archives still run, so a night whose
+# receipt could not be written still keeps its evidence. $1 is tonight's shiftId, and empty when
+# no policy was written.
 render_morning_receipt() {
   local renderer="$_here/../runtime/morning-receipt.sh" dir="$NS/receipts" err
   if [ ! -f "$renderer" ]; then
@@ -182,12 +183,12 @@ end_shift() {
   # to whatever ordinary session opens this project next.
   rm -f "$NS/.shift-armed"
   release_lease
-  # Naming the receipt needs the shiftId, and the archive is about to move the policy that
+  # Naming the receipt needs the shiftId, and the archives are about to move the policy that
   # carries it. A shift that never wrote a policy has no id, so the date alone names its receipt.
   shift_id="$(ns_policy_shift_id "$PROJECT_DIR" 2>/dev/null)" || shift_id=""
+  render_morning_receipt "$shift_id"
   archive_shift_policy
   archive_findings_ledger "${shift_id:-unknown}"
-  render_morning_receipt "$shift_id"
   receipts_commit "$1"
   whistle "$1"
 }

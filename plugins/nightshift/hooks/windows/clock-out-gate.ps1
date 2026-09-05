@@ -116,10 +116,11 @@ function Save-NSEvidenceArchive {
 
 function Save-NSMorningReceipt {
     # Best effort, never blocks the release: render the owner view to
-    # receipts/morning-<YYYY-MM-DD>-<shiftId>.md. Runs before the policy archive so the
-    # policy that ran is still in place for section 1, and before the receipts commit so a
-    # workspace with a receipts git carries the receipt in the same commit. A render failure
-    # leaves no file, no message on this hook's stdout, and no effect on the clock-out.
+    # receipts/morning-<YYYY-MM-DD>-<shiftId>.md. Runs before both archives, so the policy that
+    # ran is still in place for section 1 and the findings ledger still holds the night's
+    # evidence, and before the receipts commit so a workspace with a receipts git carries the
+    # receipt in the same commit. A render failure leaves no file, no message on this hook's
+    # stdout, and no effect on the clock-out; both archives still run.
     $originalOut = [Console]::Out
     $originalErr = [Console]::Error
     $swallow = New-Object IO.StringWriter
@@ -206,9 +207,9 @@ function Complete-NSShift {
     }
     Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
     Release-NSLeaseWithRetry
-    Save-NSEvidenceArchive
     Save-NSMorningReceipt
     Save-NSPolicyArchive
+    Save-NSEvidenceArchive
     Save-NSReceipt $Summary
     Invoke-NSWhistle $Summary
 }

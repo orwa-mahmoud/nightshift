@@ -302,7 +302,7 @@ SH
   grep -qF -- '--view owner' "$out"
   grep -qF -- "--out " "$out"
   grep -qF "morning-$today-9f2c40ab77e51d63.md" "$out"
-  # The policy is filed first, so the receipt is named from a shiftId that was still readable.
+  # The shiftId is read before anything moves, so the receipt is named for tonight either way.
   [ -f "$p/.nightshift/archive/$today/shift-policy-9f2c40ab77e51d63.json" ]
   if [ -f "$p/.nightshift/shift-log.md" ]; then
     if grep -qF 'morning receipt' "$p/.nightshift/shift-log.md"; then
@@ -858,4 +858,140 @@ FOREIGN_NONCE=claude.2.4711.8.9
   is_release
   [ ! -f "$q/.nightshift/.ended" ]
   [ "$(reclaim_log_count "$q")" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------------------------
+# The receipt is rendered from the live ledger, so it runs before the archive truncates it.
+# These use the real renderer and the real archiver: a stub would prove nothing about ordering.
+
+# seeded_ledger <project> — a baseline that saw two ids, one of them since fixed, and a second
+# source that could not run. Enough that every evidence section of the receipt has content.
+seeded_ledger() {
+  local p="$1" ev="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh"
+  bash "$ev" --project "$p" init >/dev/null
+  bash "$ev" --project "$p" append --record "$(jq -nc '{
+    schemaVersion: 1, id: "b1", domain: "baseline", sourceClass: "eslint", source: "eslint .",
+    scope: "src/", severity: "info", confidence: "high", impact: "developer", status: "open",
+    ladder: "measured", locator: "src/", digest: "digest-b1",
+    firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z", action: "",
+    host: "claude", workTarget: "/repo",
+    details: { sourceCommand: "eslint .", environmentDigest: "env-1", rawDigest: "raw-b1",
+               seen: [ { id: "i1", digest: "di1" }, { id: "i2", digest: "di2" } ] }
+  }')" >/dev/null
+  bash "$ev" --project "$p" append --record "$(jq -nc '{
+    schemaVersion: 1, id: "i1", domain: "lint", sourceClass: "eslint", source: "eslint .",
+    scope: "src/", severity: "medium", confidence: "high", impact: "developer", status: "fixed",
+    ladder: "observed", locator: "src/app.js:1", digest: "di1",
+    firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z", action: "",
+    host: "claude", workTarget: "/repo"
+  }')" >/dev/null
+  bash "$ev" --project "$p" append --record "$(jq -nc '{
+    schemaVersion: 1, id: "t1", domain: "types", sourceClass: "tsc", source: "tsc --noEmit",
+    scope: "src/", severity: "high", confidence: "high", impact: "developer",
+    status: "unavailable", ladder: "observed", locator: "src/", digest: "dt1",
+    firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z", action: "",
+    host: "claude", workTarget: "/repo"
+  }')" >/dev/null
+}
+
+# the_receipt <project> — tonight's morning file, whatever it ended up named.
+the_receipt() {
+  printf '%s' "$1/.nightshift/receipts/morning-$(date '+%Y-%m-%d')-9f2c40ab77e51d63.md"
+}
+
+@test "the morning receipt keeps its evidence when the ledger is archived on the way out" {
+  root="$(plugin_copy receipt-evidence)"
+  p="$(new_project gate-receipt-evidence)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  lines_before="$(wc -l <"$p/.nightshift/evidence/findings.jsonl")"
+
+  run gate_from "$root" "$p"
+  is_release
+
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  # The three sections that read from the ledger, which an emptied ledger renders as nothing.
+  grep -q '^## Baseline' "$out"
+  grep -qF 'b1: eslint' "$out"
+  grep -q '^## What changed' "$out"
+  grep -qF '| i1 |' "$out"
+  grep -qF 'Summary:' "$out"
+  # The archive copy is complete, and the live ledger starts the next shift lean.
+  arch="$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl"
+  [ -f "$arch" ]
+  [ "$(wc -l <"$arch")" -eq "$lines_before" ]
+  [ ! -s "$p/.nightshift/evidence/findings.jsonl" ]
+}
+
+@test "a stop-work order keeps the same evidence on its way out" {
+  root="$(plugin_copy receipt-evidence-stop)"
+  p="$(new_project gate-receipt-evidence-stop)"
+  punch_open "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  printf 'owner said so\n' >"$p/.nightshift/STOP"
+
+  run gate_from "$root" "$p"
+  is_release
+
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  grep -q '^## Baseline' "$out"
+  grep -qF '| i1 |' "$out"
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "quitting time keeps the same evidence on its way out" {
+  root="$(plugin_copy receipt-evidence-deadline)"
+  p="$(new_project gate-receipt-evidence-deadline)"
+  punch_open "$p"
+  write_policy_with_deadline "$p" 1
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  grep -q '^## Baseline' "$out"
+  grep -qF '| i1 |' "$out"
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "a second stop event never overwrites a complete receipt with an empty one" {
+  root="$(plugin_copy receipt-evidence-twice)"
+  p="$(new_project gate-receipt-evidence-twice)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+  out="$(the_receipt "$p")"
+  first="$(cat "$out")"
+
+  # The shift is no longer armed, so the second event releases without ending anything again.
+  run gate_from "$root" "$p"
+  is_release
+  [ "$(cat "$out")" = "$first" ]
+  grep -q '^## Baseline' "$out"
+  [ "$(find "$p/.nightshift/archive" -name 'findings-*.jsonl' | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "a renderer that fails still leaves the evidence archived" {
+  root="$(plugin_copy receipt-evidence-fail)"
+  renderer_fail "$root"
+  p="$(new_project gate-receipt-evidence-fail)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -f "$(the_receipt "$p")" ]
+  grep -qF 'morning receipt render failed' "$p/.nightshift/shift-log.md"
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/.ended" ]
 }
