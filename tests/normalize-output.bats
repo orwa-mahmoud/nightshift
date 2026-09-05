@@ -22,7 +22,7 @@ CASES="sample edge broken"
 all_cases() {
   case "$1" in
     eslint-json) printf '%s strings' "$CASES" ;;
-    tsc) printf '%s continuation' "$CASES" ;;
+    tsc) printf '%s continuation pretty colour summary-only partial watch clean' "$CASES" ;;
     coverage-summary) printf '%s unmeasured' "$CASES" ;;
     sarif) printf '%s wide' "$CASES" ;;
     junit) printf '%s nested cdata' "$CASES" ;;
@@ -522,4 +522,54 @@ digest_of() {
   done
   grep -qF 'tool-output' "$PLUGIN/skills/nightshift/references/receipt-templates.md"
   grep -qF 'runtime/normalize-output.sh' "$ROOT/docs/evidence-capabilities.md"
+}
+
+# The report's own total is the authority on how many errors there were. Reading fewer than it
+# counted means a diagnostic shape this parser does not know, and a count it cannot stand behind
+# is unavailable — never rounded down to what happened to parse.
+@test "a tsc report never reports fewer errors than it counted" {
+  cd "$ROOT"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/summary-only.txt
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable tsc: the report counts 3 errors and this parser read 0' ]
+
+  normalize --format tsc --input tests/fixtures/normalize/tsc/partial.txt
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable tsc: the report counts 3 errors and this parser read 1' ]
+
+  # No row is invented to reach the total.
+  normalize --format tsc --input tests/fixtures/normalize/tsc/summary-only.txt --json
+  [ "$status" -eq 3 ]
+  case "$output" in *'"items"'*) return 1 ;; esac
+}
+
+@test "a --pretty tsc diagnostic is read, with or without its colours" {
+  cd "$ROOT"
+  for name in pretty colour; do
+    normalize --format tsc --input "tests/fixtures/normalize/tsc/$name.txt" --json
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | jq -e '.counts.errors == 1' >/dev/null
+    printf '%s\n' "$output" | jq -e '.items[0].file == "src/index.ts"' >/dev/null
+    printf '%s\n' "$output" | jq -e '.items[0].line == 1' >/dev/null
+    printf '%s\n' "$output" | jq -e '.items[0].code == "TS2322"' >/dev/null
+  done
+  # The two reports say the same thing, so they carry the same result digest.
+  normalize --format tsc --input tests/fixtures/normalize/tsc/pretty.txt --json
+  a="$(printf '%s\n' "$output" | jq -r .digest)"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/colour.txt --json
+  [ "$(printf '%s\n' "$output" | jq -r .digest)" = "$a" ]
+}
+
+@test "a watch log is several reports, and none of them is the answer" {
+  cd "$ROOT"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/watch.txt
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable tsc: the input holds more than one TypeScript report' ]
+}
+
+@test "a tsc report that counted no errors is a clean compile" {
+  cd "$ROOT"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/clean.txt --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.errors == 0 and .counts.warnings == 0' >/dev/null
 }

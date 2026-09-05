@@ -500,10 +500,14 @@ function Read-NOTsc {
     $warnings = [long]0
     $noise = 0
     $summaries = 0
+    $counted = [long]0
     $seen = New-Object 'Collections.Generic.List[string]'
     foreach ($raw in Read-NOLines) {
         $line = $raw
         if ($line.EndsWith("`r", [StringComparison]::Ordinal)) { $line = $line.Substring(0, $line.Length - 1) }
+        # --pretty colours its diagnostics, and a report captured to a file keeps the
+        # escapes. They are decoration: strip them before anything is matched.
+        $line = [Text.RegularExpressions.Regex]::Replace($line, "$([char]27)\[[0-9;]*[A-Za-z]", '')
         if ($line -cmatch '^[ \t]*$') { continue }
         $p = $line.IndexOf('): ')
         $head = ''
@@ -524,19 +528,53 @@ function Read-NOTsc {
             if (-not $seen.Contains($file)) { [void]$seen.Add($file) }
             continue
         }
+        # file:line:col - error TS1234: message, which is what --pretty writes. A drive
+        # letter puts colons in the path too, so the line and column are taken from the
+        # end and everything before them is the file. The header starts a line; the same
+        # shape indented is the tail of a diagnostic whose head this input never carried.
+        $d = $line.IndexOf(' - ')
+        if ($d -ge 0 -and -not ($line -cmatch '^[ \t]')) {
+            $head = $line.Substring(0, $d)
+            $rest = $line.Substring($d + 3)
+            if ($head -cmatch ':[0-9]+:[0-9]+$' -and $rest -cmatch '^(error|warning) TS[0-9]+: ') {
+                $parts = $head.Split(':')
+                $file = [string]::Join(':', $parts[0..($parts.Count - 3)])
+                $number = [long]$parts[$parts.Count - 2]
+                $emitted = Split-NOTscDiagnostic $rest $file $number
+                if ($emitted -eq 'error') { $errors++ } else { $warnings++ }
+                if (-not $seen.Contains($file)) { [void]$seen.Add($file) }
+                continue
+            }
+        }
         if ($line -cmatch '^(error|warning) TS[0-9]+: ') {
             $emitted = Split-NOTscDiagnostic $line '-' 0
             if ($emitted -eq 'error') { $errors++ } else { $warnings++ }
             continue
         }
-        if ($line -cmatch '^Found [0-9]+ error') { $summaries++; continue }
+        if ($line -cmatch '^Found [0-9]+ error') {
+            $summaries++
+            $counted = [long]($line.Split(' ')[1])
+            continue
+        }
         # Every other non-blank line counts, indented continuations included: an input
         # of nothing but continuation lines is a report this parser did not read, not a
         # clean compile.
         $noise++
     }
+    # A watch log is several reports in one file, and none of them describes the
+    # whole input. Read it as unavailable rather than as the last one that ran.
+    if ($summaries -gt 1) {
+        Write-NOUnavailable 'the input holds more than one TypeScript report'
+    }
     if ($script:Items.Count -eq 0 -and $summaries -eq 0 -and $noise -gt 0) {
         Write-NOUnavailable 'the input holds no TypeScript diagnostics'
+    }
+    # A report that counts its own errors is the authority on how many there were.
+    # Reading fewer than it counted means diagnostics in a shape this parser does
+    # not know, so the answer is unavailable - never the total rounded down to what
+    # happened to parse, and never rows invented to reach the total.
+    if ($summaries -eq 1 -and $counted -ne $errors) {
+        Write-NOUnavailable ('the report counts ' + (Get-NOPlural $counted 'error') + ' and this parser read ' + $errors)
     }
     $script:Files = $seen.Count
     $script:Headline = 'tsc: ' + (Get-NOPlural $errors 'error') + ', ' +

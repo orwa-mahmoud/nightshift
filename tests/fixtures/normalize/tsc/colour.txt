@@ -1,0 +1,5 @@
+[96msrc/index.ts[0m:[93m1[0m:[93m7[0m - [91merror[0m [90mTS2322: [0mType is wrong.
+
+[7m1[0m const x: string = 1;
+
+Found 1 error in src/index.ts:1

@@ -1,0 +1,2 @@
+Found 1 error in src/a.ts:1
+Found 0 errors.

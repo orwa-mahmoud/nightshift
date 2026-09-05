@@ -1,0 +1,3 @@
+src/a.ts(1,1): error TS2345: only one this parser knows
+src/b.ts +++ a shape it does not
+Found 3 errors in 2 files.
