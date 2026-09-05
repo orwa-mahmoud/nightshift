@@ -19,6 +19,45 @@ shift the file itself is guarded: the session working the night is denied touchi
 you set or lift a rule. The env vars below remain as session-start overrides for tests and
 one-off exceptions.
 
+## Where a setting comes from
+
+A setting has one permanent home and one place it may be varied for a single night. Four sources
+decide the value in force, in this order:
+
+1. **The built-in default.** What the plugin does when no file says anything.
+2. **`.nightshift/rules.json`.** Your permanent answer. A key you wrote is your answer even when
+   its value is an empty string or a zero — that reads as `rules`/`permanent`, not as silence.
+3. **The shift snapshot**, `.nightshift/shift-policy.json`. The resolved policy for the night that
+   is running, written before the gate arms and guarded once it is. It carries the deadline, the
+   verification level, the tooling policy, the completion mode, and any elevation the owner
+   granted for that shift alone. It is a record, not a second settings file.
+4. **Your host's permission boundary**, which is a ceiling rather than a step. Claude Code, Codex,
+   and Cursor each decide what the agent may do at all; no Nightshift key lifts that, and an
+   organization policy above it stays above it.
+
+`.nightshift/shift-defaults.json` sits outside this order on purpose. It remembers the choices a
+composition step would otherwise ask for again — execution mode, hours, tooling policy,
+verification profile — and is never itself the source of an effective value.
+
+Some rows are not negotiable by an allowance at all. Protected paths, never-commit patterns, the
+expected commit identity, and `forbiddenCommands` come from the rules file alone; a one-shift
+elevation allowance authorizes its own category and nothing else. Allowing `containers` does not
+lift a `git .*push` you put in `forbiddenCommands` — the two are separate rules, and a command
+blocked by either is blocked.
+
+To see the values in force, with where each one came from:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PWD" resolve --table
+```
+
+Each row ends in its origin — `built-in`, `rules`, or `one-shift` — so a surprising value names
+the file to edit. Native Windows uses `runtime\windows\shift-policy.ps1` with `-Project`.
+
+An edit to the rules file applies from the next tool call; the hooks read it every time. The shift
+snapshot is frozen for the night, so a change of mind mid-shift means stopping the shift and
+starting again with the new setting.
+
 ## Editor schema
 
 Editors that honor JSON Schema (VS Code, Cursor, JetBrains) catch invalid names, types, and
