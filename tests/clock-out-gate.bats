@@ -299,7 +299,12 @@ SH
   is_release
   out="$p/.nightshift/receipts/morning-$today-9f2c40ab77e51d63.md"
   [ -f "$out" ]
-  grep -qF -- '--view owner' "$out"
+  # The gate names no view: the owner's configured reader decides, and the shipped default is
+  # owner. Forcing one here would override a setting the owner made.
+  if grep -qF -- '--view' "$out"; then
+    echo "the gate forced a view over the owner's"
+    return 1
+  fi
   grep -qF -- "--out " "$out"
   grep -qF "morning-$today-9f2c40ab77e51d63.md" "$out"
   # The shiftId is read before anything moves, so the receipt is named for tonight either way.
@@ -380,7 +385,12 @@ SH
     "$hooks/cursor/clock-out-gate.sh"; do
     grep -qF 'render_morning_receipt "$shift_id"' "$h" \
       || { echo "no receipt render in end_shift: $h"; return 1; }
-    grep -qF -- '--view owner' "$h" || { echo "no owner view: $h"; return 1; }
+    if grep -qF -- '--view owner' "$h"; then
+      echo "the gate forces a view over the owner's configured one: $h"
+      return 1
+    fi
+    grep -qF 'ns_handoff_enabled' "$h" || { echo "no handoff switch: $h"; return 1; }
+    grep -qF 'morning receipt kept:' "$h" || { echo "a custom handoff is overwritable: $h"; return 1; }
     grep -qF 'morning receipt render failed:' "$h" || { echo "no failure line: $h"; return 1; }
     grep -qF 'morning receipt skipped: runtime/morning-receipt.sh is not installed' "$h" \
       || { echo "no absent-renderer line: $h"; return 1; }
@@ -994,4 +1004,125 @@ the_receipt() {
   grep -qF 'morning receipt render failed' "$p/.nightshift/shift-log.md"
   [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
   [ -f "$p/.nightshift/.ended" ]
+}
+
+# ---------------------------------------------------------------------------------------------
+# The morning page is the owner's: which reader it is written for, which sections it carries,
+# whether it is written at all, and whether the model wrote its own instead.
+
+# handoff <project> <jq-expression> — set the handoff block the owner's way.
+handoff() {
+  jq "$2" "$1/.nightshift/rules.json" >"$1/r.json"
+  mv "$1/r.json" "$1/.nightshift/rules.json"
+}
+
+@test "the configured reader decides the page, not the gate" {
+  root="$(plugin_copy handoff-view)"
+  p="$(new_project gate-handoff-view)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.handoff.view = "reviewer"'
+
+  run gate_from "$root" "$p"
+  is_release
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  # The reviewer page is the baseline and the comparison, and carries no Shift section.
+  grep -q '^## Baseline' "$out"
+  grep -q '^## What changed' "$out"
+  if grep -q '^## Shift' "$out"; then
+    echo "the reviewer view rendered the owner page"
+    return 1
+  fi
+}
+
+@test "an owner section list picks and orders what the page carries" {
+  root="$(plugin_copy handoff-sections)"
+  p="$(new_project gate-handoff-sections)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.handoff.sections = ["changed", "shift"]'
+
+  run gate_from "$root" "$p"
+  is_release
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  # Both asked-for sections, in the order asked, and nothing else.
+  [ "$(grep -c '^## ' "$out")" -eq 2 ]
+  [ "$(grep -n '^## What changed' "$out" | cut -d: -f1)" -lt "$(grep -n '^## Shift' "$out" | cut -d: -f1)" ]
+  if grep -q '^## Baseline' "$out"; then
+    echo "a section the owner did not ask for was rendered"
+    return 1
+  fi
+  # Dropping a section changes the page, never the evidence.
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "a page the owner turned off is not written, and nothing else is lost" {
+  root="$(plugin_copy handoff-off)"
+  p="$(new_project gate-handoff-off)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.handoff.enabled = false'
+
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -f "$(the_receipt "$p")" ]
+  grep -qF 'morning receipt disabled by the owner' "$p/.nightshift/shift-log.md"
+  # Every factual record still stands.
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy-9f2c40ab77e51d63.json" ]
+  [ -f "$p/.nightshift/.ended" ]
+}
+
+@test "a handoff the model already wrote is never overwritten" {
+  root="$(plugin_copy handoff-custom)"
+  p="$(new_project gate-handoff-custom)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  out="$(the_receipt "$p")"
+  mkdir -p "$(dirname "$out")"
+  printf '# تقرير الليلة\n\nكل شيء تم.\n' >"$out"
+  before="$(cat "$out")"
+
+  run gate_from "$root" "$p"
+  is_release
+  [ "$(cat "$out")" = "$before" ]
+  grep -qF 'morning receipt kept:' "$p/.nightshift/shift-log.md"
+  # The evidence is still archived around it.
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "two shifts on one day get their own page, and a repeat event writes neither twice" {
+  root="$(plugin_copy handoff-two)"
+  p="$(new_project gate-handoff-two)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  run gate_from "$root" "$p"
+  is_release
+  first="$(the_receipt "$p")"
+  [ -f "$first" ]
+  stamp="$(cksum <"$first")"
+
+  # A second stop event for the same shift changes nothing.
+  run gate_from "$root" "$p"
+  is_release
+  [ "$(cksum <"$first")" = "$stamp" ]
+
+  # A second shift the same day, with its own id, gets its own page beside the first.
+  : >"$p/.nightshift/.shift-armed"
+  rm -f "$p/.nightshift/.ended"
+  printf '{"schemaVersion":1,"shiftId":"1122334455667788","createdAt":"2026-09-02T02:30:00Z","source":"composition","deadlineEpoch":null,"verificationLevel":"final","toolingPolicy":"existing-tools"}\n' \
+    >"$p/.nightshift/shift-policy.json"
+  run gate_from "$root" "$p"
+  is_release
+  second="$p/.nightshift/receipts/morning-$(date '+%Y-%m-%d')-1122334455667788.md"
+  [ -f "$second" ]
+  [ -f "$first" ]
+  [ "$first" != "$second" ]
 }

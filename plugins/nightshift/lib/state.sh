@@ -14,6 +14,30 @@ rule() {
   ns_rules_get "$f" "$2"
 }
 
+# ns_handoff <project-dir> <field> — one field of the handoff block, or empty when the file says
+# nothing. Presentation only: none of it decides whether a check ran.
+ns_handoff() {
+  local f="$1/.nightshift/rules.json"
+  [ -f "$f" ] || return 0
+  ns_rules_get_in "$f" handoff "$2"
+}
+
+# ns_handoff_enabled <project-dir> — status 0 unless the owner turned the page off. A shift that
+# writes no page still keeps every factual record it made.
+ns_handoff_enabled() {
+  [ "$(ns_handoff "$1" enabled)" != false ]
+}
+
+# ns_handoff_view <project-dir> — the configured reader, or owner.
+ns_handoff_view() {
+  local v
+  v="$(ns_handoff "$1" view)"
+  case "$v" in
+    owner | reviewer | release | artifact) printf '%s' "$v" ;;
+    *) printf 'owner' ;;
+  esac
+}
+
 # ns_recovery_launch_scope <project-dir> — the permission scope a revived session starts under.
 # host-grant is the documented grant for the host; host-default adds no permission argument and
 # takes whatever the host gives. Anything else, or an unreadable file, is host-grant: recovery

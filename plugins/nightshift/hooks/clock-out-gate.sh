@@ -140,7 +140,7 @@ archive_shift_policy() {
 # receipt could not be written still keeps its evidence. $1 is tonight's shiftId, and empty when
 # no policy was written.
 render_morning_receipt() {
-  local renderer="$_here/../runtime/morning-receipt.sh" dir="$NS/receipts" err
+  local renderer="$_here/../runtime/morning-receipt.sh" dir="$NS/receipts" err out
   if [ ! -f "$renderer" ]; then
     log_line "morning receipt skipped: runtime/morning-receipt.sh is not installed"
     return 0
@@ -153,8 +153,15 @@ render_morning_receipt() {
     log_line "morning receipt render failed: cannot create $dir"
     return 0
   }
-  err="$(bash "$renderer" --project "$PROJECT_DIR" --view owner \
-    --out "$dir/morning-$(date '+%Y-%m-%d')${1:+-$1}.md" 2>&1)" && return 0
+  out="$dir/morning-$(date '+%Y-%m-%d')${1:+-$1}.md"
+  # A page already standing for this shift is the one the owner asked for — a custom handoff the
+  # model wrote to the owner's template, or the page a duplicate stop event already rendered.
+  # Neither is replaced by the built-in renderer.
+  if [ -e "$out" ] || [ -L "$out" ]; then
+    log_line "morning receipt kept: $out already exists for this shift"
+    return 0
+  fi
+  err="$(bash "$renderer" --project "$PROJECT_DIR" --out "$out" 2>&1)" && return 0
   log_line "morning receipt render failed: $(printf '%s' "$err" | head -n1)"
 }
 
@@ -186,7 +193,11 @@ end_shift() {
   # Naming the receipt needs the shiftId, and the archives are about to move the policy that
   # carries it. A shift that never wrote a policy has no id, so the date alone names its receipt.
   shift_id="$(ns_policy_shift_id "$PROJECT_DIR" 2>/dev/null)" || shift_id=""
-  render_morning_receipt "$shift_id"
+  if ns_handoff_enabled "$PROJECT_DIR"; then
+    render_morning_receipt "$shift_id"
+  else
+    log_line "morning receipt disabled by the owner (handoff.enabled) - every record stands"
+  fi
   archive_shift_policy
   archive_findings_ledger "${shift_id:-unknown}"
   receipts_commit "$1"

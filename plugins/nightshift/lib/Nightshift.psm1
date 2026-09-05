@@ -6611,8 +6611,51 @@ function Get-NSMorningReceiptPath {
 function Write-NSMorningReceiptFile {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $path = Get-NSMorningReceiptPath $Workspace
-    $null = Get-NSMorningReceipt -Workspace $Workspace -View owner -Out $path
+    # A page already standing for this shift is the one the owner asked for - a custom handoff
+    # the model wrote, or the page a duplicate stop event already rendered. Neither is replaced.
+    if (Test-Path -LiteralPath $path) { return $path }
+    $view = Get-NSHandoffView $Workspace
+    $null = Get-NSMorningReceipt -Workspace $Workspace -View $view -Out $path
     return $path
+}
+
+# Get-NSHandoffView <workspace> - the reader the owner configured, or owner.
+function Get-NSHandoffView {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $block = Get-NSHandoffBlock $Workspace
+    if ($null -ne $block) {
+        $view = Get-NSMapValue $block 'view'
+        if ($script:NSReceiptViewNames -ccontains $view) { return [string]$view }
+    }
+    return 'owner'
+}
+
+# Test-NSHandoffEnabled <workspace> - false only when the owner turned the page off. A shift that
+# writes no page still keeps every factual record it made.
+function Test-NSHandoffEnabled {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $block = Get-NSHandoffBlock $Workspace
+    if ($null -eq $block) { return $true }
+    if (-not $block.Contains('enabled')) { return $true }
+    return ([bool]$block['enabled'])
+}
+
+function Get-NSHandoffBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return $null
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return $null }
+    if (-not $document.Contains('handoff')) { return $null }
+    $block = $document['handoff']
+    if (-not ($block -is [Collections.IDictionary])) { return $null }
+    return $block
 }
 
 # The last stamp the shift log carries, as the log wrote it. The log is stamped

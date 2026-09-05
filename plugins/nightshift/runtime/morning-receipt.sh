@@ -3,6 +3,10 @@
 #
 #   morning-receipt.sh --project DIR [--view owner|reviewer|release|artifact] [--out PATH]
 #
+# Without --view, the owner's handoff.view decides; handoff.sections picks and orders the
+# documented sections when it is not empty. Presentation only: a section the owner dropped
+# changes what the page shows, never what was measured.
+#
 # Renders from records only: the findings ledger, the shift policy that ran (the live file or the
 # archived snapshot), the resolved policy, the punch list, the parking lot, the opportunity map,
 # and the shift markers. It measures nothing, reruns nothing, and never renders a check the owner
@@ -74,7 +78,7 @@ die() {
 # ---------------------------------------------------------------- arguments
 
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
-VIEW=owner
+VIEW=""
 OUT=""
 
 while [ $# -gt 0 ]; do
@@ -102,7 +106,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-case "$VIEW" in
+# An explicit --view wins; without one the owner's configured reader decides, and that is
+# resolved after the workspace is known.
+case "${VIEW:-owner}" in
   owner | reviewer | release | artifact) ;;
   *) die 'view must be owner, reviewer, release, or artifact' 1 ;;
 esac
@@ -1165,6 +1171,40 @@ _ending
 
 add '# Morning receipt'
 
+# Without an explicit --view, the owner's configured reader decides. The sections a view renders
+# are the documented factual ones; an owner list picks from those and orders them, and an empty
+# list keeps the built-in order for that view.
+[ -n "$VIEW" ] || VIEW="$(ns_handoff_view "$WORKSPACE")"
+HANDOFF_SECTIONS="$(ns_handoff "$WORKSPACE" sections 2>/dev/null)" || HANDOFF_SECTIONS=""
+case "$HANDOFF_SECTIONS" in
+  '' | '[]') HANDOFF_SECTIONS="" ;;
+esac
+
+# _sections_in_order — the owner's names in the order they wrote them, else nothing.
+_sections_in_order() {
+  [ -n "$HANDOFF_SECTIONS" ] || return 1
+  printf '%s' "$HANDOFF_SECTIONS" | tr ',' '\n' | tr -d '[]" '
+}
+
+_emit_section() { # <name>
+  case "$1" in
+    shift) _lines_shift && sec_flush '## Shift' ;;
+    baseline) _lines_baseline && sec_flush '## Baseline' ;;
+    changed) _lines_changed 0 && sec_flush '## What changed' ;;
+    parked) _lines_parked && sec_flush '## Parked' ;;
+    unsupported) _lines_unsupported && sec_flush '## Unsupported / unmeasured' ;;
+    next) _lines_next && sec_flush '## Next' ;;
+  esac
+}
+
+if [ -n "$HANDOFF_SECTIONS" ]; then
+  while IFS= read -r _sec; do
+    [ -n "$_sec" ] || continue
+    _emit_section "$_sec"
+  done <<EOF
+$(_sections_in_order)
+EOF
+else
 case "$VIEW" in
   owner)
     _lines_shift && sec_flush '## Shift'
@@ -1189,6 +1229,7 @@ case "$VIEW" in
     _lines_next && sec_flush '## Next'
     ;;
 esac
+fi
 # One trailing newline, whichever section came last.
 while :; do
   case "$MD" in

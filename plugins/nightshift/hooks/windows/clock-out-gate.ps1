@@ -127,7 +127,9 @@ function Save-NSMorningReceipt {
     try {
         [Console]::SetOut($swallow)
         [Console]::SetError($swallow)
-        $null = Write-NSMorningReceiptFile -Workspace $workspace
+        if (Test-NSHandoffEnabled $workspace) {
+            $null = Write-NSMorningReceiptFile -Workspace $workspace
+        }
     }
     catch {
     }

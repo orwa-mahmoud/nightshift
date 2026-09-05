@@ -62,8 +62,8 @@ order_of() { grep -n "$2" "$1" | head -n1 | cut -d: -f1; }
   # The findings ledger is the receipt's only source for its evidence sections, and the archive
   # empties it. Every host renders first.
   for f in "$CORE" "$CODEX" "$CURSOR"; do
-    r="$(order_of "$f" '^  render_morning_receipt ')"
-    a="$(order_of "$f" '^  archive_findings_ledger ')"
+    r="$(order_of "$f" '^ *render_morning_receipt ')"
+    a="$(order_of "$f" '^ *archive_findings_ledger ')"
     [ -n "$r" ] && [ -n "$a" ]
     [ "$r" -lt "$a" ]
   done
