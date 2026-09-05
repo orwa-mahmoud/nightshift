@@ -42,15 +42,32 @@ wording — are a complete prompt: compose it and run it. Examples of a complete
 ## 1. Ask who selects
 
 Entries live one per file in `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shifts/`.
-**List that directory and read every file in it**. `shift-catalog.md` beside it explains the two
-endings and carries the Maintainer night preset; it does not list the entries.
-Read the directory rather than reciting from memory: entries are added over time, and a job
-that exists in the folder but not in the offer is a job the owner never gets.
+**Start with what the catalog holds, not with every contract in it:**
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/catalog-index.sh"
+```
+
+Native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\catalog-index.ps1"`. One line per
+entry — slug, ending, title, purpose — read straight from the files.
+An entry added today is discovered today, and one that was deleted stops being offered. There is no second list to keep in
+step, and the helper ranks nothing: which entries suit the objective is your judgement.
+
+**Then read in full only the entries you are actually going to use.** A complete objective needs
+the two or three contracts it names, not thirty. Read a contract before you compose it — its
+ending, refusals, verification and supported stacks bind the shift, and none of that is in the
+index line. `shift-catalog.md` beside the folder explains the two endings and
+carries the Maintainer night preset; it does not list the entries.
+
+If the helper is missing or fails, list the directory and read the entries yourself: discovery is
+the point, and a job that exists in the folder but never reaches the owner is the failure to
+avoid.
 
 Offer two first-class modes when the prompt did not already choose:
 
 - **Guided** — one offer line per entry, with its ending marked, plus one line for any
-  preset `shift-catalog.md` names.
+  preset `shift-catalog.md` names. The index gives you every one of them; read a contract in full
+  when the owner picks it, not before.
 - **Automatic** — inspect the work target per `execution-modes.md` (in artifact mode that includes
   `$NS/receipts/`, not a git log) and compose the entries that support the stated objective.
   Quality, coverage, and dependency work do not hijack a feature or design objective. Show evidence

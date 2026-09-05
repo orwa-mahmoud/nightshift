@@ -82,13 +82,15 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
   grep -q 'work-orders.md' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/setup/SKILL.md"
 }
 
-# Entries are files in a directory, so hunt must list it. Reciting from memory is how a shift that
-# shipped last week never reaches the owner who could have used it tonight.
+# Entries are files in a directory, so hunt must discover from it. Reciting from memory is how a
+# shift that shipped last week never reaches the owner who could have used it tonight — and
+# reading all thirty contracts to offer one is the other way to get that wrong.
 @test "hunt composes from the catalog directory and may pick more than one" {
   grep -qF 'references/shifts/' "$HUNT"
-  grep -qi 'read every file in it' "$HUNT"
+  grep -qF 'runtime/catalog-index.sh' "$HUNT"
+  grep -qi 'an entry added today is discovered today' "$HUNT"
   grep -qi 'more than one may be chosen' "$HUNT"
-  grep -qi 'read the directory rather than reciting from memory' "$HUNT"
+  grep -qi 'list the directory and read the entries yourself' "$HUNT"
 }
 
 # Hours are mandatory only where nothing else can end the shift. Where the work has a natural
