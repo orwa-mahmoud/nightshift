@@ -197,7 +197,7 @@ tools only, review missing tools first, or automatically add standard developmen
 the answer with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" defaults-set --verificationProfile <name> --hours <n|null> --toolingPolicy <name> --execution review-first|run-direct`
 (native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\shift-policy.ps1" -Project "$NIGHTSHIFT_WORKSPACE" defaults-set -VerificationProfile <name> -Hours <n|null> -ToolingPolicy <name> -Execution review-first|run-direct`).
-The helper writes `$NS/shift-defaults.json` and reports what it stored; never put the answer in
+The helper writes the `shift` block of `$NS/rules.json` — the one file the owner edits — and reports what it stored; never put the answer in
 the punch list. It only prefills the one question Hunt and Quality ask before composing — it
 decides nothing on its own, and either skill may change it for a single shift.
 
@@ -276,7 +276,7 @@ subscription. After applying a profile,
 write a preset receipt from
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md` so branch mode,
 allowed sources, verification profile, receipt retention, resource limits, and direct-mode
-boundaries trace to `rules.json` and `shift-defaults.json`. Owner rules remain authoritative;
+boundaries trace to `rules.json`. Owner rules remain authoritative;
 presets never capture hidden policy.
 
 **Template evolution — offer, never impose.** On a re-run with the file already present, compare
@@ -298,7 +298,7 @@ to restore the template contract, or keep theirs. Never rewrite without an expli
 
 Print the workspace-state path and resolved work target, what was scaffolded, whether a receipts
 repo was created, the gates that were written (or that none were), and the project defaults stored
-in `$NS/shift-defaults.json`. Tell the user to draft items in `$NS/drafting-table.md`, promote them into
+in the `shift` block of `$NS/rules.json`. Tell the user to draft items in `$NS/drafting-table.md`, promote them into
 the punch list, then start the shift (`/nightshift:start` on Claude Code, or ask Nightshift to start
 on Codex). Mention that the open-ended product-evolution shift keeps its evidence and ranked work in
 `$NS/product-research.md` and `$NS/opportunity-map.md`, while the quality skill can

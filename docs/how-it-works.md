@@ -87,7 +87,7 @@ Nightshift separates **what the project always forbids**, **what the owner usual
 | File | Role |
 | --- | --- |
 | `rules.json` | Permanent boundaries: tool denies, commit guards, retention, and the five elevation categories (`sudo`, containers, global-packages, daemons, external-services). The shipped template denies each by default. Containers cover the Docker socket and create-state verbs (`run`, `create`, `compose up`, `start`, `build`); read-only forms such as `docker ps` and `brew list` are not gated. Hardhat is hardening, not a sandbox. |
-| `shift-defaults.json` | Remembered convenience: verification profile, typical hours, tooling policy, execution mode. Prefills Hunt and Quality; never appears as the source of an effective value. |
+| `shift-defaults.json` | Only in a workspace that has not migrated. The same four remembered choices now live in the `shift` block of `rules.json`; `shift-policy.sh migrate` moves them, and until it runs they are still read from here. Neither file is ever the source of an effective value. |
 | `shift-policy.json` | Tonight's authoritative snapshot: deadline, verification level, tooling policy, one-shift elevation allowances with provenance, and the shift identity they bind to. Written by composition or Start; guarded while armed. |
 
 Status and Doctor render **one resolved policy block**: every effective setting, its source file,

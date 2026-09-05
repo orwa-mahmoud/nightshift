@@ -71,5 +71,17 @@ That is Nightshift's scope. It does not make generated code inherently correct, 
 repair a host's internal context engine. It keeps the working contract available until the list is
 done, the deadline arrives, or the owner stops the shift.
 
+## What it costs
+
+Nightshift adds work rather than removing it: a contract to read, gates to run, receipts and a
+report to write, and a watchman that wakes up. **It is not a way to spend fewer tokens, and nothing
+here claims it is.** A shift may well use more than the same work done by hand.
+
+What it can reduce is rework — a night that stops at the wrong place, a morning spent
+reconstructing what happened, a change nobody can review. Whether that trade is worth it depends
+on the work, and it is yours to judge. Where a report shows what an item cost, those are the
+numbers the host reported, kept separate from anything estimated; where the host reports nothing,
+the report says unavailable rather than guessing. A token count is never turned into a price.
+
 Read [how Nightshift works](how-it-works.md), or
 [run a first shift](../README.md#run-a-first-shift).
