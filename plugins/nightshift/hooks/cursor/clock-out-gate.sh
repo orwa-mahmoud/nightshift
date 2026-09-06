@@ -193,6 +193,12 @@ PUNCH_UNREADABLE=0
 if ! ns_gate_boxes; then
   PUNCH_UNREADABLE=1
 fi
+# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
+# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
+# item ticked second.
+if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
+  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" || :
+fi
 
 honor_stop() {
   local reason summary

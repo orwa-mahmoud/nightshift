@@ -123,3 +123,99 @@ ns_gate_filing_due() {
 ns_gate_filing_message() {
   printf '%s' "DO NOT STOP YET — this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete .nightshift/.pending-filing when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive."
 }
+
+# What the shift cost, written where the item's section is, at the moment the item is ticked.
+#
+# The tick is the boundary. Everything spent between two ticks belongs to the item ticked second —
+# its gates and its own report section included — so the gate snapshots the counter as it releases
+# and the next item starts from the same reading. The model writes none of this and is told not
+# to: on no host can it see its own usage from inside the conversation.
+#
+# ns_gate_usage_tick <nightshift-dir> <project-dir> <item-label>
+ns_gate_usage_tick() {
+  local ns="$1" project="$2" label="$3" span fields seconds host line report
+  [ -d "$ns" ] || return 0
+  [ "$(ns_report "$project" usage)" != off ] || return 0
+  ns_usage_mark "$ns" "$label" || return 0
+  span="$(ns_usage_last_item "$ns")" || return 0
+  fields="$(printf '%s' "$span" | cut -f1)"
+  seconds="$(printf '%s' "$span" | cut -f2)"
+  host="$(ns_usage_hosts "$ns")" || host="unknown"
+  report="$(ns_report_path "$project")"
+  [ -n "$fields" ] || return 0
+  line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
+  ns_gate_usage_append "$report" "$label" "$line" "$(ns_usage_duration "$seconds")"
+}
+
+# ns_gate_usage_append <report> <item-label> <usage-line> <duration> — put the two runtime-written
+# lines under the item's heading. If the model has not written that section yet, the lines still
+# land under a heading of their own: the measurement does not wait on the narrative.
+ns_gate_usage_append() {
+  local report="$1" label="$2" usage="$3" duration="$4" tmp existing
+  [ -n "$report" ] || return 0
+  [ ! -L "$report" ] || return 0
+  if [ ! -f "$report" ]; then
+    printf '# Shift report\n' >"$report" 2>/dev/null || return 0
+  fi
+  tmp="$report.usage.$$"
+  if grep -qF "### $label" "$report" 2>/dev/null; then
+    # Spliced in the shell rather than handed to awk: the usage block is three lines, and awk's
+    # -v cannot carry a newline.
+    : >"$tmp" || return 0
+    while IFS= read -r existing || [ -n "$existing" ]; do
+      printf '%s\n' "$existing" >>"$tmp"
+      if [ "$existing" = "### $label" ]; then
+        printf '\n%s\nDuration: %s\n' "$usage" "$duration" >>"$tmp"
+      fi
+    done <"$report"
+    mv "$tmp" "$report" 2>/dev/null || rm -f "$tmp"
+    return 0
+  fi
+  {
+    printf '\n### %s\n\n%s\nDuration: %s\n' "$label" "$usage" "$duration"
+  } >>"$report" 2>/dev/null || :
+}
+
+# ns_gate_usage_sync <nightshift-dir> <project-dir> <punch-list> <ticked> — catch the marks up to
+# the boxes.
+#
+# The gate does not see a tick happen; it sees how many boxes are ticked when a stop is attempted.
+# So it compares that count against the marks it has already written and closes whatever is newly
+# done, in order, taking each item's own label from the list. One mark per item, written once: a
+# second stop attempt with nothing newly ticked adds nothing.
+ns_gate_usage_sync() {
+  local ns="$1" project="$2" list="$3" ticked="$4" marked label i=0
+  [ -d "$ns" ] || return 0
+  [ -f "$list" ] || return 0
+  case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
+  [ "$(ns_report "$project" usage)" != off ] || return 0
+  # The arm mark is the shift's own start, and is not an item.
+  marked="$(ns_usage_mark_count "$ns")"
+  case "$marked" in '' | *[!0-9]*) marked=0 ;; esac
+  [ "$marked" -gt 0 ] || { ns_usage_mark_arm "$ns"; marked=1; }
+  while [ "$((marked - 1))" -lt "$ticked" ]; do
+    i=$((marked))
+    label="$(ns_gate_item_label "$list" "$i")"
+    [ -n "$label" ] || label="item $i"
+    ns_gate_usage_tick "$ns" "$project" "$label" || return 0
+    marked=$((marked + 1))
+  done
+}
+
+# ns_gate_item_label <punch-list> <n> — the id of the nth ticked item, as the report heads its
+# section. `- [x] **P03 — …**` gives `P03`.
+ns_gate_item_label() {
+  ns_items_section "$1" 2>/dev/null | awk -v want="$2" '
+    /^- \[x\]/ {
+      n++
+      if (n != want) next
+      line = $0
+      sub(/^- \[x\][[:space:]]*\*\*/, "", line)
+      sub(/[[:space:]]*[—-].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      print line
+      exit
+    }
+  '
+}

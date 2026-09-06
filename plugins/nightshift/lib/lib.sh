@@ -8,6 +8,7 @@
 #   rules-read.sh strict-subset reader for rules.json
 #   state.sh      runtime files (rules, punch list, schema, retention)
 #   policy.sh     the shift-policy resolver (rules, defaults, tonight's snapshot)
+#   usage.sh      what a shift cost, read from the records each host already keeps
 #   process.sh    process evidence
 #   ownership.sh  locks, session, lease, shift fencing
 #
@@ -33,6 +34,8 @@ _ns_lib_dir="${BASH_SOURCE[0]%/*}"
 . "$_ns_lib_dir/state.sh"
 # shellcheck source=plugins/nightshift/lib/policy.sh
 . "$_ns_lib_dir/policy.sh"
+# shellcheck source=plugins/nightshift/lib/usage.sh
+. "$_ns_lib_dir/usage.sh"
 # shellcheck source=plugins/nightshift/lib/process.sh
 . "$_ns_lib_dir/process.sh"
 # shellcheck source=plugins/nightshift/lib/ownership.sh

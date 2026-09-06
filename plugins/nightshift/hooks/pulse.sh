@@ -57,6 +57,68 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   else
     SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   fi
+  if command -v jq >/dev/null 2>&1; then
+    TPATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
+  else
+    TPATH="$(printf '%s' "$INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  fi
   ns_pulse_emit "$NS" "$SID"
+  ns_pulse_usage "$NS" claude "$SID" "$TPATH"
   exit 0
 fi
+
+# ns_pulse_usage <ns> <host> <sid> <transcript-or-payload> — take one reading, if the owner wants
+# usage measured and this session owns the shift.
+#
+# The pulse already fires on every tool call on all three hosts, so the reading rides on something
+# that was going to happen anyway: no daemon, no timer, no polling, no second session. On Claude it
+# advances the transcript offset and reads only the appended bytes; on Codex it tails the rollout's
+# running total; on Cursor there is no transcript and the figures arrive on the payload itself.
+#
+# Silent, and never fatal: a host that reports nothing leaves no snapshot, and the report says
+# `unavailable` rather than zero.
+ns_pulse_usage() {
+  local ns="$1" host="$2" sid="$3" src="$4" reading fields offset model
+  [ -n "$ns" ] && [ -n "$src" ] || return 0
+  [ -f "$ns/.shift-armed" ] || return 0
+  [ "$(ns_report "${ns%/.nightshift}" usage)" != off ] || return 0
+  # The shift's own start, stood up before the first reading so it sits at zero. A baseline taken
+  # after spend had already accrued would swallow the first item's cost.
+  ns_usage_mark_arm "$ns" || return 0
+  case "$host" in
+    claude)
+      offset="$(ns_usage_offset "$ns" "$src")"
+      reading="$(ns_usage_read_claude "$src" "$offset")" || return 0
+      ns_usage_record "$ns" claude "$(printf '%s' "$reading" | cut -f3)" transcript-incremental \
+        "$src" "$(printf '%s' "$reading" | cut -f2)" "$(printf '%s' "$reading" | cut -f1)" || return 0
+      ;;
+    codex)
+      reading="$(ns_usage_read_codex "$src")" || return 0
+      ns_usage_record "$ns" codex "$(printf '%s' "$reading" | cut -f3)" rollout \
+        "$src" 0 "$(printf '%s' "$reading" | cut -f1)" || return 0
+      ;;
+    cursor)
+      reading="$(ns_usage_read_cursor "$src")" || return 0
+      ns_usage_record "$ns" cursor "$(printf '%s' "$reading" | cut -f3)" stop-payload \
+        "cursor:$sid" 0 "$(printf '%s' "$reading" | cut -f1)" || return 0
+      ;;
+    *) return 0 ;;
+  esac
+  return 0
+}
+
+# ns_usage_offset <ns> <transcript> — the byte offset this transcript was last read to.
+ns_usage_offset() {
+  local file line
+  file="$(ns_usage_dir "$1")/segments.tsv"
+  [ -f "$file" ] || { printf '0'; return 0; }
+  while IFS= read -r line; do
+    case "$line" in
+      "$2	"*)
+        printf '%s' "$line" | cut -f5
+        return 0
+        ;;
+    esac
+  done <"$file"
+  printf '0'
+}

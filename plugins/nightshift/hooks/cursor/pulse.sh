@@ -18,4 +18,7 @@ case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
 ns_pulse_emit "$PROJECT_DIR/.nightshift" "${CURSOR_SESSION_ID:-}"
+# Cursor puts the figures on the payload itself — there is no transcript carrying them — so the
+# reading is taken from what the host just delivered.
+ns_pulse_usage "$PROJECT_DIR/.nightshift" cursor "${CURSOR_SESSION_ID:-}" "${CURSOR_RAW:-}"
 exit 0
