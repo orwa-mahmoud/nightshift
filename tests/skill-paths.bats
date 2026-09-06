@@ -53,11 +53,12 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   grep -qF 'only after an explicit yes' "$SETUP"
 }
 
-@test "setup scaffolds every template into the bound Nightshift directory" {
+@test "the scaffold writes every state file into the bound Nightshift directory" {
   for f in punch-list drafting-table parking-lot snag-log product-research opportunity-map; do
-    grep -qF "\$NS/$f.md" "$SETUP" \
-      || { echo "scaffold target not bound: $f"; return 1; }
+    [ -f "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates"/$f.md ] || { echo "no template for $f"; return 1; }
   done
+  # The destination is the bound directory, not the working directory.
+  grep -qF 'dest="$NS/$name"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
 }
 
 @test "shared plugin paths resolve once through both host conventions" {
@@ -447,10 +448,11 @@ PY
   grep -qF 'staged drafting-table items=' "$DOCTOR_PS1"
 }
 
-@test "setup substitutes workspace and NS tokens when copying owner files" {
-  grep -qF 'substitute the resolved absolute workspace path for `$NIGHTSHIFT_WORKSPACE`' "$SETUP"
-  grep -qF 'bound Nightshift directory for `$NS`' "$SETUP"
-  grep -qF 'Never write those tokens into `rules.json`' "$SETUP"
+@test "the scaffold resolves the tokens a person could not paste, and Setup still forbids them in the owner's rules" {
+  # A person pasting a command out of their own punch list has no shell variable to expand.
+  grep -qF 'NIGHTSHIFT_WORKSPACE' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
+  grep -qF 'resolves' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
+  grep -qF 'revival and clock-out text stay owner-editable' "$SETUP"
 }
 
 @test "catalog prose uses Nightshift filenames, not a workspace prefix" {
