@@ -3735,7 +3735,38 @@ $script:NSPolicyElevationPattern['daemons'] = '(^|[;&|(`]|[[:space:]]|''|")(syst
 $script:NSPolicyElevationPattern['external-services'] = '(^|[;&|(`]|[[:space:]]|''|")(gh[[:space:]]+auth[[:space:]]+login|npm[[:space:]]+login|docker[[:space:]]+login|az[[:space:]]+login|gcloud[[:space:]]+auth|aws[[:space:]]+configure)([[:space:]]|$)'
 
 # Every setting the resolved view reports, in the order the table prints them.
+# The owner preference blocks the resolved view carries, with the built-in each falls back to.
+# The same list as NS_RULES_GROUP_KEYS in lib/rules-read.sh, and the same defaults as
+# ns_policy_builtin in lib/policy.sh: both resolvers print one view.
+$script:NSPolicyGroupDefaults = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
+$script:NSPolicyGroupDefaults['archive.automatic'] = $false
+$script:NSPolicyGroupDefaults['archive.layout'] = 'date'
+$script:NSPolicyGroupDefaults['archive.root'] = 'archive'
+$script:NSPolicyGroupDefaults['archive.templatePath'] = ''
+$script:NSPolicyGroupDefaults['handoff.detail'] = 'concise'
+$script:NSPolicyGroupDefaults['handoff.enabled'] = $true
+$script:NSPolicyGroupDefaults['handoff.language'] = 'auto'
+$script:NSPolicyGroupDefaults['handoff.sections'] = @()
+$script:NSPolicyGroupDefaults['handoff.templatePath'] = ''
+$script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
+$script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
+$script:NSPolicyGroupDefaults['report.enabled'] = $true
+$script:NSPolicyGroupDefaults['report.legacyItemReceipts'] = $false
+$script:NSPolicyGroupDefaults['report.progressMinutes'] = 20
+$script:NSPolicyGroupDefaults['report.progressMode'] = 'time'
+$script:NSPolicyGroupDefaults['report.progressTokens'] = 100000
+$script:NSPolicyGroupDefaults['report.templatePath'] = ''
+$script:NSPolicyGroupDefaults['report.usage'] = 'when-available'
+$script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
+$script:NSPolicyGroupDefaults['shift.hours'] = $null
+$script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
+$script:NSPolicyGroupDefaults['shift.verificationProfile'] = 'fast'
+
 $script:NSPolicySettingNames = @(
+    'archive.automatic',
+    'archive.layout',
+    'archive.root',
+    'archive.templatePath',
     'deadlineEpoch',
     'elevation.containers',
     'elevation.daemons',
@@ -3744,8 +3775,26 @@ $script:NSPolicySettingNames = @(
     'elevation.sudo',
     'expectedEmail',
     'forbiddenCommands',
+    'handoff.detail',
+    'handoff.enabled',
+    'handoff.language',
+    'handoff.sections',
+    'handoff.templatePath',
+    'handoff.view',
     'neverCommitPatterns',
     'protectedDirs',
+    'recovery.launchScope',
+    'report.enabled',
+    'report.legacyItemReceipts',
+    'report.progressMinutes',
+    'report.progressMode',
+    'report.progressTokens',
+    'report.templatePath',
+    'report.usage',
+    'shift.execution',
+    'shift.hours',
+    'shift.toolingPolicy',
+    'shift.verificationProfile',
     'stallMax',
     'toolingPolicy',
     'verificationLevel',
@@ -4489,6 +4538,28 @@ function Get-NSPolicyRuleSetting {
     return (New-NSPolicySetting $value 'built-in' '-')
 }
 
+# A dotted preference like report.progressMode: the owner's block if they wrote the key, the
+# shipped default otherwise. Presence decides the source, so a key written as an empty string is
+# still an owner decision.
+function Get-NSPolicyGroupSetting {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    $fallback = $script:NSPolicyGroupDefaults[$Name]
+    $block = $Name.Substring(0, $Name.IndexOf('.'))
+    $key = $Name.Substring($Name.IndexOf('.') + 1)
+    $rules = Get-NSRulesObject $Workspace
+    if ($null -eq $rules) { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    $property = $rules.PSObject.Properties[$block]
+    if ($null -eq $property -or $null -eq $property.Value) { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    $inner = $property.Value.PSObject.Properties[$key]
+    if ($null -eq $inner) { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    $value = $inner.Value
+    if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'rules' 'permanent') }
+    return (New-NSPolicySetting $value 'rules' 'permanent')
+}
+
 function Get-NSPolicyRuleInteger {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -4568,6 +4639,9 @@ function Get-NSPolicyResolution {
     $settings['expectedEmail'] = Get-NSPolicyRuleSetting $Workspace 'expectedEmail'
     $settings['stallMax'] = Get-NSPolicyRuleInteger $Workspace 'stallMax' 0
     $settings['watchMinutes'] = Get-NSPolicyRuleInteger $Workspace 'watchMinutes' 10
+    foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
+        $settings[$name] = Get-NSPolicyGroupSetting $Workspace $name
+    }
 
     $resolution = New-NSOrdinalMap
     $resolution['settings'] = $settings
@@ -4612,10 +4686,14 @@ function Get-NSPolicyExactPlanAllowances {
     return , $plans
 }
 
+# One rendering for both resolvers: the table is read by people and by the model, so a boolean,
+# a null and a list have to look the same whichever half printed them.
 function Format-NSPolicyValue {
     param($Value)
-    if ($null -eq $Value) { return 'none' }
+    if ($null -eq $Value) { return 'null' }
+    if ($Value -is [bool]) { if ($Value) { return 'true' } else { return 'false' } }
     if (Test-NSJsonInteger $Value) { return ([long]$Value).ToString([Globalization.CultureInfo]::InvariantCulture) }
+    if ($Value -is [Array]) { return (ConvertTo-NSCanonicalJson $Value -Compact) }
     return [string]$Value
 }
 

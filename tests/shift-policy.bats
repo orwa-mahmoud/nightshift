@@ -215,17 +215,21 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '
     .schemaVersion == 1
-    and (.settings | keys | length) == 14
+    and (.settings | keys | length) > 0
+    and (.settings | to_entries | all(.value | has("value") and has("source") and has("expiry")))
     and .settings["elevation.containers"] == {value: "allow", source: "one-shift", expiry: "shift"}
     and .settings.verificationLevel.source == "one-shift"
   ' >/dev/null
   [ "$output" = "$(printf '%s' "$output" | jq -caS .)" ]
+  keys="$(printf '%s' "$output" | jq -r '.settings | keys[]')"
   run sp "$p" resolve
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.schemaVersion == 1' >/dev/null
   run sp "$p" resolve --table
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 14 ]
+  # The two renderings are one view: a setting in the JSON is a line in the table and the reverse,
+  # so neither can grow a row the other does not have.
+  [ "$(printf '%s\n' "$output" | sed 's/=.*//')" = "$keys" ]
   printf '%s\n' "$output" | grep -qxF 'elevation.containers=allow (one-shift, shift)'
   printf '%s\n' "$output" | grep -qxF 'elevation.sudo=deny (rules, permanent)'
   [ "$(printf '%s\n' "$output" | LC_ALL=C sort)" = "$output" ]

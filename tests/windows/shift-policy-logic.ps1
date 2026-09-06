@@ -250,9 +250,14 @@ try {
     $tableRun = Invoke-Helper @('-Project', $base, '-Command', 'resolve', '-Table')
     Expect-Equal 0 $tableRun.ExitCode 'resolve -Table exits 0'
     $table = $tableRun.StdoutText.TrimEnd("`n")
-    Expect-Equal 14 ($table -split "`n").Count 'the table prints one line per setting'
-    Expect-Equal 'deadlineEpoch=none (built-in, -)' (Get-SettingLine $table 'deadlineEpoch') `
-        'an absent deadline reports none'
+    # The two renderings are one view: a setting in the JSON is a line in the table and the
+    # reverse, so neither can grow a row the other does not have.
+    $tableNames = @($table -split "`n" | ForEach-Object { ($_ -split '=', 2)[0] })
+    $jsonNames = @([Text.RegularExpressions.Regex]::Matches($resolveJson, '"([^"]+)":\{') |
+            ForEach-Object { $_.Groups[1].Value } | Where-Object { $_ -cne 'settings' })
+    Expect-Equal ($jsonNames -join ',') ($tableNames -join ',') 'the table prints one line per setting'
+    Expect-Equal 'deadlineEpoch=null (built-in, -)' (Get-SettingLine $table 'deadlineEpoch') `
+        'an absent deadline reports null, the way the POSIX table does'
     Expect-Equal 'verificationLevel=none (built-in, -)' (Get-SettingLine $table 'verificationLevel') `
         'without a policy the verification level is the built-in default'
     Expect-Equal 'toolingPolicy=existing-tools (built-in, -)' (Get-SettingLine $table 'toolingPolicy') `

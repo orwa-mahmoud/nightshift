@@ -122,6 +122,24 @@ ns_policy_builtin() {
     forbiddenCommands | protectedDirs | neverCommitPatterns | expectedEmail) printf '""' ;;
     stallMax) printf '0' ;;
     watchMinutes) printf '10' ;;
+    archive.automatic | report.legacyItemReceipts) printf 'false' ;;
+    archive.layout) printf '"date"' ;;
+    archive.root) printf '"archive"' ;;
+    handoff.detail) printf '"concise"' ;;
+    handoff.enabled | report.enabled) printf 'true' ;;
+    handoff.language) printf '"auto"' ;;
+    handoff.sections) printf '[]' ;;
+    handoff.view) printf '"owner"' ;;
+    recovery.launchScope) printf '"inherit-recorded-scope"' ;;
+    report.progressMinutes) printf '20' ;;
+    report.progressMode) printf '"time"' ;;
+    report.progressTokens) printf '100000' ;;
+    report.usage) printf '"when-available"' ;;
+    shift.execution) printf '"review-first"' ;;
+    shift.hours) printf 'null' ;;
+    shift.toolingPolicy) printf '"existing-tools"' ;;
+    shift.verificationProfile) printf '"fast"' ;;
+    archive.templatePath | handoff.templatePath | report.templatePath) printf '""' ;;
     *) return 1 ;;
   esac
 }
@@ -136,6 +154,7 @@ ns_policy_settings() {
       [ -n "$c" ] || continue
       printf 'elevation.%s\n' "$c"
     done
+    printf '%s\n' "$NS_RULES_GROUP_KEYS"
   } | LC_ALL=C sort
 }
 
@@ -500,7 +519,7 @@ _ns_policy_load_rules() {
     [ -n "$line" ] || continue
     _ns_pf_split "$line"
     case "$NS_PF1" in
-      r) NS_POLICY_RULES_VALS="$NS_POLICY_RULES_VALS$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_TAB$NS_PF4$NS_POLICY_NL" ;;
+      r | g) NS_POLICY_RULES_VALS="$NS_POLICY_RULES_VALS$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_TAB$NS_PF4$NS_POLICY_NL" ;;
       e) NS_POLICY_RULES_ELEV="$NS_POLICY_RULES_ELEV$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_TAB$NS_PF4$NS_POLICY_NL" ;;
       p) NS_POLICY_RULES_PAT="$NS_POLICY_RULES_PAT$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_NL" ;;
     esac

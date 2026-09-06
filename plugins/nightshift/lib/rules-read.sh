@@ -423,6 +423,47 @@ ns_rules_map_msg() {
 
 # ns_rules_facts <file> — the policy fact stream _ns_policy_load_rules consumes.
 # Status 1 when the file is not the accepted shape.
+# _ns_rules_array_json <key> <subkey> — an array of strings rebuilt as compact JSON from the
+# indexed rows the reader records. Any element that is not a string fails the whole array closed,
+# because a half-read list is worse than an absent one.
+_ns_rules_array_json() {
+  local i=0 row typ val out=""
+  while row="$(_ns_rules_row "$1" "$2" "$i")"; do
+    typ="${row%%"$_NS_RULES_TAB"*}"
+    val="${row#*"$_NS_RULES_TAB"}"
+    [ "$typ" = s ] || return 1
+    [ "$i" -eq 0 ] || out="$out,"
+    out="$out$val"
+    i=$((i + 1))
+  done
+  printf '[%s]' "$out"
+}
+
+# The owner preference blocks the resolved view carries, in the byte order it prints them.
+# One list, so the fact stream and the setting names cannot drift apart.
+NS_RULES_GROUP_KEYS='archive.automatic
+archive.layout
+archive.root
+archive.templatePath
+handoff.detail
+handoff.enabled
+handoff.language
+handoff.sections
+handoff.templatePath
+handoff.view
+recovery.launchScope
+report.enabled
+report.legacyItemReceipts
+report.progressMinutes
+report.progressMode
+report.progressTokens
+report.templatePath
+report.usage
+shift.execution
+shift.hours
+shift.toolingPolicy
+shift.verificationProfile'
+
 ns_rules_facts() {
   local k c row typ val present pol pat
   ns_rules_load "$1" || return 1
@@ -462,5 +503,24 @@ ns_rules_facts() {
     [ -n "$pat" ] || continue
     pat="$(printf '%s' "$pat" | tr '\000-\037\177' ' ')"
     printf 'p\t%s\t%s\n' "$c" "$pat"
+  done
+  # The owner's preference blocks, one fact per key, named the way the resolved view names them.
+  # These are permanent settings rather than tonight's choices, so a `g` row carries the same
+  # three fields an `r` row does and the resolver treats them identically.
+  for k in $NS_RULES_GROUP_KEYS; do
+    c="${k%%.*}"
+    row="$(_ns_rules_row "$c" "${k#*.}" "")" && present=1 || present=0
+    if [ "$present" -eq 1 ]; then
+      typ="${row%%"$_NS_RULES_TAB"*}"
+      val="${row#*"$_NS_RULES_TAB"}"
+      case "$typ" in
+        s | n | b | z) ;;
+        a) val="$(_ns_rules_array_json "$c" "${k#*.}")" || val=null ;;
+        *) val=null ;;
+      esac
+    else
+      val=null
+    fi
+    printf 'g\t%s\t%s\t%s\n' "$k" "$present" "$val"
   done
 }
