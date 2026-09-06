@@ -67,13 +67,10 @@ preserve the user's repository. A non-git project outside that explicit scratch 
 
 `$NS/punch-list.md` has a contract section, then `## Items`. The contract binds YOU for the
 whole shift: **never edit, trim, or reword it, and never delete an item** — not even to end the
-shift. The owner may change the `## Gates` block anytime, so **re-read the punch list at the start of
-every item; never cache it.** If you ever notice the contract or an item was altered, restore it
-from git before continuing. In repository mode that is the work-target history, or
-`git -C "$NS"` when the owner opted into a local receipts repo. In artifact mode restore only
-from that receipts repo when it exists; do not `git init` the notes folder to invent history.
-On native Windows use `git -C` against `$NS` when Git is installed — the same receipts repo.
-If `$NS/punch-list.md` has no git history, park the conflict and keep the on-disk file.
+shift. Reading it is step 1 of every item, and the helper there gives you the current `## Gates`
+block with the item, so a mid-shift change to the gates reaches you without re-reading the file.
+The gate holds the contract and the items to what they were at arming and blocks with the repair
+named if either moves, so watching for that is not your job.
 
 ## What the owner chose
 
@@ -103,7 +100,17 @@ rather than calling the item verified. A profile name is not evidence.
 
 Top to bottom, one item:
 
-1. **Read** the item and the current `## Gates` block.
+1. **Read** the item and the current `## Gates` block — one call, and the only punch-list read an
+  item needs:
+
+  ```bash
+  "$NIGHTSHIFT_PLUGIN_ROOT/runtime/punch-list.sh" --project "$NIGHTSHIFT_WORKSPACE" next
+  ```
+
+  Native Windows:
+  `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\punch-list.ps1" -Project "$NIGHTSHIFT_WORKSPACE" next`.
+  It prints the gates block and the first still-open item verbatim, `none` when nothing is open.
+  `item <id>` names one instead, which is how a revived session picks its own back up.
 2. **Build** it fully — production-ready, no stubs, no "documented for later". If you can do it now,
   do it now. Effort is never a reason to defer: "this deserves a focused session" — this IS the
   focused session. Only correctness justifies narrowing an item.
