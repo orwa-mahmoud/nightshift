@@ -1,6 +1,7 @@
 load helpers
 
 ARCHIVE_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/archive-receipts.sh"
+LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
 ARCHIVE_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/archive-receipts.ps1"
 ARCHIVE_LOGIC="$BATS_TEST_DIRNAME/windows/archive-receipts-logic.ps1"
 ARCHIVE_SKILL="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/archive/SKILL.md"
@@ -236,6 +237,72 @@ arch_rules() { # <project> <jq-expression>
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
   [ "$status" -eq 2 ]
   [ -z "$(ls -A "$BATS_TEST_TMPDIR/outside")" ]
+}
+
+@test "an archive root reached through a link anywhere along it is refused" {
+  # The escape is not a link at the root: it is a link on the way to it. `linked/history` is an
+  # ordinary directory name and would pass a check that only looked at its last component.
+  p="$(new_project arch-intermediate)"
+  arch_rules "$p" '.archive.root = "linked/history"'
+  mkdir -p "$BATS_TEST_TMPDIR/outside-intermediate"
+  ln -s "$BATS_TEST_TMPDIR/outside-intermediate" "$p/.nightshift/linked"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'one\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 2 ]
+  [ -z "$(ls -A "$BATS_TEST_TMPDIR/outside-intermediate")" ]
+  # And the source it refused to file is still where it was.
+  [ -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+}
+
+@test "a dangling link, a file in the way and the live records are all refused as roots" {
+  p="$(new_project arch-unsafe-roots)"
+  mkdir -p "$p/.nightshift/receipts"
+  ln -s "$BATS_TEST_TMPDIR/never-created" "$p/.nightshift/dangling"
+  printf 'not a directory\n' >"$p/.nightshift/afile"
+  for bad in "dangling/history" "afile" "afile/history" "receipts" ".hidden"; do
+    arch_rules "$p" ".archive.root = \"$bad\""
+    run bash -c '. "$1"; ns_archive_root "$2"' _ "$LIB" "$p"
+    [ "$status" -eq 2 ] || { echo "$bad resolved to $output"; return 1; }
+  done
+  # A sibling whose name merely starts the same way is an ordinary directory and is allowed.
+  arch_rules "$p" '.archive.root = "archive-old"'
+  run bash -c '. "$1"; ns_archive_root "$2"' _ "$LIB" "$p"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$p/.nightshift/archive-old" ]
+}
+
+@test "a link where a record is about to land is refused before anything is written" {
+  p="$(new_project arch-leaf-link)"
+  target="$BATS_TEST_TMPDIR/leaf-target.md"
+  printf 'original\n' >"$target"
+  run bash -c '. "$1"; ns_archive_dest "$2"' _ "$LIB" "$p/.nightshift/fresh.md"
+  [ "$status" -eq 0 ]
+  ln -s "$target" "$p/.nightshift/planted.md"
+  run bash -c '. "$1"; ns_archive_dest "$2"' _ "$LIB" "$p/.nightshift/planted.md"
+  [ "$status" -eq 2 ]
+  [ "$(cat "$target")" = original ]
+  mkdir -p "$p/.nightshift/adir"
+  run bash -c '. "$1"; ns_archive_dest "$2"' _ "$LIB" "$p/.nightshift/adir"
+  [ "$status" -eq 2 ]
+}
+
+@test "a planted link at a record's archived name keeps the source and files nothing through it" {
+  p="$(new_project arch-planted-leaf)"
+  mkdir -p "$p/.nightshift/receipts" "$p/.nightshift/archive/2026-09-05/receipts"
+  printf 'the real record\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  # A link whose target already holds the same bytes: following it would read back as a faithful
+  # copy and the live record would be retired into a file outside the archive.
+  outside="$BATS_TEST_TMPDIR/planted-target.md"
+  printf 'the real record\n' >"$outside"
+  ln -s "$outside" "$p/.nightshift/archive/2026-09-05/receipts/morning-2026-09-05-abc.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'in the way of its archived copy'
+  [ -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+  [ -L "$p/.nightshift/archive/2026-09-05/receipts/morning-2026-09-05-abc.md" ]
+  [ "$(cat "$outside")" = 'the real record' ]
 }
 
 @test "filing the same day twice adds nothing twice and overwrites no earlier record" {

@@ -45,22 +45,69 @@ ns_archive() {
   ns_rules_get_in "$f" archive "$2"
 }
 
+# ns_state_path <state-dir> <relative-name> — a nested path under the Nightshift state area, or
+# status 2. The whole chain is checked, not just its last component: a link anywhere along it is
+# what an escape actually looks like, because `linked/history` reaches outside while `history` is
+# an ordinary directory nobody would question.
+#
+# Refused: an absolute or ~ path, any component that is empty, `.`, `..` or begins with a dot,
+# an existing component that is a symlink, an existing component that is not a directory, and the
+# state directory itself. Then the deepest ancestor that exists is canonicalised and checked to
+# be the state directory or inside it — comparing the real paths rather than trusting that the
+# text of one is a prefix of the other.
+ns_state_path() {
+  local ns="$1" rel="$2" path comp rest deepest canon_ns canon_deep
+  case "$rel" in
+    '' | . | /* | '~'*) return 2 ;;
+  esac
+  path="$ns"
+  deepest="$ns"
+  rest="$rel"
+  while [ -n "$rest" ]; do
+    comp="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    case "$comp" in
+      '' | .*) return 2 ;;
+    esac
+    path="$path/$comp"
+    [ ! -L "$path" ] || return 2
+    if [ -e "$path" ]; then
+      [ -d "$path" ] || return 2
+      deepest="$path"
+    fi
+  done
+  canon_ns="$(cd -P "$ns" 2>/dev/null && pwd -P)" || return 2
+  canon_deep="$(cd -P "$deepest" 2>/dev/null && pwd -P)" || return 2
+  case "$canon_deep" in
+    "$canon_ns" | "$canon_ns"/*) ;;
+    *) return 2 ;;
+  esac
+  printf '%s' "$path"
+}
+
 # ns_archive_root <project-dir> — the directory dated archives live in, as an absolute path.
-# The name is the owner's; where it may sit is not. It stays inside the Nightshift state area:
-# an absolute path, a path that climbs out with .., or a symlink is refused with status 2, and
-# the caller says so rather than writing the owner's records somewhere they cannot find them.
-# Writing outside the state area is an unsupported request, not a setting.
+# The name is the owner's; where it may sit is not. It stays inside the Nightshift state area,
+# and a request to leave it is refused with status 2 so the caller says so rather than writing
+# the owner's records somewhere they cannot find them. Writing outside the state area is an
+# unsupported request, not a setting.
 ns_archive_root() {
-  local ns="$1/.nightshift" name resolved
+  local ns="$1/.nightshift" name
   name="$(ns_archive "$1" root)"
   [ -n "$name" ] || name=archive
+  # The live records are not an archive destination: filing into them would file a shift on top
+  # of the shift that is still running.
   case "$name" in
-    /* | ~*) return 2 ;;
-    *..*) return 2 ;;
+    receipts | receipts/*) return 2 ;;
   esac
-  resolved="$ns/$name"
-  [ ! -L "$resolved" ] || return 2
-  printf '%s' "$resolved"
+  ns_state_path "$ns" "$name" || return 2
+}
+
+# ns_archive_dest <path> — status 0 when one file may be written at that exact path. A directory
+# containment check says nothing about the leaf: a link left where a receipt is about to land
+# would still carry its bytes somewhere else.
+ns_archive_dest() {
+  [ ! -L "$1" ] || return 2
+  [ ! -e "$1" ] || [ -f "$1" ] || return 2
 }
 
 # ns_archive_dir <project-dir> <date> <shift-id> — the directory one shift is filed into.

@@ -4304,6 +4304,97 @@ function Get-NSRecoveryLaunchScope {
     return 'inherit-recorded-scope'
 }
 
+# Get-NSStatePath <state-dir> <relative> - a nested path under the Nightshift state area, or
+# $null. The whole chain is checked, not just its last component: a reparse point anywhere along
+# it is what an escape actually looks like, because `linked\history` reaches outside while
+# `history` is an ordinary directory nobody would question. The twin of ns_state_path.
+function Get-NSStatePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$StateDir,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Relative
+    )
+    if ([string]::IsNullOrEmpty($Relative) -or $Relative -ceq '.') { return $null }
+    if ($Relative -cmatch '^[~/\\]' -or $Relative -cmatch '^[A-Za-z]:') { return $null }
+    $path = $StateDir
+    $deepest = $StateDir
+    foreach ($component in ($Relative -split '[\\/]')) {
+        if ([string]::IsNullOrEmpty($component) -or $component.StartsWith('.', [StringComparison]::Ordinal)) {
+            return $null
+        }
+        $path = Join-Path $path $component
+        if (Test-NSReparsePoint $path) { return $null }
+        if (Test-Path -LiteralPath $path) {
+            if (-not (Test-Path -LiteralPath $path -PathType Container)) { return $null }
+            $deepest = $path
+        }
+    }
+    # Compare the real paths rather than trusting that the text of one is a prefix of the other.
+    $canonicalState = ''
+    $canonicalDeepest = ''
+    try {
+        # -Force, because .nightshift is a hidden directory and Get-Item skips those without it.
+        $canonicalState = (Get-Item -LiteralPath $StateDir -Force -ErrorAction Stop).FullName
+        $canonicalDeepest = (Get-Item -LiteralPath $deepest -Force -ErrorAction Stop).FullName
+    }
+    catch {
+        return $null
+    }
+    $canonicalState = $canonicalState.TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $canonicalDeepest = $canonicalDeepest.TrimEnd([IO.Path]::DirectorySeparatorChar)
+    if ($canonicalDeepest -cne $canonicalState -and
+        -not $canonicalDeepest.StartsWith($canonicalState + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal)) {
+        return $null
+    }
+    return $path
+}
+
+# Get-NSArchiveRoot <workspace> - the directory dated archives live in, or $null when the owner's
+# name would leave the state area. The name is theirs; where it may sit is not.
+function Get-NSArchiveRoot {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $name = [string](Get-NSPolicyGroupSetting $Workspace 'archive.root')['value']
+    if ([string]::IsNullOrEmpty($name)) { $name = 'archive' }
+    # The live records are not an archive destination: filing into them would file a shift on top
+    # of the shift that is still running.
+    if ($name -ceq 'receipts' -or $name -clike 'receipts/*' -or $name -clike 'receipts\*') { return $null }
+    return (Get-NSStatePath (Join-Path $Workspace '.nightshift') $name)
+}
+
+# Get-NSArchiveDir <workspace> <date> <shift-id> - the directory one shift is filed into. The date
+# layout groups a night together; the shift layout gives each shift its own directory. The shift
+# id names the files inside either way, so two shifts on one day never collide.
+function Get-NSArchiveDir {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId = ''
+    )
+    $root = Get-NSArchiveRoot $Workspace
+    if ($null -eq $root) { return $null }
+    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
+    if ($layout -ceq 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
+        return (Join-Path $root ('shift-' + $ShiftId))
+    }
+    return (Join-Path $root $Date)
+}
+
+# Test-NSArchiveDest <path> - true when one file may be written at that exact path. A directory
+# containment check says nothing about the leaf: a reparse point left where a receipt is about to
+# land would still carry its bytes somewhere else.
+function Test-NSArchiveDest {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (Test-NSReparsePoint $Path) { return $false }
+    if (-not (Test-Path -LiteralPath $Path)) { return $true }
+    return (Test-Path -LiteralPath $Path -PathType Leaf)
+}
+
+# Test-NSArchiveAutomatic <workspace> - true when the owner asked for filing at clock-out.
+# Filing is a copy; it never implies deleting anything.
+function Test-NSArchiveAutomatic {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return ([string](Get-NSPolicyGroupSetting $Workspace 'archive.automatic')['value'] -ceq 'True')
+}
+
 # Get-NSPolicyHostName - which host this session is, from what the host itself sets.
 function Get-NSPolicyHostName {
     if (-not [string]::IsNullOrEmpty($env:CURSOR_PLUGIN_ROOT)) { return 'cursor' }

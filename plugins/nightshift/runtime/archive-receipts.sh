@@ -149,7 +149,14 @@ file_one() {
     .* | '') return 0 ;;
   esac
   ensure_dest
-  if [ -e "$dest/$base" ] || [ -L "$dest/$base" ]; then
+  # The leaf is checked too. A link left where this record is about to land would carry its bytes
+  # somewhere else and then read back as a faithful copy, so the source stays put instead.
+  if ! ns_archive_dest "$dest/$base"; then
+    kept="$kept$base (a link or a directory is in the way of its archived copy)
+"
+    return 0
+  fi
+  if [ -e "$dest/$base" ]; then
     if same_bytes "$f" "$dest/$base"; then
       : # already filed, byte for byte — retiring the source below is safe
     else
