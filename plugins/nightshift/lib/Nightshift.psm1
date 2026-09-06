@@ -4395,6 +4395,107 @@ function Test-NSArchiveAutomatic {
     return ([string](Get-NSPolicyGroupSetting $Workspace 'archive.automatic')['value'] -ceq 'True')
 }
 
+# Convert-NSReportLinks <text> <archived> <back> - the report's own links, repointed for where it
+# now sits. The twin of runtime/archive-links.awk, and it must answer identically: a record that
+# travelled with the report is still a sibling, one that stayed live is reached back through the
+# archive. A scheme, a leading slash, a bare fragment, anything already climbing with ../ and
+# everything inside a fenced code block are left exactly as written.
+function Convert-NSReportLinks {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Archived,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Back
+    )
+    $moved = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($entry in $Archived) {
+        if (-not [string]::IsNullOrEmpty($entry)) { $null = $moved.Add($entry) }
+    }
+    $prefix = $Back
+    if (-not [string]::IsNullOrEmpty($prefix) -and -not $prefix.EndsWith('/', [StringComparison]::Ordinal)) {
+        $prefix = $prefix + '/'
+    }
+
+    $repoint = {
+        param([string]$target)
+        $hash = $target.IndexOf('#')
+        $path = $target
+        $fragment = ''
+        if ($hash -ge 0) {
+            $path = $target.Substring(0, $hash)
+            $fragment = $target.Substring($hash)
+        }
+        if ([string]::IsNullOrEmpty($path)) { return $target }
+        if ($path -cmatch '^[A-Za-z][A-Za-z0-9+.-]*:') { return $target }
+        if ($path.StartsWith('/', [StringComparison]::Ordinal)) { return $target }
+        if ($path.StartsWith('../', [StringComparison]::Ordinal)) { return $target }
+        if ($moved.Contains($path)) { return $target }
+        return ($prefix + $path + $fragment)
+    }
+
+    # No max-substrings argument: a negative one means "the last N", which would hand back the
+    # whole document as a single line and let the scanner run straight through a fenced block.
+    $lines = $Text -split "`n"
+    $out = New-Object Collections.Generic.List[string]
+    $fence = $false
+    foreach ($line in $lines) {
+        if ($line -cmatch '^[ \t]*(```|~~~)') {
+            $fence = -not $fence
+            $out.Add($line)
+            continue
+        }
+        if ($fence) {
+            $out.Add($line)
+            continue
+        }
+        $definition = [Text.RegularExpressions.Regex]::Match($line, '^([ \t]*\[[^\]]*\]:[ \t]*)([^ \t]+)(.*)$')
+        if ($definition.Success) {
+            $out.Add($definition.Groups[1].Value + (& $repoint $definition.Groups[2].Value) + $definition.Groups[3].Value)
+            continue
+        }
+        # Scanned character by character rather than substituted by pattern, so a code span or a
+        # stray bracket cannot make it rewrite something that is not a link.
+        $builder = New-Object Text.StringBuilder
+        $i = 0
+        while ($i -lt $line.Length) {
+            $ch = $line[$i]
+            if ($ch -ceq '`') {
+                $tick = $i + 1
+                while ($tick -lt $line.Length -and $line[$tick] -cne '`') { $tick++ }
+                if ($tick -ge $line.Length) { $tick = $line.Length - 1 }
+                $null = $builder.Append($line.Substring($i, $tick - $i + 1))
+                $i = $tick + 1
+                continue
+            }
+            if ($ch -ceq ']' -and ($i + 1) -lt $line.Length -and $line[$i + 1] -ceq '(') {
+                $depth = 1
+                $stop = $i + 2
+                while ($stop -lt $line.Length -and $depth -gt 0) {
+                    if ($line[$stop] -ceq '(') { $depth++ }
+                    elseif ($line[$stop] -ceq ')') { $depth-- }
+                    if ($depth -eq 0) { break }
+                    $stop++
+                }
+                if ($depth -eq 0) {
+                    $target = $line.Substring($i + 2, $stop - $i - 2)
+                    $null = $builder.Append('](' + (& $repoint $target) + ')')
+                    $i = $stop + 1
+                    continue
+                }
+            }
+            $null = $builder.Append($ch)
+            $i++
+        }
+        $out.Add($builder.ToString())
+    }
+    return ($out -join "`n")
+}
+
+# Get-NSReportPath <workspace> - the shift's own report, the twin of ns_report_path.
+function Get-NSReportPath {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return (Join-Path (Join-Path $Workspace '.nightshift') 'shift-report.md')
+}
+
 # Get-NSPolicyHostName - which host this session is, from what the host itself sets.
 function Get-NSPolicyHostName {
     if (-not [string]::IsNullOrEmpty($env:CURSOR_PLUGIN_ROOT)) { return 'cursor' }

@@ -14,7 +14,7 @@
 /nightshift:stop       # pause now; open boxes stay open; deadline is preserved
 /nightshift:reset      # drop runtime markers and the deadline; keep punch list and history
 /nightshift:purge      # delete this project's .nightshift/; does not uninstall the plugin
-/nightshift:archive    # file finished work into .nightshift/archive/<YYYY-MM-DD>/ — shipped items, logs, handled snags; leftover contract stays
+/nightshift:archive    # file finished work under the archive root, .nightshift/archive/<YYYY-MM-DD>/ by default — shipped items, logs, handled snags; leftover contract stays
 # you review the local commits or artifact receipts — push only in repository mode, or forbid pushing outright (one env line below)
 ```
 

@@ -590,10 +590,18 @@ try {
     Expect-True (Test-Path -LiteralPath $artifactReceipt -PathType Leaf) `
         'an armed shift keeps its artifact receipts live'
 
-    # Once the shift has ended, the verified copies are retired together.
+    # Once the shift has ended, the records the caller established as closed are retired. An
+    # ended shift is not on its own evidence that any particular record is finished with, so the
+    # names are what decide it.
     Remove-Item -LiteralPath (Join-Path $archiveNs '.shift-armed') -Force
     [IO.File]::WriteAllText((Join-Path $archiveNs '.ended'), '', $utf8)
-    $closeRun = Invoke-Script -Path $archiveHelper -Arguments @('-Project', $archiveProject, '-Date', '2026-09-02')
+    $untoldRun = Invoke-Script -Path $archiveHelper -Arguments @('-Project', $archiveProject, '-Date', '2026-09-02')
+    Expect-Equal 0 $untoldRun.ExitCode "archive-receipts exits 0 when told nothing ($($untoldRun.StderrText))"
+    Expect-True (Test-Path -LiteralPath $morning -PathType Leaf) `
+        'told nothing, an ended shift still keeps every live record'
+    $closeRun = Invoke-Script -Path $archiveHelper -Arguments @(
+        '-Project', $archiveProject, '-Date', '2026-09-02',
+        '-Retire', (('morning-2026-09-02-' + $shiftId + '.md') + ',2026-09-02-quiet-the-rule.md'))
     Expect-Equal 0 $closeRun.ExitCode "archive-receipts exits 0 on a closed shift ($($closeRun.StderrText))"
     Expect-True (-not (Test-Path -LiteralPath $morning -PathType Leaf)) `
         'a closed and verified record leaves live storage'

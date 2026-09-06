@@ -405,6 +405,13 @@ if ($open -eq 0) {
     }
 }
 
+# A shift that asked for filing at clock-out and ended before it could. The next explicit Archive
+# is where it gets picked up; Start neither files nor clears it.
+$pendingFiling = Join-Path $ns '.pending-filing'
+if ((Test-Path -LiteralPath $pendingFiling -PathType Leaf) -and -not (Test-NSReparsePoint $pendingFiling)) {
+    Write-Warn 'pending-filing the last shift asked for filing at clock-out and ended before it could - the next explicit Archive picks it up from .nightshift/.pending-filing'
+}
+
 $openEnded = $false
 if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
     $inItems = $false

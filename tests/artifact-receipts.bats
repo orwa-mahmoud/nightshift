@@ -434,9 +434,9 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
 }
 
-@test "archive copies receipts and leaves live copies" {
+@test "archive copies receipts, and removing one is a separate decision" {
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
-  grep -qF 'leave the live copies' "$ARCHIVE"
+  grep -qF 'Filing is a copy' "$ARCHIVE"
   grep -qF 'runtime/archive-receipts.sh' "$ARCHIVE"
 }
 
@@ -486,7 +486,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF '**artifact receipt**' "$VOCAB"
   grep -qF 'A path that is not a usable directory is a refuse, not an empty night' "$VOCAB"
   grep -qF '**archive**' "$VOCAB"
-  grep -qF 'live receipts stay' "$VOCAB"
+  grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
   grep -qF 'runtime/write-receipt.sh' "$COMMANDS"
   grep -qF 'artifact mode has ticked items but no receipts' "$COMMANDS"

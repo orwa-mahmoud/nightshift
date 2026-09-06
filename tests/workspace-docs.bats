@@ -37,7 +37,7 @@ resolve_work_target() {
   grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$COMMANDS"
   grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$VOCAB"
   grep -qF '**archive**' "$VOCAB"
-  grep -qF 'live receipts stay' "$VOCAB"
+  grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
   grep -qF 'UNIX epoch seconds' "$VOCAB"
   grep -qF '.nightshift/work-target' "$VOCAB"

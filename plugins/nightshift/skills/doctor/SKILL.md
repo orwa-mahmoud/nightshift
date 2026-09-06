@@ -81,7 +81,7 @@ directory path). When ticked items exist and the receipts directory is empty, Do
 `artifact mode has ticked items but no receipts`. When the path exists but is not a real
 directory, it warns `artifact receipts path is not a usable directory` and offers to replace it
 so write-receipt can land; it does not also warn empty ticks for that path.
-Dated copies from Archive live under `$NS/archive/<YYYY-MM-DD>/receipts/`
+Copies from Archive live under the archive root, `$NS/archive/<YYYY-MM-DD>/receipts/` by default
 and do not replace the live files Doctor counts.
 Missing or empty receipts create no dated receipts folder.
 

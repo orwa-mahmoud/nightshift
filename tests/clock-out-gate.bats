@@ -1128,3 +1128,38 @@ handoff() {
   [ -f "$first" ]
   [ "$first" != "$second" ]
 }
+
+# archive.automatic asks for filing at clock-out. The gate notes that filing is due; it never files.
+# Deciding which records are closed reads the punch list and the work, which a stop hook cannot do,
+# and no session is spawned to make that judgement.
+
+@test "an owner who asked for filing at clock-out gets a note that it is due, not a hook that files" {
+  root="$(plugin_copy archive-auto)"
+  p="$(new_project gate-archive-auto)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.archive.automatic = true'
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'a receipt\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+
+  run gate_from "$root" "$p"
+  is_release
+  [ -f "$p/.nightshift/.pending-filing" ]
+  [ "$(sed -n 2p "$p/.nightshift/.pending-filing")" = 9f2c40ab77e51d63 ]
+  grep -qF 'archive.automatic is on' "$p/.nightshift/shift-log.md"
+  # The record is exactly where it was: the gate filed nothing and removed nothing.
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+}
+
+@test "the default is explicit filing, and no note is left" {
+  root="$(plugin_copy archive-manual)"
+  p="$(new_project gate-archive-manual)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -e "$p/.nightshift/.pending-filing" ]
+}

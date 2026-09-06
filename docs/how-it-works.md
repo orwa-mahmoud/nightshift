@@ -318,7 +318,7 @@ Nightshift gives it no remote and never pushes it. Clock-out and Archive commit 
 identity `nightshift@localhost`, and `commit.gpgsign=false` so a global signing requirement cannot
 stall a headless snapshot.
 
-Archiving moves finished work into `.nightshift/archive/<YYYY-MM-DD>/` while keeping the current working
+Archiving moves finished work under the archive root — `.nightshift/archive/<YYYY-MM-DD>/` by default, or wherever `archive.root` and `archive.layout` say — while keeping the current working
 files small.
 
 ## Different strengths on each host

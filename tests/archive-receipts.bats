@@ -552,6 +552,70 @@ REPORT
   [ "$(cksum <"$d/shift-report.md")" = "$relocated" ]
 }
 
+@test "Windows files to the same place, retires the same record and relocates the same links" {
+  if ! command -v pwsh >/dev/null 2>&1; then
+    return 0
+  fi
+  build() { # <project>
+    mkdir -p "$1/.nightshift/receipts"
+    cp "$RULES_TEMPLATE" "$1/.nightshift/rules.json"
+    jq '.archive.root = "history" | .archive.layout = "date"' "$1/.nightshift/rules.json" >"$1/r.json"
+    mv "$1/r.json" "$1/.nightshift/rules.json"
+    printf 'the baseline\n' >"$1/.nightshift/receipts/baseline.md"
+    printf 'morning\n' >"$1/.nightshift/receipts/morning-2026-09-05-abc.md"
+    printf '# Parking\n' >"$1/.nightshift/parking-lot.md"
+    printf '# Report\n\n[base](receipts/baseline.md) and [decision](parking-lot.md#x)\n' \
+      >"$1/.nightshift/shift-report.md"
+    : >"$1/.nightshift/.ended"
+  }
+  posix="$BATS_TEST_TMPDIR/parity-posix"
+  windows="$BATS_TEST_TMPDIR/parity-windows"
+  build "$posix"
+  build "$windows"
+
+  run bash "$ARCHIVE_SH" --project "$posix" --date 2026-09-05 --retire morning-2026-09-05-abc.md
+  [ "$status" -eq 0 ]
+  run pwsh -NoProfile -NonInteractive -File "$ARCHIVE_PS1" \
+    -Project "$windows" -Date 2026-09-05 -Retire morning-2026-09-05-abc.md
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+
+  # The configured root is honoured on both, so neither writes under the hardcoded archive/.
+  [ -d "$posix/.nightshift/history/2026-09-05" ]
+  [ -d "$windows/.nightshift/history/2026-09-05" ]
+  [ ! -e "$windows/.nightshift/archive" ]
+  run diff -r "$posix/.nightshift/history" "$windows/.nightshift/history"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  # And both retired the named record while leaving the other alone.
+  [ ! -f "$windows/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+  [ -f "$windows/.nightshift/receipts/baseline.md" ]
+}
+
+@test "Windows refuses to retire before the shift ends, and a name it did not file" {
+  if ! command -v pwsh >/dev/null 2>&1; then
+    return 0
+  fi
+  p="$BATS_TEST_TMPDIR/win-retire"
+  mkdir -p "$p/.nightshift/receipts"
+  cp "$RULES_TEMPLATE" "$p/.nightshift/rules.json"
+  printf 'item\n' >"$p/.nightshift/receipts/an-item.md"
+
+  run pwsh -NoProfile -NonInteractive -File "$ARCHIVE_PS1" -Project "$p" -Date 2026-09-05 -Retire an-item.md
+  [ "$status" -eq 2 ]
+  printf '%s\n' "$output" | grep -qF 'before the shift has ended'
+  [ -f "$p/.nightshift/receipts/an-item.md" ]
+
+  : >"$p/.nightshift/.ended"
+  run pwsh -NoProfile -NonInteractive -File "$ARCHIVE_PS1" -Project "$p" -Date 2026-09-05 -Retire never-existed.md
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'this run filed no such record'
+  [ -f "$p/.nightshift/receipts/an-item.md" ]
+
+  for bad in "../escape.md" "sub/x.md" ".hidden.md"; do
+    run pwsh -NoProfile -NonInteractive -File "$ARCHIVE_PS1" -Project "$p" -Date 2026-09-05 -Retire "$bad"
+    [ "$status" -eq 1 ] || { echo "$bad was accepted"; return 1; }
+  done
+}
+
 @test "a different record under a filed name is never overwritten and never removed" {
   p="$(new_project rot-clash)"
   mkdir -p "$p/.nightshift/receipts" "$p/.nightshift/archive/2026-09-05/receipts"

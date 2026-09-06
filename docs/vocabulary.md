@@ -13,7 +13,7 @@ Everything is named after construction-site work — learn one term, guess the r
 | **process lease** | `.nightshift/.shift-lease` | transient ownership of the active shift process — each watchman recovery advances its generation, admitting the recovered worker and fencing stale processes on the same conversation without locking other tabs |
 | **item gate** | per-item commands | work isn't accepted until it passes inspection — once per item, right before its commit or artifact receipt |
 | **artifact receipt** | `.nightshift/receipts/` | durable completion record in artifact mode — item, outputs, verification, identity hashes; replaces a work-target commit. A path that is not a usable directory is a refuse, not an empty night. |
-| **archive** | `.nightshift/archive/<YYYY-MM-DD>/` | dated filing of shipped items, the journal, handled snags, and copied artifact receipts; live receipts stay in `.nightshift/receipts/`. Missing or empty receipts create no dated receipts folder. |
+| **archive** | `.nightshift/archive/<YYYY-MM-DD>/` by default; `archive.root` and `archive.layout` move it | filing of shipped items, the journal, handled snags, and copied artifact receipts. Filing is a copy: a live record is retired only when Archive is told it is closed. Missing or empty receipts create no dated receipts folder. |
 | **site inspection** | interval commands | the scheduled heavy inspection (coverage, dead code, Sonar) every N items or H hours |
 | **walkthrough** | template item | the open-ended scan → fix loop that hunts defects until the clock runs out |
 | **hunt** | Nightshift Hunt | writes a ready-made walkthrough as a work order; cuts it into the punch list only on your word |

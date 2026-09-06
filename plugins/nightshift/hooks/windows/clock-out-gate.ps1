@@ -213,6 +213,20 @@ function Complete-NSShift {
     Save-NSPolicyArchive
     Save-NSEvidenceArchive
     Save-NSReceipt $Summary
+    # An owner who asked for filing at clock-out gets a note that filing is due, not a hook that
+    # files. Deciding which records are closed reads the punch list and the work; a stop hook is
+    # the wrong place for that judgement and no session is spawned to make it.
+    if ((Test-Path -LiteralPath $ns -PathType Container) -and (Test-NSArchiveAutomatic $workspace)) {
+        $pending = Join-Path $ns '.pending-filing'
+        if (Test-NSReparsePoint $pending) {
+            Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue
+        }
+        $pendingId = 'unknown'
+        $pendingState = Get-NSShiftPolicyState $workspace
+        if ($pendingState['state'] -ceq 'valid') { $pendingId = [string]$pendingState['policy']['shiftId'] }
+        [IO.File]::WriteAllText($pending, ((Get-Date -Format 'yyyy-MM-dd') + "`n" + $pendingId + "`n"), $utf8)
+        Write-NSLogLine 'archive.automatic is on - filing is due for this shift'
+    }
     Invoke-NSWhistle $Summary
 }
 

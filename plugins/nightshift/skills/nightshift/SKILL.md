@@ -290,3 +290,11 @@ You may stop only when every box is `- [x]`, or the owner issues a stop-work ord
 plus one handover line in `$NS/shift-log.md`, then
 stop. History is append-only on shift — no `reset --hard`,
 `rebase`, `amend`, or force operations; the night's receipts must survive to morning.
+
+If `archive.automatic=true` in the resolved policy, file the shift before you stop: run the
+Archive skill once the shift has ended, decide which records are closed the way Archive describes,
+and delete `$NS/.pending-filing` when it is done. That marker is written by the gate, not acted on
+by it — deciding what is finished with reads the punch list and the work, which a stop hook cannot
+do. A marker still there at the next Start means the last shift ended before it could file, and
+the next explicit Archive picks it up. The default is `false`: filing stays something the owner
+asks for.

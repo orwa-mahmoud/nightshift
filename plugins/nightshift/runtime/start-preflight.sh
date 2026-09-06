@@ -430,6 +430,12 @@ if [ "$OPEN" -eq 0 ]; then
   fi
 fi
 
+# A shift that asked for filing at clock-out and ended before it could. The next explicit Archive
+# is where it gets picked up; Start neither files nor clears it.
+if [ -f "$NS/.pending-filing" ] && [ ! -L "$NS/.pending-filing" ]; then
+  warn "pending-filing the last shift asked for filing at clock-out and ended before it could - the next explicit Archive picks it up from .nightshift/.pending-filing"
+fi
+
 OPEN_ENDED=0
 if [ -f "$NS/punch-list.md" ] && [ ! -L "$NS/punch-list.md" ]; then
   ns_items_section "$NS/punch-list.md" | grep -qF 'Ending: open-ended' && OPEN_ENDED=1

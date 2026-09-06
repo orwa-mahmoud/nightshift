@@ -42,9 +42,14 @@ Nightshift records; do not require a work-target commit that cannot exist. Copy 
 Missing or empty receipts create no dated receipts folder.
 A receipts path that is not a usable directory is a refuse, not an empty skip.
 
+If `$NS/.pending-filing` exists, the last shift asked for filing at clock-out and did not get to
+it. Its two lines are that shift's date and id — use them, then delete the marker once filing is
+done. Nothing else about it is special: file the same way you would on any explicit Archive.
+
 **Filing is a copy. Removing a live record is a separate decision, and it is yours to make.**
-The helper retires only what you name with `--retire <record name>` (native Windows:
-`-Retire <record name>`), repeatable, and only once the shift has ended. Without a name it copies
+The helper retires only what you name, and only once the shift has ended: `--retire` with one
+record name, repeated once per record on POSIX; on native Windows, `-Retire` takes the names as a
+single comma-separated list. Without a name it copies
 and removes nothing, which is the right answer whenever you are unsure.
 
 Before naming anything, read `$NS/punch-list.md` and the records themselves and decide which
@@ -56,16 +61,17 @@ never erased. A name the helper did not file is refused and told back to you.
 
 ## Where it goes
 
-Everything lands under the archive root, which is `archive.root` in the resolved policy and
-defaults to `archive/`, in `<YYYY-MM-DD>/` or `shift-<id>/` according to `archive.layout` —
-today's date is `date +%Y-%m-%d` on POSIX, or `Get-Date -Format yyyy-MM-dd` on native Windows.
+Everything lands under the archive root, which is `archive.root` in the resolved policy, in
+`<YYYY-MM-DD>/` or `shift-<id>/` according to `archive.layout`. Left alone those give the default
+`$NS/archive/<YYYY-MM-DD>/`, and receipts land in `archive/<YYYY-MM-DD>/receipts/` under it.
+Today's date is `date +%Y-%m-%d` on POSIX, or `Get-Date -Format yyyy-MM-dd` on native Windows.
 One folder per archive run; create parents, and re-running on the same day appends to that day's
 files.
 
 **The report keeps working from where it lands.** The helper repoints its links: a record that
 travelled with it stays a sibling, a record that stayed live is reached back through the archive.
-That rewriting changes bytes, so the untouched original is preserved beside it as
-`shift-report.original.md`. Do not hand-edit either one.
+That rewriting changes bytes, so the untouched original is preserved beside it, under the report's
+own name with an "original" suffix. Do not hand-edit either one.
 
 ## What moves, what stays
 

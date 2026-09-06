@@ -201,6 +201,15 @@ end_shift() {
   archive_shift_policy
   archive_findings_ledger "${shift_id:-unknown}"
   receipts_commit "$1"
+  # An owner who asked for filing at clock-out gets a note that filing is due, not a hook that
+  # files. Deciding which records are closed reads the punch list and the work; a stop hook is the
+  # wrong place for that judgement and no session is spawned to make it. The model does it before
+  # it stops, and if the session never gets that far the note is what the next Archive finds.
+  if ns_archive_automatic "$PROJECT_DIR" && [ -d "$NS" ]; then
+    [ -L "$NS/.pending-filing" ] && rm -f "$NS/.pending-filing"
+    printf '%s\n%s\n' "$(date +%Y-%m-%d)" "${shift_id:-unknown}" >"$NS/.pending-filing" 2>/dev/null || :
+    log_line "archive.automatic is on - filing is due for this shift"
+  fi
   whistle "$1"
 }
 
