@@ -138,13 +138,12 @@ new_artifact() {
 }
 
 @test "Archive skill names the receipts helper on POSIX and Windows" {
-  grep -qF 'runtime/archive-receipts.sh' "$ARCHIVE_SKILL"
-  grep -qF 'runtime\windows\archive-receipts.ps1' "$ARCHIVE_SKILL"
+  grep -qE 'ns"? archive-receipts' "$ARCHIVE_SKILL"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$ARCHIVE_SKILL"
   grep -qF 'A receipts path that is not a usable directory is a refuse, not an empty skip' "$ARCHIVE_SKILL"
   grep -qF 'Filing is a copy' "$ARCHIVE_SKILL"
   grep -qF -e '--retire' "$ARCHIVE_SKILL"
-  grep -qF 'Never call `archive-receipts.sh`' "$ARCHIVE_SKILL"
+  grep -qF 'Never call `ns archive-receipts`' "$ARCHIVE_SKILL"
   grep -qF 'runtime/archive-receipts.sh' "$COMMANDS"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$COMMANDS"
   grep -qF 'runtime\windows\archive-receipts.ps1' "$COMMANDS"

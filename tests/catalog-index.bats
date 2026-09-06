@@ -80,7 +80,7 @@ ENTRY
 }
 
 @test "Hunt discovers before it reads, and still reads what it composes" {
-  grep -qF 'runtime/catalog-index.sh' "$HUNT"
+  grep -qE 'ns"? catalog-index' "$HUNT"
   grep -qF 'Then read in full only the entries you are actually going to use' "$HUNT"
   # The old instruction to read all thirty is gone.
   if grep -qF 'read every file in it' "$HUNT"; then

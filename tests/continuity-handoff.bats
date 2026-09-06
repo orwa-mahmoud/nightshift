@@ -66,7 +66,7 @@ LIB="$ROOT/plugins/nightshift/lib/lib.sh"
 }
 
 @test "start status and doctor keep native fence and drop leftover python commands" {
-  grep -qF 'runtime/continuity-handoff.sh" fence-check --project' "$START"
+  grep -qF 'ns" continuity-handoff fence-check' "$START"
   if grep -qF 'handoff-package' "$START"; then
     return 1
   fi

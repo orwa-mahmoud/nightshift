@@ -46,14 +46,13 @@ EOF
   grep -qF 'cited-research.md' "$RECIPE"
   grep -qi 'not itself a catalog entry' "$RECIPE" || grep -qi 'not a Hunt catalog entry' "$CONTRACT"
   grep -qF 'cited-research.md' "$NIGHTSHIFT"
-  grep -qF 'runtime/check-report.sh' "$NIGHTSHIFT"
-  grep -qF 'runtime\windows\check-report.ps1' "$NIGHTSHIFT"
+  grep -qE 'ns"? check-report' "$NIGHTSHIFT"
   grep -qF 'cited-research.md' "$START"
   grep -qF 'runtime/check-report.sh' "$COMMANDS"
   grep -qF 'runtime\windows\check-report.ps1' "$COMMANDS"
   grep -qF 'runtime\windows\check-report.ps1' "$BATS_TEST_DIRNAME/../docs/windows.md"
   grep -qF 'runtime/check-report.sh' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
-  grep -qF 'runtime/write-receipt.sh' "$CONTRACT"
+  grep -qE 'ns"? write-receipt' "$CONTRACT"
   grep -qF '$NS/receipts/' "$CONTRACT"
 }
 
@@ -165,7 +164,7 @@ EOF
 }
 
 @test "Windows check-report pairs POSIX and runs when pwsh is present" {
-  grep -qF 'runtime\windows\check-report.ps1' "$START"
+  grep -qE 'ns"? check-report' "$START"
   grep -qF 'missing heading' "$CHECK_PS1"
   grep -qF 'fabricated citation' "$CHECK_PS1"
   grep -qF 'Test-NSSecretLine' "$CHECK_PS1"

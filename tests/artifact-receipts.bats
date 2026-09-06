@@ -437,20 +437,18 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
 @test "archive copies receipts, and removing one is a separate decision" {
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
   grep -qF 'Filing is a copy' "$ARCHIVE"
-  grep -qF 'runtime/archive-receipts.sh' "$ARCHIVE"
+  grep -qE 'ns"? archive-receipts' "$ARCHIVE"
 }
 
 @test "skills and docs name artifact receipts" {
-  grep -qF 'runtime/write-receipt.sh' "$NIGHTSHIFT"
-  grep -qF 'runtime\windows\write-receipt.ps1' "$NIGHTSHIFT"
+  grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"
   grep -qF '$NS/receipts/' "$START"
   grep -qF 'exists but is not a usable directory' "$START"
   grep -qF 'do not `git init` the notes folder' "$NIGHTSHIFT"
   grep -qF 'when Git is installed' "$NIGHTSHIFT"
-  grep -qF 'runtime/write-receipt.sh' "$START"
-  grep -qF 'runtime/write-receipt.sh' "$SETUP"
-  grep -qF 'runtime\windows\write-receipt.ps1' "$SETUP"
+  grep -qE 'ns"? write-receipt' "$START"
+  grep -qE 'ns"? write-receipt' "$SETUP"
   grep -qF '$NS/receipts/' "$SETUP"
   grep -qF 'do not treat artifact setup as complete' "$SETUP"
   grep -qF 'artifact receipts N' "$STATUS"

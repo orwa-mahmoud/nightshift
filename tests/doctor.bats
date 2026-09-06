@@ -22,7 +22,7 @@ doctor() {
   [ -x "$DOCTOR" ]
   [ -f "$SKILL" ]
   grep -q '^name: doctor$' "$SKILL"
-  grep -qF 'runtime/doctor.sh' "$SKILL"
+  grep -qE 'ns"? doctor' "$SKILL"
   grep -qF '[safe]' "$SKILL"
   grep -qF '[confirm]' "$SKILL"
   grep -qF '[blocked]' "$SKILL"
@@ -52,8 +52,8 @@ doctor() {
     grep -qF 'never re-derive' "$f" || grep -qF 'do not re-derive' "$f" \
       || { echo "no do-not-re-derive rule: $f"; return 1; }
   done
-  grep -qF 'runtime/status.sh' "$STATUS"
-  grep -qF 'runtime/doctor.sh' "$STATUS"
+  grep -qE 'ns"? status' "$STATUS"
+  grep -qE 'ns"? doctor' "$STATUS"
   grep -qF 'reimplement liveness' "$STATUS"
 }
 

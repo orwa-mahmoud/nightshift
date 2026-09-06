@@ -361,20 +361,20 @@ setup() {
 @test "Doctor offers the inventory without running it, and Status may show it" {
   DOCTOR="$PLUGIN/skills/doctor/SKILL.md"
   STATUS="$PLUGIN/skills/status/SKILL.md"
-  grep -qF 'runtime/inventory.sh' "$DOCTOR"
+  grep -qE 'ns"? inventory' "$DOCTOR"
   grep -qF 'A senior may run the read-only project inventory' "$DOCTOR"
   grep -qF 'Doctor never runs it' "$DOCTOR"
-  grep -qF 'runtime/inventory.sh' "$STATUS"
+  grep -qE 'ns"? inventory' "$STATUS"
 }
 
 @test "Hunt and Quality name the inventory only as optional, and Automatic never needs it" {
   for skill in hunt quality; do
-    line="$(grep -n 'inventory.sh' "$PLUGIN/skills/$skill/SKILL.md" | head -1)"
+    line="$(grep -nE 'ns"? inventory' "$PLUGIN/skills/$skill/SKILL.md" | head -1)"
     [ -n "$line" ] || { echo "$skill does not name the inventory"; return 1; }
     grep -qF 'if present, optional' "$PLUGIN/skills/$skill/SKILL.md" \
       || { echo "$skill does not mark the inventory optional"; return 1; }
   done
   # Automatic composes and works without it: no shift entry may require it.
-  ! grep -rlF 'inventory.sh' "$PLUGIN/skills/nightshift/references/shifts" | grep -q .
+  ! grep -rlE 'inventory\.sh|ns inventory' "$PLUGIN/skills/nightshift/references/shifts" | grep -q .
   grep -qF 'runtime/inventory.sh' "$ROOT/docs/evidence-capabilities.md"
 }

@@ -222,3 +222,68 @@ documented_pages() {
 
   [ -z "$bad" ] || { echo "unknown subcommands or flags:$bad"; return 1; }
 }
+
+# One spelling per command.
+#
+# A skill used to carry each command two or three times — POSIX, native Windows, and a Codex
+# variant — and the model read all of them on every host. The dispatcher resolves the host, so a
+# second spelling is dead weight the moment it appears. These hold that.
+
+@test "no skill names a helper file: every command is one ns verb" {
+  for f in "$SKILLS"/*/SKILL.md; do
+    if grep -nE '\$NIGHTSHIFT_PLUGIN_ROOT/runtime/[a-z0-9/-]+\.sh' "$f"; then
+      echo "raw POSIX helper path in $f"
+      return 1
+    fi
+    if grep -nE 'runtime.windows.[a-z0-9-]+\.ps1' "$f" | grep -v 'ns\.ps1'; then
+      echo "raw Windows helper path in $f"
+      return 1
+    fi
+  done
+}
+
+@test "no skill passes --project: the dispatcher resolves the workspace" {
+  for f in "$SKILLS"/*/SKILL.md; do
+    # Two commands take a path as their subject rather than their location: Setup links a
+    # different workspace, and Purge targets the task root so the host link goes with it.
+    case "$f" in */setup/SKILL.md | */purge/SKILL.md) continue ;; esac
+    if grep -n -- '--project\|-Project ' "$f"; then
+      echo "$f still passes the project"
+      return 1
+    fi
+  done
+}
+
+@test "the old bind prose is gone from every skill" {
+  for f in "$SKILLS"/*/SKILL.md; do
+    for phrase in 'Bind once, then never search' \
+      'Bind the Nightshift directory once' \
+      'capture `pwd -P` before any other shell call' \
+      'helpers taking `--project`'; do
+      if grep -qF "$phrase" "$f"; then
+        echo "$f still carries: $phrase"
+        return 1
+      fi
+    done
+  done
+}
+
+@test "every ns verb a skill names resolves to a helper that ships" {
+  runtime="$PLUGIN/runtime"
+  for f in "$SKILLS"/*/SKILL.md; do
+    # `ns <verb>` in a command line or in prose, but not the two built-ins.
+    for verb in $(grep -oE '(runtime/ns"|`ns) [a-z][a-z0-9-]+' "$f" | awk '{print $2}' | sort -u); do
+      case "$verb" in
+        bind | help) continue ;;
+      esac
+      found=no
+      for candidate in "$runtime/$verb.sh" "$runtime"/*/"$verb.sh" "$runtime/windows/$verb.ps1"; do
+        [ -f "$candidate" ] && found=yes && break
+      done
+      if [ "$found" = no ]; then
+        echo "$f names 'ns $verb', which resolves to no helper"
+        return 1
+      fi
+    done
+  done
+}
