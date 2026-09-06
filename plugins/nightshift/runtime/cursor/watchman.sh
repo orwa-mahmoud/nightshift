@@ -236,7 +236,7 @@ spawn() {
     scope="$(ns_recovery_effective_scope "$PROJECT" cursor)"
     case "$scope" in
       unavailable:*)
-        log_line "watchman: the shift recorded scope '${scope#unavailable:}', which this host has no way to be asked for. Not reviving at a scope it cannot reproduce."
+        log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
         log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
         note recovery-scope-unavailable
         return 1

@@ -4551,12 +4551,17 @@ function Get-NSLaunchObserved {
 # Get-NSRecoveryEffectiveScope <workspace> <host> - what a revival may actually ask for. The same
 # four answers as the POSIX resolver, decided the same way:
 #
-#   host-default      the owner asked for it, or no scope was ever recorded. No permission
-#                     argument is passed. It is the baseline, not a claim of being narrower than
-#                     the original session.
-#   host-grant        the owner wrote it by name.
-#   recorded:<scope>  a scope the host observed and can be asked for again.
-#   unavailable:<s>   a recorded scope this host cannot request, so the caller refuses.
+#   host-default             the owner asked for it by name. No permission argument is passed.
+#   host-grant               the owner wrote it by name.
+#   recorded:<scope>         a scope the host observed and can be asked for again.
+#   unavailable:unrecorded   nothing was recorded to inherit.
+#   unavailable:unreadable   the policy that would have recorded it cannot be read.
+#   unavailable:unsupported:<scope>
+#                            a recorded scope this host has no way to request.
+#
+# The three unavailable answers are refusals. Inheriting means reproducing what the session had;
+# where that cannot be established, falling back to the host's default is a guess about
+# permissions rather than a narrowing, so the caller refuses and says what the owner can do.
 function Get-NSRecoveryEffectiveScope {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -4564,13 +4569,32 @@ function Get-NSRecoveryEffectiveScope {
     )
     $configured = Get-NSRecoveryLaunchScope $Workspace
     if ($configured -ceq 'host-default' -or $configured -ceq 'host-grant') { return $configured }
+    $policyState = (Get-NSShiftPolicyState $Workspace)['state']
+    if ($policyState -ceq 'absent') { return 'unavailable:unrecorded' }
+    if ($policyState -cne 'valid') { return 'unavailable:unreadable' }
     $recorded = Get-NSPolicyLaunch -Workspace $Workspace -Field 'scope'
     $provenance = Get-NSPolicyLaunch -Workspace $Workspace -Field 'provenance'
     if ($provenance -ceq 'observed' -and -not [string]::IsNullOrEmpty($recorded) -and $recorded -cne 'unknown') {
         if (Test-NSLaunchScopeSupported $HostName $recorded) { return ('recorded:' + $recorded) }
-        return ('unavailable:' + $recorded)
+        return ('unavailable:unsupported:' + $recorded)
     }
-    return 'host-default'
+    return 'unavailable:unrecorded'
+}
+
+# Get-NSRecoveryRefusal <effective-scope> - the one sentence that says why a revival is refused.
+# Empty for a scope that is not a refusal.
+function Get-NSRecoveryRefusal {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope)
+    if ($Scope -ceq 'unavailable:unrecorded') {
+        return 'the host named no scope for the session this shift was started in, so there is nothing to inherit and no way to show a revival would be no broader'
+    }
+    if ($Scope -ceq 'unavailable:unreadable') {
+        return 'the policy that records the launch scope cannot be read, so what this shift was started under is unknown'
+    }
+    if ($Scope -clike 'unavailable:unsupported:*') {
+        return ("the shift was started under '" + $Scope.Substring('unavailable:unsupported:'.Length) + "', which this host has no way to be asked for again")
+    }
+    return ''
 }
 
 # Get-NSPolicyLaunch <workspace> <scope|provenance> - what the snapshot recorded about the scope

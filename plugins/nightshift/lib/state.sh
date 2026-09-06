@@ -244,17 +244,46 @@ ns_recovery_effective_scope() {
       return 0
       ;;
   esac
+  _ns_policy_load_shift "$1"
+  case "$NS_POLICY_SHIFT_STATE" in
+    ok) ;;
+    absent)
+      printf 'unavailable:unrecorded'
+      return 0
+      ;;
+    *)
+      printf 'unavailable:unreadable'
+      return 0
+      ;;
+  esac
   recorded="$(ns_policy_launch "$1" scope 2>/dev/null)" || recorded=""
   provenance="$(ns_policy_launch "$1" provenance 2>/dev/null)" || provenance=""
   if [ "$provenance" = observed ] && [ -n "$recorded" ] && [ "$recorded" != unknown ]; then
     if ns_launch_scope_supported "$2" "$recorded"; then
       printf 'recorded:%s' "$recorded"
     else
-      printf 'unavailable:%s' "$recorded"
+      printf 'unavailable:unsupported:%s' "$recorded"
     fi
     return 0
   fi
-  printf 'host-default'
+  printf 'unavailable:unrecorded'
+}
+
+# ns_recovery_refusal <effective-scope> — the one sentence that says why a revival is refused.
+# Status 1 for a scope that is not a refusal.
+ns_recovery_refusal() {
+  case "$1" in
+    unavailable:unrecorded)
+      printf 'the host named no scope for the session this shift was started in, so there is nothing to inherit and no way to show a revival would be no broader'
+      ;;
+    unavailable:unreadable)
+      printf 'the policy that records the launch scope cannot be read, so what this shift was started under is unknown'
+      ;;
+    unavailable:unsupported:*)
+      printf "the shift was started under '%s', which this host has no way to be asked for again" "${1#unavailable:unsupported:}"
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # toolDeny requires exact key matching. The shipped reader accepts the template's

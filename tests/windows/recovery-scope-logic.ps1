@@ -13,6 +13,14 @@ $template = Join-Path $repository 'plugins/nightshift/skills/nightshift/referenc
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $utf8 = New-Object Text.UTF8Encoding($false)
 
+function Expect-True {
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) {
+        $failures.Add($Message)
+        Write-Host "FAIL: $Message"
+    }
+}
+
 function Expect-Equal {
     param($Expected, $Actual, [string]$Message)
     if ($Expected -cne $Actual) {
@@ -58,8 +66,10 @@ try {
     # the broad grant is the defect this file exists to keep out.
     Expect-Equal 'inherit-recorded-scope' (Get-NSRecoveryLaunchScope $workspace) 'shipped template inherits'
 
-    # Nothing recorded: the host default, which adds no permission argument.
-    Expect-Equal 'host-default' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'no snapshot falls back to the host default'
+    # Nothing recorded: there is nothing to inherit, so a revival is refused rather than launched
+    # at whatever the host happens to default to.
+    Expect-Equal 'unavailable:unrecorded' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'no snapshot refuses rather than guesses'
+    Expect-True ((Get-NSRecoveryRefusal 'unavailable:unrecorded') -match 'nothing to inherit') 'the refusal says why'
 
     # A missing recovery block, a malformed file and an unrecognised value all inherit. None of
     # them is a reason to hand out permissions.
@@ -84,15 +94,16 @@ try {
         Expect-Equal ('recorded:' + $mode) (Get-NSRecoveryEffectiveScope $workspace 'codex') "codex can be asked for $mode"
     }
     Set-Snapshot $workspace 'some-future-mode' 'observed'
-    Expect-Equal 'unavailable:some-future-mode' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'an unsupported mode is refused, not passed'
+    Expect-Equal 'unavailable:unsupported:some-future-mode' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'an unsupported mode is refused, not passed'
+    Expect-True ((Get-NSRecoveryRefusal 'unavailable:unsupported:some-future-mode') -match 'no way to be asked for again') 'the refusal names the mode'
     Set-Snapshot $workspace 'workspace-write' 'unavailable'
-    Expect-Equal 'host-default' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'a scope nobody observed is not inherited'
+    Expect-Equal 'unavailable:unrecorded' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'a scope nobody observed is not inherited'
 
     # Claude Code and Cursor name no scope, so nothing is ever handed to their command lines.
     Expect-Equal "unknown`tunavailable" (Get-NSLaunchObserved 'claude') 'claude observes nothing'
     Expect-Equal "unknown`tunavailable" (Get-NSLaunchObserved 'cursor') 'cursor observes nothing'
     Set-Snapshot $workspace 'workspace-write' 'observed'
-    Expect-Equal 'unavailable:workspace-write' (Get-NSRecoveryEffectiveScope $workspace 'cursor') 'cursor cannot be asked for a codex mode'
+    Expect-Equal 'unavailable:unsupported:workspace-write' (Get-NSRecoveryEffectiveScope $workspace 'cursor') 'cursor cannot be asked for a codex mode'
 
     # What Codex does report is recorded, so a revival has something to inherit.
     $env:CODEX_SANDBOX_MODE = 'read-only'

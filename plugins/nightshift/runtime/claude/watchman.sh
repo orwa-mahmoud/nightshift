@@ -277,8 +277,26 @@ rung_prompt() { # $1 attempt, $2 total attempts this wake
 # tool access immediately. The child shell's pid + start time make the holder inspectable; the
 # Claude hook replaces them with the exact Claude ancestor when its first tool arrives.
 # The owner-provided $AGENT command line is intentionally word-split below.
+# Set once when a revival is refused because the recorded scope cannot be reproduced. Retrying
+# cannot change that answer, so the ladder stops instead of spending its rungs on it.
+RECOVERY_REFUSED=0
+
 spawn() { # $1 optionally overrides the agent for this one attempt; $2 the order for its rung
-  local a="${1:-$AGENT}" p="${2:-$PROMPT_RESUME}" rc
+  local a="${1:-$AGENT}" p="${2:-$PROMPT_RESUME}" rc scope
+  # Claude Code names no scope for a session's permissions, so a shift started under the shipped
+  # inherit setting has nothing to inherit and a revival cannot be shown to be no broader than the
+  # original. That is a refusal, not a reason to launch at whatever the host defaults to.
+  scope="$(ns_recovery_effective_scope "$PROJECT" claude)"
+  case "$scope" in
+    unavailable:*)
+      RECOVERY_REFUSED=1
+      log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
+      log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
+      note recovery-scope-unavailable
+      return 1
+      ;;
+  esac
+  log_line "watchman: reviving under launch scope $scope"
   # NIGHTSHIFT_REVIVAL marks the child for the hooks: a revival session ending is never the
   # owner's hand on the door — without the mark, the worker's own exit would write .session-end
   # under the recorded id and stand the watchman down mid-outage.
@@ -660,6 +678,7 @@ while :; do
             revived=0
             break
           fi
+          if [ "$RECOVERY_REFUSED" -eq 1 ]; then break; fi
           # Re-baseline: the failed attempt may have appended its own error to the transcript.
           # Only what moves AFTER this line is site life.
           : >"$SENTINEL"
@@ -693,6 +712,10 @@ while :; do
             log_line "watchman: resumed session returned — re-checking next wake"
             printf -- '- [notice] %s — the shift session died and the watchman revived it (details in shift-log.md).\n' "$(ts)" >>"$NS/parking-lot.md"
           fi
+        elif [ "$RECOVERY_REFUSED" -eq 1 ]; then
+          # The ladder stopped because a revival was refused, not because its rungs ran out. The
+          # reason already says which, and overwriting it with a retry count would lose it.
+          :
         elif [ -z "$aborted" ]; then
           note exhausted-retry
           if api_limited_tail; then

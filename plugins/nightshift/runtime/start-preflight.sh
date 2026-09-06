@@ -430,6 +430,19 @@ if [ "$OPEN" -eq 0 ]; then
   fi
 fi
 
+# Whether an unattended revival could happen at all, said before the night rather than discovered
+# after it. Inheriting means reproducing the scope the session was started under, and a host that
+# names none leaves nothing to inherit — so the owner hears now that recovery will refuse, and how
+# to authorize one.
+RECOVERY_SCOPE="$(ns_recovery_effective_scope "$WORKSPACE" "$HOST_NAME" 2>/dev/null)" || RECOVERY_SCOPE=""
+case "$RECOVERY_SCOPE" in
+  unavailable:*)
+    warn "recovery $(ns_recovery_refusal "$RECOVERY_SCOPE") - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Set recovery.launchScope to host-default or host-grant in .nightshift/rules.json to authorize one."
+    ;;
+  '') ;;
+  *) ok "recovery revival scope $RECOVERY_SCOPE" ;;
+esac
+
 # A shift that asked for filing at clock-out and ended before it could. The next explicit Archive
 # is where it gets picked up; Start neither files nor clears it.
 if [ -f "$NS/.pending-filing" ] && [ ! -L "$NS/.pending-filing" ]; then

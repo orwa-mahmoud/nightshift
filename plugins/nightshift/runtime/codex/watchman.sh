@@ -261,7 +261,7 @@ spawn() { # $1 = rung (1|2)
   case "$scope" in
     unavailable:*)
       RECOVERY_REFUSED=1
-      log_line "watchman: the shift recorded sandbox mode '${scope#unavailable:}', which codex exec has no way to be asked for. Not reviving at a scope this host cannot reproduce."
+      log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
       log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
       note recovery-scope-unavailable
       return 1

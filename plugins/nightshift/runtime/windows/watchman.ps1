@@ -458,8 +458,7 @@ function Start-NSAgent {
     # between rungs: a failed revival is retried at the same scope, never a broader one.
     $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
     if ($launchScope -clike 'unavailable:*') {
-        $recordedScope = $launchScope.Substring('unavailable:'.Length)
-        Write-NSLogLine ("watchman: the shift recorded scope '" + $recordedScope + "', which this host has no way to be asked for. Not reviving at a scope it cannot reproduce.")
+        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Not reviving at permissions it cannot show are no broader than the original.')
         Write-NSLogLine 'watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json.'
         Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
         return $false
