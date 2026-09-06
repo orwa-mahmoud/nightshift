@@ -287,3 +287,39 @@ documented_pages() {
     done
   done
 }
+
+# The explanation lives on the verdict, not in the skill.
+#
+# Start used to explain every preflight topic in prose, and the model read all of it on every
+# Start. The helper explains itself now, so what the skill may still say about a verdict is how to
+# read one — and the two rules that are policy rather than mechanics.
+
+@test "Start explains no verdict it did not receive" {
+  start="$SKILLS/start/SKILL.md"
+  table="$PLUGIN/lib/preflight-explain.txt"
+
+  # Every topic the table explains must be explained THERE, not in the skill. A sentence fragment
+  # distinctive to each explanation is enough to catch a copy left behind.
+  for phrase in 'Liveness is process evidence' \
+    'does not get a silent new budget' \
+    'the cross-host handoff fence refused' \
+    'the helper clears the leftovers itself' \
+    'The work-mode verdicts decide where the work happens' \
+    'this host has no reader for it at all'; do
+    if grep -qF "$phrase" "$start"; then
+      echo "Start still explains a verdict: $phrase"
+      return 1
+    fi
+  done
+
+  # And the table is where they went.
+  grep -qF 'Liveness is process evidence' "$table"
+  grep -qF 'does not get a silent new budget' "$table"
+  grep -qF 'cross-host handoff fence refused' "$table"
+
+  # What stays: how to read a verdict, and the two policy rules.
+  grep -qF 'one verdict, and it explains itself' "$start"
+  grep -qF 'never invent an explanation the helper did not print' "$start"
+  grep -qF 'never kill a live watchman' "$start"
+  grep -qF 'never clear `STOP`' "$start"
+}

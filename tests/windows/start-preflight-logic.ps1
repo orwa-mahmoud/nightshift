@@ -69,7 +69,7 @@ try {
     $cleanLines = @($cleanRun.Stdout -split "`n" | Where-Object { $_ -ne '' })
     Expect-True ($cleanLines.Count -gt 0) 'clean site prints verdicts'
     foreach ($line in $cleanLines) {
-        Expect-True ($line -match '^(ok|warn|repair|refuse) ') "every line is a verdict: $line"
+        Expect-True ($line -match '^(ok|warn|explain|repair|refuse) ') "every line is a verdict: $line"
     }
     Expect-True ($cleanRun.Stdout.Contains('ok host claude')) 'clean site names the host'
     Expect-True ($cleanRun.Stdout.Contains('ok work-mode repository')) 'clean site resolves repository mode'
@@ -174,7 +174,7 @@ try {
     Expect-True ($provisionRun.ExitCode -eq 1) 'an unproven install refuses'
     Expect-True ($provisionRun.Stdout.Contains('refuse provision an interrupted install cannot be proven recovered')) `
         'the unproven install is named'
-    Expect-True ($provisionRun.Stdout.Contains('provision.sh rollback after fixing the target, then Start again')) `
+    Expect-True ($provisionRun.Stdout.Contains('ns provision rollback after fixing the target, then Start again')) `
         'the restore instruction survives'
 
     # A future state-version fails closed and the marker is never rewritten.

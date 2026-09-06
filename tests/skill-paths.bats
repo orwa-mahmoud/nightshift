@@ -155,7 +155,8 @@ PY
   grep -qF '$NS/.shift-lease' "$START"
   grep -qF 'ns_lease_reset_stale' "$START"
   grep -qF ': nightshift-binding-probe' "$START"
-  grep -qF 'jq` or `python3' "$START"
+  # Start no longer restates what the preflight does or does not need; the policy verdict says it.
+  grep -qF 'Never install jq or python3' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qF 'ns" start-preflight' "$START"
 }
 
@@ -198,13 +199,11 @@ PY
   [ -n "$active" ]
   [ "$active" -lt "$stale" ]
   [ "$stale" -lt "$clear" ]
-  grep -qF 'refuse watchman' "$START"
-  grep -qF 'never kill a live watchman as stale' "$START"
-  grep -qF '$NS/.shift-lease' "$START"
-  grep -qF 'Stand down a stale watchman' "$HOSTS"
-  grep -qF 'Test-NSRecordedProcess' "$HOSTS"
-  grep -qF 'Stop-Process -Id' "$HOSTS"
-  grep -qF 'a reused pid is not this watchman' "$HOSTS"
+  # The rule is policy, so Start keeps it; what a watchman verdict MEANS is the helper's to say.
+  grep -qF 'never kill a live watchman' "$START"
+  grep -qF 'never kill that watchman as stale' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF 'A watchman is alive on this workspace' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'a watchman must never be able to advance the old lease' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
 }
 
 # Start opens the host reference only when a verdict names that host, so the reference has to
@@ -214,13 +213,15 @@ PY
   grep -qF 'start-hosts.md' "$START"
   grep -qF 'ConvertFrom-Json' "$HOSTS"
   grep -qF 'PSObject.Properties.Name' "$HOSTS"
-  grep -qF 'kill -0' "$HOSTS"
-  grep -qF 'process-evidence-unavailable' "$HOSTS"
+  # Liveness is a verdict's meaning, not host detail: it moved onto the watchman explanation.
+  grep -qF 'kill -0' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'process-evidence-unavailable' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qF 'claude --resume' "$HOSTS"
   grep -qF 'codex resume' "$HOSTS"
   grep -qF 'agent --resume' "$HOSTS"
-  grep -qF 'ns" link-workspace' "$HOSTS"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh' "$HOSTS"
+  # Linking another workspace and the stale-lease reset are repairs the helper hands the owner.
+  grep -qF 'ns link-workspace' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF 'ns_lease_reset_stale' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
   grep -qF '$TASK_ROOT/.claude/settings.local.json' "$HOSTS"
   grep -qF '$TASK_ROOT/.claude/settings.json' "$HOSTS"
 }
@@ -251,10 +252,11 @@ PY
   fi
 }
 
-@test "start STOP lever uses the bound Nightshift directory on both platforms" {
-  grep -qF 'touch "$NS/STOP"' "$START"
-  grep -qF 'New-Item -ItemType File -Force "$NS\STOP"' "$START"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh' "$HOSTS"
+@test "the STOP lever a refusal offers is an absolute path on both platforms" {
+  # The panic form is a repair now, so it carries the resolved workspace rather than a name the
+  # owner would have to expand themselves.
+  grep -qF 'touch \"$NS/STOP\"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF '$ns\STOP' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
 }
 
 @test "hunt and quality arm with the same bound pair as start" {
@@ -390,10 +392,10 @@ PY
   for pair in \
     "doctor:doctor" "status:doctor" "import-issues:import-issues" "hunt:import-issues" \
     "archive:retain-history" "archive:archive-receipts" "setup:migrate-state" \
-    "start:migrate-state" "doctor:migrate-state" "setup:apply-profile" "doctor:apply-profile" \
+    "doctor:migrate-state" "setup:apply-profile" "doctor:apply-profile" \
     "doctor:export-support" "stop:stop-shift" "reset:reset-shift" "purge:purge-workspace" \
-    "start:write-receipt" "setup:write-receipt" "nightshift:write-receipt" \
-    "start:check-report" "nightshift:check-report"; do
+    "setup:write-receipt" "nightshift:write-receipt" \
+    "nightshift:check-report"; do
     skill="${pair%%:*}"
     verb="${pair##*:}"
     grep -qF "ns\" $verb" "$SKILLS/$skill/SKILL.md" || grep -qF "\`ns $verb\`" "$SKILLS/$skill/SKILL.md" \
