@@ -140,10 +140,10 @@ new_artifact() {
 @test "Archive skill names the receipts helper on POSIX and Windows" {
   grep -qF 'runtime/archive-receipts.sh' "$ARCHIVE_SKILL"
   grep -qF 'runtime\windows\archive-receipts.ps1' "$ARCHIVE_SKILL"
-  grep -qF 'leave the live copies' "$ARCHIVE_SKILL"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$ARCHIVE_SKILL"
   grep -qF 'A receipts path that is not a usable directory is a refuse, not an empty skip' "$ARCHIVE_SKILL"
-  grep -qF 'Never delete live receipts' "$ARCHIVE_SKILL"
+  grep -qF 'Filing is a copy' "$ARCHIVE_SKILL"
+  grep -qF -e '--retire' "$ARCHIVE_SKILL"
   grep -qF 'Never call `archive-receipts.sh`' "$ARCHIVE_SKILL"
   grep -qF 'runtime/archive-receipts.sh' "$COMMANDS"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$COMMANDS"
@@ -378,14 +378,15 @@ closed() { # <project> — the shift ended
   [ -f "$p/.nightshift/shift-report.md" ]
 }
 
-@test "a closed shift retires its verified records, report and all" {
+@test "a closed shift retires the records it was told are closed, and only those" {
   p="$(new_project rot-closed)"
   mkdir -p "$p/.nightshift/receipts"
   printf 'morning\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
   printf 'item\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
   printf '# Shift report\n\n## P01\n\ndone.\n' >"$p/.nightshift/shift-report.md"
   closed "$p"
-  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 \
+    --retire morning-2026-09-05-abc.md --retire 2026-09-05-an-item.md --retire shift-report.md
   [ "$status" -eq 0 ]
   d="$p/.nightshift/archive/2026-09-05"
   [ -f "$d/receipts/morning-2026-09-05-abc.md" ]
@@ -393,11 +394,162 @@ closed() { # <project> — the shift ended
   [ -f "$d/shift-report.md" ]
   # The archived copies are what the live ones were.
   [ "$(cat "$d/receipts/2026-09-05-an-item.md")" = item ]
-  [ "$(cat "$d/shift-report.md" | head -1)" = '# Shift report' ]
+  [ "$(head -1 "$d/shift-report.md")" = '# Shift report' ]
   # And live storage is clear for the next shift.
   [ ! -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
   [ ! -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
   [ ! -f "$p/.nightshift/shift-report.md" ]
+}
+
+@test "an ended shift still holding open work keeps what that work needs" {
+  # STOP and the deadline both end a shift with work still open, so a terminal marker is not
+  # evidence that any particular record is finished with.
+  p="$(new_project rot-open-work)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '## Items\n- [x] **P01 done.**\n- [ ] **P02 open, and its baseline is receipts/baseline.md.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf 'the P02 baseline\n' >"$p/.nightshift/receipts/baseline.md"
+  printf 'morning\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  printf '# Shift report\n' >"$p/.nightshift/shift-report.md"
+  closed "$p"
+
+  # Told nothing, it retires nothing: every record is still where the open item can reach it.
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/receipts/baseline.md" ]
+  [ -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+  [ -f "$p/.nightshift/shift-report.md" ]
+  [ -f "$p/.nightshift/archive/2026-09-05/receipts/baseline.md" ]
+
+  # Told which record is closed, it retires that one and leaves the open item's baseline alone.
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire morning-2026-09-05-abc.md
+  [ "$status" -eq 0 ]
+  [ ! -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+  [ -f "$p/.nightshift/receipts/baseline.md" ]
+  [ "$(cat "$p/.nightshift/receipts/baseline.md")" = 'the P02 baseline' ]
+}
+
+@test "a name this run did not file is refused rather than passed over" {
+  p="$(new_project rot-unmatched)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'item\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-never-existed.md
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'this run filed no such record'
+  printf '%s\n' "$output" | grep -qF '2026-09-05-never-existed.md'
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+}
+
+@test "retiring is refused outright while the shift is armed or has not ended" {
+  p="$(new_project rot-not-ended)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'item\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  # new_project leaves the shift armed, the way Start does.
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
+  [ "$status" -eq 2 ]
+  printf '%s\n' "$output" | grep -qF 'while the shift is armed'
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+
+  # Disarmed but never ended: the shift is not over, so nothing of it is closed either.
+  rm -f "$p/.nightshift/.shift-armed"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
+  [ "$status" -eq 2 ]
+  printf '%s\n' "$output" | grep -qF 'before the shift has ended'
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+}
+
+@test "--retire takes a record name, never a path out of the archive" {
+  p="$(new_project rot-badname)"
+  mkdir -p "$p/.nightshift/receipts"
+  closed "$p"
+  for bad in "../escape.md" "sub/x.md" ".hidden.md" ""; do
+    run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire "$bad"
+    [ "$status" -eq 1 ] || { echo "$bad was accepted"; return 1; }
+  done
+}
+
+@test "the archived report still reaches the records that stayed live" {
+  p="$(new_project rot-links)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'the baseline\n' >"$p/.nightshift/receipts/baseline.md"
+  printf '# Parking\n\n## A live decision\n' >"$p/.nightshift/parking-lot.md"
+  printf '# Snag\n\n- a finding\n' >"$p/.nightshift/snag-log.md"
+  cat >"$p/.nightshift/shift-report.md" <<'REPORT'
+# Shift report
+
+The baseline is [here](receipts/baseline.md) and the decision is in
+[parking-lot.md](parking-lot.md#a-live-decision), with the finding in [snag-log.md](snag-log.md).
+Unrelated: [the docs](https://example.invalid/x), [an output](../out/build.log), [root](/etc/hosts).
+
+```
+[not a link](parking-lot.md)
+```
+REPORT
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire baseline.md
+  [ "$status" -eq 0 ]
+
+  d="$p/.nightshift/archive/2026-09-05"
+  # Every link in the archived page resolves from where that page now sits.
+  ( cd "$d" && [ -f receipts/baseline.md ] ) || { echo "the travelled record moved out of reach"; return 1; }
+  ( cd "$d" && [ -f ../../parking-lot.md ] ) || { echo "the live decision is unreachable"; return 1; }
+  ( cd "$d" && [ -f ../../snag-log.md ] ) || { echo "the live snag log is unreachable"; return 1; }
+  grep -qF '(../../parking-lot.md#a-live-decision)' "$d/shift-report.md"
+  grep -qF '(receipts/baseline.md)' "$d/shift-report.md"
+  # Nothing else is touched: an external link, a path outside the state area, an absolute path,
+  # and a fenced block all read exactly as written.
+  grep -qF '(https://example.invalid/x)' "$d/shift-report.md"
+  grep -qF '(../out/build.log)' "$d/shift-report.md"
+  grep -qF '(/etc/hosts)' "$d/shift-report.md"
+  grep -qF '[not a link](parking-lot.md)' "$d/shift-report.md"
+
+  # Rewriting changed bytes, so the untouched original is preserved beside the relocated page.
+  [ -f "$d/shift-report.original.md" ]
+  cmp -s "$d/shift-report.original.md" <(sed 's/^$//' "$d/shift-report.original.md")
+  grep -qF '(parking-lot.md#a-live-decision)' "$d/shift-report.original.md"
+}
+
+@test "a report whose links all travelled is filed unchanged, with no second copy" {
+  p="$(new_project rot-links-nochange)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'the baseline\n' >"$p/.nightshift/receipts/baseline.md"
+  printf '# Shift report\n\nOnly [the baseline](receipts/baseline.md) is linked.\n' \
+    >"$p/.nightshift/shift-report.md"
+  before="$(cksum <"$p/.nightshift/shift-report.md")"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire baseline.md
+  [ "$status" -eq 0 ]
+  d="$p/.nightshift/archive/2026-09-05"
+  [ "$(cksum <"$d/shift-report.md")" = "$before" ]
+  [ ! -e "$d/shift-report.original.md" ]
+}
+
+@test "filing a relocated report twice neither duplicates it nor calls it a clash" {
+  p="$(new_project rot-links-repeat)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# Parking\n' >"$p/.nightshift/parking-lot.md"
+  printf '# Shift report\n\n[the decision](parking-lot.md)\n' >"$p/.nightshift/shift-report.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  d="$p/.nightshift/archive/2026-09-05"
+  relocated="$(cksum <"$d/shift-report.md")"
+
+  # The archived page differs from the live one by design, so a second run must recognise it
+  # rather than report two different records under one name.
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qvF 'a different record is already filed'
+  [ "$(cksum <"$d/shift-report.md")" = "$relocated" ]
+  [ -f "$p/.nightshift/shift-report.md" ]
+
+  # And it is the preserved original that establishes the report is the same one, so naming it
+  # closed still retires the live copy.
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire shift-report.md
+  [ "$status" -eq 0 ]
+  [ ! -f "$p/.nightshift/shift-report.md" ]
+  [ "$(cksum <"$d/shift-report.md")" = "$relocated" ]
 }
 
 @test "a different record under a filed name is never overwritten and never removed" {
@@ -418,12 +570,12 @@ closed() { # <project> — the shift ended
   mkdir -p "$p/.nightshift/receipts"
   printf 'item\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
   closed "$p"
-  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
   [ "$status" -eq 0 ]
   [ ! -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
   before="$(cksum <"$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-an-item.md")"
   # Nothing left to file, and the archived record is untouched.
-  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
   [ "$status" -eq 0 ]
   [ "$(cksum <"$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-an-item.md")" = "$before" ]
 }
