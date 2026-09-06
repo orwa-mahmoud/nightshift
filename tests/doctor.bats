@@ -862,8 +862,9 @@ offers_promotion() { # <output>
 @test "Doctor and Status say the same thing about staged work" {
   # Both skills must state the precedence explicitly, so a summary cannot invert it.
   grep -qF 'Staged work is reported, never offered, while the punch list has open items' "$SKILL"
-  grep -qF 'both counts are informational' "$STATUS"
-  grep -qF 'Start works the punch list exactly as the owner left it' "$STATUS"
+  grep -qF 'informational while items are open' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'staged work is informational and nothing else' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
 }
 
 @test "the Windows Doctor applies the same condition" {

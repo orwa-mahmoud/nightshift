@@ -135,9 +135,10 @@ call_lib() {
   grep -qF 'Skip a symlink or reparse child; it is not a nested checkout.' "$START"
   grep -qF 'Skip a symlink or reparse child; it is not a nested checkout.' "$DOC"
   grep -qF 'work mode' "$STATUS" || grep -qF 'work-mode' "$STATUS"
-  grep -qF 'work mode is unset; Setup would propose artifact' "$STATUS"
-  grep -qF 'persist the proposed artifact mode with Setup' "$STATUS"
-  grep -qF 'work mode is malformed; treating the site as unusable until Setup rewrites it' "$STATUS"
+  grep -qF 'work mode is unset; Setup would propose artifact' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
+  # Status relays whatever the inspector warns; the wording is the inspector's.
+  grep -qF 'Relay every Warning' "$STATUS"
+  grep -qF 'work mode is malformed; treating the site as unusable until Setup rewrites it' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   grep -qF 'work mode' "$DOCTOR_SKILL" || grep -qF 'work-mode' "$DOCTOR_SKILL"
   grep -qF 'work mode is unset; Setup would propose artifact' "$DOCTOR"
   grep -qF 'work mode is unset; Setup would propose artifact' "$WIN_DOCTOR"

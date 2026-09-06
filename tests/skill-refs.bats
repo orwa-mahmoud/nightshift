@@ -323,3 +323,41 @@ documented_pages() {
   grep -qF 'never kill a live watchman' "$start"
   grep -qF 'never clear `STOP`' "$start"
 }
+
+# Status renders; it does not count.
+#
+# Half the Status skill was instructions for deriving facts by hand — count the boxes below a
+# heading, count drafting-table boxes only after the first rule, subtract the deadline from the
+# clock. Every one of those is mechanics, and mechanics belong in the helper.
+
+@test "the Status skill teaches no counting" {
+  status="$SKILLS/status/SKILL.md"
+  for phrase in 'counted **below the `## Items`' \
+    'Count drafting-table boxes only after the first markdown' \
+    'compare with `date +%s`' \
+    'Count open `- [ ]` boxes in' \
+    'the count and one-line titles of entries in' \
+    'report the most recent research entry and the counts of'; do
+    if grep -qF "$phrase" "$status"; then
+      echo "Status still teaches counting: $phrase"
+      return 1
+    fi
+  done
+
+  # What it keeps: the two commands, the rendering rule, and read-only.
+  grep -qE 'ns"? status' "$status"
+  grep -qE 'ns"? doctor' "$status"
+  grep -qF 'Render, never re-derive' "$status"
+  grep -qF 'read-only' "$status"
+  grep -qF 'Relay every Warning' "$status"
+  grep -qF 'reimplement liveness' "$status"
+}
+
+@test "every fact Status renders is one the helper prints" {
+  helper="$PLUGIN/runtime/status.sh"
+  for label in 'open item' 'parked' 'staged' 'snag' 'opportunities' 'deadline' 'stop' \
+    'session' 'lease' 'watch reason' 'work mode' 'work target' 'artifact receipts' 'transition'; do
+    grep -qF "fact \"$label\"" "$helper" || grep -qF "fact \"$label " "$helper" \
+      || { echo "the helper prints no '$label' fact"; return 1; }
+  done
+}

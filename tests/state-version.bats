@@ -258,7 +258,8 @@ codex_ask() {
   grep -qF 'state-version' "$SETUP"
   grep -qF 'state-version' "$START"
   grep -qiF 'start never writes' "$START"
-  grep -qF 'never run migration from status' "$STATUS"
+  # Status modifies nothing at all, which covers migration and everything else.
+  grep -qF 'Modify no file, begin no work' "$STATUS"
   grep -qF 'never migrate' "$ARCHIVE"
   grep -qF 'migrate-state.sh' "$DOCTOR_SKILL"
   grep -qF 'separate owner actions, never Doctor' "$DOCTOR_SKILL"

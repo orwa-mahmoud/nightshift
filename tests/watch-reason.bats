@@ -14,9 +14,10 @@ CODES="completed owner-stop owner-disarm stale-pid invalid-session exhausted-ret
 }
 
 @test "status and Doctor render the same shared reason file" {
-  grep -qF '.watch-reason' "$STATUS"
-  grep -qF 'ns_reason_label' "$STATUS"
-  grep -qF 'Get-NSReasonLabel' "$STATUS"
+  grep -qF '.watch-reason' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'ns_reason_label' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'Get-NSReasonLabel' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'ns_reason_code' "$DOCTOR"
   grep -qF 'ns_reason_label' "$DOCTOR"
   grep -qF '.watch-reason' "$DOCTOR_SKILL" || grep -qF 'watchman reason' "$DOCTOR"
