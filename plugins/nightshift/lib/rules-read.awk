@@ -312,6 +312,48 @@ function emit_defaults(    parts, count, j, k) {
   }
 }
 
+# praw_pref(path) — one preference value as compact JSON. An array is rebuilt from its indexed
+# elements, because the reader keeps those and not the text they came from; every other type is
+# already raw. This is the awk half of the two canonical writers and has to match them byte for
+# byte, so a list of strings prints exactly as ["a","b"].
+function praw_pref(path,    n, i, out, kind) {
+  kind = ptype(path)
+  if (kind != "array") {
+    return praw(path)
+  }
+  n = plen(path)
+  out = ""
+  for (i = 0; i < n; i++) {
+    if (i > 0) {
+      out = out ","
+    }
+    out = out praw(path "[" i "]")
+  }
+  return "[" out "]"
+}
+
+# The owner preference blocks tonight's snapshot freezes. A block the snapshot does not carry
+# emits its type and no fields, which is how a policy written before this feature is told apart
+# from one whose owner left a block empty.
+function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
+  count = split("shift recovery handoff archive report", blocks, " ")
+  fields["shift"] = "execution hours toolingPolicy verificationProfile"
+  fields["recovery"] = "launchScope"
+  fields["handoff"] = "detail enabled language sections templatePath view"
+  fields["archive"] = "automatic layout root templatePath"
+  fields["report"] = "enabled legacyItemReceipts progressMinutes progressMode progressTokens templatePath usage"
+  for (j = 1; j <= count; j++) {
+    put("ty\t" blocks[j] "\t" ptype(blocks[j]))
+    if (!(blocks[j] in V_TYPE)) {
+      continue
+    }
+    fcount = split(fields[blocks[j]], parts, " ")
+    for (k = 1; k <= fcount; k++) {
+      put("j\t" blocks[j] "." parts[k] "\t" praw_pref(blocks[j] "." parts[k]))
+    }
+  }
+}
+
 function emit_policy(    j, k, ap, cs, ws, cnt, val) {
   if (ptype(".") != "object") {
     put("x\t.\tnotobject")
@@ -319,6 +361,7 @@ function emit_policy(    j, k, ap, cs, ws, cnt, val) {
   }
   emit_keys(".", ".")
   emit_scalars(".", ".", "schemaVersion shiftId createdAt source deadlineEpoch verificationLevel toolingPolicy launchScope launchProvenance completionMode gatesDigest")
+  emit_preferences()
 
   put("ty\tbudgets\t" ptype("budgets"))
   if (ptype("budgets") == "object") {

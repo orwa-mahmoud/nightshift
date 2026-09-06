@@ -175,7 +175,7 @@ cmd_get() {
 }
 
 cmd_set() {
-  local tmpd candidate out rc observed scope provenance
+  local tmpd candidate out rc observed scope provenance block frozen
   [ -n "$FROM" ] || usage
   [ -d "$NS" ] || die "no .nightshift/ at $WORKSPACE — run setup first" 2
   refuse_while_armed
@@ -212,6 +212,15 @@ cmd_set() {
         >"$tmpd/with-launch.json" &&
       mv "$tmpd/with-launch.json" "$candidate" || :
   fi
+  # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
+  # here, so an edit to rules.json lands on the next shift rather than moving the ground under
+  # this one. A candidate that already states a block is left exactly as it was written.
+  for block in shift recovery handoff archive report; do
+    printf '%s' "$(cat "$candidate")" | grep -q "\"$block\"" && continue
+    frozen="$(ns_policy_freeze_pref "$WORKSPACE" "$block")" || continue
+    ns_rules_set_block "$candidate" "$block" "$frozen" >"$tmpd/with-$block.json" &&
+      mv "$tmpd/with-$block.json" "$candidate" || :
+  done
   ns_policy_pretty_text <"$candidate" >"$tmpd/pretty.json" || {
     rm -rf "$tmpd"
     die 'cannot render the policy' 2

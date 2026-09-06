@@ -3940,7 +3940,8 @@ function Test-NSShiftPolicyDocument {
     }
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
-        'allowances', 'gatesDigest', 'completionMode', 'selectedDebt')
+        'allowances', 'gatesDigest', 'completionMode', 'selectedDebt',
+        'shift', 'recovery', 'handoff', 'archive', 'report')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -4188,6 +4189,18 @@ function Set-NSShiftPolicy {
     # Record what this session is actually running under, so a revival can reproduce it instead of
     # guessing. It grants nothing - it is a note of what the shift already had - and a candidate
     # that states it already is left exactly as the owner wrote it.
+    # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
+    # here, so an edit to rules.json lands on the next shift rather than moving the ground under
+    # this one. A candidate that already states a block is left exactly as it was written.
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'report')) {
+        if ($document.Contains($block)) { continue }
+        $frozen = New-NSOrdinalMap
+        foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
+            if (-not $name.StartsWith($block + '.', [StringComparison]::Ordinal)) { continue }
+            $frozen[$name.Substring($block.Length + 1)] = (Get-NSPolicyGroupSetting $Workspace $name)['value']
+        }
+        if ($frozen.Count -gt 0) { $document[$block] = $frozen }
+    }
     if (-not $document.Contains('launchScope')) {
         $observed = (Get-NSLaunchObserved (Get-NSPolicyHostName)) -split "`t", 2
         $document['launchScope'] = $observed[0]
@@ -4741,6 +4754,24 @@ function Get-NSPolicyGroupSetting {
     $fallback = $script:NSPolicyGroupDefaults[$Name]
     $block = $Name.Substring(0, $Name.IndexOf('.'))
     $key = $Name.Substring($Name.IndexOf('.') + 1)
+
+    # A preference tonight's policy froze is what tonight uses, whatever the owner has since
+    # written, and the view says so. A snapshot that cannot be read answers with the shipped
+    # default rather than the mutable file it was supposed to fix; one written before this
+    # feature carries no block, and then the owner's file is the source.
+    $state = Get-NSShiftPolicyState $Workspace
+    if ($state['state'] -ceq 'malformed') { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    if ($state['state'] -ceq 'valid') {
+        $frozen = Get-NSMapValue $state['policy'] $block
+        if ($frozen -is [Collections.IDictionary] -and $frozen.Contains($key)) {
+            $value = $frozen[$key]
+            if ($null -ne $value) {
+                if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'one-shift' 'shift') }
+                return (New-NSPolicySetting $value 'one-shift' 'shift')
+            }
+        }
+    }
+
     $rules = Get-NSRulesObject $Workspace
     if ($null -eq $rules) { return (New-NSPolicySetting $fallback 'built-in' '-') }
     $property = $rules.PSObject.Properties[$block]
@@ -4797,9 +4828,14 @@ function Get-NSPolicyResolution {
     if ($null -ne $policy) {
         $settings['verificationLevel'] = New-NSPolicySetting $policy['verificationLevel'] 'one-shift' 'shift'
         $settings['toolingPolicy'] = New-NSPolicySetting $policy['toolingPolicy'] 'one-shift' 'shift'
+        # Once a policy exists, the deadline is tonight's either way: a number is the clock, and
+        # null says this shift runs without one. Neither is the absence of a decision.
         $deadline = Get-NSMapValue $policy 'deadlineEpoch'
         if (Test-NSJsonInteger $deadline) {
             $settings['deadlineEpoch'] = New-NSPolicySetting ([long]$deadline) 'one-shift' 'shift'
+        }
+        else {
+            $settings['deadlineEpoch'] = New-NSPolicySetting $null 'one-shift' 'shift'
         }
     }
 

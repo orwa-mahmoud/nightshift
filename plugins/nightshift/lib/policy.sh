@@ -44,7 +44,12 @@ budgets
 completionMode
 selectedDebt
 allowances
-gatesDigest"
+gatesDigest
+shift
+recovery
+handoff
+archive
+report"
 
 NS_POLICY_RULES_STATE=""
 NS_POLICY_RULES_VALS=""
@@ -282,6 +287,15 @@ import json, re, sys
 SCALARS = ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
            "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
            "completionMode", "gatesDigest"]
+# The owner preference blocks tonight'"'"'s snapshot freezes. A block the snapshot does not carry
+# emits its type and no fields, which is how a policy written before this feature is told apart
+# from one whose owner left a block empty.
+PREF = [("shift", ["execution", "hours", "toolingPolicy", "verificationProfile"]),
+        ("recovery", ["launchScope"]),
+        ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
+        ("archive", ["automatic", "layout", "root", "templatePath"]),
+        ("report", ["enabled", "legacyItemReceipts", "progressMinutes", "progressMode",
+                    "progressTokens", "templatePath", "usage"])]
 out = []
 
 
@@ -353,6 +367,10 @@ if not isinstance(P, dict):
     sys.exit(0)
 ks(".", P)
 sc(".", P, SCALARS)
+for block, fields in PREF:
+    ty(block, P.get(block))
+    if block in P:
+        sc(block, P.get(block), fields)
 ty("budgets", P.get("budgets"))
 for key, value in obj(P.get("budgets")).items():
     out.append("b\t%s\t%s" % (scrub(key), enc(value)))
@@ -985,6 +1003,77 @@ ns_policy_launch() {
   esac
 }
 
+# ns_policy_freeze_pref <workspace> <block> — the block as it applies tonight, compact JSON, ready
+# to be written into the snapshot. Every supported field is present: the owner's value where their
+# file states one, the shipped default where it does not, so the frozen block answers on its own
+# and a later edit to the owner's file cannot change what tonight resolved to.
+ns_policy_freeze_pref() {
+  local f="$1/.nightshift/rules.json" facts line name val out="" first=1
+  facts=""
+  if [ -f "$f" ]; then
+    facts="$(ns_rules_facts "$f" 2>/dev/null)" || facts=""
+  fi
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    case "$name" in "$2".*) ;; *) continue ;; esac
+    val=""
+    while IFS= read -r line; do
+      case "$line" in
+        "g${NS_POLICY_TAB}${name}${NS_POLICY_TAB}1${NS_POLICY_TAB}"*)
+          val="${line#*"$NS_POLICY_TAB"*"$NS_POLICY_TAB"1"$NS_POLICY_TAB"}"
+          break
+          ;;
+      esac
+    done <<FACTS
+$facts
+FACTS
+    [ -n "$val" ] || val="$(ns_policy_builtin "$name")" || val=null
+    [ "$first" -eq 1 ] || out="$out,"
+    first=0
+    out="$out\"${name#*.}\":$val"
+  done <<KEYS
+$NS_RULES_GROUP_KEYS
+KEYS
+  [ "$first" -eq 0 ] || return 1
+  printf '{%s}' "$out"
+}
+
+# ns_policy_pref <workspace> <block> <field> — one owner preference, as it applies right now.
+#
+# The owner's file is where a preference is written; tonight's snapshot is where it is fixed. Once
+# a shift has a policy, that policy answers: an edit to rules.json mid-shift changes the next
+# shift, not the one running, so a report cadence or an archive destination cannot move under a
+# night that already started. Composition is the authorized update path, and it writes a new
+# snapshot.
+#
+# Three cases, and none of them is a silent fallback:
+#
+#   the snapshot froze the block   its value, whatever the owner has since written
+#   the snapshot predates this     the owner's file, because there is nothing frozen to honour
+#   the snapshot cannot be read    empty, so the caller takes its own built-in default — never
+#                                  the mutable file the unreadable snapshot was supposed to fix
+#
+# With no snapshot at all there is no shift to fix anything for, and the owner's file answers.
+ns_policy_pref() {
+  local kind raw f
+  _ns_policy_load_shift "$1"
+  case "$NS_POLICY_SHIFT_STATE" in
+    ok)
+      kind="$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" "$2")" || kind=""
+      if [ "$kind" = object ]; then
+        raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$2.$3")" || raw=null
+        [ "$raw" = null ] && return 0
+        ns_json_text "$raw"
+        return 0
+      fi
+      ;;
+    malformed | noparser) return 0 ;;
+  esac
+  f="$1/.nightshift/rules.json"
+  [ -f "$f" ] || return 0
+  ns_rules_get_in "$f" "$2" "$3"
+}
+
 # ns_policy_validate_shift_file <file>
 # Status 0 the document is a valid shift policy · 2 prints one diagnostic naming the offending
 # field · 3 the file is absent · 4 no JSON parser is installed. Composition validates a candidate
@@ -1255,6 +1344,28 @@ _ns_policy_setting() {
       [ "$val" = allow ] || return 0
       NS_POLICY_V='"allow"'
       return 0
+      ;;
+  esac
+  # A preference tonight's policy froze is what tonight uses, whatever the owner has since
+  # written. The view says so: the source is this shift, and it expires with it.
+  case "$name" in
+    *.*)
+      if [ "$NS_POLICY_SHIFT_STATE" = ok ]; then
+        category="${name%%.*}"
+        case "$category" in
+          shift | recovery | handoff | archive | report)
+            if [ "$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" "$category")" = object ]; then
+              val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$name")" || val=""
+              if [ -n "$val" ] && [ "$val" != null ]; then
+                NS_POLICY_V="$val"
+                NS_POLICY_S=one-shift
+                NS_POLICY_E='shift'
+                return 0
+              fi
+            fi
+            ;;
+        esac
+      fi
       ;;
   esac
   [ "$NS_POLICY_RULES_STATE" = ok ] || return 0

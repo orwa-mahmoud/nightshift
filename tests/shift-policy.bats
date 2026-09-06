@@ -80,13 +80,22 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  # Everything the candidate stated comes back exactly as it was written.
-  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance)')" \
+  # Everything the candidate stated comes back exactly as it was written. What the snapshot adds
+  # is what the shift needs fixed: the scope this session runs under, and the owner preferences
+  # tonight was composed with.
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .report)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
-  # And the snapshot also notes the scope this session was running under, so a revival can
-  # reproduce it rather than reach for a broader one.
+  # The scope, so a revival can reproduce it rather than reach for a broader one.
   printf '%s' "$output" | jq -e 'has("launchScope") and has("launchProvenance")' >/dev/null
   printf '%s' "$output" | jq -e '.launchProvenance | IN("observed", "unavailable")' >/dev/null
+  # And every preference block, complete: the owner's value where their file states one and the
+  # shipped default where it does not, so the frozen block answers on its own.
+  printf '%s' "$output" | jq -e '
+    (.report | has("enabled") and has("progressMode") and has("progressMinutes"))
+    and (.archive | has("root") and has("layout") and has("automatic"))
+    and (.handoff | has("view") and has("sections") and has("enabled"))
+    and (.recovery | has("launchScope"))
+    and (.shift | has("verificationProfile") and has("hours"))' >/dev/null
   # The file on disk stays readable for the owner who opens it.
   grep -q '"shiftId": "9f2c40ab77e51d63"' "$p/.nightshift/shift-policy.json"
 }
@@ -99,7 +108,8 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$output" = "$(jq -caS . "$p/candidate.json")" ]
+  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .report)')" \
+    = "$(jq -caS . "$p/candidate.json")" ]
 }
 
 @test "set reads the policy from stdin" {

@@ -16,9 +16,7 @@ rule() {
 
 # ns_report <project-dir> <field> — one field of the report block, or empty.
 ns_report() {
-  local f="$1/.nightshift/rules.json"
-  [ -f "$f" ] || return 0
-  ns_rules_get_in "$f" report "$2"
+  ns_policy_pref "$1" report "$2"
 }
 
 # ns_report_enabled <project-dir> — status 0 unless the owner turned the report off. A shift that
@@ -40,9 +38,7 @@ ns_report_path() {
 
 # ns_archive <project-dir> <field> — one field of the archive block, or empty.
 ns_archive() {
-  local f="$1/.nightshift/rules.json"
-  [ -f "$f" ] || return 0
-  ns_rules_get_in "$f" archive "$2"
+  ns_policy_pref "$1" archive "$2"
 }
 
 # ns_state_path <state-dir> <relative-name> — a nested path under the Nightshift state area, or
@@ -133,9 +129,7 @@ ns_archive_automatic() {
 # ns_handoff <project-dir> <field> — one field of the handoff block, or empty when the file says
 # nothing. Presentation only: none of it decides whether a check ran.
 ns_handoff() {
-  local f="$1/.nightshift/rules.json"
-  [ -f "$f" ] || return 0
-  ns_rules_get_in "$f" handoff "$2"
+  ns_policy_pref "$1" handoff "$2"
 }
 
 # ns_handoff_enabled <project-dir> — status 0 unless the owner turned the page off. A shift that
@@ -159,11 +153,11 @@ ns_handoff_view() {
 # takes whatever the host gives. Anything else, or an unreadable file, is host-grant: recovery
 # keeps working, and the scope in force is logged either way. The watchman never widens it.
 ns_recovery_launch_scope() {
-  local f="$1/.nightshift/rules.json" v=""
+  local v=""
   if [ -n "${NIGHTSHIFT_LAUNCH_SCOPE:-}" ]; then
     v="$NIGHTSHIFT_LAUNCH_SCOPE"
-  elif [ -f "$f" ]; then
-    v="$(ns_rules_get_in "$f" recovery launchScope)"
+  else
+    v="$(ns_policy_pref "$1" recovery launchScope)"
   fi
   case "$v" in
     host-default) printf 'host-default' ;;
