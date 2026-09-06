@@ -1402,8 +1402,11 @@ _ns_policy_setting() {
 #   3. an exact-plan allowance permits only its listed commands; a category allowance permits the
 #      whole category; with both present the category applies.
 #   4. shift-defaults.json is never the source of an effective value.
-#   6. a malformed shift-policy.json grants nothing: the view is built-in plus rules, and the
-#      caller names the field.
+#   5. an owner preference the shift-policy froze is this shift's answer, reported one-shift and
+#      expiring with the shift; the owner's file answers only where nothing was frozen.
+#   6. a malformed shift-policy.json grants nothing. Elevation falls to built-in plus rules, and
+#      a frozen preference falls to its built-in rather than to the file it was fixed against.
+#      Either way the caller names the field.
 # A key the owner wrote is the owner's answer: a setting present in rules.json reports source
 # rules and expiry permanent even when its value is an empty string or a zero, and a category
 # present under rules.elevation reports rules whichever way its policy points. built-in and `-`
