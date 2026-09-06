@@ -9,7 +9,7 @@ PLUGIN="$ROOT/plugins/nightshift"
 PREFLIGHT="$PLUGIN/runtime/start-preflight.sh"
 PS1_TWIN="$PLUGIN/runtime/windows/start-preflight.ps1"
 START="$PLUGIN/skills/start/SKILL.md"
-HOSTS="$PLUGIN/skills/nightshift/references/start-hosts.md"
+HOSTS="$PLUGIN/skills/nightshift/references/hosts/"
 
 load helpers
 

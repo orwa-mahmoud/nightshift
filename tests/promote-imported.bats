@@ -3,8 +3,8 @@ load helpers
 IMPORT="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/import-issues.sh"
 FAKE_GH="$BATS_TEST_DIRNAME/fixtures/import-issues/bin/gh"
 FIXTURES="$BATS_TEST_DIRNAME/fixtures/import-issues/issues"
-TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/drafting-table-template.md"
-PUNCH="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/punch-list-template.md"
+TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/drafting-table.md"
+PUNCH="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/punch-list.md"
 
 setup_file() {
   chmod +x "$FAKE_GH"

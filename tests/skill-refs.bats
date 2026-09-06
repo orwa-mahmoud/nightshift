@@ -120,10 +120,10 @@ provision-preflight.sh provision-preflight.ps1"
 # The reference is loaded by name from both composition skills; a rename there is silent.
 @test "the shared execution-modes reference is reachable from both composition skills" {
   for s in hunt quality; do
-    grep -qF 'skills/nightshift/references/execution-modes.md' "$SKILLS/$s/SKILL.md" \
+    grep -qF 'skills/nightshift/references/compose/execution-modes.md' "$SKILLS/$s/SKILL.md" \
       || { echo "$s does not name the shared reference"; return 1; }
   done
-  [ -f "$SKILLS/nightshift/references/execution-modes.md" ]
+  [ -f "$SKILLS/nightshift/references/compose/execution-modes.md" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -359,5 +359,68 @@ documented_pages() {
     'session' 'lease' 'watch reason' 'work mode' 'work target' 'artifact receipts' 'transition'; do
     grep -qF "fact \"$label\"" "$helper" || grep -qF "fact \"$label " "$helper" \
       || { echo "the helper prints no '$label' fact"; return 1; }
+  done
+}
+
+# One file answers one question for one moment.
+#
+# A skill loading text for another skill, a later step, or another host pays for it twice: in
+# tokens, and in a model holding guidance it can act on by mistake. These hold the split.
+
+@test "every reference pointer in every skill resolves" {
+  for f in "$SKILLS"/*/SKILL.md; do
+    for ref in $(grep -o 'references/[A-Za-z0-9_./-]*\.md' "$f" | sort -u); do
+      case "$ref" in *'<'* | *'*'*) continue ;; esac
+      [ -f "$PLUGIN/skills/nightshift/$ref" ] || { echo "$f points at missing $ref"; return 1; }
+    done
+  done
+}
+
+@test "composition text is read by the skills that compose, and by no other" {
+  for f in "$SKILLS"/*/SKILL.md; do
+    name="$(basename "$(dirname "$f")")"
+    case "$name" in hunt | quality | setup) continue ;; esac
+    if grep -qF 'references/compose/' "$f"; then
+      echo "$name reads composition text while working a shift"
+      return 1
+    fi
+  done
+  # And the composing skills still reach it.
+  grep -qF 'references/compose/execution-modes.md' "$SKILLS/hunt/SKILL.md"
+  grep -qF 'references/compose/execution-modes.md' "$SKILLS/quality/SKILL.md"
+  # The working shift reads only the section that is its own.
+  grep -qF 'references/shift/direct-mode-decisions.md' "$SKILLS/nightshift/SKILL.md"
+}
+
+@test "a skill opens one receipt kind, not the whole set" {
+  # The main skill writes baselines and checkpoints and the cited-research report; it has no reason
+  # to hold the morning page, the SEO crawl rules or the evidence ledger while doing it.
+  for kind in morning seo-live-crawl evidence-ledger continuity-leftovers; do
+    if grep -qF "receipts/$kind.md" "$SKILLS/nightshift/SKILL.md"; then
+      echo "the main skill opens receipts/$kind.md"
+      return 1
+    fi
+  done
+  # Start needs exactly one, for the page it may have to write by hand.
+  grep -qF 'receipts/morning.md' "$SKILLS/start/SKILL.md"
+}
+
+@test "no reference file repeats a top-level heading" {
+  for f in "$PLUGIN"/skills/nightshift/references/*/*.md "$PLUGIN"/skills/nightshift/references/*.md; do
+    [ -f "$f" ] || continue
+    dupe="$(awk '
+      /^```/ { fenced = !fenced }
+      !fenced && /^## / { print }
+    ' "$f" | sort | uniq -d)"
+    [ -z "$dupe" ] || { echo "$f repeats: $dupe"; return 1; }
+  done
+}
+
+@test "no skill points at a template it only means to copy" {
+  for f in "$SKILLS"/*/SKILL.md; do
+    if grep -qF 'references/templates/' "$f"; then
+      echo "$(basename "$(dirname "$f")") points at a template instead of copying it"
+      return 1
+    fi
   done
 }

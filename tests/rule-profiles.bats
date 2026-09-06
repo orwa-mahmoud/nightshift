@@ -3,7 +3,7 @@ load helpers
 APPLY="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/apply-profile.sh"
 PROFILES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/profiles"
 SETUP="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/setup/SKILL.md"
-PUNCHLIST_TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/punch-list-template.md"
+PUNCHLIST_TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/punch-list.md"
 
 # Prints only the text of the punch list's `## Gates` block (between the heading and the next
 # `## ` heading), the same slice apply-profile.sh rewrites.

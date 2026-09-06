@@ -7,7 +7,7 @@ SCHEMA_PY="$ROOT/tests/helpers/validate-json-schema.py"
 PLAN_SCHEMA="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1/shift-plan.json"
 DISC_SCHEMA="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1/plan-discovery.json"
 LEARN_SCHEMA="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1/plan-learning.json"
-TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipt-templates.md"
+TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md"
 
 @test "planner preview and learning wrappers are gone" {
   [ ! -e "$ROOT/plugins/nightshift/runtime/shift-planner.sh" ]

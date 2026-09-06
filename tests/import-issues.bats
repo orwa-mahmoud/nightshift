@@ -4,7 +4,7 @@ IMPORT="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/import-issues.sh"
 SKILL="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/import-issues/SKILL.md"
 FAKE_GH="$BATS_TEST_DIRNAME/fixtures/import-issues/bin/gh"
 FIXTURES="$BATS_TEST_DIRNAME/fixtures/import-issues/issues"
-TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/drafting-table-template.md"
+TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/drafting-table.md"
 
 setup_file() {
   chmod +x "$FAKE_GH"

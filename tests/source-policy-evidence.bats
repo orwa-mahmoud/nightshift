@@ -2,8 +2,8 @@
 # Source policy — untrusted text is instructional. Wrapper removed.
 
 ROOT="$BATS_TEST_DIRNAME/.."
-TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipt-templates.md"
-CITED="$ROOT/plugins/nightshift/skills/nightshift/references/cited-research.md"
+TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md"
+CITED="$ROOT/plugins/nightshift/skills/nightshift/references/shift/cited-research.md"
 
 @test "source-policy-evidence python wrapper is gone" {
   [ ! -e "$ROOT/plugins/nightshift/runtime/source-policy-evidence.sh" ]

@@ -375,6 +375,6 @@ setup() {
       || { echo "$skill does not mark the inventory optional"; return 1; }
   done
   # Automatic composes and works without it: no shift entry may require it.
-  ! grep -rlE 'inventory\.sh|ns inventory' "$PLUGIN/skills/nightshift/references/shifts" | grep -q .
+  ! grep -rlE 'inventory\.sh|ns inventory' "$PLUGIN/skills/nightshift/references/compose/shifts" | grep -q .
   grep -qF 'runtime/inventory.sh' "$ROOT/docs/evidence-capabilities.md"
 }

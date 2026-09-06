@@ -1,7 +1,7 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/api-contract-drift.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/api-contract-drift.md"
 
 @test "API drift uses product-truth evidence classification" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "API drift requires an authoritative source and existing comparison" {

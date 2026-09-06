@@ -59,8 +59,8 @@ REF="$PLUGIN_ROOT/skills/nightshift/references"
 NS="$PROJECT/.nightshift"
 mkdir -p "$NS"
 for f in punch-list drafting-table parking-lot snag-log product-research opportunity-map work-orders; do
-  [ -f "$REF/$f-template.md" ] || die "missing template $f-template.md"
-  cp "$REF/$f-template.md" "$NS/$f.md"
+  [ -f "$REF/templates/$f.md" ] || die "missing template templates/$f.md"
+  cp "$REF/templates/$f.md" "$NS/$f.md"
 done
 [ -f "$REF/nightshift-rules-template.json" ] || die 'missing rules template'
 cp "$REF/nightshift-rules-template.json" "$NS/rules.json"

@@ -93,9 +93,9 @@ sp() {
 # The contract references the Items list in prose. If those references were the literal heading,
 # scoping the count would start at the first sentence and the whole contract would read as work.
 @test "the shipped template carries the Items heading exactly once" {
-  n="$(grep -c '^## Items[[:space:]]*$' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/punch-list-template.md")"
+  n="$(grep -c '^## Items[[:space:]]*$' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/punch-list.md")"
   [ "$n" -eq 1 ]
-  m="$(grep -c '## Items' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/punch-list-template.md")"
+  m="$(grep -c '## Items' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/punch-list.md")"
   [ "$m" -eq 1 ]
 }
 
@@ -112,13 +112,13 @@ sp() {
 }
 
 @test "host detail names the native Windows JSON reader" {
-  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/start-hosts.md"
+  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/hosts/"
   grep -qF 'PSObject.Properties.Name' "$s"
   grep -qF 'ConvertFrom-Json' "$s"
 }
 
 @test "stand-down matches Windows watchman start before kill" {
-  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/start-hosts.md"
+  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/hosts/"
   grep -qF 'Stand down a stale watchman' "$s"
   grep -qF 'Test-NSRecordedProcess' "$s"
   grep -qF 'Stop-Process -Id' "$s"

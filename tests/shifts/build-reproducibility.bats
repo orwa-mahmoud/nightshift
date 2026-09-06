@@ -1,11 +1,11 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/build-reproducibility.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/build-reproducibility.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
 
 @test "build reproducibility follows declared clean setup paths" {
   grep -qi 'Discovery' "$E"
   grep -qi 'declared clean setup and build paths' "$E"
   grep -qi 'repository-owned commands' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "build reproducibility inventories artifacts and compares determinism honestly" {

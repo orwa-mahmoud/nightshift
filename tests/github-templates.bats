@@ -87,7 +87,7 @@ parse_yaml() {
 }
 
 CATALOG_FORM="$BATS_TEST_DIRNAME/../.github/ISSUE_TEMPLATE/catalog_shift.yml"
-RECIPE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/catalog-recipe.md"
+RECIPE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md"
 
 @test "the catalog proposal form is valid YAML and covers every contract field" {
   parse_yaml "$CATALOG_FORM"

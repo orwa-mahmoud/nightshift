@@ -424,7 +424,7 @@ with open(p,"w") as f: json.dump(d,f)
 @test "the drafting-table item-shape example is not a staged draft" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"
-  cp "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/drafting-table-template.md" \
+  cp "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/drafting-table.md" \
     "$p/.nightshift/drafting-table.md"
   printf '## Items\n\n' >"$p/.nightshift/punch-list.md"
   run doctor "$p"

@@ -1,7 +1,7 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/accessibility-repair.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/accessibility-repair.md"
 
 @test "accessibility repair uses product-truth evidence report" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "accessibility repair requires existing configured checks" {

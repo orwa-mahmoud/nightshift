@@ -86,7 +86,7 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 # shift that shipped last week never reaches the owner who could have used it tonight — and
 # reading all thirty contracts to offer one is the other way to get that wrong.
 @test "hunt composes from the catalog directory and may pick more than one" {
-  grep -qF 'references/shifts/' "$HUNT"
+  grep -qF 'references/compose/shifts/' "$HUNT"
   grep -qF 'runtime/catalog-index.sh' "$HUNT"
   grep -qi 'an entry added today is discovered today' "$HUNT"
   grep -qi 'more than one may be chosen' "$HUNT"
@@ -180,7 +180,7 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 }
 
 @test "automatic hunt ranks evidence and uses one combined clock" {
-  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
   quality="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/quality/SKILL.md"
   grep -qi 'inspect the work target' "$mode"
   grep -qi 'inspect the work target' "$HUNT"
@@ -221,14 +221,14 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 }
 
 @test "review-first and run-direct clocks begin at different boundaries" {
-  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
   grep -qi 'clock starts only after' "$mode"
   grep -qi 'Start the clock immediately' "$mode"
   grep -qi 'Guided + run directly' "$mode"
 }
 
 @test "run-direct has a bounded decision policy and leaves receipts" {
-  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
   grep -qi 'production-quality default' "$mode"
   grep -qi 'parking-lot.md' "$mode"
   grep -qi 'rollback' "$mode"

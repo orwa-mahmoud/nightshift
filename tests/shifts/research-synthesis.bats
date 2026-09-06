@@ -1,12 +1,12 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/research-synthesis.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/research-synthesis.md"
 CHECK="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/check-report.sh"
 FIXTURE="$BATS_TEST_DIRNAME/../fixtures/research-synthesis"
 
 @test "research synthesis competitive and analytics modes use specialist gates" {
   grep -qi 'Competitive-landscape mode' "$E"
   grep -qi 'Product-analytics investigation mode' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'generic dashboard' "$E"
   grep -qi 'causal claim from correlation' "$E"
 }
@@ -19,10 +19,10 @@ FIXTURE="$BATS_TEST_DIRNAME/../fixtures/research-synthesis"
 }
 
 @test "research synthesis resolves source policy and redacts untrusted material" {
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'primary' "$E"
   grep -qi 'secondary' "$E"
   grep -qi 'community' "$E"

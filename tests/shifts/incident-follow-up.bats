@@ -1,8 +1,8 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/incident-follow-up.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/incident-follow-up.md"
 
 @test "incident follow-up uses operational evidence helpers" {
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "incident follow-up requires supplied evidence" {

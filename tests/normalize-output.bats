@@ -317,7 +317,7 @@ digest_of() {
 # The ledger's severity words are not a tool's. The template carries the mapping, and every
 # word a summary can print has to survive the trip through it.
 @test "every summary severity maps to a severity the ledger accepts" {
-  TEMPLATES="$PLUGIN/skills/nightshift/references/receipt-templates.md"
+  TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/cycle-specialist-evidence.md"
   for pair in 'critical` → `critical' 'error` → `high' 'high` → `high' 'warning` → `medium' \
     'moderate` → `medium' 'note` → `info' 'low` → `low' 'info` → `info'; do
     grep -qF "$pair" "$TEMPLATES" || { echo "the template does not map: $pair"; return 1; }
@@ -517,10 +517,10 @@ digest_of() {
   grep -qF 'Both helpers here are optional' "$QUALITY"
   for shift in clear-quality-debt coverage-hunt vulnerability-sweep flaky-test-repair \
     api-contract-drift seo-audit; do
-    grep -qF 'normalize-output.sh' "$PLUGIN/skills/nightshift/references/shifts/$shift.md" \
+    grep -qF 'normalize-output.sh' "$PLUGIN/skills/nightshift/references/compose/shifts/$shift.md" \
       || { echo "$shift does not name the helper"; return 1; }
   done
-  grep -qF 'tool-output' "$PLUGIN/skills/nightshift/references/receipt-templates.md"
+  grep -qF 'tool-output' "$PLUGIN/skills/nightshift/references/receipts/tool-output.md"
   grep -qF 'runtime/normalize-output.sh' "$ROOT/docs/evidence-capabilities.md"
 }
 

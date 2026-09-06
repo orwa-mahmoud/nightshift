@@ -1,13 +1,13 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/todo-fixme-debt.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/todo-fixme-debt.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
 QUALITY="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/quality/SKILL.md"
-MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 COMMANDS="$BATS_TEST_DIRNAME/../../docs/commands.md"
 HOW="$BATS_TEST_DIRNAME/../../docs/how-it-works.md"
 SHIFT_MODES="$BATS_TEST_DIRNAME/../../docs/shift-modes.md"
 
 @test "todo-fixme debt classifies markers with engineering evidence" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "TODO debt inventories tracked human-authored markers" {

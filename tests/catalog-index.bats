@@ -10,7 +10,7 @@ ROOT="$BATS_TEST_DIRNAME/.."
 PLUGIN="$ROOT/plugins/nightshift"
 INDEX="$PLUGIN/runtime/catalog-index.sh"
 INDEX_PS1="$PLUGIN/runtime/windows/catalog-index.ps1"
-SHIFTS="$PLUGIN/skills/nightshift/references/shifts"
+SHIFTS="$PLUGIN/skills/nightshift/references/compose/shifts"
 HUNT="$PLUGIN/skills/hunt/SKILL.md"
 
 @test "every catalog entry is listed with its ending and its purpose" {

@@ -1,6 +1,6 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/defect-hunt.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/defect-hunt.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
-MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 COMMANDS="$BATS_TEST_DIRNAME/../../docs/commands.md"
 HOW="$BATS_TEST_DIRNAME/../../docs/how-it-works.md"
 SHIFT_MODES="$BATS_TEST_DIRNAME/../../docs/shift-modes.md"

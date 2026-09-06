@@ -2,8 +2,8 @@
 # Coverage hunt — skill writes the receipt. Wrapper removed.
 
 ROOT="$BATS_TEST_DIRNAME/.."
-COVERAGE="$ROOT/plugins/nightshift/skills/nightshift/references/shifts/coverage-hunt.md"
-TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipt-templates.md"
+COVERAGE="$ROOT/plugins/nightshift/skills/nightshift/references/compose/shifts/coverage-hunt.md"
+TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md"
 
 @test "coverage-risk python wrapper is gone" {
   [ ! -e "$ROOT/plugins/nightshift/runtime/coverage-risk.sh" ]
@@ -11,7 +11,7 @@ TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipt-templat
 }
 
 @test "coverage hunt writes a risk receipt without the wrapper" {
-  grep -qF 'receipt-templates.md' "$COVERAGE"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$COVERAGE"
   if grep -qF 'runtime/coverage-risk.sh' "$COVERAGE"; then
     return 1
   fi

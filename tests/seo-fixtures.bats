@@ -5,7 +5,7 @@ ROOT="$BATS_TEST_DIRNAME/.."
 FIX="$ROOT/tests/fixtures/seo"
 SCHEMAS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1"
 SCHEMA_PY="$ROOT/tests/helpers/validate-json-schema.py"
-CONTRACT="$ROOT/plugins/nightshift/skills/nightshift/references/shifts/seo-audit.md"
+CONTRACT="$ROOT/plugins/nightshift/skills/nightshift/references/compose/shifts/seo-audit.md"
 
 @test "local inventory fixture validates against local-inventory schema" {
   python3 "$SCHEMA_PY" "$SCHEMAS/local-inventory.json" "$FIX/local/static-site-inventory.json"
@@ -57,7 +57,7 @@ CONTRACT="$ROOT/plugins/nightshift/skills/nightshift/references/shifts/seo-audit
   if grep -qF 'runtime/seo-evidence.sh' "$CONTRACT"; then
     return 1
   fi
-  grep -qF 'receipt-templates.md' "$CONTRACT"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$CONTRACT"
   grep -qF 'local-inventory' "$CONTRACT"
   grep -qF 'live-crawl' "$CONTRACT"
   grep -qF 'connected-export' "$CONTRACT"

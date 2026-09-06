@@ -4,7 +4,7 @@
 ROOT="$BATS_TEST_DIRNAME/.."
 ARCHIVE="$ROOT/plugins/nightshift/skills/archive/SKILL.md"
 SETUP="$ROOT/plugins/nightshift/skills/setup/SKILL.md"
-TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipt-templates.md"
+TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md"
 
 @test "history-context python wrapper is gone" {
   [ ! -e "$ROOT/plugins/nightshift/runtime/history-context.sh" ]
@@ -15,7 +15,7 @@ TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipt-templat
   if grep -qF 'history-context.sh' "$ARCHIVE"; then
     return 1
   fi
-  grep -qF 'references/receipt-templates.md' "$ARCHIVE"
+  grep -qF 'references/receipts/cycle-specialist-evidence.md' "$ARCHIVE"
   grep -qF 'history-context' "$TEMPLATES"
   grep -qF 'Do not call' "$TEMPLATES"
   grep -qF '# history-context / preset' "$TEMPLATES"

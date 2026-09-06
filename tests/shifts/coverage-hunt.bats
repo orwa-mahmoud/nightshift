@@ -1,13 +1,13 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/coverage-hunt.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/coverage-hunt.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
 QUALITY="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/quality/SKILL.md"
-MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 COMMANDS="$BATS_TEST_DIRNAME/../../docs/commands.md"
 HOW="$BATS_TEST_DIRNAME/../../docs/how-it-works.md"
 SHIFT_MODES="$BATS_TEST_DIRNAME/../../docs/shift-modes.md"
 
 @test "coverage hunt maps behavior risks before writing tests" {
-  grep -qi 'receipt-templates.md' "$E"
+  grep -qi 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'red state' "$E"
   grep -qi 'containing suites' "$E"
 }

@@ -1,7 +1,7 @@
 README="$BATS_TEST_DIRNAME/../README.md"
 DOC="$BATS_TEST_DIRNAME/../docs/shift-modes.md"
 COMMANDS="$BATS_TEST_DIRNAME/../docs/commands.md"
-MODES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 
 @test "README and commands link the shift-modes walkthroughs" {
   grep -qF '[Shift modes](docs/shift-modes.md)' "$README"

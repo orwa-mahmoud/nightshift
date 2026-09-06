@@ -1,6 +1,6 @@
 SKILLS="$BATS_TEST_DIRNAME/../plugins/nightshift/skills"
 REFS="$SKILLS/nightshift/references"
-HOSTS="$REFS/start-hosts.md"
+HOSTS="$REFS/hosts"
 PREFLIGHT="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
 PREFLIGHT_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
 SETUP="$SKILLS/setup/SKILL.md"
@@ -90,11 +90,11 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   done
 
   grep -qF 'ns" import-issues' "$SKILLS/hunt/SKILL.md"
-  grep -qF 'ns" import-issues' "$REFS/shifts/github-issue-hunt.md"
+  grep -qF 'ns" import-issues' "$REFS/compose/shifts/github-issue-hunt.md"
 }
 
 @test "shared references are host-neutral and skill redirects name both hosts" {
-  for ref in "$SKILLS/nightshift/references"/*.md "$SKILLS/nightshift/references/shifts"/*.md; do
+  for ref in "$SKILLS/nightshift/references"/*.md "$SKILLS/nightshift/references/compose/shifts"/*.md; do
     ! grep -qF '/nightshift:' "$ref" \
       || { echo "host-specific command in shared reference: $ref"; return 1; }
   done
@@ -208,22 +208,37 @@ PY
 
 # Start opens the host reference only when a verdict names that host, so the reference has to
 # carry the whole host answer — and stay host-neutral markdown, not a second skill.
-@test "start host detail lives in one shared reference" {
-  [ -f "$HOSTS" ]
-  grep -qF 'start-hosts.md' "$START"
-  grep -qF 'ConvertFrom-Json' "$HOSTS"
-  grep -qF 'PSObject.Properties.Name' "$HOSTS"
-  # Liveness is a verdict's meaning, not host detail: it moved onto the watchman explanation.
+@test "each host's detail lives in its own file, and nowhere else" {
+  [ -d "$HOSTS" ]
+  for host in claude codex cursor windows; do
+    [ -f "$HOSTS/$host.md" ] || { echo "no reference for $host"; return 1; }
+  done
+  # The skill names the file for the host it is on, and says when to open it.
+  grep -qF 'hosts/<host>.md' "$START"
+
+  # Each fact is in its own host's file, and in no other host's.
+  for pair in "claude:claude --resume" "claude:\$TASK_ROOT/.claude/settings.local.json" \
+    "claude:\$TASK_ROOT/.claude/settings.json" "codex:codex resume" \
+    "codex:danger-full-access" "cursor:agent --resume" \
+    "windows:ConvertFrom-Json" "windows:PSObject.Properties.Name"; do
+    host="${pair%%:*}"
+    phrase="${pair#*:}"
+    grep -qF -- "$phrase" "$HOSTS/$host.md" || { echo "$host.md lost: $phrase"; return 1; }
+    for other in claude codex cursor windows; do
+      [ "$other" = "$host" ] && continue
+      if grep -qF -- "$phrase" "$HOSTS/$other.md"; then
+        echo "$other.md carries $host's detail: $phrase"
+        return 1
+      fi
+    done
+  done
+
+  # Liveness is a verdict's meaning, not host detail: it lives on the watchman explanation.
   grep -qF 'kill -0' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qF 'process-evidence-unavailable' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
-  grep -qF 'claude --resume' "$HOSTS"
-  grep -qF 'codex resume' "$HOSTS"
-  grep -qF 'agent --resume' "$HOSTS"
   # Linking another workspace and the stale-lease reset are repairs the helper hands the owner.
   grep -qF 'ns link-workspace' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
   grep -qF 'ns_lease_reset_stale' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
-  grep -qF '$TASK_ROOT/.claude/settings.local.json' "$HOSTS"
-  grep -qF '$TASK_ROOT/.claude/settings.json' "$HOSTS"
 }
 
 @test "stop writes the stop-work order through the trusted helper" {
@@ -375,7 +390,7 @@ PY
 }
 
 @test "punch-list template STOP commands use the bound Nightshift directory" {
-  tpl="$SKILLS/nightshift/references/punch-list-template.md"
+  tpl="$SKILLS/nightshift/references/templates/punch-list.md"
   grep -qF 'touch "$NS/STOP"' "$tpl"
   grep -qF 'New-Item -ItemType File -Force "$NS\STOP"' "$tpl"
   if grep -qF 'touch .nightshift/STOP' "$tpl"; then
@@ -401,11 +416,13 @@ PY
     grep -qF "ns\" $verb" "$SKILLS/$skill/SKILL.md" || grep -qF "\`ns $verb\`" "$SKILLS/$skill/SKILL.md" \
       || { echo "$skill does not reach $verb"; return 1; }
   done
-  grep -qF 'ns" import-issues' "$REFS/shifts/github-issue-hunt.md"
+  grep -qF 'ns" import-issues' "$REFS/compose/shifts/github-issue-hunt.md"
 
-  # Windows knowledge a dispatcher cannot carry: these are PowerShell language, not helpers.
-  grep -qF 'Get-NSUnixTime' "$SKILLS/status/SKILL.md"
-  grep -qF 'Get-NSReasonLabel' "$SKILLS/status/SKILL.md"
+  # Status computes none of this any more: the clock and the label are the helper's, and what the
+  # skill still holds is the rule that it may not go and derive them itself.
+  module="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  grep -qF 'Get-NSUnixTime' "$module"
+  grep -qF 'Get-NSReasonLabel' "$module"
   grep -qF 'recorded pid' "$SKILLS/status/SKILL.md"
   grep -qF 'watchman pid' "$SKILLS/status/SKILL.md"
   grep -qF 'reimplement liveness' "$SKILLS/status/SKILL.md"
@@ -441,7 +458,7 @@ PY
            "$SKILLS/nightshift/references"/execution-modes.md \
            "$SKILLS/nightshift/references"/gates-catalog.md \
            "$SKILLS/nightshift/references"/shift-catalog.md \
-           "$SKILLS/nightshift/references/shifts"/*.md; do
+           "$SKILLS/nightshift/references/compose/shifts"/*.md; do
     ! grep -qF '$NIGHTSHIFT_WORKSPACE/.nightshift/' "$f" \
       || { echo "catalog still prefixes workspace: $f"; return 1; }
   done

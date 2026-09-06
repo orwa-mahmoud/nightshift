@@ -1,8 +1,8 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/toil-reduction.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/toil-reduction.md"
 
 @test "toil reduction uses operational evidence helpers" {
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "toil reduction requires repetition evidence" {

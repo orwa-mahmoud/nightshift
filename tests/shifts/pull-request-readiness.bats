@@ -1,18 +1,18 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/pull-request-readiness.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/pull-request-readiness.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
-MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 
 @test "pull-request readiness anchors to branch, issue, and acceptance criteria" {
   grep -qi 'Discovery' "$E"
   grep -qi 'named branch' "$E"
   grep -qi 'issue URL' "$E"
   grep -qi 'acceptance criteria' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "pull-request readiness uses review-map with changed areas, risks, and commits" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'changed areas' "$E"
   grep -qi 'remaining risks' "$E"
   grep -qi 'unsupported surfaces' "$E"
@@ -22,7 +22,7 @@ MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/
 }
 
 @test "pull-request readiness refuses owner-only actions without authority" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'Never comment on, approve, push, merge' "$E"
   grep -qi 'explicit owner authorization' "$E"
   grep -qi 'does not approve' "$E"

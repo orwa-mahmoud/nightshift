@@ -17,7 +17,7 @@ REF="$ROOT/nightshift/references"
   tr '\n' ' ' <"$REF/execution-modes.md" \
     | grep -qF 'drafting-table.md` is known work staged for a later shift'
   for skill in hunt quality; do
-    grep -qF 'references/execution-modes.md' "$ROOT/$skill/SKILL.md" \
+    grep -qF 'references/compose/execution-modes.md' "$ROOT/$skill/SKILL.md" \
       || { echo "does not read the state map: $skill"; return 1; }
   done
 }

@@ -1,9 +1,9 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/performance-regression.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/performance-regression.md"
 
 @test "performance regression uses operational evidence helpers" {
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "performance regression requires distributions and baseline" {

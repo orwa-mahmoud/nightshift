@@ -1,13 +1,13 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/documentation-drift.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/documentation-drift.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
 QUALITY="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/quality/SKILL.md"
-MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 COMMANDS="$BATS_TEST_DIRNAME/../../docs/commands.md"
 HOW="$BATS_TEST_DIRNAME/../../docs/how-it-works.md"
 SHIFT_MODES="$BATS_TEST_DIRNAME/../../docs/shift-modes.md"
 
 @test "documentation drift uses claim-to-authority matrix" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "documentation drift discovers local references against the tree" {
@@ -18,12 +18,12 @@ SHIFT_MODES="$BATS_TEST_DIRNAME/../../docs/shift-modes.md"
 
 @test "documentation drift content-architecture mode uses specialist helper" {
   grep -qi 'Content-architecture mode' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "documentation drift public-claims mode uses release-readiness matrix" {
   grep -qi 'Public-claims mode' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'Never publish or deploy from this shift' "$E"
   grep -qi 'Route full baseline-vs-candidate release comparison to release-readiness' "$E"
 }
