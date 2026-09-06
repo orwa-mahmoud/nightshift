@@ -236,14 +236,28 @@ spawn_fresh() {
       return $?
       ;;
   esac
+  # host-grant, and only host-grant: the owner wrote it in their own file.
   ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
     CODEX_PROJECT_DIR "$PROJECT" \
     codex exec -s danger-full-access "$PROMPT_FRESH"
 }
 
+# Set once when a revival is refused because the recorded scope cannot be reproduced. Retrying
+# cannot change that answer, so the ladder stops instead of spending its rungs on it.
+RECOVERY_REFUSED=0
+
 spawn() { # $1 = rung (1|2)
   local prompt kind rc scope
   scope="$(ns_recovery_effective_scope "$PROJECT" codex)"
+  case "$scope" in
+    unavailable:*)
+      RECOVERY_REFUSED=1
+      log_line "watchman: the shift recorded sandbox mode '${scope#unavailable:}', which codex exec has no way to be asked for. Not reviving at a scope this host cannot reproduce."
+      log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
+      note recovery-scope-unavailable
+      return 1
+      ;;
+  esac
   if [ -n "$AGENT" ]; then
     if [ "$1" -eq 1 ]; then prompt="$PROMPT_RESUME"; else prompt="$PROMPT_FRESH"; fi
     # shellcheck disable=SC2086 # owner-provided command line; splitting is intentional
@@ -411,6 +425,7 @@ while :; do
     attempt=$((attempt + 1))
     [ "$attempt" -le "$total" ] || break
     log_line "watchman: site dead quiet mid-shift — resume attempt $attempt ($(rung_name $attempt))"
+    if [ "$RECOVERY_REFUSED" -eq 1 ]; then break; fi
     if spawn "$attempt"; then
       revived=0
       if [ "$attempt" -ge 2 ] || [ -z "$(sid)" ]; then

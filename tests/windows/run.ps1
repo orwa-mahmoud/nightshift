@@ -454,6 +454,10 @@ try {
     $reasonLabelLogicRun = Invoke-TestScript $reasonLabelLogic
     Assert-Equal 0 $reasonLabelLogicRun.ExitCode `
         "watchman reason labels: $($reasonLabelLogicRun.Stdout) $($reasonLabelLogicRun.Stderr)"
+    $recoveryScopeLogic = Join-Path $PSScriptRoot 'recovery-scope-logic.ps1'
+    $recoveryScopeLogicRun = Invoke-TestScript $recoveryScopeLogic
+    Assert-Equal 0 $recoveryScopeLogicRun.ExitCode `
+        "recovery launch scope: $($recoveryScopeLogicRun.Stdout) $($recoveryScopeLogicRun.Stderr)"
     $migrateStateLogic = Join-Path $PSScriptRoot 'migrate-state-logic.ps1'
     $migrateStateLogicRun = Invoke-TestScript $migrateStateLogic
     Assert-Equal 0 $migrateStateLogicRun.ExitCode `

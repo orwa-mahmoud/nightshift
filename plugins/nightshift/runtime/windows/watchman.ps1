@@ -456,7 +456,14 @@ function Start-NSAgent {
     $fresh = $Attempt -ge $TotalAttempts -and $TotalAttempts -gt 1
     # The permission scope a revived session starts under is the owner's, and it never widens
     # between rungs: a failed revival is retried at the same scope, never a broader one.
-    $launchScope = Get-NSRecoveryLaunchScope $workspace
+    $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
+    if ($launchScope -clike 'unavailable:*') {
+        $recordedScope = $launchScope.Substring('unavailable:'.Length)
+        Write-NSLogLine ("watchman: the shift recorded scope '" + $recordedScope + "', which this host has no way to be asked for. Not reviving at a scope it cannot reproduce.")
+        Write-NSLogLine 'watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json.'
+        Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
+        return $false
+    }
     Write-NSLogLine ('watchman: reviving under launch scope ' + $launchScope)
     $prompt = if ($fresh) { $freshPrompt } else { $revivalPrompt }
     if ($HostName -eq 'cursor' -and -not $hadCursorWorker) {
@@ -490,7 +497,7 @@ function Start-NSAgent {
         $commandName = 'agent'
         $commandArguments.Add("--resume=$sessionId")
         $commandArguments.Add('-p')
-        if ($launchScope -ne 'host-default') {
+        if ($launchScope -ceq 'host-grant') {
             $commandArguments.Add('--trust')
             $commandArguments.Add('--yolo')
         }
@@ -520,7 +527,11 @@ function Start-NSAgent {
         if ($Attempt -eq 1 -and $kind -eq 'resumable') {
             $commandArguments.Add('exec')
             $commandArguments.Add('resume')
-            if ($launchScope -ne 'host-default') {
+            if ($launchScope -clike 'recorded:*') {
+                $commandArguments.Add('-c')
+                $commandArguments.Add('sandbox_mode="' + $launchScope.Substring('recorded:'.Length) + '"')
+            }
+            elseif ($launchScope -ceq 'host-grant') {
                 $commandArguments.Add('-c')
                 $commandArguments.Add('sandbox_mode="danger-full-access"')
             }
@@ -529,7 +540,11 @@ function Start-NSAgent {
         }
         else {
             $commandArguments.Add('exec')
-            if ($launchScope -ne 'host-default') {
+            if ($launchScope -clike 'recorded:*') {
+                $commandArguments.Add('-s')
+                $commandArguments.Add($launchScope.Substring('recorded:'.Length))
+            }
+            elseif ($launchScope -ceq 'host-grant') {
                 $commandArguments.Add('-s')
                 $commandArguments.Add('danger-full-access')
             }

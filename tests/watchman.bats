@@ -1424,9 +1424,52 @@ STUB
   [ "$output" = "$(printf 'workspace-write\tobserved')" ]
   run bash -c '. "$1"; unset CODEX_SANDBOX_MODE CODEX_SANDBOX; ns_launch_observed codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
   [ "$output" = "$(printf 'unknown\tunavailable')" ]
-  # Claude Code and Cursor hand a session its permissions at launch and name none of it.
-  run bash -c '. "$1"; ns_launch_observed claude' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
-  [ "$output" = "$(printf 'inherited\tobserved')" ]
+  # Claude Code and Cursor hand a session its permissions at launch and name none of it
+  # anywhere a hook can read, so there is nothing to observe and nothing claims otherwise.
+  for h in claude cursor; do
+    run bash -c '. "$1"; ns_launch_observed "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$h"
+    [ "$output" = "$(printf 'unknown\tunavailable')" ] || { echo "$h claimed $output"; return 1; }
+  done
+}
+
+@test "a recorded scope this host cannot ask for refuses the revival instead of guessing" {
+  p="$(new_project watch-scope-unsupported)"
+  # The arming session reported a sandbox mode codex exec has no flag for. Reviving anyway would
+  # run at some other scope, so the answer says so and the watchman stands down on it.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools",
+          launchScope: "some-future-mode", launchProvenance: "observed"}' \
+    >"$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "unavailable:some-future-mode" ]
+
+  # Only the modes codex actually takes pass through to a flag.
+  for m in read-only workspace-write danger-full-access; do
+    jq --arg m "$m" '.launchScope = $m' "$p/.nightshift/shift-policy.json" >"$p/pol.json"
+    mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
+    run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+    [ "$output" = "recorded:$m" ] || { echo "$m -> $output"; return 1; }
+  done
+
+  # Claude and Cursor name no scope at all, so a recorded one is never handed to them.
+  jq '.launchScope = "workspace-write"' "$p/.nightshift/shift-policy.json" >"$p/pol.json"
+  mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
+  for h in claude cursor; do
+    run bash -c '. "$1"; ns_recovery_effective_scope "$2" "$3"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p" "$h"
+    [ "$output" = "unavailable:workspace-write" ] || { echo "$h -> $output"; return 1; }
+  done
+}
+
+@test "the Codex watchman stops the ladder when it cannot reproduce the recorded scope" {
+  codex="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/codex/watchman.sh"
+  # It refuses rather than spawns, says what the owner can do about it, and does not spend the
+  # remaining rungs re-asking a question whose answer cannot change.
+  grep -qF 'unavailable:*' "$codex"
+  grep -qF 'RECOVERY_REFUSED=1' "$codex"
+  grep -qF 'recovery-scope-unavailable' "$codex"
+  grep -qF 'recovery.launchScope to host-default or host-grant' "$codex"
+  # The broad grant is reachable only from the owner writing host-grant.
+  awk '/^spawn_fresh\(\)/, /^}/' "$codex" | grep -qF 'host-grant, and only host-grant'
 }
 
 @test "the Codex and Cursor revivals ask for the scope rather than assuming one" {
@@ -1439,8 +1482,23 @@ STUB
   done
   # The recorded scope is passed through rather than replaced by the broad one.
   grep -qF 'recorded:*' "$codex"
-  grep -qF 'Get-NSRecoveryLaunchScope' "$win"
+  grep -qF 'Get-NSRecoveryEffectiveScope' "$win"
   grep -qF 'reviving under launch scope' "$win"
+  # Windows resolves the same four answers, so the broad flags are behind host-grant by name.
+  grep -qF "-ceq 'host-grant'" "$win"
+  grep -qF 'unavailable:*' "$win"
+  # And Windows CI runs the resolver suite that proves it, rather than assuming parity.
+  logic="$BATS_TEST_DIRNAME/windows/recovery-scope-logic.ps1"
+  [ -f "$logic" ]
+  grep -qF 'recovery-scope-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
+}
+
+@test "Windows resolves the recovery scope the same way POSIX does" {
+  if ! command -v pwsh >/dev/null 2>&1; then
+    return 0
+  fi
+  run pwsh -NoProfile -NonInteractive -File "$BATS_TEST_DIRNAME/windows/recovery-scope-logic.ps1"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "a quoted API error is text about a failure, not the host reporting one" {

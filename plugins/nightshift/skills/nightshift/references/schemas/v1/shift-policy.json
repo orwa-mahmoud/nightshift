@@ -68,7 +68,7 @@
     "launchScope": {
       "type": "string",
       "minLength": 1,
-      "description": "The execution scope this shift was started under, in the host's own words — a Codex sandbox mode, or `inherited` where the host exposes no name and the session simply keeps what it was launched with. Recorded when the snapshot is written so a revival can reproduce it instead of guessing. It grants nothing: it is a record of what the session already had."
+      "description": "The execution scope this shift was started under, in the host's own words — a Codex sandbox mode, or `unknown` where the host exposes no name for one. Recorded when the snapshot is written so a revival can reproduce it instead of guessing. A revival asks for it only where the host can be asked; anything else falls back to the host default. It grants nothing: it is a record of what the session already had."
     },
     "launchProvenance": {
       "type": "string",

@@ -225,9 +225,18 @@ spawn() {
       CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$prompt"
   else
     scope="$(ns_recovery_effective_scope "$PROJECT" cursor)"
+    case "$scope" in
+      unavailable:*)
+        log_line "watchman: the shift recorded scope '${scope#unavailable:}', which this host has no way to be asked for. Not reviving at a scope it cannot reproduce."
+        log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
+        note recovery-scope-unavailable
+        return 1
+        ;;
+    esac
     log_line "watchman: reviving under launch scope $scope"
-    # Cursor exposes no name for a session's permissions, so an inherited scope is the CLI
-    # worker's own launch: the broad grant is only used when the owner asked for it by name.
+    # Cursor exposes no name for a session's permissions, so there is nothing to inherit and the
+    # worker takes its own launch: the broad grant is only used when the owner asked for it by
+    # name, and a scope recorded for another host is never passed to this one.
     if [ "$scope" != host-grant ]; then
       ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
         CURSOR_PROJECT_DIR "$PROJECT" \

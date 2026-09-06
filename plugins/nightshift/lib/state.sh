@@ -138,9 +138,29 @@ ns_policy_host_name() {
   fi
 }
 
+# ns_launch_scope_supported <host> <scope> — true when the host can actually be asked to start a
+# session at that scope. A recorded scope is only useful if a revival can name it on the command
+# line, so this is the vocabulary the watchmen are allowed to pass through, and nothing else
+# reaches a native flag.
+ns_launch_scope_supported() {
+  case "$1" in
+    codex)
+      case "$2" in
+        read-only | workspace-write | danger-full-access) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
 # ns_launch_observed <host> — the execution scope this session is running under, in the host's own
 # words, and whether the host actually told us. Read only from what the host already exposes; a
 # scope nobody reported is unavailable, never assumed.
+#
+# Only Codex names a session's sandbox, and only in its own environment. Claude Code and Cursor
+# hand a session its permissions at launch and expose no name for them anywhere a hook can read,
+# so there is nothing to observe and this says so. Calling that 'inherited' would have been a
+# label for a measurement never taken.
 ns_launch_observed() {
   case "$1" in
     codex)
@@ -153,12 +173,6 @@ ns_launch_observed() {
         return 0
       fi
       ;;
-    claude | cursor)
-      # These hosts hand a session its permissions at launch and expose no name for them, so
-      # what a revival inherits is the launch itself rather than a flag.
-      printf 'inherited\tobserved'
-      return 0
-      ;;
   esac
   printf 'unknown\tunavailable'
 }
@@ -166,11 +180,20 @@ ns_launch_observed() {
 # ns_recovery_effective_scope <project-dir> <host> — what a revival may actually ask for.
 #
 # The shipped choice inherits the scope the shift was started under, so recovery reproduces the
-# session rather than improving on it. Where that scope was never recorded, or the host never
-# reported one, the fallback is the host's own default: narrower than the built-in grant used to
-# be, and honest about why. Nothing here ever widens what the original session had — an owner who
-# wants the documented broad grant writes host-grant in their own file, and that is the only way
-# it happens. The answer is one word, and the caller logs it.
+# session rather than improving on it. Nothing here ever widens what the original session had — an
+# owner who wants the documented broad grant writes host-grant in their own file, and that is the
+# only way it happens.
+#
+# There are four answers, and the caller logs the one it got:
+#
+#   host-default      the owner asked for it, or no scope was ever recorded. No permission
+#                     argument is passed and the host decides. This is the baseline, not a proof
+#                     that it is narrower than the original session — no host reports enough for
+#                     that claim, and it is not made.
+#   host-grant        the owner wrote it by name. Only ever from their own file.
+#   recorded:<scope>  the shift recorded a scope the host observed and can be asked for again.
+#   unavailable:<s>   a scope was recorded that this host has no way to request. A revival would
+#                     run at some other scope, so the caller refuses rather than guess.
 ns_recovery_effective_scope() {
   local configured recorded provenance
   configured="$(ns_recovery_launch_scope "$1")"
@@ -183,7 +206,11 @@ ns_recovery_effective_scope() {
   recorded="$(ns_policy_launch "$1" scope 2>/dev/null)" || recorded=""
   provenance="$(ns_policy_launch "$1" provenance 2>/dev/null)" || provenance=""
   if [ "$provenance" = observed ] && [ -n "$recorded" ] && [ "$recorded" != unknown ]; then
-    printf 'recorded:%s' "$recorded"
+    if ns_launch_scope_supported "$2" "$recorded"; then
+      printf 'recorded:%s' "$recorded"
+    else
+      printf 'unavailable:%s' "$recorded"
+    fi
     return 0
   fi
   printf 'host-default'
@@ -288,6 +315,7 @@ ns_reason_label() {
     unreadable-rules) printf 'rules file missing or incomplete' ;;
     fresh-fallback) printf 'fresh session - punch list is the handover' ;;
     unsupported-state) printf 'workspace state-version is unsupported' ;;
+    recovery-scope-unavailable) printf 'recorded launch scope cannot be requested on this host' ;;
     process-evidence-unavailable) printf 'process evidence is unavailable' ;;
     clock-out-failed) printf 'terminal clock-out failed without releasing the shift' ;;
     *) printf 'unknown watchman outcome' ;;
@@ -298,7 +326,7 @@ ns_record_reason() { # <nightshift-dir> <code> [detail]
   local dir="$1" code="$2" detail="${3:-}"
   [ -d "$dir" ] || return 1
   case "$code" in
-    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed) ;;
+    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable) ;;
     *) code="stand-down" ;;
   esac
   detail="$(printf '%s' "$detail" | tr -d '\000-\037' | sed 's/[[:space:]]*$//')"

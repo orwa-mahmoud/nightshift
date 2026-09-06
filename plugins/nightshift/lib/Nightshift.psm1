@@ -2293,7 +2293,7 @@ function Write-NSReason {
         'unknown-wedge', 'revived', 'stand-down', 'wrong-host', 'deadline',
         'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
         'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
-        'clock-out-failed'
+        'clock-out-failed', 'recovery-scope-unavailable'
     )
     if ($Code -notin $allowed) {
         $Code = 'stand-down'
@@ -2580,6 +2580,7 @@ function Get-NSReasonLabel {
         'unreadable-rules' { return 'rules file missing or incomplete' }
         'fresh-fallback' { return 'fresh session - punch list is the handover' }
         'unsupported-state' { return 'workspace state-version is unsupported' }
+        'recovery-scope-unavailable' { return 'recorded launch scope cannot be requested on this host' }
         'process-evidence-unavailable' { return 'process evidence is unavailable' }
         'clock-out-failed' { return 'terminal clock-out failed without releasing the shift' }
         default { return 'unknown watchman outcome' }
@@ -3889,8 +3890,8 @@ function Test-NSShiftPolicyDocument {
         return , $errors
     }
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
-        'verificationLevel', 'toolingPolicy', 'budgets', 'allowances', 'gatesDigest',
-        'completionMode', 'selectedDebt')
+        'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
+        'allowances', 'gatesDigest', 'completionMode', 'selectedDebt')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -4135,6 +4136,14 @@ function Set-NSShiftPolicy {
         foreach ($error in $errors) { Write-NSPolicyError ('shift-policy: ' + $error) }
         return 2
     }
+    # Record what this session is actually running under, so a revival can reproduce it instead of
+    # guessing. It grants nothing - it is a note of what the shift already had - and a candidate
+    # that states it already is left exactly as the owner wrote it.
+    if (-not $document.Contains('launchScope')) {
+        $observed = (Get-NSLaunchObserved (Get-NSPolicyHostName)) -split "`t", 2
+        $document['launchScope'] = $observed[0]
+        $document['launchProvenance'] = $observed[1]
+    }
     Write-NSEvidenceFileAtomic -Path $paths['policy'] -Text ((ConvertTo-NSCanonicalJson $document) + "`n")
     return 0
 }
@@ -4211,31 +4220,127 @@ function Merge-NSShiftBlockDefaults {
     return $Defaults
 }
 
-# Get-NSShiftBlock <workspace> — the shift object of the owner rules file, or $null.
-# Get-NSRecoveryLaunchScope <workspace> - the permission scope a revived session starts under.
-# host-grant is the documented grant for the host; host-default adds no permission argument and
-# takes whatever the host gives. Anything else, or an unreadable file, is host-grant.
+# Get-NSShiftBlock <workspace> - the shift object of the owner rules file, or $null.
+# Get-NSRecoveryLaunchScope <workspace> - the scope the owner chose, as written.
+#
+# host-grant is the documented broad grant for the host and only ever comes from the owner
+# writing it. host-default adds no permission argument and takes whatever the host gives.
+# Everything else - the shipped default, an absent key, an unreadable or malformed file - is
+# inherit-recorded-scope, which resolves against what the shift actually recorded. Falling back
+# to the broad grant because a file could not be read would hand out permissions on a parse
+# error, so it never happens here.
 function Get-NSRecoveryLaunchScope {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_LAUNCH_SCOPE)) {
         if ($env:NIGHTSHIFT_LAUNCH_SCOPE -ceq 'host-default') { return 'host-default' }
-        return 'host-grant'
+        if ($env:NIGHTSHIFT_LAUNCH_SCOPE -ceq 'host-grant') { return 'host-grant' }
+        return 'inherit-recorded-scope'
     }
     $path = (Get-NSPolicyPaths $Workspace)['rules']
-    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'host-grant' }
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'inherit-recorded-scope' }
     $document = $null
     try {
         $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
     }
     catch {
-        return 'host-grant'
+        return 'inherit-recorded-scope'
     }
-    if (-not ($document -is [Collections.IDictionary])) { return 'host-grant' }
-    if (-not $document.Contains('recovery')) { return 'host-grant' }
+    if (-not ($document -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
+    if (-not $document.Contains('recovery')) { return 'inherit-recorded-scope' }
     $block = $document['recovery']
-    if (-not ($block -is [Collections.IDictionary])) { return 'host-grant' }
-    if ((Get-NSMapValue $block 'launchScope') -ceq 'host-default') { return 'host-default' }
-    return 'host-grant'
+    if (-not ($block -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
+    $value = Get-NSMapValue $block 'launchScope'
+    if ($value -ceq 'host-default') { return 'host-default' }
+    if ($value -ceq 'host-grant') { return 'host-grant' }
+    return 'inherit-recorded-scope'
+}
+
+# Get-NSPolicyHostName - which host this session is, from what the host itself sets.
+function Get-NSPolicyHostName {
+    if (-not [string]::IsNullOrEmpty($env:CURSOR_PLUGIN_ROOT)) { return 'cursor' }
+    if (-not [string]::IsNullOrEmpty($env:CODEX_PROJECT_DIR) -or
+        -not [string]::IsNullOrEmpty($env:CODEX_SANDBOX) -or
+        -not [string]::IsNullOrEmpty($env:CODEX_SANDBOX_MODE)) { return 'codex' }
+    if (-not [string]::IsNullOrEmpty($env:CLAUDE_PLUGIN_ROOT) -or
+        -not [string]::IsNullOrEmpty($env:CLAUDE_PROJECT_DIR)) { return 'claude' }
+    return 'unknown'
+}
+
+# Test-NSLaunchScopeSupported <host> <scope> - true when the host can actually be asked to start
+# a session at that scope. Nothing outside this vocabulary reaches a native flag.
+function Test-NSLaunchScopeSupported {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope
+    )
+    if ($HostName -cne 'codex') { return $false }
+    return @('read-only', 'workspace-write', 'danger-full-access') -ccontains $Scope
+}
+
+# Get-NSLaunchObserved <host> - the scope this session runs under in the host's own words, and
+# whether the host actually said so, joined by a tab. Only Codex names a session's sandbox.
+# Claude Code and Cursor expose no name for one anywhere a hook can read it, so there is nothing
+# to observe and this reports that rather than inventing a label for it.
+function Get-NSLaunchObserved {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName)
+    if ($HostName -ceq 'codex') {
+        if (-not [string]::IsNullOrEmpty($env:CODEX_SANDBOX_MODE)) {
+            return ($env:CODEX_SANDBOX_MODE + "`tobserved")
+        }
+        if (-not [string]::IsNullOrEmpty($env:CODEX_SANDBOX)) {
+            return ($env:CODEX_SANDBOX + "`tobserved")
+        }
+    }
+    return "unknown`tunavailable"
+}
+
+# Get-NSRecoveryEffectiveScope <workspace> <host> - what a revival may actually ask for. The same
+# four answers as the POSIX resolver, decided the same way:
+#
+#   host-default      the owner asked for it, or no scope was ever recorded. No permission
+#                     argument is passed. It is the baseline, not a claim of being narrower than
+#                     the original session.
+#   host-grant        the owner wrote it by name.
+#   recorded:<scope>  a scope the host observed and can be asked for again.
+#   unavailable:<s>   a recorded scope this host cannot request, so the caller refuses.
+function Get-NSRecoveryEffectiveScope {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
+    )
+    $configured = Get-NSRecoveryLaunchScope $Workspace
+    if ($configured -ceq 'host-default' -or $configured -ceq 'host-grant') { return $configured }
+    $recorded = Get-NSPolicyLaunch -Workspace $Workspace -Field 'scope'
+    $provenance = Get-NSPolicyLaunch -Workspace $Workspace -Field 'provenance'
+    if ($provenance -ceq 'observed' -and -not [string]::IsNullOrEmpty($recorded) -and $recorded -cne 'unknown') {
+        if (Test-NSLaunchScopeSupported $HostName $recorded) { return ('recorded:' + $recorded) }
+        return ('unavailable:' + $recorded)
+    }
+    return 'host-default'
+}
+
+# Get-NSPolicyLaunch <workspace> <scope|provenance> - what the snapshot recorded about the scope
+# the shift was started under. A field the snapshot never carried is empty, never a guess.
+function Get-NSPolicyLaunch {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][ValidateSet('scope', 'provenance')][string]$Field
+    )
+    $path = (Get-NSPolicyPaths $Workspace)['policy']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return '' }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return ''
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return '' }
+    $key = 'launchScope'
+    if ($Field -ceq 'provenance') { $key = 'launchProvenance' }
+    $value = Get-NSMapValue $document $key
+    if ($value -is [string]) { return $value }
+    return ''
 }
 
 function Get-NSShiftBlock {
