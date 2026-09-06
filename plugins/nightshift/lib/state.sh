@@ -861,3 +861,49 @@ ns_punch_item() {
     }
   '
 }
+
+# ns_punch_contract <punch-list> — everything above `## Items` except the gates block: the shift
+# contract the owner wrote and nobody may edit while a shift is armed.
+#
+# The gates block is excluded from this digest and from the items one. It sits above `## Items` in
+# the file, but the owner is meant to be able to change it mid-shift — tightening a gate after a
+# near miss, relaxing one that is costing more than it catches — and `gatesDigest` already tracks
+# it on its own terms.
+ns_punch_contract() {
+  awk '
+    { sub(/\r$/, "") }
+    /^## Items[[:space:]]*$/ { exit }
+    /^## Gates[[:space:]]*$/ { skip = 1; next }
+    skip && /^## / { skip = 0 }
+    skip { next }
+    { print }
+  ' "$1" 2>/dev/null
+}
+
+# ns_punch_items_normalised <punch-list> — every item line and sub-bullet with the checkbox state
+# flattened, so ticking a box changes nothing and any other edit — a reworded item, a deleted one,
+# an inserted one — changes everything.
+#
+# Line endings are flattened with it, here and in the contract. A shift can be handed from a macOS
+# host to a Windows one, and a checkout that converts on the way would otherwise present a contract
+# nobody touched as tampered with. The digest is a property of what the list says, not of how the
+# filesystem it is sitting on ends a line.
+ns_punch_items_normalised() {
+  ns_punch_items "$1" | sed 's/^- \[[xX]\]/- [ ]/'
+}
+
+# ns_punch_digest — a stable digest of stdin, from whatever the machine has. Same shape as every
+# other digest Nightshift records: 64 lowercase hex characters.
+ns_punch_digest() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 2>/dev/null | cut -d' ' -f1
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum 2>/dev/null | cut -d' ' -f1
+  else
+    return 1
+  fi
+}
+
+# ns_punch_contract_digest <punch-list> / ns_punch_items_digest <punch-list>
+ns_punch_contract_digest() { ns_punch_contract "$1" | ns_punch_digest; }
+ns_punch_items_digest() { ns_punch_items_normalised "$1" | ns_punch_digest; }

@@ -81,7 +81,8 @@ def shift_policy:
   | ($P | ks(".")),
     ($P | sc("."; ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
                    "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
-                   "completionMode", "gatesDigest"])),
+                   "completionMode", "gatesDigest",
+                   "contractDigest", "itemsDigest"])),
     (["shift", "recovery", "handoff", "archive", "report"][] as $b
      | ($P[$b] | ty($b)),
        (if ($P | has($b)) then ($P[$b] | obj | sc($b; PREF[$b])) else empty end)),

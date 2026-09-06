@@ -21,6 +21,12 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 # nothing has moved. The decision is the shared one; only the shape around it is this host's.
 function Get-NSGateBlockReason {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Full)
+    # A contract that moved is answered in full, before any question of shortening arises: the
+    # whole point of the short line is that the model already holds the contract, and here it
+    # may not.
+    $moved = ''
+    try { $moved = Get-NSGateContractMismatch $workspace $punch } catch { $moved = '' }
+    if (-not [string]::IsNullOrEmpty($moved)) { return $moved }
     $item = ''
     try { $item = Get-NSGateOpenItem $punch } catch { $item = '' }
     $stopped = if (Test-Path -LiteralPath $stop) { 'yes' } else { 'no' }

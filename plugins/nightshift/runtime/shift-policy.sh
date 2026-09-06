@@ -175,7 +175,7 @@ cmd_get() {
 }
 
 cmd_set() {
-  local tmpd candidate out rc observed scope provenance block frozen
+  local tmpd candidate out rc observed scope provenance block frozen digest value
   [ -n "$FROM" ] || usage
   [ -d "$NS" ] || die "no .nightshift/ at $WORKSPACE — run setup first" 2
   refuse_while_armed
@@ -212,6 +212,21 @@ cmd_set() {
         >"$tmpd/with-launch.json" &&
       mv "$tmpd/with-launch.json" "$candidate" || :
   fi
+  # The contract as it stands right now, so the gate can tell later whether it moved. Two digests:
+  # everything above the Items heading, which nobody may edit while a shift runs, and the items
+  # with their checkbox state flattened, so a tick is invisible and any other edit is not. A
+  # candidate that already states one is left as the owner wrote it.
+  for digest in contractDigest itemsDigest; do
+    printf '%s' "$(cat "$candidate")" | grep -q "\"$digest\"" && continue
+    case "$digest" in
+      contractDigest) value="$(ns_punch_contract_digest "$NS/punch-list.md")" || value="" ;;
+      *) value="$(ns_punch_items_digest "$NS/punch-list.md")" || value="" ;;
+    esac
+    [ -n "$value" ] || continue
+    ns_rules_set_block "$candidate" "$digest" "\"$value\"" >"$tmpd/with-$digest.json" &&
+      mv "$tmpd/with-$digest.json" "$candidate" || :
+  done
+
   # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
   # here, so an edit to rules.json lands on the next shift rather than moving the ground under
   # this one. A candidate that already states a block is left exactly as it was written.

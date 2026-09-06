@@ -4186,6 +4186,22 @@ function Set-NSShiftPolicy {
         foreach ($error in $errors) { Write-NSPolicyError ('shift-policy: ' + $error) }
         return 2
     }
+    # The contract as it stands right now, so the gate can tell later whether it moved. Two
+    # digests: everything above the Items heading, which nobody may edit while a shift runs, and
+    # the items with their checkbox state flattened, so a tick is invisible and any other edit is
+    # not. A candidate that already states one is left as the owner wrote it.
+    $punch = Join-Path $paths['ns'] 'punch-list.md'
+    if (-not $document.Contains('contractDigest')) {
+        $value = ''
+        try { $value = Get-NSPunchContractDigest $punch } catch { $value = '' }
+        if (-not [string]::IsNullOrEmpty($value)) { $document['contractDigest'] = $value }
+    }
+    if (-not $document.Contains('itemsDigest')) {
+        $value = ''
+        try { $value = Get-NSPunchItemsDigest $punch } catch { $value = '' }
+        if (-not [string]::IsNullOrEmpty($value)) { $document['itemsDigest'] = $value }
+    }
+
     # Record what this session is actually running under, so a revival can reproduce it instead of
     # guessing. It grants nothing - it is a note of what the shift already had - and a candidate
     # that states it already is left exactly as the owner wrote it.
@@ -8140,6 +8156,103 @@ function Get-NSPunchItem {
         $out.RemoveAt($out.Count - 1)
     }
     return $out.ToArray()
+}
+
+# Get-NSPunchContract <punch-list> - everything above `## Items` except the gates block: the shift
+# contract the owner wrote and nobody may edit while a shift is armed.
+function Get-NSPunchContract {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    $skip = $false
+    foreach ($line in (Get-NSPunchLines $PunchList)) {
+        if ($line -cmatch '^## Items[ \t]*$') { break }
+        if ($line -cmatch '^## Gates[ \t]*$') { $skip = $true; continue }
+        if ($skip -and ($line -cmatch '^## ')) { $skip = $false }
+        if ($skip) { continue }
+        $out.Add($line)
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchItemsNormalised <punch-list> - every item line and sub-bullet with the checkbox state
+# flattened, so ticking a box changes nothing and rewording, deleting or inserting an item changes
+# everything.
+function Get-NSPunchItemsNormalised {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        $out.Add(($line -creplace '^- \[[xX]\]', '- [ ]'))
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchDigest <lines> - the same 64 lowercase hex characters the POSIX side produces: each
+# line terminated with a single newline, UTF-8, no byte-order mark.
+function Get-NSPunchDigest {
+    param([AllowNull()][AllowEmptyCollection()][string[]]$Lines)
+    $text = ''
+    if (($null -ne $Lines) -and ($Lines.Count -gt 0)) {
+        $text = [string]::Join("`n", $Lines) + "`n"
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha.ComputeHash((New-Object Text.UTF8Encoding($false)).GetBytes($text))
+    }
+    finally {
+        $sha.Dispose()
+    }
+    return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
+}
+
+function Get-NSPunchContractDigest {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    return (Get-NSPunchDigest (Get-NSPunchContract $PunchList))
+}
+
+function Get-NSPunchItemsDigest {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    return (Get-NSPunchDigest (Get-NSPunchItemsNormalised $PunchList))
+}
+
+# Get-NSGateContractMismatch <workspace> <punch-list> - the sentence to block with, or ''.
+#
+# Watching for a tampered punch list used to be the model's job, on a file the model also edits.
+# The gate recorded the digests at arming, so it can just check. A snapshot written before these
+# fields existed compares nothing, which is not the same as a mismatch.
+function Get-NSGateContractMismatch {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$PunchList
+    )
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
+    $which = ''
+    $policy = Get-NSShiftPolicy $Workspace
+    if ($null -eq $policy) { return '' }
+    $recorded = Get-NSMapValue $policy 'contractDigest'
+    if (-not [string]::IsNullOrEmpty($recorded)) {
+        if ((Get-NSPunchContractDigest $PunchList) -cne $recorded) { $which = 'contract' }
+    }
+    if ([string]::IsNullOrEmpty($which)) {
+        $recorded = Get-NSMapValue $policy 'itemsDigest'
+        if (-not [string]::IsNullOrEmpty($recorded)) {
+            if ((Get-NSPunchItemsDigest $PunchList) -cne $recorded) { $which = 'items' }
+        }
+    }
+    if ([string]::IsNullOrEmpty($which)) { return '' }
+
+    if ($which -ceq 'contract') {
+        return ('DO NOT STOP - the shift contract above the Items heading in ' + $PunchList +
+            ' has changed since this shift armed. It is the agreement the night is working to,' +
+            ' and it is not editable while a shift runs. Restore the punch list from the' +
+            ' work-target history or the receipts, or end the shift and let the owner edit the' +
+            ' contract with nothing armed. Nothing else about the shift has changed: your ticks' +
+            ' stand.')
+    }
+    return ('DO NOT STOP - an item in ' + $PunchList + ' has been reworded, removed or inserted' +
+        ' since this shift armed. Ticking a box is invisible to this check, so something other' +
+        ' than a tick changed. Restore the punch list from the work-target history or the' +
+        ' receipts, or end the shift and let the owner edit the list with nothing armed. Nothing' +
+        ' else about the shift has changed: your ticks stand.')
 }
 
 # Invoke-NSPunchListCommand - runtime/windows/punch-list.ps1's whole body.

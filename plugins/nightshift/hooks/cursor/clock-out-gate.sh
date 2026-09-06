@@ -341,6 +341,14 @@ fi
 # Which form this block takes. The push is unchanged — the turn is still blocked, with a reason
 # the host feeds back — but a block that repeats a message the model read a few calls ago can say
 # so in one line instead. The gate only shortens when it positively knows nothing moved.
+# A contract that moved is answered in full, before any question of shortening arises: the whole
+# point of the short line is that the model already holds the contract, and here it may not.
+NS_CONTRACT_MOVED="$(ns_gate_contract_mismatch "$PROJECT_DIR" "$PUNCH")" || NS_CONTRACT_MOVED=""
+if [ -n "$NS_CONTRACT_MOVED" ]; then
+  log_line "punch list changed since arming — blocking until it is restored"
+  cursor_emit_block "$NS_CONTRACT_MOVED"
+  exit 0
+fi
 NS_GATE_FP="$(ns_gate_reminder_fingerprint "$OPEN" "$TICKED" "$(ns_gate_open_item "$PUNCH")" \
   "$([ -f "$STOP" ] && printf yes || printf no)" \
   "$(deadline_passed && printf passed || printf pending)" \

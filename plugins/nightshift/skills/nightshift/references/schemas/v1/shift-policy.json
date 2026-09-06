@@ -380,6 +380,16 @@
           "description": "A Markdown template for the report, relative to the workspace and inside it. Wording and layout only, on the same terms as the handoff template: never executed, never a source of policy, and never able to describe an unavailable check as a passed one."
         }
       }
+    },
+    "contractDigest": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64})?$",
+      "description": "Digest of the punch list above `## Items` as it stood when the shift armed — the contract the owner wrote. The gate recomputes it on every block and names the repair if it moved. Absent on a policy written before this existed, and then nothing is compared."
+    },
+    "itemsDigest": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64})?$",
+      "description": "Digest of every item line and sub-bullet with the checkbox state flattened, so ticking a box changes nothing and rewording, deleting or inserting an item changes everything. The `## Gates` block is excluded: the owner may change it mid-shift by design."
     }
   }
 }

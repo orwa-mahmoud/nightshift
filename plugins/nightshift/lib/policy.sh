@@ -45,6 +45,8 @@ completionMode
 selectedDebt
 allowances
 gatesDigest
+contractDigest
+itemsDigest
 shift
 recovery
 handoff
@@ -286,7 +288,7 @@ import json, re, sys
 
 SCALARS = ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
            "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
-           "completionMode", "gatesDigest"]
+           "completionMode", "gatesDigest", "contractDigest", "itemsDigest"]
 # The owner preference blocks tonight'"'"'s snapshot freezes. A block the snapshot does not carry
 # emits its type and no fields, which is how a policy written before this feature is told apart
 # from one whose owner left a block empty.
@@ -851,6 +853,16 @@ _ns_policy_validate_shift() {
     _ns_policy_shift_fail gatesDigest "must be 64 lowercase hex characters"
     return 1
   fi
+  val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" contractDigest)"
+  if [ "$val" != null ] && [ "$val" != '""' ] && ! _ns_json_hex "$val" 64; then
+    _ns_policy_shift_fail contractDigest "must be 64 lowercase hex characters"
+    return 1
+  fi
+  val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" itemsDigest)"
+  if [ "$val" != null ] && [ "$val" != '""' ] && ! _ns_json_hex "$val" 64; then
+    _ns_policy_shift_fail itemsDigest "must be 64 lowercase hex characters"
+    return 1
+  fi
   case "$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" budgets)" in
     null | object) ;;
     *)
@@ -1130,6 +1142,23 @@ ns_policy_deadline_epoch() {
   val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" deadlineEpoch)" || return 1
   _ns_json_uint "$val" || return 1
   printf '%s' "$val"
+}
+
+# ns_policy_shift_field <workspace> <name> — one recorded string field of tonight's snapshot, or
+# nothing. Used for the digests the gate compares the punch list against; a policy that predates a
+# field simply has nothing to say about it, which is not the same as a mismatch.
+ns_policy_shift_field() {
+  local raw
+  _ns_policy_load_shift "$1"
+  [ "$NS_POLICY_SHIFT_STATE" = ok ] || return 1
+  raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$2")" || return 1
+  case "$raw" in
+    '"'*'"')
+      raw="${raw#\"}"
+      printf '%s' "${raw%\"}"
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # ns_policy_shift_id <workspace> — the identity this shift's allowances are bound to.

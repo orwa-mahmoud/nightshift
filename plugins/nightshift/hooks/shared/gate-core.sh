@@ -366,3 +366,45 @@ ns_gate_open_item() {
     }
   '
 }
+
+# The contract, held to what it was when the shift armed.
+#
+# The model used to be told to notice if the punch list had been altered and put it back from git —
+# which is a file's editor policing itself. The gate already records digests at arming, so it can
+# just check.
+#
+# Two digests, because two things can move for different reasons. `contractDigest` covers
+# everything above `## Items`: the shift contract, which nobody may edit while a shift runs.
+# itemsDigest covers the items with the checkbox state flattened, so ticking a box is invisible
+# to it and rewording, deleting or inserting an item is not. The `## Gates` block is deliberately
+# outside both — the owner may change it mid-shift by design, and gatesDigest tracks it on its
+# own terms.
+#
+# A mismatch blocks with the repair named. It never restores anything itself, never refuses to end
+# a shift on a tick alone, and never treats a snapshot that predates these fields as a mismatch.
+#
+# ns_gate_contract_mismatch <project-dir> <punch-list> — the sentence to block with, or nothing.
+ns_gate_contract_mismatch() {
+  local project="$1" list="$2" recorded now which=""
+  [ -f "$list" ] && [ ! -L "$list" ] || return 1
+
+  recorded="$(ns_policy_shift_field "$project" contractDigest)" || recorded=""
+  if [ -n "$recorded" ]; then
+    now="$(ns_punch_contract_digest "$list")" || now=""
+    [ -n "$now" ] && [ "$now" != "$recorded" ] && which="contract"
+  fi
+  if [ -z "$which" ]; then
+    recorded="$(ns_policy_shift_field "$project" itemsDigest)" || recorded=""
+    if [ -n "$recorded" ]; then
+      now="$(ns_punch_items_digest "$list")" || now=""
+      [ -n "$now" ] && [ "$now" != "$recorded" ] && which="items"
+    fi
+  fi
+  [ -n "$which" ] || return 1
+
+  if [ "$which" = contract ]; then
+    printf 'DO NOT STOP — the shift contract above the Items heading in %s has changed since this shift armed. It is the agreement the night is working to, and it is not editable while a shift runs. Restore the punch list from the work-target history or the receipts, or end the shift and let the owner edit the contract with nothing armed. Nothing else about the shift has changed: your ticks stand.' "$list"
+  else
+    printf 'DO NOT STOP — an item in %s has been reworded, removed or inserted since this shift armed. Ticking a box is invisible to this check, so something other than a tick changed. Restore the punch list from the work-target history or the receipts, or end the shift and let the owner edit the list with nothing armed. Nothing else about the shift has changed: your ticks stand.' "$list"
+  fi
+}
