@@ -21,7 +21,8 @@ chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
   grep -qF 'stay in this skill' "$QUALITY"
   grep -qF 'use the next 20 hours adding features and enhancing existing ones' "$HUNT"
   grep -qF '8 hours clear lint and test debt' "$HUNT"
-  grep -qF 'reads the same on every host, with or without `jq` and `python3`' "$START"
+  # The capability is what the policy verdict explains, so that is where the sentence lives.
+  grep -qF 'reads the same on every host, with or without jq and python3' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   if grep -qF 'python3' "$QUALITY"; then
     return 1
   fi

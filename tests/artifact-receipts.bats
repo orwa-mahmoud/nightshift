@@ -443,8 +443,9 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
 @test "skills and docs name artifact receipts" {
   grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"
-  grep -qF '$NS/receipts/' "$START"
-  grep -qF 'exists but is not a usable directory' "$START"
+  # Start hands artifact completion to the main skill, which owns the item loop.
+  grep -qF '$NS/receipts/' "$NIGHTSHIFT"
+  grep -qF 'exists but is not a usable directory' "$SETUP"
   grep -qF 'do not `git init` the notes folder' "$NIGHTSHIFT"
   grep -qF 'when Git is installed' "$NIGHTSHIFT"
   grep -qE 'ns"? write-receipt' "$START"
