@@ -235,3 +235,134 @@ ns_gate_item_label() {
     }
   '
 }
+
+# Which form the block takes: the whole contract, or one line saying nothing has changed.
+#
+# The push never changes. Every turn that ends with open boxes is still blocked, with a reason the
+# host feeds back into the conversation. What changes is the repetition: a model ends turns to
+# narrate — "gate green, committing" — many times per item, and each block was re-injecting a
+# message it had read a few calls earlier. One shift here took 106 blocks in four hours across
+# eleven items.
+#
+# The gate already knows everything needed to tell "something moved" from "nothing did": the open
+# and ticked counts, which item is open, whether a stop-work order exists, the deadline state, the
+# stall counter. It writes that down after each block and compares on the next.
+#
+# Unknown always means the full text. A missing, empty or malformed comparison file, a context
+# reset, the first block of a shift, and too many short lines in a row all send the whole thing.
+# No branch here may produce an empty reason or no block at all.
+
+# ns_gate_reminder_fingerprint <open> <ticked> <item> <stopped> <deadline> <stall>
+ns_gate_reminder_fingerprint() {
+  printf 'open=%s ticked=%s item=%s stopped=%s deadline=%s stall=%s' \
+    "${1:-?}" "${2:-?}" "${3:-?}" "${4:-?}" "${5:-?}" "${6:-?}"
+}
+
+# ns_gate_stall_state <stall-file> <warn-every> — `warned` once the stall guard has begun saying
+# so, `quiet` before that.
+#
+# Deliberately not the raw attempt count. That count rises on every stop attempt without progress,
+# which is the very repetition this shortens, so a fingerprint carrying it could never compare
+# equal twice and the short line would never be sent at all. Crossing into warning is a real
+# change and sends the whole contract; counting narration turns is not.
+ns_gate_stall_state() {
+  local n warn
+  [ -f "$1" ] && [ ! -L "$1" ] || { printf 'quiet'; return 0; }
+  n="$(sed -n 2p "$1" 2>/dev/null | tr -d '[:space:]')"
+  case "$n" in '' | *[!0-9]*) printf 'quiet'; return 0 ;; esac
+  warn="$2"
+  case "$warn" in '' | *[!0-9]* | 0) printf 'quiet'; return 0 ;; esac
+  if [ "$n" -ge "$warn" ]; then printf 'warned'; else printf 'quiet'; fi
+}
+
+# ns_gate_reminder_text <project-dir> <full-text> <open> <ticked> <item> <fingerprint>
+#
+# Prints the reason this block should carry. The full owner text unless the gate positively knows
+# nothing has changed since the last block, in which case the owner's short line with the item and
+# counts put in.
+ns_gate_reminder_text() {
+  local project="$1" full="$2" open="$3" ticked="$4" item="$5" fp="$6"
+  local ns="$1/.nightshift" mode file previous count limit short
+  mode="$(rule "$project" clockOutReminderMode "${NIGHTSHIFT_CLOCKOUT_REMINDER_MODE:-}")"
+  case "$mode" in
+    changed-only) ;;
+    # `full` is the shipped default, and so is anything unreadable: a mode nobody can parse is not
+    # a licence to say less.
+    *)
+      ns_gate_reminder_remember "$ns" "$fp" 0
+      printf '%s' "$full"
+      return 0
+      ;;
+  esac
+  file="$ns/.clock-out-reminder"
+  # A context reset means the conversation no longer holds what it was told. Consume the marker
+  # and send everything.
+  if [ -f "$ns/.context-reset" ] || [ -L "$ns/.context-reset" ]; then
+    rm -f "$ns/.context-reset" 2>/dev/null || :
+    ns_gate_reminder_remember "$ns" "$fp" 0
+    printf '%s' "$full"
+    return 0
+  fi
+  if [ ! -f "$file" ] || [ -L "$file" ] || [ ! -s "$file" ]; then
+    ns_gate_reminder_remember "$ns" "$fp" 0
+    printf '%s' "$full"
+    return 0
+  fi
+  previous="$(sed -n 1p "$file" 2>/dev/null)"
+  count="$(sed -n 2p "$file" 2>/dev/null | tr -d '[:space:]')"
+  case "$count" in '' | *[!0-9]*) count="" ;; esac
+  if [ -z "$previous" ] || [ -z "$count" ] || [ "$previous" != "$fp" ]; then
+    ns_gate_reminder_remember "$ns" "$fp" 0
+    printf '%s' "$full"
+    return 0
+  fi
+  limit="$(rule "$project" clockOutReminderLimit "${NIGHTSHIFT_CLOCKOUT_REMINDER_LIMIT:-}")"
+  case "$limit" in '' | *[!0-9]* | 0) limit=10 ;; esac
+  if [ "$count" -ge "$limit" ]; then
+    ns_gate_reminder_remember "$ns" "$fp" 0
+    printf '%s' "$full"
+    return 0
+  fi
+  short="$(rule "$project" clockOutReminder "${NIGHTSHIFT_CLOCKOUT_REMINDER:-}")"
+  if [ -z "$short" ]; then
+    ns_gate_reminder_remember "$ns" "$fp" 0
+    printf '%s' "$full"
+    return 0
+  fi
+  ns_gate_reminder_remember "$ns" "$fp" "$((count + 1))"
+  ns_gate_reminder_fill "$short" "$item" "$open" "$ticked"
+}
+
+# ns_gate_reminder_remember <nightshift-dir> <fingerprint> <count>
+ns_gate_reminder_remember() {
+  [ -d "$1" ] || return 0
+  [ -L "$1/.clock-out-reminder" ] && rm -f "$1/.clock-out-reminder"
+  printf '%s\n%s\n' "$2" "$3" >"$1/.clock-out-reminder" 2>/dev/null || :
+}
+
+# ns_gate_reminder_fill <short> <item> <open> <ticked> — the owner's own wording with the facts
+# put in. Substitution is by name, so an owner who drops one keeps their own sentence, and
+# {total} is offered because "4 of 7 remain" reads better than making them add.
+ns_gate_reminder_fill() {
+  local out="$1" total=$(( ${3:-0} + ${4:-0} ))
+  out="${out//\{item\}/$2}"
+  out="${out//\{open\}/$3}"
+  out="${out//\{ticked\}/$4}"
+  out="${out//\{total\}/$total}"
+  printf '%s' "$out"
+}
+
+# ns_gate_open_item <punch-list> — the id of the first still-open item, for the short line.
+ns_gate_open_item() {
+  ns_items_section "$1" 2>/dev/null | awk '
+    /^- \[ \]/ {
+      line = $0
+      sub(/^- \[ \][[:space:]]*\*\*/, "", line)
+      sub(/[[:space:]]*[—-].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      print line
+      exit
+    }
+  '
+}

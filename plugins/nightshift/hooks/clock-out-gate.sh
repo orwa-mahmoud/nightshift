@@ -384,10 +384,19 @@ fi
 # copies. jq embeds it when present; otherwise the same string is JSON-escaped in the shell.
 # The block itself never depends on config: an unreadable message still blocks, fail closed,
 # with the repair named.
+# Which form this block takes. The push is unchanged — the turn is still blocked, with a reason
+# the host feeds back — but a block that repeats a message the model read a few calls ago can say
+# so in one line instead. The gate only shortens when it positively knows nothing moved.
+NS_GATE_FP="$(ns_gate_reminder_fingerprint "$OPEN" "$TICKED" "$(ns_gate_open_item "$PUNCH")" \
+  "$([ -f "$STOP" ] && printf yes || printf no)" \
+  "$(deadline_passed && printf passed || printf pending)" \
+  "$(ns_gate_stall_state "$STALL" "$STALL_WARN")")"
 if [ -n "$GATE_MESSAGE" ]; then
-  _ns_clock_out_block "$GATE_MESSAGE"
+  _ns_clock_out_block "$(ns_gate_reminder_text "$PROJECT_DIR" "$GATE_MESSAGE" "$OPEN" "$TICKED" \
+    "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"
   exit 0
 fi
 FALLBACK="$(ns_expand_injected_paths "$PROJECT_DIR" "DO NOT STOP — the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item's gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage — unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)")"
-_ns_clock_out_block "$FALLBACK"
+_ns_clock_out_block "$(ns_gate_reminder_text "$PROJECT_DIR" "$FALLBACK" "$OPEN" "$TICKED" \
+  "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"
 exit 0

@@ -226,6 +226,24 @@
       "type": "string",
       "description": "Text the Stop hook re-injects when open punch-list items remain."
     },
+    "clockOutReminderMode": {
+      "type": "string",
+      "enum": [
+        "full",
+        "changed-only"
+      ],
+      "description": "Whether every block carries the whole clockOutMessage. `full` is today’s behaviour and the default. `changed-only` sends the full message when the shift state moved — a tick, a stop-work order, a passed deadline, a stall — and the short clockOutReminder when the gate positively knows nothing changed. The push itself never changes: the turn is blocked either way."
+    },
+    "clockOutReminder": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The one line a block carries in `changed-only` mode when nothing has moved. `{item}`, `{open}`, `{ticked}` and `{total}` are filled in by the gate; drop any of them and the rest of your sentence stands. Never used in `full` mode, and never used when the gate cannot tell whether something changed."
+    },
+    "clockOutReminderLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many short lines may follow one another before the full message is sent again regardless. The safety net on a host that cannot signal a context reset, so a compacted conversation is never left with only the short line."
+    },
     "shift": {
       "type": "object",
       "additionalProperties": false,

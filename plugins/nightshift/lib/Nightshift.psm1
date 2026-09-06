@@ -4352,6 +4352,116 @@ function Get-NSEndedField {
 }
 
 # ---------------------------------------------------------------------------
+# Which form a clock-out block takes
+#
+# The POSIX half is ns_gate_reminder_* in hooks/shared/gate-core.sh. These have to decide the same
+# way on the same facts, and produce the same fingerprint text byte for byte.
+# ---------------------------------------------------------------------------
+
+# Get-NSGateReminderFingerprint <open> <ticked> <item> <stopped> <deadline> <stall>
+function Get-NSGateReminderFingerprint {
+    param($Open, $Ticked, $Item, $Stopped, $Deadline, $Stall)
+    function Fallback($v) { if ($null -eq $v -or "$v" -eq '') { return '?' } return "$v" }
+    return ('open=' + (Fallback $Open) + ' ticked=' + (Fallback $Ticked) + ' item=' + (Fallback $Item) +
+        ' stopped=' + (Fallback $Stopped) + ' deadline=' + (Fallback $Deadline) +
+        ' stall=' + (Fallback $Stall))
+}
+
+# Format-NSGateReminder <short> <item> <open> <ticked> - the owner's own wording with the facts put
+# in, by name, so dropping one keeps the rest of their sentence.
+function Format-NSGateReminder {
+    param([AllowEmptyString()][string]$Short, [AllowEmptyString()][string]$Item, $Open, $Ticked)
+    $total = [int]$Open + [int]$Ticked
+    $out = $Short.Replace('{item}', "$Item").Replace('{open}', "$Open")
+    return $out.Replace('{ticked}', "$Ticked").Replace('{total}', "$total")
+}
+
+# Get-NSGateStallState <stall-file> <warn-every> - `warned` once the stall guard has begun saying
+# so, `quiet` before that. Deliberately not the raw attempt count: that rises on every stop
+# attempt without progress, so a fingerprint carrying it could never compare equal twice.
+function Get-NSGateStallState {
+    param([AllowEmptyString()][string]$Path, $WarnEvery)
+    if ([string]::IsNullOrEmpty($Path) -or (Test-NSReparsePoint $Path) -or
+        -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return 'quiet' }
+    $lines = @([IO.File]::ReadAllLines($Path))
+    if ($lines.Count -lt 2) { return 'quiet' }
+    $n = $lines[1].Trim()
+    if ($n -notmatch '^\d+$') { return 'quiet' }
+    if ("$WarnEvery" -notmatch '^\d+$' -or [int]$WarnEvery -le 0) { return 'quiet' }
+    if ([int]$n -ge [int]$WarnEvery) { return 'warned' }
+    return 'quiet'
+}
+
+# Get-NSGateReminderText <workspace> <full> <open> <ticked> <item> <fingerprint>
+#
+# The whole contract unless the gate positively knows nothing has changed. Unknown always means
+# the full text: a missing, empty or malformed comparison file, a context reset, the first block,
+# and too many short lines in a row all send everything.
+function Get-NSGateReminderText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Full,
+        $Open, $Ticked, [AllowEmptyString()][string]$Item,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Fingerprint
+    )
+    $ns = Join-Path $Workspace '.nightshift'
+    $mode = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderMode')
+    if ($mode -cne 'changed-only') {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $reset = Join-Path $ns '.context-reset'
+    if (Test-Path -LiteralPath $reset) {
+        Remove-Item -LiteralPath $reset -Force -ErrorAction SilentlyContinue
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $file = Join-Path $ns '.clock-out-reminder'
+    if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf)) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $lines = @([IO.File]::ReadAllLines($file))
+    if ($lines.Count -lt 2 -or [string]::IsNullOrEmpty($lines[0]) -or $lines[1].Trim() -notmatch '^\d+$') {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    if ($lines[0] -cne $Fingerprint) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $count = [int]$lines[1].Trim()
+    $limit = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderLimit')
+    if ($limit -notmatch '^\d+$' -or [int]$limit -le 0) { $limit = 10 }
+    if ($count -ge [int]$limit) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $short = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminder')
+    if ([string]::IsNullOrEmpty($short)) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    Save-NSGateReminder $ns $Fingerprint ($count + 1)
+    return (Format-NSGateReminder $short $Item $Open $Ticked)
+}
+
+function Save-NSGateReminder {
+    param([string]$StateDir, [AllowEmptyString()][string]$Fingerprint, [int]$Count)
+    if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { return }
+    $path = Join-Path $StateDir '.clock-out-reminder'
+    if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    [IO.File]::WriteAllText($path, "$Fingerprint`n$Count`n", (New-Object Text.UTF8Encoding($false)))
+}
+
+# One reader for a top-level rules key, going through the same frozen-policy path every other
+# setting uses.
+function Get-NSPolicyGroupSettingOrRule {
+    param([string]$Workspace, [string]$Key)
+    return (Get-NSRule $Workspace $Key '')
+}
+
+# ---------------------------------------------------------------------------
 # What a shift cost, read from the records the host already keeps
 #
 # The POSIX halves live in lib/usage.sh and lib/usage-*.awk. These have to answer identically on

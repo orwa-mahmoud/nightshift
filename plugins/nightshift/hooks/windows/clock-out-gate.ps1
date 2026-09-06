@@ -17,6 +17,33 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
+# The reason a block carries: the whole contract, or one line when the gate positively knows
+# nothing has moved. The decision is the shared one; only the shape around it is this host's.
+function Get-NSGateBlockReason {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Full)
+    $item = ''
+    try { $item = Get-NSGateOpenItem $punch } catch { $item = '' }
+    $stopped = if (Test-Path -LiteralPath $stop) { 'yes' } else { 'no' }
+    $deadline = if (Test-NSDeadlinePassed) { 'passed' } else { 'pending' }
+    $fp = Get-NSGateReminderFingerprint $counts.Open $counts.Ticked $item $stopped $deadline `
+        (Get-NSGateStallState $stall $stallWarn)
+    return (Get-NSGateReminderText -Workspace $workspace -Full $Full -Open $counts.Open `
+            -Ticked $counts.Ticked -Item $item -Fingerprint $fp)
+}
+
+# Get-NSGateOpenItem <punch-list> - the id of the first still-open item, for the short line.
+function Get-NSGateOpenItem {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+    $inItems = $false
+    foreach ($line in [IO.File]::ReadLines($Path)) {
+        if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $inItems = $true; continue }
+        if (-not $inItems) { continue }
+        if ($line -cmatch '^- \[ \][ \t]*\*\*(.+?)[ \t]*[\u2014-]') { return $Matches[1].Trim() }
+    }
+    return ''
+}
+
 function Write-Block {
     param([Parameter(Mandatory = $true)][string]$Reason)
     if ((Test-Path Variable:workspace) -and -not [string]::IsNullOrEmpty($workspace)) {
@@ -504,6 +531,6 @@ finally {
 }
 
 if (-not [string]::IsNullOrEmpty($gateMessage)) {
-    Write-Block $gateMessage
+    Write-Block (Get-NSGateBlockReason $gateMessage)
 }
-Write-Block 'DO NOT STOP - the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item''s gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage - unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)'
+Write-Block (Get-NSGateBlockReason 'DO NOT STOP - the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item''s gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage - unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)')
