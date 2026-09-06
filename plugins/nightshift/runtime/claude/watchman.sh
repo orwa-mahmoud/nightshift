@@ -183,7 +183,7 @@ stand_down_disarmed() {
 
 # The pidfile is this loop's claim on the site. Reset and purge remove it; a takeover replaces
 # the pid inside it. Either way the watching is somebody else's now, and a pidfile that is no
-# longer ours is never cleaned up on the way out.
+# longer ours is never cleaned up on the way out — not here, and not from the exit trap.
 stand_down_unclaimed() {
   if [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ]; then
     trap - EXIT
@@ -210,7 +210,7 @@ elif [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; t
   exit 1
 fi
 printf '%s\n' "$$" >"$PIDFILE"
-trap 'rm -f "$PIDFILE"' EXIT
+trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
 
 # Counted below the `## Items` heading only, exactly as the gate counts them — a watchman that
 # read a checkbox out of the contract prose would keep reviving a shift the gate considers done.

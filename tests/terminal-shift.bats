@@ -161,9 +161,20 @@ a_new_item() {
   terminal "$p"
   a_new_item "$p"
 
-  # This is the whole difference: someone armed it on purpose.
+  # Start's own preflight is what runs, not a hand-placed marker: it has to clear the leftovers of
+  # the shift that ended and agree the site may arm again.
+  rm -f "$p/.nightshift/.shift-session" "$p/.nightshift/.shift-lease"
+  run bash "$ROOT/plugins/nightshift/runtime/start-preflight.sh" --project "$p" --host claude
+  [ "$status" -eq 0 ] || { echo "preflight refused a site the owner may restart:"; echo "$output"; return 1; }
+  # It clears the ending itself rather than leaving the next shift to trip over it.
+  [ ! -f "$p/.nightshift/.ended" ]
+  # And it does not arm anything: that is still a deliberate act.
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+  run gate "$p"
+  is_release
+
+  # Arming is the whole difference.
   : >"$p/.nightshift/.shift-armed"
-  rm -f "$p/.nightshift/.ended"
   run gate "$p"
   is_block "$output"
   run hardhat_bash "$p" "git push" NIGHTSHIFT_FORBIDDEN_COMMANDS='git push'
@@ -201,11 +212,56 @@ a_new_item() {
   a_new_item "$p"
   rm -f "$p/.nightshift/.ended"
   : >"$p/.nightshift/.shift-armed"
-  # The old shift's watchman finally wakes up. It must not stand the new shift down.
+  # The old shift's watchman finally wakes up and takes a real wake, long enough to look at the
+  # site and decide. It must not stand the new shift down.
   run env NIGHTSHIFT_WATCH_ONESHOT=1 bash "$WATCHMAN" --project "$p" --max-wakes 1 \
-    --agent 'true' --interval 0
+    --agent 'true' --interval 1
   [ -f "$p/.nightshift/.shift-armed" ]
   [ ! -f "$p/.nightshift/.ended" ]
   run gate "$p"
   is_block "$output"
+}
+
+@test "a watchman that has been replaced does not delete the new one's claim on its way out" {
+  # The exit trap is the danger: a loop that has already lost the site would otherwise remove the
+  # pidfile naming its replacement, leaving the site watched by a loop nothing records.
+  p="$(new_project term-pidfile-handover)"
+  punch_open "$p"
+  pidfile="$p/.nightshift/.watchman"
+
+  : >"$p/.nightshift/.shift-armed"
+  # A watchman that sleeps long enough to be replaced while it waits.
+  env NIGHTSHIFT_WATCH_ONESHOT=1 bash "$WATCHMAN" --project "$p" --max-wakes 1 \
+    --agent 'true' --interval 4 >/dev/null 2>&1 &
+  old=$!
+  claimed=""
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if [ -s "$pidfile" ]; then
+      claimed="$(sed -n 1p "$pidfile")"
+      break
+    fi
+    sleep 0.2
+  done
+  [ -n "$claimed" ] || { kill "$old" 2>/dev/null; echo "the watchman never claimed the site"; return 1; }
+
+  # Its replacement takes the site over by putting its own pid in the file, the way a takeover
+  # does, and the owner disarms — so the old loop wakes, finds the shift over, and exits by the
+  # ordinary route rather than the one that notices a lost claim.
+  printf '424242\n' >"$pidfile"
+  rm -f "$p/.nightshift/.shift-armed"
+  wait "$old" 2>/dev/null || true
+
+  # The claim that outlived it is the replacement's, not a file the old loop swept away.
+  [ -f "$pidfile" ] || { echo "the old watchman deleted its replacement's claim"; return 1; }
+  [ "$(sed -n 1p "$pidfile")" = 424242 ]
+}
+
+@test "every watchman guards that trap, so no host loses a claim on exit" {
+  # One line each, and all three have to have it: the bash halves share this shape rather than
+  # this file.
+  for host in claude codex cursor; do
+    w="$ROOT/plugins/nightshift/runtime/$host/watchman.sh"
+    grep -qF "trap 'holds_pidfile && rm -f \"\$PIDFILE\"' EXIT" "$w" \
+      || { echo "$host removes the pidfile unconditionally"; return 1; }
+  done
 }

@@ -130,7 +130,16 @@ elif [ -f "$PIDFILE" ]; then
   fi
 fi
 printf '%s\n' "$$" >"$PIDFILE"
-trap 'rm -f "$PIDFILE"' EXIT
+# The pidfile is this loop's claim on the site, and a claim can change hands: Reset and Purge
+# remove it, a takeover replaces the pid inside it. Removing it on the way out is only right while
+# it still names this process — otherwise a watchman that has already been replaced would delete
+# the new one's claim as it exits, and the site would be left watched by a loop nothing records.
+holds_pidfile() {
+  [ -f "$PIDFILE" ] || return 1
+  [ ! -L "$PIDFILE" ] || return 1
+  [ "$(sed -n 1p "$PIDFILE" 2>/dev/null)" = "$$" ]
+}
+trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
 WATCH_CLOCK="$(date +%s)"
 
 sid()        { [ -L "$NS/.shift-session" ] && return; sed -n 1p "$NS/.shift-session" 2>/dev/null; }
