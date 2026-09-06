@@ -66,7 +66,8 @@ LIB="$ROOT/plugins/nightshift/lib/lib.sh"
 }
 
 @test "start status and doctor keep native fence and drop leftover python commands" {
-  grep -qF 'ns" continuity-handoff fence-check' "$START"
+  grep -qF 'ns continuity-handoff fence-check' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   if grep -qF 'handoff-package' "$START"; then
     return 1
   fi
