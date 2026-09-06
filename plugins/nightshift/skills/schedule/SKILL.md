@@ -1,6 +1,6 @@
 ---
 name: schedule
-description: Set a shift to start at a fixed time — check the work is queued, then print the launchd or cron config for this project and the one command that installs it. Generates; registers nothing.
+description: Print the launchd, cron or Task Scheduler config that starts a shift at a fixed time; registers nothing.
 ---
 
 Get the host-opened project ready to start on a clock, then hand the owner the config. Work through

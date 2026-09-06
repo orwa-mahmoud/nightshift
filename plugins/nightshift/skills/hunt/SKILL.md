@@ -1,6 +1,6 @@
 ---
 name: hunt
-description: Compose a guided or automatic shift from the ready catalog, then review it first or run it directly under one time budget. Use when the owner wants to choose jobs or let Nightshift find the highest-value applicable work.
+description: Compose a shift from the ready catalog under one time budget, guided or automatic, reviewed first or run directly.
 ---
 
 Compose a shift for the host-opened project: settle the work, the ending, and the hours, then

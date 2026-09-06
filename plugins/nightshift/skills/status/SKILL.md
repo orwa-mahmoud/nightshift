@@ -1,6 +1,6 @@
 ---
 name: status
-description: Read-only shift status — open vs ticked items, parked decisions, snag-log summary, deadline remaining, and any STOP/stall state. Starts no work.
+description: Read-only shift status: items, parked decisions, snags, deadline, STOP or stall state.
 ---
 
 Report the shift status for the host-opened project **without starting or changing anything** —

@@ -1,6 +1,6 @@
 ---
 name: nightshift
-description: Run an accountable autonomous shift — work a punch list to completion, evolve a product from research, park decisions instead of asking, and leave receipts. Use when the user wants to work through a todo list autonomously, spend remaining agent usage, run overnight, polish or improve a product, research competitors and ship opportunities, add test coverage, find and fix everything, or keep reviewing until it is clean.
+description: Work a punch list to completion autonomously — overnight, through a todo list, or until a product is polished — parking decisions and leaving receipts.
 ---
 
 # nightshift — the brain

@@ -1,6 +1,6 @@
 ---
 name: start
-description: Begin the shift — preflight, cut whatever is queued, arm the site, work the punch list. Asks nothing, so a scheduled or headless run works exactly like an interactive one.
+description: Begin the shift from the punch list without asking, so scheduled and headless runs behave like interactive ones.
 ---
 
 Start a Nightshift run in the host-opened project.

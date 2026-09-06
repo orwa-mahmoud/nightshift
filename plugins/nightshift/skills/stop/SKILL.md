@@ -1,6 +1,6 @@
 ---
 name: stop
-description: Issue a stop-work order — pause the shift immediately, leaving unfinished items open.
+description: Issue a stop-work order: pause the shift now, leaving unfinished items open.
 ---
 
 Pause the host-opened project immediately so the owner can edit the punch list and resume later.

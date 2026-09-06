@@ -1,6 +1,6 @@
 ---
 name: import-issues
-description: Stage explicitly selected GitHub issues onto the drafting table as quoted source. Never searches, never writes back to GitHub, never installs gh.
+description: Stage explicitly selected GitHub issues onto the drafting table as quoted source; never searches or writes back.
 ---
 
 Import owner-selected GitHub issues into the host-opened project. This command stages drafts. It

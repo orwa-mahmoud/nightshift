@@ -1,6 +1,6 @@
 ---
 name: quality
-description: Find and work the project's applicable quality debt across tests, code, accessibility, contracts, documentation, dependencies, and security. Supports guided or automatic selection and review-first or run-direct execution.
+description: Compose a shift that works the project's quality debt: tests, code, accessibility, contracts, docs, dependencies, security.
 ---
 
 Quality is the broad entry point for this project's quality work. It uses the same selection and

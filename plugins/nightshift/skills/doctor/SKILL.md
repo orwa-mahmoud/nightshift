@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Read-only Nightshift diagnosis — workspace, rules, markers, session, process lease, watchman, deadline, and classified next actions. Use when a shift looks wrong, recovery is unclear, or the owner asks what Nightshift sees. Never repairs by being invoked.
+description: Read-only diagnosis of the workspace, rules, markers, lease, watchman and deadline, with classified next actions.
 ---
 
 Diagnose the host-opened project **without changing anything**. Doctor is deeper than status: it

@@ -1,6 +1,6 @@
 ---
 name: reset
-description: Abandon current Nightshift runtime mechanics without deleting the owner's work or evidence.
+description: Drop the runtime markers and deadline without deleting the owner's work or evidence.
 ---
 
 Reset runtime mechanics for the host-opened project. This recovers from damaged or confusing

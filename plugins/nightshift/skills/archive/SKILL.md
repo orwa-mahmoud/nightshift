@@ -1,6 +1,6 @@
 ---
 name: archive
-description: File the finished part of the run state into a dated archive — shipped items, research, opportunities, the rotated journal, and handled snags. The live files stay lean; the facts stay on disk.
+description: File finished shift state into a dated archive so the live files stay lean.
 ---
 
 Archive the finished paperwork for the host-opened project. This files records — it never does

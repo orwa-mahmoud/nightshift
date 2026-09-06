@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Scaffold .nightshift/ from the templates and propose stack-aware quality gates — ask, never impose. Private by default.
+description: Scaffold .nightshift/ and propose quality gates for this stack; asks, never imposes.
 ---
 
 Set up Nightshift in this project. Do the scaffolding first, then the gates conversation, then
