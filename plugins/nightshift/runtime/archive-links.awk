@@ -10,9 +10,13 @@
 #                      resolve. Passed in the environment because awk's -v rejects a newline.
 #   back               the relative path from the archive directory back to the state directory.
 #
-# Only inline links and reference definitions whose target is a plain relative path are touched.
-# A scheme, a leading slash, a bare fragment and anything already climbing with ../ are left
-# exactly as written, as is everything inside a fenced code block: raw evidence is evidence.
+# Only inline links and reference definitions whose target is a relative path are touched. A
+# scheme, a leading slash and a bare fragment are left exactly as written, as is everything inside
+# a fenced code block: raw evidence is evidence.
+#
+# A link that already climbs with ../ is rebased like any other. It was written relative to the
+# report's own directory, and the report has moved deeper — so a project deliverable two levels
+# out of the state directory is that much further away now, and leaving it alone breaks it.
 BEGIN {
   n = split(ENVIRON["NS_ARCHIVED_PATHS"], list, "\n")
   for (i = 1; i <= n; i++) {
@@ -34,7 +38,6 @@ function repoint(target,   path, frag, hash) {
   if (path == "") return target
   if (path ~ /^[A-Za-z][A-Za-z0-9+.-]*:/) return target
   if (path ~ /^\//) return target
-  if (path ~ /^\.\.\//) return target
   if (path in moved) return target
   return back path frag
 }

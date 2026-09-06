@@ -475,16 +475,22 @@ closed() { # <project> — the shift ended
   printf 'the baseline\n' >"$p/.nightshift/receipts/baseline.md"
   printf '# Parking\n\n## A live decision\n' >"$p/.nightshift/parking-lot.md"
   printf '# Snag\n\n- a finding\n' >"$p/.nightshift/snag-log.md"
+  # A real project deliverable beside the state directory, the way a workspace holds its repo.
+  mkdir -p "$p/claude-nightshift"
+  printf '# The deliverable\n' >"$p/claude-nightshift/README.md"
   cat >"$p/.nightshift/shift-report.md" <<'REPORT'
 # Shift report
 
 The baseline is [here](receipts/baseline.md) and the decision is in
 [parking-lot.md](parking-lot.md#a-live-decision), with the finding in [snag-log.md](snag-log.md).
+The deliverable itself: [the README](../claude-nightshift/README.md).
 Unrelated: [the docs](https://example.invalid/x), [an output](../out/build.log), [root](/etc/hosts).
 
 ```
 [not a link](parking-lot.md)
 ```
+
+[ref]: ../claude-nightshift/README.md "the same deliverable, by reference"
 REPORT
   closed "$p"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire baseline.md
@@ -500,9 +506,15 @@ REPORT
   # Nothing else is touched: an external link, a path outside the state area, an absolute path,
   # and a fenced block all read exactly as written.
   grep -qF '(https://example.invalid/x)' "$d/shift-report.md"
-  grep -qF '(../out/build.log)' "$d/shift-report.md"
   grep -qF '(/etc/hosts)' "$d/shift-report.md"
   grep -qF '[not a link](parking-lot.md)' "$d/shift-report.md"
+  # A link that already climbed out of the state area climbed from the report's own directory,
+  # and the report is two levels deeper now. The project deliverable it names still resolves.
+  ( cd "$d" && [ -f ../../../claude-nightshift/README.md ] ) \
+    || { echo "the project deliverable is unreachable from the archived report"; return 1; }
+  grep -qF '(../../../claude-nightshift/README.md)' "$d/shift-report.md"
+  grep -qF ': ../../../claude-nightshift/README.md "the same deliverable, by reference"' "$d/shift-report.md"
+  grep -qF '(../../../out/build.log)' "$d/shift-report.md"
 
   # Rewriting changed bytes, so the untouched original is preserved beside the relocated page.
   [ -f "$d/shift-report.original.md" ]

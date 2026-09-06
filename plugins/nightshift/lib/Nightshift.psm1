@@ -4445,8 +4445,9 @@ function Test-NSArchiveAutomatic {
 # Convert-NSReportLinks <text> <archived> <back> - the report's own links, repointed for where it
 # now sits. The twin of runtime/archive-links.awk, and it must answer identically: a record that
 # travelled with the report is still a sibling, one that stayed live is reached back through the
-# archive. A scheme, a leading slash, a bare fragment, anything already climbing with ../ and
-# everything inside a fenced code block are left exactly as written.
+# archive. A scheme, a leading slash, a bare fragment and everything inside a fenced code block
+# are left exactly as written. A link that already climbs with ../ is rebased like any other: it
+# was written relative to the report's own directory, and the report has moved deeper.
 function Convert-NSReportLinks {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
@@ -4474,7 +4475,6 @@ function Convert-NSReportLinks {
         if ([string]::IsNullOrEmpty($path)) { return $target }
         if ($path -cmatch '^[A-Za-z][A-Za-z0-9+.-]*:') { return $target }
         if ($path.StartsWith('/', [StringComparison]::Ordinal)) { return $target }
-        if ($path.StartsWith('../', [StringComparison]::Ordinal)) { return $target }
         if ($moved.Contains($path)) { return $target }
         return ($prefix + $path + $fragment)
     }
