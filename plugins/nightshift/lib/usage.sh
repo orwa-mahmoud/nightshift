@@ -101,6 +101,20 @@ ns_usage_read_claude() {
     "$bin" -v size="$size" -f "$_NS_USAGE_CLAUDE_AWK" 2>/dev/null || return 1
 }
 
+# ns_usage_subagents <transcript> — the subagent transcripts belonging to one session, if any.
+#
+# A Task-spawned agent writes its own file beside the session's, and its usage is there rather
+# than in the parent. Only this session's own directory is looked at: nothing scans ~/.claude for
+# other sessions.
+ns_usage_subagents() {
+  local dir base sub
+  case "$1" in */*) dir="${1%/*}" ;; *) return 1 ;; esac
+  base="${1##*/}"
+  sub="$dir/${base%.jsonl}/subagents"
+  [ -d "$sub" ] && [ ! -L "$sub" ] || return 1
+  find "$sub" -maxdepth 1 -type f -name 'agent-*.jsonl' 2>/dev/null | sort
+}
+
 # ns_usage_awk_bin — the awk the readers use, resolved once the way the rules reader resolves it.
 ns_usage_awk_bin() { ns_rules_awk_bin; }
 

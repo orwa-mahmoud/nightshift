@@ -377,3 +377,78 @@ mark_at() {
     [ "$output" = "$(lib ns_usage_overlap "$host")" ] || { echo "$host overlap differs"; return 1; }
   done
 }
+
+@test "a subagent's usage is its own segment, not the parent's" {
+  # A Task-spawned agent writes beside the session file. Its tokens are real spend and belong to
+  # the shift; counting them inside the parent's counter would make a revived child that replays
+  # history look like new work.
+  p="$BATS_TEST_TMPDIR/subagent"
+  mkdir -p "$p/.nightshift" "$p/proj/sess/subagents"
+  cp "$FIX/claude-multiline.jsonl" "$p/proj/sess.jsonl"
+  cp "$FIX/claude-subagent.jsonl" "$p/proj/sess/subagents/agent-1.jsonl"
+
+  run lib ns_usage_subagents "$p/proj/sess.jsonl"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$p/proj/sess/subagents/agent-1.jsonl" ]
+
+  run lib ns_usage_read_claude "$p/proj/sess/subagents/agent-1.jsonl"
+  [ "$(printf '%s' "$output" | cut -f1)" = 'input=9,cache_write=0,cache_read=300,output=6,reasoning=3' ]
+
+  # A session with no children says so rather than failing loudly.
+  run lib ns_usage_subagents "$FIX/claude-multiline.jsonl"
+  [ "$status" -ne 0 ]
+}
+
+@test "a transcript that is not JSON yields nothing, not a number" {
+  run lib ns_usage_read_claude "$FIX/claude-malformed.jsonl"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | cut -f4)" = 0 ]
+  [ "$(printf '%s' "$output" | cut -f1)" = 'input=0,cache_write=0,cache_read=0,output=0,reasoning=0' ]
+}
+
+@test "a revived Codex segment counts only what it spent, not the history it replays" {
+  # The second rollout starts its own counter. Adding the two cumulative totals would bill the
+  # shift for the parent's whole history a second time.
+  p="$BATS_TEST_TMPDIR/codex-revived"; mkdir -p "$(ns "$p")"
+  lib ns_usage_mark_arm "$(ns "$p")"
+  first="$(lib ns_usage_read_codex "$FIX/codex-rollout.jsonl")"
+  lib ns_usage_record "$(ns "$p")" codex gpt-x rollout /r/first 0 "$(printf '%s' "$first" | cut -f1)"
+  second="$(lib ns_usage_read_codex "$FIX/codex-revived.jsonl")"
+  lib ns_usage_record "$(ns "$p")" codex gpt-x rollout /r/second 0 "$(printf '%s' "$second" | cut -f1)"
+
+  run lib ns_usage_total "$(ns "$p")"
+  # Neither rollout advanced past its own first reading, so the shift is billed for nothing —
+  # rather than for the 1,300 and 40 those counters happened to start at.
+  [ "$output" = 'input=0,cache_write=0,cache_read=0,output=0,reasoning=0' ]
+  run lib ns_usage_segments "$(ns "$p")"
+  [ "$output" = 2 ]
+}
+
+@test "a disabled report with an enabled handoff, and the reverse" {
+  p="$(new_project usage-report-off)"
+  printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
+  : >"$p/.nightshift/.shift-armed"
+  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
+    report:{enabled:false},handoff:{enabled:true}}' >"$p/.nightshift/shift-policy.json"
+  # Reporting is off, so no notice is ever due — the handoff is a separate page and unaffected.
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
+  [ "$status" -ne 0 ]
+  run lib ns_handoff_enabled "$p"
+  [ "$status" -eq 0 ]
+
+  # And the reverse: the report stands while the owner wants no morning page.
+  q="$(new_project usage-handoff-off)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$q/.nightshift/punch-list.md"
+  : >"$q/.nightshift/.shift-armed"
+  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
+    report:{enabled:true},handoff:{enabled:false}}' >"$q/.nightshift/shift-policy.json"
+  mark_at "$q/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$q"
+  [ "$status" -eq 0 ]
+  run lib ns_handoff_enabled "$q"
+  [ "$status" -ne 0 ]
+}

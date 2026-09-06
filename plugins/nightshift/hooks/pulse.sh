@@ -92,6 +92,15 @@ ns_pulse_usage() {
       reading="$(ns_usage_read_claude "$src" "$offset")" || return 0
       ns_usage_record "$ns" claude "$(printf '%s' "$reading" | cut -f3)" transcript-incremental \
         "$src" "$(printf '%s' "$reading" | cut -f2)" "$(printf '%s' "$reading" | cut -f1)" || return 0
+      # A Task-spawned agent writes its own transcript beside this one, and its usage is there
+      # rather than in the parent. Each is its own segment, so a child that replays history it did
+      # not spend cannot inflate the shift.
+      ns_usage_subagents "$src" 2>/dev/null | while IFS= read -r agent; do
+        [ -n "$agent" ] || continue
+        reading="$(ns_usage_read_claude "$agent" "$(ns_usage_offset "$ns" "$agent")")" || continue
+        ns_usage_record "$ns" claude "$(printf '%s' "$reading" | cut -f3)" transcript-incremental \
+          "$agent" "$(printf '%s' "$reading" | cut -f2)" "$(printf '%s' "$reading" | cut -f1)" || continue
+      done
       ;;
     codex)
       reading="$(ns_usage_read_codex "$src")" || return 0
