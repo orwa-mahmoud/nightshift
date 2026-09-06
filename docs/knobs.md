@@ -277,7 +277,7 @@ item, saying what was delivered and why. It never reaches a public commit messag
 | `progressMode` | `time` | `completion-only` writes a section once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first |
 | `progressMinutes` | `20` | Minutes of work on the current item before an update is due. Checked when a tool returns, so it never interrupts a running command |
 | `progressTokens` | `100000` | Tokens of work before an update is due. A starting value to tune, not a host limit |
-| `usage` | `when-available` | Record what each item cost, from the numbers your host already exposes. `off` records none. Input, output and cached input are reported separately by name; a dimension the host does not report reads `unavailable`, never zero |
+| `usage` | `when-available` | Record what each item cost, from the numbers your host already exposes. `off` records none. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out |
 | `legacyItemReceipts` | `false` | Artifact items are completed by their report section. `true` also writes the older per-item receipt file. Baseline, checkpoint and source receipts are unaffected |
 | `templatePath` | `""` | A Markdown template for the report, on the same terms as the handoff template: wording only |
 

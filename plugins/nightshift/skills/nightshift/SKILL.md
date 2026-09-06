@@ -153,8 +153,10 @@ baseline when the item starts, track while it is active, calculate its consumpti
 finishes, write that into the section before the tick, then reset — the next item starts from its
 own baseline.** Where the host exposes cumulative counters the item's cost is the delta against
 its baseline; where it emits individual usage events instead, sum the events belonging to the
-active item. Report **input, output and cached input each by name**, never collapsed into one
-figure, and say whether cached input is already inside the input number so nothing is counted
+active item. Report **every dimension the host exposes, each by name** — input, output, cache
+reads, cache writes, and reasoning output where a model reports it apart from its visible output —
+never collapsed into one figure, and say whether cache reads are already inside the input number
+and reasoning inside the output number, so nothing is counted
 twice. Any dimension the host does not report is `unavailable` on its own — never zero, never an
 estimate dressed as a measurement, and never a price. The shift total at clock-out is the measured
 item totals plus the shared overhead that belongs to no single item, and it says whether that
@@ -166,10 +168,23 @@ appending another status snapshot under it, and never write it as though the ite
 `report.progressMode` says when an update is due: `completion-only` only at the end, `time` after
 `report.progressMinutes` of work on that item, `tokens` after `report.progressTokens`, `either` at
 whichever comes first. Check when a tool returns — this is a cadence, not a promise to interrupt a
-running command — and start the clock again after each update. When the item completes, replace
-the progress paragraph with the finished result and drop that item's counters; the next item
-starts its own. If a later item changes an earlier result, correct that section and leave one line
-saying what changed.
+running command — and start the cadence window again after each update. **Only the window
+restarts**: the item keeps accumulating from the baseline it started with, so two updates inside
+one item never split its usage in half. When the item completes, replace the progress paragraph
+with the finished result, then drop that item's counters so the next starts from its own baseline.
+The shift totals carry on across that reset — they are what the outcome adds up. If a later item
+changes an earlier result, correct that section and leave one line saying what changed.
+
+`tokens` and `either` need counters the host actually reports. Where it reports none, or reports
+something that cannot be compared against the baseline, say so once in the current section and
+fall back to `report.progressMinutes` — reporting never quietly stops because a counter was
+missing.
+
+Keep three things where a resumed or compacted session can find them: which item is active, the
+usage baseline it started from, and when the last update was written. On resume, reload the active
+section and the current policy rather than the whole history, check once whether an update is due,
+and leave every finalised section alone. A long pause is one overdue update, not one per minute
+that passed.
 
 **At clock-out** add a short overall outcome and the owner's next steps, built from the sections
 you already wrote and whatever is still unresolved. Do not re-read the whole commit history or

@@ -26,8 +26,8 @@ Outputs: `fix(resolver): check containment before normalising` · `src/resolve.t
 
 Related: snag log, "resolver compared normalised paths" — fixed. No parked decisions.
 
-Usage: input 128,400 · output 9,310 · cached input 96,000
-  Cached input is included in the input figure above.
+Usage: input 128,400 · output 9,310 · cache read 96,000 · cache write 12,100
+  Cache reads are included in the input figure above; cache writes are not.
   Source: claude claude-opus-5, cumulative counters, session
 
 ## P02 — Cover the parser's error paths
@@ -38,7 +38,7 @@ Four of the seven error paths now have tests; the malformed-escape and truncated
 written and passing, and the two encoding cases are still being reduced to something that does not
 depend on the fixture's locale. Nothing is committed yet.
 
-Usage: input 41,900 · output 3,050 · cached input unavailable
+Usage: input 41,900 · output 3,050 · cache read unavailable · cache write unavailable
   Source: claude claude-opus-5, cumulative counters, session
 
 ## P03 — Retire the vendored copy of the date helper
@@ -74,7 +74,7 @@ paths — and P02 is the one item still open.
 Worth your eye first: the integration suite has not run against P01, and the parking-lot decision
 about the date helper's invalid-input behaviour is still yours to confirm.
 
-Shift usage: input 170,300 · output 12,360 · cached input 96,000
+Shift usage: input 170,300 · output 12,360 · cache read 96,000 · cache write 12,100
   Items measured: 2 of 3 · Shared overhead: 14,200 input / 900 output
   Coverage: partial — P03 spans two measurement segments after a mid-item revival and is not
   included in the totals above.

@@ -59,14 +59,29 @@ The only real dependency is access to reliable usage data. A host that reports n
 makes the block `unavailable` — never zero, never an estimate presented as a measurement.
 
 ```text
-Usage: input <n> · output <n> · cached input <n>
-  Cached input is <included in|separate from> the input figure above.
+Usage: input <n> · output <n> · cache read <n> · cache write <n> · reasoning <n>
+  Cache read is <included in|separate from> the input figure above.
   Source: <host> <model>, <cumulative counters|per-event sums>, <session|scope>
 ```
 
-Report the three dimensions separately and by name. Mark any one of them `unavailable` on its own
-when the host reports the others but not that one. Say whether cached input is already inside the
-input figure, so nothing is counted twice. Never turn a token count into a price.
+Report every dimension the host actually exposes, separately and by name — input, output, cache
+reads (the cached input a request was served from), cache writes (what a request added to the
+cache), and reasoning output where a model reports it apart from its visible output. Mark any one
+`unavailable` on its own when the host reports the others but not that one, and leave out a
+dimension the host has no concept of rather than writing a zero for it.
+
+Say whether cache reads are already inside the input figure, so nothing is counted twice, and the
+same for reasoning inside output. Never turn a token count into a price.
+
+**A progress update is not a finish.** It resets the cadence window — the clock or the token
+threshold that decides when the next update is due — and nothing else. The item's own totals keep
+accumulating from the baseline it started with, so two updates inside one item never split its
+usage into two items' worth.
+
+**Finishing an item resets that item, not the shift.** Write the item's final figures, tick, then
+drop that item's counters so the next one starts from its own baseline. The running shift totals
+carry on: they are the sum of the items measured so far, and clearing them at a tick would leave
+the outcome with nothing to add up.
 
 ## The outcome
 
@@ -78,7 +93,7 @@ Added at clock-out, from the sections already written — not by re-reading the 
 <What the shift delivered, in a few lines. What is still open, and what the owner should look at
 first.>
 
-Shift usage: input <n> · output <n> · cached input <n>
+Shift usage: input <n> · output <n> · cache read <n> · cache write <n> · reasoning <n>
   Items measured: <n of n> · Shared overhead: <n, or unavailable>
   Coverage: <complete|partial — and what is missing>
 ```
