@@ -602,46 +602,7 @@ function Invoke-NSEvidenceArchive {
     return 0
 }
 
-function Write-NSStatusReport {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $ns = Join-Path $Workspace '.nightshift'
-    if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
-        Write-Output 'Nightshift Status'
-        Write-Output ('Nightshift: missing at ' + $Workspace)
-        return 0
-    }
-    $punch = Join-Path $ns 'punch-list.md'
-    $open = 0; $ticked = 0
-    if (Test-NSPathEntry $punch) {
-        $counts = Get-NSBoxCounts $punch
-        $open = [int]$counts.Open
-        $ticked = [int]$counts.Ticked
-    }
-    $armed = Test-NSPathEntry (Join-Path $ns '.shift-armed')
-    $watch = 0
-    try { $watch = [int](Get-NSRule $Workspace 'watchMinutes' '') } catch { $watch = 0 }
-    Write-Output 'Nightshift Status'
-    Write-Output ('Workspace:   ' + $Workspace)
-    Write-Output ('Shift:       ' + ($(if ($armed) { 'armed' } else { 'not armed' })))
-    Write-Output ('Items:       open=' + $open + ' ticked=' + $ticked)
-    Write-Output ('evidence:    ' + (Get-NSEvidenceCountSummary $Workspace))
-    Write-Output ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
-    $activity = Get-NSStatusLastActivity $Workspace
-    Write-Output ('last activity: ' + ($(if ($activity.Length -gt 0) { $activity } else { 'none' })))
-    Write-Output ('last checkpoint: ' + (Get-NSGateCheckpointToken $Workspace))
-    Write-Output ('stall attempts: ' + (Get-NSStatusStallAttempts $Workspace))
-    Write-Output ''
-    Write-Output 'resolved policy'
-    $table = Resolve-NSPolicy -Workspace $Workspace -Table
-    if ([string]::IsNullOrEmpty($table)) { Write-Output 'none' }
-    else { Write-Output $table }
-    Write-Output ''
-    Write-Output 'preflight gaps'
-    $preflight = Get-NSPreflightNeeds $Workspace
-    if ([string]::IsNullOrEmpty($preflight)) { Write-Output 'none' }
-    else { Write-Output $preflight }
-    return 0
-}
+
 
 function Get-NSStateKind {
     param([Parameter(Mandatory = $true)][string]$Workspace)
@@ -8322,6 +8283,309 @@ function Get-NSExplainTopic {
     $space = $Text.IndexOf(' ')
     if ($space -lt 0) { return $Text }
     return $Text.Substring(0, $space)
+}
+
+# ---------------------------------------------------------------- the facts Status renders
+#
+# Twins of the ns_status_* readers in lib/state.sh. Bounded readers, never Markdown parsers: each
+# takes the first line of an entry under the shape the file already has, so a file the owner has
+# written prose into still yields facts rather than a guess.
+
+function Get-NSStatusFileLines {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    if (Test-NSReparsePoint $Path) { return @() }
+    try { return @([IO.File]::ReadAllText($Path, $script:NSUtf8NoBom) -split "`r`n|`n|`r") }
+    catch { return @() }
+}
+
+# Get-NSStatusOpenTitle <punch-list> - the title of the first still-open item, without its checkbox
+# or bold markers.
+function Get-NSStatusOpenTitle {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $item = @(Get-NSPunchItem -PunchList $PunchList -Id '')
+    if ($item.Count -eq 0) { return '' }
+    $title = $item[0]
+    $title = $title -creplace '^- \[[ xX]\][ \t]*', ''
+    $title = $title -creplace '\*\*', ''
+    return $title.TrimEnd()
+}
+
+# Get-NSStatusEntryTitles <file> <max> - the first line of each top-level `- ` entry. Used for the
+# parking lot and the snag log, which share that shape.
+function Get-NSStatusEntryTitles {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$Max = 0
+    )
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if (-not $line.StartsWith('- ')) { continue }
+        $entry = ($line.Substring(2) -creplace '\*\*', '').TrimEnd()
+        if ($entry.Length -gt 100) { $entry = $entry.Substring(0, 97) + '...' }
+        $out.Add($entry)
+    }
+    if (($Max -gt 0) -and ($out.Count -gt $Max)) {
+        return @($out.GetRange($out.Count - $Max, $Max).ToArray())
+    }
+    return $out.ToArray()
+}
+
+function Get-NSStatusEntryCount {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $n = 0
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line.StartsWith('- ')) { $n++ }
+    }
+    return $n
+}
+
+# The map ships as a commented-out template. A template heading is not an opportunity.
+function Get-NSStatusOpportunityCounts {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $counts = @{ candidate = 0; building = 0; shipped = 0; rejected = 0; parked = 0 }
+    $comment = $false
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line -clike '*<!--*') { $comment = $true }
+        if ($line -clike '*-->*') { $comment = $false; continue }
+        if ($comment) { continue }
+        if ($line -cmatch '^[ \t]*Status:[ \t]*([A-Za-z]+)') {
+            $state = $Matches[1].ToLowerInvariant()
+            if ($counts.ContainsKey($state)) { $counts[$state]++ }
+        }
+    }
+    return ('candidate=' + $counts.candidate + ' building=' + $counts.building +
+        ' shipped=' + $counts.shipped + ' rejected=' + $counts.rejected +
+        ' parked=' + $counts.parked)
+}
+
+# Get-NSStatusBuilding <map> - `<key>`tab`<value>` for the building entry's title, phase, next
+# action and remaining verification. Nothing when none is building.
+function Get-NSStatusBuilding {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    $comment = $false
+    $title = ''
+    $building = $false
+    $found = $false
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line -clike '*<!--*') { $comment = $true }
+        if ($line -clike '*-->*') { $comment = $false; continue }
+        if ($comment) { continue }
+        if ($line -cmatch '^#{2,}[ \t]') {
+            if ($found) { break }
+            $title = ($line -creplace '^#+[ \t]*', '') -creplace '\*\*', ''
+            $building = $false
+            continue
+        }
+        if ($line -cmatch '^[ \t]*Status:[ \t]*building') {
+            $building = $true
+            $found = $true
+            $out.Add("title`t" + $title)
+            continue
+        }
+        if ($building -and ($line -cmatch '^[ \t]*(Phase|Next|Verify remaining):[ \t]*(.*)$')) {
+            $out.Add($Matches[1].ToLowerInvariant() + "`t" + $Matches[2])
+        }
+    }
+    return $out.ToArray()
+}
+
+function Get-NSStatusStopReason {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $lines = @(Get-NSStatusFileLines (Join-Path $NightshiftDir 'STOP'))
+    if ($lines.Count -eq 0) { return '' }
+    return $lines[0]
+}
+
+# A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
+# would catch an item summary that merely mentions one.
+function Get-NSStatusTransitions {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$Max = 3
+    )
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($raw in (Get-NSStatusFileLines $Path)) {
+        $line = $raw -creplace '^-[ \t]*', ''
+        $line = $line -creplace '^[0-9][0-9:TZ .-]*', ''
+        $line = $line -creplace "^$([char]0x00B7)[ \t]*", ''
+        if ($line -inotmatch '^(watchman|the watchman|shift started|shift ended|the session ended|revived|host change)') { continue }
+        if ($line.Length -gt 120) { $line = $line.Substring(0, 117) + '...' }
+        $out.Add($line)
+    }
+    if (($Max -gt 0) -and ($out.Count -gt $Max)) {
+        return @($out.GetRange($out.Count - $Max, $Max).ToArray())
+    }
+    return $out.ToArray()
+}
+
+# The clock is read once, here, rather than in the skill.
+function Get-NSStatusDeadlineRemaining {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $lines = @(Get-NSStatusFileLines (Join-Path $NightshiftDir 'deadline'))
+    if ($lines.Count -eq 0) { return '' }
+    $epoch = 0
+    if (-not [long]::TryParse($lines[0].Trim(), [ref]$epoch)) { return '' }
+    $now = Get-NSUnixTime
+    if ($epoch -le $now) { return 'passed' }
+    $left = $epoch - $now
+    return ('{0}h{1:00}m remaining' -f [int][math]::Floor($left / 3600), [int][math]::Floor(($left % 3600) / 60))
+}
+# Write-NSStatusReport <workspace> - the same facts the POSIX helper prints, in the same order.
+#
+# It writes to the console rather than the pipeline. A function that both prints and returns cannot
+# be called as an expression: `exit (Write-NSStatusReport ...)` captured every line as the value of
+# that expression and the owner saw an empty response with exit 0.
+function Write-NSStatusReport {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+
+    function Say { param([AllowEmptyString()][string]$Text) [Console]::Out.Write($Text + "`n") }
+    # A fact whose value is empty is still a fact: `none` is an answer, a blank line is not.
+    function Fact {
+        param([string]$Label, [AllowEmptyString()][AllowNull()][string]$Value)
+        if ([string]::IsNullOrEmpty($Value)) { $Value = 'none' }
+        Say ($Label + ' ' + $Value)
+    }
+
+    $ns = Join-Path $Workspace '.nightshift'
+    if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
+        Say 'Nightshift Status'
+        Say ('Nightshift: missing at ' + $Workspace)
+        return 0
+    }
+    $punch = Join-Path $ns 'punch-list.md'
+    $open = 0; $ticked = 0
+    if (Test-NSPathEntry $punch) {
+        $counts = Get-NSBoxCounts $punch
+        $open = [int]$counts.Open
+        $ticked = [int]$counts.Ticked
+    }
+    $armed = Test-NSPathEntry (Join-Path $ns '.shift-armed')
+    $watch = 0
+    try { $watch = [int](Get-NSRule $Workspace 'watchMinutes' '') } catch { $watch = 0 }
+
+    Say 'Nightshift Status'
+    Say ('Workspace:   ' + $Workspace)
+    Say ('Shift:       ' + ($(if ($armed) { 'armed' } else { 'not armed' })))
+    Say ('Items:       open=' + $open + ' ticked=' + $ticked)
+    Say ('evidence:    ' + (Get-NSEvidenceCountSummary $Workspace))
+    Say ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
+    $activity = Get-NSStatusLastActivity $Workspace
+    Say ('last activity: ' + ($(if ($activity.Length -gt 0) { $activity } else { 'none' })))
+    Say ('last checkpoint: ' + (Get-NSGateCheckpointToken $Workspace))
+    Say ('stall attempts: ' + (Get-NSStatusStallAttempts $Workspace))
+
+    # The facts the skill used to derive by hand. One per line, stable label first, so the model
+    # renders them rather than recomputing them.
+    Say ''
+    Say 'facts'
+    $schema = ''
+    try { $schema = [string](Get-NSStateVersion $Workspace) } catch { $schema = '' }
+    Fact 'schema' $schema
+
+    # Unarmed with work still open is the one state that reads wrong at a glance: a punch list
+    # nobody is holding is a to-do file, and only Start makes it a shift.
+    if ((-not $armed) -and ($open -gt 0)) {
+        Fact 'armed' 'no (the punch list is a to-do file, not a shift; Start begins one)'
+    }
+    else {
+        Fact 'armed' $(if ($armed) { 'yes' } else { 'no' })
+    }
+
+    Fact 'open item' (Get-NSStatusOpenTitle $punch)
+    Fact 'parked' ([string](Get-NSStatusEntryCount (Join-Path $ns 'parking-lot.md')))
+    foreach ($entry in (Get-NSStatusEntryTitles (Join-Path $ns 'parking-lot.md') 0)) {
+        if (-not [string]::IsNullOrEmpty($entry)) { Fact 'parked entry' $entry }
+    }
+
+    $drafts = 0
+    try { $drafts = [int](Get-NSOpenDrafts (Join-Path $ns 'drafting-table.md')) } catch { $drafts = 0 }
+    $orders = 0
+    try { $orders = [int](Get-NSOpenBoxesInFile (Join-Path $ns 'work-orders.md')) } catch { $orders = 0 }
+    # With approved work open, staged work is informational and nothing else: Start works the punch
+    # list exactly as the owner left it.
+    $staged = 'drafts=' + $drafts + ' orders=' + $orders
+    if ($open -gt 0) { $staged += ' (informational while items are open)' }
+    Fact 'staged' $staged
+
+    foreach ($entry in (Get-NSStatusEntryTitles (Join-Path $ns 'snag-log.md') 3)) {
+        if (-not [string]::IsNullOrEmpty($entry)) { Fact 'snag' $entry }
+    }
+
+    Fact 'opportunities' (Get-NSStatusOpportunityCounts (Join-Path $ns 'opportunity-map.md'))
+    foreach ($row in (Get-NSStatusBuilding (Join-Path $ns 'opportunity-map.md'))) {
+        $fields = $row -split "`t", 2
+        if ($fields.Count -eq 2) { Fact ('building ' + $fields[0]) $fields[1] }
+    }
+
+    $deadline = Get-NSStatusDeadlineRemaining $ns
+    if ([string]::IsNullOrEmpty($deadline)) { $deadline = 'none (finite list)' }
+    Fact 'deadline' $deadline
+
+    if (Test-NSPathEntry (Join-Path $ns 'STOP')) {
+        $reason = Get-NSStatusStopReason $ns
+        Fact 'stop' ('present' + $(if ([string]::IsNullOrEmpty($reason)) { '' } else { ' (' + $reason + ')' }))
+    }
+    else {
+        Fact 'stop' 'absent'
+    }
+    Fact 'session' $(if (Test-NSPathEntry (Join-Path $ns '.shift-session')) { 'bound' } else { 'none' })
+    $lease = 'absent or unowned'
+    try { if ($null -ne (Read-NSLease $ns)) { $lease = 'held' } } catch { $lease = 'absent or unowned' }
+    Fact 'lease' $lease
+
+    if (Test-NSPathEntry (Join-Path $ns '.watch-reason')) {
+        $code = ''
+        try { $code = [string](Get-NSReasonCode $ns) } catch { $code = '' }
+        if ([string]::IsNullOrEmpty($code)) { Fact 'watch reason' 'none' }
+        else { Fact 'watch reason' ($code + ' (' + (Get-NSReasonLabel $code) + ')') }
+    }
+    else {
+        Fact 'watch reason' 'none'
+    }
+
+    $mode = ''
+    try { $mode = [string](Get-NSWorkMode $Workspace) } catch { $mode = '' }
+    Fact 'work mode' $mode
+    $target = ''
+    try { $target = [string](Resolve-NSWorkTarget $Workspace) } catch { $target = '' }
+    Fact 'work target' $target
+    $receipts = 0
+    try { $receipts = [int](Get-NSReceiptsCount $Workspace) } catch { $receipts = 0 }
+    Fact 'artifact receipts' ([string]$receipts)
+    $latest = ''
+    try { $latest = [string](Get-NSLatestReceipt $Workspace) } catch { $latest = '' }
+    Fact 'latest artifact receipt' $latest
+    # A path that is not a directory answers 0 the same way an empty one does, so it is reported
+    # for what it is and the empty-ticks warning is not also raised for it.
+    if ($mode -ceq 'artifact') {
+        $recvPath = Get-NSReceiptsDir $Workspace
+        $present = Test-Path -LiteralPath $recvPath
+        $usable = $false
+        try { $usable = [bool](Test-NSUsableReceiptsDir $Workspace) } catch { $usable = $false }
+        if ($present -and (-not $usable)) {
+            Fact 'receipts warning' 'the artifact receipts path is not a usable directory'
+        }
+        elseif (($ticked -gt 0) -and ($receipts -eq 0)) {
+            # Ticked boxes with nothing to review are not completion anybody can check.
+            Fact 'receipts warning' 'ticked items with no receipts are not reviewable completion'
+        }
+    }
+
+    foreach ($entry in (Get-NSStatusTransitions (Join-Path $ns 'shift-log.md') 3)) {
+        if (-not [string]::IsNullOrEmpty($entry)) { Fact 'transition' $entry }
+    }
+
+    Say ''
+    Say 'resolved policy'
+    $table = Resolve-NSPolicy -Workspace $Workspace -Table
+    if ([string]::IsNullOrEmpty($table)) { Say 'none' } else { Say $table }
+    Say ''
+    Say 'preflight gaps'
+    $preflight = Get-NSPreflightNeeds $Workspace
+    if ([string]::IsNullOrEmpty($preflight)) { Say 'none' } else { Say $preflight }
+    return 0
 }
 
 Export-ModuleMember -Function *

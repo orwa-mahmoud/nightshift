@@ -947,3 +947,163 @@ ns_explain_topic() {
     *) printf '%s' "$1" ;;
   esac
 }
+
+# ---------------------------------------------------------------- the facts Status renders
+#
+# The Status skill used to tell the model how to derive each of these by hand — count the boxes
+# below a heading, count drafting-table boxes only after the first rule, subtract the deadline from
+# the clock, read the stall counter. Counting is mechanics. The skill renders; these produce.
+#
+# Bounded readers, never Markdown parsers: each one takes the first line of an entry under the
+# shape the file already has, so a file the owner has written prose into still yields facts rather
+# than a guess.
+
+# ns_status_open_title <punch-list> — the title line of the first still-open item, without its
+# checkbox or bold markers. Empty when nothing is open.
+ns_status_open_title() {
+  ns_punch_item "$1" "" 2>/dev/null | awk '
+    NR == 1 {
+      sub(/^- \[[ xX]\][[:space:]]*/, "")
+      gsub(/\*\*/, "")
+      sub(/[[:space:]]+$/, "")
+      print
+      exit
+    }
+  '
+}
+
+# ns_status_entry_titles <file> <max> — the first line of each top-level `- ` entry, trimmed.
+# Used for the parking lot and the snag log, which share that shape.
+ns_status_entry_titles() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v max="${2:-0}" '
+    /^- / {
+      line = $0
+      sub(/^- /, "", line)
+      gsub(/\*\*/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (length(line) > 100) line = substr(line, 1, 97) "..."
+      out[++n] = line
+    }
+    END {
+      first = 1
+      if (max > 0 && n > max) first = n - max + 1
+      for (i = first; i <= n; i++) print out[i]
+    }
+  ' "$1" 2>/dev/null
+}
+
+# ns_status_entry_count <file> — how many such entries the file holds.
+ns_status_entry_count() {
+  [ -f "$1" ] && [ ! -L "$1" ] || { printf '0'; return 0; }
+  awk '/^- / { n++ } END { printf "%d", n + 0 }' "$1" 2>/dev/null || printf '0'
+}
+
+# ns_status_opportunity_counts <opportunity-map> — `candidate=N building=N shipped=N rejected=N
+# parked=N` from the `Status:` lines the map already carries.
+ns_status_opportunity_counts() {
+  [ -f "$1" ] && [ ! -L "$1" ] || { printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'; return 0; }
+  awk '
+    /<!--/ { comment = 1 }
+    /-->/  { comment = 0; next }
+    comment { next }
+    /^[[:space:]]*Status:[[:space:]]*/ {
+      s = $0
+      sub(/^[[:space:]]*Status:[[:space:]]*/, "", s)
+      sub(/[[:space:]].*$/, "", s)
+      gsub(/[^a-zA-Z]/, "", s)
+      if (s != "") c[tolower(s)]++
+    }
+    END {
+      printf "candidate=%d building=%d shipped=%d rejected=%d parked=%d",
+        c["candidate"] + 0, c["building"] + 0, c["shipped"] + 0, c["rejected"] + 0, c["parked"] + 0
+    }
+  ' "$1" 2>/dev/null || printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'
+}
+
+# ns_status_building <opportunity-map> — the building entry's title, then its `Phase:`, `Next:` and
+# `Verify remaining:` lines, one per line. Nothing when none is building.
+#
+# An entry runs from a heading to the next heading. More than one building entry is inconsistent
+# state the model reports without changing; this prints the first, and the count says there is more.
+ns_status_building() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk '
+    /<!--/ { comment = 1 }
+    /-->/  { comment = 0; next }
+    comment { next }
+    /^#{2,}[[:space:]]/ {
+      if (found) exit
+      title = $0
+      sub(/^#+[[:space:]]*/, "", title)
+      gsub(/\*\*/, "", title)
+      building = 0
+      next
+    }
+    /^[[:space:]]*Status:[[:space:]]*building/ {
+      building = 1
+      found = 1
+      print "title\t" title
+      next
+    }
+    building && /^[[:space:]]*(Phase|Next|Verify remaining):/ {
+      line = $0
+      sub(/^[[:space:]]*/, "", line)
+      key = line
+      sub(/:.*$/, "", key)
+      sub(/^[^:]*:[[:space:]]*/, "", line)
+      print tolower(key) "\t" line
+    }
+  ' "$1" 2>/dev/null
+}
+
+# ns_status_stop_reason <ns> — the first line of the stop-work marker, or nothing.
+ns_status_stop_reason() {
+  ns_marker="$1/STOP"
+  [ -f "$ns_marker" ] && [ ! -L "$ns_marker" ] || return 0
+  IFS= read -r ns_line <"$ns_marker" 2>/dev/null || return 0
+  printf '%s' "$ns_line"
+}
+
+# ns_status_transitions <shift-log> <max> — the journal lines that record a shift changing hands:
+# a stand-down, a revival, a host change. Compacted to their first sentence.
+ns_status_transitions() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v max="${2:-3}" '
+    {
+      line = $0
+      sub(/^-[[:space:]]*/, "", line)
+      # Both writers lead with a timestamp: the runtime with `<ts> \xc2\xb7 <text>`, the model with
+      # `<ts> <text>`. Strip that, and what is left is the message itself.
+      sub(/^[0-9][0-9:TZ .-]*/, "", line)
+      sub(/^\xc2\xb7[[:space:]]*/, "", line)
+    }
+    # A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
+    # would catch an item summary that merely mentions one.
+    tolower(line) ~ /^(watchman|the watchman|shift started|shift ended|the session ended|revived|host change)/ {
+      if (length(line) > 120) line = substr(line, 1, 117) "..."
+      out[++n] = line
+    }
+    END {
+      first = 1
+      if (max > 0 && n > max) first = n - max + 1
+      for (i = first; i <= n; i++) print out[i]
+    }
+  ' "$1" 2>/dev/null
+}
+
+# ns_status_deadline_remaining <ns> — `<n>h<m>m remaining`, `passed`, or nothing when there is no
+# deadline. The clock is read once, here, rather than in the skill.
+ns_status_deadline_remaining() {
+  ns_file="$1/deadline"
+  [ -f "$ns_file" ] && [ ! -L "$ns_file" ] || return 0
+  IFS= read -r ns_epoch <"$ns_file" 2>/dev/null || return 0
+  case "$ns_epoch" in '' | *[!0-9]*) return 0 ;; esac
+  ns_now="$(date +%s 2>/dev/null)" || return 0
+  if [ "$ns_epoch" -le "$ns_now" ]; then
+    printf 'passed'
+    return 0
+  fi
+  ns_left=$((ns_epoch - ns_now))
+  printf '%dh%02dm remaining' "$((ns_left / 3600))" "$(((ns_left % 3600) / 60))"
+}
