@@ -42,46 +42,29 @@ Related: <snag-log and parking-lot entries this item touched, by their own wordi
 Usage: <the block below, or `unavailable` with the reason>
 ```
 
-## Usage, per item
+## Usage and duration, per item — written by the runtime
 
-Per-item accounting is Nightshift's own job, not something a host has to support. The lifecycle is
-the same everywhere:
-
-1. **Baseline** — record the usage the session reports when the item starts.
-2. **Track** — while the item is active. Where the host exposes cumulative counters, the item's
-   consumption is the delta against its baseline. Where the host emits individual usage events
-   instead, sum the events that belong to the active item.
-3. **Finalize** — calculate the item's consumption when it finishes, and write it into the section
-   before the tick.
-4. **Reset** — drop that item's counters. The next item starts from its own baseline.
-
-The only real dependency is access to reliable usage data. A host that reports nothing usable
-makes the block `unavailable` — never zero, never an estimate presented as a measurement.
+These two lines are not yours to write. The runtime reads them from the records the host already
+keeps — Claude Code's session transcript, Codex's running token count, Cursor's stop payload — and
+appends them to the item's section at the tick. They are described here so you know what the
+section will contain, not so you can produce one.
 
 ```text
-Usage: input <n> · output <n> · cache read <n> · cache write <n> · reasoning <n>
-  Cache read is <included in|separate from> the input figure above.
-  Source: <host> <model>, <cumulative counters|per-event sums>, <session|scope>
+Usage: input <n> · cache_write <n> · cache_read <n> · output <n> · reasoning <n>
+  Source: <host> <model>, cumulative counters, segments <n>
+  <one sentence saying what is already counted inside what, for that host>
+Duration: <wall clock from the previous tick to this one>
 ```
 
-Report every dimension the host actually exposes, separately and by name — input, output, cache
-reads (the cached input a request was served from), cache writes (what a request added to the
-cache), and reasoning output where a model reports it apart from its visible output. Mark any one
-`unavailable` on its own when the host reports the others but not that one, and leave out a
-dimension the host has no concept of rather than writing a zero for it.
+Every dimension is named. One the host does not report reads `unavailable` rather than zero,
+because zero is a measurement and silence is not. The overlap sentence is the host's own
+arrangement — Anthropic keeps cache separate from input, Codex counts cache inside input and
+reasoning inside output, Cursor's input overlaps its cache figures — so nothing downstream adds
+the same tokens twice. Totals are never summed across hosts, and a token count is never turned
+into a price.
 
-Say whether cache reads are already inside the input figure, so nothing is counted twice, and the
-same for reasoning inside output. Never turn a token count into a price.
-
-**A progress update is not a finish.** It resets the cadence window — the clock or the token
-threshold that decides when the next update is due — and nothing else. The item's own totals keep
-accumulating from the baseline it started with, so two updates inside one item never split its
-usage into two items' worth.
-
-**Finishing an item resets that item, not the shift.** Write the item's final figures, tick, then
-drop that item's counters so the next one starts from its own baseline. The running shift totals
-carry on: they are the sum of the items measured so far, and clearing them at a tick would leave
-the outcome with nothing to add up.
+Where a host reports nothing usable, the line says so and the shift carries on. An unmeasured item
+is not a failed item.
 
 ## The outcome
 
@@ -93,9 +76,9 @@ Added at clock-out, from the sections already written — not by re-reading the 
 <What the shift delivered, in a few lines. What is still open, and what the owner should look at
 first.>
 
-Shift usage: input <n> · output <n> · cache read <n> · cache write <n> · reasoning <n>
+Shift usage: input <n> · cache_write <n> · cache_read <n> · output <n> · reasoning <n>
   Items measured: <n of n> · Shared overhead: <n, or unavailable>
-  Coverage: <complete|partial — and what is missing>
+  Duration: <wall clock for the shift> · Paused: <where the runtime knows a gap was not work>
 ```
 
 The shift total is the measured item totals plus the shared overhead that belongs to no single

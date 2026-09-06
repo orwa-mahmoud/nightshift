@@ -146,45 +146,23 @@ the first item starts.
 **One section per punch-list item**, headed by that item's own id. A section carries the item's
 state, what a user gets from it, the changes that mattered and why they were made that way, the
 verification that actually ran with its result and its limits, where the outputs or commits are,
-and any snag or parked decision it touched. With `report.usage` at `when-available`, add what the item cost.
+and any snag or parked decision it touched. With `report.usage` at `when-available`, the runtime
+adds what the item cost and how long it took.
 
-Per-item accounting is Nightshift's own job, not something the host has to support: **record the
-baseline when the item starts, track while it is active, calculate its consumption when it
-finishes, write that into the section before the tick, then reset — the next item starts from its
-own baseline.** Where the host exposes cumulative counters the item's cost is the delta against
-its baseline; where it emits individual usage events instead, sum the events belonging to the
-active item. Report **every dimension the host exposes, each by name** — input, output, cache
-reads, cache writes, and reasoning output where a model reports it apart from its visible output —
-never collapsed into one figure, and say whether cache reads are already inside the input number
-and reasoning inside the output number, so nothing is counted
-twice. Any dimension the host does not report is `unavailable` on its own — never zero, never an
-estimate dressed as a measurement, and never a price. The shift total at clock-out is the measured
-item totals plus the shared overhead that belongs to no single item, and it says whether that
-coverage is complete or partial.
+The runtime measures what each item cost, from the records the host already keeps, and writes the
+usage and duration lines into the section at the tick. **Do not write, estimate or edit a usage or
+duration figure**: you cannot see your own token counts from inside the conversation, and a number
+you infer would be a guess wearing a measurement's clothes.
 
 **Start the section when substantive work on the item starts.** While it is running, keep one
 short paragraph on where it has got to and what is left. Update that paragraph rather than
 appending another status snapshot under it, and never write it as though the item were finished.
-`report.progressMode` says when an update is due: `completion-only` only at the end, `time` after
-`report.progressMinutes` of work on that item, `tokens` after `report.progressTokens`, `either` at
-whichever comes first. Check when a tool returns — this is a cadence, not a promise to interrupt a
-running command — and start the cadence window again after each update. **Only the window
-restarts**: the item keeps accumulating from the baseline it started with, so two updates inside
-one item never split its usage in half. When the item completes, replace the progress paragraph
-with the finished result, then drop that item's counters so the next starts from its own baseline.
-The shift totals carry on across that reset — they are what the outcome adds up. If a later item
+When the runtime says a progress update is due, refresh that paragraph; otherwise keep working.
+When the item completes, replace the progress paragraph with the finished result. If a later item
 changes an earlier result, correct that section and leave one line saying what changed.
 
-`tokens` and `either` need counters the host actually reports. Where it reports none, or reports
-something that cannot be compared against the baseline, say so once in the current section and
-fall back to `report.progressMinutes` — reporting never quietly stops because a counter was
-missing.
-
-Keep three things where a resumed or compacted session can find them: which item is active, the
-usage baseline it started from, and when the last update was written. On resume, reload the active
-section and the current policy rather than the whole history, check once whether an update is due,
-and leave every finalised section alone. A long pause is one overdue update, not one per minute
-that passed.
+On resume or after compaction, reload the active section and the current policy rather than the
+whole history, and leave every finalised section alone.
 
 **At clock-out** add a short overall outcome and the owner's next steps, built from the sections
 you already wrote and whatever is still unresolved. Do not re-read the whole commit history or
