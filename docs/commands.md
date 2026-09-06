@@ -19,8 +19,8 @@
 ```
 
 Start asks nothing. It runs one native preflight —
-`plugins/nightshift/runtime/start-preflight.sh`, or
-`plugins\nightshift\runtime\windows\start-preflight.ps1` on native Windows — which prints one
+`ns start-preflight`, or
+`ns.ps1 start-preflight` on native Windows — which prints one
 verdict per line (`ok`, `warn`, `refuse`) and exits non-zero when the site must not arm. Those
 sentences are identical on every host, so a scheduled run behaves like an interactive one. Detail
 behind a host-specific verdict is in
@@ -56,37 +56,37 @@ When the task root and Nightshift workspace differ, setup can create an explicit
 showing both absolute paths and receiving confirmation. The offline equivalent is:
 
 ```bash
-plugins/nightshift/runtime/link-workspace.sh --host-root /absolute/task/root --workspace /absolute/workspace
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" link-workspace --host-root /absolute/task/root --workspace /absolute/workspace
 ```
 
 Native Windows:
 
 ```powershell
-plugins\nightshift\runtime\windows\link-workspace.ps1 `
-  -HostRoot C:\absolute\task\root -Workspace C:\absolute\workspace
+ns.ps1 link-workspace `
+  --host-root C:\absolute\task\root --workspace C:\absolute\workspace
 ```
 
 The target must already contain `.nightshift/`. Relative, missing, multiline, and symlink pointers
 are rejected; Nightshift never searches for a workspace automatically.
 
-Immediate pause, any time, without a model. `--project` is the folder you opened (task root);
-Nightshift follows `.nightshift-link` when present. Do not omit `--project` — these helpers never
-guess the current working directory.
+Immediate pause, any time, without a model. `ns` resolves the workspace from where you run it and
+follows `.nightshift-link` when present; pass `--project <path>` when you are running from
+somewhere else, and it is used exactly as given.
 
 ```bash
-plugins/nightshift/runtime/stop-shift.sh --project /absolute/task/root
-plugins/nightshift/runtime/reset-shift.sh --project /absolute/task/root
-plugins/nightshift/runtime/purge-workspace.sh --project /absolute/task/root \
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" reset-shift
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" purge-workspace \
   --confirm-path /absolute/workspace/.nightshift
 ```
 
 Native Windows:
 
 ```powershell
-plugins\nightshift\runtime\windows\stop-shift.ps1 -Project C:\absolute\task\root
-plugins\nightshift\runtime\windows\reset-shift.ps1 -Project C:\absolute\task\root
-plugins\nightshift\runtime\windows\purge-workspace.ps1 -Project C:\absolute\task\root `
-  -ConfirmPath C:\absolute\workspace\.nightshift
+ns.ps1 stop-shift --project C:\absolute\task\root
+ns.ps1 reset-shift --project C:\absolute\task\root
+ns.ps1 purge-workspace --project C:\absolute\task\root `
+  --confirm-path C:\absolute\workspace\.nightshift
 ```
 
 Stop writes `STOP` and stands a verified watchman down. Hardhat stays until clock-out writes
@@ -118,50 +118,50 @@ A local support bundle from a terminal (never uploaded). Known sensitive fields
 are omitted:
 
 ```bash
-plugins/nightshift/runtime/export-support.sh --project .
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" export-support
 ```
 
 Native Windows:
 
 ```powershell
-plugins\nightshift\runtime\windows\export-support.ps1 -Project .
+ns.ps1 export-support --project .
 ```
 
 An artifact-mode completion receipt (refuses repository mode; rejects missing or empty outputs):
 
 ```bash
-plugins/nightshift/runtime/write-receipt.sh --project . --item 'title' --verify 'checks' --output ./out.md
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt --item 'title' --verify 'checks' --output ./out.md
 ```
 
 Native Windows:
 
 ```powershell
-plugins\nightshift\runtime\windows\write-receipt.ps1 -Project . -Item 'title' -Verify 'checks' -Output .\out.md
+ns.ps1 write-receipt --project . --item 'title' --verify 'checks' --output .\out.md
 ```
 
 Copy live artifact receipts into today's dated archive folder (leaves the live copies in place).
 Missing or empty receipts create no dated receipts folder.
 
 ```bash
-plugins/nightshift/runtime/archive-receipts.sh --project .
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" archive-receipts
 ```
 
 Native Windows:
 
 ```powershell
-plugins\nightshift\runtime\windows\archive-receipts.ps1 -Project .
+ns.ps1 archive-receipts --project .
 ```
 
 A cited research report against its source manifest:
 
 ```bash
-plugins/nightshift/runtime/check-report.sh --project . --report ./report.md --manifest ./sources.tsv --output ./report.md
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report --report ./report.md --manifest ./sources.tsv --output ./report.md
 ```
 
 Native Windows:
 
 ```powershell
-plugins\nightshift\runtime\windows\check-report.ps1 -Project . -Report .\report.md -Manifest .\sources.tsv -Output .\report.md
+ns.ps1 check-report --project . --report .\report.md --manifest .\sources.tsv --output .\report.md
 ```
 
 **Permissions: the night cannot click Allow.** An unattended shift freezes on a permission prompt,
@@ -200,14 +200,14 @@ slash command works, because a command is read by the model. The generator under
 shell that spends no tokens and needs no session:
 
 ```bash
-plugins/nightshift/runtime/schedule.sh --project . --preflight   # check both hosts; writes nothing
-plugins/nightshift/runtime/schedule.sh --project . --at 04:05    # print the config + the install command
-plugins/nightshift/runtime/schedule.sh --project . --at 04:05 --agent 'codex exec -s danger-full-access'
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --preflight   # check both hosts; writes nothing
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --at 04:05    # print the config + the install command
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --at 04:05 --agent 'codex exec -s danger-full-access'
                                               # same entry, run by Codex instead of Claude
-plugins/nightshift/runtime/schedule.sh --project . --at 04:05 --target systemd
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --at 04:05 --target systemd
                                               # print user .service/.timer; never runs systemctl
-plugins/nightshift/runtime/schedule.sh --project . --list        # what is already registered for this project
-plugins/nightshift/runtime/schedule.sh --project . --remove      # the command that unregisters it
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --list        # what is already registered for this project
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --remove      # the command that unregisters it
 ```
 
 Run it from a terminal, or copy the single file anywhere. It refuses a second entry for a project
@@ -219,12 +219,12 @@ It also fails `work target could not be resolved - a scheduled start will refuse
 Native Windows uses the token-free PowerShell generator:
 
 ```powershell
-plugins\nightshift\runtime\windows\schedule.ps1 -Project . -Preflight
-plugins\nightshift\runtime\windows\schedule.ps1 -Project . -At 04:05
-plugins\nightshift\runtime\windows\schedule.ps1 -Project . -At 04:05 `
+ns.ps1 schedule --project . --preflight
+ns.ps1 schedule --project . --at 04:05
+ns.ps1 schedule --project . --at 04:05 `
   -Agent 'codex exec -s danger-full-access'
-plugins\nightshift\runtime\windows\schedule.ps1 -Project . -List
-plugins\nightshift\runtime\windows\schedule.ps1 -Project . -Remove
+ns.ps1 schedule --project . --list
+ns.ps1 schedule --project . --remove
 ```
 
 It emits a current-user Task Scheduler definition with overlap prevention and `StartWhenAvailable`.

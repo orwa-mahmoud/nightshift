@@ -13,7 +13,7 @@ keeps Existing tools only. Details live in the same modes contract.
 Morning review is local: work-target commits in repository mode, or files under
 `.nightshift/receipts/` in artifact mode (Doctor names the most recently written filename).
 Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
-Archive copies those files with `runtime/archive-receipts.sh` (native Windows: `runtime/windows/archive-receipts.ps1`)
+Archive copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
 into the dated folder and leaves the live copies in place. Missing or empty receipts create no dated receipts folder. Status, the shift
 log, and the parking lot sit beside those. Ticks are self-reported; they do not prove the work.
 

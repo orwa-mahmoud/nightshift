@@ -91,7 +91,7 @@ Before leaving any run unattended, use the concise
 4. Check status later. If the site looks wrong, diagnose it first; Doctor reports and never
    repairs.
 5. Review the local commit or `$NS/receipts/` (Doctor names the most recently written file). Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive copies
-   those files with `runtime/archive-receipts.sh` (native Windows: `runtime/windows/archive-receipts.ps1`)
+   those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
    into the dated folder and leaves the live copies in place. Missing or empty receipts create no dated receipts folder. Push only if this is a git repository.
 
 If the host task and the workspace holding `.nightshift/` are different folders, use the explicit
@@ -183,7 +183,7 @@ Nightshift moves the contract outside the conversation so the list and decisions
 - **The handoff is inspectable.** Local commits, timestamps, decisions, snags, and recovery events
   remain in plain files.
 - **The owner can always stop it.** Use the host command or
-  `runtime/stop-shift.sh --project /absolute/task/root` (native Windows: `stop-shift.ps1 -Project`)
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift` (native Windows: `ns.ps1 stop-shift`)
   to pause immediately even when the model is stuck. That writes `STOP` and stands the
   watchman down; hardhat stays until clock-out writes `ENDED`. Reset is the manual escape.
   `touch .nightshift/STOP` in the
@@ -348,8 +348,8 @@ independent of that history. The precise boundaries are in
   ended. Bound it with a deadline, `NIGHTSHIFT_STALL_MAX`, or both when cost matters more.
 - The stall guard treats ticks, commits, and artifact receipts as progress, so failed-attempt commits can look alive;
   the item gate and deadline remain the backstop.
-- Stop the shift at any time with the host command, `runtime/stop-shift.sh --project /absolute/task/root`
-  on POSIX, or `runtime/windows/stop-shift.ps1 -Project` in native Windows PowerShell.
+- Stop the shift at any time with the host command, `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift`
+  on POSIX, or `ns.ps1 stop-shift` in native Windows PowerShell.
   `touch .nightshift/STOP` on POSIX, or
   `New-Item -ItemType File -Force .nightshift\STOP` in native Windows PowerShell, still writes the
   panic marker in the folder that contains `.nightshift/`, not beside `.nightshift-link`.

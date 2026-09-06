@@ -221,5 +221,5 @@ research and the shift report: one item at a time, tick only after the item is c
 ask, leave pushing to the owner unless the punch list says otherwise. From here the clock-out gate
 owns the session — it will not let you stop while any box is open. When the gate logs
 `JSON parser unavailable`, write the morning page by hand from
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/morning.md`, naming the shift id
-when a policy carries one.
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/morning.md`, which names the file
+to write and the fields to fill. Every shift leaves a receipt.

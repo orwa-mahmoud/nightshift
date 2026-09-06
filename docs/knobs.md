@@ -41,7 +41,7 @@ verification profile — and is never itself the source of an effective value. T
 in the `shift` block below. To move a workspace that still has the older file:
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PWD" migrate --dry-run
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy migrate --dry-run
 ```
 
 The dry run prints what it would write and touches nothing; drop `--dry-run` to do it. It keeps a
@@ -58,11 +58,11 @@ blocked by either is blocked.
 To see the values in force, with where each one came from:
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PWD" resolve --table
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy resolve --table
 ```
 
 Each row ends in its origin — `built-in`, `rules`, or `one-shift` — so a surprising value names
-the file to edit. Native Windows uses `runtime\windows\shift-policy.ps1` with `-Project`.
+the file to edit. Native Windows runs the same verb: `ns.ps1 shift-policy`.
 
 An edit to the rules file applies from the next tool call; the hooks read it every time. The shift
 snapshot is frozen for the night, so a change of mind mid-shift means stopping the shift and
@@ -218,7 +218,7 @@ and the next shift tool call reads the change.
 thread is currently only how the owner refreshes a stale panel before inspecting or interacting;
 the linked upstream refresh work would make that handoff smoother, not enable recovery itself.
 
-**Local profiles.** `runtime/apply-profile.sh` (native Windows: `runtime/windows/apply-profile.ps1`)
+**Local profiles.** `ns apply-profile` (native Windows: `ns.ps1 apply-profile`)
 can preview or copy every version-1 or version-2 JSON file in
 `plugins/nightshift/skills/nightshift/references/profiles/`; the shipped `balanced`, `fast`, and
 `strict` profiles are version 2 and also carry shift defaults and a Gates block. That is a

@@ -17,9 +17,9 @@ transcript + lease pid; empty pid is not death. `touch .nightshift/STOP` is the 
 Write it in the folder that contains `.nightshift/` — the workspace, or the target of
 `.nightshift-link`. A STOP next to the link file is not the order.
 That marker waits for the next Stop event or watchman wake. To pause immediately — including when
-the model is stuck — run `runtime/stop-shift.sh --project /absolute/task/root` (native Windows:
-`runtime/windows/stop-shift.ps1 -Project`). Reset drops the deadline but keeps work.
-`runtime/purge-workspace.sh` permanently deletes that project's `.nightshift/` after an exact
+the model is stuck — run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift` (native Windows:
+`ns.ps1 stop-shift`). Reset drops the deadline but keeps work.
+`ns purge-workspace` permanently deletes that project's `.nightshift/` after an exact
 `--confirm-path`. None of them uninstall the plugin.
 The full Windows boundary is in [Native Windows](windows.md).
 
@@ -49,12 +49,12 @@ under `/workspace/scratch/` are refused on purpose — open the repository in Co
 has `.nightshift/`, create an explicit pointer. Nightshift never searches nearby folders:
 
 ```sh
-plugins/nightshift/runtime/link-workspace.sh \
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" link-workspace \
   --host-root /absolute/task/root \
   --workspace /absolute/nightshift/workspace
 ```
 
-Native Windows uses `runtime\windows\link-workspace.ps1 -HostRoot <path> -Workspace <path>`.
+Native Windows runs the same verb: `ns.ps1 link-workspace --host-root <path> --workspace <path>`.
 
 The target must already contain `.nightshift/`. Relative, missing, multiline, and symlink pointers
 are rejected.
@@ -78,13 +78,13 @@ downgrade or overwrite a future version. For a missing marker, migrate only whil
 and only after an explicit yes:
 
 ```sh
-plugins/nightshift/runtime/migrate-state.sh --project /absolute/workspace
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state
 ```
 
 On native Windows:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\migrate-state.ps1" -Project C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" migrate-state --project C:\path\to\workspace
 ```
 
 That command writes only `.nightshift/state-version`. Doctor offers it as a confirmation
@@ -103,8 +103,8 @@ cat .nightshift-link
 A valid link is a regular file (not a symlink) with **exactly one absolute path** to a directory
 that contains `.nightshift/`. Anything else fails closed: hooks and skills will not guess.
 
-**Repair.** Remove the broken file and run `link-workspace.sh` again (native Windows:
-`link-workspace.ps1 -HostRoot` / `-Workspace`), or work from the workspace
+**Repair.** Remove the broken file and run `ns link-workspace` again (native Windows:
+`ns link-workspace --host-root` / `-Workspace`), or work from the workspace
 that already owns `.nightshift/`. Do not hand-write a relative path.
 
 ## 3. Wrong workspace or work target
@@ -133,7 +133,7 @@ guards deny rather than pick one.
 In artifact mode the work target is the persistent folder itself. There is no work-target git
 history. Look at `.nightshift/receipts/` — Doctor reports `artifact receipts N` and, when any
 exist, `latest artifact receipt` with the filename of the most recently written receipt. Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive
-copies those files with `runtime/archive-receipts.sh` (native Windows: `runtime/windows/archive-receipts.ps1`)
+copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
 into the dated folder and leaves the live copies in place. Missing or empty receipts create no dated receipts folder. A failing `git -C … rev-parse` here is
 expected, not a broken site.
 
@@ -159,7 +159,7 @@ Tooling quality-debt entries are skipped in artifact mode.
 
 ```sh
 ls -l .nightshift/rules.json
-plugins/nightshift/runtime/doctor.sh --project .   # prints what the shipped reader made of the file
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" doctor   # prints what the shipped reader made of the file
 ```
 
 Doctor is the authority here because it uses the same reader the hooks use: it prints
@@ -331,7 +331,8 @@ active.
 
 If Doctor says the lease is malformed, or work was already interleaved before the fence took
 effect, run Stop (`/nightshift:stop` on Claude Code, or ask Nightshift to stop on Codex) from a
-separate helper conversation, or run the terminal helper with an explicit `--project` / `-Project`.
+separate helper conversation, or run `ns` from a terminal — adding `--project <path>` when you are
+not already in the project.
 That disarms immediately and releases the lease. Wait for the active process to stop, inspect the work target and shift log, then run Start; do not rewrite `.shift-lease` by hand. A bare `touch` leaves the watchman running until it checks the marker after the current
 subprocess returns or on its next wake.
 
