@@ -907,3 +907,43 @@ ns_punch_digest() {
 # ns_punch_contract_digest <punch-list> / ns_punch_items_digest <punch-list>
 ns_punch_contract_digest() { ns_punch_contract "$1" | ns_punch_digest; }
 ns_punch_items_digest() { ns_punch_items_normalised "$1" | ns_punch_digest; }
+
+# ---------------------------------------------------------------- preflight explanations
+#
+# The Start skill carried a paragraph per verdict topic, and the model read all of them on every
+# Start — including the ones for verdicts that did not occur. The explanation belongs on the line
+# that occurred, so it is printed here from lib/preflight-explain.txt, which the PowerShell twin
+# reads too: one copy of the text, so the two hosts cannot word the same verdict differently.
+
+# ns_explain_lines <kind> <topic> — the records of that kind for that topic, in file order.
+# Prints nothing when the topic has none, which is not an error: a topic without a record keeps
+# its verdict and its own repairs exactly as before.
+ns_explain_lines() {
+  local file
+  file="${NS_EXPLAIN_FILE:-}"
+  [ -n "$file" ] || return 0
+  [ -f "$file" ] || return 0
+  awk -F '\t' -v kind="$1" -v topic="$2" '
+    /^#/ || NF < 3 { next }
+    $1 == kind && $2 == topic { print $3 }
+  ' "$file" 2>/dev/null
+}
+
+# ns_explain_emit <topic> — the explanation for a topic, then any repairs the table carries for it.
+# Called by the warn and refuse emitters, so no verdict site has to remember to do it.
+ns_explain_emit() {
+  ns_explain_lines explain "$1" | while IFS= read -r line; do
+    [ -n "$line" ] && printf 'explain %s %s\n' "$1" "$line"
+  done
+  ns_explain_lines repair "$1" | while IFS= read -r line; do
+    [ -n "$line" ] && printf 'repair %s\n' "$line"
+  done
+}
+
+# ns_explain_topic <verdict text> — the first word, which every verdict leads with.
+ns_explain_topic() {
+  case "$1" in
+    *' '*) printf '%s' "${1%% *}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}

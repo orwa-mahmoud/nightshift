@@ -8288,4 +8288,40 @@ function Invoke-NSPunchListCommand {
     return 0
 }
 
+
+# ---------------------------------------------------------------- preflight explanations
+#
+# Twin of ns_explain_* in lib/state.sh, reading the same lib/preflight-explain.txt. One copy of the
+# text, so the two hosts cannot word the same verdict differently.
+
+# Get-NSExplainLines <file> <kind> <topic> - the records of that kind for that topic, in file
+# order. A topic with no record returns nothing, which is not an error.
+function Get-NSExplainLines {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Kind,
+        [Parameter(Mandatory = $true)][string]$Topic
+    )
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $out.ToArray() }
+    $text = ''
+    try { $text = [IO.File]::ReadAllText($Path, $script:NSUtf8NoBom) }
+    catch { return $out.ToArray() }
+    foreach ($line in ($text -split "`r`n|`n|`r")) {
+        if ($line.StartsWith('#')) { continue }
+        $fields = $line -split "`t"
+        if ($fields.Count -lt 3) { continue }
+        if (($fields[0] -ceq $Kind) -and ($fields[1] -ceq $Topic)) { $out.Add($fields[2]) }
+    }
+    return $out.ToArray()
+}
+
+# Get-NSExplainTopic <verdict text> - the first word, which every verdict leads with.
+function Get-NSExplainTopic {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
+    $space = $Text.IndexOf(' ')
+    if ($space -lt 0) { return $Text }
+    return $Text.Substring(0, $space)
+}
+
 Export-ModuleMember -Function *

@@ -67,10 +67,13 @@ case "$HOST_NAME" in
 esac
 
 REFUSED=0
+NS_EXPLAIN_FILE="$_here/../lib/preflight-explain.txt"
 ok()     { printf 'ok %s\n' "$1"; }
-warn()   { printf 'warn %s\n' "$1"; }
 repair() { printf 'repair %s\n' "$1"; }
-refuse() { REFUSED=1; printf 'refuse %s\n' "$1"; }
+# A warn or a refuse carries its own explanation, so no verdict site has to remember to print one.
+# `ok` lines get none: a resolved fact explains itself.
+warn()   { printf 'warn %s\n' "$1"; ns_explain_emit "$(ns_explain_topic "$1")"; }
+refuse() { REFUSED=1; printf 'refuse %s\n' "$1"; ns_explain_emit "$(ns_explain_topic "$1")"; }
 
 HOST_ROOT="$(cd -P "$PROJECT" 2>/dev/null && pwd)" || {
   refuse "workspace cannot resolve the project path $PROJECT"
@@ -111,7 +114,8 @@ if [ -n "$HOST_PROJECT" ]; then
       # Relaunching is not the only way out. When the owner named the workspace they meant, the
       # link is made from here and this conversation carries on; the link binds the host root
       # rather than this one conversation, which is why it takes their say-so.
-      repair "if $WORKSPACE is the workspace you meant, link it from this session with runtime/link-workspace.sh --host-root \"$HOST_PROJECT_ABS\" --workspace \"$WORKSPACE\" (native Windows: runtime\\windows\\link-workspace.ps1 -HostRoot -Workspace), then run Start again; otherwise reopen the host on the project you mean. Nightshift never guesses which of the two you meant, and never arms in one workspace while recording its session in another"
+      repair "reopen the host on the project you mean, then run Start again"
+      repair "or, if $WORKSPACE is the workspace you meant, link it from this session with ns link-workspace --host-root \"$HOST_PROJECT_ABS\" --workspace \"$WORKSPACE\", then run the preflight and the binding probe again - this conversation carries on. The link binds the host root, not this one conversation, which is why it takes the owner's say-so"
       exit 1
     fi
   fi
@@ -204,7 +208,9 @@ if [ -e "$NS/.shift-lease" ] || [ -L "$NS/.shift-lease" ]; then
   else
     LEASE_STATE=malformed
     refuse "lease malformed - ownership cannot be proven, so this is unowned state"
-    repair "issue STOP, then run stop-shift.sh --project \"$WORKSPACE\" in a terminal and start again; never edit or delete .shift-lease by hand"
+    repair "issue STOP, then run ns stop-shift in a terminal and start again; never edit or delete .shift-lease by hand"
+    # The owner runs this themselves, in a terminal, after STOP. Never from the blocked session.
+    repair "if the lease is still unowned after that, reset it yourself with: bash -c '. \"\$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh\"; ns_lease_reset_stale \"\$NIGHTSHIFT_WORKSPACE/.nightshift\"' - a false result is a refusal, not permission to delete the lease directly"
   fi
 fi
 
@@ -227,16 +233,16 @@ if ns_session_present "$NS"; then
   esac
   if [ "$SESSION_LIVE" -eq 1 ]; then
     refuse "session an agent is already working this punch list on $s_host"
-    repair "ask Nightshift for status, or pause it with stop-shift.sh --project \"$WORKSPACE\" before starting a second shift"
+    repair "ask Nightshift for status, or pause it with ns stop-shift before starting a second shift"
   elif [ "$SESSION_UNKNOWN" -eq 1 ]; then
     refuse "session process-evidence-unavailable - a pid that kill -0 cannot classify is not a dead session"
-    repair "run Start from a shell that can see the recorded process, or pause the shift with stop-shift.sh --project \"$WORKSPACE\""
+    repair "run Start from a shell that can see the recorded process, or pause the shift with ns stop-shift"
   fi
 fi
 
 if [ "$LEASE_STATE" = valid ] && ns_lease_pid_live "$NS"; then
   refuse "lease a live process holds generation $NS_LEASE_GENERATION of this shift"
-  repair "wait for that worker to exit, or pause the shift with stop-shift.sh --project \"$WORKSPACE\""
+  repair "wait for that worker to exit, or pause the shift with ns stop-shift"
 fi
 
 if [ "$(ns_reason_code "$NS")" = clock-out-failed ] && [ "$LEASE_STATE" = valid ] && [ -z "$NS_LEASE_NONCE" ]; then
@@ -261,7 +267,10 @@ if [ -f "$NS/.watchman" ] && [ ! -L "$NS/.watchman" ]; then
 fi
 if [ "$WATCHMAN_LIVE" -eq 1 ] && [ -f "$NS/.shift-armed" ] && [ "$OPEN" -gt 0 ]; then
   refuse "watchman a live watchman is recovering this shift, including between recovery attempts"
-  repair "ask Nightshift for status, or pause it with stop-shift.sh --project \"$WORKSPACE\"; never kill that watchman as stale"
+  repair "ask Nightshift for status, or pause it with ns stop-shift; never kill that watchman as stale"
+  # The panic form when the helper cannot be run: it only writes the marker, so the watchman stands
+  # down at its next Stop event rather than immediately.
+  repair "if you cannot run that, write the marker yourself with: touch \"$NS/STOP\" - the watchman then stands down at its next Stop event"
 fi
 
 [ "$REFUSED" -eq 0 ] || exit 1
@@ -273,10 +282,10 @@ if [ "$LEASE_STATE" = valid ]; then
     0) ok "fence takeover allowed - the prior worker is fenced and no duplicate is live" ;;
     1)
       refuse "fence the on-disk fence does not permit takeover"
-      repair "pause the shift with stop-shift.sh --project \"$WORKSPACE\", then start again" ;;
+      repair "pause the shift with ns stop-shift, then start again" ;;
     *)
       refuse "fence the on-disk fence is missing or unreadable"
-      repair "pause the shift with stop-shift.sh --project \"$WORKSPACE\", then start again" ;;
+      repair "pause the shift with ns stop-shift, then start again" ;;
   esac
 else
   ok "fence no prior worker to fence"
@@ -295,7 +304,7 @@ fi
 if [ "$DRY_RUN" -eq 0 ]; then
   if ! ns_control_stop_watchman "$NS"; then
     refuse "watchman a recorded watchman pid could not be verified, so it was left running"
-    repair "pause the shift with stop-shift.sh --project \"$WORKSPACE\", then start again"
+    repair "pause the shift with ns stop-shift, then start again"
     exit 1
   fi
   CLEARED=""
@@ -389,7 +398,7 @@ if [ -e "$NS/provision-transaction.json" ] || [ -L "$NS/provision-transaction.js
     ok "provision an interrupted install is proven recovered"
   else
     refuse "provision an interrupted install cannot be proven recovered"
-    repair ".nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again"
+    repair ".nightshift/provision-transaction.json and provision-baseline/, restore by hand or run ns provision rollback after fixing the target, then Start again"
   fi
 else
   ok "provision none pending"
