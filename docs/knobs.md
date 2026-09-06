@@ -308,6 +308,33 @@ turned into a price.
 [`examples/shift-report.md`](../examples/shift-report.md) shows the shape, including an item still
 in progress and usage that is only partly available.
 
+### When the gate repeats itself
+
+Every turn that ends with work still open is blocked, and the reason goes back into the
+conversation. That does not change. What can change is how often the whole message is repeated: a
+model ends turns to narrate — "gate green, committing" — many times per item, and each block was
+re-injecting a message it had read a few calls earlier.
+
+`clockOutReminderMode` is the switch. `full`, the default, sends `clockOutMessage` every time —
+today's behaviour exactly. `changed-only` sends the whole message when something moved and the one
+line in `clockOutReminder` when nothing did.
+
+Something moved means: a box was ticked, an item changed, a stop-work order appeared, the deadline
+passed, or the stall guard started warning. **Anything the gate cannot be sure about also counts as
+moved** — the first block of a shift, a missing or unreadable comparison file, a compacted
+conversation, and `clockOutReminderLimit` short lines in a row all send the whole message again.
+The block itself is never skipped and its reason is never empty.
+
+On Claude Code a compaction or a resume is detected and sends the full message next time. Codex and
+Cursor expose no such event, so on those hosts `clockOutReminderLimit` is the only reset — which is
+why it exists.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `clockOutReminderMode` | `full` | `full` repeats the whole message on every block. `changed-only` shortens the ones where nothing changed. |
+| `clockOutReminder` | a one-line reminder | The short line. `{item}`, `{open}`, `{ticked}` and `{total}` are filled in; drop any of them and your sentence stands. |
+| `clockOutReminderLimit` | `10` | How many short lines may follow one another before the whole message is sent again regardless. |
+
 `recovery` decides what a session the watchman revives is allowed to do. It never widens what your
 host permits, and it never lifts a rule in this file.
 

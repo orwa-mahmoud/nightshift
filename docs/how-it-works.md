@@ -318,6 +318,8 @@ Nightshift gives it no remote and never pushes it. Clock-out and Archive commit 
 identity `nightshift@localhost`, and `commit.gpgsign=false` so a global signing requirement cannot
 stall a headless snapshot.
 
+The gate blocks every turn that ends with work still open, and the reason it returns is the owner's `clockOutMessage`. With `clockOutReminderMode` set to `changed-only` it sends that message when something actually moved and one short line when nothing did — and anything it cannot be sure about, including a compacted conversation, counts as moved. The block never becomes optional and its reason is never empty.
+
 Archiving moves finished work under the archive root — `.nightshift/archive/<YYYY-MM-DD>/` by default, or wherever `archive.root` and `archive.layout` say — while keeping the current working
 files small.
 
