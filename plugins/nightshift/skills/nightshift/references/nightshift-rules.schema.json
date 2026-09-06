@@ -246,7 +246,8 @@
             "integer",
             "null"
           ],
-          "description": "Remembered time budget for a composed shift, in whole hours, or null to leave composition to ask. A whole number of at least one; a finite punch list may still end at its last tick with no clock at all."
+          "minimum": 1,
+          "description": "Remembered time budget for a composed shift, in whole hours, or null to leave composition to ask. A finite punch list may still end at its last tick with no clock at all."
         },
         "execution": {
           "type": "string",

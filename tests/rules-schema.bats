@@ -160,3 +160,29 @@ validate() {
   grep -qF 'nightshift-rules.schema.json' "$SETUP"
   grep -qF 'docs/knobs.md' "$SETUP"
 }
+
+@test "a numeric bound applies to numbers and says nothing about null" {
+  # A nullable field carrying a bound has to validate when it is unset. Its `type` is what
+  # rejects a wrong type; `minimum` is only about numbers.
+  f="$BATS_TEST_TMPDIR/hours.json"
+  jq '.shift.hours = null' "$TEMPLATE" >"$f"
+  validate "$f"
+  jq '.shift.hours = 1' "$TEMPLATE" >"$f"
+  validate "$f"
+  jq '.shift.hours = 6' "$TEMPLATE" >"$f"
+  validate "$f"
+
+  # And the bound still bites where it applies.
+  jq '.shift.hours = 0' "$TEMPLATE" >"$f"
+  run validate "$f"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -qF 'below minimum 1'
+  jq '.shift.hours = -3' "$TEMPLATE" >"$f"
+  run validate "$f"
+  [ "$status" -ne 0 ]
+  # A wrong type is still a wrong type, and it is `type` that says so.
+  jq '.shift.hours = "six"' "$TEMPLATE" >"$f"
+  run validate "$f"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -qF 'expected integer|null'
+}
