@@ -41,6 +41,29 @@ ns_archive() {
   ns_policy_pref "$1" archive "$2"
 }
 
+# The ending marker carries what filing still needs after the live policy has moved.
+#
+# Clock-out archives the policy, and a later Archive would then have no shift id to name a
+# directory after and no frozen archive settings to file into — so one shift's records could land
+# half under its own name and half under a date, and an owner edit between the two would move the
+# destination. The marker that already says the shift ended says which shift, and where it files.
+# One line per field, `key=value`, and an empty marker stays a valid ending.
+#
+# ns_ended_record <state-dir> <shift-id> <archive-root-name> <archive-layout>
+ns_ended_record() {
+  local ns="$1"
+  [ -d "$ns" ] || return 0
+  [ -L "$ns/.ended" ] && rm -f "$ns/.ended"
+  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\n' "$2" "$3" "$4" >"$ns/.ended" 2>/dev/null || :
+}
+
+# ns_ended_field <project-dir> <key> — one field of the ending marker, or empty.
+ns_ended_field() {
+  local f="$1/.nightshift/.ended"
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  sed -n "s/^$2=//p" "$f" 2>/dev/null | head -n1
+}
+
 # ns_state_path <state-dir> <relative-name> — a nested path under the Nightshift state area, or
 # status 2. The whole chain is checked, not just its last component: a link anywhere along it is
 # what an escape actually looks like, because `linked/history` reaches outside while `history` is

@@ -4317,6 +4317,40 @@ function Get-NSRecoveryLaunchScope {
     return 'inherit-recorded-scope'
 }
 
+# The ending marker carries what filing still needs after the live policy has moved. Clock-out
+# archives the policy, and a later Archive would then have no shift id to name a directory after
+# and no frozen archive settings to file into. One line per field, key=value; an empty marker
+# stays a valid ending.
+function Write-NSEndedRecord {
+    param(
+        [Parameter(Mandatory = $true)][string]$StateDir,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ShiftId,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveRoot,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveLayout
+    )
+    if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { return }
+    $path = Join-Path $StateDir '.ended'
+    if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`n"
+    [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding($false)))
+}
+
+# Get-NSEndedField <workspace> <key> - one field of the ending marker, or an empty string.
+function Get-NSEndedField {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+    $path = Join-Path (Join-Path $Workspace '.nightshift') '.ended'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if ($line.StartsWith($Key + '=', [StringComparison]::Ordinal)) {
+            return $line.Substring($Key.Length + 1)
+        }
+    }
+    return ''
+}
+
 # Get-NSStatePath <state-dir> <relative> - a nested path under the Nightshift state area, or
 # $null. The whole chain is checked, not just its last component: a reparse point anywhere along
 # it is what an escape actually looks like, because `linked\history` reaches outside while
@@ -4785,6 +4819,14 @@ function Get-NSPolicyGroupSetting {
     # feature carries no block, and then the owner's file is the source.
     $state = Get-NSShiftPolicyState $Workspace
     if ($state['state'] -ceq 'malformed') { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    if ($state['state'] -ceq 'absent') {
+        # The shift ended and its policy was archived. Where it files is still its own decision,
+        # so the ending marker answers for the two settings a later Archive needs.
+        $ended = ''
+        if ($Name -ceq 'archive.root') { $ended = Get-NSEndedField $Workspace 'archiveRoot' }
+        elseif ($Name -ceq 'archive.layout') { $ended = Get-NSEndedField $Workspace 'archiveLayout' }
+        if (-not [string]::IsNullOrEmpty($ended)) { return (New-NSPolicySetting $ended 'one-shift' 'shift') }
+    }
     if ($state['state'] -ceq 'valid') {
         $frozen = Get-NSMapValue $state['policy'] $block
         if ($frozen -is [Collections.IDictionary] -and $frozen.Contains($key)) {

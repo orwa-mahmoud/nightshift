@@ -198,6 +198,11 @@ end_shift() {
   else
     log_line "morning receipt disabled by the owner (handoff.enabled) - every record stands"
   fi
+  # The marker that says this shift ended also says which shift, and where it files. Archiving the
+  # policy below takes both away from any later Archive, and one shift's records must not end up
+  # half under its own name and half under a date.
+  ns_ended_record "$NS" "${shift_id:-unknown}" \
+    "$(ns_archive "$PROJECT_DIR" root)" "$(ns_archive "$PROJECT_DIR" layout)"
   archive_shift_policy
   archive_findings_ledger "${shift_id:-unknown}"
   receipts_commit "$1"

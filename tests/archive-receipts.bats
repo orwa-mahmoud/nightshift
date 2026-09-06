@@ -616,6 +616,104 @@ REPORT
   done
 }
 
+# Clock-out archives the live policy, so a later Archive has no policy to read a shift id or an
+# archive destination from. These run the whole sequence — gate first, filing afterwards — rather
+# than calling the archiver while the policy is still there to answer.
+
+# clock_out <project> — the real gate, on a shift with every box ticked.
+clock_out() {
+  jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}' |
+    env CLAUDE_PROJECT_DIR="$1" bash "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/clock-out-gate.sh"
+}
+
+# composed <project> <shift-id> — a workspace whose shift was composed and is ready to end.
+composed() {
+  local sh="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/shift-policy.sh"
+  mkdir -p "$1/.nightshift/receipts"
+  rm -f "$1/.nightshift/.shift-armed"
+  jq -nc --arg id "$2" '{schemaVersion:1,shiftId:$id,createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",deadlineEpoch:null,verificationLevel:"none",toolingPolicy:"existing-tools"}' |
+    "$sh" --project "$1" set --from-json - >/dev/null
+  printf '## Items\n- [x] **1. done.**\n' >"$1/.nightshift/punch-list.md"
+  : >"$1/.nightshift/.shift-armed"
+}
+
+@test "a shift filed after clock-out is filed under its own name, not a date bucket" {
+  p="$(new_project ident-shift-layout)"
+  arch_rules "$p" '.archive.layout = "shift" | .archive.root = "history"'
+  composed "$p" 9f2c40ab77e51d63
+  printf 'a receipt\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+
+  run clock_out "$p"
+  [ -f "$p/.nightshift/.ended" ]
+  # The live policy is gone, exactly as it is for any later Archive.
+  [ ! -f "$p/.nightshift/shift-policy.json" ]
+
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/history/shift-9f2c40ab77e51d63/receipts/2026-09-05-an-item.md" ] \
+    || { echo "filed to: $(find "$p/.nightshift/history" -type d | tr '\n' ' ')"; return 1; }
+  [ ! -d "$p/.nightshift/history/2026-09-05" ]
+}
+
+@test "an owner edit between clock-out and Archive does not move where the shift files" {
+  p="$(new_project ident-frozen-dest)"
+  arch_rules "$p" '.archive.layout = "shift" | .archive.root = "history"'
+  composed "$p" 9f2c40ab77e51d63
+  printf 'a receipt\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  run clock_out "$p"
+
+  # The owner changes their mind after the night is over. The night still files where it decided.
+  arch_rules "$p" '.archive.layout = "date" | .archive.root = "elsewhere"'
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/history/shift-9f2c40ab77e51d63/receipts/2026-09-05-an-item.md" ]
+  [ ! -d "$p/.nightshift/elsewhere" ]
+}
+
+@test "two shifts on one date keep their records apart" {
+  p="$(new_project ident-two-shifts)"
+  arch_rules "$p" '.archive.layout = "shift" | .archive.root = "history"'
+
+  composed "$p" 1111111111111111
+  printf 'the first night\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  run clock_out "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
+  [ "$status" -eq 0 ]
+
+  # The same day, a second shift, and a record that happens to share the first one's name.
+  rm -f "$p/.nightshift/.ended"
+  composed "$p" 2222222222222222
+  printf 'the second night\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  run clock_out "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
+  [ "$status" -eq 0 ]
+
+  [ "$(cat "$p/.nightshift/history/shift-1111111111111111/receipts/2026-09-05-an-item.md")" = 'the first night' ]
+  [ "$(cat "$p/.nightshift/history/shift-2222222222222222/receipts/2026-09-05-an-item.md")" = 'the second night' ]
+}
+
+@test "an unfinished item keeps its evidence through the whole sequence" {
+  p="$(new_project ident-open-work)"
+  arch_rules "$p" '.archive.layout = "shift" | .archive.root = "history"'
+  composed "$p" 9f2c40ab77e51d63
+  printf 'the P02 baseline\n' >"$p/.nightshift/receipts/baseline.md"
+  printf 'morning\n' >"$p/.nightshift/receipts/morning-2026-09-05-abc.md"
+  # The shift is stopped with work still open, which is what STOP and the deadline both do.
+  printf '## Items\n- [x] **1. done.**\n- [ ] **2. open, and it needs receipts/baseline.md.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf 'owner said stop\n' >"$p/.nightshift/STOP"
+  run clock_out "$p"
+  [ -f "$p/.nightshift/.ended" ]
+
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire morning-2026-09-05-abc.md
+  [ "$status" -eq 0 ]
+  # The closed record is retired; the one the open item needs is exactly where it was.
+  [ ! -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
+  [ "$(cat "$p/.nightshift/receipts/baseline.md")" = 'the P02 baseline' ]
+  [ -f "$p/.nightshift/history/shift-9f2c40ab77e51d63/receipts/baseline.md" ]
+}
+
 @test "a different record under a filed name is never overwritten and never removed" {
   p="$(new_project rot-clash)"
   mkdir -p "$p/.nightshift/receipts" "$p/.nightshift/archive/2026-09-05/receipts"

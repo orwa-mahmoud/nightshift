@@ -210,6 +210,15 @@ function Complete-NSShift {
     Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
     Release-NSLeaseWithRetry
     Save-NSMorningReceipt
+    # The marker that says this shift ended also says which shift, and where it files. Archiving
+    # the policy below takes both away from any later Archive, and one shift's records must not
+    # end up half under its own name and half under a date.
+    $endedId = 'unknown'
+    $endedState = Get-NSShiftPolicyState $workspace
+    if ($endedState['state'] -ceq 'valid') { $endedId = [string]$endedState['policy']['shiftId'] }
+    Write-NSEndedRecord -StateDir $ns -ShiftId $endedId `
+        -ArchiveRoot ([string](Get-NSPolicyGroupSetting $workspace 'archive.root')['value']) `
+        -ArchiveLayout ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
     Save-NSPolicyArchive
     Save-NSEvidenceArchive
     Save-NSReceipt $Summary

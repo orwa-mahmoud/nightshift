@@ -63,9 +63,16 @@ foreach ($name in $Retire) {
 $src = Get-NSReceiptsDir $workspace
 # The owner's archive.root and archive.layout decide where this lands, the same as on POSIX, and
 # the same containment refuses a root that would leave the state area.
+# Whose records these are. The live policy answers while it is still live; once clock-out has
+# archived it, the ending marker is what remembers, so a shift filed later lands under its own
+# name rather than a date bucket that could hold somebody else's night too.
 $shiftId = ''
 $policyState = Get-NSShiftPolicyState $workspace
 if ($policyState['state'] -ceq 'valid') { $shiftId = [string]$policyState['policy']['shiftId'] }
+if ([string]::IsNullOrEmpty($shiftId) -or $shiftId -ceq 'unknown') {
+    $endedId = Get-NSEndedField $workspace 'shiftId'
+    if (-not [string]::IsNullOrEmpty($endedId)) { $shiftId = $endedId }
+}
 $group = Get-NSArchiveDir -Workspace $workspace -Date $Date -ShiftId $shiftId
 if ($null -eq $group) {
     Write-NSArchiveReceiptsError 'archive-receipts: archive.root must name a directory inside .nightshift/ - an absolute path, a path with .., or a symlink is not supported'

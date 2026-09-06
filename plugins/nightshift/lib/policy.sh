@@ -1055,7 +1055,7 @@ KEYS
 #
 # With no snapshot at all there is no shift to fix anything for, and the owner's file answers.
 ns_policy_pref() {
-  local kind raw f
+  local kind raw f ended
   _ns_policy_load_shift "$1"
   case "$NS_POLICY_SHIFT_STATE" in
     ok)
@@ -1068,6 +1068,19 @@ ns_policy_pref() {
       fi
       ;;
     malformed | noparser) return 0 ;;
+    absent)
+      # The shift ended and its policy was archived. Where it files is still its own decision, so
+      # the ending marker answers for the two settings a later Archive needs.
+      ended=""
+      case "$2.$3" in
+        archive.root) ended="$(ns_ended_field "$1" archiveRoot)" ;;
+        archive.layout) ended="$(ns_ended_field "$1" archiveLayout)" ;;
+      esac
+      if [ -n "$ended" ]; then
+        printf '%s' "$ended"
+        return 0
+      fi
+      ;;
   esac
   f="$1/.nightshift/rules.json"
   [ -f "$f" ] || return 0

@@ -101,7 +101,14 @@ if ! root="$(ns_archive_root "$WORKSPACE")"; then
   printf 'archive-receipts: archive.root must name a directory inside .nightshift/ — an absolute path, a path with .., or a symlink is not supported\n' >&2
   exit 2
 fi
+# Whose records these are. The live policy answers while it is still live; once clock-out has
+# archived it, the ending marker is what remembers, so a shift filed later lands under its own
+# name rather than a date bucket that could hold somebody else's night too.
 shift_id="$(ns_policy_shift_id "$WORKSPACE" 2>/dev/null)" || shift_id=""
+if [ -z "$shift_id" ] || [ "$shift_id" = unknown ]; then
+  ended_id="$(ns_ended_field "$WORKSPACE" shiftId)"
+  [ -n "$ended_id" ] && shift_id="$ended_id"
+fi
 if ! group="$(ns_archive_dir "$WORKSPACE" "$DATE" "$shift_id")"; then
   printf 'archive-receipts: archive.root must name a directory inside .nightshift/\n' >&2
   exit 2
