@@ -213,9 +213,10 @@ a_new_item() {
   rm -f "$p/.nightshift/.ended"
   : >"$p/.nightshift/.shift-armed"
   # The old shift's watchman finally wakes up and takes a real wake, long enough to look at the
-  # site and decide. It must not stand the new shift down.
-  run env NIGHTSHIFT_WATCH_ONESHOT=1 bash "$WATCHMAN" --project "$p" --max-wakes 1 \
-    --agent 'true' --interval 1
+  # site and decide. --interval is in minutes, so the sleep itself is set in seconds: a genuine
+  # wake, not the degenerate one an interval of zero produces.
+  run env NIGHTSHIFT_WATCH_ONESHOT=1 NIGHTSHIFT_WATCH_SLEEP=1 bash "$WATCHMAN" \
+    --project "$p" --max-wakes 1 --agent 'true' --interval 10
   [ -f "$p/.nightshift/.shift-armed" ]
   [ ! -f "$p/.nightshift/.ended" ]
   run gate "$p"
@@ -230,17 +231,19 @@ a_new_item() {
   pidfile="$p/.nightshift/.watchman"
 
   : >"$p/.nightshift/.shift-armed"
-  # A watchman that sleeps long enough to be replaced while it waits.
-  env NIGHTSHIFT_WATCH_ONESHOT=1 bash "$WATCHMAN" --project "$p" --max-wakes 1 \
-    --agent 'true' --interval 4 >/dev/null 2>&1 &
+  # A watchman that sleeps long enough to be replaced while it waits. Two seconds of sleep, not
+  # two minutes: --interval is in minutes and NIGHTSHIFT_WATCH_SLEEP is the seconds it actually
+  # waits, so the window is real and the test still finishes.
+  env NIGHTSHIFT_WATCH_ONESHOT=1 NIGHTSHIFT_WATCH_SLEEP=2 bash "$WATCHMAN" \
+    --project "$p" --max-wakes 1 --agent 'true' --interval 10 >/dev/null 2>&1 &
   old=$!
   claimed=""
-  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  for _ in $(seq 1 40); do
     if [ -s "$pidfile" ]; then
       claimed="$(sed -n 1p "$pidfile")"
       break
     fi
-    sleep 0.2
+    sleep 0.1
   done
   [ -n "$claimed" ] || { kill "$old" 2>/dev/null; echo "the watchman never claimed the site"; return 1; }
 
@@ -249,7 +252,18 @@ a_new_item() {
   # ordinary route rather than the one that notices a lost claim.
   printf '424242\n' >"$pidfile"
   rm -f "$p/.nightshift/.shift-armed"
-  wait "$old" 2>/dev/null || true
+
+  # Bounded: a test that waits forever on a child takes the whole suite with it.
+  gone=0
+  for _ in $(seq 1 100); do
+    kill -0 "$old" 2>/dev/null || { gone=1; break; }
+    sleep 0.1
+  done
+  if [ "$gone" -ne 1 ]; then
+    kill "$old" 2>/dev/null
+    echo "the watchman did not stand down within ten seconds"
+    return 1
+  fi
 
   # The claim that outlived it is the replacement's, not a file the old loop swept away.
   [ -f "$pidfile" ] || { echo "the old watchman deleted its replacement's claim"; return 1; }
