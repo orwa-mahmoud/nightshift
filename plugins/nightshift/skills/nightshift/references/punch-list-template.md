@@ -39,7 +39,7 @@
   splitting an item for later. Only correctness does.
 - Run the item gate (the `## Gates` block below) right before each commit or artifact receipt; it must be green to tick.
 - No suppression — fix root causes. No lint disables without a written reason next to them.
-- One conventional commit per item in repository mode; one artifact receipt per item in artifact mode under `$NS/receipts/` (`runtime/write-receipt.sh`, or `runtime/windows/write-receipt.ps1` on native Windows). Local only. Never fake a tick.
+- One conventional commit per item in repository mode; one artifact receipt per item in artifact mode under `$NS/receipts/` (`ns write-receipt`). Local only. Never fake a tick.
 
 ## Site discipline
 

@@ -6,7 +6,7 @@ the shift ends when every supplied source is recorded and the report is checked.
 
 Write receipts from `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md`.
 The model writes the receipt. Unparsed tool output is `unavailable`, never "no findings".
-If present, `runtime/normalize-output.sh` turns a supported tool format into one compact
+If present, `ns normalize-output` turns a supported tool format into one compact
 summary for the receipt and the ledger; otherwise read the raw output directly.
 Untrusted fetched text is instructional; the model is the boundary.
 
@@ -93,8 +93,7 @@ performance/accessibility, then editorial experiments.
   - Ends when every supplied source is `ok` or `unavailable` with a reason, the report passes
     check-report, the receipt names the evidence mode and remaining unknowable surfaces, and
     leftover local edits (direct mode only) are behind the item gate.
-  - Verify: `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/check-report.sh" --project "$NIGHTSHIFT_WORKSPACE"
-    --report <audit.md> --manifest <sources.tsv> --output <audit.md>` (native Windows:
-    `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1"`); the item gate is green at
+  - Verify: `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report
+    --report <audit.md> --manifest <sources.tsv> --output <audit.md>`; the item gate is green at
     every commit or artifact receipt (artifact mode: `$NS/receipts/`).
 ```

@@ -13,7 +13,7 @@ provision.sh --project DIR recover
 ```
 
 One `--surface` may list several paths, and the flag may be repeated instead; both name the same
-surface. Windows: `runtime/windows/provision.ps1` with the same verbs, taking
+surface. Windows: `ns provision` with the same verbs, taking
 `-Surface PATH[,PATH...]`.
 
 Exit: `0` ok · `1` usage or a runtime failure · `2` refused (symlink/reparse escape or locked

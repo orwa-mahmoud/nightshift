@@ -15,8 +15,8 @@ Never select this entry in artifact mode: leave imported drafts on the drafting 
 ```text
 - [ ] **GitHub issue hunt — finish the selected imported issues, one commit each.**
   - Discovery: list proposed imports with
-    `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh" --project "$NIGHTSHIFT_WORKSPACE" --list-proposed`
-    (on native Windows, `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\import-issues.ps1" -Project "$NIGHTSHIFT_WORKSPACE" -ListProposed`).
+    `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --list-proposed`
+    (on native).
     Build the dependency graph, shared-root clusters, repo-fit checks, duplicate/conflict
     dispositions, and time-fit selection in a
     `mode: issue-select` receipt from `receipt-templates.md`, from the imported set only — never

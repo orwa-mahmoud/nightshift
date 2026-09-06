@@ -110,7 +110,7 @@ When the prompt is incomplete or Guided, composition asks exactly one question, 
 count, or tooling policy, and elevation in words — *"allow docker tonight"* becomes a one-shift
 allowance in the shift policy; *"always allow docker here"* becomes a permanent `rules.json`
 allowance, written while the shift is unarmed. The same question folds in the permission
-preflight's gaps (`runtime/preflight-needs.sh` against every selected item and Hunt order): *"Items
+preflight's gaps (`ns preflight-needs` against every selected item and Hunt order): *"Items
 4 and 7 need `containers`: allow tonight, allow always, or leave them parked?"* Composition writes
 the resolved policy with `shift-policy.sh … set --from-json -` before any compose, cut, or arm;
 review-first writes nothing else, and run-direct arms immediately once it lands. Start never asks:

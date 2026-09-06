@@ -6,23 +6,19 @@ description: Set a shift to start at a fixed time — check the work is queued, 
 Get the host-opened project ready to start on a clock, then hand the owner the config. Work through
 these in order; each one is a check the owner would otherwise discover at 4am.
 
-Bind once, then never search, guess, or re-resolve. `$TASK_ROOT` is the host-opened project
-folder: `${CLAUDE_PROJECT_DIR}` on Claude Code; on Codex the `CODEX_PROJECT_DIR` recovery override
-when Nightshift set it, otherwise `pwd -P` captured before any other shell call.
-`$NIGHTSHIFT_WORKSPACE` is the validated absolute target of `$TASK_ROOT/.nightshift-link` when that
-link exists, otherwise `$TASK_ROOT`. Then `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"` (native Windows:
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`), and every Nightshift file is `$NS/<name>`
-for the rest of the run; helpers taking `--project` or `-Project` receive
-`"$NIGHTSHIFT_WORKSPACE"`. The shell's working directory persists between calls, so a bare path is
-never safe.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/schedule/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT`: use
-`${CLAUDE_PLUGIN_ROOT}` on Claude Code; on Codex use `$PLUGIN_ROOT` when available, otherwise derive
-it from the absolute path attached to this skill (`skills/schedule/SKILL.md`). Substitute that
-absolute path in every command below; never search for the plugin.
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
 
-On native Windows, use the PowerShell tool, `$env:` host variables, and native paths. Do not invoke
-the POSIX generator through Git Bash or WSL; the Task Scheduler generator is bundled separately.
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route Schedule through WSL
+or Git Bash. `ns help` lists the verbs this host has.
 
 ## 1. Is there a site at all?
 
@@ -47,8 +43,7 @@ Count the open `- [ ]` in `$NS/punch-list.md`:
 - **None** — say so plainly and offer the ways to fix it: compose a shift now with
  Hunt (answer **later**, not **now** — a shift started here defeats scheduling it), cut an
  ordinary draft from `$NS/drafting-table.md`, cut a `Status: proposed` import with
- `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh" --project "$NIGHTSHIFT_WORKSPACE" --promote …`
- (native Windows: `import-issues.ps1 -Project "$NIGHTSHIFT_WORKSPACE" -Promote …`), or write an
+ `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --promote …`, or write an
  item by hand. Then re-check. Never schedule an empty list without saying it will do nothing.
 
 A parked work order is not queued work. If one exists, say so: it must be moved into the punch list
@@ -83,30 +78,16 @@ Ask for the time if the owner has not given one — 24-hour `HH:MM`, local — t
 and show its output as it comes:
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/schedule.sh" --project "$NIGHTSHIFT_WORKSPACE" --preflight
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/schedule.sh" --project "$NIGHTSHIFT_WORKSPACE" --at <HH:MM>
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --preflight
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --at <HH:MM>
 # Codex projects add: --agent 'codex exec -s danger-full-access'
 # Linux user timers:  --target systemd
 ```
 
-Native Windows:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
- -Project "$NIGHTSHIFT_WORKSPACE" -Preflight
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
- -Project "$NIGHTSHIFT_WORKSPACE" -At <HH:MM>
-# Codex projects add: -Agent 'codex exec -s danger-full-access'
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
- -Project "$NIGHTSHIFT_WORKSPACE" -List
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
- -Project "$NIGHTSHIFT_WORKSPACE" -Remove
-```
-
 `--preflight` / `-Preflight` checks the agent binary, permissions, resolved workspace, rules, queued work,
 generated paths, and scheduler syntax for Claude Code and Codex. It installs nothing, writes
-nothing under LaunchAgents, and does not enable, start, or register an entry. `--list` / `-List` shows what
-is already registered for this project; `--remove` / `-Remove` prints the command that unregisters it. The
+nothing under LaunchAgents, and does not enable, start, or register an entry. `--list` shows what
+is already registered for this project; `--remove` prints the command that unregisters it. The
 generator refuses to hand over a second entry where one exists — two scheduled starts on one punch
 list is two agents on one shift.
 
@@ -116,7 +97,7 @@ list is two agents on one shift.
 
 Say where the run's output will land (`$NS/scheduled.log`), and
 mention once that the same generator runs from a terminal with no session —
-`$NIGHTSHIFT_PLUGIN_ROOT/runtime/schedule.sh` is plain shell and spends no model tokens, which is
+`ns schedule` is plain shell and spends no model tokens, which is
 what makes it reachable on a day this command is not. On native Windows the equivalent is
-`$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\schedule.ps1`; it likewise spends no model tokens and
+; it likewise spends no model tokens and
 registers nothing. The README carries the full offline note.

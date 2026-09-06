@@ -5,37 +5,25 @@ description: Issue a stop-work order — pause the shift immediately, leaving un
 
 Pause the host-opened project immediately so the owner can edit the punch list and resume later.
 
-Bind once, then never search, guess, or re-resolve. `$TASK_ROOT` is the host-opened project
-folder: `${CLAUDE_PROJECT_DIR}` on Claude Code; on Codex the `CODEX_PROJECT_DIR` recovery override
-when Nightshift set it, otherwise `pwd -P` captured before any other shell call.
-`$NIGHTSHIFT_WORKSPACE` is the validated absolute target of `$TASK_ROOT/.nightshift-link` when that
-link exists, otherwise `$TASK_ROOT`. Then `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"` (native Windows:
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`), and every Nightshift file is `$NS/<name>`
-for the rest of the run; helpers taking `--project` or `-Project` receive
-`"$NIGHTSHIFT_WORKSPACE"`. The shell's working directory persists between calls, so a bare path is
-never safe.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/stop/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT`: use
-`${CLAUDE_PLUGIN_ROOT}` on Claude Code; on Codex use `$PLUGIN_ROOT` when available, otherwise derive
-it from the absolute path attached to this skill (`skills/stop/SKILL.md`). Substitute that
-absolute path below; never search for the plugin.
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
 
-On native Windows, use the PowerShell tool and native paths throughout. Resolve the same values
-from `$env:CLAUDE_PROJECT_DIR`, `$env:CODEX_PROJECT_DIR`, and `$env:PLUGIN_ROOT`, with
-`[Environment]::CurrentDirectory` as the Codex cwd fallback. Do not route Stop through WSL or Git
-Bash.
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route Stop through WSL
+or Git Bash. `ns help` lists the verbs this host has.
 
 Run the trusted helper. Do not write `$NS/STOP` by hand, do not delete `$NS/.shift-armed`, and do
 not kill `$NS/.watchman` yourself — the helper performs the safe teardown:
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/stop-shift.sh" --project "$NIGHTSHIFT_WORKSPACE"
-```
-
-On native Windows:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\stop-shift.ps1" -Project "$NIGHTSHIFT_WORKSPACE"
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift
 ```
 
 The helper writes `$NS/STOP` with a reason and UTC timestamp, appends `stopped by owner` to

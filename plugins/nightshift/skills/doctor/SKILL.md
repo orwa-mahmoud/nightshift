@@ -12,39 +12,24 @@ rewrite, or delete.
 decisions plus the default chosen so work continues; `work-orders.md` → timed catalog work composed
 only through Hunt. Report these as different categories; do not merge or move them.
 
-Resolve the host-opened project folder to an absolute `$TASK_ROOT`: use `${CLAUDE_PROJECT_DIR}` on
-Claude Code; on Codex honor Nightshift's `${CODEX_PROJECT_DIR}` recovery override when present,
-otherwise capture `pwd -P` before any other shell call. Resolve `$TASK_ROOT/.nightshift-link` when
-present and call the validated absolute target `$NIGHTSHIFT_WORKSPACE`; otherwise set
-`NIGHTSHIFT_WORKSPACE="$TASK_ROOT"`.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/doctor/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Bind the Nightshift directory once: `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"`. On native Windows,
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`. After this bind, Nightshift files are
-`$NS/<name>` for every read, write, and shell command. Owner-facing prose may use the short names
-(`punch-list.md`, `parking-lot.md`, `STOP`). Never re-resolve, never search or guess. Helpers that
-take `--project` or `-Project` still receive `"$NIGHTSHIFT_WORKSPACE"`. The shell's working
-directory persists between Bash calls, so never use a bare path.
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
 
-Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT`: use
-`${CLAUDE_PLUGIN_ROOT}` on Claude Code; on Codex use `$PLUGIN_ROOT` when available, otherwise derive
-it from the absolute path attached to this skill (`skills/doctor/SKILL.md`). Substitute that
-absolute path in every command below; never search for the plugin.
-
-On native Windows, use the PowerShell tool and native paths throughout. Resolve the same values
-from `$env:CLAUDE_PROJECT_DIR`, `$env:CODEX_PROJECT_DIR`, and `$env:PLUGIN_ROOT`, with
-`[Environment]::CurrentDirectory` as the Codex cwd fallback. Do not route Doctor through WSL or Git
-Bash.
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route Doctor through WSL
+or Git Bash. `ns help` lists the verbs this host has.
 
 ## 1. Run the inspector
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/doctor.sh" --project "$NIGHTSHIFT_WORKSPACE"
-```
-
-On native Windows:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\doctor.ps1" -Project "$NIGHTSHIFT_WORKSPACE"
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" doctor
 ```
 
 Print its report verbatim. Do not summarise away Facts, Warnings, or Actions, and do not re-derive
@@ -106,8 +91,7 @@ The report tags every suggestion:
 - `[blocked]` — Nightshift cannot fix this here (non-resumable Codex id, malformed process lease,
   missing host binary, unverified wedge). Say so. Never guess a session id or print/edit a lease
   capability. For a stuck conversation or a fenced recorded session, name
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/stop-shift.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-  (native Windows: `stop-shift.ps1 -Project`) — that pauses immediately without waiting for a Stop
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift` — that pauses immediately without waiting for a Stop
   event. Do not run it from Doctor.
 
 When the report says a terminal clock-out failed without releasing the shift, say whether the
@@ -131,19 +115,15 @@ informational only: continue the active work without asking or writing state.
 Two repairs the report names are separate owner actions, never Doctor's own:
 
 - Legacy schema migration, offered as `[confirm]` for unarmed legacy workspaces only —
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/migrate-state.sh" --project "$NIGHTSHIFT_WORKSPACE"`, or
-  `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\migrate-state.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`
-  on native Windows. A future version is `[blocked]`: never downgrade a marker.
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state`. A future version is `[blocked]`: never downgrade a marker.
 - A local rule profile. Doctor may list the shipped examples with
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/apply-profile.sh" --project "$NIGHTSHIFT_WORKSPACE" --list`
-  and preview one with `--profile <name> --mode fill` (or `--mode replace`). Native Windows:
-  `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\apply-profile.ps1" -Project "$NIGHTSHIFT_WORKSPACE" -List`
-  and `-Profile <name> -Mode fill`. Preview is the default; only `--apply` writes, and Invoking
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" apply-profile --list`
+  and preview one with `--profile <name> --mode fill` (or `--mode replace`). Preview is the
+  default; only `--apply` writes, and Invoking
   Doctor never writes `rules.json`.
 
 A senior may run the read-only project inventory after the report:
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/inventory.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-(native Windows: `inventory.ps1 -Project "$NIGHTSHIFT_WORKSPACE"`). It prints one table per
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" inventory`. It prints one table per
 workspace package — package manager and lockfile, the scripts declared for test, lint, typecheck,
 build and format, the config files present, and each named tool as `declared`, `runnable` or
 `absent`. Those three words are the whole verdict; the report never calls a project misconfigured.
@@ -152,9 +132,6 @@ is offered.
 
 If the owner then explicitly asks to **Export support bundle**, they are no longer in Doctor.
 Run
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/export-support.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-on POSIX, or
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\export-support.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`
-on native Windows.
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" export-support`.
 Print its path, included sections, and omitted categories. Do not upload, attach, transmit, or open
 the file. Invoking Doctor alone must not create `$NS/support/`.

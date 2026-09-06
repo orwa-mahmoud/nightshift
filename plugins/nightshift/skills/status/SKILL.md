@@ -11,43 +11,30 @@ this is read-only.
 decisions plus the default chosen so work continues; `work-orders.md` → timed catalog work composed
 only through Hunt. Report these as different categories; do not merge or move them.
 
-Resolve the host-opened project folder to an absolute `$TASK_ROOT`: use `${CLAUDE_PROJECT_DIR}` on
-Claude Code; on Codex honor Nightshift's `${CODEX_PROJECT_DIR}` recovery override when present,
-otherwise capture `pwd -P` before any other shell call. Resolve `$TASK_ROOT/.nightshift-link` when
-present and call the validated absolute target `$NIGHTSHIFT_WORKSPACE`; otherwise set
-`NIGHTSHIFT_WORKSPACE="$TASK_ROOT"`.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/status/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Bind the Nightshift directory once: `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"`. On native Windows,
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`. After this bind, Nightshift files are
-`$NS/<name>` for every read, write, and shell command. Owner-facing prose may use the short names
-(`punch-list.md`, `parking-lot.md`, `STOP`). Never re-resolve, never search or guess. Helpers that
-take `--project` or `-Project` still receive `"$NIGHTSHIFT_WORKSPACE"`. The shell's working
-directory persists between Bash calls, so never use a bare path. Resolve the installed plugin root
-as Doctor does: `${CLAUDE_PLUGIN_ROOT}` on Claude Code; `$PLUGIN_ROOT` on Codex when available,
-otherwise derive it from this skill's absolute path.
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
 
-On native Windows, use the PowerShell tool and native paths throughout. Resolve the same values
-from `$env:CLAUDE_PROJECT_DIR`, `$env:CODEX_PROJECT_DIR`, and `$env:PLUGIN_ROOT`, with
-`[Environment]::CurrentDirectory` as the Codex cwd fallback. Do not route Status through WSL or Git
-Bash.
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route Status through WSL
+or Git Bash. `ns help` lists the verbs this host has.
 
 ## 1. Run the two read-only helpers
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/status.sh" --project "$NIGHTSHIFT_WORKSPACE"
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/doctor.sh" --project "$NIGHTSHIFT_WORKSPACE"
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" status
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" doctor
 ```
 
-Native Windows:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\status.ps1" -Project "$NIGHTSHIFT_WORKSPACE"
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\doctor.ps1" -Project "$NIGHTSHIFT_WORKSPACE"
-```
-
-`status.sh` gives the glanceable summary: workspace, armed or not, item counts, evidence counts,
+`ns status` gives the glanceable summary: workspace, armed or not, item counts, evidence counts,
 resolved policy, preflight gaps, and the separate `liveness`, `last activity`, `last checkpoint`
-and `stall attempts` lines. `doctor.sh` supplies what Status cannot see safely on its own —
+and `stall attempts` lines. `ns doctor` supplies what Status cannot see safely on its own —
 `recorded pid` and `watchman pid` liveness, the process-lease lines, work mode and work target, the
 deadline reading, and every Warning about a path that is not a usable file. Do not
 reimplement liveness, do not read the runtime-owned lease file directly, and never re-derive
@@ -129,6 +116,5 @@ Do not print a project tool's raw output, credentials, raw evidence, or rule val
 Keep it a compact glanceable summary. Do not modify any file, do not begin work.
 
 The project inventory is a separate optional report the owner can ask for by name:
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/inventory.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-(native Windows: `inventory.ps1 -Project "$NIGHTSHIFT_WORKSPACE"`). Status never prints it
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" inventory`. Status never prints it
 unasked — a table of packages is not a glance.

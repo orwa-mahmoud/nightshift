@@ -28,7 +28,7 @@ Supported on any repository or artifact folder that can hold the deliverable. Fo
     Project-native doc checks (the item gate) run before each commit or artifact receipt.
     A command that only appeared in an `unavailable` source is a gap, not a documented feature.
   - Repository mode: one conventional commit in the work target. Artifact mode: write the receipt
-    through `runtime/write-receipt.sh` into
+    through `ns write-receipt` into
     `$NS/receipts/` for the deliverable and manifest. Never `git init` or invent repository tooling.
     Both leave the cited-research report beside the doc.
   - Review first writes the deliverable only. Direct mode may edit authorized local doc files
@@ -38,8 +38,7 @@ Supported on any repository or artifact folder that can hold the deliverable. Fo
   - Dedupe against snag-log.md (ALL seen — fixed and rejected).
   - Ends when every supplied source is `ok` or `unavailable` with a reason, check-report passes,
     and named links/examples in the deliverable resolve or are marked unavailable.
-  - Verify: `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/check-report.sh" --project "$NIGHTSHIFT_WORKSPACE"
-    --report <doc.md> --manifest <sources.tsv> --output <doc.md>` (native Windows:
-    `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1"`); the item gate is green at
+  - Verify: `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report
+    --report <doc.md> --manifest <sources.tsv> --output <doc.md>`; the item gate is green at
     every commit or artifact receipt.
 ```

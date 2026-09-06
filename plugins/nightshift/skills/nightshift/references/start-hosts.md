@@ -10,10 +10,6 @@ Use the PowerShell tool and native paths throughout. The host variables are
 `[Environment]::CurrentDirectory` as the Codex launch-cwd fallback. Import the bundled module
 before calling any helper function:
 
-```powershell
-Import-Module "$NIGHTSHIFT_PLUGIN_ROOT\lib\Nightshift.psm1" -Force
-```
-
 Do not route a native run through WSL or Git Bash. WSL is a separate Linux runtime and follows the
 POSIX commands.
 
@@ -38,8 +34,7 @@ able to advance the old lease while markers are being removed. A pid it cannot v
 running and the preflight refuses.
 
 **Cross-host handoff.** The `fence` verdict is the on-disk fence:
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/continuity-handoff.sh" fence-check --project "$NIGHTSHIFT_WORKSPACE"`
-(native Windows: `Test-NSHandoffFence -Project "$NIGHTSHIFT_WORKSPACE"`) reads the same lease,
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" continuity-handoff fence-check --project "$NIGHTSHIFT_WORKSPACE"` reads the same lease,
 session and pid. Model-authored flags and omitted fields cannot grant takeover, and two active
 workers are never permitted. Summarize campaign history from `$NS/shift-log.md` instead of calling
 the packaging subcommands.
@@ -94,12 +89,10 @@ CLI worker in `.shift-worker` and never passes the IDE id to `agent --resume`.
 
 `repository` is the historical default. `artifact` means the work target is a persistent folder,
 not a Git repository: inspect and edit that folder, do not require Git, and complete each item with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/write-receipt.sh" --project "$NIGHTSHIFT_WORKSPACE"` (native
-Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`)
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt` (native)
 instead of a work-target commit. Completion there is `$NS/receipts/`, not a git log. Cited reports
 follow `cited-research.md` beside this file and
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/check-report.sh"` (native Windows:
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1"`).
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report`.
 
 When the record is missing, the resolver uses the workspace itself if it is a repository, or its
 single immediate child repository. It skips a symlink or reparse child; that is not a nested
@@ -110,16 +103,14 @@ Setup records one.
 
 If the start request itself explicitly names a different existing Nightshift workspace, that
 owner-provided path is authorization to link it. Print both absolute paths, run
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/link-workspace.sh" --host-root "$TASK_ROOT" --workspace "$PROPOSED_WORKSPACE"`
-(native Windows:
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\link-workspace.ps1" -HostRoot "$TASK_ROOT" -Workspace "$PROPOSED_WORKSPACE"`),
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" link-workspace --host-root "$TASK_ROOT" --workspace "$PROPOSED_WORKSPACE"`,
 then continue from the resolved workspace. Without an explicit path or an existing valid link,
 refuse to arm outside the task root and send the owner to Setup; never discover a target.
 
 ## State version
 
 Migration is a Setup or Doctor repair only —
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/migrate-state.sh" --project "$NIGHTSHIFT_WORKSPACE"` on POSIX,
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\migrate-state.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state` on POSIX,
+
 on native Windows. Start never writes the marker, and a newer marker is never rewritten or
 downgraded.

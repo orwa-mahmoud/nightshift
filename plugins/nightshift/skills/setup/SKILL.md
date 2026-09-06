@@ -11,36 +11,23 @@ print a summary.
 decisions plus the default chosen so work continues; `work-orders.md` → timed catalog work composed
 only through Hunt. Ordinary plans belong in the drafting table, never in Hunt or the parking lot.
 
-Resolve the host-opened project folder to an absolute `$TASK_ROOT`: use `${CLAUDE_PROJECT_DIR}` on
-Claude Code; on Codex honor Nightshift's `${CODEX_PROJECT_DIR}` recovery override when present,
-otherwise capture `pwd -P` before any other shell call. If `$TASK_ROOT/.nightshift-link` exists,
-validate the one absolute workspace path inside it and call that `$NIGHTSHIFT_WORKSPACE`; otherwise
-set `NIGHTSHIFT_WORKSPACE="$TASK_ROOT"`.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/setup/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Bind the Nightshift directory once: `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"`. On native Windows,
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`. After this bind, Nightshift files are
-`$NS/<name>` for every read, write, and shell command. Catalog and owner-facing prose may use the
-short names (`punch-list.md`, `parking-lot.md`, `STOP`). Never re-resolve. Helpers that take
-`--project` or `-Project` still receive `"$NIGHTSHIFT_WORKSPACE"`.
-Never search
-surrounding folders or guess. On Claude Code, `.claude/` settings stay at `$TASK_ROOT`. The shell's
-working directory persists between Bash calls, so never rely on a bare relative path.
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
 
-Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT`: use
-`${CLAUDE_PLUGIN_ROOT}` on Claude Code; on Codex use `$PLUGIN_ROOT` when available, otherwise derive
-it from the absolute path attached to this skill (`skills/setup/SKILL.md`). Substitute that
-absolute path in every command below; never search for the plugin.
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route setup through WSL
+or Git Bash. `ns help` lists the verbs this host has.
 
-On native Windows, use the PowerShell tool and native paths throughout: the host variables are
-`$env:CLAUDE_PROJECT_DIR`, `$env:CODEX_PROJECT_DIR`, and `$env:PLUGIN_ROOT`, with
-`[Environment]::CurrentDirectory` as the Codex cwd fallback. Do not route setup through WSL or Git
-Bash. Once the workspace and work target are resolved, the bundled mechanical scaffold is:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\setup.ps1" `
- -Project "$NIGHTSHIFT_WORKSPACE" -WorkTarget "$WORK_TARGET" -Mode "$WORK_MODE"
-```
-
+Once the workspace and work target are resolved, the bundled mechanical scaffold is
+`ns setup --work-target "$WORK_TARGET" --mode "$WORK_MODE"`, which exists on native Windows only;
+on every other host this skill writes the same templates itself, as below.
 It copies only absent files, writes state version 1 for a new site, persists the work target and
 work mode (`-Mode repository` or `-Mode artifact`), and keeps `$NS/` private. It refuses a notes
 folder under default repository mode: `pass -Mode artifact for a notes folder that is not a Git repository`.
@@ -50,10 +37,7 @@ choice, or a tooling policy.
 
 If the user explicitly identifies a different existing workspace containing `.nightshift/`, show
 both absolute paths and ask for confirmation. On yes, run
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/link-workspace.sh" --host-root "$TASK_ROOT" --workspace "$PROPOSED_WORKSPACE"`.
-On native Windows, run
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\link-workspace.ps1" -HostRoot "$TASK_ROOT" -Workspace "$PROPOSED_WORKSPACE"`
-instead.
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" link-workspace --host-root "$TASK_ROOT" --workspace "$PROPOSED_WORKSPACE"`.
 The pointer is local-only and state remains in the authoritative workspace; never copy it.
 
 ## 0. Reject disposable ChatGPT scratch workspaces
@@ -84,8 +68,7 @@ Detect the work mode, explain it, and ask before persisting it. Use
 - `artifact` — there is no Git repository here. The persistent folder itself is the work target
   (research, docs, audits, planning). Say so plainly: gates, commits, and stack detection that
   require Git do not apply; complete each item with
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/write-receipt.sh"` (native Windows:
-  `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1"`).
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt`.
   Completion in that folder is `$NS/receipts/`, not a git log.
   When `$NS/receipts` exists but is not a usable directory, say so and do not treat artifact setup as complete.
 - scratch (`ns_propose_work_mode` status 2, or `Get-NSProposedWorkMode` throwing) — stop; create
@@ -124,12 +107,10 @@ integer `1`. If this run created `$NS/` (the directory did not exist when setup
 started), write exactly `1` followed by a newline to
 `$NS/state-version` after the templates. If `$NS/`
 already existed and the marker is missing, that workspace is legacy version `0` — offer
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/migrate-state.sh" --project "$NIGHTSHIFT_WORKSPACE"`
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state`
 and run it only after an explicit yes; the script writes only the marker and refuses while
-armed. On native Windows, offer
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\migrate-state.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`
-for that same confirmed repair (or the scaffold's `-MigrateLegacy` switch, which is the same
-idempotent marker write). A marker newer than `1`, or a malformed file, fails closed: print the diagnostic, do
+armed. On native Windows the scaffold's `--migrate-legacy` switch is the same idempotent marker
+write. A marker newer than `1`, or a malformed file, fails closed: print the diagnostic, do
 not rewrite or downgrade it, and do not continue scaffolding as if the site were current.
 
 ## 2. Private by default
@@ -154,8 +135,8 @@ not rewrite or downgrade it, and do not continue scaffolding as if the site were
  Creating the repo does **not** turn on headless auto-commit — that is `receiptsAutoCommit`
  in `rules.json`, shipped `false`; the owner commits the receipts tree when they want.
  **Never add a remote to it, never push it.**
- On native Windows, after a clear yes, rerun the bundled scaffold with the same `-Project` and
- `-WorkTarget` plus `-Receipts`; the idempotent pass creates only this local receipts repo.
+ On native Windows, after a clear yes, rerun the bundled scaffold with the same
+ `--work-target` plus `--receipts`; the idempotent pass creates only this local receipts repo.
 - **Cursor CLI file hooks — ask, default no.** The installed Cursor plugin already holds the
  IDE Agent tab. The Cursor CLI (`agent`) currently ignores marketplace and local plugin hooks
  and only runs project file hooks — a Cursor limitation, not a Nightshift skip. Ask —
@@ -195,8 +176,7 @@ stack change. The contract's immutability binds the agent, not the owner.
 profile (`fast`, `balanced`, `strict`, or `custom`), typical hours, and tooling policy (existing
 tools only, review missing tools first, or automatically add standard development tools). Persist
 the answer with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" defaults-set --verificationProfile <name> --hours <n|null> --toolingPolicy <name> --execution review-first|run-direct`
-(native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\shift-policy.ps1" -Project "$NIGHTSHIFT_WORKSPACE" defaults-set -VerificationProfile <name> -Hours <n|null> -ToolingPolicy <name> -Execution review-first|run-direct`).
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy defaults-set --verificationProfile <name> --hours <n|null> --toolingPolicy <name> --execution review-first|run-direct`.
 The helper writes the `shift` block of `$NS/rules.json` — the one file the owner edits — and reports what it stored; never put the answer in
 the punch list. It only prefills the one question Hunt and Quality ask before composing — it
 decides nothing on its own, and either skill may change it for a single shift.
@@ -266,12 +246,9 @@ synced from this file, offer to remove them: the file is the one copy.
 **Local rule profiles — offer, never impose.** Setup may list the shipped examples in
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/profiles/` (every version-1 or version-2 JSON
 file there) and preview one with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/apply-profile.sh" --project "$NIGHTSHIFT_WORKSPACE" --profile <name> --mode fill|replace`.
-On native Windows, preview with
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\apply-profile.ps1" -Project "$NIGHTSHIFT_WORKSPACE" -Profile <name> -Mode fill|replace`.
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" apply-profile --profile <name> --mode fill|replace`.
 The helper prints the preview and the complete next file; read it out rather than describing it.
-Applying requires an explicit yes and `--apply` / `-Apply`.
-Refuse `--apply` / `-Apply` while armed. Profiles are a one-time local copy — no network, no
+Applying requires an explicit yes and `--apply`. Refuse `--apply` while armed. Profiles are a one-time local copy — no network, no
 subscription. After applying a profile,
 write a preset receipt from
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md` so branch mode,

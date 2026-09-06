@@ -6,20 +6,21 @@ description: Compose a guided or automatic shift from the ready catalog, then re
 Compose a shift for the host-opened project: settle the work, the ending, and the hours, then
 either show it for approval or cut it and start.
 
-Bind once, then never search, guess, or re-resolve. `$TASK_ROOT` is the host-opened project
-folder: `${CLAUDE_PROJECT_DIR}` on Claude Code; on Codex the `CODEX_PROJECT_DIR` recovery override
-when Nightshift set it, otherwise `pwd -P` captured before any other shell call.
-`$NIGHTSHIFT_WORKSPACE` is the validated absolute target of `$TASK_ROOT/.nightshift-link` when that
-link exists, otherwise `$TASK_ROOT`. Then `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"` (native Windows:
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`), and every Nightshift file is `$NS/<name>`
-for the rest of the run; helpers taking `--project` or `-Project` receive
-`"$NIGHTSHIFT_WORKSPACE"`. The shell's working directory persists between calls, so a bare path is
-never safe.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/hunt/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Resolve `$NIGHTSHIFT_PLUGIN_ROOT` from `${CLAUDE_PLUGIN_ROOT}` on Claude Code, from `$PLUGIN_ROOT`
-on Codex, or from the absolute path this skill was attached from (`skills/hunt/SKILL.md`); never
-search for the plugin. Read
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/execution-modes.md` before composing: it
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
+
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route Hunt through WSL
+or Git Bash. `ns help` lists the verbs this host has.
+
+Read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/execution-modes.md` before composing: it
 carries the state map, who selects work, when the clock starts, direct-mode authority, the tooling
 policy, and how several entries become one shift. If `$NS/` does not exist yet, tell the owner to
 run Setup, then return.
@@ -45,11 +46,10 @@ Entries live one per file in `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/referenc
 **Start with what the catalog holds, not with every contract in it:**
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/catalog-index.sh"
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" catalog-index
 ```
 
-Native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\catalog-index.ps1"`. One line per
-entry — slug, ending, title, purpose — read straight from the files.
+One line per entry — slug, ending, title, purpose — read straight from the files.
 An entry added today is discovered today, and one that was deleted stops being offered. There is no second list to keep in
 step, and the helper ranks nothing: which entries suit the objective is your judgement.
 
@@ -87,8 +87,7 @@ The GitHub issue-hunt entry is offered with the rest of the catalog. It consumes
 drafting-table entries the Import issues skill created (canonical Source URL and
 `Status: proposed`); list them by reading `$NS/drafting-table.md`. Promote a selection by cutting
 the item — never a copy — with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh" --project "$NIGHTSHIFT_WORKSPACE" --promote …`
-(native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\import-issues.ps1" -Project "$NIGHTSHIFT_WORKSPACE" -Promote …`),
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --promote …`,
 or do the cut here when that helper cannot parse the file.
 It does not replace defect hunt or product evolution, and never searches or writes back to GitHub.
 Never select it when work mode is artifact.
@@ -100,7 +99,7 @@ Never select TODO and FIXME debt when work mode is artifact.
 Never select coverage hunt when work mode is artifact.
 Never select tooling quality-debt entries when work mode is artifact.
 
-`runtime/normalize-output.sh` and `runtime/inventory.sh` are read-only reports a shift may
+`ns normalize-output` and `ns inventory` are read-only reports a shift may
 lean on when the host carries them — if present, optional, never required. The first turns a
 supported tool format into one compact summary for the receipt and the ledger; the second lists
 each workspace package's manager, lockfile, declared scripts, configs, and which named tools are
@@ -129,15 +128,12 @@ elevation — an allowance is still the owner's to give. Otherwise ask **before 
 before any compose, cut, or arm.
 
 Read `$NS/work-mode` and the remembered project default with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" defaults-get`
-(native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\shift-policy.ps1" -Project "$NIGHTSHIFT_WORKSPACE" defaults-get`),
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy defaults-get`,
 and run the permission preflight
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/preflight-needs.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-(native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\preflight-needs.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`)
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" preflight-needs`
 against the entries this compose would select. Ask the single prefilled question in
 `execution-modes.md`, folding every capability gap into it, then write the resolved policy with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" set --from-json -`
-(native Windows: `-Command set -FromJson -`). Persist a change as the new project default only when
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy set --from-json -`. Persist a change as the new project default only when
 the owner says to remember it (`defaults-set`). In review-first mode that policy is the only file
 written before approval; in run-direct mode, arm as soon as it lands.
 
@@ -146,8 +142,7 @@ notes folder has no repository toolchain to add. Only existing-tools is valid th
 remembered default holds a repository-tool policy, keep existing-tools.
 
 Under auto-add, capture the write surface before writing with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/provision.sh" --project "$NIGHTSHIFT_WORKSPACE" baseline --surface <rel> [<rel>...]` (one flag takes several paths, or repeat `--surface` per path)
-(native Windows: `provision.ps1 -Command baseline -Surface …`), then install, smoke, `diff`, and
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" provision baseline --surface <rel> [<rel>...]` (one flag takes several paths, or repeat `--surface` per path), then install, smoke, `diff`, and
 `rollback` when smoke or the tooling commit fails.
 
 Then inspect, compose, cut, or arm. Under existing-tools, skip unavailable contracts even when
@@ -231,15 +226,10 @@ do not leave an empty order heading behind), put only the item under `## Items` 
 - log the start and run the binding probe (`: nightshift-binding-probe` on POSIX,
   `$null = 'nightshift-binding-probe'` on native Windows);
 - classify Codex `$NS/.shift-session` line 1 with `ns_codex_identity_kind` from
-  `$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh` (native Windows: `Get-NSCodexIdentityKind` after importing
-  `Nightshift.psm1`) before arming the watchman or beginning item work;
-- **arm the watchman** as the Start skill requires: Claude Code uses
-  `$NIGHTSHIFT_PLUGIN_ROOT/runtime/claude/watchman.sh`, Codex
-  `$NIGHTSHIFT_PLUGIN_ROOT/runtime/codex/watchman.sh`, Cursor
-  `$NIGHTSHIFT_PLUGIN_ROOT/runtime/cursor/watchman.sh`, and native Windows
-  `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\start-watchman.ps1"`
-  `-Project "$NIGHTSHIFT_WORKSPACE" -HostName claude` (Codex: `-HostName codex`; Cursor:
-  `-HostName cursor`).
+  `$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh`, or `Get-NSCodexIdentityKind` after importing
+  `Nightshift.psm1` on native Windows, before arming the watchman or beginning item work;
+- **arm the watchman** as the Start skill requires, with `ns watchman`, which resolves to this
+  host's own.
 
 An empty `## Items` section still keeps the Shift contract and Gates; they bind the cut item.
 Record leftover campaign rules in `$NS/parking-lot.md` when they are not this order's.

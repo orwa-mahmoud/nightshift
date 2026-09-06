@@ -99,4 +99,4 @@ than "improve Python code", because a narrow entry can state a specific definiti
 Shifts that read owner-approved URLs or local files and write a cited report inherit
 [`cited-research.md`](cited-research.md). That contract is not itself a catalog entry: Hunt still
 lists only `shifts/`. Put SEO, documentation-from-sources, and synthesis work in `shifts/` and
-point their Verify line at `runtime/check-report.sh`.
+point their Verify line at `ns check-report`.

@@ -12,33 +12,25 @@ decisions plus the default chosen so work continues; `work-orders.md` → timed 
 only through Hunt. Imported issues land on the drafting table as `Status: proposed`. They are not
 owner authorization and they are not punch-list work until the owner promotes them.
 
-Bind once, then never search, guess, or re-resolve. `$TASK_ROOT` is the host-opened project
-folder: `${CLAUDE_PROJECT_DIR}` on Claude Code; on Codex the `CODEX_PROJECT_DIR` recovery override
-when Nightshift set it, otherwise `pwd -P` captured before any other shell call.
-`$NIGHTSHIFT_WORKSPACE` is the validated absolute target of `$TASK_ROOT/.nightshift-link` when that
-link exists, otherwise `$TASK_ROOT`. Then `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"` (native Windows:
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`), and every Nightshift file is `$NS/<name>`
-for the rest of the run; helpers taking `--project` or `-Project` receive
-`"$NIGHTSHIFT_WORKSPACE"`. The shell's working directory persists between calls, so a bare path is
-never safe.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/import-issues/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT`: use
-`${CLAUDE_PLUGIN_ROOT}` on Claude Code; on Codex use `$PLUGIN_ROOT` when available, otherwise derive
-it from the absolute path attached to this skill (`skills/import-issues/SKILL.md`). Substitute that
-absolute path in every command below; never search for the plugin.
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
+
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route the import through WSL
+or Git Bash. `ns help` lists the verbs this host has.
 
 Claude Code and Codex run the same platform helper. Do not reimplement fetch or staging in prose.
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh" --project "$NIGHTSHIFT_WORKSPACE" --fetch …
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh" --project "$NIGHTSHIFT_WORKSPACE" --stage …
-```
-
-On native Windows, use the PowerShell tool and native paths. Do not route through WSL or Git Bash:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\import-issues.ps1" -Project "$NIGHTSHIFT_WORKSPACE" -Fetch …
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\import-issues.ps1" -Project "$NIGHTSHIFT_WORKSPACE" -Stage …
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --fetch …
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --stage …
 ```
 
 ## 1. Require an explicit selection

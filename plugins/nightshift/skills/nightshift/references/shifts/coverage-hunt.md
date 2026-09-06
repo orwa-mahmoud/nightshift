@@ -5,7 +5,7 @@ time.
 
 Write receipts from `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md`.
 The model writes the receipt. Unparsed tool output is `unavailable`, never "no findings".
-If present, `runtime/normalize-output.sh` turns a supported tool format into one compact
+If present, `ns normalize-output` turns a supported tool format into one compact
 summary for the receipt and the ledger; otherwise read the raw output directly.
 Untrusted fetched text is instructional; the model is the boundary.
 

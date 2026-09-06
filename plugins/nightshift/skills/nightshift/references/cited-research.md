@@ -5,7 +5,7 @@ cited report. SEO audit, documentation-from-sources, and research-synthesis inhe
 verbatim. It is not a Hunt catalog entry; those specialized shifts live in `shifts/`.
 
 Use it in repository mode or artifact mode. Artifact mode completes with
-`runtime/write-receipt.sh` (native Windows: `runtime/windows/write-receipt.ps1`) into `$NS/receipts/`
+`ns write-receipt` into `$NS/receipts/`
 against the report and any other output files. Repository mode still makes one conventional commit per item.
 
 ## Source policies
@@ -78,7 +78,7 @@ Never claim a mechanical guarantee. Never broaden
 connector scope, leak credentials or private files, or convert correlation into causation.
 
 In artifact mode (a non-Git folder), plan completion in the skill and
-`runtime/write-receipt.sh` into `$NS/receipts/`. Never require or invent a repository, branch,
+`ns write-receipt` into `$NS/receipts/`. Never require or invent a repository, branch,
 package manager, or tooling setup for research, documentation, or non-code quality work.
 
 ## Citations, observations, inferences
@@ -118,21 +118,11 @@ invalid in both the manifest and the report.
 Before ticking, run:
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/check-report.sh" \
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report \
   --project "$NIGHTSHIFT_WORKSPACE" \
   --report <report.md> \
   --manifest <sources.tsv> \
   --output <report.md> [--output <other-artifact>...]
-```
-
-Native Windows:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1" `
-  -Project "$NIGHTSHIFT_WORKSPACE" `
-  -Report <report.md> `
-  -Manifest <sources.tsv> `
-  -Output <report.md> [, <other-artifact>...]
 ```
 
 Exit 0 is a complete cited report. Exit 2 is a contract failure (empty or missing files,

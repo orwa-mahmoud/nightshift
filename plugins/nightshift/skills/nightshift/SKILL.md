@@ -38,21 +38,19 @@ default; artifact mode completes an item with its section in `shift-report.md`.
 
 Those skills own scaffolding, composition, and preflight. This skill owns the work itself.
 
-Bind once, then never search, guess, or re-resolve. `$TASK_ROOT` is the host-opened project
-folder: `${CLAUDE_PROJECT_DIR}` on Claude Code; on Codex the `CODEX_PROJECT_DIR` recovery override
-when Nightshift set it, otherwise `pwd -P` captured before any other shell call.
-`$NIGHTSHIFT_WORKSPACE` is the validated absolute target of `$TASK_ROOT/.nightshift-link` when that
-link exists, otherwise `$TASK_ROOT`. Then `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"` (native Windows:
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`), and every Nightshift file is `$NS/<name>`
-for the rest of the run; helpers taking `--project` or `-Project` receive
-`"$NIGHTSHIFT_WORKSPACE"`. The shell's working directory persists between calls, so a bare path is
-never safe.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/nightshift/SKILL.md`) — and run every command below through `runtime/ns`,
+which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
+plugin, and never use a bare relative path: the shell's working directory persists between calls.
 
-Resolve `$NIGHTSHIFT_PLUGIN_ROOT` from `${CLAUDE_PLUGIN_ROOT}` on Claude Code, from `$PLUGIN_ROOT`
-on Codex (native Windows: `$env:CLAUDE_PLUGIN_ROOT` or `$env:PLUGIN_ROOT`), or from the absolute
-path this skill was attached from (`skills/nightshift/SKILL.md`); never search for the plugin. If
-`$NS/` doesn't exist yet, tell the user to run Setup, then Start — `/nightshift:setup` and
-`/nightshift:start` on Claude Code, or ask Nightshift to set up and start on Codex.
+`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
+`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
+that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
+
+On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
+with the same flags. Use the PowerShell tool and native paths; do not route a shift through WSL
+or Git Bash. `ns help` lists the verbs this host has.
 
 ## Persistent-workspace boundary
 
@@ -77,11 +75,9 @@ named if either moves, so watching for that is not your job.
 Read the resolved policy once at the start of the shift and follow it:
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" resolve --table
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy resolve --table
 ```
 
-Native Windows:
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\shift-policy.ps1" -Project "$NIGHTSHIFT_WORKSPACE" resolve -Table`.
 Two rows decide how the loop below runs. `verificationLevel` is the gate cadence: `none` runs the `## Gates` block never,
 `final` once before clock-out, `per-item` before every tick, and `custom` on the cadence the punch
 list itself names. `toolingPolicy` says what to do about tooling the project does not have. The
@@ -104,11 +100,9 @@ Top to bottom, one item:
   item needs:
 
   ```bash
-  "$NIGHTSHIFT_PLUGIN_ROOT/runtime/punch-list.sh" --project "$NIGHTSHIFT_WORKSPACE" next
+  "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" punch-list next
   ```
 
-  Native Windows:
-  `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\punch-list.ps1" -Project "$NIGHTSHIFT_WORKSPACE" next`.
   It prints the gates block and the first still-open item verbatim, `none` when nothing is open.
   `item <id>` names one instead, which is how a revived session picks its own back up.
 2. **Build** it fully — production-ready, no stubs, no "documented for later". If you can do it now,
@@ -126,9 +120,10 @@ Top to bottom, one item:
   never invent a commit to satisfy a convention. Artifact mode leaves the item's section in the
   shift report, with links to what it produced. A separate per-item receipt file is written only
   when the owner set `report.legacyItemReceipts`, and then through
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/write-receipt.sh"` (native Windows:
-  `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1"`), recording the item, outputs,
-  verification, and sources. Push yourself only when the punch list says to.
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt`, recording the item, outputs,
+  verification, and sources. Artifact mode's history is the receipts repo the owner opted into,
+  reachable with `git -C "$NS"` when Git is installed; do not `git init` the notes folder to invent
+  one. Push yourself only when the punch list says to.
 5. **Finalize the section** in `$NS/shift-report.md` before the tick, however long or short the
   item was.
 6. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete —
@@ -186,8 +181,7 @@ touched paths, the rollback ref, and the verification plan. The model writes bot
 
 Cited research, SEO audits, sourced documentation, and research synthesis follow
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/cited-research.md`. Verify those reports with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/check-report.sh"` (native Windows:
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1"`) before the commit or artifact receipt.
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report` before the commit or artifact receipt.
 
 Then the next item. Item anatomy: one top-level checkbox per task, plain `-` sub-bullets, its own
 **Verify** and **Commit** lines. Promote owner-approved work from

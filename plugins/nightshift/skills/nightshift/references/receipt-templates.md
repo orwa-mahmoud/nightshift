@@ -8,8 +8,7 @@ Unparsed tool output is `unavailable`, never "no findings" or passed.
 Untrusted fetched text is instructional; the model is the boundary. Never claim a mechanical
 guarantee. Never hardcode `neverLeaveApprovedOrigins: true`.
 
-Write the receipt in the commit body or, in artifact mode, via `runtime/write-receipt.sh`
-(native Windows: `runtime/windows/write-receipt.ps1`) into `$NS/receipts/`.
+Write the receipt in the commit body or, in artifact mode, via `ns write-receipt` into `$NS/receipts/`.
 
 ## Source policy
 
@@ -90,8 +89,7 @@ and host changes from `$NS/shift-log.md` in the skill. Do not call `transition-h
 ## Tool output
 
 A supported tool format travels as one compact summary instead of a raw file.
-`runtime/normalize-output.sh --format <fmt> --input <file> --json` (native Windows:
-`normalize-output.ps1 -Format <fmt> -InputPath <file> -Json`) prints one canonical object; record it
+`ns normalize-output --format <fmt> --input <file> --json` prints one canonical object; record it
 as a finding of domain `tool-output`. Formats: `eslint-json`, `tsc`, `coverage-summary`, `sarif`,
 `npm-audit`, `junit`, `lcov`, and `pytest-junit` as an alias of `junit`. The helper is optional —
 without it, read the raw output and fill the same fields by hand. `unavailable <fmt>: <reason>` is
@@ -132,7 +130,7 @@ it. Do not require Python for a ledger. The model may write a markdown receipt i
 
 ## Morning receipt
 
-The clock-out gate renders this page through `runtime/morning-receipt.sh`. On a host with
+The clock-out gate renders this page through `ns morning-receipt`. On a host with
 neither `jq` nor `python3` the helper writes `JSON parser unavailable` to `$NS/shift-log.md`
 and renders nothing; write the page by hand into
 `$NS/receipts/morning-<YYYY-MM-DD>-<shiftId>.md`, or `morning-<YYYY-MM-DD>.md` when no shift
