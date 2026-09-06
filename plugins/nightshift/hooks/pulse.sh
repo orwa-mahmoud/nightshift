@@ -64,6 +64,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   fi
   ns_pulse_emit "$NS" "$SID"
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"
+  ns_pulse_context claude "$(ns_pulse_report_due "$NS" "$PROJECT_DIR")"
   exit 0
 fi
 
@@ -121,4 +122,63 @@ ns_usage_offset() {
     esac
   done <"$file"
   printf '0'
+}
+
+# ns_pulse_report_due <ns> <project> — the one line that tells the model an update is due, or
+# nothing.
+#
+# The notice is written to a marker before it is emitted, and cleared when the item's section
+# changes. A revived session, or a host that dropped the hook's output, still finds the notice at
+# the next pulse; nothing repeats until the window resets, so a long pause is one overdue notice
+# rather than one per minute that passed.
+ns_pulse_report_due() {
+  local ns="$1" project="$2" label
+  [ -f "$ns/.shift-armed" ] || return 1
+  [ "$(ns_report "$project" enabled)" != false ] || return 1
+  label="$(ns_pulse_active_item "$project")" || return 1
+  [ -n "$label" ] || return 1
+  if [ -f "$ns/.report-due" ] && [ ! -L "$ns/.report-due" ]; then
+    printf '%s' "$(cat "$ns/.report-due" 2>/dev/null)"
+    return 0
+  fi
+  ns_usage_progress_due "$project" "$label" || return 1
+  printf 'report: progress update due for %s' "$label" >"$ns/.report-due" 2>/dev/null || return 1
+  printf 'report: progress update due for %s' "$label"
+}
+
+# ns_pulse_active_item <project> — the first still-open item, which is the one being worked.
+ns_pulse_active_item() {
+  local punch="$1/.nightshift/punch-list.md"
+  [ -f "$punch" ] || return 1
+  ns_items_section "$punch" 2>/dev/null | awk '
+    /^- \[ \]/ {
+      line = $0
+      sub(/^- \[ \][[:space:]]*\*\*/, "", line)
+      sub(/[[:space:]]*[—-].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      print line
+      exit
+    }
+  '
+}
+
+# ns_pulse_context <host> <line> — the notice in the field each host documents for model-visible
+# context. Claude Code and Codex read hookSpecificOutput.additionalContext; Cursor reads
+# additional_context. Silent when there is nothing to say, so an ordinary pulse stays silent.
+ns_pulse_context() {
+  local host="$1" line="$2" escaped
+  [ -n "$line" ] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    case "$host" in
+      cursor) jq -nc --arg c "$line" '{additional_context:$c}' ;;
+      *) jq -nc --arg c "$line" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$c}}' ;;
+    esac
+    return 0
+  fi
+  escaped="$(printf '%s' "$line" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  case "$host" in
+    cursor) printf '{"additional_context":"%s"}\n' "$escaped" ;;
+    *) printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"%s"}}\n' "$escaped" ;;
+  esac
 }

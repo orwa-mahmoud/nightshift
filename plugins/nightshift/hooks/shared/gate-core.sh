@@ -133,7 +133,7 @@ ns_gate_filing_message() {
 #
 # ns_gate_usage_tick <nightshift-dir> <project-dir> <item-label>
 ns_gate_usage_tick() {
-  local ns="$1" project="$2" label="$3" span fields seconds host line report
+  local ns="$1" project="$2" label="$3" span fields seconds host line report duration paused
   [ -d "$ns" ] || return 0
   [ "$(ns_report "$project" usage)" != off ] || return 0
   ns_usage_mark "$ns" "$label" || return 0
@@ -144,7 +144,23 @@ ns_gate_usage_tick() {
   report="$(ns_report_path "$project")"
   [ -n "$fields" ] || return 0
   line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
-  ns_gate_usage_append "$report" "$label" "$line" "$(ns_usage_duration "$seconds")"
+  # Wall clock, and beside it any gap the runtime knows was not work — a revival after a session
+  # died, a shift held at STOP. Listed, never subtracted: a duration that quietly excluded time
+  # would be a figure nobody could check.
+  duration="$(ns_usage_duration "$seconds")"
+  paused="$(ns_usage_paused_since "$ns" "$(_ns_usage_item_start "$ns")")" && {
+    duration="$duration (paused $(ns_usage_duration "$(printf '%s' "$paused" | cut -f1)"), $(printf '%s' "$paused" | cut -f2))"
+  }
+  ns_gate_usage_append "$report" "$label" "$line" "$duration"
+}
+
+# _ns_usage_item_start <nightshift-dir> — when the item that just closed began: the mark before
+# the one just written.
+_ns_usage_item_start() {
+  local file
+  file="$(ns_usage_dir "$1")/marks.tsv"
+  [ -f "$file" ] || { printf '0'; return 0; }
+  tail -n2 "$file" | head -n1 | cut -f1
 }
 
 # ns_gate_usage_append <report> <item-label> <usage-line> <duration> — put the two runtime-written

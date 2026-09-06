@@ -369,6 +369,60 @@ ns_usage_last_item() {
     "$(printf '%s' "$last" | cut -f2)"
 }
 
+# ns_usage_pause <nightshift-dir> <reason> — a gap the runtime knows was not work.
+#
+# A session that ended and was revived, or a shift held at STOP, is wall-clock time nobody spent.
+# It is recorded so the duration line can list it, and never subtracted silently: a figure that
+# quietly excludes time is a figure nobody can check.
+ns_usage_pause() {
+  local dir file
+  dir="$(ns_usage_dir "$1")"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  file="$dir/pauses.tsv"
+  printf '%s\t%s\n' "$(date +%s)" "${2:-paused}" >>"$file" 2>/dev/null || return 1
+}
+
+# ns_usage_paused_since <nightshift-dir> <epoch> — how long was recorded as not-work since that
+# moment, and why. `<seconds>\t<reason>`, empty when the runtime knows of no gap.
+#
+# A pause is closed by the next thing that happens: the gap runs from the pause to the reading
+# that follows it. Where nothing followed, the gap is open and is reported as such rather than
+# guessed at.
+ns_usage_paused_since() {
+  local ns="$1" from="$2" file line at reason total=0 last_reason="" next
+  file="$(ns_usage_dir "$ns")/pauses.tsv"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  while IFS= read -r line; do
+    at="$(printf '%s' "$line" | cut -f1)"
+    reason="$(printf '%s' "$line" | cut -f2)"
+    case "$at" in '' | *[!0-9]*) continue ;; esac
+    [ "$at" -ge "$from" ] || continue
+    next="$(_ns_usage_resumed_at "$ns" "$at")" || next=""
+    [ -n "$next" ] || continue
+    total=$((total + next - at))
+    last_reason="$reason"
+  done <"$file"
+  [ "$total" -gt 0 ] || return 1
+  printf '%s\t%s' "$total" "$last_reason"
+}
+
+# _ns_usage_resumed_at <nightshift-dir> <epoch> — when work was next seen after a pause, from the
+# marks the runtime was already keeping.
+_ns_usage_resumed_at() {
+  local file line at
+  file="$(_ns_usage_marks "$1")"
+  [ -f "$file" ] || return 1
+  while IFS= read -r line; do
+    at="$(printf '%s' "$line" | cut -f1)"
+    case "$at" in '' | *[!0-9]*) continue ;; esac
+    if [ "$at" -gt "$2" ]; then
+      printf '%s' "$at"
+      return 0
+    fi
+  done <"$file"
+  return 1
+}
+
 # ns_usage_overlap <host> — the one sentence that says what is already counted inside what, so a
 # reader never adds the same tokens twice. Each host's own arrangement, not a normalised one.
 ns_usage_overlap() {
@@ -402,4 +456,121 @@ ns_usage_duration() {
   if [ "$s" -lt 60 ]; then printf '%ss' "$s"; return 0; fi
   if [ "$s" -lt 3600 ]; then printf '%sm %ss' "$((s / 60))" "$((s % 60))"; return 0; fi
   printf '%sh %sm' "$((s / 3600))" "$(((s % 3600) / 60))"
+}
+
+# ---------------------------------------------------------------------------------------------
+# The progress cadence, evaluated by the runtime
+#
+# `report.progressMode` decides when the model should refresh the active item's progress
+# paragraph. The model does not evaluate it: `time` needs a clock it would have to keep itself,
+# and `tokens` needs a counter it cannot see. The pulse already fires on every tool call, so it
+# does the arithmetic against the same marks and the same counter everything else here uses.
+#
+# The last update is detected mechanically. The pulse hashes the active item's section in the
+# report; a changed hash means the model refreshed it, and the window restarts. Nothing asks the
+# model to remember when it last wrote, and nothing believes it if it says.
+
+# ns_usage_section_hash <report> <item-label> — a hash of that item's section, or empty.
+ns_usage_section_hash() {
+  local report="$1" label="$2" body
+  [ -f "$report" ] && [ ! -L "$report" ] || return 1
+  body="$(awk -v want="### $label" '
+    $0 == want { on = 1; next }
+    on && /^### / { exit }
+    on { print }
+  ' "$report" 2>/dev/null)" || return 1
+  printf '%s' "$body" | ns_usage_sum
+}
+
+# ns_usage_sum — a short stable digest of stdin, from whatever the machine has.
+ns_usage_sum() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 2>/dev/null | cut -c1-16
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum 2>/dev/null | cut -c1-16
+  else
+    cksum 2>/dev/null | tr -d ' ' | cut -c1-16
+  fi
+}
+
+# ns_usage_window <nightshift-dir> <item-label> <report> — where the current cadence window
+# started, as `<epoch>\t<total-fields>`. The later of the item's own start mark and the last time
+# its section changed, so a progress update restarts the window and nothing else does.
+ns_usage_window() {
+  local ns="$1" label="$2" report="$3" file line epoch total hash stamp
+  file="$(_ns_usage_marks "$ns")"
+  [ -f "$file" ] || return 1
+  line="$(tail -n1 "$file")"
+  epoch="$(printf '%s' "$line" | cut -f1)"
+  total="$(printf '%s' "$line" | cut -f3)"
+  hash="$(ns_usage_section_hash "$report" "$label")" || hash=""
+  stamp="$(ns_usage_dir "$ns")/window"
+  if [ -n "$hash" ]; then
+    if [ ! -f "$stamp" ] || [ -L "$stamp" ]; then
+      # First sight of this section. Recording what it looks like is not the same as the model
+      # having just refreshed it, so the window stays where the item started — otherwise nothing
+      # would ever fall due, because every first look would restart the clock.
+      mkdir -p "$(ns_usage_dir "$ns")" 2>/dev/null || return 1
+      printf '%s\t%s\t%s\n' "${epoch:-0}" "$hash" "$total" >"$stamp" 2>/dev/null || :
+    elif [ "$(cut -f2 "$stamp" 2>/dev/null)" != "$hash" ]; then
+      # It changed, so the model refreshed it: the window starts again from here.
+      printf '%s\t%s\t%s\n' "$(date +%s)" "$hash" "$(ns_usage_total "$ns")" >"$stamp" 2>/dev/null || :
+      rm -f "$ns/.report-due" 2>/dev/null || :
+    fi
+  fi
+  if [ -f "$stamp" ] && [ ! -L "$stamp" ]; then
+    if [ "$(cut -f1 "$stamp" 2>/dev/null)" -gt "${epoch:-0}" ] 2>/dev/null; then
+      epoch="$(cut -f1 "$stamp")"
+      total="$(cut -f3 "$stamp")"
+    fi
+  fi
+  printf '%s\t%s' "${epoch:-0}" "$total"
+}
+
+# ns_usage_progress_due <project-dir> <item-label> — status 0 when the owner's cadence says an
+# update is now due. `completion-only` never is; `time` and `tokens` measure against the window;
+# `either` is whichever comes first. A mode that needs a counter no host reported falls back to
+# the time cadence rather than quietly never firing.
+ns_usage_progress_due() {
+  local project="$1" label="$2" ns="$1/.nightshift" mode minutes tokens window epoch base now spent moved
+  mode="$(ns_report "$project" progressMode)"
+  [ -n "$mode" ] || mode="time"
+  [ "$mode" != completion-only ] || return 1
+  [ "$(ns_report "$project" usage)" != off ] || return 1
+  window="$(ns_usage_window "$ns" "$label" "$(ns_report_path "$project")")" || return 1
+  epoch="$(printf '%s' "$window" | cut -f1)"
+  base="$(printf '%s' "$window" | cut -f2)"
+  now="$(date +%s)"
+  minutes="$(ns_report "$project" progressMinutes)"
+  case "$minutes" in '' | *[!0-9]*) minutes=20 ;; esac
+  tokens="$(ns_report "$project" progressTokens)"
+  case "$tokens" in '' | *[!0-9]*) tokens=100000 ;; esac
+  case "$mode" in
+    time) [ "$((now - epoch))" -ge "$((minutes * 60))" ] && return 0 ;;
+    tokens | either)
+      spent="$(ns_usage_total "$ns")" || spent=""
+      if [ -n "$spent" ]; then
+        moved="$(ns_usage_countable "$(ns_usage_sub "$spent" "$base")")"
+        [ "$moved" -ge "$tokens" ] && return 0
+      elif [ "$mode" = tokens ]; then
+        # A token cadence with no counter to read is a time cadence, not a silence.
+        [ "$((now - epoch))" -ge "$((minutes * 60))" ] && return 0
+      fi
+      [ "$mode" = either ] && [ "$((now - epoch))" -ge "$((minutes * 60))" ] && return 0
+      ;;
+  esac
+  return 1
+}
+
+# ns_usage_countable <fields> — input plus output, counted once. A token cadence is about how much
+# was spent, and the cache and reasoning figures either sit inside those two already or are
+# separate readings of the same work; adding them would make the threshold mean something
+# different on every host.
+ns_usage_countable() {
+  local a b
+  a="$(ns_usage_field "$1" input)" || a=0
+  b="$(ns_usage_field "$1" output)" || b=0
+  [ -n "$a" ] || a=0
+  [ -n "$b" ] || b=0
+  printf '%s' "$((a + b))"
 }

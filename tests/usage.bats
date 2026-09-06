@@ -219,3 +219,161 @@ ns() { printf '%s/.nightshift' "$1"; }
   [ ! -e "$p/.nightshift/usage/marks.tsv" ]
   [ ! -e "$p/.nightshift/shift-report.md" ]
 }
+
+# The cadence is the runtime's arithmetic against the same marks and the same counter. None of it
+# waits: the marks are written directly, so a twenty-minute window is tested in milliseconds.
+
+# mark_at <ns> <epoch> <label> <total> — a mark as if it had been written then.
+mark_at() {
+  mkdir -p "$1/usage"
+  printf '%s\t%s\t%s\n' "$2" "$3" "$4" >>"$1/usage/marks.tsv"
+}
+
+@test "the time cadence fires when the clock has moved, and not before" {
+  p="$(new_project cadence-time)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  now="$(date +%s)"
+  mark_at "$p/.nightshift" "$((now - 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+
+  rm -f "$p/.nightshift/usage/marks.tsv"
+  mark_at "$p/.nightshift" "$((now - 25 * 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
+}
+
+@test "the token cadence fires on the counter, not on the clock" {
+  p="$(new_project cadence-tokens)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
+    report:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
+    >"$p/.nightshift/shift-policy.json"
+  now="$(date +%s)"
+  mark_at "$p/.nightshift" "$((now - 60))" arm ''
+  lib ns_usage_record "$p/.nightshift" claude m transcript-incremental /t/a 1 'input=100,output=50'
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+
+  lib ns_usage_record "$p/.nightshift" claude m transcript-incremental /t/a 2 'input=800,output=200'
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
+}
+
+@test "completion-only never falls due" {
+  p="$(new_project cadence-completion)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
+    report:{progressMode:"completion-only"}}' >"$p/.nightshift/shift-policy.json"
+  mark_at "$p/.nightshift" "$(( $(date +%s) - 90 * 60 ))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+}
+
+@test "a token cadence with no counter to read falls back to the clock" {
+  p="$(new_project cadence-fallback)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
+    report:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
+    >"$p/.nightshift/shift-policy.json"
+  # No readings at all: the host reported nothing usable.
+  mark_at "$p/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
+}
+
+@test "refreshing the item's section restarts the window" {
+  p="$(new_project cadence-window)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  printf '# Shift report\n\n### P01\n\nWhere it has got to.\n' >"$p/.nightshift/shift-report.md"
+  mark_at "$p/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
+
+  # The model refreshes the paragraph. The window starts again from that moment, and nothing had
+  # to tell the runtime it happened.
+  printf '# Shift report\n\n### P01\n\nWhere it has got to, updated.\n' >"$p/.nightshift/shift-report.md"
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+}
+
+@test "a long idle stretch is one overdue notice, not one per minute" {
+  p="$(new_project cadence-once)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  : >"$p/.nightshift/.shift-armed"
+  mark_at "$p/.nightshift" "$(( $(date +%s) - 90 * 60 ))" arm ''
+
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
+  [ "$status" -eq 0 ]
+  [ "$output" = 'report: progress update due for P01' ]
+  [ -f "$p/.nightshift/.report-due" ]
+
+  # The same notice stands rather than being written afresh: the marker is what a revived session
+  # or a dropped hook output finds at the next pulse.
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
+  [ "$output" = 'report: progress update due for P01' ]
+}
+
+@test "the notice reaches the model in each host's own context field" {
+  run bash -c '. "$1"; . "$2"; ns_pulse_context claude "report: progress update due for P01"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"
+  printf '%s' "$output" | jq -e '.hookSpecificOutput.additionalContext == "report: progress update due for P01"' >/dev/null
+
+  run bash -c '. "$1"; . "$2"; ns_pulse_context cursor "report: progress update due for P01"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"
+  printf '%s' "$output" | jq -e '.additional_context == "report: progress update due for P01"' >/dev/null
+
+  # An ordinary pulse says nothing at all.
+  run bash -c '. "$1"; . "$2"; ns_pulse_context claude ""' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"
+  [ -z "$output" ]
+}
+
+@test "a gap the runtime knows was not work is listed beside the wall clock, never subtracted" {
+  p="$(new_project paused-gap)"
+  printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
+  now="$(date +%s)"
+  mark_at "$p/.nightshift" "$((now - 3600))" arm ''
+  # The session died half an hour in and was revived twenty minutes later.
+  mkdir -p "$p/.nightshift/usage"
+  printf '%s\t%s\n' "$((now - 1800))" "the session ended and the shift was revived" \
+    >"$p/.nightshift/usage/pauses.tsv"
+  lib ns_usage_record "$p/.nightshift" claude m transcript-incremental /t/a 1 'input=5,output=1'
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
+
+  grep -qF 'paused' "$p/.nightshift/shift-report.md"
+  grep -qF 'the session ended and the shift was revived' "$p/.nightshift/shift-report.md"
+  # The wall clock still reads the full hour: the gap is listed next to it, not taken out of it.
+  grep -qE 'Duration: 1h 0m \(paused' "$p/.nightshift/shift-report.md"
+}
+
+@test "Windows reads the same fixtures to the same bytes" {
+  if ! command -v pwsh >/dev/null 2>&1; then
+    return 0
+  fi
+  module="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  for pair in "claude-multiline.jsonl Read-NSUsageClaude" "claude-truncated.jsonl Read-NSUsageClaude" \
+    "codex-rollout.jsonl Read-NSUsageCodex" "codex-revived.jsonl Read-NSUsageCodex"; do
+    set -- $pair
+    case "$2" in
+      Read-NSUsageClaude) posix="$(lib ns_usage_read_claude "$FIX/$1")" ;;
+      *) posix="$(lib ns_usage_read_codex "$FIX/$1")" || posix="" ;;
+    esac
+    run pwsh -NoProfile -NonInteractive -Command \
+      "Import-Module '$module' -Force -DisableNameChecking; \$r = $2 '$FIX/$1'; if (\$null -ne \$r) { Write-Output \$r }"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$posix" ] || { echo "$1: posix [$posix] windows [$output]"; return 1; }
+  done
+
+  # And the overlap sentence, which the report carries verbatim on either half.
+  for host in claude codex cursor; do
+    run pwsh -NoProfile -NonInteractive -Command \
+      "Import-Module '$module' -Force -DisableNameChecking; Get-NSUsageOverlap '$host'"
+    [ "$output" = "$(lib ns_usage_overlap "$host")" ] || { echo "$host overlap differs"; return 1; }
+  done
+}

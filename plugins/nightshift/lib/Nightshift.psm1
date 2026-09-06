@@ -4351,6 +4351,123 @@ function Get-NSEndedField {
     return ''
 }
 
+# ---------------------------------------------------------------------------
+# What a shift cost, read from the records the host already keeps
+#
+# The POSIX halves live in lib/usage.sh and lib/usage-*.awk. These have to answer identically on
+# the same fixture: same deduplication, same field names, same order, same overlap sentence.
+# ---------------------------------------------------------------------------
+
+$script:NSUsageDimensions = @('input', 'cache_write', 'cache_read', 'output', 'reasoning')
+
+# Get-NSUsageNumber <text> <key> - one number out of a line, or -1. A bounded scan rather than a
+# JSON parse, the same way the POSIX reader works.
+function Get-NSUsageNumber {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Line,
+          [Parameter(Mandatory = $true)][string]$Key)
+    $match = [Text.RegularExpressions.Regex]::Match($Line, '"' + [Text.RegularExpressions.Regex]::Escape($Key) + '":\s*(\d+)')
+    if (-not $match.Success) { return -1 }
+    return [long]$match.Groups[1].Value
+}
+
+# Get-NSUsageString <text> <key> - one string out of a line, or an empty string.
+function Get-NSUsageString {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Line,
+          [Parameter(Mandatory = $true)][string]$Key)
+    $match = [Text.RegularExpressions.Regex]::Match($Line, '"' + [Text.RegularExpressions.Regex]::Escape($Key) + '":"([^"]*)"')
+    if (-not $match.Success) { return '' }
+    return $match.Groups[1].Value
+}
+
+# Read-NSUsageClaude <transcript> [offset] - the cumulative counter from a Claude Code transcript,
+# deduplicated on request id. One response is written once per content block and each copy repeats
+# the same usage, so summing lines would overstate the total; and a line that does not end in a
+# closing brace was still being written, so nothing is taken from it.
+function Read-NSUsageClaude {
+    param([Parameter(Mandatory = $true)][string]$Path,
+          [long]$Offset = 0)
+    if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $size = (Get-Item -LiteralPath $Path -Force).Length
+    if ($Offset -lt 0 -or $Offset -gt $size) { $Offset = 0 }
+    $input = 0; $cachew = 0; $cacher = 0; $output = 0; $reason = 0
+    $model = ''; $responses = 0
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    if ($Offset -lt $size) {
+        $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $null = $stream.Seek($Offset, [IO.SeekOrigin]::Begin)
+            $reader = New-Object IO.StreamReader($stream, (New-Object Text.UTF8Encoding($false)))
+            while ($null -ne ($line = $reader.ReadLine())) {
+                if ($line.IndexOf('"usage"', [StringComparison]::Ordinal) -lt 0) { continue }
+                if (-not $line.EndsWith('}', [StringComparison]::Ordinal)) { continue }
+                $id = Get-NSUsageString $line 'requestId'
+                if ([string]::IsNullOrEmpty($id)) { $id = Get-NSUsageString $line 'id' }
+                if ([string]::IsNullOrEmpty($id)) { continue }
+                if (-not $seen.Add($id)) { continue }
+                $responses++
+                $m = Get-NSUsageString $line 'model'
+                if (-not [string]::IsNullOrEmpty($m)) { $model = $m }
+                foreach ($pair in @(@('input_tokens', 'input'), @('cache_creation_input_tokens', 'cachew'),
+                        @('cache_read_input_tokens', 'cacher'), @('output_tokens', 'output'),
+                        @('thinking_tokens', 'reason'))) {
+                    $v = Get-NSUsageNumber $line $pair[0]
+                    if ($v -lt 0) { continue }
+                    switch ($pair[1]) {
+                        'input' { $input += $v }
+                        'cachew' { $cachew += $v }
+                        'cacher' { $cacher += $v }
+                        'output' { $output += $v }
+                        'reason' { $reason += $v }
+                    }
+                }
+            }
+        }
+        finally { $stream.Dispose() }
+    }
+    $fields = "input=$input,cache_write=$cachew,cache_read=$cacher,output=$output,reasoning=$reason"
+    return ($fields + "`t" + $size + "`t" + $model + "`t" + $responses)
+}
+
+# Read-NSUsageCodex <rollout> - the running total from the rollout's last token_count line. Codex
+# counts cached input inside input and reasoning inside output; that arrangement is carried
+# through rather than corrected, and the report states it.
+function Read-NSUsageCodex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $last = ''
+    foreach ($line in [IO.File]::ReadLines($Path)) {
+        if ($line.IndexOf('"token_count"', [StringComparison]::Ordinal) -ge 0) { $last = $line }
+    }
+    if ([string]::IsNullOrEmpty($last)) { return $null }
+    $at = $last.IndexOf('"total_token_usage"', [StringComparison]::Ordinal)
+    if ($at -lt 0) { return $null }
+    $block = $last.Substring($at)
+    $input = Get-NSUsageNumber $block 'input_tokens'
+    $output = Get-NSUsageNumber $block 'output_tokens'
+    if ($input -lt 0 -or $output -lt 0) { return $null }
+    $fields = "input=$input"
+    $cachew = Get-NSUsageNumber $block 'cache_write_input_tokens'
+    if ($cachew -ge 0) { $fields += ",cache_write=$cachew" }
+    $cacher = Get-NSUsageNumber $block 'cached_input_tokens'
+    if ($cacher -ge 0) { $fields += ",cache_read=$cacher" }
+    $fields += ",output=$output"
+    $reason = Get-NSUsageNumber $block 'reasoning_output_tokens'
+    if ($reason -ge 0) { $fields += ",reasoning=$reason" }
+    return ($fields + "`t0`t" + (Get-NSUsageString $last 'model') + "`t0")
+}
+
+# Get-NSUsageOverlap <host> - the one sentence saying what is already counted inside what, in that
+# host's own arrangement. Byte-identical to ns_usage_overlap.
+function Get-NSUsageOverlap {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName)
+    switch ($HostName) {
+        'claude' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
+        'codex' { return 'Cached input is already inside the input figure, and reasoning is already inside output.' }
+        'cursor' { return 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' }
+    }
+    return 'Overlap between the dimensions is unknown for this host.'
+}
+
 # Get-NSStatePath <state-dir> <relative> - a nested path under the Nightshift state area, or
 # $null. The whole chain is checked, not just its last component: a reparse point anywhere along
 # it is what an escape actually looks like, because `linked\history` reaches outside while
