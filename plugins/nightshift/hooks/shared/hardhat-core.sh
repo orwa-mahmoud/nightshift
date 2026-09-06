@@ -387,20 +387,49 @@ NS_HARDHAT_NL='
 '
 NS_HARDHAT_STRIPPED=""
 
+# ns_hardhat_heredoc_is_data_write <opening-line> — true when the here-document this line opens
+# is written to a file rather than handed to something that runs it.
+#
+# Quoting a delimiter stops the outer shell from expanding the body. It does not stop `bash` from
+# executing what it reads, so the exemption has to know the consumer, not just the quoting. Only
+# `cat` and `tee` qualify, and only on a line that is one plain command with one here-document:
+# no pipeline, no command list, no background, no substitution, and no `$` at all, so the file
+# being written is literally on the line the guards already inspect.
+ns_hardhat_heredoc_is_data_write() {
+  local line="$1" trimmed word
+  case "$line" in
+    *'<<'*'<<'*) return 1 ;;
+  esac
+  case "$line" in
+    *'|'* | *';'* | *'&'* | *'`'* | *'$'* | *'('*) return 1 ;;
+  esac
+  trimmed="${line#"${line%%[! 	]*}"}"
+  word="${trimmed%%[ 	]*}"
+  case "$word" in
+    cat | tee) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # ns_hardhat_strip_quoted_heredocs <command> — the same command with the body of every quoted
-# here-document replaced by a placeholder.
+# here-document that is written to a file replaced by a placeholder.
 #
-# A quoted delimiter means the shell expands nothing in the body, runs nothing in it, and the
-# words inside are the file being written rather than a command. Reading that body as code makes
-# the product unwritable from inside a shift: a page explaining the elevation categories reads as
-# a request for one, and a note naming a control file reads as an attempt to rewrite it.
+# A quoted delimiter on a `cat` or `tee` write means the words inside are the file being written
+# rather than a command. Reading that body as code makes the product unwritable from inside a
+# shift: a page explaining the elevation categories reads as a request for one, and a note naming
+# a control file reads as an attempt to rewrite it.
 #
-# The line that opens the heredoc is kept, so the redirection target is inspected exactly as
-# before — writing a protected file is caught by where it writes, not by what it says. An
-# unquoted delimiter is left alone, because that body is expanded and a command substitution in
-# it really does run. So is an unterminated one: a body with no visible end is not skipped.
+# Every other consumer keeps its body under inspection. `bash <<'EOF'`, a producer piped into an
+# interpreter, `eval`, `source` and anything the classifier does not recognise are all commands
+# that run their input, and a quoted delimiter changes nothing about that.
+#
+# The line that opens the heredoc is kept either way, so the redirection target is inspected
+# exactly as before — writing a protected file is caught by where it writes, not by what it
+# says. An unquoted delimiter is left alone, because that body is expanded and a command
+# substitution in it really does run. So is an unterminated one: a body with no visible end is
+# not skipped.
 ns_hardhat_strip_quoted_heredocs() {
-  local input="$1" out="" line delim="" body_open=0 found stripped
+  local input="$1" out="" line delim="" body_open=0 strip_body=0 found stripped
   NS_HARDHAT_STRIPPED="$input"
   case "$input" in
     *'<<'*) ;;
@@ -412,7 +441,9 @@ ns_hardhat_strip_quoted_heredocs() {
       if [ "$stripped" = "$delim" ] || [ "$line" = "$delim" ]; then
         body_open=0
         out="$out$line$NS_HARDHAT_NL"
+        continue
       fi
+      [ "$strip_body" -eq 1 ] || out="$out$line$NS_HARDHAT_NL"
       continue
     fi
     out="$out$line$NS_HARDHAT_NL"
@@ -422,7 +453,12 @@ ns_hardhat_strip_quoted_heredocs() {
     if [ -n "$found" ]; then
       delim="$found"
       body_open=1
-      out="${out}NIGHTSHIFT_HEREDOC_BODY$NS_HARDHAT_NL"
+      if ns_hardhat_heredoc_is_data_write "$line"; then
+        strip_body=1
+        out="${out}NIGHTSHIFT_HEREDOC_BODY$NS_HARDHAT_NL"
+      else
+        strip_body=0
+      fi
     fi
   done <<NS_HEREDOC_SCAN
 $input

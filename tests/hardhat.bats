@@ -1391,6 +1391,95 @@ hd() {
   is_deny "$output"
 }
 
+# An interpreter reading its script from a quoted here-document is still an interpreter. Quoting
+# the delimiter stops the outer shell expanding the body; it does not stop bash from running it.
+# These feed strings to the hook and assert its decision — no payload is ever executed.
+
+@test "a quoted heredoc fed to an interpreter is code, not documentation" {
+  p="$(new_project hd-interpreter)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "bash <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "sh <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "python3 - <<'PY'\nrun('sudo id')\nPY")"
+  is_deny "$output"
+}
+
+@test "a heredoc piped into an interpreter is code" {
+  p="$(new_project hd-pipe)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "cat <<'EOF' | bash\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "tee /dev/null <<'EOF' | sh\nsudo id\nEOF")"
+  is_deny "$output"
+}
+
+@test "eval and source forms keep their heredoc bodies visible" {
+  p="$(new_project hd-eval)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "eval <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf ". /dev/stdin <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+}
+
+@test "a backslash-quoted delimiter is not an exemption either" {
+  p="$(new_project hd-backslash)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf 'bash <<\\EOF\nsudo id\nEOF')"
+  is_deny "$output"
+}
+
+@test "a substituted or non-literal destination keeps its body visible" {
+  p="$(new_project hd-dynamic)"
+  punch_open "$p"
+  # Where it writes is not on the line, so the body is not taken on trust.
+  run hardhat_bash "$p" "$(printf 'cat > "$out" <<%s\nsudo id\nEOF' "'EOF'")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf 'cat > "$(mktemp)" <<%s\nsudo id\nEOF' "'EOF'")"
+  is_deny "$output"
+}
+
+@test "a command list on the opening line keeps its body visible" {
+  p="$(new_project hd-list)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "true; cat > d.md <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "cat > d.md <<'EOF' &\nsudo id\nEOF")"
+  is_deny "$output"
+}
+
+@test "tee writes and tab-stripped bodies are still documentation" {
+  p="$(new_project hd-tee)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "tee docs/e.md <<'EOF'\nsudo and doas, docker run, systemctl\nEOF")"
+  is_allow
+  run hardhat_bash "$p" "$(printf "tee -a docs/e.md <<'EOF'\nbrew install -g something\nEOF")"
+  is_allow
+  run hardhat_bash "$p" "$(printf "cat > docs/e.md <<-'EOF'\n\tsudo and doas\n\tEOF")"
+  is_allow
+}
+
+@test "one documentation heredoc does not exempt the next interpreter one" {
+  p="$(new_project hd-multi)"
+  punch_open "$p"
+  run hardhat_bash "$p" \
+    "$(printf "cat > d.md <<'A'\nharmless words\nA\nbash <<'B'\nsudo id\nB")"
+  is_deny "$output"
+  # And the reverse order: the first body is inspected even though a safe write follows.
+  run hardhat_bash "$p" \
+    "$(printf "bash <<'A'\nsudo id\nA\ncat > d.md <<'B'\nharmless words\nB")"
+  is_deny "$output"
+}
+
+@test "two heredocs on one line are never exempt" {
+  p="$(new_project hd-two-on-one)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "cat <<'A' <<'B'\nsudo id\nA\nB")"
+  is_deny "$output"
+}
+
 @test "the owner's own forbidden pattern still holds inside and outside a heredoc" {
   p="$(new_project hd-owner-rule)"
   punch_open "$p"
