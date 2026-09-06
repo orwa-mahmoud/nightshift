@@ -345,9 +345,9 @@ host permits, and it never lifts a rule in this file.
 **A revival never gets more than the session it is replacing had.** The shipped choice reads what
 the shift recorded about itself when it armed and asks for exactly that. Where the host reported no
 scope — or the shift predates the recording — it falls back to the host's own default and says so
-in `shift-log.md`, rather than reaching for the broader grant. That is narrower than Nightshift
-used to be: a revived Codex session under `workspace-write` can edit but not commit, and it will
-report that honestly instead of widening to make a commit possible.
+in `shift-log.md`, rather than reaching for the broader grant. A revived Codex session under
+`workspace-write` can edit but not commit, and it reports that rather than widening to make a
+commit possible.
 
 `host-grant` is how you say you want the broad grant anyway, and it happens only because you wrote
 it here — a workspace that predates this setting has not chosen it. Whichever scope is in force is
