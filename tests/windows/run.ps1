@@ -438,6 +438,10 @@ try {
     $scheduleEmptyLogicRun = Invoke-TestScript $scheduleEmptyLogic
     Assert-Equal 0 $scheduleEmptyLogicRun.ExitCode `
         "schedule empty-list notes: $($scheduleEmptyLogicRun.Stdout) $($scheduleEmptyLogicRun.Stderr)"
+    $punchListLogic = Join-Path $PSScriptRoot 'punch-list-logic.ps1'
+    $punchListLogicRun = Invoke-TestScript $punchListLogic
+    Assert-Equal 0 $punchListLogicRun.ExitCode `
+        "punch-list reader and contract digests: $($punchListLogicRun.Stdout) $($punchListLogicRun.Stderr)"
     $boxCountsLogic = Join-Path $PSScriptRoot 'box-counts-logic.ps1'
     $boxCountsLogicRun = Invoke-TestScript $boxCountsLogic
     Assert-Equal 0 $boxCountsLogicRun.ExitCode `

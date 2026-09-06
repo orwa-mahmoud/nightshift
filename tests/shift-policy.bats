@@ -83,8 +83,13 @@ write_policy() { # <project> [extra JSON]
   # Everything the candidate stated comes back exactly as it was written. What the snapshot adds
   # is what the shift needs fixed: the scope this session runs under, and the owner preferences
   # tonight was composed with.
-  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .report)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .report, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
+  # And the contract as it stood at arming, so the gate can tell later whether it moved.
+  printf '%s' "$output" | jq -e '
+    (.contractDigest | type) == "string" and (.contractDigest | test("^[0-9a-f]{64}$"))
+    and (.itemsDigest | type) == "string" and (.itemsDigest | test("^[0-9a-f]{64}$"))' >/dev/null
+
   # The scope, so a revival can reproduce it rather than reach for a broader one.
   printf '%s' "$output" | jq -e 'has("launchScope") and has("launchProvenance")' >/dev/null
   printf '%s' "$output" | jq -e '.launchProvenance | IN("observed", "unavailable")' >/dev/null
@@ -108,7 +113,7 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .report)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .report, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
 }
 
