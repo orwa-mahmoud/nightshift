@@ -448,7 +448,8 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'exists but is not a usable directory' "$SETUP"
   grep -qF 'do not `git init` the notes folder' "$NIGHTSHIFT"
   grep -qF 'when Git is installed' "$NIGHTSHIFT"
-  grep -qE 'ns"? write-receipt' "$START"
+  # Start hands the item loop, and its receipts, to the main skill.
+  grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
   grep -qE 'ns"? write-receipt' "$SETUP"
   grep -qF '$NS/receipts/' "$SETUP"
   grep -qF 'do not treat artifact setup as complete' "$SETUP"
@@ -459,7 +460,9 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'the artifact receipts path is not a usable directory' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'the empty-ticks warning is not also raised' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
-  grep -qF 'do not replace the live files Status reports' "$ARCHIVE"
+  # Archive states the same guarantee at its source: what it writes is a copy, so the live files
+  # Status reports are still there.
+  grep -qF 'Filing is a copy' "$ARCHIVE"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$ARCHIVE"
   grep -qF 'artifact receipts N' "$DOCTOR_SKILL"
   grep -qF 'latest artifact receipt' "$DOCTOR_SKILL"
