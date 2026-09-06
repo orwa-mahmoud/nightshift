@@ -254,7 +254,7 @@ codex_ask() {
     "$root/runtime/link-workspace.sh"; then
     return 1
   fi
-  grep -qF 'runtime/migrate-state.sh' "$SETUP"
+  grep -qE 'ns"? migrate-state' "$SETUP"
   grep -qF 'state-version' "$SETUP"
   grep -qF 'state-version' "$START"
   grep -qiF 'start never writes' "$START"

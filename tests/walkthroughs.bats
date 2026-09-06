@@ -87,7 +87,7 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 # reading all thirty contracts to offer one is the other way to get that wrong.
 @test "hunt composes from the catalog directory and may pick more than one" {
   grep -qF 'references/compose/shifts/' "$HUNT"
-  grep -qF 'runtime/catalog-index.sh' "$HUNT"
+  grep -qE 'ns"? catalog-index' "$HUNT"
   grep -qi 'an entry added today is discovered today' "$HUNT"
   grep -qi 'more than one may be chosen' "$HUNT"
   grep -qi 'list the directory and read the entries yourself' "$HUNT"

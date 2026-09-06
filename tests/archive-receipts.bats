@@ -144,10 +144,10 @@ new_artifact() {
   grep -qF 'Filing is a copy' "$ARCHIVE_SKILL"
   grep -qF -e '--retire' "$ARCHIVE_SKILL"
   grep -qF 'Never call `ns archive-receipts`' "$ARCHIVE_SKILL"
-  grep -qF 'runtime/archive-receipts.sh' "$COMMANDS"
+  grep -qE 'ns"? archive-receipts' "$COMMANDS"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$COMMANDS"
-  grep -qF 'runtime\windows\archive-receipts.ps1' "$COMMANDS"
-  grep -qF 'runtime/archive-receipts.sh' "$HOW"
+  grep -qF 'ns.ps1 archive-receipts' "$COMMANDS"
+  grep -qE 'ns"? archive-receipts' "$HOW"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$HOW"
   [ -f "$ARCHIVE_PS1" ]
   grep -qF 'Get-NSReceiptsDir' "$ARCHIVE_PS1"

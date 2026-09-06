@@ -512,7 +512,7 @@ digest_of() {
 
 @test "the composition and quality skills name the helper as optional" {
   QUALITY="$PLUGIN/skills/quality/SKILL.md"
-  grep -qF 'runtime/normalize-output.sh' "$QUALITY"
+  grep -qE 'ns"? normalize-output' "$QUALITY"
   grep -qF 'If present,' "$QUALITY"
   grep -qF 'Both helpers here are optional' "$QUALITY"
   for shift in clear-quality-debt coverage-hunt vulnerability-sweep flaky-test-repair \

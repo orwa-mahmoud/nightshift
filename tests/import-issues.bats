@@ -157,7 +157,7 @@ prep_draft() {
   run isolated_import "$s" --stage https://github.com/acme/widgets/issues/12
   grep -q 'Add a dry-run flag' "$s/.nightshift/drafting-table.md"
 
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh' "$SKILL"
+  grep -qE 'ns"? import-issues' "$SKILL"
   grep -qF -- '--project "$NIGHTSHIFT_WORKSPACE"' "$SKILL"
   grep -qF 'Claude Code and Codex run the same platform helper' "$SKILL"
   grep -qF 'If work mode is artifact' "$SKILL"
