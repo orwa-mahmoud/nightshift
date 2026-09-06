@@ -795,3 +795,69 @@ ns_receipt_slug() {
   [ -n "$s" ] || s=item
   printf '%s' "$s"
 }
+
+# ---------------------------------------------------------------------------------------------
+# Reading one item out of the punch list, and holding the contract to what it was
+#
+# The bounded rule the gate and Status already use: a top-level checkbox line owns the indented
+# lines that follow it, up to the next top-level line. Fenced code and nested lists inside an item
+# are indented, so they belong to it and come through whole. This is not a Markdown parser and is
+# not trying to be one.
+
+# ns_punch_gates <punch-list> — the gates block verbatim, heading included, or nothing.
+# The owner may change it mid-shift by design, so it is never digested and always reprinted.
+ns_punch_gates() {
+  awk '
+    /^## Gates[[:space:]]*$/ { on = 1; print; next }
+    on && /^## / { exit }
+    on { print }
+  ' "$1" 2>/dev/null
+}
+
+# ns_punch_items <punch-list> — the lines under `## Items`, stopping at the next top-level heading.
+#
+# Not ns_items_section, which runs to the end of the file: that is the right boundary for counting
+# boxes and the wrong one for a digest, because it would put a `## Notes` section the owner is free
+# to edit inside the thing the gate holds still.
+ns_punch_items() {
+  awk '
+    { sub(/\r$/, "") }
+    !on { if ($0 ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; next }
+    /^## / { exit }
+    { print }
+  ' "$1" 2>/dev/null
+}
+
+# ns_punch_item <punch-list> <id> — one item with its sub-bullets, exactly as written. An empty id
+# means the first still-open one. Prints nothing when there is no such item.
+ns_punch_item() {
+  ns_punch_items "$1" | awk -v want="$2" '
+    function starts_item(line) { return line ~ /^- \[[ xX]\]/ }
+    # A top-level line is anything not indented: the next item, a heading, a note. Either way this
+    # item has ended.
+    function top_level(line) { return line !~ /^[[:space:]]/ && line != "" }
+    {
+      if (!on && starts_item($0)) {
+        if (want == "") {
+          if ($0 !~ /^- \[ \]/) next
+          on = 1
+          print
+          next
+        }
+        id = $0
+        sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", id)
+        sub(/[[:space:]]*[—-].*$/, "", id)
+        sub(/\*\*.*$/, "", id)
+        gsub(/[[:space:]]+$/, "", id)
+        if (id != want) next
+        on = 1
+        print
+        next
+      }
+      if (on) {
+        if (top_level($0)) exit
+        print
+      }
+    }
+  '
+}

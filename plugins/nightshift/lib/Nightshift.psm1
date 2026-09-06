@@ -3940,7 +3940,7 @@ function Test-NSShiftPolicyDocument {
     }
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
-        'allowances', 'gatesDigest', 'completionMode', 'selectedDebt',
+        'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
         'shift', 'recovery', 'handoff', 'archive', 'report')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
@@ -8050,5 +8050,129 @@ function Invoke-NSMorningReceiptCommand {
     }
 }
 
+
+
+# ---------------------------------------------------------------- the punch list, one item at a
+# time
+#
+# Twin of lib/state.sh's ns_punch_* readers and runtime/punch-list.sh. Same bounded rule for what
+# an item is, same two digests, same bytes out.
+
+# Get-NSPunchLines <punch-list> - the file as lines, with line endings already flattened. Both
+# digests are a property of what the list says, never of how the filesystem it sits on ends a line.
+function Get-NSPunchLines {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return @() }
+    $text = ''
+    try { $text = [IO.File]::ReadAllText($PunchList, $script:NSUtf8NoBom) }
+    catch { return @() }
+    if ([string]::IsNullOrEmpty($text)) { return @() }
+    # A file ending in a newline splits to a trailing empty element; awk never prints that line.
+    $text = $text -creplace '(\r\n|\n|\r)$', ''
+    return @($text -split "`r`n|`n|`r")
+}
+
+# Get-NSPunchGates <punch-list> - the gates block verbatim, heading included. Never digested and
+# always reprinted: the owner may change it mid-shift by design.
+function Get-NSPunchGates {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in (Get-NSPunchLines $PunchList)) {
+        if ($line -cmatch '^## Gates[ \t]*$') { $on = $true; $out.Add($line); continue }
+        if (-not $on) { continue }
+        if ($line -cmatch '^## ') { break }
+        $out.Add($line)
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchItemsSection <punch-list> - the lines under `## Items`, up to the next top-level
+# heading.
+function Get-NSPunchItemsSection {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in (Get-NSPunchLines $PunchList)) {
+        if (-not $on) {
+            if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $on = $true }
+            continue
+        }
+        if ($line -cmatch '^## ') { break }
+        $out.Add($line)
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchItem <punch-list> <id> - one item with its sub-bullets, exactly as written. An empty
+# id means the first still-open one. An item runs from its checkbox line to the next unindented
+# line, so fenced code and nested lists inside it come through whole.
+function Get-NSPunchItem {
+    param(
+        [Parameter(Mandatory = $true)][string]$PunchList,
+        [AllowEmptyString()][string]$Id = ''
+    )
+    $out = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        if (-not $on) {
+            if ($line -cnotmatch '^- \[[ xX]\]') { continue }
+            if ([string]::IsNullOrEmpty($Id)) {
+                if ($line -cnotmatch '^- \[ \]') { continue }
+            }
+            else {
+                $found = $line
+                $found = $found -creplace '^- \[[ xX]\][ \t]*\*\*', ''
+                $found = $found -creplace '[ \t]*[—-].*$', ''
+                $found = $found -creplace '\*\*.*$', ''
+                if ($found.TrimEnd() -cne $Id) { continue }
+            }
+            $on = $true
+            $out.Add($line)
+            continue
+        }
+        # Anything unindented and non-empty is the next item, a heading, or a note: this one ended.
+        if (($line -cnotmatch '^[ \t]') -and ($line -cne '')) { break }
+        $out.Add($line)
+    }
+    # The blank lines between this item and the next belong to neither.
+    while (($out.Count -gt 0) -and ($out[$out.Count - 1].Trim() -ceq '')) {
+        $out.RemoveAt($out.Count - 1)
+    }
+    return $out.ToArray()
+}
+
+# Invoke-NSPunchListCommand - runtime/windows/punch-list.ps1's whole body.
+function Invoke-NSPunchListCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][ValidateSet('next', 'item')][string]$Verb,
+        [AllowEmptyString()][string]$Id = ''
+    )
+    $workspace = Resolve-NSWorkspaceRoot $Project
+    if ([string]::IsNullOrEmpty($workspace)) {
+        [Console]::Error.WriteLine('punch-list: invalid .nightshift-link - Nightshift will not guess a workspace')
+        return 2
+    }
+    $punch = Join-Path (Join-Path $workspace '.nightshift') 'punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) {
+        [Console]::Error.WriteLine('punch-list: no punch list at ' + $punch)
+        return 2
+    }
+
+    foreach ($line in @(Get-NSPunchGates $punch)) { [Console]::Out.WriteLine($line) }
+
+    $body = @(Get-NSPunchItem -PunchList $punch -Id $(if ($Verb -ceq 'next') { '' } else { $Id }))
+    if ($body.Count -eq 0) {
+        if ($Verb -ceq 'item') {
+            [Console]::Error.WriteLine('punch-list: no item ' + $Id + ' in ' + $punch)
+            return 2
+        }
+        [Console]::Out.WriteLine('none')
+        return 0
+    }
+    foreach ($line in $body) { [Console]::Out.WriteLine($line) }
+    return 0
+}
 
 Export-ModuleMember -Function *
