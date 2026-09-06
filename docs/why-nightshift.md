@@ -83,5 +83,10 @@ on the work, and it is yours to judge. Where a report shows what an item cost, t
 numbers the host reported, kept separate from anything estimated; where the host reports nothing,
 the report says unavailable rather than guessing. A token count is never turned into a price.
 
+Those figures are read by the runtime from the records your host already keeps — the session
+transcript on Claude Code, the rollout's running count on Codex, the stop payload on Cursor — and
+written into each item's section at the tick. Nothing is estimated, and the model never writes a
+usage figure: it cannot see its own token counts, so anything it wrote would be a guess.
+
 Read [how Nightshift works](how-it-works.md), or
 [run a first shift](../README.md#run-a-first-shift).

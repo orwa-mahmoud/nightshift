@@ -26,9 +26,10 @@ Outputs: `fix(resolver): check containment before normalising` · `src/resolve.t
 
 Related: snag log, "resolver compared normalised paths" — fixed. No parked decisions.
 
-Usage: input 128,400 · output 9,310 · cache read 96,000 · cache write 12,100
-  Cache reads are included in the input figure above; cache writes are not.
-  Source: claude claude-opus-5, cumulative counters, session
+Usage: input 128,400 · cache_write 12,100 · cache_read 96,000 · output 9,310 · reasoning 2,140
+  Source: claude claude-opus-5, cumulative counters, segments 1
+  Cache reads and cache writes are separate from the input figure; reasoning is inside output.
+Duration: 41m 12s
 
 ## P02 — Cover the parser's error paths
 
@@ -38,8 +39,10 @@ Four of the seven error paths now have tests; the malformed-escape and truncated
 written and passing, and the two encoding cases are still being reduced to something that does not
 depend on the fixture's locale. Nothing is committed yet.
 
-Usage: input 41,900 · output 3,050 · cache read unavailable · cache write unavailable
-  Source: claude claude-opus-5, cumulative counters, session
+Usage: input 41,900 · cache_write 3,400 · cache_read 28,700 · output 3,050 · reasoning 610
+  Source: claude claude-opus-5, cumulative counters, segments 1
+  Cache reads and cache writes are separate from the input figure; reasoning is inside output.
+Duration: 18m 03s
 
 ## P03 — Retire the vendored copy of the date helper
 
@@ -62,8 +65,15 @@ Outputs: `refactor(dates): use the packaged date helper` · four call sites unde
 Related: parking lot, "the vendored helper's throw-on-invalid behaviour" — the default chosen was
 to check the return value at each call site rather than wrap the package.
 
-Usage: unavailable — the session was revived mid-item after an outage and the counters restarted,
-so this item spans two measurement segments that cannot be added together.
+Usage: input 62,800 · cache_write 5,900 · cache_read 214,300 · output 4,120 · reasoning 980
+  Source: claude claude-opus-5, cumulative counters, segments 2
+  Cache reads and cache writes are separate from the input figure; reasoning is inside output.
+Duration: 1h 06m (paused 22m 41s, the session ended and the shift was revived)
+
+The session died mid-item after an outage and the watchman revived it, so this item spans two
+measurement segments. They are not added across the seam — each one contributes what it spent
+after the runtime began watching it, and the two contributions sum to the figure above. The gap
+between them is listed beside the wall clock rather than taken out of it.
 
 ## Outcome
 
@@ -74,7 +84,8 @@ paths — and P02 is the one item still open.
 Worth your eye first: the integration suite has not run against P01, and the parking-lot decision
 about the date helper's invalid-input behaviour is still yours to confirm.
 
-Shift usage: input 170,300 · output 12,360 · cache read 96,000 · cache write 12,100
-  Items measured: 2 of 3 · Shared overhead: 14,200 input / 900 output
-  Coverage: partial — P03 spans two measurement segments after a mid-item revival and is not
-  included in the totals above.
+Shift usage: input 233,100 · cache_write 21,400 · cache_read 339,000 · output 16,480 · reasoning 3,730
+  Items measured: 3 of 3 · Shared overhead: 14,200 input / 900 output
+  Duration: 2h 19m · Paused: 22m 41s
+  Coverage: complete for this host. A Cursor CLI segment, had there been one, would read
+  `unavailable`: that host exposes no per-turn usage to a plugin.

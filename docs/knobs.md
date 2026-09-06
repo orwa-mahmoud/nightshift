@@ -281,12 +281,29 @@ item, saying what was delivered and why. It never reaches a public commit messag
 | `legacyItemReceipts` | `false` | Artifact items are completed by their report section. `true` also writes the older per-item receipt file. Baseline, checkpoint and source receipts are unaffected |
 | `templatePath` | `""` | A Markdown template for the report, on the same terms as the handoff template: wording only |
 
-Per-item accounting is Nightshift's own work, not something a host has to support: it records a
-baseline when an item starts, tracks while the item is active, calculates the item's consumption
-when it finishes, and resets so the next item starts from its own baseline. Where a host exposes
-cumulative counters that is a delta; where it emits usage events instead, they are summed for the
-active item. The shift total adds the shared overhead that belongs to no single item and says
-whether the coverage is complete or partial. No token count is ever turned into a price.
+The measuring is the runtime's, not the model's. No host shows a model its own token counts from
+inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
+Nightshift already registers do see the numbers, and they take the readings. The tick is the
+boundary: everything spent between two ticks belongs to the item ticked second, and the gate writes
+that item's usage and duration lines into its section as it releases.
+
+Where each host's figures come from, and what each one leaves out:
+
+- **Claude Code** — the session transcript the hook is handed. One response is written once per
+  content block and every copy repeats the same usage, so readings are deduplicated on the request
+  id; summing lines instead would overstate a real session by more than half. Cache creation and
+  cache read are reported separately from input and are additive.
+- **Codex** — the rollout's running `token_count`, read with one tail. Codex counts cached input
+  inside its input figure and reasoning inside its output figure, and the report says so rather
+  than rearranging the numbers.
+- **Cursor** — the stop payload, which is the only place the figures appear; the local agent
+  transcripts carry none. Input overlaps the cache figures, and Cursor reports no reasoning and no
+  subagent tokens. The Cursor CLI the watchman revives into has no per-turn source at all, so a
+  revived segment there is `unavailable`.
+
+A dimension a host does not report reads `unavailable` — never zero, because zero is a
+measurement and silence is not. Totals are never summed across hosts, and no token count is ever
+turned into a price.
 
 [`examples/shift-report.md`](../examples/shift-report.md) shows the shape, including an item still
 in progress and usage that is only partly available.
