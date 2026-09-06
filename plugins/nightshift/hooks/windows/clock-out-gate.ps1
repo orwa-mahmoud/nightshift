@@ -199,6 +199,31 @@ function Invoke-NSWhistle {
     }
 }
 
+# Every ending runs through here. The shift is over by now, so asking the model to file is a
+# request it can carry out, and that request is the one hold left in a finished shift. Asking is
+# recorded, so the next stop releases either way.
+function Complete-NSShiftAndStop {
+    param([Parameter(Mandatory = $true)][string]$Summary)
+    Complete-NSShift $Summary
+    Complete-NSShiftHold
+    Write-Release
+}
+
+# The one hold left in a finished shift: the owner asked for filing, so the model is given its
+# turn before the session terminates. Asking is recorded, so the next stop releases either way.
+function Complete-NSShiftHold {
+    $pending = Join-Path $ns '.pending-filing'
+    if ((Test-Path -LiteralPath (Join-Path $ns '.ended') -PathType Leaf) -and
+        -not (Test-Path -LiteralPath $armed) -and
+        (Test-Path -LiteralPath $pending -PathType Leaf) -and
+        -not (Test-NSReparsePoint $pending) -and
+        -not (@([IO.File]::ReadAllLines($pending)) -ccontains 'asked=1')) {
+        [IO.File]::AppendAllText($pending, "asked=1`n", $utf8)
+        Write-NSLogLine 'archive.automatic is on - holding once so this shift can be filed before the session ends'
+        Write-Block 'DO NOT STOP YET - this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete .nightshift/.pending-filing when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive.'
+    }
+}
+
 function Complete-NSShift {
     param([Parameter(Mandatory = $true)][string]$Summary)
     if (Test-Path -LiteralPath $ns -PathType Container) {
@@ -219,23 +244,19 @@ function Complete-NSShift {
     Write-NSEndedRecord -StateDir $ns -ShiftId $endedId `
         -ArchiveRoot ([string](Get-NSPolicyGroupSetting $workspace 'archive.root')['value']) `
         -ArchiveLayout ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
+    if (Test-NSArchiveAutomatic $workspace) {
+        $pending = Join-Path $ns '.pending-filing'
+        if (Test-NSReparsePoint $pending) { Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue }
+        [IO.File]::WriteAllText($pending,
+            ('date=' + (Get-Date -Format 'yyyy-MM-dd') + "`nshiftId=$endedId`n"), $utf8)
+        Write-NSLogLine 'archive.automatic is on - filing is due for this shift'
+    }
     Save-NSPolicyArchive
     Save-NSEvidenceArchive
     Save-NSReceipt $Summary
     # An owner who asked for filing at clock-out gets a note that filing is due, not a hook that
     # files. Deciding which records are closed reads the punch list and the work; a stop hook is
     # the wrong place for that judgement and no session is spawned to make it.
-    if ((Test-Path -LiteralPath $ns -PathType Container) -and (Test-NSArchiveAutomatic $workspace)) {
-        $pending = Join-Path $ns '.pending-filing'
-        if (Test-NSReparsePoint $pending) {
-            Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue
-        }
-        $pendingId = 'unknown'
-        $pendingState = Get-NSShiftPolicyState $workspace
-        if ($pendingState['state'] -ceq 'valid') { $pendingId = [string]$pendingState['policy']['shiftId'] }
-        [IO.File]::WriteAllText($pending, ((Get-Date -Format 'yyyy-MM-dd') + "`n" + $pendingId + "`n"), $utf8)
-        Write-NSLogLine 'archive.automatic is on - filing is due for this shift'
-    }
     Invoke-NSWhistle $Summary
 }
 
@@ -371,6 +392,9 @@ if (Test-Path -LiteralPath $stop -PathType Leaf) {
             Exit-NSMutex $mutex
         }
     }
+    # The mutex is released first: the hold below may end the session, and holding a site mutex
+    # across that would leave the next stop waiting on a process that is gone.
+    Complete-NSShiftHold
     Write-Release
 }
 
@@ -420,25 +444,21 @@ try {
         catch {
         }
         $suffix = if ([string]::IsNullOrEmpty($reason)) { '' } else { " ($reason)" }
-        Complete-NSShift ("shift ended${suffix}: $($counts.Ticked)/$($counts.Total) done")
-        Write-Release
+        Complete-NSShiftAndStop ("shift ended${suffix}: $($counts.Ticked)/$($counts.Total) done")
     }
 
     if ($counts.Readable) {
         if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) {
-            Complete-NSShift "shift done: $($counts.Ticked)/$($counts.Total)"
-            Write-Release
+            Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
         }
         if ($counts.Open -eq 0) {
-            Complete-NSShift "shift done: $($counts.Ticked)/$($counts.Total)"
-            Write-Release
+            Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
         }
     }
     if (Test-NSDeadlinePassed) {
         Write-NSLogLine "quitting time - shift ended, $($counts.Ticked)/$($counts.Total) done, items left open"
         [IO.File]::WriteAllText($stop, "deadline$([Environment]::NewLine)", $utf8)
-        Complete-NSShift "quitting time: $($counts.Ticked)/$($counts.Total) done, items left open"
-        Write-Release
+        Complete-NSShiftAndStop "quitting time: $($counts.Ticked)/$($counts.Total) done, items left open"
     }
 
     if ($stallReady) {
@@ -462,8 +482,7 @@ try {
         if ($stallMax -gt 0 -and $attempts -ge $stallMax) {
             Write-NSLogLine "stalled - auto-ended, $attempts attempts no progress, $($counts.Ticked)/$($counts.Total) done, items left open"
             [IO.File]::WriteAllText($stop, "stalled$([Environment]::NewLine)", $utf8)
-            Complete-NSShift "stalled: $($counts.Ticked)/$($counts.Total) done, $attempts attempts no progress"
-            Write-Release
+            Complete-NSShiftAndStop "stalled: $($counts.Ticked)/$($counts.Total) done, $attempts attempts no progress"
         }
         if ($stallMax -eq 0 -and $attempts -ge $stallWarn) {
             Write-NSLogLine "stall warning - $attempts attempts no progress, $($counts.Ticked)/$($counts.Total) done; keeping shift open"

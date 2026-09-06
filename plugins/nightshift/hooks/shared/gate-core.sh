@@ -84,3 +84,42 @@ ns_gate_deadline_passed() {
   fi
   [ -n "$target" ] && [ "$now" -ge "$target" ]
 }
+
+# The terminal sequence, shared so every host ends a shift the same way.
+#
+# Ending a shift and filing it are two different acts, and only one of them can happen inside a
+# hook: filing decides which records are closed, which means reading the punch list and the work,
+# which is the model's job. So the gate ends the shift, records what a later filing needs, and —
+# when the owner asked for filing at clock-out — holds the session once more so the model can file
+# before it stops. That is the whole transition, and it is executable: by the time the model is
+# asked, the shift has genuinely ended.
+#
+# ns_gate_record_ending <nightshift-dir> <project-dir> <shift-id>
+ns_gate_record_ending() {
+  local ns="$1" project="$2" id="${3:-unknown}"
+  ns_ended_record "$ns" "$id" \
+    "$(ns_archive "$project" root)" "$(ns_archive "$project" layout)"
+  [ -d "$ns" ] || return 0
+  ns_archive_automatic "$project" || return 0
+  [ -L "$ns/.pending-filing" ] && rm -f "$ns/.pending-filing"
+  printf 'date=%s\nshiftId=%s\n' "$(date +%Y-%m-%d)" "$id" >"$ns/.pending-filing" 2>/dev/null || :
+}
+
+# ns_gate_filing_due <nightshift-dir> — status 0 when the model still owes this ended shift its
+# filing and has not been asked yet. Asking is recorded, so the next stop releases either way: a
+# session that could not file leaves the marker for the next explicit Archive rather than being
+# held forever by a hook that cannot do the filing itself.
+ns_gate_filing_due() {
+  local ns="$1" pending="$1/.pending-filing"
+  [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ] || return 1
+  [ ! -f "$ns/.shift-armed" ] || return 1
+  [ -f "$pending" ] && [ ! -L "$pending" ] || return 1
+  grep -q '^asked=1$' "$pending" 2>/dev/null && return 1
+  printf 'asked=1\n' >>"$pending" 2>/dev/null || return 1
+  return 0
+}
+
+# ns_gate_filing_message <nightshift-dir> — what the model is told when filing is due.
+ns_gate_filing_message() {
+  printf '%s' "DO NOT STOP YET — this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete .nightshift/.pending-filing when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive."
+}

@@ -167,9 +167,26 @@ end_shift() {
   else
     log_line "morning receipt disabled by the owner (handoff.enabled) - every record stands"
   fi
+  # The marker that says this shift ended also says which shift and where it files, and notes that
+  # filing is due when the owner asked for it.
+  ns_gate_record_ending "$NS" "$PROJECT_DIR" "${shift_id:-unknown}"
   archive_findings_ledger "${shift_id:-unknown}"
   receipts_commit "$1"
   whistle "$1"
+}
+
+# Every ending runs through here. The shift is over by now, so asking the model to file is a
+# request it can carry out, and that request is the one hold left in a finished shift. Asking is
+# recorded, so the next stop releases either way.
+end_and_stop() {
+  end_shift "$1"
+  if ns_gate_filing_due "$NS"; then
+    log_line "archive.automatic is on - holding once so this shift can be filed before the session ends"
+    codex_emit_block "$(ns_gate_filing_message "$NS")"
+  else
+    codex_emit_release
+  fi
+  exit 0
 }
 
 PUNCH_UNREADABLE=0
@@ -182,10 +199,10 @@ honor_stop() {
   if [ -f "$PUNCH" ]; then
     reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     summary="shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
-    end_shift "$summary"
+    end_and_stop "$summary"
   else
     reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-    end_shift "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
+    end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
   fi
 }
 
@@ -199,9 +216,8 @@ if [ ! -f "$NS/.shift-armed" ]; then codex_emit_release; exit 0; fi
 # owner-issued order through clock-out; process ownership must never make emergency stop unusable.
 if [ -f "$STOP" ]; then
   if [ -d "$NS" ] && ns_lock "$NS"; then trap 'ns_unlock "$NS"' EXIT; fi
+  # honor_stop ends the shift and terminates: every path through it releases or holds.
   honor_stop
-  codex_emit_release
-  exit 0
 fi
 
 LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
@@ -239,23 +255,18 @@ fi
 
 # 1. Stop-work order — honor at once; open boxes are left open on purpose.
 if [ -f "$STOP" ]; then
+  # honor_stop ends the shift and terminates: every path through it releases or holds.
   honor_stop
-  codex_emit_release
-  exit 0
 fi
 
 # 2. Done — no punch list at all, or every box ticked. An unreadable punch
 # list is not zero open: do not release.
 if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
   if [ ! -f "$PUNCH" ]; then
-    end_shift "shift done: $TICKED/$TOTAL"
-    codex_emit_release
-    exit 0
+    end_and_stop "shift done: $TICKED/$TOTAL"
   fi
   if [ "$OPEN" -eq 0 ]; then
-    end_shift "shift done: $TICKED/$TOTAL"
-    codex_emit_release
-    exit 0
+    end_and_stop "shift done: $TICKED/$TOTAL"
   fi
 fi
 
@@ -263,9 +274,7 @@ fi
 if [ -f "$DEADLINE" ] && deadline_passed; then
   log_line "quitting time — shift ended, $TICKED/$TOTAL done, items left open"
   printf 'deadline\n' >"$STOP"
-  end_shift "quitting time: $TICKED/$TOTAL done, items left open"
-  codex_emit_release
-  exit 0
+  end_and_stop "quitting time: $TICKED/$TOTAL done, items left open"
 fi
 
 # Stall guard — consecutive stop attempts with no progress. Progress = a box ticked OR a
@@ -290,9 +299,7 @@ if [ "$STALL_OK" -eq 1 ]; then
     if [ "$attempts" -ge "$STALL_MAX" ]; then
       log_line "stalled — auto-ended, $attempts attempts no progress, $TICKED/$TOTAL done, items left open"
       printf 'stalled\n' >"$STOP"
-      end_shift "stalled: $TICKED/$TOTAL done, $attempts attempts no progress"
-      codex_emit_release
-      exit 0
+      end_and_stop "stalled: $TICKED/$TOTAL done, $attempts attempts no progress"
     fi
   elif [ "$attempts" -ge "$STALL_WARN" ]; then
     log_line "stall warning — session active, no durable checkpoint since the last $attempts stop attempts, $TICKED/$TOTAL done; keeping shift open"

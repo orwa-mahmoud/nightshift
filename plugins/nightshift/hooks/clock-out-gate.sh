@@ -78,6 +78,15 @@ case "$STALL_WARN" in '' | *[!0-9]* | 0) STALL_OK=0 ;; esac
 NOTIFY="$(rule "$PROJECT_DIR" notifyCommand "${NIGHTSHIFT_NOTIFY_CMD:-}")"
 GATE_MESSAGE="$(ns_expand_injected_paths "$PROJECT_DIR" "$(rule "$PROJECT_DIR" clockOutMessage "${NIGHTSHIFT_GATE_MESSAGE:-}")")"
 
+_ns_clock_out_block() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -nc --arg r "$1" '{decision:"block",reason:$r}'
+    return
+  fi
+  escaped="$(printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '{"decision":"block","reason":"%s"}\n' "$escaped"
+}
+
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 
@@ -198,24 +207,32 @@ end_shift() {
   else
     log_line "morning receipt disabled by the owner (handoff.enabled) - every record stands"
   fi
-  # The marker that says this shift ended also says which shift, and where it files. Archiving the
-  # policy below takes both away from any later Archive, and one shift's records must not end up
-  # half under its own name and half under a date.
-  ns_ended_record "$NS" "${shift_id:-unknown}" \
-    "$(ns_archive "$PROJECT_DIR" root)" "$(ns_archive "$PROJECT_DIR" layout)"
+  # The marker that says this shift ended also says which shift and where it files, and notes that
+  # filing is due when the owner asked for it. Archiving the policy below takes the first two away
+  # from any later Archive, and one shift's records must not end up half under its own name and
+  # half under a date.
+  ns_gate_record_ending "$NS" "$PROJECT_DIR" "${shift_id:-unknown}"
   archive_shift_policy
   archive_findings_ledger "${shift_id:-unknown}"
   receipts_commit "$1"
-  # An owner who asked for filing at clock-out gets a note that filing is due, not a hook that
-  # files. Deciding which records are closed reads the punch list and the work; a stop hook is the
-  # wrong place for that judgement and no session is spawned to make it. The model does it before
-  # it stops, and if the session never gets that far the note is what the next Archive finds.
-  if ns_archive_automatic "$PROJECT_DIR" && [ -d "$NS" ]; then
-    [ -L "$NS/.pending-filing" ] && rm -f "$NS/.pending-filing"
-    printf '%s\n%s\n' "$(date +%Y-%m-%d)" "${shift_id:-unknown}" >"$NS/.pending-filing" 2>/dev/null || :
+  if [ -f "$NS/.pending-filing" ]; then
     log_line "archive.automatic is on - filing is due for this shift"
   fi
   whistle "$1"
+}
+
+# Every ending runs through here. The shift is over by now — the marker is written and the site is
+# disarmed — so asking the model to file is a request it can actually carry out, and the one hold
+# left in a finished shift is that request. Asking is recorded, so the next stop releases either
+# way: a session that could not file leaves the marker for the next explicit Archive rather than
+# being held forever by a hook that cannot do the filing itself.
+end_and_stop() {
+  end_shift "$1"
+  if ns_gate_filing_due "$NS"; then
+    log_line "archive.automatic is on - holding once so this shift can be filed before the session ends"
+    _ns_clock_out_block "$(ns_gate_filing_message "$NS")"
+  fi
+  exit 0
 }
 
 PUNCH_UNREADABLE=0
@@ -228,10 +245,10 @@ honor_stop() {
   if [ -f "$PUNCH" ]; then
     reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     summary="shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
-    end_shift "$summary"
+    end_and_stop "$summary"
   else
     reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-    end_shift "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
+    end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
   fi
 }
 
@@ -244,14 +261,22 @@ CURRENT_START="$NS_CURRENT_START"
 # A shift exists because the owner started one, never because a list exists. Nightshift Start
 # writes .shift-armed; without it the punch list is a to-do file and every session stops freely —
 # including the one that just wrote the list while planning.
+# The shift has ended and the owner asked for filing. Hold the session once more so the model can
+# file before it terminates — the shift is genuinely over by now, which is what makes filing legal
+# and the request executable. Asking is recorded, so stopping again releases either way.
+if ns_gate_filing_due "$NS"; then
+  log_line "archive.automatic is on - holding once so this shift can be filed before the session ends"
+  _ns_clock_out_block "$(ns_gate_filing_message "$NS")"
+  exit 0
+fi
 [ -f "$NS/.shift-armed" ] || exit 0
 
 # STOP is an owner capability, not a worker capability. Any Stop event may carry an existing
 # owner-issued order through clock-out; process ownership must never make emergency stop unusable.
 if [ -f "$STOP" ]; then
   if [ -d "$NS" ] && ns_lock "$NS"; then trap 'ns_unlock "$NS"' EXIT; fi
+  # honor_stop ends the shift and terminates: every path through it releases or holds for filing.
   honor_stop
-  exit 0
 fi
 
 # Cursor IDE also runs this Claude gate; leave Cursor's gate as the only clock-out owner.
@@ -289,19 +314,16 @@ fi
 # 1. Stop-work order — honor at once; open boxes are left open on purpose.
 if [ -f "$STOP" ]; then
   honor_stop
-  exit 0
 fi
 
 # 2. Done — no punch list at all, or every box ticked. An unreadable punch
 # list is not zero open: do not release.
 if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
   if [ ! -f "$PUNCH" ]; then
-    end_shift "shift done: $TICKED/$TOTAL"
-    exit 0
+    end_and_stop "shift done: $TICKED/$TOTAL"
   fi
   if [ "$OPEN" -eq 0 ]; then
-    end_shift "shift done: $TICKED/$TOTAL"
-    exit 0
+    end_and_stop "shift done: $TICKED/$TOTAL"
   fi
 fi
 
@@ -310,8 +332,7 @@ fi
 if deadline_passed; then
   log_line "quitting time — shift ended, $TICKED/$TOTAL done, items left open"
   printf 'deadline\n' >"$STOP"
-  end_shift "quitting time: $TICKED/$TOTAL done, items left open"
-  exit 0
+  end_and_stop "quitting time: $TICKED/$TOTAL done, items left open"
 fi
 
 # Stall guard — consecutive stop attempts with no progress. Progress = a box ticked OR a
@@ -336,8 +357,7 @@ if [ "$STALL_OK" -eq 1 ]; then
     if [ "$attempts" -ge "$STALL_MAX" ]; then
       log_line "stalled — auto-ended, $attempts attempts no progress, $TICKED/$TOTAL done, items left open"
       printf 'stalled\n' >"$STOP"
-      end_shift "stalled: $TICKED/$TOTAL done, $attempts attempts no progress"
-      exit 0
+      end_and_stop "stalled: $TICKED/$TOTAL done, $attempts attempts no progress"
     fi
   elif [ "$attempts" -ge "$STALL_WARN" ]; then
     log_line "stall warning — session active, no durable checkpoint since the last $attempts stop attempts, $TICKED/$TOTAL done; keeping shift open"
@@ -358,14 +378,6 @@ fi
 # copies. jq embeds it when present; otherwise the same string is JSON-escaped in the shell.
 # The block itself never depends on config: an unreadable message still blocks, fail closed,
 # with the repair named.
-_ns_clock_out_block() {
-  if command -v jq >/dev/null 2>&1; then
-    jq -nc --arg r "$1" '{decision:"block",reason:$r}'
-    return
-  fi
-  escaped="$(printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
-  printf '{"decision":"block","reason":"%s"}\n' "$escaped"
-}
 if [ -n "$GATE_MESSAGE" ]; then
   _ns_clock_out_block "$GATE_MESSAGE"
   exit 0

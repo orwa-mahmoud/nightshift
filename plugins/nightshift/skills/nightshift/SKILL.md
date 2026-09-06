@@ -306,10 +306,18 @@ plus one handover line in `$NS/shift-log.md`, then
 stop. History is append-only on shift — no `reset --hard`,
 `rebase`, `amend`, or force operations; the night's receipts must survive to morning.
 
-If `archive.automatic=true` in the resolved policy, file the shift before you stop: run the
-Archive skill once the shift has ended, decide which records are closed the way Archive describes,
-and delete `$NS/.pending-filing` when it is done. That marker is written by the gate, not acted on
-by it — deciding what is finished with reads the punch list and the work, which a stop hook cannot
-do. A marker still there at the next Start means the last shift ended before it could file, and
-the next explicit Archive picks it up. The default is `false`: filing stays something the owner
-asks for.
+If `archive.automatic=true` in the resolved policy, the shift is filed before the session ends,
+and the order is the gate's, not yours to arrange:
+
+1. You stop as usual. The gate ends the shift — marker written, site disarmed, policy archived —
+   and then holds the session once, telling you filing is due. By that point the shift really has
+   ended, which is what makes filing it legitimate.
+2. Run the Archive skill now. Decide from the punch list and the records which belong to work that
+   is finished with, file those, and delete `$NS/.pending-filing` when it is done.
+3. Stop again. That releases.
+
+The gate never files: deciding what is finished with reads the punch list and the work, which a
+stop hook cannot do. It also never holds you twice — stopping a second time releases whether or
+not filing succeeded, so a session that could not file leaves the marker rather than being stuck.
+A marker still there at the next Start means exactly that, and the next explicit Archive picks it
+up. The default is `false`: filing stays something the owner asks for.

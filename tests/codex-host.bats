@@ -99,3 +99,39 @@ codex_hook() {
   grep -qF 'clean session end (error)' "$p/.nightshift/.session-end"
   [ "$(cat "$outside")" = untouched ]
 }
+
+# codex_stop <project> — a Codex stop payload.
+codex_stop() {
+  jq -nc --arg w "$1" '{session_id:"sess-1",cwd:$w,hook_event_name:"Stop"}' |
+    env CODEX_PROJECT_DIR="$1" bash "$CODEX/clock-out-gate.sh"
+}
+
+@test "the Codex gate holds an ended shift once so the model can file it" {
+  p="$(new_project codex-auto-file)"
+  printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"
+  jq '.archive.automatic = true' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+
+  run codex_stop "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'file it before the session terminates' \
+    || { echo "the shift ended without asking for its filing: $output"; return 1; }
+  [ -f "$p/.nightshift/.ended" ]
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+  [ -f "$p/.nightshift/.pending-filing" ]
+
+  run codex_stop "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qvF 'file it before the session terminates'
+}
+
+@test "the Codex gate records which shift ended and where it files" {
+  p="$(new_project codex-ended-record)"
+  printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"
+  jq '.archive.root = "history" | .archive.layout = "shift"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run codex_stop "$p"
+  [ "$status" -eq 0 ]
+  grep -qF 'archiveRoot=history' "$p/.nightshift/.ended"
+  grep -qF 'archiveLayout=shift' "$p/.nightshift/.ended"
+}

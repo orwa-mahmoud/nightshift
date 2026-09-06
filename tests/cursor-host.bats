@@ -172,3 +172,33 @@ cursor_pulse() {
   # It leaves no claim behind on a site it is not watching.
   [ ! -f "$p/.nightshift/.watchman" ]
 }
+
+@test "the Cursor gate holds an ended shift once so the model can file it" {
+  p="$(new_project cursor-auto-file)"
+  printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"
+  jq '.archive.automatic = true' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+
+  run cursor_stop "$p"
+  [ "$status" -eq 0 ]
+  cursor_blocked "$output" || { echo "the shift ended without asking for its filing: $output"; return 1; }
+  printf '%s' "$output" | jq -r .followup_message | grep -qF 'file it before the session terminates'
+  # It really did end: the marker is written and the site is disarmed.
+  [ -f "$p/.nightshift/.ended" ]
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+  [ -f "$p/.nightshift/.pending-filing" ]
+
+  # Stopping again releases, whether or not filing happened.
+  run cursor_stop "$p"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "the Cursor gate releases a finished shift that asked for nothing" {
+  p="$(new_project cursor-auto-off)"
+  printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"
+  run cursor_stop "$p"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -e "$p/.nightshift/.pending-filing" ]
+}

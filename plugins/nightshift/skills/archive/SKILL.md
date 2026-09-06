@@ -42,9 +42,14 @@ Nightshift records; do not require a work-target commit that cannot exist. Copy 
 Missing or empty receipts create no dated receipts folder.
 A receipts path that is not a usable directory is a refuse, not an empty skip.
 
-If `$NS/.pending-filing` exists, the last shift asked for filing at clock-out and did not get to
-it. Its two lines are that shift's date and id — use them, then delete the marker once filing is
-done. Nothing else about it is special: file the same way you would on any explicit Archive.
+If `$NS/.pending-filing` exists, a shift asked for filing at clock-out. It carries `date=` and
+`shiftId=` lines naming that shift — use them — and an `asked=1` line once the gate has held the
+session to ask for it. Delete the marker once filing is done, and only then. Nothing else about it
+is special: file the same way you would on any explicit Archive.
+
+`$NS/.ended` names the shift that finished and where it files, in `shiftId=`, `archiveRoot=` and
+`archiveLayout=` lines. Those are what a later Archive follows, because clock-out has already
+archived the policy that used to say.
 
 **Filing is a copy. Removing a live record is a separate decision, and it is yours to make.**
 The helper retires only what you name, and only once the shift has ended: `--retire` with one

@@ -1129,11 +1129,12 @@ handoff() {
   [ "$first" != "$second" ]
 }
 
-# archive.automatic asks for filing at clock-out. The gate notes that filing is due; it never files.
-# Deciding which records are closed reads the punch list and the work, which a stop hook cannot do,
-# and no session is spawned to make that judgement.
+# archive.automatic asks for filing at clock-out, and filing decides which records are closed —
+# which means reading the punch list and the work, which a hook cannot do. So the gate ends the
+# shift, records that filing is due, and holds the session once more so the model can file before
+# it terminates. By then the shift has genuinely ended, which is what makes the request executable.
 
-@test "an owner who asked for filing at clock-out gets a note that it is due, not a hook that files" {
+@test "a shift that asked for filing is held once, after it has ended, so the model can file" {
   root="$(plugin_copy archive-auto)"
   p="$(new_project gate-archive-auto)"
   punch_done "$p"
@@ -1143,13 +1144,57 @@ handoff() {
   mkdir -p "$p/.nightshift/receipts"
   printf 'a receipt\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
 
+  # The stop that ends the shift. It ends: the marker is written and the site is disarmed.
+  run gate_from "$root" "$p"
+  is_block "$output"
+  printf '%s' "$output" | jq -r .reason | grep -qF 'file it before the session terminates'
+  [ -f "$p/.nightshift/.ended" ]
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+  [ -f "$p/.nightshift/.pending-filing" ]
+  grep -qF 'shiftId=9f2c40ab77e51d63' "$p/.nightshift/.pending-filing"
+  # The gate filed nothing and removed nothing: that judgement is the model's.
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+
+  # Stopping again releases, whether or not the model managed to file. An unfiled marker is left
+  # for the next explicit Archive rather than holding the session forever.
   run gate_from "$root" "$p"
   is_release
   [ -f "$p/.nightshift/.pending-filing" ]
-  [ "$(sed -n 2p "$p/.nightshift/.pending-filing")" = 9f2c40ab77e51d63 ]
-  grep -qF 'archive.automatic is on' "$p/.nightshift/shift-log.md"
-  # The record is exactly where it was: the gate filed nothing and removed nothing.
-  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+}
+
+@test "a model that filed is not asked again" {
+  root="$(plugin_copy archive-filed)"
+  p="$(new_project gate-archive-filed)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.archive.automatic = true'
+
+  run gate_from "$root" "$p"
+  is_block "$output"
+  # The model files and clears the marker, the way Archive is told to.
+  rm -f "$p/.nightshift/.pending-filing"
+  run gate_from "$root" "$p"
+  is_release
+}
+
+@test "an ordinary conversation afterwards never re-arms the finished shift" {
+  root="$(plugin_copy archive-after)"
+  p="$(new_project gate-archive-after)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.archive.automatic = true'
+  run gate_from "$root" "$p"
+  is_block "$output"
+  rm -f "$p/.nightshift/.pending-filing"
+
+  # Someone adds work to the list afterwards and keeps talking. The shift is over.
+  printf '## Items\n- [x] **1. done.**\n- [ ] **2. added after the ending.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -f "$p/.nightshift/.shift-armed" ]
 }
 
 @test "the default is explicit filing, and no note is left" {

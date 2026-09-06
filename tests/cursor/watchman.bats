@@ -6,6 +6,11 @@ setup() {
   mkdir -p "$P/.nightshift"
   cp "$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" "$P/.nightshift/rules.json"
   printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+  # Cursor names no scope for a session's permissions, so the shipped inherit setting has nothing
+  # to inherit and a revival refuses. A site that means to be revived says which scope a revival
+  # may use, and these tests are about reviving.
+  jq '.recovery.launchScope = "host-default"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
   : >"$P/.nightshift/.shift-armed"
   printf 'origin-ide\n%s\n\n\ncursor\n' "$BATS_TEST_TMPDIR/origin.jsonl" >"$P/.nightshift/.shift-session"
   : >"$BATS_TEST_TMPDIR/origin.jsonl"
