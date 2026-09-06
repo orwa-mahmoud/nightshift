@@ -122,7 +122,7 @@ once and proceed, because the choice stays the owner's.
 
 **Artifact mode completes with receipts, not commits.** When the verdict is
 `ok work-mode artifact`, complete each item with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt` (native)
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt`
 instead of a work-target commit. Completion there is `$NS/receipts/`, not a git log.
 
 **Inspect capabilities in the skill.** Read manifests, lockfiles, and `## Gates` in the work

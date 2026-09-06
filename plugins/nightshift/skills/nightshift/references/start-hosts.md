@@ -89,7 +89,7 @@ CLI worker in `.shift-worker` and never passes the IDE id to `agent --resume`.
 
 `repository` is the historical default. `artifact` means the work target is a persistent folder,
 not a Git repository: inspect and edit that folder, do not require Git, and complete each item with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt` (native)
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt`
 instead of a work-target commit. Completion there is `$NS/receipts/`, not a git log. Cited reports
 follow `cited-research.md` beside this file and
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report`.
@@ -110,7 +110,5 @@ refuse to arm outside the task root and send the owner to Setup; never discover 
 ## State version
 
 Migration is a Setup or Doctor repair only —
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state` on POSIX,
-
-on native Windows. Start never writes the marker, and a newer marker is never rewritten or
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state`. Start never writes the marker, and a newer marker is never rewritten or
 downgraded.
