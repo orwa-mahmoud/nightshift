@@ -20,7 +20,7 @@ On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime
 with the same flags. Use the PowerShell tool and native paths; do not route Hunt through WSL
 or Git Bash. `ns help` lists the verbs this host has.
 
-Read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/execution-modes.md` before composing: it
+Read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/execution-modes.md` before composing: it
 carries the state map, who selects work, when the clock starts, direct-mode authority, the tooling
 policy, and how several entries become one shift. If `$NS/` does not exist yet, tell the owner to
 run Setup, then return.
@@ -42,7 +42,7 @@ wording — are a complete prompt: compose it and run it. Examples of a complete
 
 ## 1. Ask who selects
 
-Entries live one per file in `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shifts/`.
+Entries live one per file in `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/shifts/`.
 **Start with what the catalog holds, not with every contract in it:**
 
 ```bash

@@ -84,21 +84,16 @@ pretending it is a repository.
 
 ## 1. Scaffold `$NS/` (never clobber an existing shift)
 
-For each target below, copy the template only if the target does not already exist:
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" scaffold
+```
 
-- `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/punch-list-template.md` → `$NS/punch-list.md`
-- `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/drafting-table-template.md` → `$NS/drafting-table.md`
-- `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/parking-lot-template.md` → `$NS/parking-lot.md`
-- `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/snag-log-template.md` → `$NS/snag-log.md`
-- `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/product-research-template.md` → `$NS/product-research.md`
-- `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/opportunity-map-template.md` → `$NS/opportunity-map.md`
-- `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/work-orders-template.md` → `$NS/work-orders.md`
-
-When copying, substitute the resolved absolute workspace path for `$NIGHTSHIFT_WORKSPACE` and the
-bound Nightshift directory for `$NS` in the destination file so the owner's copy contains resolved
-absolute paths. A human copy-pasting STOP from their punch list does not have those skill variables. Leave
-the shipped template unchanged. Never write those tokens into `rules.json` — revival and clock-out
-text stay owner-editable, and the gate qualifies bare `.nightshift/` mentions at injection time.
+It writes each state file that is not already there and reports `wrote <name>` or `kept <name>`,
+so a name the owner already has is left exactly as it is and a second run is a safe repair. Read
+its output back. The copies carry resolved absolute paths — a person pasting a command out of
+their own punch list has no `$NS` — and the shipped templates are unchanged. Never write those
+tokens into `rules.json`: revival and clock-out text stay owner-editable, and the gate qualifies
+bare `.nightshift/` mentions at injection time.
 
 Create `$NS/shift-log.md` with a one-line header if absent.
 
@@ -152,7 +147,7 @@ not rewrite or downgrade it, and do not continue scaffolding as if the site were
 ## 3. Gates — ask, never impose
 
 Detect the stack in the persisted work target from the table in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/gates-catalog.md`
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/gates-catalog.md`
 (monorepo-aware). A plugin or marketplace manifest may sit at the work-target
 root or one directory down at `plugins/<name>/.claude-plugin/` /
 `plugins/<name>/.codex-plugin/`; that nested layout is a match when no
@@ -251,7 +246,7 @@ The helper prints the preview and the complete next file; read it out rather tha
 Applying requires an explicit yes and `--apply`. Refuse `--apply` while armed. Profiles are a one-time local copy — no network, no
 subscription. After applying a profile,
 write a preset receipt from
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md` so branch mode,
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md` so branch mode,
 allowed sources, verification profile, receipt retention, resource limits, and direct-mode
 boundaries trace to `rules.json`. Owner rules remain authoritative;
 presets never capture hidden policy.

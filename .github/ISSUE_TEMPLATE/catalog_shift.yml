@@ -8,7 +8,7 @@ body:
       value: |
         Propose a shift the catalog does not yet have. This form does **not** add the shift —
         a merged entry is still two new files plus human review, per the
-        [catalog recipe](https://github.com/orwa-mahmoud/nightshift/blob/main/plugins/nightshift/skills/nightshift/references/catalog-recipe.md).
+        [catalog recipe](https://github.com/orwa-mahmoud/nightshift/blob/main/plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md).
         The [contribution map](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/contribution-map.md)
         lists the files and checks for catalog work.
 

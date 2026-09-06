@@ -281,14 +281,14 @@ requires hours and a walkthrough never runs without a cost cap. **Finite** entri
 list and end when it is clear, so hours are a cap rather than a requirement.
 
 The entries live one per file in
-[`shifts/`](plugins/nightshift/skills/nightshift/references/shifts/) — read that directory for the current set
+[`shifts/`](plugins/nightshift/skills/nightshift/references/compose/shifts/) — read that directory for the current set
 and the exact contract of each. No page enumerates them.
 
 **Running a night that isn't in there? Add it.** Catalog entries are the easiest contributions to
 review and merge: one Markdown contract and its focused test, with no shared hook change. Each
 entry lands in its own file, so nothing you write collides with anyone else's.
 The [contribution map](docs/contribution-map.md) and
-[`catalog-recipe.md`](plugins/nightshift/skills/nightshift/references/catalog-recipe.md) show the
+[`catalog-recipe.md`](plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md) show the
 two files and checks.
 
 ## Built into every host, not pasted into a prompt

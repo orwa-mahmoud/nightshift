@@ -58,7 +58,7 @@ one verdict per line: `ok` for a fact worth stating, `warn` for something the ow
 while the shift still arms, and `refuse` for a condition that stops it. The sentences are
 byte-identical on POSIX and native Windows, so a scheduled or headless run behaves exactly like an
 interactive one. Host-specific detail behind a verdict lives in
-[`start-hosts.md`](../plugins/nightshift/skills/nightshift/references/start-hosts.md).
+[`references/hosts/`](../plugins/nightshift/skills/nightshift/references/hosts/).
 
 Immediately after arming, Start — and Hunt or Quality when they start immediately — make a
 harmless host-shell probe—Bash on POSIX, PowerShell on

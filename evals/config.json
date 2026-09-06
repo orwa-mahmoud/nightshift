@@ -3,7 +3,7 @@
   "identifiers": "plugins/nightshift/skills/nightshift/references/schemas/v1/identifiers.json",
   "caseSchema": "evals/schema/case-v1.json",
   "reportSchema": "evals/schema/report-v1.json",
-  "catalogShifts": "plugins/nightshift/skills/nightshift/references/shifts",
+  "catalogShifts": "plugins/nightshift/skills/nightshift/references/compose/shifts",
   "skills": {
     "hunt": "plugins/nightshift/skills/hunt/SKILL.md",
     "quality": "plugins/nightshift/skills/quality/SKILL.md"

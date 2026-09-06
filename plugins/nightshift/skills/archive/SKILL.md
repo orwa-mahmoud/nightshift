@@ -152,7 +152,7 @@ files.
 
 After filing, write a lightweight private index of archived shifts for later comparison
 using the history-context template in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md`.
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`.
 The index lists each archived shift's objective, contracts, host, work target, outcome, evidence
 locators, verification, commits or artifacts, duration, and ending. Corrupt or missing fields are
 recorded — never invented. Compare prior shifts from that index to reuse evidence locators and

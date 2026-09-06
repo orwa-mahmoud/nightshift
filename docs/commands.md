@@ -24,7 +24,7 @@ Start asks nothing. It runs one native preflight —
 verdict per line (`ok`, `warn`, `refuse`) and exits non-zero when the site must not arm. Those
 sentences are identical on every host, so a scheduled run behaves like an interactive one. Detail
 behind a host-specific verdict is in
-[`start-hosts.md`](../plugins/nightshift/skills/nightshift/references/start-hosts.md).
+[`references/hosts/`](../plugins/nightshift/skills/nightshift/references/hosts/).
 
 Quality uses the same Guided or Automatic selection and Review first or Run directly launch modes
 as Hunt. Both compose in the skill; the model plans. Copyable owner requests for each combination

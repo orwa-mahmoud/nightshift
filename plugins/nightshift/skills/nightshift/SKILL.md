@@ -142,7 +142,7 @@ report; every other record stays exactly as honest, and no per-item receipt quie
 its place.
 
 The shape of every block is in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift-report-template.md`; read it once when
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift/shift-report-template.md`; read it once when
 the first item starts.
 
 **One section per punch-list item**, headed by that item's own id. A section carries the item's
@@ -174,13 +174,13 @@ as far as it got — a missing summary never holds up a stop or a deadline.
 
 Before the first fix that answers an originating source, write that source's baseline — once per
 source class — using
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md`, and reuse that
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`, and reuse that
 id for every fix from that source. Before a risky cluster — a migration, a codemod, a
 provisioning step, anything whose undo is not obvious — write a checkpoint receipt naming
 touched paths, the rollback ref, and the verification plan. The model writes both receipts; nothing here requires a parser.
 
 Cited research, SEO audits, sourced documentation, and research synthesis follow
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/cited-research.md`. Verify those reports with
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift/cited-research.md`. Verify those reports with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report` before the commit or artifact receipt.
 
 Then the next item. Item anatomy: one top-level checkbox per task, plain `-` sub-bullets, its own
@@ -230,7 +230,7 @@ it.
 When the owner selected **run directly**, that is explicit authority to choose and implement
 reasonable, reversible production defaults within the stated scope and time, under the direct-mode
 decision policy in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/execution-modes.md`. Do not turn ordinary
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift/direct-mode-decisions.md`. Do not turn ordinary
 code, API, design, localization, or cleanup judgments into blockers merely because alternatives
 exist.
 

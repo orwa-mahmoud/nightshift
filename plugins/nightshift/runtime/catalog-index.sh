@@ -39,7 +39,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-DIR="$PLUGIN_ROOT/skills/nightshift/references/shifts"
+DIR="$PLUGIN_ROOT/skills/nightshift/references/compose/shifts"
 [ -d "$DIR" ] || {
   printf 'catalog-index: no catalog at %s\n' "$DIR" >&2
   exit 2

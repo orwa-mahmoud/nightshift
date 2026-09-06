@@ -56,13 +56,13 @@ if (-not $newSite) {
 $null = New-Item -ItemType Directory -Path $ns -Force
 
 $templates = [ordered]@{
-    'skills/nightshift/references/punch-list-template.md' = 'punch-list.md'
-    'skills/nightshift/references/drafting-table-template.md' = 'drafting-table.md'
-    'skills/nightshift/references/parking-lot-template.md' = 'parking-lot.md'
-    'skills/nightshift/references/snag-log-template.md' = 'snag-log.md'
-    'skills/nightshift/references/product-research-template.md' = 'product-research.md'
-    'skills/nightshift/references/opportunity-map-template.md' = 'opportunity-map.md'
-    'skills/nightshift/references/work-orders-template.md' = 'work-orders.md'
+    'skills/nightshift/references/templates/punch-list.md' = 'punch-list.md'
+    'skills/nightshift/references/templates/drafting-table.md' = 'drafting-table.md'
+    'skills/nightshift/references/templates/parking-lot.md' = 'parking-lot.md'
+    'skills/nightshift/references/templates/snag-log.md' = 'snag-log.md'
+    'skills/nightshift/references/templates/product-research.md' = 'product-research.md'
+    'skills/nightshift/references/templates/opportunity-map.md' = 'opportunity-map.md'
+    'skills/nightshift/references/templates/work-orders.md' = 'work-orders.md'
     'skills/nightshift/references/nightshift-rules-template.json' = 'rules.json'
 }
 

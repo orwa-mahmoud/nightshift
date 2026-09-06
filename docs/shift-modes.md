@@ -1,7 +1,7 @@
 # Shift modes
 
 Hunt and Quality share two independent choices: who selects the work, and when the clock starts.
-The contract is in [selection and launch modes](../plugins/nightshift/skills/nightshift/references/execution-modes.md).
+The contract is in [selection and launch modes](../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md).
 This page is one copyable walkthrough per combination. Setup must already have been run in the
 project you want changed — a Git repository or a persistent folder, never a ChatGPT scratch
 workspace.

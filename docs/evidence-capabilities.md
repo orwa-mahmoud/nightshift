@@ -27,7 +27,7 @@ half-record. Hooks never depend on either — see
 
 ## What the model writes
 
-[`receipt-templates.md`](../plugins/nightshift/skills/nightshift/references/receipt-templates.md)
+[`receipts/cycle-specialist-evidence.md`](../plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md)
 carries a block per receipt shape: cycle, coverage, defect, source policy, history, specialist. The
 model copies the matching block and fills every field. A field the tools did not produce is
 `unavailable` — never "no findings", never passed. Untrusted fetched text is instructional
@@ -40,7 +40,7 @@ Two receipts have a fixed trigger:
   whose undo is not obvious.
 
 Cited reports, SEO audits, sourced documentation, and research synthesis follow
-[`cited-research.md`](../plugins/nightshift/skills/nightshift/references/cited-research.md). Source
+[`cited-research.md`](../plugins/nightshift/skills/nightshift/references/shift/cited-research.md). Source
 policies (`closed-list`, `bounded-discovery`, `connected-corpus`) decide what may be fetched.
 
 ## Policy behind a receipt
@@ -63,12 +63,12 @@ The tooling policy decides what a shift may add: `existing-tools` scans with wha
 `review-missing` holds the clock until the owner approves a plan, `auto-add` may install under the
 elevation categories the shift already allows. Artifact mode is always `existing-tools`.
 
-[`tooling-hints.md`](../plugins/nightshift/skills/nightshift/references/tooling-hints.md) names the
+[`tooling-hints.md`](../plugins/nightshift/skills/nightshift/references/compose/tooling-hints.md) names the
 tools commonly used for a capability, by ecosystem. It is a starting point, not authority: what the
 project already configures wins, and a capability that cannot be satisfied is reported
 `unavailable` rather than skipped quietly. When something is added, `runtime/provision.sh` captures
 the write surface first so the change can be undone — the seatbelt described in
-[`provisioning-engine.md`](../plugins/nightshift/skills/nightshift/references/provisioning-engine.md).
+[`provisioning-engine.md`](../plugins/nightshift/skills/nightshift/references/compose/provisioning-engine.md).
 
 ## Optional read-only helpers
 
@@ -131,4 +131,4 @@ and size. They do not run a host-agent matrix; a catalog contribution is still r
 - No telemetry. Product measures live in local receipts only.
 - Optional **SonarQube Community Edition** can back a site inspection when
   `sonar-project.properties` exists and a local instance answers; Sonar is never a per-item gate.
-  See [`gates-catalog.md`](../plugins/nightshift/skills/nightshift/references/gates-catalog.md).
+  See [`gates-catalog.md`](../plugins/nightshift/skills/nightshift/references/compose/gates-catalog.md).

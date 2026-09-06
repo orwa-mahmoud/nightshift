@@ -19,10 +19,10 @@ On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime
 with the same flags. Use the PowerShell tool and native paths; do not route Start through WSL
 or Git Bash. `ns help` lists the verbs this host has.
 
-Host detail — native Windows paths, permission modes, resume commands, work-mode rules, the
-stale-lease reset, and linking another workspace — lives in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/start-hosts.md`. Open it when a verdict
-below names your host, and not before.
+When a verdict names your host — permission modes, resume commands, the sandbox and identity
+rules that belong to it — open
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/hosts/<host>.md` for the host you are on,
+and no other. Not before a verdict names it.
 
 ## 1. Preflight — one helper, one verdict per line
 
@@ -160,8 +160,8 @@ claim. Never create or edit the lease directly.
 
 The probe must execute cleanly with no hook denial or hook error. On native Windows this is also
 the live check that the filesystem can make an atomic private session claim and lease. If it fails,
-remove `$NS/.shift-armed`, run Stop, and use the stale-lease reset procedure in `start-hosts.md`;
-do not begin item work or arm a watchman on an assumed claim.
+remove `$NS/.shift-armed`, run Stop, and follow the stale-lease reset the preflight prints as a
+repair; do not begin item work or arm a watchman on an assumed claim.
 
 ### Codex identity checkpoint — before the watchman
 
@@ -211,7 +211,7 @@ nohup "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" watchman >/dev/null 2>&1 &
 
 It revives a session that DIES mid-shift — an API outage, a crash, a killed terminal — by spawning
 a fresh session that resumes from the punch list. Every host stands down on done, a stop-work
-order, or quitting time; per-host revival detail is in `start-hosts.md`. `STOP` remains the
+order, or quitting time; per-host revival detail is in `hosts/<host>.md`. `STOP` remains the
 stop-work order on every host, and the only stop a headless run can receive.
 
 ## 7. Work
@@ -220,6 +220,6 @@ Begin item 1 and follow the nightshift skill, which owns the loop, the gates, th
 research and the shift report: one item at a time, tick only after the item is complete, park don't
 ask, leave pushing to the owner unless the punch list says otherwise. From here the clock-out gate
 owns the session — it will not let you stop while any box is open. When the gate logs
-`JSON parser unavailable`, write the morning page by hand from the Morning receipt block in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md`, naming the shift id
+`JSON parser unavailable`, write the morning page by hand from
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/morning.md`, naming the shift id
 when a policy carries one.

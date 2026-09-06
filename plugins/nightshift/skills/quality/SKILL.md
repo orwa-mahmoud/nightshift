@@ -21,10 +21,10 @@ with the same flags. Use the PowerShell tool and native paths; do not route Qual
 or Git Bash. `ns help` lists the verbs this host has.
 
 Before scanning, read
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/execution-modes.md` — the state map, who
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/execution-modes.md` — the state map, who
 selects work, when the clock starts, the tooling policy, and how several entries become one
 shift — and every applicable entry under
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shifts/`.
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/shifts/`.
 
 Quality includes: lint, types, tests, flaky tests, coverage, dead code, TODO/FIXME debt,
 accessibility, localization, API contract drift, documentation drift, CI warnings, direct

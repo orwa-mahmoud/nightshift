@@ -20,7 +20,7 @@ if ([string]::IsNullOrEmpty($PluginRoot)) {
     $PluginRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 }
 
-$dir = Join-Path $PluginRoot 'skills/nightshift/references/shifts'
+$dir = Join-Path $PluginRoot 'skills/nightshift/references/compose/shifts'
 if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
     [Console]::Error.WriteLine('catalog-index: no catalog at ' + $dir)
     exit 2
