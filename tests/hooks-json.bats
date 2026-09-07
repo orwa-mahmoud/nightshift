@@ -4,8 +4,15 @@ load helpers
 # an unquoted ${CLAUDE_PLUGIN_ROOT} makes the shell split the path and every hook fails.
 
 @test "hooks.json declares every hook command" {
-  n="$(jq -r '[.. | .command? // empty] | length' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hooks.json")"
-  [ "$n" -eq 4 ]
+  json="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hooks.json"
+  # The names, not a count: a hook added to the tree but never registered here never runs, and a
+  # number alone cannot say which one is missing.
+  for hook in claude-hardhat claude-pulse claude-session-start claude-session-end claude-clock-out; do
+    jq -r '[.. | .command? // empty][]' "$json" | grep -qF "$hook" \
+      || { echo "hooks.json does not declare $hook"; return 1; }
+  done
+  n="$(jq -r '[.. | .command? // empty] | length' "$json")"
+  [ "$n" -eq 5 ] || { echo "hooks.json declares $n commands, expected 5"; return 1; }
 }
 
 @test "every hooks.json command quotes the plugin root (spaced-path safe)" {

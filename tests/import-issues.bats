@@ -158,7 +158,8 @@ prep_draft() {
   grep -q 'Add a dry-run flag' "$s/.nightshift/drafting-table.md"
 
   grep -qE 'ns"? import-issues' "$SKILL"
-  grep -qF -- '--project "$NIGHTSHIFT_WORKSPACE"' "$SKILL"
+  # The dispatcher resolves the workspace; the skill names the verb.
+  grep -qE 'ns"? import-issues' "$SKILL"
   grep -qF 'Claude Code and Codex run the same platform helper' "$SKILL"
   grep -qF 'If work mode is artifact' "$SKILL"
   grep -qi 'will not consume them' "$SKILL"
@@ -173,8 +174,10 @@ prep_draft() {
   if grep -nE 'curl|wget|gh search|gh issue list' "$SKILL" | grep -qivE 'never|do not|refuse'; then
     return 1
   fi
-  grep -qF 'Never searches' "$SKILL"
-  grep -qF 'never writes back to GitHub' "$SKILL"
+  # The description says it in one sentence and the body says it as rules the model follows.
+  grep -qiF 'never searches or writes back' "$SKILL"
+  grep -qF 'Never run `gh search`' "$SKILL"
+  grep -qF 'Never install `gh`' "$SKILL"
   p="$(new_project)"
   prep_draft "$p"
   : >"$BATS_TEST_TMPDIR/gh.log"

@@ -210,10 +210,10 @@ age_file() {
   if grep -n 'retain-history' "$ROOT/runtime/windows/doctor.ps1"; then
     return 1
   fi
-  grep -qF 'retain-history.sh' "$ARCHIVE"
+  grep -qE 'ns"? retain-history' "$ARCHIVE"
   grep -qF 'explicit confirmation' "$ARCHIVE" || grep -qF 'owner confirms' "$ARCHIVE"
-  grep -qF 'Never call `retain-history.sh`' "$ARCHIVE"
-  grep -qF 'retain-history.ps1' "$ARCHIVE"
+  # The rule that matters: nothing on the armed path may call it.
+  grep -qF 'Never call `ns retain-history`' "$ARCHIVE"
   grep -qF 'from start, hooks, status, Doctor, or recovery' "$ARCHIVE"
 }
 
