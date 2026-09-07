@@ -125,14 +125,18 @@ call_lib() {
   grep -qF 'work-mode' "$SETUP"
   grep -qF 'ask before persisting' "$SETUP" || grep -qF 'asks before persisting' "$SETUP"
   grep -qF 'artifact' "$SETUP"
-  grep -qF 'work-mode' "$START"
-  grep -qF 'artifact' "$START"
-  grep -qF 'exists but is not a usable directory' "$START"
-  grep -qF 'Setup would propose artifact, refuse to arm and send the owner to Setup' "$START"
-  grep -qF 'do not `git init` a notes folder.' "$START"
+  # Start no longer restates the work-mode rules: the verdict explains itself, and the refusal
+  # carries the repair.
+  grep -qF 'The work mode decides where the work happens' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'never git init a notes folder' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'Setup would propose artifact' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF 'exists but is not a usable directory' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qF 'Skip a symlink or reparse child; it is not a nested checkout.' "$SETUP"
   grep -qF 'Never `git init` a notes folder to change an artifact proposal into repository mode.' "$SETUP"
-  grep -qF 'Skip a symlink or reparse child; it is not a nested checkout.' "$START"
+  # Start defers the resolver's rule to the verdict that carries it.
+  grep -qF 'symlink or reparse child is skipped' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qF 'Skip a symlink or reparse child; it is not a nested checkout.' "$DOC"
   grep -qF 'work mode' "$STATUS" || grep -qF 'work-mode' "$STATUS"
   grep -qF 'work mode is unset; Setup would propose artifact' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
@@ -168,7 +172,8 @@ call_lib() {
   grep -qF 'function Get-NSWorkMode' "$PSM1"
   grep -qF 'function Get-NSProposedWorkMode' "$PSM1"
   grep -qF "ValidateSet('repository', 'artifact')" "$PSM1"
-  grep -qF 'Mode "$WORK_MODE"' "$SETUP"
+  # One spelling of the flag; `ns.ps1` translates it.
+  grep -qF -- '--mode "$WORK_MODE"' "$SETUP"
 }
 
 PATHS="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/paths.sh"
