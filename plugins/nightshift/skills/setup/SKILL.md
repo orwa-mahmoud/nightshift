@@ -196,7 +196,8 @@ denied means denied. Ask one question:
  finish a night, in the gate and the stall guard alike, and the commit rule is theirs to strip
  from the punch list and `clockOutMessage`. Under Codex's `workspace-write` sandbox `.git` is
  protected, so the default contract, which commits once per item, cannot run under it and is
- started `codex -a never -s danger-full-access`. The fence around that access is nightshift's
+ started with the launch command on the Codex host page,
+ `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/hosts/codex.md`. The fence around that access is nightshift's
  own guards, which hold in every mode — the same trade `bypassPermissions` makes on Claude Code.
 - **No** → respect it and say the cost plainly: *"a permission prompt mid-shift freezes the night
  until morning — if the shift stalls on one, that was tonight's trade."* Suggest the narrower

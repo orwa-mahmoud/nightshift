@@ -340,7 +340,7 @@ host permits, and it never lifts a rule in this file.
 
 | Key | Default | Values |
 |---|---|---|
-| `launchScope` | `inherit-recorded-scope` | Revive with the permissions the shift was started under, as recorded when it armed. `host-grant` starts a revived session with the documented grant for that host — on Codex `danger-full-access`, on Cursor `--trust --yolo`. `host-default` passes no permission argument at all |
+| `launchScope` | `inherit-recorded-scope` | Revive with the permissions the shift was started under, as recorded when it armed. `host-grant` starts a revived session with the broad grant documented on that host's page under `references/hosts/`. `host-default` passes no permission argument at all |
 
 **A revival never gets more than the session it is replacing had.** The shipped choice reads what
 the shift recorded about itself when it armed and asks for exactly that. Where the host reported no

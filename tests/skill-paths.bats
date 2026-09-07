@@ -338,7 +338,10 @@ PY
   grep -qF 'ns" schedule' "$SCHEDULE"
   grep -qF -- '`--list`' "$SCHEDULE"
   grep -qF -- '`--remove`' "$SCHEDULE"
-  grep -qF -- "--agent 'codex exec -s danger-full-access'" "$SCHEDULE"
+  # The Codex grant is spelled once, on the Codex host page; the skill points there and the
+  # generator's own preflight (tests/schedule.bats) still prints the full command.
+  grep -qF 'references/hosts/codex.md' "$SCHEDULE"
+  ! grep -qF 'danger-full-access' "$SCHEDULE" || { echo "schedule spells the grant itself"; return 1; }
   # The PowerShell spellings are the dispatcher's business now, not the skill's.
   for bad in '-Project "$NIGHTSHIFT_WORKSPACE" -List' '`-List`' '`-Remove`'; do
     ! grep -qF -- "$bad" "$SCHEDULE" || { echo "carries a second spelling ($bad)"; return 1; }
