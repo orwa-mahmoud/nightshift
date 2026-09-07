@@ -102,8 +102,8 @@ An unattended run cannot answer permission prompts. Claude Code can use a projec
 `bypassPermissions` setting offered by setup. On Codex, unattended execution is `-a never` and the
 sandbox is a separate choice: a contract that does not commit runs under `-s workspace-write`,
 because ticks alone finish a night. Under Codex's `workspace-write` sandbox `.git` is protected, so
-a contract that commits cannot run under it and needs `codex -a never -s danger-full-access`.
-Nightshift's configured guards remain active in either sandbox.
+a contract that commits cannot run under it; the launch command for that case is on the
+[commands page](docs/commands.md). Nightshift's configured guards remain active in either sandbox.
 
 Only four ideas matter on the first run:
 

@@ -123,9 +123,9 @@ run. Both follow Start's whole preflight first — the one-shift check, state an
 validation, stale run-control markers, deadline handling, rules, and unattended permissions — and
 report unsupported permission modes before arming, never mid-shift: Claude Code without
 `bypassPermissions` (or an allowlist covering the gates), and Codex without `-a never`. A contract
-that does not commit arms under `-s workspace-write`; one that commits needs
-`codex -a never -s danger-full-access`, because under Codex's `workspace-write` sandbox `.git` is
-protected. Warn and proceed.
+that does not commit arms under `-s workspace-write`; one that commits needs the launch command on
+`references/hosts/codex.md`, because under Codex's `workspace-write` sandbox `.git` is protected.
+Warn and proceed.
 
 Only then: cut the whole work order out of `work-orders.md`, put the item under `## Items`, write
 the deadline, arm the gate, log the start, run the binding probe, classify the Codex session

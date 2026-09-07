@@ -177,8 +177,11 @@ STUB
   grep -qF 'Setup would propose artifact, refuse to print or install a job' "$s"
 
   perms="$(awk '/^## 3\./ { capture=1; next } /^## 4\./ { exit } capture' "$s")"
-  printf '%s\n' "$perms" | grep -qF -- "--agent 'codex exec -s danger-full-access'"
-  printf '%s\n' "$perms" | grep -qF -- "-Agent 'codex exec -s danger-full-access'"
+  # The Codex grant is spelled once, on the Codex host page; the permissions section points there
+  # and hands it through --agent. The generator's own preflight prints the full command below.
+  printf '%s\n' "$perms" | grep -qF 'references/hosts/codex.md'
+  printf '%s\n' "$perms" | grep -qF -- '--agent'
+  grep -qF -- "--agent 'codex exec -s danger-full-access'" "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/hosts/codex.md"
 
   arming="$(awk '/^## 4\./ { capture=1; next } /^## 5\./ { exit } capture' "$s")"
   printf '%s\n' "$arming" | grep -qF '.shift-armed'
