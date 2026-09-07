@@ -32,7 +32,7 @@ scaffold() { # <workspace> — the files setup copies, via the shipped templates
   local w="$1"
   mkdir -p "$w/.nightshift"
   for f in punch-list drafting-table parking-lot snag-log product-research opportunity-map work-orders; do
-    cp "$REF/$f-template.md" "$w/.nightshift/$f.md"
+    cp "$REF/templates/$f.md" "$w/.nightshift/$f.md"
   done
   cp "$REF/nightshift-rules-template.json" "$w/.nightshift/rules.json"
   printf '# Shift Log\n' >"$w/.nightshift/shift-log.md"

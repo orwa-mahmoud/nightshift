@@ -3,8 +3,10 @@ REF="$ROOT/nightshift/references"
 
 # The skills that touch state directly carry the map inline. Hunt and Quality read it from
 # execution-modes.md, which they are told to open before composing.
-@test "active workflow skills carry the same state map" {
-  for skill in setup start status archive import-issues doctor; do
+@test "the state map has one copy per audience, and they agree" {
+  # A skill that promotes, stages or files these four needs the map inline; a shift reads it once
+  # from the main skill, and composition reads it from the file it is told to open.
+  for skill in setup archive import-issues doctor; do
     file="$ROOT/$skill/SKILL.md"
     grep -qF 'punch-list.md` → owner-approved work active in this shift' "$file"
     grep -qF 'drafting-table.md` → known work staged for a later shift' "$file"
@@ -12,9 +14,24 @@ REF="$ROOT/nightshift/references"
     grep -qF 'work-orders.md` → timed catalog work composed' "$file"
     grep -qF 'only through Hunt' "$file"
   done
-  tr '\n' ' ' <"$REF/execution-modes.md" \
+
+  # The one copy a working shift reads names the same four files.
+  main="$ROOT/nightshift/SKILL.md"
+  grep -qF 'What the owner reads in the morning' "$main"
+  for f in punch-list drafting-table parking-lot work-orders; do
+    grep -qF "$f.md" "$main" || { echo "the main skill's list omits $f.md"; return 1; }
+  done
+
+  # Start and Status render what the runtime tells them; neither repeats the map.
+  for skill in start status; do
+    if grep -qF 'owner-approved work active in this shift' "$ROOT/$skill/SKILL.md"; then
+      echo "$skill repeats the state map"
+      return 1
+    fi
+  done
+  tr '\n' ' ' <"$REF/compose/execution-modes.md" \
     | grep -qF 'punch-list.md` is owner-approved work active in this shift'
-  tr '\n' ' ' <"$REF/execution-modes.md" \
+  tr '\n' ' ' <"$REF/compose/execution-modes.md" \
     | grep -qF 'drafting-table.md` is known work staged for a later shift'
   for skill in hunt quality; do
     grep -qF 'references/compose/execution-modes.md' "$ROOT/$skill/SKILL.md" \
@@ -23,14 +40,16 @@ REF="$ROOT/nightshift/references"
 }
 
 @test "state templates say what belongs and what does not" {
-  grep -qF 'Owner-approved active work belongs here' "$REF/punch-list-template.md"
-  grep -qF 'known later work' "$REF/drafting-table-template.md"
-  grep -qF 'Known tasks and follow-ups do not belong here' "$REF/parking-lot-template.md"
-  grep -qF 'composed only through Nightshift: Hunt' "$REF/work-orders-template.md"
+  grep -qF 'Owner-approved active work belongs here' "$REF/templates/punch-list.md"
+  grep -qF 'known later work' "$REF/templates/drafting-table.md"
+  grep -qF 'Known tasks and follow-ups do not belong here' "$REF/templates/parking-lot.md"
+  grep -qF 'composed only through Nightshift: Hunt' "$REF/templates/work-orders.md"
 }
 
-@test "setup scaffolds the explicit work-order template" {
-  grep -qF 'work-orders-template.md' "$ROOT/setup/SKILL.md"
+@test "the work-order file is scaffolded from its template, not written by hand" {
+  # Setup runs the scaffold, which copies every template including this one.
+  grep -qE 'ns"? scaffold' "$ROOT/setup/SKILL.md"
+  [ -f "$REF/templates/work-orders.md" ]
   if grep -qF 'work-orders.md` with a one-line header' "$ROOT/setup/SKILL.md"; then
     return 1
   fi
@@ -39,8 +58,8 @@ REF="$ROOT/nightshift/references"
 @test "ordinary workflow guidance does not call later work parked" {
   if grep -RqiE 'park(ed|ing)? (known |ordinary )?(work|task|plan)|park(ed|ing)? for later' \
     "$ROOT/nightshift/SKILL.md" "$ROOT/setup/SKILL.md" "$ROOT/start/SKILL.md" \
-    "$ROOT/status/SKILL.md" "$ROOT/archive/SKILL.md" "$REF/punch-list-template.md" \
-    "$REF/drafting-table-template.md" "$REF/parking-lot-template.md" "$REF/work-orders-template.md"; then
+    "$ROOT/status/SKILL.md" "$ROOT/archive/SKILL.md" "$REF/templates/punch-list.md" \
+    "$REF/templates/drafting-table.md" "$REF/templates/parking-lot.md" "$REF/templates/work-orders.md"; then
     return 1
   fi
 }
