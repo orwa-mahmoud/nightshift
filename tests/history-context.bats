@@ -17,6 +17,7 @@ TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-
   fi
   grep -qF 'references/receipts/cycle-specialist-evidence.md' "$ARCHIVE"
   grep -qF 'history-context' "$TEMPLATES"
-  grep -qF 'Do not call' "$TEMPLATES"
+  # The split moved the wording; the guarantee is that the file names these as NOT commands.
+  grep -qF 'these names are not' "$TEMPLATES"
   grep -qF '# history-context / preset' "$TEMPLATES"
 }
