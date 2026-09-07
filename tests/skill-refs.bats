@@ -225,9 +225,9 @@ documented_pages() {
 
 # One spelling per command.
 #
-# A skill used to carry each command two or three times — POSIX, native Windows, and a Codex
-# variant — and the model read all of them on every host. The dispatcher resolves the host, so a
-# second spelling is dead weight the moment it appears. These hold that.
+# A command spelled two or three times over — POSIX, native Windows, a Codex variant — is read in
+# full on every host, and the dispatcher resolves the host anyway, so the second spelling is dead
+# weight the moment it appears. These hold that.
 
 @test "no skill names a helper file: every command is one ns verb" {
   for f in "$SKILLS"/*/SKILL.md; do
