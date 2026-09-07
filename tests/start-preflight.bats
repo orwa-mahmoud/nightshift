@@ -309,8 +309,8 @@ setup_site() { # <name> [punch-body]
   grep -qF 'refuse' "$START"
   grep -qF 'repair' "$START"
   grep -qF 'explain' "$START"
-  [ -f "$HOSTS" ]
-  grep -qF 'start-hosts.md' "$START"
+  [ -d "$HOSTS" ]
+  grep -qF 'references/hosts/<host>.md' "$START"
 }
 
 # The helpers these skills used to name are gone from the runtime. A skill that still names one
@@ -542,19 +542,24 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   grep -qF 'never clear `STOP` or' "$START"
 }
 
-@test "start-hosts keeps host detail and no longer explains a verdict" {
+@test "each host page carries its own detail and explains no verdict" {
+  # One page per host, so the model opens the host it is on and nothing else. A verdict explanation
+  # on any of them is a second wording of what the preflight already prints.
   for phrase in '## Process evidence' '## Work mode and work target' \
     '## Linking another workspace' '## State version'; do
-    if grep -qF "$phrase" "$HOSTS"; then
-      echo "start-hosts still explains a verdict: $phrase"
+    if grep -rqF "$phrase" "$HOSTS"; then
+      echo "a host page explains a verdict: $phrase"
       return 1
     fi
   done
-  for phrase in '## Native Windows' '## Claude Code' '## Codex' '## Cursor'; do
-    grep -qF "$phrase" "$HOSTS" || { echo "start-hosts lost $phrase"; return 1; }
+  # The resume mechanism is the host detail that most obviously differs, and each page carries only
+  # its own: a page that named another host's would send the model to the wrong command.
+  for pair in 'claude.md:claude --resume' 'codex.md:codex resume' \
+    'cursor.md:agent --resume' 'windows.md:Import-Module'; do
+    page="${pair%%:*}"
+    phrase="${pair#*:}"
+    [ -f "$HOSTS/$page" ] || { echo "no host page $page"; return 1; }
+    grep -qF "$phrase" "$HOSTS/$page" || { echo "$page lost $phrase"; return 1; }
+    grep -qF '# Start on ' "$HOSTS/$page" || { echo "$page has no title"; return 1; }
   done
-  grep -qF 'claude --resume' "$HOSTS"
-  grep -qF 'codex resume' "$HOSTS"
-  grep -qF 'agent --resume' "$HOSTS"
-  grep -qF 'Import-Module' "$HOSTS"
 }
