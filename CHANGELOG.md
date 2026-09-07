@@ -3,6 +3,75 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.21.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.20.0...v0.21.0) (2026-09-07)
+
+
+### Features
+
+* **archive:** file every record through one configured destination ([2cceaed](https://github.com/orwa-mahmoud/nightshift/commit/2cceaedca3f602b114093d695481cc1caf907ee1))
+* **archive:** give the model its turn to file before the session ends ([5704413](https://github.com/orwa-mahmoud/nightshift/commit/5704413a241ed691fc3521ce09b8478746743f02))
+* **archive:** support configurable lossless shift filing ([fed1947](https://github.com/orwa-mahmoud/nightshift/commit/fed19477722abae1a418c2d0464b6d4405e753f1))
+* **gate:** hold the punch-list contract and items by digest while a shift is armed ([1baa5c9](https://github.com/orwa-mahmoud/nightshift/commit/1baa5c930227666b15562c0829529c794d7e9009))
+* **gate:** send the full clock-out message only when the shift state changed ([aaf9254](https://github.com/orwa-mahmoud/nightshift/commit/aaf92548c57a00fbdb4f78fbff239957eeb273e4))
+* **policy:** define unified owner settings contract ([6f6560b](https://github.com/orwa-mahmoud/nightshift/commit/6f6560b07ba3e6c3f2af4b285a274a8b5271c6c7))
+* **policy:** fix the owner's preferences for the shift that is running ([40bc092](https://github.com/orwa-mahmoud/nightshift/commit/40bc0924888f61c41035b1a2ab8ee346a2f66441))
+* **policy:** migrate remembered choices into the owner rules file ([11e660b](https://github.com/orwa-mahmoud/nightshift/commit/11e660b6e276d1b5b8eac84eb23c4bd2f045a3bc))
+* **policy:** resolve the owner's preference blocks into the one view ([753947b](https://github.com/orwa-mahmoud/nightshift/commit/753947bc1c3c6ace6ec8f109c253d04afb74182f))
+* **receipts:** support owner-defined handoff presentation ([7f0107f](https://github.com/orwa-mahmoud/nightshift/commit/7f0107f9238a1bc98d8ed4703f52fe04ba583750))
+* **report:** accumulate item results and rotate closed shift records ([ec41e02](https://github.com/orwa-mahmoud/nightshift/commit/ec41e025e12fe9ec47be6c91af022487940fbe07))
+* **report:** evaluate the progress cadence and the shift clock in the runtime ([5cb22bb](https://github.com/orwa-mahmoud/nightshift/commit/5cb22bbd22e6ff48e1bb8e9a7e9b5dfc2fd0a76c))
+* **report:** measure per-item usage from the host's own records at the tick ([61c459e](https://github.com/orwa-mahmoud/nightshift/commit/61c459e5cadb43fcc28425bf2183fe5360d514c6))
+* **runtime:** add the ns dispatcher — one verb per helper, host and workspace resolved by the runtime ([1352562](https://github.com/orwa-mahmoud/nightshift/commit/1352562e7979b8f34c034fc34fdffc748b5f9c87))
+* **runtime:** print the next punch-list item and the gates on request ([803bfb4](https://github.com/orwa-mahmoud/nightshift/commit/803bfb4ff4bb01a723adc1a6825004ae27e79ca2))
+* **setup:** scaffold the state directory with a helper ([f3bd83e](https://github.com/orwa-mahmoud/nightshift/commit/f3bd83e4ee279dee80bb05b974c05b301669137d))
+* **start:** print the explanation and repair for each preflight verdict ([7573143](https://github.com/orwa-mahmoud/nightshift/commit/7573143c4b74dcffd0fcd528e3e4a5da16a6b909))
+* **status:** print every status fact from the helper ([5b1963f](https://github.com/orwa-mahmoud/nightshift/commit/5b1963f0347b4a1c226f3c87fb0c48f10292ae61))
+* **usage:** account for a shift's cost on native Windows ([f9ddc8d](https://github.com/orwa-mahmoud/nightshift/commit/f9ddc8d613180a7e4668f990eb700bc1a6108680))
+
+
+### Bug Fixes
+
+* **archive:** contain the whole destination path, not just its last part ([d31db65](https://github.com/orwa-mahmoud/nightshift/commit/d31db658d943a0a9fa4e5398d6eccfe02f979dc3))
+* **archive:** keep a finished shift's identity through its filing ([8fda33f](https://github.com/orwa-mahmoud/nightshift/commit/8fda33f356b2cf7f6226da46d01b74433ab4c9e0))
+* **archive:** rebase every relative link when the report moves ([75b4a09](https://github.com/orwa-mahmoud/nightshift/commit/75b4a09d97027d1a0e4c9b10f0d226cef0d060c4))
+* **archive:** retire only the records established as closed ([bb1664d](https://github.com/orwa-mahmoud/nightshift/commit/bb1664d3f32b558638d5c12e3808888bbfc5259b))
+* **evidence:** reject unavailable sources without finding rows ([6258746](https://github.com/orwa-mahmoud/nightshift/commit/6258746f7a71c89750a8d70755238e36e9c2490f))
+* **gate:** account for a stop only once the stopping session owns the shift ([a7734eb](https://github.com/orwa-mahmoud/nightshift/commit/a7734eb235d87e0afdcf0f6d9800352610a73ce2))
+* **hardhat:** inspect here-documents that an interpreter runs ([4ed4c5c](https://github.com/orwa-mahmoud/nightshift/commit/4ed4c5c30f15cf586decf3fac02ae784957a8fe5))
+* **hardhat:** read a quoted heredoc body as data, not as a command ([0599338](https://github.com/orwa-mahmoud/nightshift/commit/0599338e4ea36c6ae83dc21a6d72cc2e86596dc8))
+* **hooks:** bound the read of a hook's stdin ([ca14662](https://github.com/orwa-mahmoud/nightshift/commit/ca1466206c3a6423d064a4dc3b1dcc5555f0a9c8))
+* **hooks:** run the Claude pulse's block after the functions it calls ([a9e7adc](https://github.com/orwa-mahmoud/nightshift/commit/a9e7adcc29421f18f09d35366bd86cd236698d28))
+* **hooks:** ship the Windows SessionStart hook the dispatch file calls ([27cef67](https://github.com/orwa-mahmoud/nightshift/commit/27cef672e6d22ffea5060585d8a9bdfb6b2ce660))
+* **normalize:** reject incomplete JUnit reports ([3f9387b](https://github.com/orwa-mahmoud/nightshift/commit/3f9387b39ad389a95177718cfa6b15b429da57e1))
+* **normalize:** retain TypeScript error counts or report unavailable ([6d4f46e](https://github.com/orwa-mahmoud/nightshift/commit/6d4f46e1f1ac0016f36729ea1f1ffde97072c7a5))
+* **ns:** honour the bound workspace, and refuse a mismatch before writing ([c5a1912](https://github.com/orwa-mahmoud/nightshift/commit/c5a1912e96490c467459d336d051bf35d12e29ff))
+* **profiles:** write remembered choices where they are read from ([5cc24ac](https://github.com/orwa-mahmoud/nightshift/commit/5cc24acb52476dde9f61358f8780f897b6b33dbe))
+* **receipts:** preserve evidence in clock-out handoffs ([65518e7](https://github.com/orwa-mahmoud/nightshift/commit/65518e72ff8768962e5643962eef058a8ae3aaf3))
+* **recovery:** preserve authorized host permissions ([b336057](https://github.com/orwa-mahmoud/nightshift/commit/b33605768b4d9825a80ddd8a6eae4431e8015bd1))
+* **recovery:** refuse a revival that cannot be shown to inherit its scope ([67ad1e6](https://github.com/orwa-mahmoud/nightshift/commit/67ad1e6d8a9b6a8f4c4e7ba2c697cd52b1965d05))
+* **recovery:** resolve the launch scope the same way on every host ([6f95ccc](https://github.com/orwa-mahmoud/nightshift/commit/6f95ccc1adc0fe2ae4e8471aeefcfc3900c89bb8))
+* **recovery:** revive with the permissions the shift was started under ([16d2d56](https://github.com/orwa-mahmoud/nightshift/commit/16d2d564d9503e42788c2180f0dbca9b85a038a9))
+* **references:** give the GitHub issue hunt one spelling per command ([dea9a6f](https://github.com/orwa-mahmoud/nightshift/commit/dea9a6f37bbb3d687f47cceced3ba85a62684a30))
+* **references:** point the catalog recipe at the cited-research page ([5f1428e](https://github.com/orwa-mahmoud/nightshift/commit/5f1428e6de5ec6b2eb1f4c04798dc0b1c5f2d2e8))
+* **references:** restore the names that are not commands to every receipt kind ([86b62dc](https://github.com/orwa-mahmoud/nightshift/commit/86b62dc06264b1c5a877e862dc67c5476a771ab9))
+* **runtime:** let native Windows evidence-archive name the file it wrote ([3ac5b0a](https://github.com/orwa-mahmoud/nightshift/commit/3ac5b0a520de341c31331db6a267c7f0b09960d7))
+* **runtime:** make the morning-receipt renderer executable ([de83900](https://github.com/orwa-mahmoud/nightshift/commit/de83900a5a15eb605a90014d6362d4d5f05e95ff))
+* **runtime:** make the native Windows morning page match the POSIX one ([bf3f97e](https://github.com/orwa-mahmoud/nightshift/commit/bf3f97eefd5fcb1341535178aaa9f0cbc15bcda5))
+* **runtime:** preserve owner policy without optional parsers ([93597b0](https://github.com/orwa-mahmoud/nightshift/commit/93597b0854a8450cdc9902e4531b44094db05ad7))
+* **schema:** apply a numeric bound to numbers, and restore the one on hours ([118efcb](https://github.com/orwa-mahmoud/nightshift/commit/118efcb96dc35d602f250fc7098c16a48cf46e49))
+* **skills:** honor resolved owner choices across the shift ([8c4fd25](https://github.com/orwa-mahmoud/nightshift/commit/8c4fd25f3c619e5897aa9a6c4be036be515cf6da))
+* **skills:** repair three fragments left by the command-spelling pass ([543d001](https://github.com/orwa-mahmoud/nightshift/commit/543d001b7a400b97ab20227dad64f0b7742124b0))
+* **skills:** route the model to every receipt kind ([5c7a2cf](https://github.com/orwa-mahmoud/nightshift/commit/5c7a2cf2e37ad02176b140e50e7b7f0e9da9d470))
+* **skills:** state each rule once, and point at it ([16675af](https://github.com/orwa-mahmoud/nightshift/commit/16675af3da30a4f5d48b14f5ba5faa2fa70e71cb))
+* **start:** keep the fence inspection and the control decision on their verdicts ([ad17252](https://github.com/orwa-mahmoud/nightshift/commit/ad1725259a422cd2d291230345c6a7b44675b397))
+* **start:** offer linking as well as relaunching on a binding mismatch ([f7253bf](https://github.com/orwa-mahmoud/nightshift/commit/f7253bfd1587734d8f084254845482d5023e3a50))
+* **usage:** bill only an armed shift its owner is working, and keep CI green on every host ([eb1784c](https://github.com/orwa-mahmoud/nightshift/commit/eb1784c8f7b1aae52130c5acbc7321287fcc2015))
+* **usage:** count a response once when its lines straddle two reads ([0b71bce](https://github.com/orwa-mahmoud/nightshift/commit/0b71bce76a46b6c796d308232f3fd92836b1492a))
+* **usage:** mark an item when it is ticked, not when the session stops ([540e8e1](https://github.com/orwa-mahmoud/nightshift/commit/540e8e167cfee8a369bd6251b139c25ded2a489d))
+* **usage:** retire a finished shift's accounting when the next one arms ([ee6e31e](https://github.com/orwa-mahmoud/nightshift/commit/ee6e31e8a96e3cab580b24f2e6fc2f706cbed7db))
+* **usage:** start each transcript where it stood when the shift armed ([96e849f](https://github.com/orwa-mahmoud/nightshift/commit/96e849f64e7eaedaa4aa9c29728312dcbc2751e8))
+* **watchman:** keep a claim that has changed hands ([311f64c](https://github.com/orwa-mahmoud/nightshift/commit/311f64c1e04bd0e4c19cf79828db0f64d6dc5f2f))
+
 ## [0.20.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.19.0...v0.20.0) (2026-09-05)
 
 
