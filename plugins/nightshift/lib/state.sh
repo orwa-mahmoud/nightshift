@@ -995,14 +995,14 @@ ns_status_entry_titles() {
 
 # ns_status_entry_count <file> — how many such entries the file holds.
 ns_status_entry_count() {
-  [ -f "$1" ] && [ ! -L "$1" ] || { printf '0'; return 0; }
+  if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf '0'; return 0; fi
   awk '/^- / { n++ } END { printf "%d", n + 0 }' "$1" 2>/dev/null || printf '0'
 }
 
 # ns_status_opportunity_counts <opportunity-map> — `candidate=N building=N shipped=N rejected=N
 # parked=N` from the `Status:` lines the map already carries.
 ns_status_opportunity_counts() {
-  [ -f "$1" ] && [ ! -L "$1" ] || { printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'; return 0; }
+  if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'; return 0; fi
   awk '
     /<!--/ { comment = 1 }
     /-->/  { comment = 0; next }
@@ -1072,11 +1072,9 @@ ns_status_transitions() {
   awk -v max="${2:-3}" '
     {
       line = $0
-      sub(/^-[[:space:]]*/, "", line)
-      # Both writers lead with a timestamp: the runtime with `<ts> \xc2\xb7 <text>`, the model with
-      # `<ts> <text>`. Strip that, and what is left is the message itself.
-      sub(/^[0-9][0-9:TZ .-]*/, "", line)
-      sub(/^\xc2\xb7[[:space:]]*/, "", line)
+      # Both writers lead with a dash, a timestamp and a separator before the message. Everything up
+      # to the first letter is that preamble, in any locale and with any separator byte.
+      sub(/^[^A-Za-z]*/, "", line)
     }
     # A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
     # would catch an item summary that merely mentions one.

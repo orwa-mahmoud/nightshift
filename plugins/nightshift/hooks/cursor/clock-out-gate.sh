@@ -193,12 +193,6 @@ PUNCH_UNREADABLE=0
 if ! ns_gate_boxes; then
   PUNCH_UNREADABLE=1
 fi
-# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
-# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
-# item ticked second.
-if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
-  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" || :
-fi
 
 honor_stop() {
   local reason summary
@@ -217,6 +211,13 @@ honor_stop() {
 # writes .shift-armed; without it the punch list is a to-do file and every session stops freely —
 # including the one that just wrote the list while planning.
 if [ ! -f "$NS/.shift-armed" ]; then cursor_emit_release; exit 0; fi
+
+# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
+# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
+# item ticked second.
+if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
+  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" || :
+fi
 
 # Owner interrupt — live Stop button sends status "aborted" (Cursor 3.17.21).
 # Same meaning as Claude Esc: release, do not reinject, do not clock out.

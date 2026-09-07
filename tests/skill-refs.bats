@@ -539,3 +539,13 @@ documented_pages() {
   ! grep -qF 'Reading it is step 1 of every item' "$m"
   grep -qF 'Read `$NS/punch-list.md` in full, then begin item 1' "$SKILLS/start/SKILL.md"
 }
+
+# A file a skill points at has to reach the user, which means it has to be tracked. A repository
+# ignore rule matched case-insensitively on one checkout can leave a page present locally and
+# absent from every clone.
+@test "every reference file is tracked by git" {
+  cd "$ROOT" || return 1
+  for f in $(find plugins/nightshift/skills/nightshift/references -type f | sort); do
+    git ls-files --error-unmatch "$f" >/dev/null 2>&1 || { echo "not tracked: $f"; return 1; }
+  done
+}

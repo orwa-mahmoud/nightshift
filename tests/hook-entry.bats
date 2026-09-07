@@ -148,3 +148,54 @@ held_open() {
   done
   grep -qF 'ns_read_stdin_bounded()' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/common.sh"
 }
+
+# ---------------------------------------------------------------------------------------------
+# Accounting belongs to an armed shift owned by this session. A tool call before Start, or from a
+# second tab on the same project, is not billed — and must not leave an arm mark behind, because a
+# mark standing when the shift arms would skip the transcript baseline and bill the setting-up
+# conversation to item one.
+
+unarmed_site() { # <name> — scaffolded, punch list present, not armed
+  local p
+  p="$(new_project "$1")"
+  printf '# Punch list\n\n## Items\n\n- [x] **A1 — a thing.**\n- [ ] **A2 — another.**\n' >"$p/.nightshift/punch-list.md"
+  printf 'sess-hook-entry\n' >"$p/.nightshift/.shift-session"
+  rm -f "$p/.nightshift/.shift-armed"
+  cp "$FIX" "$p/transcript.jsonl"
+  printf '%s' "$p"
+}
+
+@test "a pulse before the shift arms records nothing and leaves no arm mark" {
+  p="$(unarmed_site hook-entry-unarmed)"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/pulse.sh" <<<"$(payload "$p")"
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/usage" ]
+}
+
+@test "a stop before the shift arms records nothing either" {
+  p="$(unarmed_site hook-entry-unarmed-gate)"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/clock-out-gate.sh" <<<"$(payload "$p")"
+  [ ! -e "$p/.nightshift/usage" ]
+}
+
+@test "arming after pre-shift pulses still records the baseline where the transcript stands" {
+  p="$(unarmed_site hook-entry-then-armed)"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/pulse.sh" <<<"$(payload "$p")"
+  before="$(wc -c <"$p/transcript.jsonl" | tr -d ' ')"
+  : >"$p/.nightshift/.shift-armed"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/pulse.sh" <<<"$(payload "$p")"
+  [ "$status" -eq 0 ]
+  seg="$p/.nightshift/usage/segments.tsv"
+  [ -f "$seg" ]
+  # The baseline is the file's size at arming, and nothing before it is charged.
+  [ "$(cut -f5 "$seg")" = "$before" ]
+  [ -z "$(cut -f7 "$seg")" ]
+}
+
+@test "a session that does not own the shift is not billed to it" {
+  p="$(armed_site hook-entry-foreign)"
+  foreign='{"session_id":"sess-someone-else","transcript_path":"'"$p"'/transcript.jsonl","cwd":"'"$p"'","tool_name":"Edit","tool_input":{}}'
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/pulse.sh" <<<"$foreign"
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/usage" ]
+}

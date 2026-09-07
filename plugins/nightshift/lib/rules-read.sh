@@ -169,7 +169,7 @@ _ns_rules_array() {
     line="${line#*"$_NS_RULES_TAB"}"
     typ="${line%%"$_NS_RULES_TAB"*}"
     val="${line#*"$_NS_RULES_TAB"}"
-    [ "$p1" = "$1" ] && [ "$p2" = "$2" ] && [ -n "$p3" ] || continue
+    if ! { [ "$p1" = "$1" ] && [ "$p2" = "$2" ] && [ -n "$p3" ]; }; then continue; fi
     case "$typ" in s | n | b) ;; *) continue ;; esac
     [ "$first" -eq 1 ] || out="$out,"
     first=0

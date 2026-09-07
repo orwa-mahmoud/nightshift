@@ -120,7 +120,7 @@ $line = '{0} {1}{2}' -f (Get-NSUnixTime), $sessionId, [Environment]::NewLine
 $source = $(if ($HostName -eq 'cursor') { $raw } else { Get-PropertyValue $payload 'transcript_path' })
 try {
     $null = Invoke-NSPulseUsage $ns $HostName $sessionId $source
-    $null = Invoke-NSPulseMarks $ns $workspace
+    $null = Invoke-NSPulseMarks $ns $workspace $source
 }
 catch {
     [Console]::Error.WriteLine('nightshift: usage accounting skipped - ' + $_.Exception.Message)

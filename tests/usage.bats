@@ -669,6 +669,7 @@ parity_site() {
   printf '# Punch list\n\n## Items\n\n- [x] **A1 — one.**\n- [x] **A2 — two.**\n- [ ] **A3 — three.**\n' \
     >"$p/.nightshift/punch-list.md"
   cp "$FIX/claude-multiline.jsonl" "$p/transcript.jsonl"
+  : >"$p/.nightshift/.shift-armed"
   printf '%s' "$p"
 }
 
@@ -727,4 +728,24 @@ parity_normalise() {
   command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
   run pwsh -NoProfile -NonInteractive -File "$LOGIC"
   [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------------------------
+# A disabled report is not written by the accounting either.
+
+@test "report.enabled=false leaves no report behind, ticks or not" {
+  p="$(three_open report-disabled-usage)"
+  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
+    report:{enabled:false}}' >"$p/.nightshift/shift-policy.json"
+  grow "$p"; fire "$p"
+  tick "$p" A1; tick "$p" A2; grow "$p"; fire "$p"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$GATE" <<<"$(printf '{"session_id":"sess-marks","transcript_path":"%s/transcript.jsonl","cwd":"%s","hook_event_name":"Stop"}' "$p" "$p")"
+  [ ! -e "$p/.nightshift/shift-report.md" ]
+  [ ! -e "$p/.nightshift/usage" ]
+}
+
+@test "native Windows Start retires the finished shift's accounting like POSIX does" {
+  grep -qF 'Move-NSUsageRetire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
+  grep -qF 'ns_usage_retire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
 }

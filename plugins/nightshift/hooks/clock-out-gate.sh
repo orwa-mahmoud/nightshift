@@ -240,12 +240,6 @@ PUNCH_UNREADABLE=0
 if ! ns_gate_boxes; then
   PUNCH_UNREADABLE=1
 fi
-# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
-# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
-# item ticked second.
-if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
-  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" || :
-fi
 
 honor_stop() {
   local reason summary
@@ -277,6 +271,13 @@ if ns_gate_filing_due "$NS"; then
   exit 0
 fi
 [ -f "$NS/.shift-armed" ] || exit 0
+
+# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
+# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
+# item ticked second.
+if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
+  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" "${TPATH:-}" || :
+fi
 
 # STOP is an owner capability, not a worker capability. Any Stop event may carry an existing
 # owner-issued order through clock-out; process ownership must never make emergency stop unusable.

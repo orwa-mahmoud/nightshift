@@ -257,13 +257,13 @@ fi
 # marks, its totals. Filed under the group with everything else and retired from live storage on the
 # same rule, so the state directory does not accumulate one directory per night.
 for u in "$NS"/usage-*; do
-  [ -d "$u" ] && [ ! -L "$u" ] || continue
+  if ! { [ -d "$u" ] && [ ! -L "$u" ]; }; then continue; fi
   ubase="${u##*/}"
   usrc="$dest"
   dest="$group/$ubase"
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    if ! { [ -f "$f" ] && [ ! -L "$f" ]; }; then continue; fi
     file_one "$f"
   done <<FIND
 $(find "$u" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)

@@ -53,6 +53,8 @@ ns_pulse_usage() {
   local ns="$1" host="$2" sid="$3" src="$4" reading fields offset model
   [ -n "$ns" ] && [ -n "$src" ] || return 0
   [ -f "$ns/.shift-armed" ] || return 0
+  ns_pulse_owner_ok "$ns" "$sid" || return 0
+  ns_report_enabled "${ns%/.nightshift}" || return 0
   [ "$(ns_report "${ns%/.nightshift}" usage)" != off ] || return 0
   # The shift's own start, stood up before the first reading so it sits at zero. A baseline taken
   # after spend had already accrued would swallow the first item's cost. The transcripts go with
@@ -201,9 +203,14 @@ ns_pulse_context() {
 # It calls the gate's own sync rather than a parallel loop. One code path writes the marks and the
 # report lines, whichever side gets there first, and the gate stays as the catch-up for a pulse that
 # never fired.
-ns_pulse_marks() {
-  local ns="$1" project="$2" punch ticked core
+ns_pulse_marks() { # <ns> <project> <sid> [transcript]
+  local ns="$1" project="$2" sid="$3" src="${4:-}" punch ticked core
   [ -d "$ns" ] || return 0
+  # The same three conditions the reading itself needs: an armed shift, owned by this session, with
+  # the report on. Anything else is a to-do list in a folder, and it is not billed.
+  [ -f "$ns/.shift-armed" ] || return 0
+  ns_pulse_owner_ok "$ns" "$sid" || return 0
+  ns_report_enabled "$project" || return 0
   punch="$ns/punch-list.md"
   [ -f "$punch" ] || return 0
   # This file's own directory, never the caller's. The Codex and Cursor pulses source this file and
@@ -218,7 +225,7 @@ ns_pulse_marks() {
   fi
   ticked="$(ns_ticked_boxes "$punch" 2>/dev/null)" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
-  ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" || return 0
+  ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || return 0
 }
 
 # Executed as the Claude wrapper: parse stdin, emit, stay silent.
@@ -252,7 +259,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   fi
   ns_pulse_emit "$NS" "$SID"
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"
-  ns_pulse_marks "$NS" "$PROJECT_DIR"
+  ns_pulse_marks "$NS" "$PROJECT_DIR" "$SID" "$TPATH"
   ns_pulse_context claude "$(ns_pulse_report_due "$NS" "$PROJECT_DIR")"
   exit 0
 fi

@@ -135,6 +135,7 @@ ns_gate_filing_message() {
 ns_gate_usage_tick() {
   local ns="$1" project="$2" label="$3" span fields seconds host line report duration paused
   [ -d "$ns" ] || return 0
+  ns_report_enabled "$project" || return 0
   [ "$(ns_report "$project" usage)" != off ] || return 0
   ns_usage_mark "$ns" "$label" || return 0
   span="$(ns_usage_last_item "$ns")" || return 0
@@ -203,12 +204,21 @@ ns_gate_usage_sync() {
   local ns="$1" project="$2" list="$3" ticked="$4" marked label i=0
   [ -d "$ns" ] || return 0
   [ -f "$list" ] || return 0
+  # Accounting belongs to an armed shift with the report on. Before Start there is no shift to bill,
+  # and an arm mark written then would stand in the way of the baseline the real arming records.
+  [ -f "$ns/.shift-armed" ] || return 0
+  ns_report_enabled "$project" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
   [ "$(ns_report "$project" usage)" != off ] || return 0
-  # The arm mark is the shift's own start, and is not an item.
+  # The arm mark is the shift's own start, and is not an item. When no pulse has written it yet,
+  # arm here with whatever transcripts the caller has, so reading begins where they stand now.
   marked="$(ns_usage_mark_count "$ns")"
   case "$marked" in '' | *[!0-9]*) marked=0 ;; esac
-  [ "$marked" -gt 0 ] || { ns_usage_mark_arm "$ns"; marked=1; }
+  if [ "$marked" -eq 0 ]; then
+    shift 4
+    ns_usage_mark_arm "$ns" "$@"
+    marked=1
+  fi
   while [ "$((marked - 1))" -lt "$ticked" ]; do
     i=$((marked))
     label="$(ns_gate_item_label "$list" "$i")"
@@ -267,7 +277,7 @@ ns_gate_reminder_fingerprint() {
 # change and sends the whole contract; counting narration turns is not.
 ns_gate_stall_state() {
   local n warn
-  [ -f "$1" ] && [ ! -L "$1" ] || { printf 'quiet'; return 0; }
+  if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf 'quiet'; return 0; fi
   n="$(sed -n 2p "$1" 2>/dev/null | tr -d '[:space:]')"
   case "$n" in '' | *[!0-9]*) printf 'quiet'; return 0 ;; esac
   warn="$2"

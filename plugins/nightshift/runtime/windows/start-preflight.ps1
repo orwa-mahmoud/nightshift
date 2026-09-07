@@ -288,6 +288,11 @@ if (-not $DryRun) {
             '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.lock.d')) {
         if (Test-NSPathEntry (Join-Path $ns $marker)) { $null = $cleared.Add($marker) }
     }
+    # The finished shift's accounting goes with its markers. Left in place, the next shift would open
+    # transcripts at the last shift's offsets and add to its totals. Renamed, not dropped: Archive
+    # files it with the rest.
+    $retiredUsage = Move-NSUsageRetire $ns (Get-NSEndedField $workspace 'shiftId')
+    if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
     Remove-NSPath (Join-Path $ns 'STOP')
     $deadlinePath = Join-Path $ns 'deadline'
     $deadlineSpent = $false

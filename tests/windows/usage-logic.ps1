@@ -20,6 +20,7 @@ function New-Workspace {
     $null = New-Item -ItemType Directory -Path (Join-Path $Path '.nightshift') -Force
     [IO.File]::WriteAllText((Join-Path $Path '.nightshift/punch-list.md'), $Punch,
         (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $Path '.nightshift/.shift-armed'), '')
     return (Join-Path $Path '.nightshift')
 }
 

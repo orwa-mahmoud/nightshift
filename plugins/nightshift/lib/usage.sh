@@ -390,7 +390,7 @@ ns_usage_mark_arm() {
   [ ! -s "$file" ] || return 0
   shift
   for t in "$@"; do
-    [ -n "$t" ] && [ -f "$t" ] || continue
+    if ! { [ -n "$t" ] && [ -f "$t" ]; }; then continue; fi
     size="$(ns_file_size "$t")" || continue
     _ns_usage_seg_baseline "$ns" "$t" "$size" || true
   done

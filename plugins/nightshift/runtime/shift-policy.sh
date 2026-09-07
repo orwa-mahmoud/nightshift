@@ -207,10 +207,11 @@ cmd_set() {
     observed="$(ns_launch_observed "$(ns_policy_host_name)")"
     scope="${observed%%	*}"
     provenance="${observed#*	}"
-    ns_rules_set_block "$candidate" launchScope "\"$scope\"" >"$tmpd/with-scope.json" &&
-      ns_rules_set_block "$tmpd/with-scope.json" launchProvenance "\"$provenance\"" \
-        >"$tmpd/with-launch.json" &&
-      mv "$tmpd/with-launch.json" "$candidate" || :
+    if ns_rules_set_block "$candidate" launchScope "\"$scope\"" >"$tmpd/with-scope.json" \
+      && ns_rules_set_block "$tmpd/with-scope.json" launchProvenance "\"$provenance\"" \
+        >"$tmpd/with-launch.json"; then
+      mv "$tmpd/with-launch.json" "$candidate"
+    fi
   fi
   # The contract as it stands right now, so the gate can tell later whether it moved. Two digests:
   # everything above the Items heading, which nobody may edit while a shift runs, and the items
@@ -223,8 +224,9 @@ cmd_set() {
       *) value="$(ns_punch_items_digest "$NS/punch-list.md")" || value="" ;;
     esac
     [ -n "$value" ] || continue
-    ns_rules_set_block "$candidate" "$digest" "\"$value\"" >"$tmpd/with-$digest.json" &&
-      mv "$tmpd/with-$digest.json" "$candidate" || :
+    if ns_rules_set_block "$candidate" "$digest" "\"$value\"" >"$tmpd/with-$digest.json"; then
+      mv "$tmpd/with-$digest.json" "$candidate"
+    fi
   done
 
   # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
@@ -233,8 +235,9 @@ cmd_set() {
   for block in shift recovery handoff archive report; do
     printf '%s' "$(cat "$candidate")" | grep -q "\"$block\"" && continue
     frozen="$(ns_policy_freeze_pref "$WORKSPACE" "$block")" || continue
-    ns_rules_set_block "$candidate" "$block" "$frozen" >"$tmpd/with-$block.json" &&
-      mv "$tmpd/with-$block.json" "$candidate" || :
+    if ns_rules_set_block "$candidate" "$block" "$frozen" >"$tmpd/with-$block.json"; then
+      mv "$tmpd/with-$block.json" "$candidate"
+    fi
   done
   ns_policy_pretty_text <"$candidate" >"$tmpd/pretty.json" || {
     rm -rf "$tmpd"

@@ -278,6 +278,17 @@ function Initialize-TestWorkspace {
     return $repo
 }
 
+# A site that means to be revived names the scope a revival may use: the shipped
+# inherit-recorded-scope refuses when the session recorded none, which every fixture here is.
+function Set-TestRecoveryScope {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $rules = Get-Content -LiteralPath $template -Raw | ConvertFrom-Json
+    $rules.recovery.launchScope = 'host-default'
+    [IO.File]::WriteAllText((Join-Path $Workspace '.nightshift/rules.json'),
+        ($rules | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding($false)))
+}
+
 function Set-TestPunch {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -936,6 +947,7 @@ try {
     Write-Host 'Checking native recovery and watchman placement'
     $recoveryWorkspace = Join-Path $root 'recovery workspace'
     $recoveryTarget = Initialize-TestWorkspace $recoveryWorkspace
+    Set-TestRecoveryScope $recoveryWorkspace
     Set-TestPunch $recoveryWorkspace $true
     $recoveryArmed = Join-Path $recoveryWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($recoveryArmed, '')
@@ -1040,6 +1052,7 @@ exit 0
 
     $backoffWorkspace = Join-Path $root 'backoff workspace'
     $null = Initialize-TestWorkspace $backoffWorkspace
+    Set-TestRecoveryScope $backoffWorkspace
     Set-TestPunch $backoffWorkspace $true
     $backoffArmed = Join-Path $backoffWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($backoffArmed, '')
@@ -1070,6 +1083,7 @@ exit 1
 
     $freshGuardWorkspace = Join-Path $root 'fresh guard workspace'
     $null = Initialize-TestWorkspace $freshGuardWorkspace
+    Set-TestRecoveryScope $freshGuardWorkspace
     Set-TestPunch $freshGuardWorkspace $true
     $freshGuardArmed = Join-Path $freshGuardWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($freshGuardArmed, '')
@@ -1093,6 +1107,7 @@ exit 1
     Write-Host 'Checking default Codex recovery through an npm-style command shim'
     $codexRecoveryWorkspace = Join-Path $root 'codex shim recovery workspace'
     $null = Initialize-TestWorkspace $codexRecoveryWorkspace
+    Set-TestRecoveryScope $codexRecoveryWorkspace
     Set-TestPunch $codexRecoveryWorkspace $true
     $codexRecoveryArmed = Join-Path $codexRecoveryWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($codexRecoveryArmed, '')
@@ -1171,6 +1186,7 @@ exit 1
     Write-Host 'Checking bounded terminal clock-out'
     $clockFailWorkspace = Join-Path $root 'clock-out fail workspace'
     $null = Initialize-TestWorkspace $clockFailWorkspace
+    Set-TestRecoveryScope $clockFailWorkspace
     # Bind while the punch list still has open work - hardhat is inert when every box is ticked.
     Set-TestPunch $clockFailWorkspace $true
     [IO.File]::WriteAllText((Join-Path $clockFailWorkspace '.nightshift/.shift-armed'), '')

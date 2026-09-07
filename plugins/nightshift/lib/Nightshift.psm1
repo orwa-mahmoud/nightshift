@@ -8070,7 +8070,7 @@ function Get-NSPunchLines {
     catch { return @() }
     if ([string]::IsNullOrEmpty($text)) { return @() }
     # A file ending in a newline splits to a trailing empty element; awk never prints that line.
-    $text = $text -creplace '(\r\n|\n|\r)$', ''
+    $text = $text -creplace '(\r\n|\n|\r)\z', ''
     return @($text -split "`r`n|`n|`r")
 }
 
@@ -9059,6 +9059,7 @@ function Invoke-NSGateUsageTick {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir,
           [Parameter(Mandatory = $true)][string]$Project, [Parameter(Mandatory = $true)][string]$Label)
     if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
     if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
     if (-not (Write-NSUsageMark $NightshiftDir $Label)) { return $false }
     $span = Get-NSUsageLastItem $NightshiftDir
@@ -9089,13 +9090,18 @@ function Invoke-NSGateUsageTick {
 # fired does not cost the shift its accounting. The arm mark is the shift's start, not an item.
 function Invoke-NSGateUsageSync {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
-          [Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Ticked)
+          [Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Ticked,
+          [string[]]$Transcripts = @())
     if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return $false }
+    # Accounting belongs to an armed shift with the report on. Before Start there is no shift to
+    # bill, and an arm mark written then would stand in the way of the baseline arming records.
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
+    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
     if ($Ticked -lt 0) { return $false }
     if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
     $marked = Get-NSUsageMarkCount $NightshiftDir
-    if ($marked -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir; $marked = 1 }
+    if ($marked -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts; $marked = 1 }
     while (($marked - 1) -lt $Ticked) {
         $label = Get-NSGateItemLabel $PunchList $marked
         if ([string]::IsNullOrEmpty($label)) { $label = 'item ' + $marked }
@@ -9205,13 +9211,17 @@ function Invoke-NSPulseUsage {
 # reading at the moment the work finished. It calls the gate's own sync: one code path writes the
 # marks and the report lines, whichever side gets there first.
 function Invoke-NSPulseMarks {
-    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project)
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [AllowEmptyString()][string]$Source = '')
     if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
     $punch = Join-Path $NightshiftDir 'punch-list.md'
     if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return $false }
     $counts = Get-NSBoxCounts $punch
     if (-not $counts.Readable) { return $false }
-    return (Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked)
+    $transcripts = @()
+    if (-not [string]::IsNullOrEmpty($Source) -and (Test-Path -LiteralPath $Source -PathType Leaf)) { $transcripts = @($Source) }
+    return (Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts)
 }
 
 # Move-NSUsageRetire - a finished shift's accounting, set aside so the next shift starts clean.
