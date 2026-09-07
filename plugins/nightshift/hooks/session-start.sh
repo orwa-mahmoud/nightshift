@@ -23,7 +23,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
-INPUT="$(cat)"
+INPUT="$(ns_read_stdin_bounded 2)"
 HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
 STATE_KIND="$(ns_state_kind "$PROJECT_DIR")"

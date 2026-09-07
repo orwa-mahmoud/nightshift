@@ -18,12 +18,13 @@
 #   CODEX_CWD         CODEX_TOOL_FILEPATH    CODEX_RAW
 # session_id, transcript_path, cwd, and tool_name are the documented common fields;
 # tool_input.command is the documented input for Bash and apply_patch — for apply_patch it
-# carries the patch text itself. A tty on stdin means a manual run, which must not hang on
-# `cat`. jq is preferred; the sed fallback keeps every guard alive on a box without it. When
+# carries the patch text itself. Stdin is read under a bound, so neither a manual run nor a
+# descriptor that never closes hangs the hook. jq is preferred; the sed fallback keeps every
+# guard alive on a box without it. When
 # no command can be extracted the raw payload stands in as the match target — a broken parse
 # must never disable a string guard.
 codex_read_input() {
-  if [ -t 0 ]; then CODEX_RAW=""; else CODEX_RAW="$(cat)"; fi
+  CODEX_RAW="$(ns_read_stdin_bounded 2)"
   if command -v jq >/dev/null 2>&1; then
     CODEX_SESSION_ID="$(printf '%s' "$CODEX_RAW" | jq -r '.session_id // empty' 2>/dev/null || true)"
     CODEX_TRANSCRIPT_PATH="$(printf '%s' "$CODEX_RAW" | jq -r '.transcript_path // empty' 2>/dev/null || true)"

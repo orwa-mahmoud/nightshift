@@ -35,8 +35,9 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
 . "$_here/shared/gate-core.sh"
 
-# The Stop payload carries the session's identity; a tty guard keeps manual runs from hanging.
-if [ -t 0 ]; then INPUT=""; else INPUT="$(cat)"; fi
+# The Stop payload carries the session's identity, read under a bound so neither a manual run nor
+# a descriptor that never closes hangs the hook.
+INPUT="$(ns_read_stdin_bounded 2)"
 if command -v jq >/dev/null 2>&1; then
   SID="$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)"
   TPATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"

@@ -77,3 +77,74 @@ payload() { # <project>
     }
   done
 }
+
+# ------------------------------------------------------------------------------------------------
+# Stdin, bounded
+#
+# A hook handed a descriptor that never reaches EOF used to sit in `cat` until something killed it:
+# one held a session for five and a half hours with its payload in argv the whole time. These hold
+# every hook to a bounded read, and to reaching its own fallbacks when nothing arrives.
+
+# held_open <hook> [argv…] — the hook with stdin open and silent, the case that used to hang.
+#
+# `timeout` is GNU and is not on a stock macOS runner; perl's alarm is, and is the same measurement.
+# HELD_ELAPSED is what the assertion reads: the hook has its own bound, so finishing quickly is the
+# claim, not the exit status of whatever ran it.
+held_open() {
+  local hook="$1" start end
+  shift
+  start="$(date +%s)"
+  run env CLAUDE_PROJECT_DIR="$WS" CURSOR_PROJECT_DIR="$WS" CODEX_PROJECT_DIR="$WS" \
+    perl -e 'alarm 10; exec @ARGV or exit 127' bash "$hook" "$@" < <(sleep 30)
+  end="$(date +%s)"
+  HELD_ELAPSED=$((end - start))
+}
+
+@test "a hook whose stdin never closes still finishes, and uses the payload it was given" {
+  ws="$(armed_site stdin-held)"
+  WS="$ws"
+  payload="$(payload "$ws")"
+
+  # Cursor's before-submit is where this was found live: the payload was in argv the whole time.
+  held_open "$HOOKS/cursor/before-submit.sh" "$payload"
+  [ "$HELD_ELAPSED" -lt 8 ]
+
+  # The pulse proves the argv payload was actually read: no session id, no pulse file.
+  rm -f "$ws/.nightshift/.shift-pulse"
+  held_open "$HOOKS/cursor/pulse.sh" "$payload"
+  [ "$HELD_ELAPSED" -lt 8 ]
+  [ -f "$ws/.nightshift/.shift-pulse" ]
+  grep -q 'sess-hook-entry$' "$ws/.nightshift/.shift-pulse"
+
+  # Codex documents no argv fallback, so it has nothing to fall back to and simply finishes.
+  held_open "$HOOKS/codex/pulse.sh" "$payload"
+  [ "$HELD_ELAPSED" -lt 8 ]
+
+  # The guard hook decides on the same payload and lets an ordinary command through.
+  held_open "$HOOKS/cursor/hardhat.sh" "$payload"
+  [ "$HELD_ELAPSED" -lt 8 ]
+}
+
+@test "a payload delivered on stdin parses the way it always did" {
+  ws="$(armed_site stdin-normal)"
+  run env CLAUDE_PROJECT_DIR="$ws" bash "$HOOKS/pulse.sh" <<<"$(payload "$ws")"
+  [ "$status" -eq 0 ]
+  [ -f "$ws/.nightshift/.shift-pulse" ]
+  grep -q 'sess-hook-entry$' "$ws/.nightshift/.shift-pulse"
+}
+
+@test "empty stdin falls through to the environment the host set" {
+  ws="$(armed_site stdin-env)"
+  run env CURSOR_PROJECT_DIR="$ws" CURSOR_HOOK_INPUT="$(payload "$ws")" \
+    bash "$HOOKS/cursor/pulse.sh" </dev/null
+  [ "$status" -eq 0 ]
+  [ -f "$ws/.nightshift/.shift-pulse" ]
+}
+
+@test "no hook reads stdin unbounded" {
+  # The bound belongs to every hook, not to the one where the hang was found.
+  for h in "$HOOKS"/*.sh "$HOOKS"/codex/*.sh "$HOOKS"/cursor/*.sh; do
+    ! grep -qE '\$\(cat\)|`cat`' "$h" || { echo "reads stdin unbounded: $h"; return 1; }
+  done
+  grep -qF 'ns_read_stdin_bounded()' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/common.sh"
+}
