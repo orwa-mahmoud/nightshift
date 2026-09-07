@@ -376,5 +376,7 @@ setup() {
   done
   # Automatic composes and works without it: no shift entry may require it.
   ! grep -rlE 'inventory\.sh|ns inventory' "$PLUGIN/skills/nightshift/references/compose/shifts" | grep -q .
-  grep -qF 'runtime/inventory.sh' "$ROOT/docs/evidence-capabilities.md"
+  # The capabilities page names the verb owners run, on both hosts.
+  grep -qF 'ns inventory' "$ROOT/docs/evidence-capabilities.md"
+  grep -qF 'ns.ps1 inventory' "$ROOT/docs/evidence-capabilities.md"
 }
