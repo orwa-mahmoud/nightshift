@@ -446,8 +446,13 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   # Start hands artifact completion to the main skill, which owns the item loop.
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"
   grep -qF 'exists but is not a usable directory' "$SETUP"
-  grep -qF 'do not `git init` the notes folder' "$NIGHTSHIFT"
-  grep -qF 'when Git is installed' "$NIGHTSHIFT"
+  # Both of these moved out of the main skill when each rule was given one home. The refusal is
+  # explained where the preflight prints it; the receipts repo is Setup's question to ask.
+  grep -qF 'never git init a notes folder' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'Never `git init` a notes folder to get past a refusal.' \
+    "$SKILLS/nightshift/references/compose/execution-modes.md"
+  grep -qF 'versioned in its own local-only git' "$SETUP"
   # Start hands the item loop, and its receipts, to the main skill.
   grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
   grep -qE 'ns"? write-receipt' "$SETUP"
