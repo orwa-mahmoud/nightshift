@@ -282,11 +282,13 @@ function Initialize-TestWorkspace {
 # inherit-recorded-scope refuses when the session recorded none, which every fixture here is.
 function Set-TestRecoveryScope {
     param([Parameter(Mandatory = $true)][string]$Workspace)
+    # The shipped template with one value changed, as text: the file is then byte-identical under
+    # Windows PowerShell 5.1 and PowerShell 7, whose JSON serialisers differ.
     $template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
-    $rules = Get-Content -LiteralPath $template -Raw | ConvertFrom-Json
-    $rules.recovery.launchScope = 'host-default'
-    [IO.File]::WriteAllText((Join-Path $Workspace '.nightshift/rules.json'),
-        ($rules | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding($false)))
+    $text = [IO.File]::ReadAllText($template)
+    $edited = $text.Replace('"launchScope": "inherit-recorded-scope"', '"launchScope": "host-default"')
+    if ($edited -ceq $text) { throw 'the rules template no longer carries recovery.launchScope as expected' }
+    [IO.File]::WriteAllText((Join-Path $Workspace '.nightshift/rules.json'), $edited, (New-Object Text.UTF8Encoding($false)))
 }
 
 function Set-TestPunch {
