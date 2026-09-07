@@ -399,6 +399,13 @@ if (-not (Test-Path -LiteralPath $armed -PathType Leaf)) {
 }
 
 $counts = Get-NSBoxCounts $punch
+# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
+# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the item
+# ticked second.
+if ($counts.Readable) {
+    try { $null = Invoke-NSGateUsageSync $ns $workspace $punch $counts.Ticked }
+    catch { Write-NSLogLine "usage accounting skipped - $($_.Exception.Message)" }
+}
 $stallMaxRaw = Get-NSRule $workspace 'stallMax' ([string]$env:NIGHTSHIFT_STALL_MAX)
 $stallWarnRaw = Get-NSRule $workspace 'stallWarnEvery' ([string]$env:NIGHTSHIFT_STALL_WARN)
 $stallReady = $stallMaxRaw -match '^[0-9]+$' -and $stallWarnRaw -match '^[1-9][0-9]*$'

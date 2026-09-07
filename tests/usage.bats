@@ -655,3 +655,76 @@ marks() { cat "$1/.nightshift/usage/marks.tsv"; }
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+# ------------------------------------------------------------------------------------------------
+# Cross-host parity
+#
+# The POSIX shell and the PowerShell module keep the same books. Two files and two report lines, in
+# the same formats, from the same transcript — so a shift worked on native Windows costs what the
+# same shift costs anywhere else, and a reader comparing two nights is comparing like with like.
+
+parity_site() {
+  local p="$BATS_TEST_TMPDIR/$1"
+  mkdir -p "$p/.nightshift"
+  printf '# Punch list\n\n## Items\n\n- [x] **A1 — one.**\n- [x] **A2 — two.**\n- [ ] **A3 — three.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  cp "$FIX/claude-multiline.jsonl" "$p/transcript.jsonl"
+  printf '%s' "$p"
+}
+
+# Everything the two sides cannot agree on because it is not accounting: where the workspace sits,
+# and what the clock said.
+parity_normalise() {
+  sed -e "s|$1|<workspace>|g" -e 's/^[0-9][0-9]*	/<epoch>	/' -e 's/^Duration: .*/Duration: <span>/'
+}
+
+@test "the PowerShell books match the POSIX books, file for file" {
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  a="$(parity_site parity-posix)"
+  b="$(parity_site parity-pwsh)"
+
+  bash -c '
+    . "$1"; . "$2"; p="$3"
+    ns_usage_mark_arm "$p/.nightshift"
+    r="$(ns_usage_read_claude "$p/transcript.jsonl" 0 "")"
+    ns_usage_record "$p/.nightshift" claude "$(printf "%s" "$r" | cut -f3)" transcript-incremental \
+      "$p/transcript.jsonl" "$(printf "%s" "$r" | cut -f2)" "$(printf "%s" "$r" | cut -f1)" \
+      "$(printf "%s" "$r" | cut -f5)"
+    ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 2
+  ' _ "$LIB" "$CORE" "$a"
+
+  run env NS_PARITY_MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1" \
+    NS_PARITY_PROJECT="$b" pwsh -NoProfile -NonInteractive -Command '
+    Import-Module $env:NS_PARITY_MODULE -Force -DisableNameChecking
+    $p = $env:NS_PARITY_PROJECT
+    $ns = Join-Path $p ".nightshift"
+    $t = Join-Path $p "transcript.jsonl"
+    $null = Write-NSUsageMarkArm $ns
+    $r = (Read-NSUsageClaude $t 0 "").Split([char]9)
+    $null = Write-NSUsageRecord $ns "claude" $r[2] "transcript-incremental" $t $r[1] $r[0] $r[4]
+    $null = Invoke-NSGateUsageSync $ns $p (Join-Path $ns "punch-list.md") 2
+  '
+  [ "$status" -eq 0 ]
+
+  for f in usage/segments.tsv usage/marks.tsv shift-report.md; do
+    [ -f "$a/.nightshift/$f" ]
+    [ -f "$b/.nightshift/$f" ]
+    diff <(parity_normalise "$a" <"$a/.nightshift/$f") <(parity_normalise "$b" <"$b/.nightshift/$f")
+  done
+}
+
+@test "the Windows hooks call the accounting, and its logic suite is registered" {
+  PULSE_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/pulse.ps1"
+  GATE_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/clock-out-gate.ps1"
+  LOGIC="$BATS_TEST_DIRNAME/windows/usage-logic.ps1"
+  # Ported functions are worth nothing until the hooks reach them: the defect this pairs with was a
+  # module that had the accounting and two hooks that named none of it.
+  grep -qF 'Invoke-NSPulseUsage' "$PULSE_PS1"
+  grep -qF 'Invoke-NSPulseMarks' "$PULSE_PS1"
+  grep -qF 'Invoke-NSGateUsageSync' "$GATE_PS1"
+  [ -f "$LOGIC" ]
+  grep -qF 'usage-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  run pwsh -NoProfile -NonInteractive -File "$LOGIC"
+  [ "$status" -eq 0 ]
+}

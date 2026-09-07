@@ -544,6 +544,10 @@ try {
     $inventoryLogicRun = Invoke-TestScript $inventoryLogic
     Assert-Equal 0 $inventoryLogicRun.ExitCode `
         "project inventory: $($inventoryLogicRun.Stdout) $($inventoryLogicRun.Stderr)"
+    $usageLogic = Join-Path $PSScriptRoot 'usage-logic.ps1'
+    $usageLogicRun = Invoke-TestScript $usageLogic
+    Assert-Equal 0 $usageLogicRun.ExitCode `
+        "usage accounting: $($usageLogicRun.Stdout) $($usageLogicRun.Stderr)"
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost

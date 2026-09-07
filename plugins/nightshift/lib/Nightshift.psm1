@@ -8613,4 +8613,621 @@ function Write-NSStatusReport {
     return 0
 }
 
+
+# ---------------------------------------------------------------------------------------------
+# Usage accounting, the native Windows half.
+#
+# The module carried the three readers and nothing that used them: no record, no marks, no total,
+# no report line. A shift on native Windows measured its transcripts and then threw the numbers
+# away. These are the POSIX functions in `lib/usage.sh` and `hooks/shared/gate-core.sh`, ported to
+# the same file formats — `segments.tsv` and `marks.tsv`, tab separated, the same columns in the
+# same order, including the eighth that carries the last response identity across a read.
+#
+# The formats are the contract between the two halves, not an implementation detail: a shift that
+# starts on one host and is revived on the other reads what the first one wrote.
+
+$script:NSUsageDimensions = @('input', 'cache_write', 'cache_read', 'output', 'reasoning')
+
+function Get-NSUsageDir { param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return (Join-Path $NightshiftDir 'usage') }
+function Get-NSUsageStatePath { param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return (Join-Path (Get-NSUsageDir $NightshiftDir) 'segments.tsv') }
+function Get-NSUsageMarksPath { param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return (Join-Path (Get-NSUsageDir $NightshiftDir) 'marks.tsv') }
+
+# Get-NSFileSize <path> - bytes, or -1 when the file cannot be measured.
+function Get-NSFileSize {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try { return (Get-Item -LiteralPath $Path -Force).Length } catch { return -1 }
+}
+
+# Get-NSUsageField <fields> <dimension> - one dimension out of a snapshot, or ''.
+function Get-NSUsageField {
+    param([AllowEmptyString()][string]$Fields, [Parameter(Mandatory = $true)][string]$Key)
+    if ([string]::IsNullOrEmpty($Fields)) { return '' }
+    foreach ($pair in $Fields.Split(',')) {
+        $i = $pair.IndexOf('=')
+        if ($i -lt 1) { continue }
+        if ($pair.Substring(0, $i) -ceq $Key) { return $pair.Substring($i + 1) }
+    }
+    return ''
+}
+
+# A dimension the host did not report is absent, never zero: zero is a measurement.
+function Add-NSUsageFields {
+    param([AllowEmptyString()][string]$A, [AllowEmptyString()][string]$B)
+    $out = @()
+    foreach ($dim in $script:NSUsageDimensions) {
+        $x = Get-NSUsageField $A $dim
+        $y = Get-NSUsageField $B $dim
+        if ([string]::IsNullOrEmpty($x) -and [string]::IsNullOrEmpty($y)) { continue }
+        if ([string]::IsNullOrEmpty($x)) { $x = '0' }
+        if ([string]::IsNullOrEmpty($y)) { $y = '0' }
+        $out += ($dim + '=' + ([long]$x + [long]$y))
+    }
+    return ($out -join ',')
+}
+
+function Get-NSUsageSubtract {
+    param([AllowEmptyString()][string]$A, [AllowEmptyString()][string]$B)
+    $out = @()
+    foreach ($dim in $script:NSUsageDimensions) {
+        $x = Get-NSUsageField $A $dim
+        if ([string]::IsNullOrEmpty($x)) { continue }
+        $y = Get-NSUsageField $B $dim
+        if ([string]::IsNullOrEmpty($y)) { $y = '0' }
+        $one = [long]$x - [long]$y
+        if ($one -lt 0) { $one = 0 }
+        $out += ($dim + '=' + $one)
+    }
+    return ($out -join ',')
+}
+
+# One segment line, seven fields plus the carried identity. Written whole so a partial line can
+# never be read back as a complete one.
+function Write-NSUsageSegments {
+    # `[string[]]` refuses an empty array under a Mandatory binding, and an empty segment file is an
+    # ordinary state — a workspace that has armed and read nothing yet.
+    param([Parameter(Mandatory = $true)][string]$Path,
+          [AllowEmptyCollection()][string[]]$Lines = @())
+    $text = ''
+    foreach ($l in $Lines) { if (-not [string]::IsNullOrEmpty($l)) { $text += $l + "`n" } }
+    [IO.File]::WriteAllText($Path, $text, (New-Object Text.UTF8Encoding($false)))
+}
+
+function Get-NSUsageSegmentLines {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    return @([IO.File]::ReadAllLines($Path) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+}
+
+function Get-NSUsageSegField {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Id,
+          [Parameter(Mandatory = $true)][int]$Column)
+    foreach ($line in (Get-NSUsageSegmentLines $Path)) {
+        $parts = $line.Split("`t")
+        if ($parts.Length -ge 1 -and $parts[0] -ceq $Id) {
+            if ($parts.Length -ge $Column) { return $parts[$Column - 1] }
+            return ''
+        }
+    }
+    return ''
+}
+
+# Get-NSUsageOffset / Get-NSUsageCarry - where reading got to, and the response it stopped inside.
+function Get-NSUsageOffset {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Id)
+    $v = Get-NSUsageSegField (Get-NSUsageStatePath $NightshiftDir) $Id 5
+    if ([string]::IsNullOrEmpty($v)) { return 0 }
+    $n = 0
+    if ([long]::TryParse($v, [ref]$n)) { return $n }
+    return 0
+}
+
+function Get-NSUsageCarry {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Id)
+    return (Get-NSUsageSegField (Get-NSUsageStatePath $NightshiftDir) $Id 8)
+}
+
+# Write-NSUsageRecord - one reading folded into the segment for that transcript.
+#
+# Claude's reader hands back only what was appended since the last offset, so its segment total
+# accumulates; the other hosts hand back a counter already cumulative for the session. A stored
+# current that is higher than the new reading means a different counter, and the segment is split
+# rather than pretending one ran backwards.
+function Write-NSUsageRecord {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$HostName,
+          [AllowEmptyString()][string]$Model,
+          [Parameter(Mandatory = $true)][string]$Source,
+          [Parameter(Mandatory = $true)][string]$Id,
+          [AllowEmptyString()][string]$Offset,
+          [AllowEmptyString()][string]$Fields,
+          [AllowEmptyString()][string]$Carry = '')
+    if ([string]::IsNullOrEmpty($Id) -or [string]::IsNullOrEmpty($Fields)) { return $false }
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageStatePath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-NSUsageSegments $file @() }
+    $newId = $Id
+    if ($Source -ceq 'transcript-incremental') {
+        $seg = Get-NSUsageSegField $file $Id 7
+        $Fields = Add-NSUsageFields $seg $Fields
+    }
+    $start = Get-NSUsageSegField $file $Id 6
+    $cur = Get-NSUsageSegField $file $Id 7
+    if ((-not [string]::IsNullOrEmpty($cur)) -and
+        ((Get-NSUsageSubtract $cur $Fields) -cne (Get-NSUsageSubtract $cur $cur))) {
+        $newId = $Id + '#' + (Get-NSUnixTime)
+        $start = ''
+        $cur = ''
+    }
+    if ([string]::IsNullOrEmpty($start)) {
+        if ($Source -ceq 'transcript-incremental') { $start = Get-NSUsageSubtract $Fields $Fields }
+        else { $start = $Fields }
+    }
+    $row = @($newId, $HostName, $Model, $Source, $Offset, $start, $Fields, $Carry) -join "`t"
+    $out = @()
+    $found = $false
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        if ($line.Split("`t")[0] -ceq $newId) { $out += $row; $found = $true }
+        else { $out += $line }
+    }
+    if (-not $found) { $out += $row }
+    Write-NSUsageSegments $file $out
+    return $true
+}
+
+# Get-NSUsageTotal - what the shift has spent: each segment's advance past where it was first seen.
+function Get-NSUsageTotal {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageStatePath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $total = ''
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        $p = $line.Split("`t")
+        if ($p.Length -lt 7) { continue }
+        if ([string]::IsNullOrEmpty($p[6])) { continue }
+        $total = Add-NSUsageFields $total (Get-NSUsageSubtract $p[6] $p[5])
+    }
+    return $total
+}
+
+# The baseline segment: this transcript starts here, with nothing charged for what came before.
+function Write-NSUsageSegBaseline {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$Id, [Parameter(Mandatory = $true)][long]$Offset)
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageStatePath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-NSUsageSegments $file @() }
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        if ($line.Split("`t")[0] -ceq $Id) { return $false }
+    }
+    $row = @($Id, 'claude', '', 'transcript-incremental', $Offset, '', '', '') -join "`t"
+    $lines = @(Get-NSUsageSegmentLines $file) + $row
+    Write-NSUsageSegments $file $lines
+    return $true
+}
+
+function Get-NSUsageMarkCount {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return 0 }
+    return @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) }).Count
+}
+
+function Write-NSUsageMark {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    $total = Get-NSUsageTotal $NightshiftDir
+    $line = @((Get-NSUnixTime), $Label, $total) -join "`t"
+    [IO.File]::AppendAllText($file, $line + "`n", (New-Object Text.UTF8Encoding($false)))
+    return $true
+}
+
+# The shift's own start, written before the first reading so it stands at zero, and the transcripts
+# stamped where they already stood so what preceded the shift is not billed to its first item.
+function Write-NSUsageMarkArm {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [string[]]$Transcripts = @())
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if ((Test-Path -LiteralPath $file -PathType Leaf) -and (Get-NSFileSize $file) -gt 0) { return $true }
+    foreach ($t in $Transcripts) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        if (-not (Test-Path -LiteralPath $t -PathType Leaf)) { continue }
+        $size = Get-NSFileSize $t
+        if ($size -lt 0) { continue }
+        $null = Write-NSUsageSegBaseline $NightshiftDir $t $size
+    }
+    [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`tarm`t`n"),
+        (New-Object Text.UTF8Encoding($false)))
+    return $true
+}
+
+function Get-NSUsageSinceLastMark {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    $now = Get-NSUnixTime
+    if ((-not (Test-Path -LiteralPath $file -PathType Leaf)) -or (Get-NSFileSize $file) -le 0) {
+        return ("`t0")
+    }
+    $lines = @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    $last = $lines[$lines.Length - 1].Split("`t")
+    $epoch = $now
+    $n = 0
+    if ($last.Length -ge 1 -and [long]::TryParse($last[0], [ref]$n)) { $epoch = $n }
+    $prevTotal = $(if ($last.Length -ge 3) { $last[2] } else { '' })
+    return ((Get-NSUsageSubtract (Get-NSUsageTotal $NightshiftDir) $prevTotal) + "`t" + ($now - $epoch))
+}
+
+function Get-NSUsageLastItem {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $lines = @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    if ($lines.Length -lt 2) { return '' }
+    $prev = $lines[$lines.Length - 2].Split("`t")
+    $last = $lines[$lines.Length - 1].Split("`t")
+    $pt = $(if ($prev.Length -ge 3) { $prev[2] } else { '' })
+    $lt = $(if ($last.Length -ge 3) { $last[2] } else { '' })
+    $seconds = [long]$last[0] - [long]$prev[0]
+    $label = $(if ($last.Length -ge 2) { $last[1] } else { '' })
+    return ((Get-NSUsageSubtract $lt $pt) + "`t" + $seconds + "`t" + $label)
+}
+
+function Get-NSUsageDuration {
+    param([AllowEmptyString()][string]$Seconds)
+    $s = 0
+    if ([string]::IsNullOrEmpty($Seconds) -or -not [long]::TryParse($Seconds, [ref]$s)) {
+        return 'unavailable'
+    }
+    if ($s -lt 60) { return ("{0}s" -f $s) }
+    if ($s -lt 3600) { return ("{0}m {1}s" -f [math]::Floor($s / 60), ($s % 60)) }
+    return ("{0}h {1}m" -f [math]::Floor($s / 3600), [math]::Floor(($s % 3600) / 60))
+}
+
+function Get-NSUsageSegmentCount {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return @(Get-NSUsageSegmentLines (Get-NSUsageStatePath $NightshiftDir)).Count
+}
+
+function Get-NSUsageHosts {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $lines = @(Get-NSUsageSegmentLines (Get-NSUsageStatePath $NightshiftDir))
+    if ($lines.Count -eq 0) { return '' }
+    $seen = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($line in $lines) {
+        $p = $line.Split("`t")
+        $pair = (($(if ($p.Length -ge 2) { $p[1] } else { '' })) + ' ' +
+                 ($(if ($p.Length -ge 3) { $p[2] } else { '' })))
+        if (-not $seen.Contains($pair)) { $null = $seen.Add($pair) }
+    }
+    $sorted = @($seen | Sort-Object -CaseSensitive)
+    return ($sorted -join '; ')
+}
+
+# What each host's figures overlap. Stated rather than corrected: a total that quietly reconciled
+# three different accounting conventions would be a number nobody could check against their bill.
+function Get-NSUsageOverlapText {
+    param([AllowEmptyString()][string]$HostName)
+    switch ($HostName) {
+        'claude' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
+        'codex' { return 'Cached input is already inside the input figure, and reasoning is already inside output.' }
+        'cursor' { return 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' }
+        default { return 'Overlap between the dimensions is unknown for this host.' }
+    }
+}
+
+function Get-NSUsageLine {
+    param([AllowEmptyString()][string]$Fields, [AllowEmptyString()][string]$Sources,
+          [AllowEmptyString()][string]$Segments, [AllowEmptyString()][string]$HostName = '')
+    $parts = @()
+    foreach ($dim in $script:NSUsageDimensions) {
+        $v = Get-NSUsageField $Fields $dim
+        if ([string]::IsNullOrEmpty($v)) { $v = 'unavailable' }
+        $parts += ($dim + ' ' + $v)
+    }
+    return ('Usage: ' + ($parts -join ' · ') + "`n  Source: " + $Sources +
+            ', cumulative counters, segments ' + $Segments + "`n  " +
+            (Get-NSUsageOverlapText $HostName))
+}
+
+# The item's own section of the report, written where the model already writes its account of the
+# work. An existing section is spliced into rather than appended after, so one item is one section.
+function Add-NSGateUsageAppend {
+    param([Parameter(Mandatory = $true)][string]$Report, [Parameter(Mandatory = $true)][string]$Label,
+          [Parameter(Mandatory = $true)][string]$Usage, [Parameter(Mandatory = $true)][string]$Duration)
+    if ([string]::IsNullOrEmpty($Report)) { return }
+    if (Test-NSReparsePoint $Report) { return }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    if (-not (Test-Path -LiteralPath $Report -PathType Leaf)) {
+        [IO.File]::WriteAllText($Report, "# Shift report`n", $utf8)
+    }
+    $heading = '### ' + $Label
+    $lines = @([IO.File]::ReadAllLines($Report))
+    if ($lines -ccontains $heading) {
+        $out = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($l in $lines) {
+            $null = $out.Add($l)
+            if ($l -ceq $heading) {
+                $null = $out.Add('')
+                foreach ($u in $Usage.Split("`n")) { $null = $out.Add($u) }
+                $null = $out.Add('Duration: ' + $Duration)
+            }
+        }
+        [IO.File]::WriteAllText($Report, (($out -join "`n") + "`n"), $utf8)
+        return
+    }
+    $tail = "`n" + $heading + "`n`n" + $Usage + "`nDuration: " + $Duration + "`n"
+    [IO.File]::AppendAllText($Report, $tail, $utf8)
+}
+
+# Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it.
+function Get-NSGateItemLabel {
+    param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Which)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
+    $n = 0
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        if ($line -cmatch '^- \[x\]') {
+            $n++
+            if ($n -ne $Which) { continue }
+            $t = $line -creplace '^- \[x\][ \t]*\*\*', ''
+            $t = $t -creplace '[ \t]*[—-].*$', ''
+            $t = $t -creplace '\*\*.*$', ''
+            return $t.TrimEnd()
+        }
+    }
+    return ''
+}
+
+# Write-NSUsagePause <nightshift-dir> <reason> - a gap the runtime knows was not work.
+#
+# A session that ended and was revived, or a shift held at STOP, is wall-clock time nobody spent.
+# It is recorded so the duration line can list it, and never subtracted silently.
+function Write-NSUsagePause {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Reason = '')
+    $dir = Get-NSUsageDir $NightshiftDir
+    if (Test-NSReparsePoint $dir) { return $false }
+    try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch { return $false }
+    $why = $Reason
+    if ([string]::IsNullOrEmpty($why)) { $why = 'paused' }
+    $file = Join-Path $dir 'pauses.tsv'
+    if (Test-NSReparsePoint $file) { return $false }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    try { [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`t" + $why + "`n"), $utf8) }
+    catch { return $false }
+    return $true
+}
+
+# Get-NSUsageResumedAt <nightshift-dir> <epoch> - when work was next seen after a pause, from the
+# marks the runtime was already keeping.
+function Get-NSUsageResumedAt {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$After)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    foreach ($line in @([IO.File]::ReadAllLines($file))) {
+        $at = $line.Split("`t")[0]
+        if ($at -notmatch '^[0-9]+$') { continue }
+        if ([long]$at -gt $After) { return $at }
+    }
+    return ''
+}
+
+# Get-NSUsagePausedSince <nightshift-dir> <epoch> - how long was recorded as not-work since that
+# moment, and why: `<seconds>`t<reason>`, empty when the runtime knows of no gap.
+#
+# A pause is closed by the next thing that happens. Where nothing followed, the gap is open and is
+# reported as such rather than guessed at.
+function Get-NSUsagePausedSince {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From)
+    $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'pauses.tsv'
+    if (Test-NSReparsePoint $file) { return '' }
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $total = [long]0
+    $lastReason = ''
+    foreach ($line in @([IO.File]::ReadAllLines($file))) {
+        $parts = $line.Split("`t")
+        $at = $parts[0]
+        if ($at -notmatch '^[0-9]+$') { continue }
+        if ([long]$at -lt $From) { continue }
+        $next = Get-NSUsageResumedAt $NightshiftDir ([long]$at)
+        if ([string]::IsNullOrEmpty($next)) { continue }
+        $total += ([long]$next - [long]$at)
+        $lastReason = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
+    }
+    if ($total -le 0) { return '' }
+    return ([string]$total + "`t" + $lastReason)
+}
+
+# Get-NSUsageItemStart <nightshift-dir> - when the item that just closed began: the mark before the
+# one just written.
+function Get-NSUsageItemStart {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '0' }
+    $lines = @([IO.File]::ReadAllLines($file))
+    if ($lines.Count -lt 2) { return '0' }
+    return $lines[$lines.Count - 2].Split("`t")[0]
+}
+
+# One item's slice, marked and written into its report section.
+function Invoke-NSGateUsageTick {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$Project, [Parameter(Mandatory = $true)][string]$Label)
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    if (-not (Write-NSUsageMark $NightshiftDir $Label)) { return $false }
+    $span = Get-NSUsageLastItem $NightshiftDir
+    if ([string]::IsNullOrEmpty($span)) { return $false }
+    $parts = $span.Split("`t")
+    $fields = $parts[0]
+    if ([string]::IsNullOrEmpty($fields)) { return $false }
+    $seconds = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
+    $hosts = Get-NSUsageHosts $NightshiftDir
+    if ([string]::IsNullOrEmpty($hosts)) { $hosts = 'unknown' }
+    $first = $hosts.Split(' ')[0]
+    $line = Get-NSUsageLine $fields $hosts (Get-NSUsageSegmentCount $NightshiftDir) $first
+    # Wall clock, and beside it any gap the runtime knows was not work. Listed, never subtracted.
+    $duration = Get-NSUsageDuration $seconds
+    $start = Get-NSUsageItemStart $NightshiftDir
+    if ($start -match '^[0-9]+$') {
+        $paused = Get-NSUsagePausedSince $NightshiftDir ([long]$start)
+        if (-not [string]::IsNullOrEmpty($paused)) {
+            $pp = $paused.Split("`t")
+            $duration = $duration + ' (paused ' + (Get-NSUsageDuration $pp[0]) + ', ' + $pp[1] + ')'
+        }
+    }
+    Add-NSGateUsageAppend (Get-NSReportPath $Project) $Label $line $duration
+    return $true
+}
+
+# The catch-up. Every item ticked since the last mark gets one, in order, so a pulse that never
+# fired does not cost the shift its accounting. The arm mark is the shift's start, not an item.
+function Invoke-NSGateUsageSync {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Ticked)
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return $false }
+    if ($Ticked -lt 0) { return $false }
+    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    $marked = Get-NSUsageMarkCount $NightshiftDir
+    if ($marked -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir; $marked = 1 }
+    while (($marked - 1) -lt $Ticked) {
+        $label = Get-NSGateItemLabel $PunchList $marked
+        if ([string]::IsNullOrEmpty($label)) { $label = 'item ' + $marked }
+        if (-not (Invoke-NSGateUsageTick $NightshiftDir $Project $label)) { return $false }
+        $marked++
+    }
+    return $true
+}
+
+# Read-NSUsageCursor <payload> - the counter from a Cursor stop payload.
+#
+# Cursor delivers the figures on the hook payload itself; there is no transcript to read. The fields
+# are optional and undocumented, so each is read defensively: a payload without them is not zero
+# usage, it is no measurement, and the caller says `unavailable`.
+function Read-NSUsageCursor {
+    param([AllowEmptyString()][string]$Payload)
+    if ([string]::IsNullOrEmpty($Payload)) { return $null }
+    $input = Get-NSUsageNumber $Payload 'input_tokens'
+    $output = Get-NSUsageNumber $Payload 'output_tokens'
+    if ($input -lt 0 -and $output -lt 0) { return $null }
+    $cacher = Get-NSUsageNumber $Payload 'cache_read_tokens'
+    $cachew = Get-NSUsageNumber $Payload 'cache_write_tokens'
+    $model = Get-NSUsageString $Payload 'model'
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    if ($input -ge 0) { $null = $parts.Add('input=' + $input) }
+    if ($cachew -ge 0) { $null = $parts.Add('cache_write=' + $cachew) }
+    if ($cacher -ge 0) { $null = $parts.Add('cache_read=' + $cacher) }
+    if ($output -ge 0) { $null = $parts.Add('output=' + $output) }
+    return (($parts -join ',') + "`t0`t" + $model + "`t0")
+}
+
+# Get-NSUsageSubagents <transcript> - the subagent transcripts belonging to one session, if any.
+#
+# A Task-spawned agent writes its own file beside the session's, and its usage is there rather than
+# in the parent. Only this session's own directory is looked at.
+function Get-NSUsageSubagents {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $dir = [IO.Path]::GetDirectoryName($Path)
+    if ([string]::IsNullOrEmpty($dir)) { return @() }
+    $base = [IO.Path]::GetFileName($Path)
+    if ($base.EndsWith('.jsonl', [StringComparison]::Ordinal)) {
+        $base = $base.Substring(0, $base.Length - 6)
+    }
+    $sub = Join-Path (Join-Path $dir $base) 'subagents'
+    if (Test-NSReparsePoint $sub) { return @() }
+    if (-not (Test-Path -LiteralPath $sub -PathType Container)) { return @() }
+    return @(Get-ChildItem -LiteralPath $sub -File -Filter 'agent-*.jsonl' -ErrorAction SilentlyContinue |
+        Sort-Object -Property FullName |
+        ForEach-Object { $_.FullName })
+}
+
+# Invoke-NSPulseUsage <ns> <host> <session-id> <source> - take one reading, if the owner wants usage
+# measured.
+#
+# The pulse fires on every tool call, so the reading rides on something that was going to happen
+# anyway. The arm mark is stood up first, with the transcripts beside it: whatever the setting-up
+# conversation already wrote is where reading begins, not byte zero.
+function Invoke-NSPulseUsage {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$HostName,
+          [AllowEmptyString()][string]$SessionId,
+          [AllowEmptyString()][string]$Source)
+    if ([string]::IsNullOrEmpty($Source)) { return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
+    $project = [IO.Path]::GetDirectoryName($NightshiftDir)
+    if ((Get-NSRule $project 'report.usage' '') -ceq 'off') { return $false }
+    $agents = @()
+    if ($HostName -ceq 'claude') { $agents = Get-NSUsageSubagents $Source }
+    if ($HostName -ceq 'claude') {
+        $null = Write-NSUsageMarkArm $NightshiftDir (@($Source) + $agents)
+    }
+    else {
+        $null = Write-NSUsageMarkArm $NightshiftDir
+    }
+    switch ($HostName) {
+        'claude' {
+            foreach ($t in (@($Source) + $agents)) {
+                $reading = Read-NSUsageClaude $t (Get-NSUsageOffset $NightshiftDir $t) `
+                    (Get-NSUsageCarry $NightshiftDir $t)
+                if ([string]::IsNullOrEmpty($reading)) { continue }
+                $f = $reading.Split("`t")
+                $null = Write-NSUsageRecord $NightshiftDir 'claude' $f[2] 'transcript-incremental' `
+                    $t $f[1] $f[0] $f[4]
+            }
+            return $true
+        }
+        'codex' {
+            $reading = Read-NSUsageCodex $Source
+            if ([string]::IsNullOrEmpty($reading)) { return $false }
+            $f = $reading.Split("`t")
+            return (Write-NSUsageRecord $NightshiftDir 'codex' $f[2] 'rollout' $Source '0' $f[0])
+        }
+        'cursor' {
+            $reading = Read-NSUsageCursor $Source
+            if ([string]::IsNullOrEmpty($reading)) { return $false }
+            $f = $reading.Split("`t")
+            return (Write-NSUsageRecord $NightshiftDir 'cursor' $f[2] 'stop-payload' ('cursor:' + $SessionId) '0' $f[0])
+        }
+    }
+    return $false
+}
+
+# Invoke-NSPulseMarks <ns> <project> - mark every item ticked since the last mark, at this moment.
+#
+# The gate marks on a stop attempt, so two items ticked between stops both get the reading taken at
+# the stop. The pulse fires on the tool call that ticked the box, so a mark taken here carries the
+# reading at the moment the work finished. It calls the gate's own sync: one code path writes the
+# marks and the report lines, whichever side gets there first.
+function Invoke-NSPulseMarks {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project)
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    $punch = Join-Path $NightshiftDir 'punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return $false }
+    $counts = Get-NSBoxCounts $punch
+    if (-not $counts.Readable) { return $false }
+    return (Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked)
+}
+
+# Move-NSUsageRetire - a finished shift's accounting, set aside so the next shift starts clean.
+function Move-NSUsageRetire {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$ShiftId)
+    $dir = Get-NSUsageDir $NightshiftDir
+    if (Test-NSReparsePoint $dir) { return '' }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return '' }
+    $id = $ShiftId
+    if ([string]::IsNullOrEmpty($id) -or $id -match '[\\/]' -or $id.StartsWith('.')) {
+        $id = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+    }
+    $dest = Join-Path $NightshiftDir ('usage-' + $id)
+    if (Test-Path -LiteralPath $dest) { $dest = $dest + '-' + (Get-NSUnixTime) }
+    try { Move-Item -LiteralPath $dir -Destination $dest -Force } catch { return '' }
+    return $dest
+}
+
 Export-ModuleMember -Function *
