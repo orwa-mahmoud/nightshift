@@ -252,6 +252,28 @@ $(find "$src" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
 FIND
 fi
 
+# A retired shift's accounting travels too. `usage-<id>/` is what the Start preflight renamed when
+# it cleared the last shift's leftovers, so it is the closed shift's own readings — its offsets, its
+# marks, its totals. Filed under the group with everything else and retired from live storage on the
+# same rule, so the state directory does not accumulate one directory per night.
+for u in "$NS"/usage-*; do
+  [ -d "$u" ] && [ ! -L "$u" ] || continue
+  ubase="${u##*/}"
+  usrc="$dest"
+  dest="$group/$ubase"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    file_one "$f"
+  done <<FIND
+$(find "$u" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
+FIND
+  dest="$usrc"
+  if [ "$ROTATE" -eq 1 ] && retire_named "$ubase"; then
+    rm -rf "$u" 2>/dev/null && removed=$((removed + 1))
+  fi
+done
+
 # The shift report travels with the receipts it describes.
 report="$(ns_report_path "$WORKSPACE")"
 report_base=""

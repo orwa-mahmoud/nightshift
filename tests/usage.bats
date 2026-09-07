@@ -598,3 +598,60 @@ marks() { cat "$1/.nightshift/usage/marks.tsv"; }
   run lib ns_usage_read_claude "$p/t.jsonl" "$size" req_a
   [ "$status" -eq 0 ]
 }
+
+# ---------------------------------------------------------------------------------------------
+# One shift's accounting does not become the next shift's.
+#
+# `usage/` holds the offsets a shift reached, the marks it took and the totals it accumulated. Left
+# in place it made the next shift open transcripts where the last one stopped and add to its totals,
+# so two nights became one number nobody could separate. The Start preflight renames it aside when
+# it clears the other leftovers, and Archive files what it renamed.
+
+@test "a finished shift's accounting is retired, not carried into the next one" {
+  p="$(three_open usage-retire)"
+  cp "$FIX/claude-multiline.jsonl" "$p/transcript.jsonl"
+  fire "$p"
+  cat "$FIX/claude-multiline.jsonl" >>"$p/transcript.jsonl"
+  fire "$p"
+  first="$(cut -f7 "$p/.nightshift/usage/segments.tsv")"
+  [ -n "$first" ]
+
+  # The shift ends and the next one clears the leftovers.
+  printf 'shiftId=aaaa1111bbbb2222\n' >"$p/.nightshift/.ended"
+  run lib ns_usage_retire "$p/.nightshift" aaaa1111bbbb2222
+  [ "$status" -eq 0 ]
+  [ -d "$p/.nightshift/usage-aaaa1111bbbb2222" ]
+  [ ! -d "$p/.nightshift/usage" ]
+
+  # The second shift starts clean and bills only what it spends. Its first pulse re-arms and
+  # stamps the baseline where the transcript now stands, so what came before is not its spend.
+  rm -f "$p/.nightshift/.ended"
+  fire "$p"
+  cat "$FIX/claude-multiline.jsonl" >>"$p/transcript.jsonl"
+  fire "$p"
+  second="$(cut -f7 "$p/.nightshift/usage/segments.tsv")"
+  [ "$second" = 'input=17,cache_write=100,cache_read=3000,output=16,reasoning=6' ] \
+    || { echo "second shift billed $second"; return 1; }
+  # And the first shift's record still says what it said.
+  [ "$(cut -f7 "$p/.nightshift/usage-aaaa1111bbbb2222/segments.tsv")" = "$first" ]
+}
+
+@test "retiring twice under one id keeps both records" {
+  p="$(three_open usage-retire-twice)"
+  cp "$FIX/claude-multiline.jsonl" "$p/transcript.jsonl"
+  fire "$p"
+  run lib ns_usage_retire "$p/.nightshift" dup
+  [ "$status" -eq 0 ]
+  fire "$p"
+  run lib ns_usage_retire "$p/.nightshift" dup
+  [ "$status" -eq 0 ]
+  # Neither night's readings were written over the other's.
+  [ "$(find "$p/.nightshift" -maxdepth 1 -name 'usage-dup*' -type d | wc -l | tr -d ' ')" -eq 2 ]
+}
+
+@test "retiring is silent when there is nothing to retire" {
+  p="$(three_open usage-retire-none)"
+  run lib ns_usage_retire "$p/.nightshift" someid
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}

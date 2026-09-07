@@ -29,6 +29,27 @@ _NS_USAGE_CLAUDE_AWK="$_NS_USAGE_AWK_DIR/usage-claude.awk"
 _NS_USAGE_CODEX_AWK="$_NS_USAGE_AWK_DIR/usage-codex.awk"
 _NS_USAGE_CURSOR_AWK="$_NS_USAGE_AWK_DIR/usage-cursor.awk"
 
+# ns_usage_retire <nightshift-dir> <shift-id> — move a finished shift's accounting aside.
+#
+# `usage/` holds one shift's readings: the offsets it had reached, the marks it took, the totals it
+# accumulated. Left in place, the next shift opens transcripts at the previous shift's offsets and
+# adds to the previous shift's totals, and the two nights become one number nobody can separate.
+# Renaming rather than deleting keeps the record: Archive files `usage-*` with everything else.
+#
+# Silent when there is nothing to retire, which is the ordinary case for a first shift.
+ns_usage_retire() {
+  local ns="$1" id="$2" dir dest
+  dir="$(ns_usage_dir "$ns")"
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
+  case "$id" in '' | */* | .*) id="" ;; esac
+  [ -n "$id" ] || id="$(date +%Y%m%dT%H%M%SZ)"
+  dest="$ns/usage-$id"
+  # A second shift ending under the same id would otherwise clobber the first one's record.
+  [ ! -e "$dest" ] || dest="$ns/usage-$id-$(date +%s)"
+  mv "$dir" "$dest" 2>/dev/null || return 1
+  printf '%s' "$dest"
+}
+
 # ns_usage_dir <nightshift-dir> — where snapshots live. Created on demand.
 ns_usage_dir() { printf '%s/usage' "$1"; }
 
