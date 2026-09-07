@@ -286,7 +286,7 @@ LOG
   grep -qE '^deadline [0-9]+h[0-9]{2}m remaining$' "$p/windows.txt"
 }
 
-@test "the Status skill renders and no longer teaches counting" {
+@test "the Status skill renders and teaches no counting" {
   skill="$ROOT/plugins/nightshift/skills/status/SKILL.md"
   for phrase in 'counted **below the `## Items`' \
     'Count drafting-table boxes only after the first markdown' \

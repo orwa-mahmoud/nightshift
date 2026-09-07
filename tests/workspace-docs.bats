@@ -118,7 +118,7 @@ resolve_work_target() {
 # A reader who types what a page shows and gets an error learns the page is not maintained, and
 # from then on checks everything against the tree themselves. These hold the pages to the tree.
 
-@test "no public page shows a command the product no longer has" {
+@test "no public page shows a command the product does not have" {
   for f in "$ROOT/README.md" "$ROOT"/docs/*.md "$ROOT"/examples/*.md; do
     [ -f "$f" ] || continue
     case "$f" in

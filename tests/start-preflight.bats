@@ -496,7 +496,7 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   printf '%s\n' "$output" | grep -qF 'a false result is a refusal'
 }
 
-@test "no repair hands the owner a command that is no longer how a command is spelled" {
+@test "every repair names a verb, never the helper file behind it" {
   for f in "$PREFLIGHT" "$PS1_TWIN"; do
     if grep -nE '(repair|Write-Repair) .*(stop-shift\.(sh|ps1)|link-workspace\.(sh|ps1)|provision\.sh)' "$f"; then
       echo "$f offers a repair naming a helper file rather than its verb"
