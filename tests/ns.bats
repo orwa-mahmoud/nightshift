@@ -209,3 +209,25 @@ on() {
     [ -x "$target" ] || { echo "$verb resolves to a file that cannot be executed: $target"; return 1; }
   done
 }
+
+@test "a copied plugin tree works the way an installed one is used" {
+  # The executable-bit defect was invisible because the gate and every test call the renderer
+  # through `bash`. An installed plugin is a copy that is exec'd, so this is that.
+  inst="$BATS_TEST_TMPDIR/installed/nightshift"
+  mkdir -p "$inst"
+  cp -R "$BATS_TEST_DIRNAME/../plugins/nightshift/." "$inst/"
+  p="$(new_project ns-installed)"
+  rm -f "$p/.nightshift"/*.md
+
+  run env CLAUDE_PROJECT_DIR="$p" "$inst/runtime/ns" scaffold
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'wrote punch-list.md'
+
+  run env CLAUDE_PROJECT_DIR="$p" "$inst/runtime/ns" status
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'Nightshift Status'
+
+  run env CLAUDE_PROJECT_DIR="$p" "$inst/runtime/ns" morning-receipt --out "$p/m.md"
+  [ "$status" -eq 0 ]
+  [ -s "$p/m.md" ]
+}
