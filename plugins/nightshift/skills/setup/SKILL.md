@@ -1,6 +1,7 @@
 ---
 name: setup
 description: Scaffold .nightshift/ and propose quality gates for this stack; asks, never imposes.
+license: MIT
 ---
 
 Set up Nightshift in this project. Do the scaffolding first, then the gates conversation, then

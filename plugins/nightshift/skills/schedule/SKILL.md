@@ -1,6 +1,7 @@
 ---
 name: schedule
 description: Print the launchd, cron or Task Scheduler config that starts a shift at a fixed time; registers nothing.
+license: MIT
 ---
 
 Get the host-opened project ready to start on a clock, then hand the owner the config. Work through
