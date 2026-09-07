@@ -424,7 +424,7 @@ ns_hardhat_heredoc_is_data_write() {
 # that run their input, and a quoted delimiter changes nothing about that.
 #
 # The line that opens the heredoc is kept either way, so the redirection target is inspected
-# exactly as before — writing a protected file is caught by where it writes, not by what it
+# whatever the body says — writing a protected file is caught by where it writes, not by what it
 # says. An unquoted delimiter is left alone, because that body is expanded and a command
 # substitution in it really does run. So is an unterminated one: a body with no visible end is
 # not skipped.

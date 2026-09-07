@@ -290,9 +290,9 @@ documented_pages() {
 
 # The explanation lives on the verdict, not in the skill.
 #
-# Start used to explain every preflight topic in prose, and the model read all of it on every
-# Start. The helper explains itself now, so what the skill may still say about a verdict is how to
-# read one — and the two rules that are policy rather than mechanics.
+# Explaining every preflight topic in prose makes the model read all of it on every Start. The
+# helper explains itself, so what the skill says about a verdict is how to read one — and the two
+# rules that are policy rather than mechanics.
 
 @test "Start explains no verdict it did not receive" {
   start="$SKILLS/start/SKILL.md"

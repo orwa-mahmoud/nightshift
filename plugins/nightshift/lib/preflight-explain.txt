@@ -1,13 +1,13 @@
 # What each preflight verdict means, and what to do about it.
 #
-# The Start skill used to carry a paragraph per topic, and the model read every one of them on
-# every Start - including the ones for verdicts that did not occur. The explanation belongs on the
-# verdict line that occurred, so it lives here and the helper prints it.
+# The explanation belongs on the verdict line that occurred, not in a paragraph the model reads on
+# every Start for verdicts that did not. It lives here and the helper prints it, and both hosts
+# read this one file, so neither can word the same verdict differently.
 #
 # One record per line: <kind> TAB <topic> TAB <text>. `explain` says what the verdict means;
 # `repair` is an action the owner takes, printed after the explanation and before any repair the
 # helper builds for itself, in file order when a topic has more than one. A topic with no record
-# here prints its verdict and its own repairs, exactly as before.
+# here prints its verdict and its own repairs.
 #
 # Both the POSIX helper and the PowerShell one read this file, so the two hosts cannot drift into
 # different wordings of the same verdict. Lines starting with # and blank lines are ignored, and

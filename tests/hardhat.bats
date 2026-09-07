@@ -1334,7 +1334,7 @@ ROWS
 # ---------------------------------------------------------------------------------------------
 # A quoted here-document body is the file being written, not a command. Writing documentation about
 # Nightshift — its elevation categories, its owner file, its control files — must not read as a
-# request to do any of it. What the command actually writes to is still inspected exactly as before.
+# request to do any of it. What the command actually writes to is inspected whatever the body says.
 
 # hd <delimiter-quote> <target> <body> — a here-document command.
 hd() {

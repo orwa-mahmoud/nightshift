@@ -5,9 +5,9 @@
 #   ns bind               the five resolved facts, for a skill or owner that wants to see them
 #   ns help               this host's verb table, with the exact invocation per line
 #
-# Skills used to carry every command in two or three spellings — POSIX, native Windows, and a
-# Codex variant — and the model read all of them on every host. No host loads a skill per
-# platform, so the per-host command file is made executable instead of loaded.
+# A skill names one verb, not one spelling of it per platform — POSIX, native Windows, and a
+# Codex variant, all read on every host. No host loads a skill per platform, so the per-host
+# command file is made executable here instead of read there.
 #
 # The boundary: this decides which file implements a verb here, how that file spells its flags,
 # and where the workspace is. It never decides whether a verb runs, in what order, or what is

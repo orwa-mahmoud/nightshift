@@ -3,8 +3,8 @@
   Copy the state templates into the workspace, never over an existing file.
 
 .DESCRIPTION
-  Mirrors runtime/scaffold.sh. Setup used to point the model at nine template
-  files so it could write them out; copying a file does not require its text.
+  Mirrors runtime/scaffold.sh. Copying a file does not require its text, so the
+  model reads none of the nine templates.
 
   Never clobbers. A name already in `.nightshift/` is the owner's, whatever it
   now contains, so it is reported `kept` and left exactly as it is. Running this

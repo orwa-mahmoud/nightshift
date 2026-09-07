@@ -54,11 +54,12 @@ load helpers
   [ "$FP1" != "$FP2" ]
 }
 
-# The facts the skill used to derive by hand.
+# The facts, derived by the helper rather than by hand in the skill.
 #
 # Counting boxes below a heading, counting drafting-table boxes only after the first rule,
-# subtracting a deadline from the clock — every one of those was an instruction in prose, and every
-# one is mechanics. These hold what the helper now prints so the skill can render it.
+# subtracting a deadline from the clock — every one of those is mechanics, and mechanics in prose
+# is an instruction that can be followed loosely. These hold what the helper prints so the skill
+# can render it.
 
 PS_STATUS="$ROOT/plugins/nightshift/runtime/windows/status.ps1"
 

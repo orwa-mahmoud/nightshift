@@ -18,8 +18,8 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
     grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns' "$s" \
       || { echo "does not name the dispatcher: $s"; return 1; }
     grep -qF 'ns bind' "$s" || { echo "does not name the five bound facts: $s"; return 1; }
-    # The resolving is the runtime's. A skill that still spells out a host's own answer will
-    # drift from it, and the unsafe fallbacks are exactly how that used to go wrong.
+    # The resolving is the runtime's. A skill that spells out a host's own answer drifts from it,
+    # and each fallback below is a spelling that resolves to the wrong root when the host differs.
     for bad in 'pwd -P' '${CLAUDE_PROJECT_DIR:-$PWD}' '${CODEX_PROJECT_DIR:-$PWD}' \
       '--project "$CLAUDE_PROJECT_DIR"'; do
       ! grep -qF -- "$bad" "$s" || { echo "re-derives the task root ($bad): $s"; return 1; }

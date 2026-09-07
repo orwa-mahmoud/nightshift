@@ -3,9 +3,8 @@
 #
 #   scaffold.sh --project <ws> [--list]
 #
-# Setup used to point the model at nine template files so it could write them out. Copying a file
-# does not require its text: the model reads nothing here, and what it saves in context it also
-# saves in fidelity — a copy cannot paraphrase.
+# Copying a file does not require its text: the model reads none of the nine templates, and what
+# that saves in context it also saves in fidelity — a copy cannot paraphrase.
 #
 # Never clobbers. A file already in `.nightshift/` is the owner's, whatever it now contains, so an
 # existing name is reported `kept` and left exactly as it is. Running this twice is safe, and that

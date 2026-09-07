@@ -1,13 +1,12 @@
 #!/usr/bin/env bats
 # One item at a time, without re-reading the whole list to get it.
 #
-# The model used to re-read the entire punch list at the start of every item, because the Gates
-# block may legitimately change mid-shift. On a long list that is thousands of tokens per item to
-# see one block. The helper prints the two things an item needs — and nothing else, and in the
-# file's own words.
+# The Gates block may legitimately change mid-shift, so an item needs it fresh — and reading the
+# entire punch list to see one block is thousands of tokens per item on a long list. The helper
+# prints the two things an item needs, nothing else, in the file's own words.
 #
-# The other half is the contract holding still. Watching for tampering used to be the model's job,
-# on a file the model also edits; the gate records digests at arming and checks them instead.
+# The other half is the contract holding still. A file's own editor cannot watch it for tampering,
+# so the gate records digests at arming and checks them.
 
 load helpers
 

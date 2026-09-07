@@ -369,9 +369,9 @@ ns_gate_open_item() {
 
 # The contract, held to what it was when the shift armed.
 #
-# The model used to be told to notice if the punch list had been altered and put it back from git —
-# which is a file's editor policing itself. The gate already records digests at arming, so it can
-# just check.
+# A file's own editor cannot police it, and restoring a punch list from git is the editor deciding
+# what the contract said. The gate records digests at arming, so it checks rather than asking the
+# model to notice.
 #
 # Two digests, because two things can move for different reasons. `contractDigest` covers
 # everything above `## Items`: the shift contract, which nobody may edit while a shift runs.

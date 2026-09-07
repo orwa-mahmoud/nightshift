@@ -910,14 +910,14 @@ ns_punch_items_digest() { ns_punch_items_normalised "$1" | ns_punch_digest; }
 
 # ---------------------------------------------------------------- preflight explanations
 #
-# The Start skill carried a paragraph per verdict topic, and the model read all of them on every
-# Start — including the ones for verdicts that did not occur. The explanation belongs on the line
-# that occurred, so it is printed here from lib/preflight-explain.txt, which the PowerShell twin
-# reads too: one copy of the text, so the two hosts cannot word the same verdict differently.
+# The explanation belongs on the verdict line that occurred, not in a paragraph the model reads on
+# every Start for verdicts that did not. It is printed here from lib/preflight-explain.txt, which
+# the PowerShell twin reads too: one copy of the text, so the two hosts cannot word the same
+# verdict differently.
 
 # ns_explain_lines <kind> <topic> — the records of that kind for that topic, in file order.
 # Prints nothing when the topic has none, which is not an error: a topic without a record keeps
-# its verdict and its own repairs exactly as before.
+# its verdict and its own repairs.
 ns_explain_lines() {
   local file
   file="${NS_EXPLAIN_FILE:-}"
@@ -950,9 +950,9 @@ ns_explain_topic() {
 
 # ---------------------------------------------------------------- the facts Status renders
 #
-# The Status skill used to tell the model how to derive each of these by hand — count the boxes
-# below a heading, count drafting-table boxes only after the first rule, subtract the deadline from
-# the clock, read the stall counter. Counting is mechanics. The skill renders; these produce.
+# Counting is mechanics — the boxes below a heading, drafting-table boxes only after the first
+# rule, the deadline against the clock, the stall counter. The skill renders; these produce, so
+# none of it is derived by hand.
 #
 # Bounded readers, never Markdown parsers: each one takes the first line of an entry under the
 # shape the file already has, so a file the owner has written prose into still yields facts rather

@@ -41,8 +41,8 @@ session to ask for it. Delete the marker once filing is done, and only then. Not
 is special: file the same way you would on any explicit Archive.
 
 `$NS/.ended` names the shift that finished and where it files, in `shiftId=`, `archiveRoot=` and
-`archiveLayout=` lines. Those are what a later Archive follows, because clock-out has already
-archived the policy that used to say.
+`archiveLayout=` lines. Those are what a later Archive follows: clock-out has already archived
+the policy that carried them.
 
 **Filing is a copy. Removing a live record is a separate decision, and it is yours to make.**
 The helper retires only what you name, and only once the shift has ended: `--retire` with one

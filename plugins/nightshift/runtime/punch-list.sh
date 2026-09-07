@@ -4,9 +4,9 @@
 #   punch-list.sh --project <ws> next        the gates block, then the first still-open item
 #   punch-list.sh --project <ws> item <id>   the gates block, then that named item
 #
-# The model used to re-read the whole punch list at the start of every item, because the `## Gates`
-# block may legitimately change mid-shift. On a long list that is thousands of tokens per item to
-# see one block. This prints the two things an item actually needs and nothing else.
+# The `## Gates` block may legitimately change mid-shift, so an item needs it fresh — and reading
+# the whole punch list to see one block is thousands of tokens per item on a long list. This prints
+# the two things an item actually needs and nothing else.
 #
 # It is a reader and only a reader. Nothing here rewrites, reorders, renumbers or summarises an
 # item: what comes out is the file's own text, byte for byte, so a model working from it is

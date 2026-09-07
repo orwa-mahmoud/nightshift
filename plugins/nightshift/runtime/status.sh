@@ -73,8 +73,8 @@ emit "last activity: ${activity:-none}"
 emit "last checkpoint: $(ns_status_last_checkpoint "$WORKSPACE")"
 emit "stall attempts: $(ns_status_stall_attempts "$NS")"
 
-# The facts the skill used to derive by hand. One per line, stable label first, so the model
-# renders them rather than recomputing them.
+# The facts, derived here rather than by hand in the skill. One per line, stable label first, so
+# the model renders them rather than recomputing them.
 emit ""
 emit "facts"
 fact "schema" "$(ns_state_version "$WORKSPACE" 2>/dev/null)"

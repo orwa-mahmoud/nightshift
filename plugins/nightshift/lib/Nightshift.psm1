@@ -8177,9 +8177,9 @@ function Get-NSPunchItemsDigest {
 
 # Get-NSGateContractMismatch <workspace> <punch-list> - the sentence to block with, or ''.
 #
-# Watching for a tampered punch list used to be the model's job, on a file the model also edits.
-# The gate recorded the digests at arming, so it can just check. A snapshot written before these
-# fields existed compares nothing, which is not the same as a mismatch.
+# A file's own editor cannot be its watchman. The gate records the digests at arming, so it checks
+# rather than asking the model to notice. A snapshot written without these fields compares nothing,
+# which is not the same as a mismatch.
 function Get-NSGateContractMismatch {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -8476,8 +8476,8 @@ function Write-NSStatusReport {
     Say ('last checkpoint: ' + (Get-NSGateCheckpointToken $Workspace))
     Say ('stall attempts: ' + (Get-NSStatusStallAttempts $Workspace))
 
-    # The facts the skill used to derive by hand. One per line, stable label first, so the model
-    # renders them rather than recomputing them.
+    # The facts, derived here rather than by hand in the skill. One per line, stable label first,
+    # so the model renders them rather than recomputing them.
     Say ''
     Say 'facts'
     $schema = ''
