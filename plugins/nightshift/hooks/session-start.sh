@@ -7,8 +7,8 @@
 #   .context-reset   a marker the next clock-out block consumes, so that block carries the whole
 #                    contract again rather than the short reminder. A compacted conversation has
 #                    lost the message it was shortening against.
-#   one line back    said once, so the model reloads the skill and the section it was working
-#                    before it carries on.
+#   one line back    said once, so the model reloads the skill, the contract that binds it, and
+#                    the section it was working before it carries on.
 #
 # It starts the way the pulse and the gate start: read the state directory, and leave immediately
 # when there is no armed shift or the session on stdin is not the one holding it. An ordinary
@@ -57,7 +57,7 @@ REC="$(ns_session_line "$NS" 1)"
 [ -L "$NS/.context-reset" ] && rm -f "$NS/.context-reset"
 : >"$NS/.context-reset" 2>/dev/null || :
 
-LINE='nightshift: context was compacted — reload the nightshift skill and the active section of shift-report.md before continuing.'
+LINE='nightshift: context was compacted — reload the nightshift skill, the contract in punch-list.md, and the active section of shift-report.md before continuing.'
 if command -v jq >/dev/null 2>&1; then
   jq -nc --arg c "$LINE" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$c}}'
 else

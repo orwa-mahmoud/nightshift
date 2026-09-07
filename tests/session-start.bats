@@ -33,6 +33,10 @@ bound() {
   printf '%s' "$output" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null
   printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF 'context was compacted'
   printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF 'shift-report.md'
+  # A compacted conversation has lost the contract as surely as the report section, and the helper
+  # in step 1 hands back an item, never the contract above it.
+  printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' \
+    | grep -qF 'the contract in punch-list.md'
   [ -f "$p/.nightshift/.context-reset" ]
 }
 
@@ -103,4 +107,34 @@ bound() {
   jq -e '.hooks.SessionStart[0].matcher == "compact|resume"' "$hooks" >/dev/null
   jq -e '.hooks.SessionStart[0].hooks[0].command | contains("claude-session-start")' "$hooks" >/dev/null
   [ -x "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/dispatch/claude-session-start.ps1" ]
+}
+
+@test "every dispatch file names two hooks that exist" {
+  # SessionStart shipped pointing at a Windows hook that was never written, so a native session got
+  # a failing hook on every compaction and resume. The class is the check, not the instance: each
+  # dispatch file names a POSIX target and a Windows one, and both must be there.
+  P="$BATS_TEST_DIRNAME/../plugins/nightshift"
+  for d in "$P"/hooks/dispatch/*; do
+    named=0
+    for target in $(grep -oE 'hooks[/\\][A-Za-z0-9_/\\.-]+\.(ps1|sh)' "$d" | tr '\\' '/' | sort -u); do
+      named=$((named + 1))
+      [ -f "$P/$target" ] || { echo "$d names $target, which does not exist"; return 1; }
+    done
+    [ "$named" -ge 2 ] || { echo "$d names fewer than two hooks"; return 1; }
+  done
+}
+
+@test "the Windows SessionStart twin exists and its logic suite is registered" {
+  W="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-start.ps1"
+  [ -f "$W" ]
+  # The two things the POSIX hook does, and the two hosts that have no such event.
+  grep -qF '.context-reset' "$W"
+  grep -qF 'SessionStart' "$W"
+  grep -qF 'compact' "$W"
+  grep -qF 'resume' "$W"
+  [ -f "$BATS_TEST_DIRNAME/windows/session-start-logic.ps1" ]
+  grep -qF 'session-start-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  run pwsh -NoProfile -NonInteractive -File "$BATS_TEST_DIRNAME/windows/session-start-logic.ps1"
+  [ "$status" -eq 0 ]
 }

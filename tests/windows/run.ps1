@@ -552,6 +552,10 @@ try {
     $nsLogicRun = Invoke-TestScript $nsLogic
     Assert-Equal 0 $nsLogicRun.ExitCode `
         "dispatcher workspace binding: $($nsLogicRun.Stdout) $($nsLogicRun.Stderr)"
+    $sessionStartLogic = Join-Path $PSScriptRoot 'session-start-logic.ps1'
+    $sessionStartLogicRun = Invoke-TestScript $sessionStartLogic
+    Assert-Equal 0 $sessionStartLogicRun.ExitCode `
+        "SessionStart context reset: $($sessionStartLogicRun.Stdout) $($sessionStartLogicRun.Stderr)"
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost
