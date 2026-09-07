@@ -170,7 +170,7 @@ STUB
   grep -qF 'Hunt' "$s"                       # and how to fix that
   grep -qF 'Status: proposed' "$s"
   grep -qF -- '--promote' "$s"
-  grep -qF -- '-Promote' "$s"
+  grep -qF -- '--promote' "$s"
   grep -qi 'cannot answer a prompt' "$s"     # headless permissions
   grep -qi 'install nothing' "$s"            # generator, never a daemon
   grep -qF 'exists but is not a usable directory' "$s"
@@ -193,14 +193,14 @@ STUB
   r="$BATS_TEST_DIRNAME/../docs/commands.md"
   grep -qi 'no credit left' "$r"
   grep -qi 'spends no tokens and needs no session' "$r"
-  grep -q 'plugins/nightshift/runtime/schedule.sh --project . --at' "$r"
+  grep -q 'runtime/ns" schedule --at' "$r"
 }
 
 @test "native Windows Task Scheduler docs name list and remove" {
   w="$BATS_TEST_DIRNAME/../docs/windows.md"
   block="$(awk '/^## Task Scheduler$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$block" | grep -qF -- '-List'
-  printf '%s\n' "$block" | grep -qF -- '-Remove'
+  printf '%s\n' "$block" | grep -qF -- '--list'
+  printf '%s\n' "$block" | grep -qF -- '--remove'
   printf '%s\n' "$block" | grep -qF 'work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm'
   printf '%s\n' "$block" | grep -qF 'work target could not be resolved - a scheduled start will refuse to arm'
 }
@@ -208,25 +208,25 @@ STUB
 @test "native Windows helper docs name import-issues" {
   w="$BATS_TEST_DIRNAME/../docs/windows.md"
   helpers="$(awk '/^## Doctor and other helpers$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$helpers" | grep -qF 'runtime\windows\import-issues.ps1'
-  printf '%s\n' "$helpers" | grep -qF -- '-ListProposed'
+  printf '%s\n' "$helpers" | grep -qE 'ns\.ps1"? import-issues'
+  printf '%s\n' "$helpers" | grep -qF -- '--list-proposed'
   grep -qF 'import-issues, apply-profile, and export-support helpers' "$w"
 }
 
 @test "native Windows helper docs name migrate-state" {
   w="$BATS_TEST_DIRNAME/../docs/windows.md"
   helpers="$(awk '/^## Doctor and other helpers$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$helpers" | grep -qF 'runtime\windows\migrate-state.ps1'
-  printf '%s\n' "$helpers" | grep -qF -- '-Project'
+  printf '%s\n' "$helpers" | grep -qE 'ns\.ps1"? migrate-state'
+  printf '%s\n' "$helpers" | grep -qF -- '--project'
   grep -qF 'Doctor, migrate-state, retain-history' "$w"
 }
 
 @test "native Windows setup docs name the workspace linker" {
   w="$BATS_TEST_DIRNAME/../docs/windows.md"
   setup="$(awk '/^## Setup and start$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$setup" | grep -qF 'runtime\windows\link-workspace.ps1'
-  printf '%s\n' "$setup" | grep -qF -- '-HostRoot'
-  printf '%s\n' "$setup" | grep -qF -- '-Workspace'
+  printf '%s\n' "$setup" | grep -qE 'ns\.ps1"? link-workspace'
+  printf '%s\n' "$setup" | grep -qF -- '--host-root'
+  printf '%s\n' "$setup" | grep -qF -- '--workspace'
 }
 
 @test "native Windows rule docs name expected-email and protected-dir matching" {

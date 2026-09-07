@@ -50,8 +50,8 @@ EOF
   grep -qF 'cited-research.md' "$NIGHTSHIFT"
   grep -qE 'ns"? check-report' "$COMMANDS"
   grep -qF 'ns.ps1 check-report' "$COMMANDS"
-  grep -qF 'runtime\windows\check-report.ps1' "$BATS_TEST_DIRNAME/../docs/windows.md"
-  grep -qF 'runtime/check-report.sh' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
+  grep -qE 'ns\.ps1"? check-report' "$BATS_TEST_DIRNAME/../docs/windows.md"
+  grep -qE 'ns"? check-report' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
   grep -qE 'ns"? write-receipt' "$CONTRACT"
   grep -qF '$NS/receipts/' "$CONTRACT"
 }
