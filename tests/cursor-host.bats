@@ -166,7 +166,9 @@ cursor_pulse() {
   p="$(new_project cursor-watchman)"
   punch_open "$p"
   rm -f "$p/.nightshift/.shift-armed"
-  run env NIGHTSHIFT_WATCH_ONESHOT=1 bash "$CURSOR_WATCHMAN" --project "$p" --max-wakes 1 \
+  # NIGHTSHIFT_WATCH_SLEEP is the suite's speed lever. Without it `--interval 1` means one minute,
+  # and this test spent that long on every run to watch a stand-down that happens on the first wake.
+  run env NIGHTSHIFT_WATCH_SLEEP=0 bash "$CURSOR_WATCHMAN" --project "$p" --max-wakes 1 \
     --agent 'true' --interval 1
   [ "$status" -eq 0 ]
   # It leaves no claim behind on a site it is not watching.

@@ -110,7 +110,7 @@ a_new_item() {
   is_release
   terminal "$p"
   a_new_item "$p"
-  run env NIGHTSHIFT_WATCH_ONESHOT=1 bash "$WATCHMAN" --project "$p" --max-wakes 1 \
+  run env bash "$WATCHMAN" --project "$p" --max-wakes 1 \
     --agent 'true' --interval 0
   # Whatever the exit path, no revival was attempted and nothing was re-armed.
   [ ! -f "$p/.nightshift/.shift-armed" ]
@@ -215,7 +215,7 @@ a_new_item() {
   # The old shift's watchman finally wakes up and takes a real wake, long enough to look at the
   # site and decide. --interval is in minutes, so the sleep itself is set in seconds: a genuine
   # wake, not the degenerate one an interval of zero produces.
-  run env NIGHTSHIFT_WATCH_ONESHOT=1 NIGHTSHIFT_WATCH_SLEEP=1 bash "$WATCHMAN" \
+  run env NIGHTSHIFT_WATCH_SLEEP=1 bash "$WATCHMAN" \
     --project "$p" --max-wakes 1 --agent 'true' --interval 10
   [ -f "$p/.nightshift/.shift-armed" ]
   [ ! -f "$p/.nightshift/.ended" ]
@@ -234,7 +234,7 @@ a_new_item() {
   # A watchman that sleeps long enough to be replaced while it waits. Two seconds of sleep, not
   # two minutes: --interval is in minutes and NIGHTSHIFT_WATCH_SLEEP is the seconds it actually
   # waits, so the window is real and the test still finishes.
-  env NIGHTSHIFT_WATCH_ONESHOT=1 NIGHTSHIFT_WATCH_SLEEP=2 bash "$WATCHMAN" \
+  env NIGHTSHIFT_WATCH_SLEEP=2 bash "$WATCHMAN" \
     --project "$p" --max-wakes 1 --agent 'true' --interval 10 >/dev/null 2>&1 &
   old=$!
   claimed=""
