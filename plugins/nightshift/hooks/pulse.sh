@@ -38,35 +38,6 @@ ns_pulse_emit() { # <ns> <sid>
   return 0
 }
 
-# Executed as the Claude wrapper: parse stdin, emit, stay silent.
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-  set -u
-  _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
-  # shellcheck source=plugins/nightshift/lib/lib.sh
-  . "$_here/../lib/lib.sh"
-  INPUT="$(cat)"
-  HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
-  PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
-  STATE_KIND="$(ns_state_kind "$PROJECT_DIR")"
-  case "$STATE_KIND" in
-    malformed | future) exit 0 ;;
-  esac
-  NS="$PROJECT_DIR/.nightshift"
-  if command -v jq >/dev/null 2>&1; then
-    SID="$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)"
-  else
-    SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-  fi
-  if command -v jq >/dev/null 2>&1; then
-    TPATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
-  else
-    TPATH="$(printf '%s' "$INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-  fi
-  ns_pulse_emit "$NS" "$SID"
-  ns_pulse_usage "$NS" claude "$SID" "$TPATH"
-  ns_pulse_context claude "$(ns_pulse_report_due "$NS" "$PROJECT_DIR")"
-  exit 0
-fi
 
 # ns_pulse_usage <ns> <host> <sid> <transcript-or-payload> — take one reading, if the owner wants
 # usage measured and this session owns the shift.
@@ -191,3 +162,38 @@ ns_pulse_context() {
     *) printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"%s"}}\n' "$escaped" ;;
   esac
 }
+
+# Executed as the Claude wrapper: parse stdin, emit, stay silent.
+#
+# This block is last on purpose. Bash defines a function when it reaches the definition, so a
+# block placed above them runs with those names undefined: the calls below would write
+# "command not found" to stderr and the hook would still exit 0, recording nothing. Every test
+# that sources this file and calls its functions passes either way.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  set -u
+  _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+  # shellcheck source=plugins/nightshift/lib/lib.sh
+  . "$_here/../lib/lib.sh"
+  INPUT="$(cat)"
+  HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
+  PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
+  STATE_KIND="$(ns_state_kind "$PROJECT_DIR")"
+  case "$STATE_KIND" in
+    malformed | future) exit 0 ;;
+  esac
+  NS="$PROJECT_DIR/.nightshift"
+  if command -v jq >/dev/null 2>&1; then
+    SID="$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)"
+  else
+    SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    TPATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
+  else
+    TPATH="$(printf '%s' "$INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  fi
+  ns_pulse_emit "$NS" "$SID"
+  ns_pulse_usage "$NS" claude "$SID" "$TPATH"
+  ns_pulse_context claude "$(ns_pulse_report_due "$NS" "$PROJECT_DIR")"
+  exit 0
+fi
