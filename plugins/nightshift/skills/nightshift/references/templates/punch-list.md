@@ -27,8 +27,8 @@
 - **Quitting time** — past `deadline`, the gate clocks the shift out. Belongs to
   open-ended work: start NOTHING new past the whistle, finish the unit in hand, then clock out.
 - **Orderly clock-out** — if a shift must end with work in hand, commit it as a `wip:` commit
-  (repository mode) or write an artifact receipt (artifact mode), plus
-  one handover line in `shift-log.md`, then stop.
+  (repository mode) or mark the item's section in `shift-report.md` in progress (artifact mode),
+  plus one handover line in `shift-log.md`, then stop.
 
 ## The standard — what "done" means
 

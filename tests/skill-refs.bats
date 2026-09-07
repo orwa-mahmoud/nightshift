@@ -480,3 +480,62 @@ documented_pages() {
       || { echo "$name does not say '$phrase'"; return 1; }
   done
 }
+
+# Each rule is stated once and pointed at from everywhere else. A second copy is a second place to
+# edit, and the first time one is missed the skills disagree with each other.
+@test "the dispatcher is explained once, by the runtime; every skill names it in one sentence" {
+  for s in "$SKILLS"/*/SKILL.md; do
+    grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns' "$s" || { echo "does not name the dispatcher: $s"; return 1; }
+    grep -qF 'ns bind' "$s" || { echo "does not name ns bind: $s"; return 1; }
+    ! grep -qF 'prints the five facts those commands are built on' "$s" \
+      || { echo "carries the dispatcher paragraph instead of the sentence: $s"; return 1; }
+    ! grep -qF 'owner-facing prose may use the short names' "$s" \
+      || { echo "carries the dispatcher paragraph instead of the sentence: $s"; return 1; }
+  done
+}
+
+@test "the state map is one file; the skills that stage, promote or file point at it" {
+  map="$SKILLS/nightshift/references/shift/state-map.md"
+  [ -f "$map" ]
+  for f in punch-list drafting-table parking-lot work-orders; do
+    grep -qF "\`$f.md\` →" "$map" || { echo "state-map.md omits $f.md"; return 1; }
+  done
+  for name in archive doctor import-issues setup; do
+    s="$SKILLS/$name/SKILL.md"
+    ! grep -qF '**State map:**' "$s" || { echo "carries its own state map: $s"; return 1; }
+    grep -qF 'references/shift/state-map.md' "$s" || { echo "does not point at the state map: $s"; return 1; }
+  done
+}
+
+@test "hunt and quality send composition refusals to the preflight rather than restating them" {
+  for name in hunt quality; do
+    s="$SKILLS/$name/SKILL.md"
+    ! grep -qF 'Refuse to compose, cut, or arm when the work target cannot be resolved' "$s" \
+      || { echo "restates the preflight refusals: $s"; return 1; }
+    grep -qF 'Compose, cut and arm only through the Start preflight' "$s" \
+      || { echo "does not point at the preflight: $s"; return 1; }
+  done
+}
+
+@test "the main skill states each working rule once, and where it comes from" {
+  m="$SKILLS/nightshift/SKILL.md"
+  grep -qF 'If no shift is armed, run Start first' "$m"
+  grep -qF 'in full' "$m"
+  grep -qF 'when the shift starts and before the first item' "$m"
+  grep -qF 'as the punch-list contract says' "$m"
+  ! grep -qF "owner's commit setting" "$m"
+  grep -qF 'happens only' "$m"
+  grep -qF 'when the punch list has no open item, and only through Start' "$m"
+  ! grep -qF 'Promote owner-approved work from' "$m"
+  grep -qF 'marked in progress in' "$m"
+  ! grep -qF 'or an artifact receipt (artifact mode)' "$m"
+  grep -qF 'the page' "$m"
+  grep -qF 'for source, cycle and specialist receipts' "$m"
+  [ "$(grep -c 'From the table you already read' "$m")" -eq 2 ]
+  [ "$(grep -c 'Read the resolved policy once' "$m")" -eq 1 ]
+  ! grep -qF 'Read the `report.*` rows of the resolved policy once' "$m"
+  grep -qF 'Completing the item is step 5 above' "$m"
+  ! grep -qF 'reachable with `git -C "$NS"` when Git is installed' "$m"
+  ! grep -qF 'Reading it is step 1 of every item' "$m"
+  grep -qF 'Read `$NS/punch-list.md` in full, then begin item 1' "$SKILLS/start/SKILL.md"
+}

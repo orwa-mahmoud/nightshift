@@ -6,24 +6,17 @@ description: File finished shift state into a dated archive so the live files st
 Archive the finished paperwork for the host-opened project. This files records — it never does
 shift work, never ticks a box, never touches the contract.
 
-**State map:** `punch-list.md` → owner-approved work active in this shift;
-`drafting-table.md` → known work staged for a later shift; `parking-lot.md` → unresolved owner
-decisions plus the default chosen so work continues; `work-orders.md` → timed catalog work composed
-only through Hunt. Archive each by its own lifecycle; never reclassify one as another.
+The four state files and what each holds are in
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift/state-map.md`. Archive each by its own lifecycle; never reclassify one as another.
 
 Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
 on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
-attached from (`skills/archive/SKILL.md`) — and run every command below through `runtime/ns`,
-which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
-plugin, and never use a bare relative path: the shell's working directory persists between calls.
-
-`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
-`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
-that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
-
-On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
-with the same flags. Use the PowerShell tool and native paths; do not route Archive through WSL
-or Git Bash. `ns help` lists the verbs this host has.
+attached from (`skills/archive/SKILL.md`). Run every command below through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
+in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
+verbs, and `ns bind` prints the five resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
+`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`); `$NS` below is that `NS`. Never a bare relative path: the working
+directory persists between calls.
 
 Read `$NS/state-version` first. Legacy (missing) and current (`1`) may be archived.
 A newer or malformed marker fails closed — file nothing, rewrite nothing, and never migrate.

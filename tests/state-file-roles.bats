@@ -1,18 +1,21 @@
 ROOT="$BATS_TEST_DIRNAME/../plugins/nightshift/skills"
 REF="$ROOT/nightshift/references"
 
-# The skills that touch state directly carry the map inline. Hunt and Quality read it from
-# execution-modes.md, which they are told to open before composing.
+# The state map is one reference file. The skills that touch state directly point at it; Hunt and
+# Quality read it from execution-modes.md, which they are told to open before composing.
 @test "the state map has one copy per audience, and they agree" {
-  # A skill that promotes, stages or files these four needs the map inline; a shift reads it once
-  # from the main skill, and composition reads it from the file it is told to open.
+  # The map is one file. A skill that promotes, stages or files these four points at it; a shift
+  # reads its own list once from the main skill, and composition reads the file it is told to open.
+  map="$REF/shift/state-map.md"
+  grep -qF 'punch-list.md` → owner-approved work active in this shift' "$map"
+  grep -qF 'drafting-table.md` → known work staged for a later shift' "$map"
+  grep -qF 'parking-lot.md` → unresolved owner' "$map"
+  grep -qF 'work-orders.md` → timed catalog work composed' "$map"
+  grep -qF 'only through Hunt' "$map"
   for skill in setup archive import-issues doctor; do
     file="$ROOT/$skill/SKILL.md"
-    grep -qF 'punch-list.md` → owner-approved work active in this shift' "$file"
-    grep -qF 'drafting-table.md` → known work staged for a later shift' "$file"
-    grep -qF 'parking-lot.md` → unresolved owner' "$file"
-    grep -qF 'work-orders.md` → timed catalog work composed' "$file"
-    grep -qF 'only through Hunt' "$file"
+    grep -qF 'references/shift/state-map.md' "$file" || { echo "$skill does not point at the state map"; return 1; }
+    ! grep -qF 'owner-approved work active in this shift' "$file" || { echo "$skill repeats the state map"; return 1; }
   done
 
   # The one copy a working shift reads names the same four files.

@@ -5,6 +5,8 @@ description: Work a punch list to completion autonomously — overnight, through
 
 # nightshift — the brain
 
+If no shift is armed, run Start first; it asks nothing. This skill is the work, not the door.
+
 A **shift** is a stretch of autonomous work with a punch list you cannot walk away from. The list
 lives in `.nightshift/punch-list.md`: a contract that binds you for the whole night, then `## Items`
 — one checkbox per task, each with its own Verify and Commit lines. The clock-out gate holds the
@@ -25,8 +27,8 @@ production default and a written note, so the morning is a review rather than a 
 - `shift-report.md` — what the night delivered, a section per item, written as the work happens.
 
 Never route an ordinary plan through Hunt, call later work "parked," or put a known task in the
-parking lot. Repository mode leaves commits as the owner's commit setting says — one per item by
-default; artifact mode completes an item with its section in `shift-report.md`.
+parking lot. Repository mode leaves commits as the punch-list contract says — one per item unless the contract
+above `## Items` says otherwise; artifact mode completes an item with its section in `shift-report.md`.
 
 **Three ways a shift gets composed**, after Setup has scaffolded the site once:
 
@@ -40,17 +42,12 @@ Those skills own scaffolding, composition, and preflight. This skill owns the wo
 
 Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
 on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
-attached from (`skills/nightshift/SKILL.md`) — and run every command below through `runtime/ns`,
-which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
-plugin, and never use a bare relative path: the shell's working directory persists between calls.
-
-`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
-`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
-that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
-
-On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
-with the same flags. Use the PowerShell tool and native paths; do not route a shift through WSL
-or Git Bash. `ns help` lists the verbs this host has.
+attached from (`skills/nightshift/SKILL.md`). Run every command below through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
+in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
+verbs, and `ns bind` prints the five resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
+`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`); `$NS` below is that `NS`. Never a bare relative path: the working
+directory persists between calls.
 
 ## Persistent-workspace boundary
 
@@ -63,10 +60,12 @@ preserve the user's repository. A non-git project outside that explicit scratch 
 
 ## The contract is above `## Items`
 
-`$NS/punch-list.md` has a contract section, then `## Items`. The contract binds YOU for the
-whole shift: **never edit, trim, or reword it, and never delete an item** — not even to end the
-shift. Reading it is step 1 of every item, and the helper there gives you the current `## Gates`
-block with the item, so a mid-shift change to the gates reaches you without re-reading the file.
+`$NS/punch-list.md` has a contract section, then `## Items`. Read `$NS/punch-list.md` in full
+once, when the shift starts and before the first item; after that, each item reaches you through the
+helper in step 1. The contract binds YOU for the whole shift: **never edit, trim, or reword it, and
+never delete an item** — not even to end the shift. Step 1 of every item is the helper, which gives
+you that item and the current `## Gates` block, so a mid-shift change to the gates reaches you
+without re-reading the file.
 The gate holds the contract and the items to what they were at arming and blocks with the repair
 named if either moves, so watching for that is not your job.
 
@@ -114,20 +113,23 @@ Top to bottom, one item:
   Whenever a gate does run, it must be green, and no suppression goes in without a written reason
   beside it.
 4. **Record it** — repository mode leaves one conventional commit per item in the work target,
-  local by default. When the owner asked for a coherent batch, one commit may cover the items it
-  belongs with, still local, still a real change. When the owner asked for no commits, finish the
+  local by default. When the contract asks for a coherent batch, one commit may cover the items it
+  belongs with, still local, still a real change. When the contract asks for no commits, finish the
   item and leave the work in the tree — say plainly in the handoff that it is uncommitted, and
   never invent a commit to satisfy a convention. Artifact mode leaves the item's section in the
   shift report, with links to what it produced. A separate per-item receipt file is written only
   when the owner set `report.legacyItemReceipts`, and then through
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt`, recording the item, outputs,
-  verification, and sources. Artifact mode's history is the receipts repo the owner opted into,
-  reachable with `git -C "$NS"` when Git is installed; do not `git init` the notes folder to invent
-  one. Push yourself only when the punch list says to.
+  verification, and sources. Push yourself only when the punch list says to.
 5. **Finalize the section** in `$NS/shift-report.md` before the tick, however long or short the
   item was.
 6. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete —
   that claim is about the work, not about how it was recorded or how often a gate ran.
+
+Then the next item. Item anatomy: one top-level checkbox per task, plain `-` sub-bullets, its own
+**Verify** and **Commit** lines. Promotion from `$NS/drafting-table.md` into `## Items` happens only
+when the punch list has no open item, and only through Start; on shift, drafts stay where the owner
+left them, and you never invent scope the owner didn't ask for.
 
 ## The shift report
 
@@ -137,8 +139,8 @@ snag log the findings, the parking lot the decisions. Link to those rather than 
 keep it out of public commit messages — a commit says what the change does, not how the night
 went.
 
-Read the `report.*` rows of the resolved policy once. `report.enabled=false` means write no
-report; every other record stays exactly as honest, and no per-item receipt quietly comes back in
+From the table you already read, the `report.*` rows decide the report. `report.enabled=false` means
+write no report; every other record stays exactly as honest, and no per-item receipt quietly comes back in
 its place.
 
 The shape of every block is in
@@ -160,7 +162,7 @@ you infer would be a guess wearing a measurement's clothes.
 short paragraph on where it has got to and what is left. Update that paragraph rather than
 appending another status snapshot under it, and never write it as though the item were finished.
 When the runtime says a progress update is due, refresh that paragraph; otherwise keep working.
-When the item completes, replace the progress paragraph with the finished result. If a later item
+Completing the item is step 5 above: the finished result replaces the progress paragraph. If a later item
 changes an earlier result, correct that section and leave one line saying what changed.
 
 On resume or after compaction, reload the active section and the current policy rather than the
@@ -178,8 +180,8 @@ the kind you are writing, and no other.
 
 Before the first fix that answers an originating source, write that source's baseline — once per
 source class — using
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`, and reuse that
-id for every fix from that source. Before a risky cluster — a migration, a codemod, a
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`, the page
+for source, cycle and specialist receipts, and reuse that id for every fix from that source. Before a risky cluster — a migration, a codemod, a
 provisioning step, anything whose undo is not obvious — write a checkpoint receipt naming
 touched paths, the rollback ref, and the verification plan. The model writes both receipts; nothing here requires a parser.
 
@@ -187,16 +189,11 @@ Cited research, SEO audits, sourced documentation, and research synthesis follow
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift/cited-research.md`. Verify those reports with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report` before the commit or artifact receipt.
 
-Then the next item. Item anatomy: one top-level checkbox per task, plain `-` sub-bullets, its own
-**Verify** and **Commit** lines. Promote owner-approved work from
-`$NS/drafting-table.md` into `## Items`; never invent scope the owner
-didn't ask for.
-
 ## The morning page
 
 The clock-out gate writes the built-in receipt on its own; you write one only when the owner asked
-for something the renderer cannot produce. Read the `handoff.*` rows of the resolved policy at the
-start of the shift:
+for something the renderer cannot produce. From the table you already read, the `handoff.*` rows
+decide it:
 
 - `handoff.enabled=false` — write no page at all. Every factual record still stands: the ledger, the
   archive, the shift log, the parking lot. Turning the summary off never deletes evidence.
@@ -284,8 +281,8 @@ item. Do not loop. The gate's stall warning is the backstop, not the plan.
 
 You may stop only when every box is `- [x]`, or the owner issues a stop-work order
 (`$NS/STOP`). If a shift must end mid-work, clock out orderly: a
-`wip:` commit (repository mode) or an artifact receipt (artifact mode)
-plus one handover line in `$NS/shift-log.md`, then
+`wip:` commit in repository mode, or the item's section in `shift-report.md` marked in progress in
+artifact mode, plus one handover line in `$NS/shift-log.md`, then
 stop. History is append-only on shift — no `reset --hard`,
 `rebase`, `amend`, or force operations; the night's receipts must survive to morning.
 

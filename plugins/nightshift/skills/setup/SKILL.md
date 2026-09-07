@@ -6,24 +6,17 @@ description: Scaffold .nightshift/ and propose quality gates for this stack; ask
 Set up Nightshift in this project. Do the scaffolding first, then the gates conversation, then
 print a summary.
 
-**State map:** `punch-list.md` → owner-approved work active in this shift;
-`drafting-table.md` → known work staged for a later shift; `parking-lot.md` → unresolved owner
-decisions plus the default chosen so work continues; `work-orders.md` → timed catalog work composed
-only through Hunt. Ordinary plans belong in the drafting table, never in Hunt or the parking lot.
+The four state files and what each holds are in
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift/state-map.md`. Ordinary plans belong in the drafting table, never in Hunt or the parking lot.
 
 Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
 on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
-attached from (`skills/setup/SKILL.md`) — and run every command below through `runtime/ns`,
-which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
-plugin, and never use a bare relative path: the shell's working directory persists between calls.
-
-`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
-`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
-that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
-
-On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
-with the same flags. Use the PowerShell tool and native paths; do not route setup through WSL
-or Git Bash. `ns help` lists the verbs this host has.
+attached from (`skills/setup/SKILL.md`). Run every command below through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
+in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
+verbs, and `ns bind` prints the five resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
+`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`); `$NS` below is that `NS`. Never a bare relative path: the working
+directory persists between calls.
 
 Once the workspace and work target are resolved, the bundled mechanical scaffold is
 `ns setup --work-target "$WORK_TARGET" --mode "$WORK_MODE"`, which exists on native Windows only;

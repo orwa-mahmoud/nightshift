@@ -8,17 +8,12 @@ either show it for approval or cut it and start.
 
 Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
 on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
-attached from (`skills/hunt/SKILL.md`) — and run every command below through `runtime/ns`,
-which resolves the host, the workspace and any `.nightshift-link` itself. Never search for the
-plugin, and never use a bare relative path: the shell's working directory persists between calls.
-
-`ns bind` prints the five facts those commands are built on — `TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`,
-`NS`, `NIGHTSHIFT_PLUGIN_ROOT` and `HOST` — for a read or write of your own. `$NS/<name>` below is
-that `NS`; owner-facing prose may use the short names (`punch-list.md`, `parking-lot.md`, `STOP`).
-
-On native Windows the same verbs run through `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`,
-with the same flags. Use the PowerShell tool and native paths; do not route Hunt through WSL
-or Git Bash. `ns help` lists the verbs this host has.
+attached from (`skills/hunt/SKILL.md`). Run every command below through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
+in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
+verbs, and `ns bind` prints the five resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
+`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`); `$NS` below is that `NS`. Never a bare relative path: the working
+directory persists between calls.
 
 Read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/execution-modes.md` before composing: it
 carries the state map, who selects work, when the clock starts, direct-mode authority, the tooling
@@ -77,11 +72,9 @@ Offer two first-class modes when the prompt did not already choose:
 the whistle. Respect every entry's compatibility restrictions when combining; never combine
 entries that claim the same single-writer state.
 
-Refuse to compose, cut, or arm when `$NS/receipts` exists but is not a usable directory.
-If `$NS/work-mode` is missing and Setup would propose artifact, refuse to compose, cut, or arm and
-send the owner to Setup. Do not `git init` a notes folder.
-Refuse to compose, cut, or arm when work-mode is malformed.
-Refuse to compose, cut, or arm when the work target cannot be resolved.
+Compose, cut and arm only through the Start preflight; it refuses, and names the repair, when the
+work target cannot be resolved, work-mode is missing or malformed, or `$NS/receipts` exists but is
+not a usable directory. Never `git init` a notes folder to get past a refusal.
 
 The GitHub issue-hunt entry is offered with the rest of the catalog. It consumes only
 drafting-table entries the Import issues skill created (canonical Source URL and

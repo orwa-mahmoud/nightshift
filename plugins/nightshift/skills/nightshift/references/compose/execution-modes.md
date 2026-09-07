@@ -31,10 +31,9 @@ stated intent — and the receipt must say so. Review-first preview is model pro
 In repository mode inspect tooling, tests, documentation, issue references available in the
 workspace, and recent git history. In artifact mode that is the persistent folder's files
 and any existing source manifests or reports; do not require a git history that cannot exist.
-Refuse to compose, cut, or arm when `$NS/receipts` exists but is not a usable directory.
-If `$NS/work-mode` is missing and Setup would propose artifact, refuse to compose, cut, or arm and send the owner to Setup. Do not `git init` a notes folder.
-Refuse to compose, cut, or arm when work-mode is malformed.
-Refuse to compose, cut, or arm when the work target cannot be resolved.
+Compose, cut and arm only through the Start preflight; it refuses, and names the repair, when the
+work target cannot be resolved, work-mode is missing or malformed, or `$NS/receipts` exists but is
+not a usable directory. Never `git init` a notes folder to get past a refusal.
 An entry is applicable only when the work target can supply its discovery surface. Skip coverage,
 CI, dependency, and similar quality-debt entries when the folder has no tests, tooling, or
 manifests to inspect — and the owner did not ask for that work. In artifact mode:
