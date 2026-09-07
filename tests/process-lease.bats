@@ -78,8 +78,11 @@ lease_mode() {
   printf 'malformed\n' >"$p/.nightshift/.shift-lease"
   : >"$p/.nightshift/.shift-lease.tmp.leftover"
 
-  grep -qF 'do not run the stale-lease reset' "$START_SKILL"
-  grep -qF 'terminal clock-out failed without releasing the shift' "$START_SKILL"
+  # Both rules travel with the verdict that raises them: the blocked session does not reset the
+  # lease itself, and the clock-out case does not get a reset at all.
+  EXPLAIN="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'do not run the stale-lease reset' "$EXPLAIN"
+  grep -qF 'terminal clock-out failed without releasing the shift' "$EXPLAIN"
 
   run bash -c '. "$1"; ns_lease_reset_stale "$2/.nightshift"' nightshift "$LIB" "$p"
   [ "$status" -eq 0 ]

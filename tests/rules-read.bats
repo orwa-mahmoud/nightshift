@@ -105,12 +105,23 @@ no_json_bin() {
   [ "$status" -eq 1 ]
   [ "$output" = "trailing comma" ]
 
-  grep -qF 'ns_rules_check' "$START"
-  grep -qF 'refuse to arm' "$START"
-  grep -qF 'named reason' "$START"
+  # The preflight calls the reader and refuses on what it says, so the reason the owner reads is
+  # the reason the reader gave — not a paraphrase in a skill.
+  PRE="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  EXPLAIN="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'ns_rules_check' "$PRE"
+  grep -qF 'rules.json is not the accepted shape' "$PRE"
+  grep -qF 'fix that named reason' "$PRE"
+  grep -qF 'a shift does not arm on a policy nobody can read' "$EXPLAIN"
+  # Reading a policy never asks for a parser: the rule is stated once, on the verdict. The single
+  # place a parser is offered is the repair for a host with no text environment at all, which is
+  # not this verdict and not a policy question.
+  grep -qF 'Never install jq or python3 for any of this' "$EXPLAIN"
   if grep -qF 'install jq or python3' "$START"; then
+    echo 'the skill asks for a parser'
     return 1
   fi
+  grep -qF 'restore a POSIX text environment, or install jq or python3' "$PRE"
   if grep -qiE '\bawk\b' "$START"; then
     return 1
   fi

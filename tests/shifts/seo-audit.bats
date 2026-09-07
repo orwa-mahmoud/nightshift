@@ -35,8 +35,10 @@ WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-report.ps
 
 @test "SEO audit inherits cited research and gates every receipt" {
   grep -qF 'cited-research.md' "$E"
-  grep -qF 'check-report.sh' "$E"
-  grep -qF 'check-report.ps1' "$E"
+  grep -qF 'ns" check-report' "$E"
+  # One spelling per command: the dispatcher picks the Windows file, so an entry that also
+  # carried a `.ps1` form would be a second spelling to keep in step.
+  ! grep -qF 'check-report.ps1' "$E" || { echo 'carries a second spelling'; return 1; }
   grep -qi 'item gate is green' "$E"
   grep -qF '$NS/receipts/' "$E"
   [ -f "$WIN" ]

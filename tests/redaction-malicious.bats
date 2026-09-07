@@ -3,7 +3,7 @@
 
 ROOT="$BATS_TEST_DIRNAME/.."
 PLUGIN="$ROOT/plugins/nightshift"
-TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/cycle-specialist-evidence.md"
+TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/source-policy.md"
 
 @test "source-policy python wrapper is gone" {
   [ ! -e "$PLUGIN/runtime/source-policy-evidence.sh" ]

@@ -411,11 +411,15 @@ fingerprint() {
   [ "$status" -eq 3 ]
   printf '%s\n' "$output" | jq -e '.ok == false and .proven == false' >/dev/null
 
-  # Start's contract for that exit code, and the repair it must print.
-  grep -qF 'recover before any product work' "$START"
-  grep -qF 'refuses to arm' "$START"
-  grep -qF '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run' "$START"
-  grep -qF 'provision.sh rollback after fixing the target, then Start again' "$START"
+  # The contract for that exit code, and the repair, are the preflight's: it decides the verdict and
+  # prints the words, so a test on Start's prose would hold a copy rather than the thing.
+  PRE="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  EXPLAIN="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'refuse "provision an interrupted install cannot be proven recovered"' "$PRE"
+  grep -qF '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run' "$PRE"
+  grep -qF 'ns provision rollback after fixing the target, then Start again' "$PRE"
+  # Why it refuses, said once, where the verdict is explained.
+  grep -qF 'product work on top of it would build on a half-applied change' "$EXPLAIN"
 }
 
 @test "the CLI verbs delegate to the native helper" {

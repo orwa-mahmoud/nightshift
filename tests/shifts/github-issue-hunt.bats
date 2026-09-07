@@ -25,9 +25,12 @@ HOW="$BATS_TEST_DIRNAME/../../docs/how-it-works.md"
 }
 
 @test "the hunt cuts drafts into one punch list and keeps one commit per issue" {
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh' "$E"
-  grep -qF -- '--project "$NIGHTSHIFT_WORKSPACE"' "$E"
+  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues' "$E"
+  # The dispatcher supplies the project, so the entry names the verb and its own flag and nothing
+  # else — and carries no second spelling for another host to keep in step.
   grep -qF -- '--promote' "$E"
+  ! grep -qF -- '-Promote' "$E" || { echo 'carries a second spelling'; return 1; }
+  ! grep -qF -- '--project' "$E" || { echo 'restates a flag the runtime supplies'; return 1; }
   grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'Cut, never copy' "$E"

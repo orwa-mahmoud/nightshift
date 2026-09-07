@@ -26,11 +26,20 @@ TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-
   [ -f "$LEARN_SCHEMA" ]
 }
 
-@test "receipt templates forbid the planner helpers" {
-  grep -qF 'shift-planner.sh' "$TEMPLATES"
-  grep -qF 'shift-preview.sh' "$TEMPLATES"
-  grep -qF 'plan-learning.sh' "$TEMPLATES"
-  grep -qF 'Do not call' "$TEMPLATES"
+@test "every receipt page forbids the planner helpers" {
+  # The names a model might try to run are forbidden on each page, so splitting the receipts cannot
+  # quietly drop the list from one of them. Matched with the line breaks flattened: a re-wrap is
+  # not a change of rule.
+  R="$ROOT/plugins/nightshift/skills/nightshift/references/receipts"
+  for f in "$R"/*.md; do
+    flat="$(tr '\n' ' ' <"$f" | tr -s ' ')"
+    printf '%s' "$flat" | grep -qF 'these names are not Nightshift commands' \
+      || { echo "$(basename "$f") does not say the names are not commands"; return 1; }
+    for h in 'shift-planner.sh' 'shift-preview.sh' 'plan-learning.sh'; do
+      printf '%s' "$flat" | grep -qF "$h" \
+        || { echo "$(basename "$f") does not forbid $h"; return 1; }
+    done
+  done
 }
 
 @test "Hunt Automatic does not require the planner or preview helpers" {
