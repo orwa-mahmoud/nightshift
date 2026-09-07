@@ -15,8 +15,7 @@ Never select this entry in artifact mode: leave imported drafts on the drafting 
 ```text
 - [ ] **GitHub issue hunt — finish the selected imported issues, one commit each.**
   - Discovery: list proposed imports with
-    `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --list-proposed`
-    (on native).
+    `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --list-proposed`.
     Build the dependency graph, shared-root clusters, repo-fit checks, duplicate/conflict
     dispositions, and time-fit selection in a
     `mode: issue-select` receipt from `receipts/cycle-specialist-evidence.md`, from the imported set only — never
@@ -25,9 +24,9 @@ Never select this entry in artifact mode: leave imported drafts on the drafting 
     fit the time budget. Order by dependency first, then risk, then finite value. Group deliberate
     batches that share roots only when they fit the remaining budget.
     Never select this entry when work mode is artifact.
-  - Cut, never copy: move the selected entries into one punch list with the same qualified helper,
-    project argument, and `--promote` (native Windows `-Promote`). They must not remain on the drafting table. Do not paste this
-    catalog item as an extra live box beside them.
+  - Cut, never copy: move the selected entries into one punch list with the same verb and
+    `--promote`. They must not remain on the drafting table. Do not paste this catalog item as an
+    extra live box beside them.
   - Work top to bottom. One conventional commit per issue. Link each tick to its commit and
     verification in the receipt, then record the Source URL,
     delivered scope, verification, commit, parked decisions, and any divergence from the upstream
