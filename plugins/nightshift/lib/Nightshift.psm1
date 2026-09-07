@@ -598,7 +598,10 @@ function Invoke-NSEvidenceArchive {
     $destination = Join-NSPath $directory ('findings-' + $ShiftId + '.jsonl')
     Copy-Item -LiteralPath $jsonl -Destination $destination -Force
     [IO.File]::WriteAllText($jsonl, '', $script:NSUtf8NoBom)
-    Write-Output $destination
+    # The console, not the pipeline: the caller writes `exit (Invoke-NSEvidenceArchive ...)`, which
+    # would consume this path as part of the expression's value and print nothing, and the archived
+    # copy is the one thing the owner needs to be told about.
+    [Console]::Out.Write($destination + "`n")
     return 0
 }
 

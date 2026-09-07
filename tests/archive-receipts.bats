@@ -353,6 +353,39 @@ arch_rules() { # <project> <jq-expression>
   printf '%s\n' "$output" | grep -qF '/.nightshift/history/'
 }
 
+# Both twins archive the ledger; both have to say where it went. The Windows one was written as
+# `exit (Invoke-NSEvidenceArchive ...)`, which made the path part of the expression's value, so it
+# archived correctly and printed nothing at all.
+@test "both twins name the archived ledger" {
+  command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"
+  posix="$(new_project arch-twin-posix)"
+  win="$(new_project arch-twin-win)"
+  for p in "$posix" "$win"; do
+    rm -f "$p/.nightshift/.shift-armed"
+    bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh" --project "$p" init >/dev/null
+    printf '{"schemaVersion":1}\n' >>"$p/.nightshift/evidence/findings.jsonl"
+  done
+
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence-archive.sh" \
+    --project "$posix" --shift-id 9f2c40ab77e51d63
+  [ "$status" -eq 0 ]
+  a="$(printf '%s\n' "$output" | tail -1)"
+
+  run pwsh -NoProfile -NonInteractive -File \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/evidence-archive.ps1" \
+    -Project "$win" -ShiftId 9f2c40ab77e51d63
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  b="$(printf '%s\n' "$output" | tail -1)"
+
+  # Same name, each under its own workspace, and neither is empty.
+  [ -n "$a" ] && [ -n "$b" ]
+  [ "${a##*/}" = "${b##*/}" ]
+  [ -f "$a" ] && [ -f "$b" ]
+  # The live ledger is emptied on both, which is the other half of archiving it.
+  [ ! -s "$posix/.nightshift/evidence/findings.jsonl" ]
+  [ ! -s "$win/.nightshift/evidence/findings.jsonl" ]
+}
+
 # ---------------------------------------------------------------------------------------------
 # A record leaves live storage because its shift is closed and its archived copy verified — never
 # because of what it is called, and never while the shift is still running.
