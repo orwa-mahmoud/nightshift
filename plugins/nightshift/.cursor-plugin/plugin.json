@@ -1,7 +1,7 @@
 {
   "name": "nightshift",
   "displayName": "Nightshift",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Accountable, time-bounded engineering shifts with a persistent punch list, mechanical guards, and reviewable receipts.",
   "author": {
     "name": "Orwa Mahmoud",
