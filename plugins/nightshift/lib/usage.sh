@@ -328,17 +328,50 @@ ns_usage_mark() {
   printf '%s\t%s\t%s\n' "$(date +%s)" "$label" "$total" >>"$file" 2>/dev/null || return 1
 }
 
-# ns_usage_mark_arm <nightshift-dir> — the shift's own start.
+# ns_usage_mark_arm <nightshift-dir> [transcript...] — the shift's own start.
 #
 # Written before the first reading is ever taken, so it stands at zero and the first item is
 # credited with everything measured after it. A mark written later would carry whatever had
 # already accrued and silently swallow the first item's spend into the baseline.
-ns_usage_mark_arm() {
-  local dir file
-  dir="$(ns_usage_dir "$1")"
+#
+# The transcripts are the shift's other baseline. A conversation that set the night up has already
+# written to the file the incremental reader is about to open, and that reader starts from byte 0
+# for a transcript it has not seen. Every response spent deciding what to do tonight would then be
+# billed to item one. Stamping a segment here at the file's current size means the first real
+# reading begins at the end of what was already there. A transcript that appears later — a subagent
+# spawned mid-shift — is not stamped, because all of its content is work.
+# _ns_usage_seg_baseline <nightshift-dir> <transcript> <offset> — start this transcript here.
+#
+# One segment line with the offset set to what the file already holds and no spend recorded against
+# it. The incremental reader takes its start from column 5, so the first real reading opens the file
+# past everything that was written before the shift armed. Never overwrites: a transcript already
+# carrying a segment has been read at least once, and its offset is the truth about where reading
+# got to.
+_ns_usage_seg_baseline() {
+  local ns="$1" id="$2" offset="$3" dir file
+  [ -n "$id" ] || return 1
+  case "$offset" in '' | *[!0-9]*) return 1 ;; esac
+  dir="$(ns_usage_dir "$ns")"
   mkdir -p "$dir" 2>/dev/null || return 1
-  file="$(_ns_usage_marks "$1")"
+  file="$(_ns_usage_state "$ns")"
+  [ -f "$file" ] || : >"$file"
+  ! grep -q "^$id	" "$file" 2>/dev/null || return 0
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$id" claude '' transcript-incremental "$offset" '' '' >>"$file" 2>/dev/null || return 1
+}
+
+ns_usage_mark_arm() {
+  local ns="$1" dir file t size
+  dir="$(ns_usage_dir "$ns")"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  file="$(_ns_usage_marks "$ns")"
   [ ! -s "$file" ] || return 0
+  shift
+  for t in "$@"; do
+    [ -n "$t" ] && [ -f "$t" ] || continue
+    size="$(ns_file_size "$t")" || continue
+    _ns_usage_seg_baseline "$ns" "$t" "$size" || true
+  done
   printf '%s\t%s\t\n' "$(date +%s)" arm >>"$file" 2>/dev/null || return 1
 }
 

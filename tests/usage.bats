@@ -514,3 +514,38 @@ marks() { cat "$1/.nightshift/usage/marks.tsv"; }
   run env CLAUDE_PROJECT_DIR="$p" bash "$GATE" <<<"$(printf '{"session_id":"sess-marks","transcript_path":"%s/transcript.jsonl","cwd":"%s","hook_event_name":"Stop"}' "$p" "$p")"
   [ "$(marks "$p" | wc -l | tr -d ' ')" -eq 4 ]
 }
+
+# ---------------------------------------------------------------------------------------------
+# The shift starts where the transcript already stood.
+#
+# A conversation sets the night up before Start ever arms, and it writes to the same transcript the
+# incremental reader is about to open. That reader begins at byte 0 for a file it has not seen, so
+# every response spent planning the shift was billed to item one. The arm mark now stamps the
+# transcript at its current size, and reading begins there.
+
+@test "spend from before the shift armed is not billed to the first item" {
+  p="$(three_open preshift-baseline)"
+  cat "$FIX/claude-preshift.jsonl" >"$p/transcript.jsonl"
+  before="$(wc -c <"$p/transcript.jsonl" | tr -d ' ')"
+  fire "$p"
+
+  # Arming records where the file already stood, and charges nothing for it.
+  seg="$p/.nightshift/usage/segments.tsv"
+  [ "$(cut -f5 "$seg")" = "$before" ]
+  [ -z "$(cut -f7 "$seg")" ]
+
+  # Only what arrives afterwards is the shift's.
+  cat "$FIX/claude-multiline.jsonl" >>"$p/transcript.jsonl"
+  fire "$p"
+  [ "$(cut -f7 "$seg")" = 'input=17,cache_write=100,cache_read=3000,output=16,reasoning=6' ]
+}
+
+@test "a transcript first seen mid-shift is read from its beginning" {
+  # Nothing in it predates the shift, so there is no baseline to skip.
+  p="$(three_open preshift-latecomer)"
+  : >"$p/transcript.jsonl"
+  fire "$p"
+  cat "$FIX/claude-multiline.jsonl" >>"$p/transcript.jsonl"
+  fire "$p"
+  [ "$(cut -f7 "$p/.nightshift/usage/segments.tsv")" = 'input=17,cache_write=100,cache_read=3000,output=16,reasoning=6' ]
+}

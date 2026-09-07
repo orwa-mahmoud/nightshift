@@ -55,8 +55,15 @@ ns_pulse_usage() {
   [ -f "$ns/.shift-armed" ] || return 0
   [ "$(ns_report "${ns%/.nightshift}" usage)" != off ] || return 0
   # The shift's own start, stood up before the first reading so it sits at zero. A baseline taken
-  # after spend had already accrued would swallow the first item's cost.
-  ns_usage_mark_arm "$ns" || return 0
+  # after spend had already accrued would swallow the first item's cost. The transcripts go with
+  # it: whatever the setting-up conversation already wrote is where reading begins, not byte zero.
+  case "$host" in
+    claude)
+      # shellcheck disable=SC2046 # each subagent path is its own argument
+      ns_usage_mark_arm "$ns" "$src" $(ns_usage_subagents "$src" 2>/dev/null) || return 0
+      ;;
+    *) ns_usage_mark_arm "$ns" || return 0 ;;
+  esac
   case "$host" in
     claude)
       offset="$(ns_usage_offset "$ns" "$src")"
