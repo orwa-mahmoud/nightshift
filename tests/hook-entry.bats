@@ -199,3 +199,25 @@ unarmed_site() { # <name> — scaffolded, punch list present, not armed
   [ "$status" -eq 0 ]
   [ ! -e "$p/.nightshift/usage" ]
 }
+
+@test "a stop from a session that does not own the shift leaves the ledger unchanged" {
+  p="$(armed_site hook-entry-foreign-stop)"
+  sed -i.bak 's/- \[ \] \*\*A1/- [x] **A1/' "$p/.nightshift/punch-list.md"; rm -f "$p/.nightshift/punch-list.md.bak"
+  foreign='{"session_id":"sess-someone-else","transcript_path":"'"$p"'/transcript.jsonl","cwd":"'"$p"'","hook_event_name":"Stop"}'
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/clock-out-gate.sh" <<<"$foreign"
+  [ ! -e "$p/.nightshift/usage" ]
+  # The owner's own stop closes the item.
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/clock-out-gate.sh" <<<"$(payload "$p" | sed 's/"tool_name":"Edit","tool_input":{}/"hook_event_name":"Stop"/')"
+  [ -f "$p/.nightshift/usage/marks.tsv" ]
+}
+
+@test "every gate accounts only after ownership is settled" {
+  for g in clock-out-gate.sh codex/clock-out-gate.sh cursor/clock-out-gate.sh; do
+    own="$(grep -n 'ns_shift_ownership' "$HOOKS/$g" | tail -1 | cut -d: -f1)"
+    sync="$(grep -n 'ns_gate_usage_sync' "$HOOKS/$g" | tail -1 | cut -d: -f1)"
+    [ -n "$own" ] && [ -n "$sync" ] && [ "$sync" -gt "$own" ] || { echo "$g: sync at $sync, ownership at $own"; return 1; }
+  done
+  own="$(grep -n 'Resolve-NSShiftOwnership' "$HOOKS/windows/clock-out-gate.ps1" | tail -1 | cut -d: -f1)"
+  sync="$(grep -n 'Invoke-NSGateUsageSync' "$HOOKS/windows/clock-out-gate.ps1" | tail -1 | cut -d: -f1)"
+  [ "$sync" -gt "$own" ] || { echo "windows: sync at $sync, ownership at $own"; return 1; }
+}

@@ -399,13 +399,6 @@ if (-not (Test-Path -LiteralPath $armed -PathType Leaf)) {
 }
 
 $counts = Get-NSBoxCounts $punch
-# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
-# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the item
-# ticked second.
-if ($counts.Readable) {
-    try { $null = Invoke-NSGateUsageSync $ns $workspace $punch $counts.Ticked }
-    catch { Write-NSLogLine "usage accounting skipped - $($_.Exception.Message)" }
-}
 $stallMaxRaw = Get-NSRule $workspace 'stallMax' ([string]$env:NIGHTSHIFT_STALL_MAX)
 $stallWarnRaw = Get-NSRule $workspace 'stallWarnEvery' ([string]$env:NIGHTSHIFT_STALL_WARN)
 $stallReady = $stallMaxRaw -match '^[0-9]+$' -and $stallWarnRaw -match '^[1-9][0-9]*$'
@@ -476,6 +469,14 @@ $session = $owned.Session
 $mutex = Enter-NSMutex $ns '.lock.d'
 # An unlockable site is decided unlocked: the gate must answer, never queue.
 try {
+    # What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather
+    # than ticks, so it catches the marks up to them. It runs here, once this session has been shown
+    # to own the shift and holds the site's lock: a stop from a second conversation on the same
+    # workspace must leave the ledger exactly as it found it.
+    if ($counts.Readable) {
+        try { $null = Invoke-NSGateUsageSync $ns $workspace $punch $counts.Ticked }
+        catch { Write-NSLogLine "usage accounting skipped - $($_.Exception.Message)" }
+    }
     if (Test-Path -LiteralPath $stop -PathType Leaf) {
         $reason = ''
         try {

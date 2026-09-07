@@ -212,12 +212,6 @@ honor_stop() {
 # including the one that just wrote the list while planning.
 if [ ! -f "$NS/.shift-armed" ]; then cursor_emit_release; exit 0; fi
 
-# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
-# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
-# item ticked second.
-if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
-  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" || :
-fi
 
 # Owner interrupt — live Stop button sends status "aborted" (Cursor 3.17.21).
 # Same meaning as Claude Esc: release, do not reinject, do not clock out.
@@ -271,6 +265,15 @@ fi
 # stop at once. An unlockable site is decided unlocked — the gate must answer, never queue.
 if [ -d "$NS" ] && ns_lock "$NS"; then
   trap 'ns_unlock "$NS"' EXIT
+fi
+
+# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
+# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
+# item ticked second. It runs here, once this session has been shown to own the shift and holds
+# the site's lock: a stop from a second conversation on the same workspace must leave the ledger
+# exactly as it found it.
+if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
+  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" || :
 fi
 
 # 1. Stop-work order — honor at once; open boxes are left open on purpose.

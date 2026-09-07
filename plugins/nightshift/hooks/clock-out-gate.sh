@@ -272,12 +272,6 @@ if ns_gate_filing_due "$NS"; then
 fi
 [ -f "$NS/.shift-armed" ] || exit 0
 
-# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
-# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
-# item ticked second.
-if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
-  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" "${TPATH:-}" || :
-fi
 
 # STOP is an owner capability, not a worker capability. Any Stop event may carry an existing
 # owner-issued order through clock-out; process ownership must never make emergency stop unusable.
@@ -317,6 +311,15 @@ fi
 # stop at once. An unlockable site is decided unlocked — the gate must answer, never queue.
 if [ -d "$NS" ] && ns_lock "$NS"; then
   trap 'ns_unlock "$NS"' EXIT
+fi
+
+# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
+# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
+# item ticked second. It runs here, once this session has been shown to own the shift and holds
+# the site's lock: a stop from a second conversation on the same workspace must leave the ledger
+# exactly as it found it.
+if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
+  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" "${TPATH:-}" || :
 fi
 
 # 1. Stop-work order — honor at once; open boxes are left open on purpose.
