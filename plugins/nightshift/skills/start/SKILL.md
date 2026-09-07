@@ -10,8 +10,8 @@ on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path th
 attached from (`skills/start/SKILL.md`). Run every command below through
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
-verbs, and `ns bind` prints the five resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
-`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`); `$NS` below is that `NS`. Never a bare relative path: the working
+verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
+`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
 directory persists between calls.
 
 When a verdict names your host — permission modes, resume commands, the sandbox and identity

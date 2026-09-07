@@ -25,15 +25,15 @@ on() {
   shift 2
   env -u CLAUDE_PROJECT_DIR -u CLAUDECODE -u CLAUDE_PLUGIN_ROOT \
     -u CODEX_PROJECT_DIR -u CODEX_HOME -u CODEX_SANDBOX \
-    -u CURSOR_PROJECT_DIR -u CURSOR_PLUGIN_ROOT -u CURSOR_TRACE_ID \
+    -u CURSOR_PROJECT_DIR -u CURSOR_PLUGIN_ROOT -u CURSOR_TRACE_ID -u NIGHTSHIFT_WORKSPACE \
     "NIGHTSHIFT_HOST=$host" "CLAUDE_PROJECT_DIR=$project" "$NS" "$@"
 }
 
-@test "bind prints the five resolved facts" {
+@test "bind prints the six resolved facts" {
   p="$(new_project ns-bind)"
   run on claude "$p" bind
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 5 ]
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 6 ]
   printf '%s\n' "$output" | grep -q "^NIGHTSHIFT_WORKSPACE	$(canon "$p")$"
   printf '%s\n' "$output" | grep -q "^NS	$(canon "$p")/.nightshift$"
   printf '%s\n' "$output" | grep -q '^HOST	claude$'
@@ -230,4 +230,96 @@ on() {
   run env CLAUDE_PROJECT_DIR="$p" "$inst/runtime/ns" morning-receipt --out "$p/m.md"
   [ "$status" -eq 0 ]
   [ -s "$p/m.md" ]
+}
+
+# ------------------------------------------------------------------------------------------------
+# The bound workspace
+#
+# A session binds one workspace and can be run from another. The snag log records `ns scaffold`
+# writing seven templates into a repository checkout, exit 0, because only the derived path was
+# ever read. The bound value is now the authority, and a disagreement refuses before a verb runs.
+
+# bound <project> <bound> [args…] — the dispatcher standing in one place, bound to another.
+bound() {
+  local project="$1" ws="$2"
+  shift 2
+  env -u CLAUDE_PROJECT_DIR -u CLAUDECODE -u CLAUDE_PLUGIN_ROOT \
+    -u CODEX_PROJECT_DIR -u CODEX_HOME -u CODEX_SANDBOX \
+    -u CURSOR_PROJECT_DIR -u CURSOR_PLUGIN_ROOT -u CURSOR_TRACE_ID \
+    NIGHTSHIFT_HOST=claude "CLAUDE_PROJECT_DIR=$project" "NIGHTSHIFT_WORKSPACE=$ws" "$NS" "$@"
+}
+
+@test "a bound workspace that agrees with the derived one runs the verb, and bind says bound" {
+  p="$(new_project ns-bound-same)"
+  run bound "$p" "$p" bind
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -q "^NIGHTSHIFT_WORKSPACE	$(canon "$p")$"
+  printf '%s\n' "$output" | grep -q '^SOURCE	bound$'
+
+  run bound "$p" "$p" status
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'Nightshift Status'
+}
+
+@test "with nothing bound, bind says derived" {
+  p="$(new_project ns-bound-unset)"
+  run on claude "$p" bind
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -q '^SOURCE	derived$'
+}
+
+@test "a bound workspace whose link is broken refuses the way an unreadable link always has" {
+  a="$(new_project ns-bound-link)"
+  b="$(new_project ns-bound-linktarget)"
+  printf 'nowhere-near-a-workspace\n' >"$b/.nightshift-link"
+
+  run bound "$a" "$b" bind
+  [ "$status" -eq 2 ]
+  printf '%s\n' "$output" | grep -qF 'refuse workspace invalid .nightshift-link at'
+  printf '%s\n' "$output" | grep -qF 'repair Fix or remove .nightshift-link'
+}
+
+@test "a verb that writes says where first; a verb that only reads says nothing extra" {
+  p="$(new_project ns-writing-verb)"
+  rm -f "$p/.nightshift"/*.md
+
+  run on claude "$p" scaffold
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | head -1)" = "workspace $(canon "$p")" ]
+
+  run on claude "$p" status
+  [ "$status" -eq 0 ]
+  ! printf '%s\n' "$output" | grep -q '^workspace '
+}
+
+@test "a bound workspace that differs refuses in two lines, and writes nothing anywhere" {
+  a="$(new_project ns-bound-here)"
+  b="$(new_project ns-bound-there)"
+  before_a="$(find "$a" | sort)"
+  before_b="$(find "$b" | sort)"
+
+  run bound "$a" "$b" scaffold
+  [ "$status" -eq 2 ]
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 2 ]
+  printf '%s\n' "$output" | grep -q "^refuse workspace bound $(canon "$b") differs from derived $(canon "$a")$"
+  printf '%s\n' "$output" | grep -qF 'repair cd to the bound workspace, or unset NIGHTSHIFT_WORKSPACE, then run the command again.'
+  [ "$(find "$a" | sort)" = "$before_a" ]
+  [ "$(find "$b" | sort)" = "$before_b" ]
+}
+
+@test "the two dispatchers carry the same writing verbs" {
+  for v in scaffold write-receipt archive-receipts stop-shift link-workspace evidence-archive \
+    migrate-state apply-profile; do
+    sed -n '/^NS_WRITING_VERBS=/p' "$NS" | grep -qF "$v" || { echo "POSIX list is missing $v"; return 1; }
+    sed -n "/^\$NSWritingVerbs = @(/,/)\$/p" "$NSPS" | grep -qF "'$v'" \
+      || { echo "Windows list is missing $v"; return 1; }
+  done
+}
+
+@test "the Windows dispatcher decides the workspace the same way, and its suite is registered" {
+  [ -f "$BATS_TEST_DIRNAME/windows/ns-logic.ps1" ]
+  grep -qF 'ns-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
+  ps_ready
+  run pwsh -NoProfile -NonInteractive -File "$BATS_TEST_DIRNAME/windows/ns-logic.ps1"
+  [ "$status" -eq 0 ]
 }

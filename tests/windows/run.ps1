@@ -548,6 +548,10 @@ try {
     $usageLogicRun = Invoke-TestScript $usageLogic
     Assert-Equal 0 $usageLogicRun.ExitCode `
         "usage accounting: $($usageLogicRun.Stdout) $($usageLogicRun.Stderr)"
+    $nsLogic = Join-Path $PSScriptRoot 'ns-logic.ps1'
+    $nsLogicRun = Invoke-TestScript $nsLogic
+    Assert-Equal 0 $nsLogicRun.ExitCode `
+        "dispatcher workspace binding: $($nsLogicRun.Stdout) $($nsLogicRun.Stderr)"
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost

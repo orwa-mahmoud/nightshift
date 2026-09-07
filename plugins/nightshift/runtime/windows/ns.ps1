@@ -6,7 +6,7 @@
   Twin of runtime/ns. Same verbs, same arguments in the same POSIX spelling:
 
     & ns.ps1 <verb> [--flag value ...]
-    & ns.ps1 bind        the five resolved facts
+    & ns.ps1 bind        the six resolved facts
     & ns.ps1 help        this host's verb table
 
   Skills carry one spelling of every command. This translates it: `--flag value`
@@ -34,6 +34,10 @@ $pluginRoot = Split-Path -Parent $runtime
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+
+# The verbs that change something on disk. Identical in the POSIX dispatcher.
+$NSWritingVerbs = @('scaffold', 'write-receipt', 'archive-receipts', 'stop-shift', 'link-workspace',
+    'evidence-archive', 'migrate-state', 'apply-profile')
 
 # The host, from the environment the hooks already read. Never from searching.
 function Get-NSDispatchHost {
@@ -117,11 +121,39 @@ $taskRoot = $env:CLAUDE_PROJECT_DIR
 if ([string]::IsNullOrEmpty($taskRoot)) { $taskRoot = $env:CODEX_PROJECT_DIR }
 if ([string]::IsNullOrEmpty($taskRoot)) { $taskRoot = $env:CURSOR_PROJECT_DIR }
 if ([string]::IsNullOrEmpty($taskRoot)) { $taskRoot = (Get-Location).ProviderPath }
-$workspace = Resolve-NSWorkspaceRoot $taskRoot
-if ([string]::IsNullOrEmpty($workspace)) {
+# The resolver throws on a link it cannot trust, and a terminating error here would replace the
+# refusal with a stack trace.
+try { $derived = Resolve-NSWorkspaceRoot $taskRoot } catch { $derived = '' }
+if ([string]::IsNullOrEmpty($derived)) {
     [Console]::Out.WriteLine('refuse workspace invalid .nightshift-link at ' + $taskRoot)
     [Console]::Out.WriteLine('repair Fix or remove .nightshift-link so it holds one absolute path to a folder containing .nightshift/, then run the command again.')
     exit 2
+}
+$workspace = $derived
+$source = 'derived'
+
+# A session bound to one workspace and standing in another is not a preference to reconcile: the
+# writing verbs would scaffold or file into whichever the dispatcher picked. So the bound value wins
+# where it is the only one that resolves, and a disagreement refuses before any verb runs.
+function Get-NSCanonicalPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try { return (Resolve-Path -LiteralPath $Path -ErrorAction Stop).ProviderPath }
+    catch { return $Path }
+}
+if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_WORKSPACE)) {
+    try { $bound = Resolve-NSWorkspaceRoot $env:NIGHTSHIFT_WORKSPACE } catch { $bound = '' }
+    if ([string]::IsNullOrEmpty($bound)) {
+        [Console]::Out.WriteLine('refuse workspace invalid .nightshift-link at ' + $env:NIGHTSHIFT_WORKSPACE)
+        [Console]::Out.WriteLine('repair Fix or remove .nightshift-link so it holds one absolute path to a folder containing .nightshift/, then run the command again.')
+        exit 2
+    }
+    $workspace = $bound
+    $source = 'bound'
+    if ((Get-NSCanonicalPath $bound) -ne (Get-NSCanonicalPath $derived)) {
+        [Console]::Out.WriteLine('refuse workspace bound ' + $bound + ' differs from derived ' + $derived)
+        [Console]::Out.WriteLine('repair cd to the bound workspace, or unset NIGHTSHIFT_WORKSPACE, then run the command again.')
+        exit 2
+    }
 }
 
 if ($Verb -ceq 'bind') {
@@ -130,6 +162,7 @@ if ($Verb -ceq 'bind') {
     [Console]::Out.WriteLine("NS`t" + (Join-Path $workspace '.nightshift'))
     [Console]::Out.WriteLine("NIGHTSHIFT_PLUGIN_ROOT`t" + $pluginRoot)
     [Console]::Out.WriteLine("HOST`t" + $hostName)
+    [Console]::Out.WriteLine("SOURCE`t" + $source)
     exit 0
 }
 
@@ -148,6 +181,12 @@ $target = Get-NSDispatchTarget $Verb
 if ([string]::IsNullOrEmpty($target)) {
     [Console]::Error.WriteLine('ns: no verb ' + $Verb + ' on ' + $hostName + ' — run ns help for this host''s verbs')
     exit 1
+}
+
+# A verb that writes says where before it does. One line, first on stdout, so an owner reading a
+# transcript can see which workspace took the change without reconstructing the resolution.
+if ($NSWritingVerbs -ccontains $Verb) {
+    [Console]::Out.WriteLine('workspace ' + $workspace)
 }
 
 $parameters = Get-NSHelperParameters $target
