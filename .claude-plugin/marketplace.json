@@ -11,6 +11,7 @@
     {
       "name": "nightshift",
       "source": "./plugins/nightshift",
+      "strict": true,
       "displayName": "nightshift",
       "description": "Keep long Claude Code runs on task: enforce the punch list, park questions, preserve progress, recover crashes, and run product or quality shifts until done.",
       "category": "workflow",
