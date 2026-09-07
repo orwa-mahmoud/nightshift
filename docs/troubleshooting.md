@@ -103,8 +103,8 @@ cat .nightshift-link
 A valid link is a regular file (not a symlink) with **exactly one absolute path** to a directory
 that contains `.nightshift/`. Anything else fails closed: hooks and skills will not guess.
 
-**Repair.** Remove the broken file and run `ns link-workspace` again (native Windows:
-`ns link-workspace --host-root` / `-Workspace`), or work from the workspace
+**Repair.** Remove the broken file and run `ns link-workspace --host-root <path> --workspace <path>`
+again (native Windows: `ns.ps1 link-workspace`, same flags), or work from the workspace
 that already owns `.nightshift/`. Do not hand-write a relative path.
 
 ## 3. Wrong workspace or work target

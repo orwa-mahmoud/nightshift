@@ -297,9 +297,9 @@ JSON
   if grep -E 'curl|wget|http' "$APPLY" "$PROFILES"/*.json; then
     return 1
   fi
-  grep -qF 'apply-profile.sh' "$SETUP"
+  grep -qE 'ns"? apply-profile' "$SETUP"
   grep -qF 'one-time local copy' "$SETUP"
-  grep -qF 'Refuse `--apply` / `-Apply` while armed' "$SETUP"
+  grep -qF 'Refuse `--apply` while armed' "$SETUP"
   grep -qF 'every version-1 or version-2 JSON' "$SETUP"
   grep -qF 'every version-1 or version-2 JSON file' "$BATS_TEST_DIRNAME/../docs/knobs.md"
 }

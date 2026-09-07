@@ -18,8 +18,8 @@ KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
     'Watchman stood down'; do
     grep -qF "$phrase" "$DOC" || { echo "missing branch: $phrase"; return 1; }
   done
-  grep -qF 'migrate-state.sh' "$DOC"
-  grep -qF 'link-workspace.sh' "$DOC"
+  grep -qE 'ns"? migrate-state' "$DOC"
+  grep -qE 'ns"? link-workspace' "$DOC"
   grep -qF '.nightshift-link' "$DOC"
   grep -qF 'work-target' "$DOC"
   grep -qF 'work-mode' "$DOC"
@@ -53,8 +53,9 @@ KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
   grep -qF 'Hunt or Quality when they start immediately' "$HOW"
   grep -qF 'Hunt or Quality when they start immediately' "$DOC"
   repair="$(awk '/^## 2\. Invalid/{p=1; next} /^## /{p=0} p' "$DOC")"
-  printf '%s\n' "$repair" | grep -qF 'link-workspace.sh'
-  printf '%s\n' "$repair" | grep -qF 'link-workspace.ps1'
+  # The repair names one verb, and says how to run it on native Windows.
+  printf '%s\n' "$repair" | grep -qE 'ns"? link-workspace'
+  printf '%s\n' "$repair" | grep -qF 'ns.ps1 link-workspace'
   grep -qF 'Get-Content -TotalCount 1 .nightshift\work-mode' "$DOC"
   grep -qF 'Get-Content -TotalCount 1 .nightshift\work-target' "$DOC"
   grep -qF 'Get-ChildItem .nightshift\receipts -ErrorAction SilentlyContinue' "$DOC"
