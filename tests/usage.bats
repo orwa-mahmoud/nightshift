@@ -549,3 +549,52 @@ marks() { cat "$1/.nightshift/usage/marks.tsv"; }
   fire "$p"
   [ "$(cut -f7 "$p/.nightshift/usage/segments.tsv")" = 'input=17,cache_write=100,cache_read=3000,output=16,reasoning=6' ]
 }
+
+# ---------------------------------------------------------------------------------------------
+# Deduplication has to survive the read boundary as well as the read.
+#
+# One response is written as several lines carrying the same identity. A read that ends between
+# them leaves the rest for next time, still carrying that identity, and counting it again bills the
+# response twice. The reader hands back the last identity it counted and takes it on the next call.
+
+@test "a response split across two reads is counted once" {
+  p="$(new_project usage-carry)"
+  cp "$FIX/claude-multiline.jsonl" "$p/whole.jsonl"
+  head -3 "$FIX/claude-multiline.jsonl" >"$p/part.jsonl"
+
+  # Cut inside req_a, which spans three lines.
+  first="$(lib ns_usage_read_claude "$p/part.jsonl" 0 '')"
+  [ "$(printf '%s' "$first" | cut -f5)" = req_a ]
+
+  offset="$(printf '%s' "$first" | cut -f2)"
+  carry="$(printf '%s' "$first" | cut -f5)"
+  second="$(lib ns_usage_read_claude "$p/whole.jsonl" "$offset" "$carry")"
+
+  # The two reads together must equal one read of the whole file, exactly.
+  whole="$(lib ns_usage_read_claude "$p/whole.jsonl" 0 '')"
+  sum="$(lib ns_usage_add "$(printf '%s' "$first" | cut -f1)" "$(printf '%s' "$second" | cut -f1)")"
+  [ "$sum" = "$(printf '%s' "$whole" | cut -f1)" ] \
+    || { echo "split=$sum whole=$(printf '%s' "$whole" | cut -f1)"; return 1; }
+}
+
+@test "without the carried identity the straddling response is billed twice" {
+  # The defect this closes, stated as a measurement rather than a description.
+  p="$(new_project usage-carry-absent)"
+  cp "$FIX/claude-multiline.jsonl" "$p/whole.jsonl"
+  head -3 "$FIX/claude-multiline.jsonl" >"$p/part.jsonl"
+  first="$(lib ns_usage_read_claude "$p/part.jsonl" 0 '')"
+  offset="$(printf '%s' "$first" | cut -f2)"
+  naive="$(lib ns_usage_read_claude "$p/whole.jsonl" "$offset" '')"
+  carried="$(lib ns_usage_read_claude "$p/whole.jsonl" "$offset" req_a)"
+  [ "$(printf '%s' "$naive" | cut -f1)" != "$(printf '%s' "$carried" | cut -f1)" ]
+}
+
+@test "a transcript that shrank drops its carried identity with its offset" {
+  # The identity describes a file that is no longer there, so keeping it could skip a real response.
+  p="$(new_project usage-carry-shrank)"
+  cp "$FIX/claude-multiline.jsonl" "$p/t.jsonl"
+  size="$(wc -c <"$p/t.jsonl" | tr -d ' ')"
+  head -1 "$FIX/claude-multiline.jsonl" >"$p/t.jsonl"
+  run lib ns_usage_read_claude "$p/t.jsonl" "$size" req_a
+  [ "$status" -eq 0 ]
+}

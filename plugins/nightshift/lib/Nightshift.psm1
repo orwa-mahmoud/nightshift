@@ -4475,12 +4475,18 @@ function Get-NSUsageString {
 # closing brace was still being written, so nothing is taken from it.
 function Read-NSUsageClaude {
     param([Parameter(Mandatory = $true)][string]$Path,
-          [long]$Offset = 0)
+          [long]$Offset = 0,
+          [AllowEmptyString()][string]$Carry = '')
     if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     $size = (Get-Item -LiteralPath $Path -Force).Length
-    if ($Offset -lt 0 -or $Offset -gt $size) { $Offset = 0 }
+    # A transcript that shrank is a different file under the same name. The carried identity
+    # describes the file that is gone, so it goes with the offset.
+    if ($Offset -lt 0 -or $Offset -gt $size) { $Offset = 0; $Carry = '' }
     $input = 0; $cachew = 0; $cacher = 0; $output = 0; $reason = 0
     $model = ''; $responses = 0
+    # The identity of the last response counted, handed back so a response whose lines straddle two
+    # reads is counted once. `changed` spends the carry as soon as a different identity appears.
+    $last = ''; $changed = $false
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     if ($Offset -lt $size) {
         $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
@@ -4493,8 +4499,11 @@ function Read-NSUsageClaude {
                 $id = Get-NSUsageString $line 'requestId'
                 if ([string]::IsNullOrEmpty($id)) { $id = Get-NSUsageString $line 'id' }
                 if ([string]::IsNullOrEmpty($id)) { continue }
+                if ((-not [string]::IsNullOrEmpty($Carry)) -and $id -ceq $Carry -and -not $changed) { continue }
+                if ($id -cne $Carry) { $changed = $true }
                 if (-not $seen.Add($id)) { continue }
                 $responses++
+                $last = $id
                 $m = Get-NSUsageString $line 'model'
                 if (-not [string]::IsNullOrEmpty($m)) { $model = $m }
                 foreach ($pair in @(@('input_tokens', 'input'), @('cache_creation_input_tokens', 'cachew'),
@@ -4515,7 +4524,8 @@ function Read-NSUsageClaude {
         finally { $stream.Dispose() }
     }
     $fields = "input=$input,cache_write=$cachew,cache_read=$cacher,output=$output,reasoning=$reason"
-    return ($fields + "`t" + $size + "`t" + $model + "`t" + $responses)
+    $tail = $(if ([string]::IsNullOrEmpty($last)) { $Carry } else { $last })
+    return ($fields + "`t" + $size + "`t" + $model + "`t" + $responses + "`t" + $tail)
 }
 
 # Read-NSUsageCodex <rollout> - the running total from the rollout's last token_count line. Codex

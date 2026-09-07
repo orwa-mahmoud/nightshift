@@ -85,20 +85,21 @@ ns_usage_field() {
 # what it had. Anthropic reports cache creation and cache read separately from input; they are
 # additive, and this keeps them that way.
 ns_usage_read_claude() {
-  local file="$1" offset="${2:-0}" size bin
+  local file="$1" offset="${2:-0}" carry="${3:-}" size bin
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   size="$(ns_file_size "$file")" || return 1
   case "$offset" in '' | *[!0-9]*) offset=0 ;; esac
   # A transcript that shrank is a different file under the same name: start over rather than read
-  # from an offset into content that is not the content it was measured against.
-  [ "$offset" -le "$size" ] || offset=0
+  # from an offset into content that is not the content it was measured against. The carried
+  # identity goes with it — it describes a file that is no longer there.
+  [ "$offset" -le "$size" ] || { offset=0; carry=""; }
   if [ "$offset" -eq "$size" ]; then
-    printf '\t%s\t\t0' "$size"
+    printf '\t%s\t\t0\t%s' "$size" "$carry"
     return 0
   fi
   bin="$(ns_usage_awk_bin)" || return 1
   tail -c "+$((offset + 1))" "$file" 2>/dev/null |
-    "$bin" -v size="$size" -f "$_NS_USAGE_CLAUDE_AWK" 2>/dev/null || return 1
+    "$bin" -v size="$size" -v carry="$carry" -f "$_NS_USAGE_CLAUDE_AWK" 2>/dev/null || return 1
 }
 
 # ns_usage_subagents <transcript> — the subagent transcripts belonging to one session, if any.
@@ -220,7 +221,7 @@ ns_usage_add() {
 # which is a new counter wearing the same name: it opens a fresh segment rather than producing a
 # negative.
 ns_usage_record() {
-  local ns="$1" host="$2" model="$3" src="$4" id="$5" offset="$6" fields="$7"
+  local ns="$1" host="$2" model="$3" src="$4" id="$5" offset="$6" fields="$7" carry="${8:-}"
   local dir file line found=0 start cur seg tmp dim now new_id="$id"
   [ -n "$id" ] && [ -n "$fields" ] || return 1
   dir="$(ns_usage_dir "$ns")"
@@ -257,12 +258,12 @@ ns_usage_record() {
   : >"$tmp" || return 1
   while IFS= read -r line; do
     case "$line" in
-      "$new_id	"*) found=1; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$new_id" "$host" "$model" "$src" "$offset" "$start" "$fields" >>"$tmp" ;;
+      "$new_id	"*) found=1; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$new_id" "$host" "$model" "$src" "$offset" "$start" "$fields" "$carry" >>"$tmp" ;;
       '') ;;
       *) printf '%s\n' "$line" >>"$tmp" ;;
     esac
   done <"$file"
-  [ "$found" -eq 1 ] || printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$new_id" "$host" "$model" "$src" "$offset" "$start" "$fields" >>"$tmp"
+  [ "$found" -eq 1 ] || printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$new_id" "$host" "$model" "$src" "$offset" "$start" "$fields" "$carry" >>"$tmp"
   mv "$tmp" "$file" 2>/dev/null || { rm -f "$tmp"; return 1; }
 }
 
@@ -356,8 +357,8 @@ _ns_usage_seg_baseline() {
   file="$(_ns_usage_state "$ns")"
   [ -f "$file" ] || : >"$file"
   ! grep -q "^$id	" "$file" 2>/dev/null || return 0
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$id" claude '' transcript-incremental "$offset" '' '' >>"$file" 2>/dev/null || return 1
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$id" claude '' transcript-incremental "$offset" '' '' '' >>"$file" 2>/dev/null || return 1
 }
 
 ns_usage_mark_arm() {

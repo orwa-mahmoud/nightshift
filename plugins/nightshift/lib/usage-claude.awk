@@ -11,12 +11,20 @@
 # rather than dividing by a constant. Identity is requestId, falling back to the message id.
 #
 #   -v size=<bytes>   the offset this read finishes at, echoed back for the caller to persist
+#   -v carry=<id>     the last identity the previous read counted, so a response whose lines
+#                     straddle the boundary is not counted a second time
 #   stdin             the appended bytes since the last read
 #
 # A line that does not end in a closing brace was still being written; it is skipped entirely
 # rather than half-read, and the next read picks it up whole.
 #
-# Prints: <fields>\t<offset>\t<model>\t<responses>
+# Deduplication has to survive the read boundary as well as the read. One response is several
+# lines; a read that ends between them leaves the rest to be picked up next time, still carrying
+# the same identity. Counting it again would bill that response twice. The caller persists the last
+# identity counted and hands it back as `carry`, and the lines that repeat it are skipped until a
+# different identity appears.
+#
+# Prints: <fields>\t<offset>\t<model>\t<responses>\t<last-identity>
 
 function num(line, key,   pos, rest, out, ch, i) {
   pos = index(line, "\"" key "\":")
@@ -50,8 +58,13 @@ function str(line, key,   pos, rest, stop) {
   id = str($0, "requestId")
   if (id == "") id = str($0, "id")
   if (id == "") next
+  # The response the previous read was in the middle of. Skipped until the identity changes;
+  # once it has, the carry is spent and a later line that repeats it is a genuine repeat.
+  if (carry != "" && id == carry && !changed) next
+  if (id != carry) changed = 1
   if (id in seen) next
   seen[id] = 1
+  last = id
   responses++
   m = str($0, "model")
   if (m != "") model = m
@@ -63,6 +76,7 @@ function str(line, key,   pos, rest, stop) {
 }
 
 END {
-  printf "input=%d,cache_write=%d,cache_read=%d,output=%d,reasoning=%d\t%s\t%s\t%d", \
-    input + 0, cachew + 0, cacher + 0, output + 0, reason + 0, size, model, responses + 0
+  printf "input=%d,cache_write=%d,cache_read=%d,output=%d,reasoning=%d\t%s\t%s\t%d\t%s", \
+    input + 0, cachew + 0, cacher + 0, output + 0, reason + 0, size, model, responses + 0, \
+    (last != "" ? last : carry)
 }

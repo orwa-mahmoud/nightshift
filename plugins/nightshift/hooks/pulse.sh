@@ -67,17 +67,19 @@ ns_pulse_usage() {
   case "$host" in
     claude)
       offset="$(ns_usage_offset "$ns" "$src")"
-      reading="$(ns_usage_read_claude "$src" "$offset")" || return 0
+      reading="$(ns_usage_read_claude "$src" "$offset" "$(ns_usage_carry "$ns" "$src")")" || return 0
       ns_usage_record "$ns" claude "$(printf '%s' "$reading" | cut -f3)" transcript-incremental \
-        "$src" "$(printf '%s' "$reading" | cut -f2)" "$(printf '%s' "$reading" | cut -f1)" || return 0
+        "$src" "$(printf '%s' "$reading" | cut -f2)" "$(printf '%s' "$reading" | cut -f1)" \
+        "$(printf '%s' "$reading" | cut -f5)" || return 0
       # A Task-spawned agent writes its own transcript beside this one, and its usage is there
       # rather than in the parent. Each is its own segment, so a child that replays history it did
       # not spend cannot inflate the shift.
       ns_usage_subagents "$src" 2>/dev/null | while IFS= read -r agent; do
         [ -n "$agent" ] || continue
-        reading="$(ns_usage_read_claude "$agent" "$(ns_usage_offset "$ns" "$agent")")" || continue
+        reading="$(ns_usage_read_claude "$agent" "$(ns_usage_offset "$ns" "$agent")" "$(ns_usage_carry "$ns" "$agent")")" || continue
         ns_usage_record "$ns" claude "$(printf '%s' "$reading" | cut -f3)" transcript-incremental \
-          "$agent" "$(printf '%s' "$reading" | cut -f2)" "$(printf '%s' "$reading" | cut -f1)" || continue
+          "$agent" "$(printf '%s' "$reading" | cut -f2)" "$(printf '%s' "$reading" | cut -f1)" \
+          "$(printf '%s' "$reading" | cut -f5)" || continue
       done
       ;;
     codex)
@@ -92,6 +94,25 @@ ns_pulse_usage() {
       ;;
     *) return 0 ;;
   esac
+  return 0
+}
+
+# ns_usage_carry <nightshift-dir> <id> — the last response identity counted for this transcript.
+#
+# Handed back to the reader so a response whose lines straddle two reads is counted once. Empty for
+# a transcript never read, which is right: there is no half-read response to skip.
+ns_usage_carry() {
+  local file line
+  file="$(ns_usage_dir "$1")/segments.tsv"
+  [ -f "$file" ] || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      "$2	"*)
+        printf '%s' "$line" | cut -f8
+        return 0
+        ;;
+    esac
+  done <"$file"
   return 0
 }
 
