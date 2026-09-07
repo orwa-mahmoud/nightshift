@@ -172,6 +172,10 @@ the conversation to reconstruct the night; go back to the original evidence only
 gap. If the shift ends before you can, the built-in page still gets written and the report stands
 as far as it got — a missing summary never holds up a stop or a deadline.
 
+Receipt shapes live one per kind in
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/`. Open the page whose title names
+the kind you are writing, and no other.
+
 Before the first fix that answers an originating source, write that source's baseline — once per
 source class — using
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`, and reuse that
