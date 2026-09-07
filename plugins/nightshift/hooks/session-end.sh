@@ -20,7 +20,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # mid-outage after the first revival.
 [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || exit 0
 
-INPUT="$(cat)"
+INPUT="$(ns_read_stdin_bounded 2)"
 HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
 STATE_KIND="$(ns_state_kind "$PROJECT_DIR")"
@@ -71,4 +71,7 @@ fi
 
 [ -L "$NS/.session-end" ] && rm -f "$NS/.session-end"
 printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$NS/.session-end"
+# The session is over while the shift is not: whatever passes until something works again is a
+# gap nobody spent. Recorded so the duration line can list it, never subtracted silently.
+ns_usage_pause "$NS" "the session ended and the shift was revived" || :
 exit 0

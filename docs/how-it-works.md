@@ -40,18 +40,25 @@ not activate hooks: Start, or a Hunt or Quality path that starts immediately, cr
 exists and the shift has not ended. A `STOP` order keeps hardhat on until clock-out writes
 `.nightshift/.ended`; open boxes stay as the record. Reset is the manual escape.
 
+**A shift that ended stays ended.** Adding an unchecked item afterwards does not put you back on
+shift: the gate releases, your rules stop applying, and the watchman will not revive it — the
+punch list is an ordinary to-do file again, whatever leftover `STOP`, deadline, policy or stall
+file is still lying about. Working those items as a shift takes an explicit Start, which arms a
+new marker and a new identity. That is the same boundary as the first time: a list is not a shift
+until someone starts one.
+
 Archive files ticked items and never resets the leftover Shift contract or Gates. An empty
 `## Items` section still binds the next Hunt or Start cut — review those sections before
 composing a new campaign. Status and Doctor report the leftover; Archive writes a Notes reminder
 when a campaign is fully filed.
 
 Start asks nothing. Before it arms, it runs one native preflight —
-`runtime/start-preflight.sh` (native Windows: `runtime/windows/start-preflight.ps1`) — which prints
+`ns start-preflight` (native Windows: `ns.ps1 start-preflight`) — which prints
 one verdict per line: `ok` for a fact worth stating, `warn` for something the owner should hear
 while the shift still arms, and `refuse` for a condition that stops it. The sentences are
 byte-identical on POSIX and native Windows, so a scheduled or headless run behaves exactly like an
 interactive one. Host-specific detail behind a verdict lives in
-[`start-hosts.md`](../plugins/nightshift/skills/nightshift/references/start-hosts.md).
+[`references/hosts/`](../plugins/nightshift/skills/nightshift/references/hosts/).
 
 Immediately after arming, Start — and Hunt or Quality when they start immediately — make a
 harmless host-shell probe—Bash on POSIX, PowerShell on
@@ -80,7 +87,7 @@ Nightshift separates **what the project always forbids**, **what the owner usual
 | File | Role |
 | --- | --- |
 | `rules.json` | Permanent boundaries: tool denies, commit guards, retention, and the five elevation categories (`sudo`, containers, global-packages, daemons, external-services). The shipped template denies each by default. Containers cover the Docker socket and create-state verbs (`run`, `create`, `compose up`, `start`, `build`); read-only forms such as `docker ps` and `brew list` are not gated. Hardhat is hardening, not a sandbox. |
-| `shift-defaults.json` | Remembered convenience: verification profile, typical hours, tooling policy, execution mode. Prefills Hunt and Quality; never appears as the source of an effective value. |
+| `shift-defaults.json` | Only in a workspace that has not migrated. The same four remembered choices now live in the `shift` block of `rules.json`; `ns shift-policy migrate` moves them, and until it runs they are still read from here. Neither file is ever the source of an effective value. |
 | `shift-policy.json` | Tonight's authoritative snapshot: deadline, verification level, tooling policy, one-shift elevation allowances with provenance, and the shift identity they bind to. Written by composition or Start; guarded while armed. |
 
 Status and Doctor render **one resolved policy block**: every effective setting, its source file,
@@ -274,18 +281,18 @@ session with open Items leaves the armed shift to its watchman. To end the shift
 host, use the host Stop command or the terminal helper in the folder you opened:
 
 ```bash
-plugins/nightshift/runtime/stop-shift.sh --project /absolute/task/root
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift
 ```
 
 Native Windows PowerShell:
 
 ```powershell
-plugins\nightshift\runtime\windows\stop-shift.ps1 -Project C:\absolute\task\root
+ns.ps1 stop-shift --project C:\absolute\task\root
 ```
 
 That writes `STOP` and kills only a verified watchman. `.shift-armed` stays, so hardhat
 remains until clock-out writes `.nightshift/.ended`. Reset is the manual escape. The deadline and punch list
-stay. Reset (`reset-shift.sh` / `reset-shift.ps1`) drops runtime markers and the deadline. Purge
+stay. Reset (`ns reset-shift` / `ns reset-shift`) drops runtime markers and the deadline. Purge
 deletes that project's `.nightshift/` after an exact `--confirm-path`. None of them uninstall the
 plugin.
 
@@ -311,7 +318,9 @@ Nightshift gives it no remote and never pushes it. Clock-out and Archive commit 
 identity `nightshift@localhost`, and `commit.gpgsign=false` so a global signing requirement cannot
 stall a headless snapshot.
 
-Archiving moves finished work into `.nightshift/archive/<YYYY-MM-DD>/` while keeping the current working
+The gate blocks every turn that ends with work still open, and the reason it returns is the owner's `clockOutMessage`. With `clockOutReminderMode` set to `changed-only` it sends that message when something actually moved and one short line when nothing did — and anything it cannot be sure about, including a compacted conversation, counts as moved. The block never becomes optional and its reason is never empty.
+
+Archiving moves finished work under the archive root — `.nightshift/archive/<YYYY-MM-DD>/` by default, or wherever `archive.root` and `archive.layout` say — while keeping the current working
 files small.
 
 ## Different strengths on each host
@@ -462,18 +471,18 @@ Start, Status, Doctor, Archive, Schedule, and workspace links read the same mode
 repository workspaces stay repository mode when `work-mode` is absent.
 
 Completion in artifact mode is a file under `$NS/receipts/`, written by
-`runtime/write-receipt.sh` (native Windows: `runtime/windows/write-receipt.ps1`). The receipt
+`ns write-receipt` (native Windows: `ns.ps1 write-receipt`). The receipt
 records the item, output paths, verification, optional decisions and sources, timestamps, and
 file identity (bytes, SHA-256, mtime). Missing or empty outputs are refused. The stall guard
 treats a new receipt like a commit; Doctor reports `artifact receipts N` and, when any exist,
 `latest artifact receipt` with the filename only of the most recently written receipt, and warns when ticked items have no receipts;
 it warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt; Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts;
-Archive copies receipts with `runtime/archive-receipts.sh` (native Windows: `runtime/windows/archive-receipts.ps1`)
+Archive copies receipts with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
 into the dated folder and leaves the live files in place. Missing or empty receipts create no dated receipts folder. Repository mode still requires a
 work-target git commit.
 
 Cited reports in that folder follow `cited-research.md` and
-`runtime/check-report.sh` (native Windows: `runtime/windows/check-report.ps1`). Hunt's SEO audit,
+`ns check-report` (native Windows: `ns.ps1 check-report`). Hunt's SEO audit,
 documentation writing, and research-synthesis entries inherit that contract. Automatic Hunt skips
 quality-debt entries the folder cannot support and skips the GitHub issue hunt in artifact mode;
 imported drafts stay on the drafting table. It also skips the defect hunt in artifact mode.
@@ -487,12 +496,12 @@ It also skips tooling quality-debt entries in artifact mode.
 If the host task and state workspace must be different folders, create one explicit link:
 
 ```bash
-plugins/nightshift/runtime/link-workspace.sh \
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" link-workspace \
   --host-root /absolute/task/root \
   --workspace /absolute/nightshift/workspace
 ```
 
-Native Windows uses `runtime\windows\link-workspace.ps1` with `-HostRoot` and `-Workspace`.
+Native Windows runs the same verb: `ns.ps1 link-workspace` with `--host-root` and `--workspace`.
 
 The task root receives a machine-local `.nightshift-link`, excluded through Git's local
 `info/exclude` when applicable. This file is a trust boundary: it must be a regular file—not a

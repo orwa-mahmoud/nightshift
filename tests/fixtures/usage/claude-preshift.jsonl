@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":"go"}}
+{"type":"assistant","requestId":"req_a","message":{"id":"msg_a","model":"claude-opus-5","usage":{"input_tokens":10,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":5,"output_tokens_details":{"thinking_tokens":2}}}}
+{"type":"assistant","requestId":"req_a","message":{"id":"msg_a","model":"claude-opus-5","usage":{"input_tokens":10,"cache_creation_input_tokens":100,"cache_read_input_tokens":1000,"output_tokens":5,"output_tokens_details":{"thinking_tokens":2}}}}

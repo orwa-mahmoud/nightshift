@@ -56,7 +56,7 @@ RECEIPTS="$ROOT/examples/README.md"
 @test "every concrete contribution-map path exists" {
   for path in \
     CONTRIBUTING.md README.md docs examples \
-    plugins/nightshift/skills/nightshift/references/catalog-recipe.md \
+    plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md \
     plugins/nightshift/runtime plugins/nightshift/lib/lib.sh \
     plugins/nightshift/runtime/claude/watchman.sh \
     plugins/nightshift/runtime/codex/watchman.sh \

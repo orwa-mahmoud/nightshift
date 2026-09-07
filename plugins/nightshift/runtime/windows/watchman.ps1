@@ -454,6 +454,16 @@ function Start-NSAgent {
         $sessionId = $workerId
     }
     $fresh = $Attempt -ge $TotalAttempts -and $TotalAttempts -gt 1
+    # The permission scope a revived session starts under is the owner's, and it never widens
+    # between rungs: a failed revival is retried at the same scope, never a broader one.
+    $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
+    if ($launchScope -clike 'unavailable:*') {
+        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Not reviving at permissions it cannot show are no broader than the original.')
+        Write-NSLogLine 'watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json.'
+        Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
+        return $false
+    }
+    Write-NSLogLine ('watchman: reviving under launch scope ' + $launchScope)
     $prompt = if ($fresh) { $freshPrompt } else { $revivalPrompt }
     if ($HostName -eq 'cursor' -and -not $hadCursorWorker) {
         $prompt = $freshPrompt
@@ -486,8 +496,10 @@ function Start-NSAgent {
         $commandName = 'agent'
         $commandArguments.Add("--resume=$sessionId")
         $commandArguments.Add('-p')
-        $commandArguments.Add('--trust')
-        $commandArguments.Add('--yolo')
+        if ($launchScope -ceq 'host-grant') {
+            $commandArguments.Add('--trust')
+            $commandArguments.Add('--yolo')
+        }
         $commandArguments.Add('--workspace')
         $commandArguments.Add($workspace)
         $commandArguments.Add($prompt)
@@ -514,15 +526,27 @@ function Start-NSAgent {
         if ($Attempt -eq 1 -and $kind -eq 'resumable') {
             $commandArguments.Add('exec')
             $commandArguments.Add('resume')
-            $commandArguments.Add('-c')
-            $commandArguments.Add('sandbox_mode="danger-full-access"')
+            if ($launchScope -clike 'recorded:*') {
+                $commandArguments.Add('-c')
+                $commandArguments.Add('sandbox_mode="' + $launchScope.Substring('recorded:'.Length) + '"')
+            }
+            elseif ($launchScope -ceq 'host-grant') {
+                $commandArguments.Add('-c')
+                $commandArguments.Add('sandbox_mode="danger-full-access"')
+            }
             $commandArguments.Add($sessionId)
             $commandArguments.Add($prompt)
         }
         else {
             $commandArguments.Add('exec')
-            $commandArguments.Add('-s')
-            $commandArguments.Add('danger-full-access')
+            if ($launchScope -clike 'recorded:*') {
+                $commandArguments.Add('-s')
+                $commandArguments.Add($launchScope.Substring('recorded:'.Length))
+            }
+            elseif ($launchScope -ceq 'host-grant') {
+                $commandArguments.Add('-s')
+                $commandArguments.Add('danger-full-access')
+            }
             $commandArguments.Add($freshPrompt)
         }
     }

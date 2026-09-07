@@ -4,7 +4,7 @@ IMPORT="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/import-issues.sh"
 SKILL="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/import-issues/SKILL.md"
 FAKE_GH="$BATS_TEST_DIRNAME/fixtures/import-issues/bin/gh"
 FIXTURES="$BATS_TEST_DIRNAME/fixtures/import-issues/issues"
-TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/drafting-table-template.md"
+TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/drafting-table.md"
 
 setup_file() {
   chmod +x "$FAKE_GH"
@@ -157,8 +157,9 @@ prep_draft() {
   run isolated_import "$s" --stage https://github.com/acme/widgets/issues/12
   grep -q 'Add a dry-run flag' "$s/.nightshift/drafting-table.md"
 
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh' "$SKILL"
-  grep -qF -- '--project "$NIGHTSHIFT_WORKSPACE"' "$SKILL"
+  grep -qE 'ns"? import-issues' "$SKILL"
+  # The dispatcher resolves the workspace; the skill names the verb.
+  grep -qE 'ns"? import-issues' "$SKILL"
   grep -qF 'Claude Code and Codex run the same platform helper' "$SKILL"
   grep -qF 'If work mode is artifact' "$SKILL"
   grep -qi 'will not consume them' "$SKILL"
@@ -173,8 +174,10 @@ prep_draft() {
   if grep -nE 'curl|wget|gh search|gh issue list' "$SKILL" | grep -qivE 'never|do not|refuse'; then
     return 1
   fi
-  grep -qF 'Never searches' "$SKILL"
-  grep -qF 'never writes back to GitHub' "$SKILL"
+  # The description says it in one sentence and the body says it as rules the model follows.
+  grep -qiF 'never searches or writes back' "$SKILL"
+  grep -qF 'Never run `gh search`' "$SKILL"
+  grep -qF 'Never install `gh`' "$SKILL"
   p="$(new_project)"
   prep_draft "$p"
   : >"$BATS_TEST_TMPDIR/gh.log"

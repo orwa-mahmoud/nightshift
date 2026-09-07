@@ -10,6 +10,11 @@ setup() {
   mkdir -p "$P/.nightshift"
   cp "$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" "$P/.nightshift/rules.json"
   printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+  # An unattended revival needs a scope it can vouch for, and these fixtures record none — the
+  # shipped inherit setting would refuse. A site that means to be revived says which scope a
+  # revival may use, and these tests are about reviving.
+  jq '.recovery.launchScope = "host-default"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
 
   # a recorded codex shift whose rollout is a plain file the tests control
   ROLLOUT="$BATS_TEST_TMPDIR/rollout.jsonl"

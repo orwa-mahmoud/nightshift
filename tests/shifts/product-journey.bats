@@ -1,10 +1,10 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/product-journey.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/product-journey.md"
 
 @test "product journey requires explicit persona goal and steps" {
   grep -qi 'persona' "$E"
   grep -qi 'goal' "$E"
   grep -qi 'starting state' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "product journey modes stay on one entry" {
@@ -22,8 +22,8 @@ E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shif
 }
 
 @test "product journey fixes reproducible gaps and retests" {
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'reproducible gap' "$E"
 }
 

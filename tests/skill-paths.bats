@@ -1,6 +1,6 @@
 SKILLS="$BATS_TEST_DIRNAME/../plugins/nightshift/skills"
 REFS="$SKILLS/nightshift/references"
-HOSTS="$REFS/start-hosts.md"
+HOSTS="$REFS/hosts"
 PREFLIGHT="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
 PREFLIGHT_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
 SETUP="$SKILLS/setup/SKILL.md"
@@ -13,21 +13,17 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
 
 # Shared skills are loaded unchanged by both hosts. Pin the path carriers and reject the unsafe
 # host-only fallbacks; wording and line wrapping remain free to change.
-@test "every skill resolves both host task roots into one workspace name" {
+@test "every skill reaches the runtime through the dispatcher, and derives nothing itself" {
   for s in "$SKILLS"/*/SKILL.md; do
-    grep -qF '.nightshift-link' "$s" || { echo "no linked-workspace rule: $s"; return 1; }
-    grep -qF '${CLAUDE_PROJECT_DIR}' "$s" || { echo "no Claude project root: $s"; return 1; }
-    grep -qF 'CODEX_PROJECT_DIR' "$s" || { echo "no Codex recovery override: $s"; return 1; }
-    grep -qF 'pwd -P' "$s" || { echo "no canonical Codex launch cwd: $s"; return 1; }
-    grep -qF '$TASK_ROOT' "$s" || { echo "no task-root name: $s"; return 1; }
-    grep -qF '$NIGHTSHIFT_WORKSPACE' "$s" \
-      || { echo "no workspace name: $s"; return 1; }
-    ! grep -qF '${CLAUDE_PROJECT_DIR:-$PWD}' "$s" \
-      || { echo "Claude-only cwd fallback: $s"; return 1; }
-    ! grep -qF '${CODEX_PROJECT_DIR:-$PWD}' "$s" \
-      || { echo "uncaptured Codex cwd fallback: $s"; return 1; }
-    ! grep -qF -- '--project "$CLAUDE_PROJECT_DIR"' "$s" \
-      || { echo "Claude-only runtime project: $s"; return 1; }
+    grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns' "$s" \
+      || { echo "does not name the dispatcher: $s"; return 1; }
+    grep -qF 'ns bind' "$s" || { echo "does not name the five bound facts: $s"; return 1; }
+    # The resolving is the runtime's. A skill that spells out a host's own answer drifts from it,
+    # and each fallback below is a spelling that resolves to the wrong root when the host differs.
+    for bad in 'pwd -P' '${CLAUDE_PROJECT_DIR:-$PWD}' '${CODEX_PROJECT_DIR:-$PWD}' \
+      '--project "$CLAUDE_PROJECT_DIR"'; do
+      ! grep -qF -- "$bad" "$s" || { echo "re-derives the task root ($bad): $s"; return 1; }
+    done
   done
 }
 
@@ -37,12 +33,13 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   grep -qF '$TASK_ROOT/.claude/settings.local.json' "$SETUP"
 }
 
-@test "every skill binds the Nightshift directory once after resolving the workspace" {
+@test "every skill takes the Nightshift directory from the dispatcher, not from a host rule" {
   for s in "$SKILLS"/*/SKILL.md; do
-    grep -qF 'NS="$NIGHTSHIFT_WORKSPACE/.nightshift"' "$s" \
-      || { echo "no POSIX NS bind: $s"; return 1; }
-    grep -qF "Join-Path \$NIGHTSHIFT_WORKSPACE '.nightshift'" "$s" \
-      || { echo "no Windows NS bind: $s"; return 1; }
+    grep -qF '`NS`' "$s" || { echo "does not name NS among the bound facts: $s"; return 1; }
+    for bad in 'NS="$NIGHTSHIFT_WORKSPACE/.nightshift"' \
+      "Join-Path \$NIGHTSHIFT_WORKSPACE '.nightshift'"; do
+      ! grep -qF -- "$bad" "$s" || { echo "still binds NS by hand: $s"; return 1; }
+    done
   done
 }
 
@@ -52,15 +49,16 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
 
 @test "setup writes state-version on a new workspace and migrates only on confirmation" {
   grep -qF '$NS/state-version' "$SETUP"
-  grep -qF 'runtime/migrate-state.sh' "$SETUP"
+  grep -qF 'ns" migrate-state' "$SETUP"
   grep -qF 'only after an explicit yes' "$SETUP"
 }
 
-@test "setup scaffolds every template into the bound Nightshift directory" {
+@test "the scaffold writes every state file into the bound Nightshift directory" {
   for f in punch-list drafting-table parking-lot snag-log product-research opportunity-map; do
-    grep -qF "\$NS/$f.md" "$SETUP" \
-      || { echo "scaffold target not bound: $f"; return 1; }
+    [ -f "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates"/$f.md ] || { echo "no template for $f"; return 1; }
   done
+  # The destination is the bound directory, not the working directory.
+  grep -qF 'dest="$NS/$name"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
 }
 
 @test "shared plugin paths resolve once through both host conventions" {
@@ -82,20 +80,22 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   done
 }
 
-@test "runtime helpers are qualified and target the resolved workspace" {
-  for s in doctor import-issues schedule archive; do
-    grep -qF -- '--project "$NIGHTSHIFT_WORKSPACE"' "$SKILLS/$s/SKILL.md" \
-      || { echo "runtime helper bypasses resolved workspace: $s"; return 1; }
+@test "every dispatcher call is qualified by the resolved plugin root" {
+  for s in "$SKILLS"/*/SKILL.md "$REFS"/*.md "$REFS"/shifts/*.md; do
+    # A bare `runtime/ns` in a command is a relative path, and the working directory persists
+    # between calls on every host. Prose may name the file; a command may not.
+    if grep -nE '^[^`]*[^/A-Z_]runtime/ns"' "$s" | grep -vF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns'; then
+      echo "unqualified dispatcher call: $s"
+      return 1
+    fi
   done
 
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh' \
-    "$SKILLS/hunt/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh' \
-    "$SKILLS/nightshift/references/shifts/github-issue-hunt.md"
+  grep -qF 'ns" import-issues' "$SKILLS/hunt/SKILL.md"
+  grep -qF 'ns" import-issues' "$REFS/compose/shifts/github-issue-hunt.md"
 }
 
 @test "shared references are host-neutral and skill redirects name both hosts" {
-  for ref in "$SKILLS/nightshift/references"/*.md "$SKILLS/nightshift/references/shifts"/*.md; do
+  for ref in "$SKILLS/nightshift/references"/*.md "$SKILLS/nightshift/references/compose/shifts"/*.md; do
     ! grep -qF '/nightshift:' "$ref" \
       || { echo "host-specific command in shared reference: $ref"; return 1; }
   done
@@ -151,17 +151,14 @@ PY
 # whose accidental removal would leave a scheduled or headless shift unarmed or unstoppable.
 @test "start explicitly arms the shift and both host watchmen" {
   grep -qF '$NS/.shift-armed' "$START"
-  grep -qF 'runtime/claude/watchman.sh' "$START"
-  grep -qF 'runtime/codex/watchman.sh' "$START"
-  grep -qF 'runtime/cursor/watchman.sh' "$START"
-  grep -qF 'start-watchman.ps1' "$START"
+  grep -qF 'ns" watchman' "$START"
   grep -qF '### Bind this session' "$START"
   grep -qF '$NS/.shift-lease' "$START"
   grep -qF 'ns_lease_reset_stale' "$START"
   grep -qF ': nightshift-binding-probe' "$START"
-  grep -qF 'jq` or `python3' "$START"
-  grep -qF 'runtime/start-preflight.sh' "$START"
-  grep -qF 'runtime\windows\start-preflight.ps1' "$START"
+  # Start no longer restates what the preflight does or does not need; the policy verdict says it.
+  grep -qF 'Never install jq or python3' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'ns" start-preflight' "$START"
 }
 
 # The lease reader and the watchman recovery keys are the helper's job on both hosts. A skill that
@@ -203,38 +200,52 @@ PY
   [ -n "$active" ]
   [ "$active" -lt "$stale" ]
   [ "$stale" -lt "$clear" ]
-  grep -qF 'refuse watchman' "$START"
-  grep -qF 'never kill a live watchman as stale' "$START"
-  grep -qF '$NS/.shift-lease' "$START"
-  grep -qF 'Stand down a stale watchman' "$HOSTS"
-  grep -qF 'Test-NSRecordedProcess' "$HOSTS"
-  grep -qF 'Stop-Process -Id' "$HOSTS"
-  grep -qF 'a reused pid is not this watchman' "$HOSTS"
+  # The rule is policy, so Start keeps it; what a watchman verdict MEANS is the helper's to say.
+  grep -qF 'never kill a live watchman' "$START"
+  grep -qF 'never kill that watchman as stale' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF 'A watchman is alive on this workspace' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'a watchman must never be able to advance the old lease' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
 }
 
 # Start opens the host reference only when a verdict names that host, so the reference has to
 # carry the whole host answer — and stay host-neutral markdown, not a second skill.
-@test "start host detail lives in one shared reference" {
-  [ -f "$HOSTS" ]
-  grep -qF 'start-hosts.md' "$START"
-  grep -qF 'ConvertFrom-Json' "$HOSTS"
-  grep -qF 'PSObject.Properties.Name' "$HOSTS"
-  grep -qF 'kill -0' "$HOSTS"
-  grep -qF 'process-evidence-unavailable' "$HOSTS"
-  grep -qF 'claude --resume' "$HOSTS"
-  grep -qF 'codex resume' "$HOSTS"
-  grep -qF 'agent --resume' "$HOSTS"
-  grep -qF 'link-workspace.sh' "$HOSTS"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh' "$HOSTS"
-  grep -qF '$TASK_ROOT/.claude/settings.local.json' "$HOSTS"
-  grep -qF '$TASK_ROOT/.claude/settings.json' "$HOSTS"
+@test "each host's detail lives in its own file, and nowhere else" {
+  [ -d "$HOSTS" ]
+  for host in claude codex cursor windows; do
+    [ -f "$HOSTS/$host.md" ] || { echo "no reference for $host"; return 1; }
+  done
+  # The skill names the file for the host it is on, and says when to open it.
+  grep -qF 'hosts/<host>.md' "$START"
+
+  # Each fact is in its own host's file, and in no other host's.
+  for pair in "claude:claude --resume" "claude:\$TASK_ROOT/.claude/settings.local.json" \
+    "claude:\$TASK_ROOT/.claude/settings.json" "codex:codex resume" \
+    "codex:danger-full-access" "cursor:agent --resume" \
+    "windows:ConvertFrom-Json" "windows:PSObject.Properties.Name"; do
+    host="${pair%%:*}"
+    phrase="${pair#*:}"
+    grep -qF -- "$phrase" "$HOSTS/$host.md" || { echo "$host.md lost: $phrase"; return 1; }
+    for other in claude codex cursor windows; do
+      [ "$other" = "$host" ] && continue
+      if grep -qF -- "$phrase" "$HOSTS/$other.md"; then
+        echo "$other.md carries $host's detail: $phrase"
+        return 1
+      fi
+    done
+  done
+
+  # Liveness is a verdict's meaning, not host detail: it lives on the watchman explanation.
+  grep -qF 'kill -0' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'process-evidence-unavailable' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  # Linking another workspace and the stale-lease reset are repairs the helper hands the owner.
+  grep -qF 'ns link-workspace' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF 'ns_lease_reset_stale' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
 }
 
 @test "stop writes the stop-work order through the trusted helper" {
   grep -qF '$NS/STOP' "$STOP"
   grep -qF '$NS/.watchman' "$STOP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/stop-shift.sh' "$STOP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\stop-shift.ps1' "$STOP"
+  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift' "$STOP"
   grep -qi 'kill' "$STOP"
 }
 
@@ -257,10 +268,11 @@ PY
   fi
 }
 
-@test "start STOP lever uses the bound Nightshift directory on both platforms" {
-  grep -qF 'touch "$NS/STOP"' "$START"
-  grep -qF 'New-Item -ItemType File -Force "$NS\STOP"' "$START"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh' "$HOSTS"
+@test "the STOP lever a refusal offers is an absolute path on both platforms" {
+  # The panic form is a repair now, so it carries the resolved workspace rather than a name the
+  # owner would have to expand themselves.
+  grep -qF 'touch \"$NS/STOP\"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF '$ns\STOP' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
 }
 
 @test "hunt and quality arm with the same bound pair as start" {
@@ -269,21 +281,24 @@ PY
       || { echo "missing POSIX arm: $f"; return 1; }
     grep -qF 'New-Item -ItemType File -Force "$NS\.shift-armed"' "$f" \
       || { echo "missing Windows arm: $f"; return 1; }
+    grep -qF 'ns" watchman' "$f" || grep -qF '`ns watchman`' "$f" \
+      || { echo "does not arm the watchman through the dispatcher: $f"; return 1; }
   done
 }
 
 # Hunt and Quality start a shift without a second command. Naming only .shift-armed
 # left Windows and Codex to invent a launcher; Start already ships the three.
-@test "hunt and quality name the same watchman launchers as start" {
+@test "no skill picks the watchman for its host: one verb resolves to the right one" {
   for f in "$START" "$HUNT" "$QUALITY"; do
-    grep -qF 'runtime/claude/watchman.sh' "$f" \
-      || { echo "missing Claude watchman: $f"; return 1; }
-    grep -qF 'runtime/codex/watchman.sh' "$f" \
-      || { echo "missing Codex watchman: $f"; return 1; }
-    grep -qF 'runtime/cursor/watchman.sh' "$f" \
-      || { echo "missing Cursor watchman: $f"; return 1; }
-    grep -qF 'start-watchman.ps1' "$f" \
-      || { echo "missing Windows watchman: $f"; return 1; }
+    for bad in 'runtime/claude/watchman.sh' 'runtime/codex/watchman.sh' \
+      'runtime/cursor/watchman.sh' 'start-watchman.ps1'; do
+      ! grep -qF -- "$bad" "$f" || { echo "names a host's watchman directly ($bad): $f"; return 1; }
+    done
+  done
+  # And the helpers those verbs must reach still ship, one per host.
+  for h in claude codex cursor; do
+    [ -f "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/$h/watchman.sh" ] \
+      || { echo "no watchman for $h"; return 1; }
   done
 }
 
@@ -319,17 +334,15 @@ PY
   grep -qF 'docs/knobs.md' "$SETUP"
 }
 
-@test "schedule names the Windows generator from the plugin root" {
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\schedule.ps1' "$SCHEDULE"
-  if grep -qF '`runtime\windows\schedule.ps1`' "$SCHEDULE"; then
-    return 1
-  fi
-  grep -qF -- '-Project "$NIGHTSHIFT_WORKSPACE" -List' "$SCHEDULE"
-  grep -qF -- '-Project "$NIGHTSHIFT_WORKSPACE" -Remove' "$SCHEDULE"
-  grep -qF -- '`--list` / `-List`' "$SCHEDULE"
-  grep -qF -- '`--remove` / `-Remove`' "$SCHEDULE"
-  grep -qF -- "-Agent 'codex exec -s danger-full-access'" "$SCHEDULE"
+@test "schedule reaches its generator as a verb, with one spelling of every flag" {
+  grep -qF 'ns" schedule' "$SCHEDULE"
+  grep -qF -- '`--list`' "$SCHEDULE"
+  grep -qF -- '`--remove`' "$SCHEDULE"
   grep -qF -- "--agent 'codex exec -s danger-full-access'" "$SCHEDULE"
+  # The PowerShell spellings are the dispatcher's business now, not the skill's.
+  for bad in '-Project "$NIGHTSHIFT_WORKSPACE" -List' '`-List`' '`-Remove`'; do
+    ! grep -qF -- "$bad" "$SCHEDULE" || { echo "carries a second spelling ($bad)"; return 1; }
+  done
   grep -qF 'parked Hunt work order' \
     "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/schedule.ps1"
   grep -qF 'drafting-table item' \
@@ -378,7 +391,7 @@ PY
 }
 
 @test "punch-list template STOP commands use the bound Nightshift directory" {
-  tpl="$SKILLS/nightshift/references/punch-list-template.md"
+  tpl="$SKILLS/nightshift/references/templates/punch-list.md"
   grep -qF 'touch "$NS/STOP"' "$tpl"
   grep -qF 'New-Item -ItemType File -Force "$NS\STOP"' "$tpl"
   if grep -qF 'touch .nightshift/STOP' "$tpl"; then
@@ -389,40 +402,38 @@ PY
   fi
 }
 
-@test "native Windows skills pair runtime helpers instead of calling .sh" {
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\doctor.ps1' "$SKILLS/doctor/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\doctor.ps1' "$SKILLS/status/SKILL.md"
-  grep -qF 'Get-NSUnixTime' "$SKILLS/status/SKILL.md"
-  grep -qF 'Get-NSReasonLabel' "$SKILLS/status/SKILL.md"
+@test "every helper a skill needs is reached, as a verb" {
+  # The pairing this replaces held that a skill named both spellings of every helper. There is one
+  # spelling now, so what is left to hold is that the skill still reaches the helper at all.
+  for pair in \
+    "doctor:doctor" "status:doctor" "import-issues:import-issues" "hunt:import-issues" \
+    "archive:retain-history" "archive:archive-receipts" "setup:migrate-state" \
+    "doctor:migrate-state" "setup:apply-profile" "doctor:apply-profile" \
+    "doctor:export-support" "stop:stop-shift" "reset:reset-shift" "purge:purge-workspace" \
+    "setup:write-receipt" "nightshift:write-receipt" \
+    "nightshift:check-report"; do
+    skill="${pair%%:*}"
+    verb="${pair##*:}"
+    grep -qF "ns\" $verb" "$SKILLS/$skill/SKILL.md" || grep -qF "\`ns $verb\`" "$SKILLS/$skill/SKILL.md" \
+      || { echo "$skill does not reach $verb"; return 1; }
+  done
+  grep -qF 'ns" import-issues' "$REFS/compose/shifts/github-issue-hunt.md"
+
+  # Status computes none of this any more: the clock and the label are the helper's, and what the
+  # skill still holds is the rule that it may not go and derive them itself.
+  module="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  grep -qF 'Get-NSUnixTime' "$module"
+  grep -qF 'Get-NSReasonLabel' "$module"
   grep -qF 'recorded pid' "$SKILLS/status/SKILL.md"
   grep -qF 'watchman pid' "$SKILLS/status/SKILL.md"
   grep -qF 'reimplement liveness' "$SKILLS/status/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\import-issues.ps1' "$SKILLS/import-issues/SKILL.md"
-  grep -qF -- '-Fetch' "$SKILLS/import-issues/SKILL.md"
-  grep -qF -- '-Stage' "$SKILLS/import-issues/SKILL.md"
-  grep -qF -- '-AllowClosed' "$SKILLS/import-issues/SKILL.md"
-  grep -qF -- '-Repo owner/repo' "$SKILLS/import-issues/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\import-issues.ps1' "$HUNT"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\start-watchman.ps1' "$HUNT"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\start-watchman.ps1' "$QUALITY"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\retain-history.ps1' "$SKILLS/archive/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\archive-receipts.ps1' "$SKILLS/archive/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\migrate-state.ps1' "$SETUP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\migrate-state.ps1' "$START"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\migrate-state.ps1' "$SKILLS/doctor/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\apply-profile.ps1' "$SETUP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\apply-profile.ps1' "$SKILLS/doctor/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\export-support.ps1' "$SKILLS/doctor/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\stop-shift.ps1' "$SKILLS/stop/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\reset-shift.ps1' "$SKILLS/reset/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\purge-workspace.ps1' "$SKILLS/purge/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1' "$START"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1' "$SETUP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1' "$SKILLS/nightshift/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1' "$START"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1' "$SKILLS/nightshift/SKILL.md"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\import-issues.ps1' \
-    "$SKILLS/nightshift/references/shifts/github-issue-hunt.md"
+
+  # One spelling of every flag the import skill names.
+  for flag in -- '--fetch' '--stage' '--allow-closed' '--repo owner/repo'; do
+    [ "$flag" = -- ] && continue
+    grep -qF -- "$flag" "$SKILLS/import-issues/SKILL.md" \
+      || { echo "import-issues does not name $flag"; return 1; }
+  done
 }
 
 @test "doctor Windows actions name helpers beside the inspector" {
@@ -437,10 +448,11 @@ PY
   grep -qF 'staged drafting-table items=' "$DOCTOR_PS1"
 }
 
-@test "setup substitutes workspace and NS tokens when copying owner files" {
-  grep -qF 'substitute the resolved absolute workspace path for `$NIGHTSHIFT_WORKSPACE`' "$SETUP"
-  grep -qF 'bound Nightshift directory for `$NS`' "$SETUP"
-  grep -qF 'Never write those tokens into `rules.json`' "$SETUP"
+@test "the scaffold resolves the tokens a person could not paste, and Setup still forbids them in the owner's rules" {
+  # A person pasting a command out of their own punch list has no shell variable to expand.
+  grep -qF 'NIGHTSHIFT_WORKSPACE' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
+  grep -qF 'resolves' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
+  grep -qF 'revival and clock-out text stay owner-editable' "$SETUP"
 }
 
 @test "catalog prose uses Nightshift filenames, not a workspace prefix" {
@@ -448,7 +460,7 @@ PY
            "$SKILLS/nightshift/references"/execution-modes.md \
            "$SKILLS/nightshift/references"/gates-catalog.md \
            "$SKILLS/nightshift/references"/shift-catalog.md \
-           "$SKILLS/nightshift/references/shifts"/*.md; do
+           "$SKILLS/nightshift/references/compose/shifts"/*.md; do
     ! grep -qF '$NIGHTSHIFT_WORKSPACE/.nightshift/' "$f" \
       || { echo "catalog still prefixes workspace: $f"; return 1; }
   done

@@ -40,8 +40,9 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
   grep -qF 'ns_have_cmd pgrep' "$CODEX_WM"
   grep -qF 'process-evidence-unavailable' "$CLAUDE_WM"
   grep -qF 'process-evidence-unavailable' "$CODEX_WM"
-  grep -qF 'kill -0' "$START"
-  grep -qF 'process-evidence-unavailable' "$START"
+  # Liveness is a verdict's meaning now, so it travels on the watchman explanation.
+  grep -qF 'kill -0' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'process-evidence-unavailable' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
 }
 
 @test "missing lsof and pgrep never count as a dead process" {

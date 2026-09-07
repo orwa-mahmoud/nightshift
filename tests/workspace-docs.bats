@@ -37,7 +37,7 @@ resolve_work_target() {
   grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$COMMANDS"
   grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$VOCAB"
   grep -qF '**archive**' "$VOCAB"
-  grep -qF 'live receipts stay' "$VOCAB"
+  grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
   grep -qF 'UNIX epoch seconds' "$VOCAB"
   grep -qF '.nightshift/work-target' "$VOCAB"
@@ -111,4 +111,69 @@ resolve_work_target() {
   printf 'relative/path\n' >"$host/.nightshift-link"
   run resolve_workspace "$host"
   [ "$status" -eq 2 ]
+}
+
+# The public surface says what the product does.
+#
+# A reader who types what a page shows and gets an error learns the page is not maintained, and
+# from then on checks everything against the tree themselves. These hold the pages to the tree.
+
+@test "no public page shows a command the product does not have" {
+  for f in "$ROOT/README.md" "$ROOT"/docs/*.md "$ROOT"/examples/*.md; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      # These two map source files to the tests that cover them: a maintainer needs the path.
+      */contribution-map.md | */maintainer-verification-matrix.md) continue ;;
+    esac
+    if grep -nE 'runtime[/\\](windows[/\\])?[a-z-]+\.(sh|ps1)' "$f" | grep -vE '[/\\]ns\.ps1|/ns"'; then
+      echo "$f shows a helper path where a verb belongs"
+      return 1
+    fi
+    if grep -nE '`[a-z][a-z0-9-]+\.(sh|ps1)' "$f" | grep -vE 'coverage\.sh|run\.ps1|ns\.ps1'; then
+      echo "$f names a helper file where a verb belongs"
+      return 1
+    fi
+  done
+}
+
+@test "no public page tells a reader to pass a flag the runtime supplies" {
+  for f in "$ROOT/README.md" "$ROOT"/docs/*.md "$ROOT"/examples/*.md; do
+    [ -f "$f" ] || continue
+    case "$f" in */contribution-map.md | */maintainer-verification-matrix.md) continue ;; esac
+    # `--project` is legitimate when the page is teaching terminal use from elsewhere; what is
+    # not legitimate is telling the reader it is required.
+    if grep -qF 'Do not omit `--project`' "$f"; then
+      echo "$f still requires a flag the dispatcher supplies"
+      return 1
+    fi
+    if grep -qE '\-Project\b' "$f"; then
+      echo "$f carries a second spelling of a flag"
+      return 1
+    fi
+  done
+}
+
+@test "every public page points at a reference that exists" {
+  for f in "$ROOT/README.md" "$ROOT"/docs/*.md "$ROOT"/examples/*.md; do
+    [ -f "$f" ] || continue
+    for ref in $(grep -o 'references/[A-Za-z0-9_./-]*\.md' "$f" | sort -u); do
+      case "$ref" in *'<'* | *'*'*) continue ;; esac
+      [ -f "$ROOT/plugins/nightshift/skills/nightshift/$ref" ] \
+        || { echo "$f points at missing $ref"; return 1; }
+    done
+  done
+}
+
+@test "no public page calls a per-item receipt the way an item completes" {
+  for f in "$ROOT/README.md" "$ROOT"/docs/*.md "$ROOT"/examples/*.md; do
+    [ -f "$f" ] || continue
+    for phrase in 'one receipt per item' 'artifact receipt per item' 'a receipt per item'; do
+      if grep -qiF "$phrase" "$f"; then
+        echo "$f: $phrase"
+        return 1
+      fi
+    done
+  done
+  # What is true: the report section completes the item, and the older file is opt-in.
+  grep -qF 'legacyItemReceipts' "$ROOT/docs/knobs.md"
 }

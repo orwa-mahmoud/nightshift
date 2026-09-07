@@ -67,3 +67,23 @@ ns_sanitize_line() {
   ns_secret_line "$text" && return 1
   ns_tokenize_text "$text" "$2" "$3" "$4"
 }
+
+# ns_read_stdin_bounded <seconds> — the hook payload, and never a hung session.
+#
+# A hook whose stdin is a descriptor that never reaches EOF used to sit in `cat` until something
+# killed it: one such hook held a session for five and a half hours with its payload sitting in
+# argv the whole time. The read is bounded instead, so the descriptor being open says nothing
+# about whether the payload has arrived and the caller reaches its own fallbacks either way.
+#
+# A terminal is a manual run and carries no payload. A final line without its newline is kept:
+# `read` returns non-zero having filled the variable, and dropping it would corrupt the JSON.
+ns_read_stdin_bounded() {
+  local seconds="${1:-2}" line buf=""
+  [ ! -t 0 ] || return 0
+  while IFS= read -r -t "$seconds" line; do
+    buf="$buf$line
+"
+  done
+  [ -z "$line" ] || buf="$buf$line"
+  printf '%s' "$buf"
+}

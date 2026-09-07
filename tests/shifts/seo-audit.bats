@@ -1,10 +1,10 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/seo-audit.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/seo-audit.md"
 CHECK="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/check-report.sh"
 FIXTURE="$BATS_TEST_DIRNAME/../fixtures/seo-audit"
 WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-report.ps1"
 
 @test "SEO audit uses receipt templates and refuses live-crawl without budgets" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'Refuse live-crawl' "$E"
   grep -qF 'neverLeaveApprovedOrigins' "$E"
 }
@@ -35,8 +35,10 @@ WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-report.ps
 
 @test "SEO audit inherits cited research and gates every receipt" {
   grep -qF 'cited-research.md' "$E"
-  grep -qF 'check-report.sh' "$E"
-  grep -qF 'check-report.ps1' "$E"
+  grep -qF 'ns" check-report' "$E"
+  # One spelling per command: the dispatcher picks the Windows file, so an entry that also
+  # carried a `.ps1` form would be a second spelling to keep in step.
+  ! grep -qF 'check-report.ps1' "$E" || { echo 'carries a second spelling'; return 1; }
   grep -qi 'item gate is green' "$E"
   grep -qF '$NS/receipts/' "$E"
   [ -f "$WIN" ]

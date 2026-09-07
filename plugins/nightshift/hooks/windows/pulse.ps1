@@ -113,4 +113,16 @@ if (Test-NSReparsePoint $pulse) {
 }
 $line = '{0} {1}{2}' -f (Get-NSUnixTime), $sessionId, [Environment]::NewLine
 [IO.File]::WriteAllText($pulse, $line, (New-Object Text.UTF8Encoding($false)))
+
+# The reading rides on the pulse: no daemon, no timer, no second session. Cursor carries its figures
+# on the payload; the other two name a transcript. Never fatal - a host that reports nothing leaves
+# no snapshot, and the report says `unavailable` rather than zero.
+$source = $(if ($HostName -eq 'cursor') { $raw } else { Get-PropertyValue $payload 'transcript_path' })
+try {
+    $null = Invoke-NSPulseUsage $ns $HostName $sessionId $source
+    $null = Invoke-NSPulseMarks $ns $workspace $source
+}
+catch {
+    [Console]::Error.WriteLine('nightshift: usage accounting skipped - ' + $_.Exception.Message)
+}
 exit 0

@@ -19,8 +19,8 @@ SETUP="$SKILLS/setup/SKILL.md"
 STATUS="$SKILLS/status/SKILL.md"
 DOCTOR_SKILL="$SKILLS/doctor/SKILL.md"
 ARCHIVE="$SKILLS/archive/SKILL.md"
-TEMPLATE="$SKILLS/nightshift/references/punch-list-template.md"
-DRAFT_TEMPLATE="$SKILLS/nightshift/references/drafting-table-template.md"
+TEMPLATE="$SKILLS/nightshift/references/templates/punch-list.md"
+DRAFT_TEMPLATE="$SKILLS/nightshift/references/templates/drafting-table.md"
 DOC="$BATS_TEST_DIRNAME/../docs/how-it-works.md"
 VOCAB="$BATS_TEST_DIRNAME/../docs/vocabulary.md"
 COMMANDS="$BATS_TEST_DIRNAME/../docs/commands.md"
@@ -351,18 +351,75 @@ new_artifact() {
   fi
 }
 
-@test "an artifact receipt resets the stall counter" {
-  p="$(new_artifact stall)"
-  punch_open "$p"
+# Writing about the work is not doing it. A record the shift produced about itself — a receipt, a
+# report section, a usage line, a rendered morning page — must not read as progress, or a shift
+# that only ever describes itself would never look stuck.
+
+# stall_site <name> — an artifact site whose stall warning is far enough away to watch the
+# counter climb, and whose punch list has room for a tick to change something.
+stall_site() {
+  local p
+  p="$(new_artifact "$1")"
+  jq '.stallWarnEvery = 20' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  printf '## Items\n- [ ] **1. first.**\n- [ ] **2. second.**\n- [x] **3. done.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '%s' "$p"
+}
+
+stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
+
+@test "a record the shift wrote about itself is not stall progress" {
+  p="$(stall_site stall)"
   run gate "$p"
   run gate "$p"
-  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "2" ]
+  [ "$(stall_count "$p")" = "2" ]
+  # A completion receipt, and a report section about the work: both are the shift describing
+  # itself, and neither is the work moving.
   printf 'ok\n' >"$p/out/topic.md"
   run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/topic.md"
   [ "$status" -eq 0 ]
+  printf '# Shift report\n\n## item 1\n\nstill going.\n' >"$p/.nightshift/shift-report.md"
   run gate "$p"
   is_block "$output"
-  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
+  [ "$(stall_count "$p")" = "3" ]
+  # And again, with only the report changing.
+  printf '# Shift report\n\n## item 1\n\nstill going, more words.\n' >"$p/.nightshift/shift-report.md"
+  run gate "$p"
+  is_block "$output"
+  [ "$(stall_count "$p")" = "4" ]
+}
+
+@test "a tick is stall progress in artifact mode" {
+  p="$(stall_site stall-tick)"
+  run gate "$p"
+  run gate "$p"
+  [ "$(stall_count "$p")" = "2" ]
+  # The item is finished, which is what a tick claims.
+  printf '## Items\n- [x] **1. first.**\n- [ ] **2. second.**\n- [x] **3. done.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  run gate "$p"
+  is_block "$output"
+  [ "$(stall_count "$p")" = "1" ]
+}
+
+@test "a substantive checkpoint is stall progress in artifact mode" {
+  p="$(stall_site stall-checkpoint)"
+  run gate "$p"
+  run gate "$p"
+  [ "$(stall_count "$p")" = "2" ]
+  bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh" --project "$p" init >/dev/null
+  bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh" --project "$p" append \
+    --record "$(jq -nc '{
+      schemaVersion: 1, id: "c1", domain: "checkpoint", sourceClass: "migration",
+      source: "codemod", scope: "src/", severity: "info", confidence: "high",
+      impact: "developer", status: "open", ladder: "measured", locator: "src/",
+      digest: "dc1", firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z",
+      action: "", host: "claude", workTarget: "/repo"
+    }')" >/dev/null
+  run gate "$p"
+  is_block "$output"
+  [ "$(stall_count "$p")" = "1" ]
 }
 
 @test "repository mode still treats a commit as stall progress" {
@@ -377,34 +434,41 @@ new_artifact() {
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
 }
 
-@test "archive copies receipts and leaves live copies" {
+@test "archive copies receipts, and removing one is a separate decision" {
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
-  grep -qF 'leave the live copies' "$ARCHIVE"
-  grep -qF 'runtime/archive-receipts.sh' "$ARCHIVE"
+  grep -qF 'Filing is a copy' "$ARCHIVE"
+  grep -qE 'ns"? archive-receipts' "$ARCHIVE"
 }
 
 @test "skills and docs name artifact receipts" {
-  grep -qF 'runtime/write-receipt.sh' "$NIGHTSHIFT"
-  grep -qF 'runtime\windows\write-receipt.ps1' "$NIGHTSHIFT"
+  grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"
-  grep -qF '$NS/receipts/' "$START"
-  grep -qF 'exists but is not a usable directory' "$START"
-  grep -qF 'do not `git init` the notes folder' "$NIGHTSHIFT"
-  grep -qF 'when Git is installed' "$NIGHTSHIFT"
-  grep -qF 'runtime/write-receipt.sh' "$START"
-  grep -qF 'runtime/write-receipt.sh' "$SETUP"
-  grep -qF 'runtime\windows\write-receipt.ps1' "$SETUP"
+  # Start hands artifact completion to the main skill, which owns the item loop.
+  grep -qF '$NS/receipts/' "$NIGHTSHIFT"
+  grep -qF 'exists but is not a usable directory' "$SETUP"
+  # Both of these moved out of the main skill when each rule was given one home. The refusal is
+  # explained where the preflight prints it; the receipts repo is Setup's question to ask.
+  grep -qF 'never git init a notes folder' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'Never `git init` a notes folder to get past a refusal.' \
+    "$SKILLS/nightshift/references/compose/execution-modes.md"
+  grep -qF 'versioned in its own local-only git' "$SETUP"
+  # Start hands the item loop, and its receipts, to the main skill.
+  grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
+  grep -qE 'ns"? write-receipt' "$SETUP"
   grep -qF '$NS/receipts/' "$SETUP"
   grep -qF 'do not treat artifact setup as complete' "$SETUP"
-  grep -qF 'artifact receipts N' "$STATUS"
-  grep -qF 'latest artifact receipt' "$STATUS"
-  grep -qF 'most recently written' "$STATUS"
-  grep -qF 'artifact mode has ticked items but no receipts' "$STATUS"
-  grep -qF 'artifact receipts path is not a usable directory' "$STATUS"
-  grep -qF 'do not also report empty ticks' "$STATUS"
-  grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$STATUS"
-  grep -qF 'do not replace the live files Status reports' "$STATUS"
-  grep -qF 'Missing or empty receipts create no dated receipts folder' "$STATUS"
+  grep -qF 'fact "artifact receipts"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'latest artifact receipt' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'ns_latest_receipt' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'ticked items with no receipts are not reviewable completion' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'the artifact receipts path is not a usable directory' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'the empty-ticks warning is not also raised' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
+  # Archive states the same guarantee at its source: what it writes is a copy, so the live files
+  # Status reports are still there.
+  grep -qF 'Filing is a copy' "$ARCHIVE"
+  grep -qF 'Missing or empty receipts create no dated receipts folder' "$ARCHIVE"
   grep -qF 'artifact receipts N' "$DOCTOR_SKILL"
   grep -qF 'latest artifact receipt' "$DOCTOR_SKILL"
   grep -qF 'most recently written' "$DOCTOR_SKILL"
@@ -418,8 +482,8 @@ new_artifact() {
   grep -qF 'artifact receipt' "$TEMPLATE"
   grep -qF '$NS/receipts/' "$TEMPLATE"
   grep -qF '$NS/receipts/' "$DRAFT_TEMPLATE"
-  grep -qF 'runtime/write-receipt.sh' "$DOC"
-  grep -qF 'runtime/archive-receipts.sh' "$DOC"
+  grep -qE 'ns"? write-receipt' "$DOC"
+  grep -qE 'ns"? archive-receipts' "$DOC"
   grep -qF 'latest artifact receipt' "$DOC"
   grep -qF 'most recently written' "$DOC"
   grep -qF 'ticked items have no receipts' "$DOC"
@@ -429,9 +493,9 @@ new_artifact() {
   grep -qF '**artifact receipt**' "$VOCAB"
   grep -qF 'A path that is not a usable directory is a refuse, not an empty night' "$VOCAB"
   grep -qF '**archive**' "$VOCAB"
-  grep -qF 'live receipts stay' "$VOCAB"
+  grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
-  grep -qF 'runtime/write-receipt.sh' "$COMMANDS"
+  grep -qE 'ns"? write-receipt' "$COMMANDS"
   grep -qF 'artifact mode has ticked items but no receipts' "$COMMANDS"
   grep -qF 'artifact receipts path is not a usable directory' "$COMMANDS"
   grep -qF 'replace it rather than write-receipt' "$COMMANDS"
@@ -439,9 +503,9 @@ new_artifact() {
   grep -qF 'latest artifact receipt' "$COMMANDS"
   grep -qF 'most recently written' "$COMMANDS"
   grep -qF 'local commits or artifact receipts' "$COMMANDS"
-  grep -qF 'runtime\windows\write-receipt.ps1' "$COMMANDS"
-  grep -qF 'runtime\windows\write-receipt.ps1' "$WINDOC"
-  grep -qF 'runtime\windows\archive-receipts.ps1' "$WINDOC"
+  grep -qF 'ns.ps1 write-receipt' "$COMMANDS"
+  grep -qE 'ns\.ps1" write-receipt' "$WINDOC"
+  grep -qE 'ns\.ps1" archive-receipts' "$WINDOC"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$WINDOC"
   grep -qF 'persistent folder' "$WINDOC"
   grep -qF 'latest artifact receipt' "$WINDOC"

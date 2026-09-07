@@ -63,12 +63,29 @@ def allowance($i; $a):
      | "w\t" + $n + "\t" + (.key | tostring) + "\t"
        + (if (.value | type) == "string" then "s" else "x" end));
 
+# The owner preference blocks tonight's snapshot freezes. A block the snapshot does not carry
+# emits its type and no fields, which is how a policy written before this feature is told apart
+# from one whose owner left a block empty.
+def PREF: {
+  "shift":    ["execution", "hours", "toolingPolicy", "verificationProfile"],
+  "recovery": ["launchScope"],
+  "handoff":  ["detail", "enabled", "language", "sections", "templatePath", "view"],
+  "archive":  ["automatic", "layout", "root", "templatePath"],
+  "report":   ["enabled", "legacyItemReceipts", "progressMinutes", "progressMode",
+               "progressTokens", "templatePath", "usage"]
+};
+
 def shift_policy:
   if type != "object" then "x\t.\tnotobject"
   else . as $P
   | ($P | ks(".")),
     ($P | sc("."; ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
-                   "verificationLevel", "toolingPolicy", "completionMode", "gatesDigest"])),
+                   "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
+                   "completionMode", "gatesDigest",
+                   "contractDigest", "itemsDigest"])),
+    (["shift", "recovery", "handoff", "archive", "report"][] as $b
+     | ($P[$b] | ty($b)),
+       (if ($P | has($b)) then ($P[$b] | obj | sc($b; PREF[$b])) else empty end)),
     ($P.budgets | ty("budgets")),
     ($P.budgets | obj | to_entries[] | "b\t" + (.key | scrub) + "\t" + (.value | tojson)),
     ($P.selectedDebt | ty("selectedDebt")),

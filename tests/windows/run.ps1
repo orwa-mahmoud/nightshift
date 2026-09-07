@@ -278,6 +278,19 @@ function Initialize-TestWorkspace {
     return $repo
 }
 
+# A site that means to be revived names the scope a revival may use: the shipped
+# inherit-recorded-scope refuses when the session recorded none, which every fixture here is.
+function Set-TestRecoveryScope {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    # The shipped template with one value changed, as text: the file is then byte-identical under
+    # Windows PowerShell 5.1 and PowerShell 7, whose JSON serialisers differ.
+    $template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $text = [IO.File]::ReadAllText($template)
+    $edited = $text.Replace('"launchScope": "inherit-recorded-scope"', '"launchScope": "host-default"')
+    if ($edited -ceq $text) { throw 'the rules template no longer carries recovery.launchScope as expected' }
+    [IO.File]::WriteAllText((Join-Path $Workspace '.nightshift/rules.json'), $edited, (New-Object Text.UTF8Encoding($false)))
+}
+
 function Set-TestPunch {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -438,6 +451,16 @@ try {
     $scheduleEmptyLogicRun = Invoke-TestScript $scheduleEmptyLogic
     Assert-Equal 0 $scheduleEmptyLogicRun.ExitCode `
         "schedule empty-list notes: $($scheduleEmptyLogicRun.Stdout) $($scheduleEmptyLogicRun.Stderr)"
+    $scaffold = Join-Path $plugin 'runtime/windows/scaffold.ps1'
+    Assert-True (Test-Path -LiteralPath $scaffold) 'the Windows scaffold ships'
+    $statusFactsLogic = Join-Path $PSScriptRoot 'status-facts-logic.ps1'
+    $statusFactsLogicRun = Invoke-TestScript $statusFactsLogic
+    Assert-Equal 0 $statusFactsLogicRun.ExitCode `
+        "status fact readers: $($statusFactsLogicRun.Stdout) $($statusFactsLogicRun.Stderr)"
+    $punchListLogic = Join-Path $PSScriptRoot 'punch-list-logic.ps1'
+    $punchListLogicRun = Invoke-TestScript $punchListLogic
+    Assert-Equal 0 $punchListLogicRun.ExitCode `
+        "punch-list reader and contract digests: $($punchListLogicRun.Stdout) $($punchListLogicRun.Stderr)"
     $boxCountsLogic = Join-Path $PSScriptRoot 'box-counts-logic.ps1'
     $boxCountsLogicRun = Invoke-TestScript $boxCountsLogic
     Assert-Equal 0 $boxCountsLogicRun.ExitCode `
@@ -454,6 +477,10 @@ try {
     $reasonLabelLogicRun = Invoke-TestScript $reasonLabelLogic
     Assert-Equal 0 $reasonLabelLogicRun.ExitCode `
         "watchman reason labels: $($reasonLabelLogicRun.Stdout) $($reasonLabelLogicRun.Stderr)"
+    $recoveryScopeLogic = Join-Path $PSScriptRoot 'recovery-scope-logic.ps1'
+    $recoveryScopeLogicRun = Invoke-TestScript $recoveryScopeLogic
+    Assert-Equal 0 $recoveryScopeLogicRun.ExitCode `
+        "recovery launch scope: $($recoveryScopeLogicRun.Stdout) $($recoveryScopeLogicRun.Stderr)"
     $migrateStateLogic = Join-Path $PSScriptRoot 'migrate-state-logic.ps1'
     $migrateStateLogicRun = Invoke-TestScript $migrateStateLogic
     Assert-Equal 0 $migrateStateLogicRun.ExitCode `
@@ -530,6 +557,18 @@ try {
     $inventoryLogicRun = Invoke-TestScript $inventoryLogic
     Assert-Equal 0 $inventoryLogicRun.ExitCode `
         "project inventory: $($inventoryLogicRun.Stdout) $($inventoryLogicRun.Stderr)"
+    $usageLogic = Join-Path $PSScriptRoot 'usage-logic.ps1'
+    $usageLogicRun = Invoke-TestScript $usageLogic
+    Assert-Equal 0 $usageLogicRun.ExitCode `
+        "usage accounting: $($usageLogicRun.Stdout) $($usageLogicRun.Stderr)"
+    $nsLogic = Join-Path $PSScriptRoot 'ns-logic.ps1'
+    $nsLogicRun = Invoke-TestScript $nsLogic
+    Assert-Equal 0 $nsLogicRun.ExitCode `
+        "dispatcher workspace binding: $($nsLogicRun.Stdout) $($nsLogicRun.Stderr)"
+    $sessionStartLogic = Join-Path $PSScriptRoot 'session-start-logic.ps1'
+    $sessionStartLogicRun = Invoke-TestScript $sessionStartLogic
+    Assert-Equal 0 $sessionStartLogicRun.ExitCode `
+        "SessionStart context reset: $($sessionStartLogicRun.Stdout) $($sessionStartLogicRun.Stderr)"
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost
@@ -910,6 +949,7 @@ try {
     Write-Host 'Checking native recovery and watchman placement'
     $recoveryWorkspace = Join-Path $root 'recovery workspace'
     $recoveryTarget = Initialize-TestWorkspace $recoveryWorkspace
+    Set-TestRecoveryScope $recoveryWorkspace
     Set-TestPunch $recoveryWorkspace $true
     $recoveryArmed = Join-Path $recoveryWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($recoveryArmed, '')
@@ -1014,6 +1054,7 @@ exit 0
 
     $backoffWorkspace = Join-Path $root 'backoff workspace'
     $null = Initialize-TestWorkspace $backoffWorkspace
+    Set-TestRecoveryScope $backoffWorkspace
     Set-TestPunch $backoffWorkspace $true
     $backoffArmed = Join-Path $backoffWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($backoffArmed, '')
@@ -1044,6 +1085,7 @@ exit 1
 
     $freshGuardWorkspace = Join-Path $root 'fresh guard workspace'
     $null = Initialize-TestWorkspace $freshGuardWorkspace
+    Set-TestRecoveryScope $freshGuardWorkspace
     Set-TestPunch $freshGuardWorkspace $true
     $freshGuardArmed = Join-Path $freshGuardWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($freshGuardArmed, '')
@@ -1067,6 +1109,7 @@ exit 1
     Write-Host 'Checking default Codex recovery through an npm-style command shim'
     $codexRecoveryWorkspace = Join-Path $root 'codex shim recovery workspace'
     $null = Initialize-TestWorkspace $codexRecoveryWorkspace
+    Set-TestRecoveryScope $codexRecoveryWorkspace
     Set-TestPunch $codexRecoveryWorkspace $true
     $codexRecoveryArmed = Join-Path $codexRecoveryWorkspace '.nightshift/.shift-armed'
     [IO.File]::WriteAllText($codexRecoveryArmed, '')
@@ -1145,6 +1188,7 @@ exit 1
     Write-Host 'Checking bounded terminal clock-out'
     $clockFailWorkspace = Join-Path $root 'clock-out fail workspace'
     $null = Initialize-TestWorkspace $clockFailWorkspace
+    Set-TestRecoveryScope $clockFailWorkspace
     # Bind while the punch list still has open work - hardhat is inert when every box is ticked.
     Set-TestPunch $clockFailWorkspace $true
     [IO.File]::WriteAllText((Join-Path $clockFailWorkspace '.nightshift/.shift-armed'), '')
@@ -1177,6 +1221,7 @@ exit 1
 
     $clockOkWorkspace = Join-Path $root 'clock-out ok workspace'
     $null = Initialize-TestWorkspace $clockOkWorkspace
+    Set-TestRecoveryScope $clockOkWorkspace
     Set-TestPunch $clockOkWorkspace $true
     [IO.File]::WriteAllText((Join-Path $clockOkWorkspace '.nightshift/.shift-armed'), '')
     $clockOkSession = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
@@ -1210,6 +1255,7 @@ exit 0
 
     $clockDeadlineWorkspace = Join-Path $root 'clock-out deadline workspace'
     $null = Initialize-TestWorkspace $clockDeadlineWorkspace
+    Set-TestRecoveryScope $clockDeadlineWorkspace
     Set-TestPunch $clockDeadlineWorkspace $true
     [IO.File]::WriteAllText((Join-Path $clockDeadlineWorkspace '.nightshift/.shift-armed'), '')
     [IO.File]::WriteAllText((Join-Path $clockDeadlineWorkspace '.nightshift/deadline'), '1')

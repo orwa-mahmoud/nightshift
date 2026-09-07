@@ -19,7 +19,7 @@ _here="${BASH_SOURCE[0]%/*}"
 . "$_here/../lib/lib.sh"
 
 PREFLIGHT="$_here/preflight-needs.sh"
-TEMPLATE="$_here/../skills/nightshift/references/parking-lot-template.md"
+TEMPLATE="$_here/../skills/nightshift/references/templates/parking-lot.md"
 
 usage() {
   awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0" >&2

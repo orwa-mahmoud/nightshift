@@ -21,6 +21,17 @@
         ]
       }
     ],
+    "SessionStart": [
+      {
+        "matcher": "compact|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch/claude-session-start.ps1\""
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [

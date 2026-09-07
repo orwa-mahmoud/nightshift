@@ -1,0 +1,8 @@
+{
+  "execution": "review-first",
+  "hours": null,
+  "schemaVersion": 1,
+  "toolingPolicy": "review-missing",
+  "updatedAt": "2026-09-05T10:42:17Z",
+  "verificationProfile": "fast"
+}

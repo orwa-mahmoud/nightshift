@@ -1,17 +1,17 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/documentation-writing.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/documentation-writing.md"
 CHECK="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/check-report.sh"
 FIXTURE="$BATS_TEST_DIRNAME/../fixtures/documentation-writing"
 WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-report.ps1"
 
 @test "documentation writing uses product-truth outline helper" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "documentation writing resolves source policy for artifact folders" {
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qF 'git init' "$E"
 }
 
@@ -34,8 +34,10 @@ WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-report.ps
 @test "documentation writing is finite and inherits cited research" {
   grep -qi 'Ends when every supplied source' "$E"
   grep -qF 'cited-research.md' "$E"
-  grep -qF 'check-report.sh' "$E"
-  grep -qF 'check-report.ps1' "$E"
+  grep -qF 'ns" check-report' "$E"
+  # One spelling per command: the dispatcher picks the Windows file, so an entry that also
+  # carried a `.ps1` form would be a second spelling to keep in step.
+  ! grep -qF 'check-report.ps1' "$E" || { echo 'carries a second spelling'; return 1; }
   grep -qi 'item gate is green' "$E"
   [ -f "$WIN" ]
 }

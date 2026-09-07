@@ -154,6 +154,54 @@ ns_json_text() {
   esac
 }
 
+# _ns_rules_array <p1> <p2> — the string array at that path as compact JSON.
+_ns_rules_array() {
+  local rest="$NS_RULES_ROWS" line p1 p2 p3 typ val out="" first=1
+  while [ -n "$rest" ]; do
+    line="${rest%%"$_NS_RULES_NL"*}"
+    case "$rest" in *"$_NS_RULES_NL"*) rest="${rest#*"$_NS_RULES_NL"}" ;; *) rest="" ;; esac
+    [ -n "$line" ] || continue
+    p1="${line%%"$_NS_RULES_TAB"*}"
+    line="${line#*"$_NS_RULES_TAB"}"
+    p2="${line%%"$_NS_RULES_TAB"*}"
+    line="${line#*"$_NS_RULES_TAB"}"
+    p3="${line%%"$_NS_RULES_TAB"*}"
+    line="${line#*"$_NS_RULES_TAB"}"
+    typ="${line%%"$_NS_RULES_TAB"*}"
+    val="${line#*"$_NS_RULES_TAB"}"
+    if ! { [ "$p1" = "$1" ] && [ "$p2" = "$2" ] && [ -n "$p3" ]; }; then continue; fi
+    case "$typ" in s | n | b) ;; *) continue ;; esac
+    [ "$first" -eq 1 ] || out="$out,"
+    first=0
+    out="$out$val"
+  done
+  printf '[%s]' "$out"
+}
+
+# ns_rules_set_block <file> <key> <compact-json> — the same document with one top-level key set
+# to that value, sorted and indented, on stdout. Every other key survives byte for byte, including
+# one this version does not know: a plugin update fills settings in, it never takes them away.
+ns_rules_set_block() {
+  local bin
+  bin="$(ns_rules_awk_bin)" || return 1
+  LC_ALL=C "$bin" -v mode=setblock -v key="$2" -v value="$3" -f "$_NS_RULES_AWK_FILE" <"$1"
+}
+
+# ns_rules_get_in <file> <block> <key> — one field of a settings block, as the
+# effective scalar, null, or compact JSON for an array. Empty when absent.
+ns_rules_get_in() {
+  local row typ val
+  ns_rules_load "$1" || return 0
+  row="$(_ns_rules_row "$2" "$3" "")" || return 0
+  typ="${row%%"$_NS_RULES_TAB"*}"
+  val="${row#*"$_NS_RULES_TAB"}"
+  case "$typ" in
+    s | n | b) ns_json_text "$val" ;;
+    z) printf 'null' ;;
+    a) _ns_rules_array "$2" "$3" ;;
+  esac
+}
+
 # ns_rules_get <file> <key> — the effective scalar (or compact JSON for an
 # object/array). Empty when the key is absent or the file fails closed.
 ns_rules_get() {
@@ -164,6 +212,7 @@ ns_rules_get() {
   val="${row#*"$_NS_RULES_TAB"}"
   case "$typ" in
     s | n | b) ns_json_text "$val" ;;
+    z) printf 'null' ;;
     o | a)
       parts=""
       rest="$NS_RULES_ROWS"
@@ -183,7 +232,15 @@ ns_rules_get() {
         if [ -z "$p2" ] || [ -n "$p3" ]; then
           continue
         fi
-        case "$child_typ" in s | n | b) ;; *) continue ;; esac
+        # A field is carried whatever it holds. Skipping a shape here would drop
+        # it from the object silently, which reads as a setting the owner never
+        # wrote rather than one this reader could not render.
+        case "$child_typ" in
+          s | n | b) ;;
+          z) child_val=null ;;
+          a) child_val="$(_ns_rules_array "$2" "$p2")" ;;
+          *) continue ;;
+        esac
         if [ "$typ" = a ]; then
           [ "$first" -eq 1 ] || parts="$parts,"
           first=0
@@ -366,6 +423,47 @@ ns_rules_map_msg() {
 
 # ns_rules_facts <file> — the policy fact stream _ns_policy_load_rules consumes.
 # Status 1 when the file is not the accepted shape.
+# _ns_rules_array_json <key> <subkey> — an array of strings rebuilt as compact JSON from the
+# indexed rows the reader records. Any element that is not a string fails the whole array closed,
+# because a half-read list is worse than an absent one.
+_ns_rules_array_json() {
+  local i=0 row typ val out=""
+  while row="$(_ns_rules_row "$1" "$2" "$i")"; do
+    typ="${row%%"$_NS_RULES_TAB"*}"
+    val="${row#*"$_NS_RULES_TAB"}"
+    [ "$typ" = s ] || return 1
+    [ "$i" -eq 0 ] || out="$out,"
+    out="$out$val"
+    i=$((i + 1))
+  done
+  printf '[%s]' "$out"
+}
+
+# The owner preference blocks the resolved view carries, in the byte order it prints them.
+# One list, so the fact stream and the setting names cannot drift apart.
+NS_RULES_GROUP_KEYS='archive.automatic
+archive.layout
+archive.root
+archive.templatePath
+handoff.detail
+handoff.enabled
+handoff.language
+handoff.sections
+handoff.templatePath
+handoff.view
+recovery.launchScope
+report.enabled
+report.legacyItemReceipts
+report.progressMinutes
+report.progressMode
+report.progressTokens
+report.templatePath
+report.usage
+shift.execution
+shift.hours
+shift.toolingPolicy
+shift.verificationProfile'
+
 ns_rules_facts() {
   local k c row typ val present pol pat
   ns_rules_load "$1" || return 1
@@ -405,5 +503,24 @@ ns_rules_facts() {
     [ -n "$pat" ] || continue
     pat="$(printf '%s' "$pat" | tr '\000-\037\177' ' ')"
     printf 'p\t%s\t%s\n' "$c" "$pat"
+  done
+  # The owner's preference blocks, one fact per key, named the way the resolved view names them.
+  # These are permanent settings rather than tonight's choices, so a `g` row carries the same
+  # three fields an `r` row does and the resolver treats them identically.
+  for k in $NS_RULES_GROUP_KEYS; do
+    c="${k%%.*}"
+    row="$(_ns_rules_row "$c" "${k#*.}" "")" && present=1 || present=0
+    if [ "$present" -eq 1 ]; then
+      typ="${row%%"$_NS_RULES_TAB"*}"
+      val="${row#*"$_NS_RULES_TAB"}"
+      case "$typ" in
+        s | n | b | z) ;;
+        a) val="$(_ns_rules_array_json "$c" "${k#*.}")" || val=null ;;
+        *) val=null ;;
+      esac
+    else
+      val=null
+    fi
+    printf 'g\t%s\t%s\t%s\n' "$k" "$present" "$val"
   done
 }

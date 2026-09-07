@@ -47,9 +47,21 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'Get-NSMorningReceiptPath' "$MODULE"
 }
 
-@test "the archive moves the morning receipt and leaves artifact receipts live" {
-  grep -qF "morning-*.md" "$WIN/archive-receipts.ps1"
-  grep -qF 'Remove-Item -LiteralPath $file.FullName' "$WIN/archive-receipts.ps1"
+# A record leaves live storage because the shift is closed and its archived copy verified, never
+# because of what it is called. Both hosts share that lifecycle now.
+@test "the archive retires closed records by state, not by filename" {
+  if grep -qF "morning-*.md" "$WIN/archive-receipts.ps1"; then
+    echo "the Windows archive still decides by filename"
+    return 1
+  fi
+  grep -qF 'Test-NSSameBytes' "$WIN/archive-receipts.ps1"
+  grep -qF '$rotate = (-not $armed) -and $ended' "$WIN/archive-receipts.ps1"
+  grep -qF 'a different record is already filed under that name' "$WIN/archive-receipts.ps1"
+  # And the POSIX helper says the same thing.
+  sh="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/archive-receipts.sh"
+  grep -qF 'ROTATE=1' "$sh"
+  grep -qF 'same_bytes' "$sh"
+  grep -qF 'a different record is already filed under that name' "$sh"
 }
 
 @test "Windows morning-receipt logic covers every view and the zero-gate render" {
@@ -76,8 +88,10 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'the gate writes receipts/morning-<date>-<shiftId>.md at the end of the shift' "$LOGIC"
   grep -qF 'a receipt render failure never blocks the release' "$LOGIC"
   grep -qF 'a receipt render failure still clocks the shift out' "$LOGIC"
-  grep -qF 'the morning receipt moves rather than copies' "$LOGIC"
-  grep -qF 'artifact receipts stay live for stall progress' "$LOGIC"
+  grep -qF 'an armed shift keeps every live record, whatever it is called' "$LOGIC"
+  grep -qF 'a closed and verified record leaves live storage' "$LOGIC"
+  grep -qF 'the artifact receipt is retired on the same terms, not by its name' "$LOGIC"
+  grep -qF 'the record already filed is never overwritten' "$LOGIC"
 }
 
 @test "Windows morning-receipt logic checks exact byte formatting and bash parity" {

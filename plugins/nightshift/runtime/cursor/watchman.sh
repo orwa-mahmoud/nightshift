@@ -130,7 +130,16 @@ elif [ -f "$PIDFILE" ]; then
   fi
 fi
 printf '%s\n' "$$" >"$PIDFILE"
-trap 'rm -f "$PIDFILE"' EXIT
+# The pidfile is this loop's claim on the site, and a claim can change hands: Reset and Purge
+# remove it, a takeover replaces the pid inside it. Removing it on the way out is only right while
+# it still names this process — otherwise a watchman that has already been replaced would delete
+# the new one's claim as it exits, and the site would be left watched by a loop nothing records.
+holds_pidfile() {
+  [ -f "$PIDFILE" ] || return 1
+  [ ! -L "$PIDFILE" ] || return 1
+  [ "$(sed -n 1p "$PIDFILE" 2>/dev/null)" = "$$" ]
+}
+trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
 WATCH_CLOCK="$(date +%s)"
 
 sid()        { [ -L "$NS/.shift-session" ] && return; sed -n 1p "$NS/.shift-session" 2>/dev/null; }
@@ -208,7 +217,7 @@ ensure_worker() {
 
 # $1 = 1 resume the stored CLI worker · 2 fresh CLI worker (same id, fresh prompt)
 spawn() {
-  local worker prompt rc freshly
+  local worker prompt rc freshly scope
   freshly=0
   if ! ns_cursor_worker_present "$NS"; then
     freshly=1
@@ -224,9 +233,28 @@ spawn() {
     ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
       CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$prompt"
   else
-    ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" \
-      agent --resume="$worker" -p --trust --yolo --workspace "$PROJECT" "$prompt"
+    scope="$(ns_recovery_effective_scope "$PROJECT" cursor)"
+    case "$scope" in
+      unavailable:*)
+        log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
+        log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
+        note recovery-scope-unavailable
+        return 1
+        ;;
+    esac
+    log_line "watchman: reviving under launch scope $scope"
+    # Cursor exposes no name for a session's permissions, so there is nothing to inherit and the
+    # worker takes its own launch: the broad grant is only used when the owner asked for it by
+    # name, and a scope recorded for another host is never passed to this one.
+    if [ "$scope" != host-grant ]; then
+      ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
+        CURSOR_PROJECT_DIR "$PROJECT" \
+        agent --resume="$worker" -p --workspace "$PROJECT" "$prompt"
+    else
+      ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
+        CURSOR_PROJECT_DIR "$PROJECT" \
+        agent --resume="$worker" -p --trust --yolo --workspace "$PROJECT" "$prompt"
+    fi
   fi
   rc=$?
   if [ "$rc" -eq 3 ]; then

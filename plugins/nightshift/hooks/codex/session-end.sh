@@ -49,4 +49,7 @@ fi
 
 [ -L "$NS/.session-end" ] && rm -f "$NS/.session-end"
 printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$NS/.session-end"
+# The session is over while the shift is not: whatever passes until something works again is a
+# gap nobody spent. Recorded so the duration line can list it, never subtracted silently.
+ns_usage_pause "$NS" "the session ended and the shift was revived" || :
 exit 0

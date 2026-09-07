@@ -17,6 +17,39 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
+# The reason a block carries: the whole contract, or one line when the gate positively knows
+# nothing has moved. The decision is the shared one; only the shape around it is this host's.
+function Get-NSGateBlockReason {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Full)
+    # A contract that moved is answered in full, before any question of shortening arises: the
+    # whole point of the short line is that the model already holds the contract, and here it
+    # may not.
+    $moved = ''
+    try { $moved = Get-NSGateContractMismatch $workspace $punch } catch { $moved = '' }
+    if (-not [string]::IsNullOrEmpty($moved)) { return $moved }
+    $item = ''
+    try { $item = Get-NSGateOpenItem $punch } catch { $item = '' }
+    $stopped = if (Test-Path -LiteralPath $stop) { 'yes' } else { 'no' }
+    $deadline = if (Test-NSDeadlinePassed) { 'passed' } else { 'pending' }
+    $fp = Get-NSGateReminderFingerprint $counts.Open $counts.Ticked $item $stopped $deadline `
+        (Get-NSGateStallState $stall $stallWarn)
+    return (Get-NSGateReminderText -Workspace $workspace -Full $Full -Open $counts.Open `
+            -Ticked $counts.Ticked -Item $item -Fingerprint $fp)
+}
+
+# Get-NSGateOpenItem <punch-list> - the id of the first still-open item, for the short line.
+function Get-NSGateOpenItem {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+    $inItems = $false
+    foreach ($line in [IO.File]::ReadLines($Path)) {
+        if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $inItems = $true; continue }
+        if (-not $inItems) { continue }
+        if ($line -cmatch '^- \[ \][ \t]*\*\*(.+?)[ \t]*[\u2014-]') { return $Matches[1].Trim() }
+    }
+    return ''
+}
+
 function Write-Block {
     param([Parameter(Mandatory = $true)][string]$Reason)
     if ((Test-Path Variable:workspace) -and -not [string]::IsNullOrEmpty($workspace)) {
@@ -116,17 +149,20 @@ function Save-NSEvidenceArchive {
 
 function Save-NSMorningReceipt {
     # Best effort, never blocks the release: render the owner view to
-    # receipts/morning-<YYYY-MM-DD>-<shiftId>.md. Runs before the policy archive so the
-    # policy that ran is still in place for section 1, and before the receipts commit so a
-    # workspace with a receipts git carries the receipt in the same commit. A render failure
-    # leaves no file, no message on this hook's stdout, and no effect on the clock-out.
+    # receipts/morning-<YYYY-MM-DD>-<shiftId>.md. Runs before both archives, so the policy that
+    # ran is still in place for section 1 and the findings ledger still holds the night's
+    # evidence, and before the receipts commit so a workspace with a receipts git carries the
+    # receipt in the same commit. A render failure leaves no file, no message on this hook's
+    # stdout, and no effect on the clock-out; both archives still run.
     $originalOut = [Console]::Out
     $originalErr = [Console]::Error
     $swallow = New-Object IO.StringWriter
     try {
         [Console]::SetOut($swallow)
         [Console]::SetError($swallow)
-        $null = Write-NSMorningReceiptFile -Workspace $workspace
+        if (Test-NSHandoffEnabled $workspace) {
+            $null = Write-NSMorningReceiptFile -Workspace $workspace
+        }
     }
     catch {
     }
@@ -196,6 +232,31 @@ function Invoke-NSWhistle {
     }
 }
 
+# Every ending runs through here. The shift is over by now, so asking the model to file is a
+# request it can carry out, and that request is the one hold left in a finished shift. Asking is
+# recorded, so the next stop releases either way.
+function Complete-NSShiftAndStop {
+    param([Parameter(Mandatory = $true)][string]$Summary)
+    Complete-NSShift $Summary
+    Complete-NSShiftHold
+    Write-Release
+}
+
+# The one hold left in a finished shift: the owner asked for filing, so the model is given its
+# turn before the session terminates. Asking is recorded, so the next stop releases either way.
+function Complete-NSShiftHold {
+    $pending = Join-Path $ns '.pending-filing'
+    if ((Test-Path -LiteralPath (Join-Path $ns '.ended') -PathType Leaf) -and
+        -not (Test-Path -LiteralPath $armed) -and
+        (Test-Path -LiteralPath $pending -PathType Leaf) -and
+        -not (Test-NSReparsePoint $pending) -and
+        -not (@([IO.File]::ReadAllLines($pending)) -ccontains 'asked=1')) {
+        [IO.File]::AppendAllText($pending, "asked=1`n", $utf8)
+        Write-NSLogLine 'archive.automatic is on - holding once so this shift can be filed before the session ends'
+        Write-Block 'DO NOT STOP YET - this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete .nightshift/.pending-filing when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive.'
+    }
+}
+
 function Complete-NSShift {
     param([Parameter(Mandatory = $true)][string]$Summary)
     if (Test-Path -LiteralPath $ns -PathType Container) {
@@ -206,10 +267,29 @@ function Complete-NSShift {
     }
     Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
     Release-NSLeaseWithRetry
-    Save-NSEvidenceArchive
     Save-NSMorningReceipt
+    # The marker that says this shift ended also says which shift, and where it files. Archiving
+    # the policy below takes both away from any later Archive, and one shift's records must not
+    # end up half under its own name and half under a date.
+    $endedId = 'unknown'
+    $endedState = Get-NSShiftPolicyState $workspace
+    if ($endedState['state'] -ceq 'valid') { $endedId = [string]$endedState['policy']['shiftId'] }
+    Write-NSEndedRecord -StateDir $ns -ShiftId $endedId `
+        -ArchiveRoot ([string](Get-NSPolicyGroupSetting $workspace 'archive.root')['value']) `
+        -ArchiveLayout ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
+    if (Test-NSArchiveAutomatic $workspace) {
+        $pending = Join-Path $ns '.pending-filing'
+        if (Test-NSReparsePoint $pending) { Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue }
+        [IO.File]::WriteAllText($pending,
+            ('date=' + (Get-Date -Format 'yyyy-MM-dd') + "`nshiftId=$endedId`n"), $utf8)
+        Write-NSLogLine 'archive.automatic is on - filing is due for this shift'
+    }
     Save-NSPolicyArchive
+    Save-NSEvidenceArchive
     Save-NSReceipt $Summary
+    # An owner who asked for filing at clock-out gets a note that filing is due, not a hook that
+    # files. Deciding which records are closed reads the punch list and the work; a stop hook is
+    # the wrong place for that judgement and no session is spawned to make it.
     Invoke-NSWhistle $Summary
 }
 
@@ -345,6 +425,9 @@ if (Test-Path -LiteralPath $stop -PathType Leaf) {
             Exit-NSMutex $mutex
         }
     }
+    # The mutex is released first: the hold below may end the session, and holding a site mutex
+    # across that would leave the next stop waiting on a process that is gone.
+    Complete-NSShiftHold
     Write-Release
 }
 
@@ -386,6 +469,14 @@ $session = $owned.Session
 $mutex = Enter-NSMutex $ns '.lock.d'
 # An unlockable site is decided unlocked: the gate must answer, never queue.
 try {
+    # What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather
+    # than ticks, so it catches the marks up to them. It runs here, once this session has been shown
+    # to own the shift and holds the site's lock: a stop from a second conversation on the same
+    # workspace must leave the ledger exactly as it found it.
+    if ($counts.Readable) {
+        try { $null = Invoke-NSGateUsageSync $ns $workspace $punch $counts.Ticked }
+        catch { Write-NSLogLine "usage accounting skipped - $($_.Exception.Message)" }
+    }
     if (Test-Path -LiteralPath $stop -PathType Leaf) {
         $reason = ''
         try {
@@ -394,25 +485,21 @@ try {
         catch {
         }
         $suffix = if ([string]::IsNullOrEmpty($reason)) { '' } else { " ($reason)" }
-        Complete-NSShift ("shift ended${suffix}: $($counts.Ticked)/$($counts.Total) done")
-        Write-Release
+        Complete-NSShiftAndStop ("shift ended${suffix}: $($counts.Ticked)/$($counts.Total) done")
     }
 
     if ($counts.Readable) {
         if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) {
-            Complete-NSShift "shift done: $($counts.Ticked)/$($counts.Total)"
-            Write-Release
+            Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
         }
         if ($counts.Open -eq 0) {
-            Complete-NSShift "shift done: $($counts.Ticked)/$($counts.Total)"
-            Write-Release
+            Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
         }
     }
     if (Test-NSDeadlinePassed) {
         Write-NSLogLine "quitting time - shift ended, $($counts.Ticked)/$($counts.Total) done, items left open"
         [IO.File]::WriteAllText($stop, "deadline$([Environment]::NewLine)", $utf8)
-        Complete-NSShift "quitting time: $($counts.Ticked)/$($counts.Total) done, items left open"
-        Write-Release
+        Complete-NSShiftAndStop "quitting time: $($counts.Ticked)/$($counts.Total) done, items left open"
     }
 
     if ($stallReady) {
@@ -436,8 +523,7 @@ try {
         if ($stallMax -gt 0 -and $attempts -ge $stallMax) {
             Write-NSLogLine "stalled - auto-ended, $attempts attempts no progress, $($counts.Ticked)/$($counts.Total) done, items left open"
             [IO.File]::WriteAllText($stop, "stalled$([Environment]::NewLine)", $utf8)
-            Complete-NSShift "stalled: $($counts.Ticked)/$($counts.Total) done, $attempts attempts no progress"
-            Write-Release
+            Complete-NSShiftAndStop "stalled: $($counts.Ticked)/$($counts.Total) done, $attempts attempts no progress"
         }
         if ($stallMax -eq 0 -and $attempts -ge $stallWarn) {
             Write-NSLogLine "stall warning - $attempts attempts no progress, $($counts.Ticked)/$($counts.Total) done; keeping shift open"
@@ -459,6 +545,6 @@ finally {
 }
 
 if (-not [string]::IsNullOrEmpty($gateMessage)) {
-    Write-Block $gateMessage
+    Write-Block (Get-NSGateBlockReason $gateMessage)
 }
-Write-Block 'DO NOT STOP - the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item''s gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage - unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)'
+Write-Block (Get-NSGateBlockReason 'DO NOT STOP - the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item''s gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage - unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)')

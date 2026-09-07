@@ -5,7 +5,7 @@ ROOT="$BATS_TEST_DIRNAME/.."
 PROVISION="$ROOT/plugins/nightshift/runtime/provision.sh"
 LINKER="$ROOT/plugins/nightshift/runtime/link-workspace.sh"
 WIN="$ROOT/plugins/nightshift/runtime/windows/provision.ps1"
-ENGINE="$ROOT/plugins/nightshift/skills/nightshift/references/provisioning-engine.md"
+ENGINE="$ROOT/plugins/nightshift/skills/nightshift/references/compose/provisioning-engine.md"
 SCHEMA="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1/capability-recipe.json"
 START="$ROOT/plugins/nightshift/skills/start/SKILL.md"
 HUNT="$ROOT/plugins/nightshift/skills/hunt/SKILL.md"
@@ -217,9 +217,13 @@ recover_seed_mutated() {
 @test "Start and Hunt name the thin seatbelt" {
   grep -qF 'provision.sh' "$ENGINE"
   grep -qF 'baseline' "$ENGINE"
-  grep -qF 'provision.sh' "$START"
-  grep -qE 'provision\.sh[^`]* recover' "$START"
-  grep -qF 'provision.sh' "$HUNT"
+  # Start stopped restating the provisioning refusal when the verdict began explaining itself.
+  # What must hold is that the verdict says what it means and hands over the recovery.
+  T="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'A provisioning transaction is unrecovered' "$T"
+  grep -qE 'ns provision rollback' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qE 'ns"? provision' "$HUNT"
   grep -qF 'baseline' "$HUNT"
 }
 

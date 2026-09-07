@@ -1,7 +1,7 @@
 README="$BATS_TEST_DIRNAME/../README.md"
 DOC="$BATS_TEST_DIRNAME/../docs/shift-modes.md"
 COMMANDS="$BATS_TEST_DIRNAME/../docs/commands.md"
-MODES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 
 @test "README and commands link the shift-modes walkthroughs" {
   grep -qF '[Shift modes](docs/shift-modes.md)' "$README"
@@ -19,8 +19,8 @@ MODES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/exe
   grep -qF 'hours are required' "$DOC" || grep -qF 'Hours are required' "$DOC"
   grep -qF 'Owner-selected catalog entries' "$DOC"
   grep -qF '.nightshift/receipts/' "$DOC"
-  grep -qF 'runtime/archive-receipts.sh' "$DOC"
-  grep -qF 'runtime/windows/archive-receipts.ps1' "$DOC"
+  grep -qE 'ns"? archive-receipts' "$DOC"
+  grep -qF 'ns.ps1 archive-receipts' "$DOC"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$DOC"
   grep -qF 'artifact receipts path is not a usable directory' "$DOC"
   grep -qF 'cannot land receipts' "$DOC"

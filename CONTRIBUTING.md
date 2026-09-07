@@ -101,7 +101,7 @@ path, prerequisite knowledge, likely files, and focused verification commands.
 
 Shift catalog entries are the easiest way in: they are markdown, they touch no
 hooks, and they grow the catalog without growing the product. Read
-[`catalog-recipe.md`](plugins/nightshift/skills/nightshift/references/catalog-recipe.md) first — an
+[`catalog-recipe.md`](plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md) first — an
 entry must declare its ending, how it discovers work, its definition of done, what
 it will never do, its verification, and the stacks it supports. Every catalog PR is
 read by a human before merge: a plausible entry can still be a bad night on someone

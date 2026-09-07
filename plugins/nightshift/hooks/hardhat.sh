@@ -29,7 +29,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/hooks/shared/hardhat-core.sh
 . "$_here/shared/hardhat-core.sh"
 
-INPUT="$(cat)"
+INPUT="$(ns_read_stdin_bounded 2)"
 HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 LINK_ERROR=""
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || LINK_ERROR=1
@@ -167,11 +167,13 @@ if ns_hardhat_tool_deny_broken; then
 fi
 
 # The active agent never inspects or changes the owner's rules through any observable tool.
-# Inspect target-bearing arguments and patch headers, not unrelated prose in a payload.
-if ns_hardhat_payload_targets_rules "$TOOL" "$INPUT" "$CMD"; then
+# Inspect target-bearing arguments and patch headers, not unrelated prose in a payload: the
+# scrubbed command keeps every redirection target and drops the body of a quoted here-document,
+# which is the file being written rather than a command naming it.
+if ns_hardhat_payload_targets_rules "$TOOL" "$INPUT" "$SCRUBBED"; then
   deny "BLOCKED: the rules file is the owner's — the night neither reads nor rewrites its own rules. Park the need in .nightshift/parking-lot.md and keep working."
 fi
-if ns_hardhat_payload_targets_control "$TOOL" "$INPUT" "$CMD"; then
+if ns_hardhat_payload_targets_control "$TOOL" "$INPUT" "$SCRUBBED"; then
   deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in .nightshift/parking-lot.md and keep working."
 fi
 

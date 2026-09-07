@@ -1,6 +1,7 @@
 .DS_Store
 .claude/
-CLAUDE.md
+/CLAUDE.md
 .nightshift/
 coverage/
 .scannerwork/
+.env

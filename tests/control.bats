@@ -24,8 +24,10 @@ stop_cmd() { # <project>
 }
 
 @test "start refuses a paused shift with an expired deadline" {
-  grep -qF 'ns_control_start_refuse_reason' "$START"
-  grep -qF 'Get-NSControlStartRefuseReason' "$START"
+  grep -qF 'ns_control_start_refuse_reason' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'Get-NSControlStartRefuseReason' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qi 'deadline is cleared only if it has already passed' "$START"
 }
 

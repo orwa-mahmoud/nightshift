@@ -55,8 +55,15 @@ write_policy() { # <project> [extra JSON]
   run sp "$p" set --from-json "$p/.nightshift/shift-policy.json"
   [ "$status" -eq 0 ]
   python3 "$VALIDATOR" "$SCHEMAS/shift-policy.json" "$p/.nightshift/shift-policy.json"
+  # The remembered choices live in the shift block of the owner file, so that is what has to
+  # validate — and the whole file still does, not just the block that changed.
   sp "$p" defaults-set --verificationProfile strict --hours 8 >/dev/null
-  python3 "$VALIDATOR" "$SCHEMAS/shift-defaults.json" "$p/.nightshift/shift-defaults.json"
+  python3 "$VALIDATOR" \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json" \
+    "$p/.nightshift/rules.json"
+  [ "$(jq -r '.shift.verificationProfile' "$p/.nightshift/rules.json")" = strict ]
+  [ "$(jq -r '.shift.hours' "$p/.nightshift/rules.json")" = 8 ]
+  [ ! -f "$p/.nightshift/shift-defaults.json" ]
 }
 
 @test "get prints an empty object and exits 3 when there is no policy yet" {
@@ -73,9 +80,41 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$output" = "$(jq -caS . "$p/candidate.json")" ]
+  # Everything the candidate stated comes back exactly as it was written. What the snapshot adds
+  # is what the shift needs fixed: the scope this session runs under, and the owner preferences
+  # tonight was composed with.
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .report, .contractDigest, .itemsDigest)')" \
+    = "$(jq -caS . "$p/candidate.json")" ]
+  # And the contract as it stood at arming, so the gate can tell later whether it moved.
+  printf '%s' "$output" | jq -e '
+    (.contractDigest | type) == "string" and (.contractDigest | test("^[0-9a-f]{64}$"))
+    and (.itemsDigest | type) == "string" and (.itemsDigest | test("^[0-9a-f]{64}$"))' >/dev/null
+
+  # The scope, so a revival can reproduce it rather than reach for a broader one.
+  printf '%s' "$output" | jq -e 'has("launchScope") and has("launchProvenance")' >/dev/null
+  printf '%s' "$output" | jq -e '.launchProvenance | IN("observed", "unavailable")' >/dev/null
+  # And every preference block, complete: the owner's value where their file states one and the
+  # shipped default where it does not, so the frozen block answers on its own.
+  printf '%s' "$output" | jq -e '
+    (.report | has("enabled") and has("progressMode") and has("progressMinutes"))
+    and (.archive | has("root") and has("layout") and has("automatic"))
+    and (.handoff | has("view") and has("sections") and has("enabled"))
+    and (.recovery | has("launchScope"))
+    and (.shift | has("verificationProfile") and has("hours"))' >/dev/null
   # The file on disk stays readable for the owner who opens it.
   grep -q '"shiftId": "9f2c40ab77e51d63"' "$p/.nightshift/shift-policy.json"
+}
+
+@test "a policy that already states its launch scope is written exactly as the owner wrote it" {
+  p="$(unarmed sp-launch-explicit)"
+  policy_json | jq '.launchScope = "read-only" | .launchProvenance = "observed"' \
+    >"$p/candidate.json"
+  run sp "$p" set --from-json "$p/candidate.json"
+  [ "$status" -eq 0 ]
+  run sp "$p" get
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .report, .contractDigest, .itemsDigest)')" \
+    = "$(jq -caS . "$p/candidate.json")" ]
 }
 
 @test "set reads the policy from stdin" {
@@ -191,17 +230,21 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '
     .schemaVersion == 1
-    and (.settings | keys | length) == 14
+    and (.settings | keys | length) > 0
+    and (.settings | to_entries | all(.value | has("value") and has("source") and has("expiry")))
     and .settings["elevation.containers"] == {value: "allow", source: "one-shift", expiry: "shift"}
     and .settings.verificationLevel.source == "one-shift"
   ' >/dev/null
   [ "$output" = "$(printf '%s' "$output" | jq -caS .)" ]
+  keys="$(printf '%s' "$output" | jq -r '.settings | keys[]')"
   run sp "$p" resolve
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.schemaVersion == 1' >/dev/null
   run sp "$p" resolve --table
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 14 ]
+  # The two renderings are one view: a setting in the JSON is a line in the table and the reverse,
+  # so neither can grow a row the other does not have.
+  [ "$(printf '%s\n' "$output" | sed 's/=.*//')" = "$keys" ]
   printf '%s\n' "$output" | grep -qxF 'elevation.containers=allow (one-shift, shift)'
   printf '%s\n' "$output" | grep -qxF 'elevation.sudo=deny (rules, permanent)'
   [ "$(printf '%s\n' "$output" | LC_ALL=C sort)" = "$output" ]
@@ -219,18 +262,81 @@ write_policy() { # <project> [extra JSON]
   [ "$output" = "$jq_out" ]
 }
 
-@test "without jq and without python3 every verb says what is missing and stops" {
+# The snapshot is where tonight's deadline, verification level and elevation allowances live.
+# None of that may quietly stop applying because a host has no jq and no python3, so the same
+# bounded reader that reads the rules file reads this one too.
+@test "without jq and without python3 the answer is the same one" {
   bin="$(build_toolset_bin no-json bash sh sed tr sort grep cut awk cat mktemp uname date \
     rm mv cp ln printf head tail wc find test dirname)"
+  [ ! -e "$bin/jq" ]
+  [ ! -e "$bin/python3" ]
   p="$(unarmed sp-noparser)"
   write_policy "$p"
   for verb in get resolve defaults-get; do
+    with="$(bash "$SP" --project "$p" "$verb")" || { echo "$verb failed with a parser"; return 1; }
     run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
       bash "$SP" --project "$p" "$verb"
-    [ "$status" -eq 2 ] || { echo "$verb exited $status"; return 1; }
-    printf '%s\n' "$output" | grep -qF 'JSON parser unavailable' \
-      || { echo "$verb said: $output"; return 1; }
+    [ "$status" -eq 0 ] || { echo "$verb exited $status: $output"; return 1; }
+    [ "$output" = "$with" ] || { echo "$verb drifted without a parser"; return 1; }
   done
+}
+
+@test "a snapshot written without a parser is the one a parser reads back" {
+  bin="$(build_toolset_bin no-json-write bash sh sed tr sort grep cut awk cat mktemp uname date \
+    rm mv cp ln printf head tail wc find test dirname)"
+  p="$(unarmed sp-noparser-write)"
+  policy_json >"$BATS_TEST_TMPDIR/candidate.json"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" set --from-json "$BATS_TEST_TMPDIR/candidate.json"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -f "$p/.nightshift/shift-policy.json" ]
+  # A parser reads the file back and agrees about every field.
+  run bash "$SP" --project "$p" get
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.schemaVersion == 1' >/dev/null
+  # And the resolved view is the same whichever engine produced it.
+  with="$(bash "$SP" --project "$p" resolve --table)"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" resolve --table
+  [ "$output" = "$with" ]
+}
+
+@test "an owner choice recorded for the night still applies with no parser" {
+  bin="$(build_toolset_bin no-json-choice bash sh sed tr sort grep cut awk cat mktemp uname date \
+    rm mv cp ln printf head tail wc find test dirname)"
+  p="$(unarmed sp-noparser-choice)"
+  # A one-shift allowance and a non-default level, exactly as composition would record them.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", deadlineEpoch: 1788000000, verificationLevel: "per-item",
+          toolingPolicy: "auto-add",
+          allowances: [{category: "containers", scope: "category", provenance: "one-shift"}]}' \
+    >"$p/.nightshift/shift-policy.json"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" resolve --table
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'verificationLevel=per-item (one-shift, shift)'
+  printf '%s\n' "$output" | grep -qxF 'toolingPolicy=auto-add (one-shift, shift)'
+  printf '%s\n' "$output" | grep -qxF 'deadlineEpoch=1788000000 (one-shift, shift)'
+  printf '%s\n' "$output" | grep -qxF 'elevation.containers=allow (one-shift, shift)'
+  # The allowance the owner granted is honoured, and the ones they did not are still denied.
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash -c '. "$1"; ns_policy_allowed "$2" containers "docker run alpine"' _ "$LIB" "$p"
+  [ "$status" -eq 0 ]
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash -c '. "$1"; ns_policy_allowed "$2" daemons "systemctl start x"' _ "$LIB" "$p"
+  [ "$status" -eq 1 ]
+}
+
+@test "a host with no reader at all says what is missing and stops" {
+  bin="$(build_toolset_bin no-reader bash sh sed tr sort grep cut cat mktemp uname date \
+    rm mv cp ln printf head tail wc find test dirname)"
+  [ ! -e "$bin/awk" ]
+  p="$(unarmed sp-noreader)"
+  write_policy "$p"
+  run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$SP" --project "$p" get
+  [ "$status" -eq 2 ]
+  printf '%s\n' "$output" | grep -qF 'no JSON reader on this host'
 }
 
 @test "the helper writes nothing outside .nightshift/" {

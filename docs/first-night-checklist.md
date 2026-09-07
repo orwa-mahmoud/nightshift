@@ -3,9 +3,9 @@
 Use this once before leaving Nightshift unattended in a project.
 
 - **Start attended.** Run one small shift while watching it. Confirm the proposed gates pass, one
-  item becomes one reviewable commit in repository mode or one artifact receipt from
-  `runtime/write-receipt.sh` (native Windows: `runtime/windows/write-receipt.ps1`) in artifact
-  mode, and the shift ends only after its box is ticked.
+  item becomes one reviewable commit in repository mode, or its own section in
+  `.nightshift/shift-report.md` in artifact mode, and the shift ends only after its box is
+  ticked.
   Hunt or Quality that start immediately write the same binding probe and arm the same watchman —
   watch that first run too, even if you never invoked Start.
 - **Choose permissions deliberately.** Pre-allow only what the work needs, or explicitly accept the
@@ -34,7 +34,7 @@ Use this once before leaving Nightshift unattended in a project.
 - **Leave pushing for morning.** Keep the default local-only commits, review the diff and receipts,
   then push or open a pull request yourself. In artifact mode there is no work-target git history:
   review `$NS/receipts/` instead (Doctor names the most recently written file). Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive copies those
-  files with `runtime/archive-receipts.sh` (native Windows: `runtime/windows/archive-receipts.ps1`)
+  files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
   into the dated folder and leaves the live copies in place. Missing or empty receipts create no dated receipts folder.
 
 The emergency stop is always available from the Nightshift workspace — the folder that

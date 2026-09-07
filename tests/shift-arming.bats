@@ -93,9 +93,9 @@ sp() {
 # The contract references the Items list in prose. If those references were the literal heading,
 # scoping the count would start at the first sentence and the whole contract would read as work.
 @test "the shipped template carries the Items heading exactly once" {
-  n="$(grep -c '^## Items[[:space:]]*$' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/punch-list-template.md")"
+  n="$(grep -c '^## Items[[:space:]]*$' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/punch-list.md")"
   [ "$n" -eq 1 ]
-  m="$(grep -c '## Items' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/punch-list-template.md")"
+  m="$(grep -c '## Items' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/punch-list.md")"
   [ "$m" -eq 1 ]
 }
 
@@ -112,17 +112,20 @@ sp() {
 }
 
 @test "host detail names the native Windows JSON reader" {
-  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/start-hosts.md"
+  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/hosts/windows.md"
   grep -qF 'PSObject.Properties.Name' "$s"
   grep -qF 'ConvertFrom-Json' "$s"
 }
 
 @test "stand-down matches Windows watchman start before kill" {
-  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/start-hosts.md"
-  grep -qF 'Stand down a stale watchman' "$s"
-  grep -qF 'Test-NSRecordedProcess' "$s"
-  grep -qF 'Stop-Process -Id' "$s"
-  grep -qF 'a reused pid is not this watchman' "$s"
+  # This stopped being documentation when the preflight took it over: a page describing what the
+  # helper does can drift from it, and the behaviour is what has to hold.
+  m="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  grep -qF 'Test-NSRecordedProcess' "$m"
+  grep -qF 'Stop-Process -Id' "$m"
+  # A pid is only killed once it has been matched to the recorded start time: a reused pid is a
+  # different process.
+  grep -qF 'Test-NSRecordedProcess' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
 }
 
 # hunt and quality both start shifts without the owner typing another command. A start path that
@@ -143,7 +146,12 @@ sp() {
 }
 
 @test "status reports whether a shift is running" {
-  grep -qF '$NS/.shift-armed' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/status/SKILL.md"
+  # Status no longer reads the marker: the helper prints an `armed` fact, and says plainly when an
+  # unarmed workspace with open boxes is a to-do file rather than a shift.
+  h="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF '.shift-armed' "$h"
+  grep -qF 'fact "armed"' "$h"
+  grep -qF 'to-do file, not a shift' "$h"
 }
 
 # Start never asks, on any host, interactive or scheduled. This is the one signal both paths read

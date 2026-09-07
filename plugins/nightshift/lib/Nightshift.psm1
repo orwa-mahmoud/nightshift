@@ -598,50 +598,14 @@ function Invoke-NSEvidenceArchive {
     $destination = Join-NSPath $directory ('findings-' + $ShiftId + '.jsonl')
     Copy-Item -LiteralPath $jsonl -Destination $destination -Force
     [IO.File]::WriteAllText($jsonl, '', $script:NSUtf8NoBom)
-    Write-Output $destination
+    # The console, not the pipeline: the caller writes `exit (Invoke-NSEvidenceArchive ...)`, which
+    # would consume this path as part of the expression's value and print nothing, and the archived
+    # copy is the one thing the owner needs to be told about.
+    [Console]::Out.Write($destination + "`n")
     return 0
 }
 
-function Write-NSStatusReport {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $ns = Join-Path $Workspace '.nightshift'
-    if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
-        Write-Output 'Nightshift Status'
-        Write-Output ('Nightshift: missing at ' + $Workspace)
-        return 0
-    }
-    $punch = Join-Path $ns 'punch-list.md'
-    $open = 0; $ticked = 0
-    if (Test-NSPathEntry $punch) {
-        $counts = Get-NSBoxCounts $punch
-        $open = [int]$counts.Open
-        $ticked = [int]$counts.Ticked
-    }
-    $armed = Test-NSPathEntry (Join-Path $ns '.shift-armed')
-    $watch = 0
-    try { $watch = [int](Get-NSRule $Workspace 'watchMinutes' '') } catch { $watch = 0 }
-    Write-Output 'Nightshift Status'
-    Write-Output ('Workspace:   ' + $Workspace)
-    Write-Output ('Shift:       ' + ($(if ($armed) { 'armed' } else { 'not armed' })))
-    Write-Output ('Items:       open=' + $open + ' ticked=' + $ticked)
-    Write-Output ('evidence:    ' + (Get-NSEvidenceCountSummary $Workspace))
-    Write-Output ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
-    $activity = Get-NSStatusLastActivity $Workspace
-    Write-Output ('last activity: ' + ($(if ($activity.Length -gt 0) { $activity } else { 'none' })))
-    Write-Output ('last checkpoint: ' + (Get-NSGateCheckpointToken $Workspace))
-    Write-Output ('stall attempts: ' + (Get-NSStatusStallAttempts $Workspace))
-    Write-Output ''
-    Write-Output 'resolved policy'
-    $table = Resolve-NSPolicy -Workspace $Workspace -Table
-    if ([string]::IsNullOrEmpty($table)) { Write-Output 'none' }
-    else { Write-Output $table }
-    Write-Output ''
-    Write-Output 'preflight gaps'
-    $preflight = Get-NSPreflightNeeds $Workspace
-    if ([string]::IsNullOrEmpty($preflight)) { Write-Output 'none' }
-    else { Write-Output $preflight }
-    return 0
-}
+
 
 function Get-NSStateKind {
     param([Parameter(Mandatory = $true)][string]$Workspace)
@@ -2293,7 +2257,7 @@ function Write-NSReason {
         'unknown-wedge', 'revived', 'stand-down', 'wrong-host', 'deadline',
         'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
         'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
-        'clock-out-failed'
+        'clock-out-failed', 'recovery-scope-unavailable'
     )
     if ($Code -notin $allowed) {
         $Code = 'stand-down'
@@ -2580,6 +2544,7 @@ function Get-NSReasonLabel {
         'unreadable-rules' { return 'rules file missing or incomplete' }
         'fresh-fallback' { return 'fresh session - punch list is the handover' }
         'unsupported-state' { return 'workspace state-version is unsupported' }
+        'recovery-scope-unavailable' { return 'recorded launch scope cannot be requested on this host' }
         'process-evidence-unavailable' { return 'process evidence is unavailable' }
         'clock-out-failed' { return 'terminal clock-out failed without releasing the shift' }
         default { return 'unknown watchman outcome' }
@@ -3734,7 +3699,38 @@ $script:NSPolicyElevationPattern['daemons'] = '(^|[;&|(`]|[[:space:]]|''|")(syst
 $script:NSPolicyElevationPattern['external-services'] = '(^|[;&|(`]|[[:space:]]|''|")(gh[[:space:]]+auth[[:space:]]+login|npm[[:space:]]+login|docker[[:space:]]+login|az[[:space:]]+login|gcloud[[:space:]]+auth|aws[[:space:]]+configure)([[:space:]]|$)'
 
 # Every setting the resolved view reports, in the order the table prints them.
+# The owner preference blocks the resolved view carries, with the built-in each falls back to.
+# The same list as NS_RULES_GROUP_KEYS in lib/rules-read.sh, and the same defaults as
+# ns_policy_builtin in lib/policy.sh: both resolvers print one view.
+$script:NSPolicyGroupDefaults = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
+$script:NSPolicyGroupDefaults['archive.automatic'] = $false
+$script:NSPolicyGroupDefaults['archive.layout'] = 'date'
+$script:NSPolicyGroupDefaults['archive.root'] = 'archive'
+$script:NSPolicyGroupDefaults['archive.templatePath'] = ''
+$script:NSPolicyGroupDefaults['handoff.detail'] = 'concise'
+$script:NSPolicyGroupDefaults['handoff.enabled'] = $true
+$script:NSPolicyGroupDefaults['handoff.language'] = 'auto'
+$script:NSPolicyGroupDefaults['handoff.sections'] = @()
+$script:NSPolicyGroupDefaults['handoff.templatePath'] = ''
+$script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
+$script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
+$script:NSPolicyGroupDefaults['report.enabled'] = $true
+$script:NSPolicyGroupDefaults['report.legacyItemReceipts'] = $false
+$script:NSPolicyGroupDefaults['report.progressMinutes'] = 20
+$script:NSPolicyGroupDefaults['report.progressMode'] = 'time'
+$script:NSPolicyGroupDefaults['report.progressTokens'] = 100000
+$script:NSPolicyGroupDefaults['report.templatePath'] = ''
+$script:NSPolicyGroupDefaults['report.usage'] = 'when-available'
+$script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
+$script:NSPolicyGroupDefaults['shift.hours'] = $null
+$script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
+$script:NSPolicyGroupDefaults['shift.verificationProfile'] = 'fast'
+
 $script:NSPolicySettingNames = @(
+    'archive.automatic',
+    'archive.layout',
+    'archive.root',
+    'archive.templatePath',
     'deadlineEpoch',
     'elevation.containers',
     'elevation.daemons',
@@ -3743,8 +3739,26 @@ $script:NSPolicySettingNames = @(
     'elevation.sudo',
     'expectedEmail',
     'forbiddenCommands',
+    'handoff.detail',
+    'handoff.enabled',
+    'handoff.language',
+    'handoff.sections',
+    'handoff.templatePath',
+    'handoff.view',
     'neverCommitPatterns',
     'protectedDirs',
+    'recovery.launchScope',
+    'report.enabled',
+    'report.legacyItemReceipts',
+    'report.progressMinutes',
+    'report.progressMode',
+    'report.progressTokens',
+    'report.templatePath',
+    'report.usage',
+    'shift.execution',
+    'shift.hours',
+    'shift.toolingPolicy',
+    'shift.verificationProfile',
     'stallMax',
     'toolingPolicy',
     'verificationLevel',
@@ -3781,6 +3795,7 @@ function Get-NSPolicyPaths {
     $paths['punch'] = Join-NSPath $ns 'punch-list.md'
     $paths['orders'] = Join-NSPath $ns 'work-orders.md'
     $paths['parking'] = Join-NSPath $ns 'parking-lot.md'
+    $paths['rules'] = Join-NSPath $ns 'rules.json'
     return $paths
 }
 
@@ -3888,8 +3903,9 @@ function Test-NSShiftPolicyDocument {
         return , $errors
     }
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
-        'verificationLevel', 'toolingPolicy', 'budgets', 'allowances', 'gatesDigest',
-        'completionMode', 'selectedDebt')
+        'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
+        'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
+        'shift', 'recovery', 'handoff', 'archive', 'report')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -4134,6 +4150,42 @@ function Set-NSShiftPolicy {
         foreach ($error in $errors) { Write-NSPolicyError ('shift-policy: ' + $error) }
         return 2
     }
+    # The contract as it stands right now, so the gate can tell later whether it moved. Two
+    # digests: everything above the Items heading, which nobody may edit while a shift runs, and
+    # the items with their checkbox state flattened, so a tick is invisible and any other edit is
+    # not. A candidate that already states one is left as the owner wrote it.
+    $punch = Join-Path $paths['ns'] 'punch-list.md'
+    if (-not $document.Contains('contractDigest')) {
+        $value = ''
+        try { $value = Get-NSPunchContractDigest $punch } catch { $value = '' }
+        if (-not [string]::IsNullOrEmpty($value)) { $document['contractDigest'] = $value }
+    }
+    if (-not $document.Contains('itemsDigest')) {
+        $value = ''
+        try { $value = Get-NSPunchItemsDigest $punch } catch { $value = '' }
+        if (-not [string]::IsNullOrEmpty($value)) { $document['itemsDigest'] = $value }
+    }
+
+    # Record what this session is actually running under, so a revival can reproduce it instead of
+    # guessing. It grants nothing - it is a note of what the shift already had - and a candidate
+    # that states it already is left exactly as the owner wrote it.
+    # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
+    # here, so an edit to rules.json lands on the next shift rather than moving the ground under
+    # this one. A candidate that already states a block is left exactly as it was written.
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'report')) {
+        if ($document.Contains($block)) { continue }
+        $frozen = New-NSOrdinalMap
+        foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
+            if (-not $name.StartsWith($block + '.', [StringComparison]::Ordinal)) { continue }
+            $frozen[$name.Substring($block.Length + 1)] = (Get-NSPolicyGroupSetting $Workspace $name)['value']
+        }
+        if ($frozen.Count -gt 0) { $document[$block] = $frozen }
+    }
+    if (-not $document.Contains('launchScope')) {
+        $observed = (Get-NSLaunchObserved (Get-NSPolicyHostName)) -split "`t", 2
+        $document['launchScope'] = $observed[0]
+        $document['launchProvenance'] = $observed[1]
+    }
     Write-NSEvidenceFileAtomic -Path $paths['policy'] -Text ((ConvertTo-NSCanonicalJson $document) + "`n")
     return 0
 }
@@ -4158,15 +4210,21 @@ function Get-NSShiftDefaults {
     $paths = Get-NSPolicyPaths $Workspace
     $defaults = New-NSShiftDefaultsDocument
     $path = $paths['defaults']
-    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $defaults }
+    # Every way out of the legacy file goes through the shift block, so a workspace that has
+    # already migrated - and so has no legacy file at all - still reports what the owner chose.
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
+    }
     $document = $null
     try {
         $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
     }
     catch {
-        return $defaults
+        return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
     }
-    if (-not ($document -is [Collections.IDictionary])) { return $defaults }
+    if (-not ($document -is [Collections.IDictionary])) {
+        return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
+    }
     $storedProfile = Get-NSMapValue $document 'verificationProfile'
     if (Test-NSEvidenceEnum $storedProfile $script:NSPolicyProfiles) { $defaults['verificationProfile'] = $storedProfile }
     $tooling = Get-NSMapValue $document 'toolingPolicy'
@@ -4177,7 +4235,688 @@ function Get-NSShiftDefaults {
     if ((Test-NSJsonInteger $hours) -and [long]$hours -ge 0) { $defaults['hours'] = [long]$hours }
     $updated = Get-NSMapValue $document 'updatedAt'
     if ($updated -is [string]) { $defaults['updatedAt'] = $updated }
-    return $defaults
+    return (Merge-NSShiftBlockDefaults -Workspace $Workspace -Defaults $defaults)
+}
+
+# The shift block of the owner file is where these live now. A value stated there is the owner's
+# answer and wins over the older file, which stays readable only so a workspace that has not
+# migrated yet still reports the choice it remembers.
+function Merge-NSShiftBlockDefaults {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)]$Defaults
+    )
+    $block = Get-NSShiftBlock $Workspace
+    if ($null -eq $block) { return $Defaults }
+    $stored = Get-NSMapValue $block 'verificationProfile'
+    if (Test-NSEvidenceEnum $stored $script:NSPolicyProfiles) { $Defaults['verificationProfile'] = $stored }
+    $stored = Get-NSMapValue $block 'toolingPolicy'
+    if (Test-NSEvidenceEnum $stored $script:NSPolicyToolingPolicies) { $Defaults['toolingPolicy'] = $stored }
+    $stored = Get-NSMapValue $block 'execution'
+    if (Test-NSEvidenceEnum $stored $script:NSPolicyExecutions) { $Defaults['execution'] = $stored }
+    if ($block.Contains('hours')) {
+        $stored = Get-NSMapValue $block 'hours'
+        if ($null -eq $stored) { $Defaults['hours'] = $null }
+        elseif ((Test-NSJsonInteger $stored) -and [long]$stored -ge 0) { $Defaults['hours'] = [long]$stored }
+    }
+    return $Defaults
+}
+
+# Get-NSShiftBlock <workspace> - the shift object of the owner rules file, or $null.
+# Get-NSRecoveryLaunchScope <workspace> - the scope the owner chose, as written.
+#
+# host-grant is the documented broad grant for the host and only ever comes from the owner
+# writing it. host-default adds no permission argument and takes whatever the host gives.
+# Everything else - the shipped default, an absent key, an unreadable or malformed file - is
+# inherit-recorded-scope, which resolves against what the shift actually recorded. Falling back
+# to the broad grant because a file could not be read would hand out permissions on a parse
+# error, so it never happens here.
+function Get-NSRecoveryLaunchScope {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_LAUNCH_SCOPE)) {
+        if ($env:NIGHTSHIFT_LAUNCH_SCOPE -ceq 'host-default') { return 'host-default' }
+        if ($env:NIGHTSHIFT_LAUNCH_SCOPE -ceq 'host-grant') { return 'host-grant' }
+        return 'inherit-recorded-scope'
+    }
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'inherit-recorded-scope' }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return 'inherit-recorded-scope'
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
+    if (-not $document.Contains('recovery')) { return 'inherit-recorded-scope' }
+    $block = $document['recovery']
+    if (-not ($block -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
+    $value = Get-NSMapValue $block 'launchScope'
+    if ($value -ceq 'host-default') { return 'host-default' }
+    if ($value -ceq 'host-grant') { return 'host-grant' }
+    return 'inherit-recorded-scope'
+}
+
+# The ending marker carries what filing still needs after the live policy has moved. Clock-out
+# archives the policy, and a later Archive would then have no shift id to name a directory after
+# and no frozen archive settings to file into. One line per field, key=value; an empty marker
+# stays a valid ending.
+function Write-NSEndedRecord {
+    param(
+        [Parameter(Mandatory = $true)][string]$StateDir,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ShiftId,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveRoot,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveLayout
+    )
+    if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { return }
+    $path = Join-Path $StateDir '.ended'
+    if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`n"
+    [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding($false)))
+}
+
+# Get-NSEndedField <workspace> <key> - one field of the ending marker, or an empty string.
+function Get-NSEndedField {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+    $path = Join-Path (Join-Path $Workspace '.nightshift') '.ended'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if ($line.StartsWith($Key + '=', [StringComparison]::Ordinal)) {
+            return $line.Substring($Key.Length + 1)
+        }
+    }
+    return ''
+}
+
+# ---------------------------------------------------------------------------
+# Which form a clock-out block takes
+#
+# The POSIX half is ns_gate_reminder_* in hooks/shared/gate-core.sh. These have to decide the same
+# way on the same facts, and produce the same fingerprint text byte for byte.
+# ---------------------------------------------------------------------------
+
+# Get-NSGateReminderFingerprint <open> <ticked> <item> <stopped> <deadline> <stall>
+function Get-NSGateReminderFingerprint {
+    param($Open, $Ticked, $Item, $Stopped, $Deadline, $Stall)
+    function Fallback($v) { if ($null -eq $v -or "$v" -eq '') { return '?' } return "$v" }
+    return ('open=' + (Fallback $Open) + ' ticked=' + (Fallback $Ticked) + ' item=' + (Fallback $Item) +
+        ' stopped=' + (Fallback $Stopped) + ' deadline=' + (Fallback $Deadline) +
+        ' stall=' + (Fallback $Stall))
+}
+
+# Format-NSGateReminder <short> <item> <open> <ticked> - the owner's own wording with the facts put
+# in, by name, so dropping one keeps the rest of their sentence.
+function Format-NSGateReminder {
+    param([AllowEmptyString()][string]$Short, [AllowEmptyString()][string]$Item, $Open, $Ticked)
+    $total = [int]$Open + [int]$Ticked
+    $out = $Short.Replace('{item}', "$Item").Replace('{open}', "$Open")
+    return $out.Replace('{ticked}', "$Ticked").Replace('{total}', "$total")
+}
+
+# Get-NSGateStallState <stall-file> <warn-every> - `warned` once the stall guard has begun saying
+# so, `quiet` before that. Deliberately not the raw attempt count: that rises on every stop
+# attempt without progress, so a fingerprint carrying it could never compare equal twice.
+function Get-NSGateStallState {
+    param([AllowEmptyString()][string]$Path, $WarnEvery)
+    if ([string]::IsNullOrEmpty($Path) -or (Test-NSReparsePoint $Path) -or
+        -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return 'quiet' }
+    $lines = @([IO.File]::ReadAllLines($Path))
+    if ($lines.Count -lt 2) { return 'quiet' }
+    $n = $lines[1].Trim()
+    if ($n -notmatch '^\d+$') { return 'quiet' }
+    if ("$WarnEvery" -notmatch '^\d+$' -or [int]$WarnEvery -le 0) { return 'quiet' }
+    if ([int]$n -ge [int]$WarnEvery) { return 'warned' }
+    return 'quiet'
+}
+
+# Get-NSGateReminderText <workspace> <full> <open> <ticked> <item> <fingerprint>
+#
+# The whole contract unless the gate positively knows nothing has changed. Unknown always means
+# the full text: a missing, empty or malformed comparison file, a context reset, the first block,
+# and too many short lines in a row all send everything.
+function Get-NSGateReminderText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Full,
+        $Open, $Ticked, [AllowEmptyString()][string]$Item,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Fingerprint
+    )
+    $ns = Join-Path $Workspace '.nightshift'
+    $mode = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderMode')
+    if ($mode -cne 'changed-only') {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $reset = Join-Path $ns '.context-reset'
+    if (Test-Path -LiteralPath $reset) {
+        Remove-Item -LiteralPath $reset -Force -ErrorAction SilentlyContinue
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $file = Join-Path $ns '.clock-out-reminder'
+    if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf)) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $lines = @([IO.File]::ReadAllLines($file))
+    if ($lines.Count -lt 2 -or [string]::IsNullOrEmpty($lines[0]) -or $lines[1].Trim() -notmatch '^\d+$') {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    if ($lines[0] -cne $Fingerprint) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $count = [int]$lines[1].Trim()
+    $limit = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderLimit')
+    if ($limit -notmatch '^\d+$' -or [int]$limit -le 0) { $limit = 10 }
+    if ($count -ge [int]$limit) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    $short = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminder')
+    if ([string]::IsNullOrEmpty($short)) {
+        Save-NSGateReminder $ns $Fingerprint 0
+        return $Full
+    }
+    Save-NSGateReminder $ns $Fingerprint ($count + 1)
+    return (Format-NSGateReminder $short $Item $Open $Ticked)
+}
+
+function Save-NSGateReminder {
+    param([string]$StateDir, [AllowEmptyString()][string]$Fingerprint, [int]$Count)
+    if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { return }
+    $path = Join-Path $StateDir '.clock-out-reminder'
+    if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    [IO.File]::WriteAllText($path, "$Fingerprint`n$Count`n", (New-Object Text.UTF8Encoding($false)))
+}
+
+# One reader for a top-level rules key, going through the same frozen-policy path every other
+# setting uses.
+function Get-NSPolicyGroupSettingOrRule {
+    param([string]$Workspace, [string]$Key)
+    return (Get-NSRule $Workspace $Key '')
+}
+
+# ---------------------------------------------------------------------------
+# What a shift cost, read from the records the host already keeps
+#
+# The POSIX halves live in lib/usage.sh and lib/usage-*.awk. These have to answer identically on
+# the same fixture: same deduplication, same field names, same order, same overlap sentence.
+# ---------------------------------------------------------------------------
+
+$script:NSUsageDimensions = @('input', 'cache_write', 'cache_read', 'output', 'reasoning')
+
+# Get-NSUsageNumber <text> <key> - one number out of a line, or -1. A bounded scan rather than a
+# JSON parse, the same way the POSIX reader works.
+function Get-NSUsageNumber {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Line,
+          [Parameter(Mandatory = $true)][string]$Key)
+    $match = [Text.RegularExpressions.Regex]::Match($Line, '"' + [Text.RegularExpressions.Regex]::Escape($Key) + '":\s*(\d+)')
+    if (-not $match.Success) { return -1 }
+    return [long]$match.Groups[1].Value
+}
+
+# Get-NSUsageString <text> <key> - one string out of a line, or an empty string.
+function Get-NSUsageString {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Line,
+          [Parameter(Mandatory = $true)][string]$Key)
+    $match = [Text.RegularExpressions.Regex]::Match($Line, '"' + [Text.RegularExpressions.Regex]::Escape($Key) + '":"([^"]*)"')
+    if (-not $match.Success) { return '' }
+    return $match.Groups[1].Value
+}
+
+# Read-NSUsageClaude <transcript> [offset] - the cumulative counter from a Claude Code transcript,
+# deduplicated on request id. One response is written once per content block and each copy repeats
+# the same usage, so summing lines would overstate the total; and a line that does not end in a
+# closing brace was still being written, so nothing is taken from it.
+function Read-NSUsageClaude {
+    param([Parameter(Mandatory = $true)][string]$Path,
+          [long]$Offset = 0,
+          [AllowEmptyString()][string]$Carry = '')
+    if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $size = (Get-Item -LiteralPath $Path -Force).Length
+    # A transcript that shrank is a different file under the same name. The carried identity
+    # describes the file that is gone, so it goes with the offset.
+    if ($Offset -lt 0 -or $Offset -gt $size) { $Offset = 0; $Carry = '' }
+    $input = 0; $cachew = 0; $cacher = 0; $output = 0; $reason = 0
+    $model = ''; $responses = 0
+    # The identity of the last response counted, handed back so a response whose lines straddle two
+    # reads is counted once. `changed` spends the carry as soon as a different identity appears.
+    $last = ''; $changed = $false
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    if ($Offset -lt $size) {
+        $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $null = $stream.Seek($Offset, [IO.SeekOrigin]::Begin)
+            $reader = New-Object IO.StreamReader($stream, (New-Object Text.UTF8Encoding($false)))
+            while ($null -ne ($line = $reader.ReadLine())) {
+                if ($line.IndexOf('"usage"', [StringComparison]::Ordinal) -lt 0) { continue }
+                if (-not $line.EndsWith('}', [StringComparison]::Ordinal)) { continue }
+                $id = Get-NSUsageString $line 'requestId'
+                if ([string]::IsNullOrEmpty($id)) { $id = Get-NSUsageString $line 'id' }
+                if ([string]::IsNullOrEmpty($id)) { continue }
+                if ((-not [string]::IsNullOrEmpty($Carry)) -and $id -ceq $Carry -and -not $changed) { continue }
+                if ($id -cne $Carry) { $changed = $true }
+                if (-not $seen.Add($id)) { continue }
+                $responses++
+                $last = $id
+                $m = Get-NSUsageString $line 'model'
+                if (-not [string]::IsNullOrEmpty($m)) { $model = $m }
+                foreach ($pair in @(@('input_tokens', 'input'), @('cache_creation_input_tokens', 'cachew'),
+                        @('cache_read_input_tokens', 'cacher'), @('output_tokens', 'output'),
+                        @('thinking_tokens', 'reason'))) {
+                    $v = Get-NSUsageNumber $line $pair[0]
+                    if ($v -lt 0) { continue }
+                    switch ($pair[1]) {
+                        'input' { $input += $v }
+                        'cachew' { $cachew += $v }
+                        'cacher' { $cacher += $v }
+                        'output' { $output += $v }
+                        'reason' { $reason += $v }
+                    }
+                }
+            }
+        }
+        finally { $stream.Dispose() }
+    }
+    $fields = "input=$input,cache_write=$cachew,cache_read=$cacher,output=$output,reasoning=$reason"
+    $tail = $(if ([string]::IsNullOrEmpty($last)) { $Carry } else { $last })
+    return ($fields + "`t" + $size + "`t" + $model + "`t" + $responses + "`t" + $tail)
+}
+
+# Read-NSUsageCodex <rollout> - the running total from the rollout's last token_count line. Codex
+# counts cached input inside input and reasoning inside output; that arrangement is carried
+# through rather than corrected, and the report states it.
+function Read-NSUsageCodex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $last = ''
+    foreach ($line in [IO.File]::ReadLines($Path)) {
+        if ($line.IndexOf('"token_count"', [StringComparison]::Ordinal) -ge 0) { $last = $line }
+    }
+    if ([string]::IsNullOrEmpty($last)) { return $null }
+    $at = $last.IndexOf('"total_token_usage"', [StringComparison]::Ordinal)
+    if ($at -lt 0) { return $null }
+    $block = $last.Substring($at)
+    $input = Get-NSUsageNumber $block 'input_tokens'
+    $output = Get-NSUsageNumber $block 'output_tokens'
+    if ($input -lt 0 -or $output -lt 0) { return $null }
+    $fields = "input=$input"
+    $cachew = Get-NSUsageNumber $block 'cache_write_input_tokens'
+    if ($cachew -ge 0) { $fields += ",cache_write=$cachew" }
+    $cacher = Get-NSUsageNumber $block 'cached_input_tokens'
+    if ($cacher -ge 0) { $fields += ",cache_read=$cacher" }
+    $fields += ",output=$output"
+    $reason = Get-NSUsageNumber $block 'reasoning_output_tokens'
+    if ($reason -ge 0) { $fields += ",reasoning=$reason" }
+    return ($fields + "`t0`t" + (Get-NSUsageString $last 'model') + "`t0")
+}
+
+# Get-NSUsageOverlap <host> - the one sentence saying what is already counted inside what, in that
+# host's own arrangement. Byte-identical to ns_usage_overlap.
+function Get-NSUsageOverlap {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName)
+    switch ($HostName) {
+        'claude' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
+        'codex' { return 'Cached input is already inside the input figure, and reasoning is already inside output.' }
+        'cursor' { return 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' }
+    }
+    return 'Overlap between the dimensions is unknown for this host.'
+}
+
+# Get-NSStatePath <state-dir> <relative> - a nested path under the Nightshift state area, or
+# $null. The whole chain is checked, not just its last component: a reparse point anywhere along
+# it is what an escape actually looks like, because `linked\history` reaches outside while
+# `history` is an ordinary directory nobody would question. The twin of ns_state_path.
+function Get-NSStatePath {
+    param(
+        [Parameter(Mandatory = $true)][string]$StateDir,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Relative
+    )
+    if ([string]::IsNullOrEmpty($Relative) -or $Relative -ceq '.') { return $null }
+    if ($Relative -cmatch '^[~/\\]' -or $Relative -cmatch '^[A-Za-z]:') { return $null }
+    $path = $StateDir
+    $deepest = $StateDir
+    foreach ($component in ($Relative -split '[\\/]')) {
+        if ([string]::IsNullOrEmpty($component) -or $component.StartsWith('.', [StringComparison]::Ordinal)) {
+            return $null
+        }
+        $path = Join-Path $path $component
+        if (Test-NSReparsePoint $path) { return $null }
+        if (Test-Path -LiteralPath $path) {
+            if (-not (Test-Path -LiteralPath $path -PathType Container)) { return $null }
+            $deepest = $path
+        }
+    }
+    # Compare the real paths rather than trusting that the text of one is a prefix of the other.
+    $canonicalState = ''
+    $canonicalDeepest = ''
+    try {
+        # -Force, because .nightshift is a hidden directory and Get-Item skips those without it.
+        $canonicalState = (Get-Item -LiteralPath $StateDir -Force -ErrorAction Stop).FullName
+        $canonicalDeepest = (Get-Item -LiteralPath $deepest -Force -ErrorAction Stop).FullName
+    }
+    catch {
+        return $null
+    }
+    $canonicalState = $canonicalState.TrimEnd([IO.Path]::DirectorySeparatorChar)
+    $canonicalDeepest = $canonicalDeepest.TrimEnd([IO.Path]::DirectorySeparatorChar)
+    if ($canonicalDeepest -cne $canonicalState -and
+        -not $canonicalDeepest.StartsWith($canonicalState + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal)) {
+        return $null
+    }
+    return $path
+}
+
+# Get-NSArchiveRoot <workspace> - the directory dated archives live in, or $null when the owner's
+# name would leave the state area. The name is theirs; where it may sit is not.
+function Get-NSArchiveRoot {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $name = [string](Get-NSPolicyGroupSetting $Workspace 'archive.root')['value']
+    if ([string]::IsNullOrEmpty($name)) { $name = 'archive' }
+    # The live records are not an archive destination: filing into them would file a shift on top
+    # of the shift that is still running.
+    if ($name -ceq 'receipts' -or $name -clike 'receipts/*' -or $name -clike 'receipts\*') { return $null }
+    return (Get-NSStatePath (Join-Path $Workspace '.nightshift') $name)
+}
+
+# Get-NSArchiveDir <workspace> <date> <shift-id> - the directory one shift is filed into. The date
+# layout groups a night together; the shift layout gives each shift its own directory. The shift
+# id names the files inside either way, so two shifts on one day never collide.
+function Get-NSArchiveDir {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId = ''
+    )
+    $root = Get-NSArchiveRoot $Workspace
+    if ($null -eq $root) { return $null }
+    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
+    if ($layout -ceq 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
+        return (Join-Path $root ('shift-' + $ShiftId))
+    }
+    return (Join-Path $root $Date)
+}
+
+# Test-NSArchiveDest <path> - true when one file may be written at that exact path. A directory
+# containment check says nothing about the leaf: a reparse point left where a receipt is about to
+# land would still carry its bytes somewhere else.
+function Test-NSArchiveDest {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (Test-NSReparsePoint $Path) { return $false }
+    if (-not (Test-Path -LiteralPath $Path)) { return $true }
+    return (Test-Path -LiteralPath $Path -PathType Leaf)
+}
+
+# Test-NSArchiveAutomatic <workspace> - true when the owner asked for filing at clock-out.
+# Filing is a copy; it never implies deleting anything.
+function Test-NSArchiveAutomatic {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return ([string](Get-NSPolicyGroupSetting $Workspace 'archive.automatic')['value'] -ceq 'True')
+}
+
+# Convert-NSReportLinks <text> <archived> <back> - the report's own links, repointed for where it
+# now sits. The twin of runtime/archive-links.awk, and it must answer identically: a record that
+# travelled with the report is still a sibling, one that stayed live is reached back through the
+# archive. A scheme, a leading slash, a bare fragment and everything inside a fenced code block
+# are left exactly as written. A link that already climbs with ../ is rebased like any other: it
+# was written relative to the report's own directory, and the report has moved deeper.
+function Convert-NSReportLinks {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Archived,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Back
+    )
+    $moved = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($entry in $Archived) {
+        if (-not [string]::IsNullOrEmpty($entry)) { $null = $moved.Add($entry) }
+    }
+    $prefix = $Back
+    if (-not [string]::IsNullOrEmpty($prefix) -and -not $prefix.EndsWith('/', [StringComparison]::Ordinal)) {
+        $prefix = $prefix + '/'
+    }
+
+    $repoint = {
+        param([string]$target)
+        $hash = $target.IndexOf('#')
+        $path = $target
+        $fragment = ''
+        if ($hash -ge 0) {
+            $path = $target.Substring(0, $hash)
+            $fragment = $target.Substring($hash)
+        }
+        if ([string]::IsNullOrEmpty($path)) { return $target }
+        if ($path -cmatch '^[A-Za-z][A-Za-z0-9+.-]*:') { return $target }
+        if ($path.StartsWith('/', [StringComparison]::Ordinal)) { return $target }
+        if ($moved.Contains($path)) { return $target }
+        return ($prefix + $path + $fragment)
+    }
+
+    # No max-substrings argument: a negative one means "the last N", which would hand back the
+    # whole document as a single line and let the scanner run straight through a fenced block.
+    $lines = $Text -split "`n"
+    $out = New-Object Collections.Generic.List[string]
+    $fence = $false
+    foreach ($line in $lines) {
+        if ($line -cmatch '^[ \t]*(```|~~~)') {
+            $fence = -not $fence
+            $out.Add($line)
+            continue
+        }
+        if ($fence) {
+            $out.Add($line)
+            continue
+        }
+        $definition = [Text.RegularExpressions.Regex]::Match($line, '^([ \t]*\[[^\]]*\]:[ \t]*)([^ \t]+)(.*)$')
+        if ($definition.Success) {
+            $out.Add($definition.Groups[1].Value + (& $repoint $definition.Groups[2].Value) + $definition.Groups[3].Value)
+            continue
+        }
+        # Scanned character by character rather than substituted by pattern, so a code span or a
+        # stray bracket cannot make it rewrite something that is not a link.
+        $builder = New-Object Text.StringBuilder
+        $i = 0
+        while ($i -lt $line.Length) {
+            $ch = $line[$i]
+            if ($ch -ceq '`') {
+                $tick = $i + 1
+                while ($tick -lt $line.Length -and $line[$tick] -cne '`') { $tick++ }
+                if ($tick -ge $line.Length) { $tick = $line.Length - 1 }
+                $null = $builder.Append($line.Substring($i, $tick - $i + 1))
+                $i = $tick + 1
+                continue
+            }
+            if ($ch -ceq ']' -and ($i + 1) -lt $line.Length -and $line[$i + 1] -ceq '(') {
+                $depth = 1
+                $stop = $i + 2
+                while ($stop -lt $line.Length -and $depth -gt 0) {
+                    if ($line[$stop] -ceq '(') { $depth++ }
+                    elseif ($line[$stop] -ceq ')') { $depth-- }
+                    if ($depth -eq 0) { break }
+                    $stop++
+                }
+                if ($depth -eq 0) {
+                    $target = $line.Substring($i + 2, $stop - $i - 2)
+                    $null = $builder.Append('](' + (& $repoint $target) + ')')
+                    $i = $stop + 1
+                    continue
+                }
+            }
+            $null = $builder.Append($ch)
+            $i++
+        }
+        $out.Add($builder.ToString())
+    }
+    return ($out -join "`n")
+}
+
+# Get-NSReportPath <workspace> - the shift's own report, the twin of ns_report_path.
+function Get-NSReportPath {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return (Join-Path (Join-Path $Workspace '.nightshift') 'shift-report.md')
+}
+
+# Get-NSPolicyHostName - which host this session is, from what the host itself sets.
+function Get-NSPolicyHostName {
+    if (-not [string]::IsNullOrEmpty($env:CURSOR_PLUGIN_ROOT)) { return 'cursor' }
+    if (-not [string]::IsNullOrEmpty($env:CODEX_PROJECT_DIR) -or
+        -not [string]::IsNullOrEmpty($env:CODEX_SANDBOX) -or
+        -not [string]::IsNullOrEmpty($env:CODEX_SANDBOX_MODE)) { return 'codex' }
+    if (-not [string]::IsNullOrEmpty($env:CLAUDE_PLUGIN_ROOT) -or
+        -not [string]::IsNullOrEmpty($env:CLAUDE_PROJECT_DIR)) { return 'claude' }
+    return 'unknown'
+}
+
+# Test-NSLaunchScopeSupported <host> <scope> - true when the host can actually be asked to start
+# a session at that scope. Nothing outside this vocabulary reaches a native flag.
+function Test-NSLaunchScopeSupported {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope
+    )
+    if ($HostName -cne 'codex') { return $false }
+    return @('read-only', 'workspace-write', 'danger-full-access') -ccontains $Scope
+}
+
+# Get-NSLaunchObserved <host> - the scope this session runs under in the host's own words, and
+# whether the host actually said so, joined by a tab. Only Codex names a session's sandbox.
+# Claude Code and Cursor expose no name for one anywhere a hook can read it, so there is nothing
+# to observe and this reports that rather than inventing a label for it.
+function Get-NSLaunchObserved {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName)
+    if ($HostName -ceq 'codex') {
+        if (-not [string]::IsNullOrEmpty($env:CODEX_SANDBOX_MODE)) {
+            return ($env:CODEX_SANDBOX_MODE + "`tobserved")
+        }
+        if (-not [string]::IsNullOrEmpty($env:CODEX_SANDBOX)) {
+            return ($env:CODEX_SANDBOX + "`tobserved")
+        }
+    }
+    return "unknown`tunavailable"
+}
+
+# Get-NSRecoveryEffectiveScope <workspace> <host> - what a revival may actually ask for. The same
+# four answers as the POSIX resolver, decided the same way:
+#
+#   host-default             the owner asked for it by name. No permission argument is passed.
+#   host-grant               the owner wrote it by name.
+#   recorded:<scope>         a scope the host observed and can be asked for again.
+#   unavailable:unrecorded   nothing was recorded to inherit.
+#   unavailable:unreadable   the policy that would have recorded it cannot be read.
+#   unavailable:unsupported:<scope>
+#                            a recorded scope this host has no way to request.
+#
+# The three unavailable answers are refusals. Inheriting means reproducing what the session had;
+# where that cannot be established, falling back to the host's default is a guess about
+# permissions rather than a narrowing, so the caller refuses and says what the owner can do.
+function Get-NSRecoveryEffectiveScope {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
+    )
+    $configured = Get-NSRecoveryLaunchScope $Workspace
+    if ($configured -ceq 'host-default' -or $configured -ceq 'host-grant') { return $configured }
+    $policyState = (Get-NSShiftPolicyState $Workspace)['state']
+    if ($policyState -ceq 'absent') { return 'unavailable:unrecorded' }
+    if ($policyState -cne 'valid') { return 'unavailable:unreadable' }
+    $recorded = Get-NSPolicyLaunch -Workspace $Workspace -Field 'scope'
+    $provenance = Get-NSPolicyLaunch -Workspace $Workspace -Field 'provenance'
+    if ($provenance -ceq 'observed' -and -not [string]::IsNullOrEmpty($recorded) -and $recorded -cne 'unknown') {
+        if (Test-NSLaunchScopeSupported $HostName $recorded) { return ('recorded:' + $recorded) }
+        return ('unavailable:unsupported:' + $recorded)
+    }
+    return 'unavailable:unrecorded'
+}
+
+# Get-NSRecoveryRefusal <effective-scope> - the one sentence that says why a revival is refused.
+# Empty for a scope that is not a refusal.
+function Get-NSRecoveryRefusal {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope)
+    if ($Scope -ceq 'unavailable:unrecorded') {
+        return 'the host named no scope for the session this shift was started in, so there is nothing to inherit and no way to show a revival would be no broader'
+    }
+    if ($Scope -ceq 'unavailable:unreadable') {
+        return 'the policy that records the launch scope cannot be read, so what this shift was started under is unknown'
+    }
+    if ($Scope -clike 'unavailable:unsupported:*') {
+        return ("the shift was started under '" + $Scope.Substring('unavailable:unsupported:'.Length) + "', which this host has no way to be asked for again")
+    }
+    return ''
+}
+
+# Get-NSPolicyLaunch <workspace> <scope|provenance> - what the snapshot recorded about the scope
+# the shift was started under. A field the snapshot never carried is empty, never a guess.
+function Get-NSPolicyLaunch {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][ValidateSet('scope', 'provenance')][string]$Field
+    )
+    $path = (Get-NSPolicyPaths $Workspace)['policy']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return '' }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return ''
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return '' }
+    $key = 'launchScope'
+    if ($Field -ceq 'provenance') { $key = 'launchProvenance' }
+    $value = Get-NSMapValue $document $key
+    if ($value -is [string]) { return $value }
+    return ''
+}
+
+function Get-NSShiftBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return $null
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return $null }
+    if (-not $document.Contains('shift')) { return $null }
+    $block = $document['shift']
+    if (-not ($block -is [Collections.IDictionary])) { return $null }
+    return $block
+}
+
+# Set-NSShiftBlock <workspace> <block> — the owner file with its shift block replaced. Every other
+# key survives, including one a later version added.
+function Set-NSShiftBlock {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)]$Block
+    )
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        Write-NSPolicyError ('shift-policy: no owner rules file at ' + $path + ' - run setup first')
+        return 2
+    }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        Write-NSPolicyError ('shift-policy: ' + $path + ' is not readable')
+        return 2
+    }
+    if (-not ($document -is [Collections.IDictionary])) {
+        Write-NSPolicyError ('shift-policy: ' + $path + ' is not a JSON object')
+        return 2
+    }
+    $document['shift'] = $Block
+    Write-NSEvidenceFileAtomic -Path $path -Text ((ConvertTo-NSCanonicalJson $document) + "`n")
+    return 0
 }
 
 function Set-NSShiftDefaults {
@@ -4231,9 +4970,17 @@ function Set-NSShiftDefaults {
             return 2
         }
     }
-    $document['updatedAt'] = Get-NSPolicyNow
-    Write-NSEvidenceFileAtomic -Path $paths['defaults'] -Text ((ConvertTo-NSCanonicalJson $document) + "`n")
-    return 0
+    # These live in the shift block of the owner file, which is the one place a preference is
+    # kept. Writing them anywhere else would leave the value that is read and the value that was
+    # set in two files that can disagree.
+    $block = New-NSOrdinalMap
+    $block['verificationProfile'] = $document['verificationProfile']
+    $block['hours'] = $document['hours']
+    $block['execution'] = $document['execution']
+    $block['toolingPolicy'] = $document['toolingPolicy']
+    $rc = Set-NSShiftBlock -Workspace $Workspace -Block $block
+    if ($rc -eq 0) { Write-NSPolicyOut (Get-NSPolicyPaths $Workspace)['rules'] }
+    return $rc
 }
 
 # ---------------------------------------------------------------------------
@@ -4269,6 +5016,54 @@ function Get-NSPolicyRuleSetting {
     $value = Get-NSRule $Workspace $Key ''
     if (Test-NSRuleKeyPresent $Workspace $Key) { return (New-NSPolicySetting $value 'rules' 'permanent') }
     return (New-NSPolicySetting $value 'built-in' '-')
+}
+
+# A dotted preference like report.progressMode: the owner's block if they wrote the key, the
+# shipped default otherwise. Presence decides the source, so a key written as an empty string is
+# still an owner decision.
+function Get-NSPolicyGroupSetting {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    $fallback = $script:NSPolicyGroupDefaults[$Name]
+    $block = $Name.Substring(0, $Name.IndexOf('.'))
+    $key = $Name.Substring($Name.IndexOf('.') + 1)
+
+    # A preference tonight's policy froze is what tonight uses, whatever the owner has since
+    # written, and the view says so. A snapshot that cannot be read answers with the shipped
+    # default rather than the mutable file it was supposed to fix; one written before this
+    # feature carries no block, and then the owner's file is the source.
+    $state = Get-NSShiftPolicyState $Workspace
+    if ($state['state'] -ceq 'malformed') { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    if ($state['state'] -ceq 'absent') {
+        # The shift ended and its policy was archived. Where it files is still its own decision,
+        # so the ending marker answers for the two settings a later Archive needs.
+        $ended = ''
+        if ($Name -ceq 'archive.root') { $ended = Get-NSEndedField $Workspace 'archiveRoot' }
+        elseif ($Name -ceq 'archive.layout') { $ended = Get-NSEndedField $Workspace 'archiveLayout' }
+        if (-not [string]::IsNullOrEmpty($ended)) { return (New-NSPolicySetting $ended 'one-shift' 'shift') }
+    }
+    if ($state['state'] -ceq 'valid') {
+        $frozen = Get-NSMapValue $state['policy'] $block
+        if ($frozen -is [Collections.IDictionary] -and $frozen.Contains($key)) {
+            $value = $frozen[$key]
+            if ($null -ne $value) {
+                if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'one-shift' 'shift') }
+                return (New-NSPolicySetting $value 'one-shift' 'shift')
+            }
+        }
+    }
+
+    $rules = Get-NSRulesObject $Workspace
+    if ($null -eq $rules) { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    $property = $rules.PSObject.Properties[$block]
+    if ($null -eq $property -or $null -eq $property.Value) { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    $inner = $property.Value.PSObject.Properties[$key]
+    if ($null -eq $inner) { return (New-NSPolicySetting $fallback 'built-in' '-') }
+    $value = $inner.Value
+    if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'rules' 'permanent') }
+    return (New-NSPolicySetting $value 'rules' 'permanent')
 }
 
 function Get-NSPolicyRuleInteger {
@@ -4316,9 +5111,14 @@ function Get-NSPolicyResolution {
     if ($null -ne $policy) {
         $settings['verificationLevel'] = New-NSPolicySetting $policy['verificationLevel'] 'one-shift' 'shift'
         $settings['toolingPolicy'] = New-NSPolicySetting $policy['toolingPolicy'] 'one-shift' 'shift'
+        # Once a policy exists, the deadline is tonight's either way: a number is the clock, and
+        # null says this shift runs without one. Neither is the absence of a decision.
         $deadline = Get-NSMapValue $policy 'deadlineEpoch'
         if (Test-NSJsonInteger $deadline) {
             $settings['deadlineEpoch'] = New-NSPolicySetting ([long]$deadline) 'one-shift' 'shift'
+        }
+        else {
+            $settings['deadlineEpoch'] = New-NSPolicySetting $null 'one-shift' 'shift'
         }
     }
 
@@ -4350,6 +5150,9 @@ function Get-NSPolicyResolution {
     $settings['expectedEmail'] = Get-NSPolicyRuleSetting $Workspace 'expectedEmail'
     $settings['stallMax'] = Get-NSPolicyRuleInteger $Workspace 'stallMax' 0
     $settings['watchMinutes'] = Get-NSPolicyRuleInteger $Workspace 'watchMinutes' 10
+    foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
+        $settings[$name] = Get-NSPolicyGroupSetting $Workspace $name
+    }
 
     $resolution = New-NSOrdinalMap
     $resolution['settings'] = $settings
@@ -4394,10 +5197,14 @@ function Get-NSPolicyExactPlanAllowances {
     return , $plans
 }
 
+# One rendering for both resolvers: the table is read by people and by the model, so a boolean,
+# a null and a list have to look the same whichever half printed them.
 function Format-NSPolicyValue {
     param($Value)
-    if ($null -eq $Value) { return 'none' }
+    if ($null -eq $Value) { return 'null' }
+    if ($Value -is [bool]) { if ($Value) { return 'true' } else { return 'false' } }
     if (Test-NSJsonInteger $Value) { return ([long]$Value).ToString([Globalization.CultureInfo]::InvariantCulture) }
+    if ($Value -is [Array]) { return (ConvertTo-NSCanonicalJson $Value -Compact) }
     return [string]$Value
 }
 
@@ -4820,6 +5627,117 @@ function Invoke-NSShiftPolicyArchive {
     return 0
 }
 
+# The migration onto the one-file shape. Same contract as the POSIX helper: refuse while armed,
+# name an invalid value by its key, validate the destination before replacing one that loads,
+# keep a lossless backup, do nothing the second time, and refuse a disagreeing pair by naming
+# both sides rather than choosing one.
+function Invoke-NSPolicyMigrate {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [switch]$DryRun
+    )
+    $paths = Get-NSPolicyPaths $Workspace
+    $rules = $paths['rules']
+    $legacy = $paths['defaults']
+    if (-not (Test-Path -LiteralPath $rules -PathType Leaf)) {
+        Write-NSPolicyError ('shift-policy: no owner rules file at ' + $rules + ' - run setup first')
+        return 3
+    }
+    if (Test-NSPolicyArmed $Workspace) {
+        Write-NSPolicyError 'shift-policy: refuse to migrate while the shift is armed - stop the shift, migrate, then start again'
+        return 4
+    }
+    $canonical = Get-NSShiftBlock $Workspace
+    $stated = $null
+    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+        try {
+            $stated = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($legacy, $script:NSUtf8NoBom))
+        }
+        catch {
+            $stated = $null
+        }
+        if (-not ($stated -is [Collections.IDictionary])) { $stated = $null }
+    }
+
+    $fields = @(
+        @{ Name = 'verificationProfile'; Enum = $script:NSPolicyProfiles },
+        @{ Name = 'hours'; Enum = $null },
+        @{ Name = 'execution'; Enum = $script:NSPolicyExecutions },
+        @{ Name = 'toolingPolicy'; Enum = $script:NSPolicyToolingPolicies })
+
+    $block = New-NSOrdinalMap
+    $conflicts = New-Object Collections.Generic.List[string]
+    foreach ($field in $fields) {
+        $name = [string]$field['Name']
+        $here = $null
+        $there = $null
+        $haveHere = ($null -ne $canonical) -and $canonical.Contains($name)
+        $haveThere = ($null -ne $stated) -and $stated.Contains($name)
+        if ($haveHere) { $here = $canonical[$name] }
+        if ($haveThere) { $there = $stated[$name] }
+        foreach ($pair in @(@($haveHere, $here), @($haveThere, $there))) {
+            if (-not $pair[0]) { continue }
+            if (-not (Test-NSMigrateValue $name $pair[1] $field['Enum'])) { return 2 }
+        }
+        if ($haveHere -and $haveThere -and ((ConvertTo-NSCanonicalJson @{ v = $here }) -cne (ConvertTo-NSCanonicalJson @{ v = $there }))) {
+            $conflicts.Add('  shift.' + $name + ': this file says ' + (ConvertTo-NSJsonScalar $here) +
+                ', the legacy file says ' + (ConvertTo-NSJsonScalar $there))
+            continue
+        }
+        if ($haveHere) { $block[$name] = $here }
+        elseif ($haveThere) { $block[$name] = $there }
+    }
+
+    if ($conflicts.Count -gt 0) {
+        Write-NSPolicyError 'shift-policy: refused: two explicit values disagree, and nothing here decides between them'
+        foreach ($line in $conflicts) { Write-NSPolicyError $line }
+        Write-NSPolicyError ('shift-policy: keep one value, delete the other from ' + $legacy + ', then run migrate again')
+        return 2
+    }
+
+    if (-not (Test-Path -LiteralPath $legacy -PathType Leaf) -and $null -ne $canonical) {
+        Write-NSPolicyOut ('no-op: every remembered choice already lives in ' + $rules)
+        return 0
+    }
+
+    Write-NSPolicyOut ('migrating into ' + $rules + ':')
+    Write-NSPolicyOut ('  shift = ' + (ConvertTo-NSCanonicalJson $block))
+    if ($DryRun) {
+        Write-NSPolicyOut 'dry run: nothing was written'
+        return 0
+    }
+    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+        Copy-Item -LiteralPath $legacy -Destination ($legacy + '.bak') -Force
+    }
+    $rc = Set-NSShiftBlock -Workspace $Workspace -Block $block
+    if ($rc -ne 0) { return $rc }
+    Remove-Item -LiteralPath $legacy -Force -ErrorAction SilentlyContinue
+    Write-NSPolicyOut $rules
+    return 0
+}
+
+# The bounded reader answers about shape; this answers about the value, which is what a migration
+# must know before it carries one forward.
+function Test-NSMigrateValue {
+    param([string]$Name, $Value, $Enum)
+    if ($Name -ceq 'hours') {
+        if ($null -eq $Value) { return $true }
+        if ((Test-NSJsonInteger $Value) -and [long]$Value -ge 0) { return $true }
+        Write-NSPolicyError 'shift-policy: shift.hours: must be a whole number of hours or null'
+        return $false
+    }
+    if (Test-NSEvidenceEnum $Value $Enum) { return $true }
+    Write-NSPolicyError ('shift-policy: shift.' + $Name + ': must be ' + ($Enum -join ', '))
+    return $false
+}
+
+function ConvertTo-NSJsonScalar {
+    param($Value)
+    if ($null -eq $Value) { return 'null' }
+    if ($Value -is [string]) { return ('"' + $Value + '"') }
+    return ([string]$Value)
+}
+
 function Invoke-NSShiftPolicyCommand {
     param(
         [AllowEmptyString()][string]$Project = '',
@@ -4831,7 +5749,8 @@ function Invoke-NSShiftPolicyCommand {
         [AllowEmptyString()][string]$Execution = '',
         [AllowEmptyString()][string]$Date = '',
         [switch]$Json,
-        [switch]$Table
+        [switch]$Table,
+        [switch]$DryRun
     )
     if ([string]::IsNullOrEmpty($Project) -or [string]::IsNullOrEmpty($Command)) { return (Write-NSShiftPolicyUsage) }
     $workspace = Get-NSAbsolutePath $Project
@@ -4877,6 +5796,9 @@ function Invoke-NSShiftPolicyCommand {
             }
             Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Json)
             return 0
+        }
+        'migrate' {
+            return (Invoke-NSPolicyMigrate -Workspace $workspace -DryRun:$DryRun)
         }
         'archive' {
             $day = $Date
@@ -5815,6 +6737,7 @@ $script:NSCompareRowFormat = '| {0} | {1} | {2} | {3} | {4} |'
 $script:NSCompareEmptyLocator = 'empty'
 $script:NSCompareBaselineFormat = 'Baseline: {0} {1} {2} {1} `{3}`'
 $script:NSCompareModeFormat = 'Mode: {0}'
+$script:NSCompareSourceFormat = 'Source: {0}'
 $script:NSCompareResultFormat = 'Result: {0}'
 $script:NSComparePassLabel = 'pass'
 $script:NSCompareFailLabel = 'fail'
@@ -5995,13 +6918,16 @@ function Get-NSBaselineSeenMap {
     return $map
 }
 
+# A receipt records what the run knew. A work target that could not be resolved is not the
+# workspace by default — naming it would put a path on the morning page that nothing ever chose —
+# so this answers with nothing and the field is left out, which is what the POSIX renderer does.
 function Get-NSEvidenceWorkTarget {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     try {
         return (Resolve-NSWorkTarget $Workspace)
     }
     catch {
-        return (Get-NSAbsolutePath $Workspace)
+        return ''
     }
 }
 
@@ -6143,6 +7069,20 @@ function Get-NSEvidenceComparison {
         if (-not ($other -ceq $environment)) { $environmentMoved = $true }
     }
 
+    # The source speaks for itself, above every row. A baseline of this source taken at or after
+    # the chosen one that reports itself unavailable means the tool did not run: nothing it did
+    # not say can be read as an improvement, and an empty answer is not a clean one.
+    $sourceUnavailable = $false
+    $reached = $false
+    foreach ($record in (Get-NSCompareBaselineRecords $all)) {
+        if ((Get-NSRecordText $record 'id') -ceq $Baseline) { $reached = $true }
+        if (-not $reached) { continue }
+        if (-not ((Get-NSCompareBaselineSourceClass $record) -ceq $sourceClass)) { continue }
+        if ($script:NSCompareUnavailableStatuses -ccontains (Get-NSRecordText $record 'status')) {
+            $sourceUnavailable = $true
+        }
+    }
+
     $current = New-NSOrdinalMap
     foreach ($record in @($all)) {
         if ($script:NSEvidenceLifecycleDomains -ccontains (Get-NSRecordText $record 'domain')) { continue }
@@ -6195,6 +7135,7 @@ function Get-NSEvidenceComparison {
             $row['locator'] = ''
             $row['sources'] = Get-NSUniqueSorted ([string[]]@($command))
         }
+        if ($sourceUnavailable) { $row['class'] = 'unavailable' }
         $rows.Add($row)
     }
 
@@ -6223,6 +7164,7 @@ function Get-NSEvidenceComparison {
         if ($outstanding.Count -gt 0) { $pass = $false }
     }
     else {
+        if ($sourceUnavailable -or $environmentMoved) { $pass = $false }
         foreach ($row in $rows) {
             if ($script:NSCompareOutstandingClasses -ccontains ([string]$row['class'])) { $pass = $false }
         }
@@ -6240,6 +7182,7 @@ function Get-NSEvidenceComparison {
     $document['pass'] = $pass
     $document['rows'] = $rows.ToArray()
     $document['schemaVersion'] = 1
+    $document['sourceStatus'] = if ($sourceUnavailable -or $environmentMoved) { 'unavailable' } else { 'available' }
     $document['summary'] = $summary
 
     $result = New-NSOrdinalMap
@@ -6268,7 +7211,7 @@ function Get-NSCompareRowLine {
 }
 
 function Get-NSCompareTableLines {
-    param($Rows)
+    param($Rows, [string]$SourceStatus = 'available')
     $lines = New-Object Collections.Generic.List[string]
     $lines.Add($script:NSCompareTableHeader)
     $lines.Add($script:NSCompareTableRule)
@@ -6278,8 +7221,12 @@ function Get-NSCompareTableLines {
         $count++
     }
     if ($count -eq 0) {
+        # An empty table says why it is empty: a source that ran and found nothing is not the
+        # same answer as a source that never ran.
         $dash = Get-NSEvidenceDash
-        $lines.Add(($script:NSCompareRowFormat -f $dash, $dash, $dash, $dash, $script:NSCompareEmptyLocator))
+        $why = $script:NSCompareEmptyLocator
+        if ($SourceStatus -ceq 'unavailable') { $why = 'unavailable' }
+        $lines.Add(($script:NSCompareRowFormat -f $dash, $dash, $dash, $dash, $why))
     }
     return , $lines.ToArray()
 }
@@ -6317,9 +7264,10 @@ function Get-NSCompareMarkdown {
     $lines.Add(($script:NSCompareBaselineFormat -f ([string]$document['baseline']), $dash, `
         ([string]$Comparison['sourceClass']), ([string]$Comparison['command'])))
     $lines.Add(($script:NSCompareModeFormat -f ([string]$document['mode'])))
+    $lines.Add(($script:NSCompareSourceFormat -f ([string]$document['sourceStatus'])))
     $lines.Add(($script:NSCompareResultFormat -f (Get-NSCompareResultLabel $document['pass'])))
     $lines.Add('')
-    foreach ($line in (Get-NSCompareTableLines $document['rows'])) { $lines.Add($line) }
+    foreach ($line in (Get-NSCompareTableLines $document['rows'] ([string]$document['sourceStatus']))) { $lines.Add($line) }
     $lines.Add('')
     $summary = $document['summary']
     foreach ($line in (Get-NSCompareSummaryLines $summary $summary['selectedDebtOutstanding'])) { $lines.Add($line) }
@@ -6360,8 +7308,51 @@ function Get-NSMorningReceiptPath {
 function Write-NSMorningReceiptFile {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $path = Get-NSMorningReceiptPath $Workspace
-    $null = Get-NSMorningReceipt -Workspace $Workspace -View owner -Out $path
+    # A page already standing for this shift is the one the owner asked for - a custom handoff
+    # the model wrote, or the page a duplicate stop event already rendered. Neither is replaced.
+    if (Test-Path -LiteralPath $path) { return $path }
+    $view = Get-NSHandoffView $Workspace
+    $null = Get-NSMorningReceipt -Workspace $Workspace -View $view -Out $path
     return $path
+}
+
+# Get-NSHandoffView <workspace> - the reader the owner configured, or owner.
+function Get-NSHandoffView {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $block = Get-NSHandoffBlock $Workspace
+    if ($null -ne $block) {
+        $view = Get-NSMapValue $block 'view'
+        if ($script:NSReceiptViewNames -ccontains $view) { return [string]$view }
+    }
+    return 'owner'
+}
+
+# Test-NSHandoffEnabled <workspace> - false only when the owner turned the page off. A shift that
+# writes no page still keeps every factual record it made.
+function Test-NSHandoffEnabled {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $block = Get-NSHandoffBlock $Workspace
+    if ($null -eq $block) { return $true }
+    if (-not $block.Contains('enabled')) { return $true }
+    return ([bool]$block['enabled'])
+}
+
+function Get-NSHandoffBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = (Get-NSPolicyPaths $Workspace)['rules']
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch {
+        return $null
+    }
+    if (-not ($document -is [Collections.IDictionary])) { return $null }
+    if (-not $document.Contains('handoff')) { return $null }
+    $block = $document['handoff']
+    if (-not ($block -is [Collections.IDictionary])) { return $null }
+    return $block
 }
 
 # The last stamp the shift log carries, as the log wrote it. The log is stamped
@@ -6556,9 +7547,16 @@ function Get-NSReceiptBuilding {
     if (-not (Test-Path -LiteralPath $OpportunityMap -PathType Leaf)) { return $result }
     $title = ''
     $building = $false
+    # The shipped map carries its entry catalogue inside an HTML comment, and that example is
+    # `Status: building`. Reading it makes a freshly scaffolded workspace look like a cycle in
+    # progress and puts the template's own placeholders on the owner's morning page.
+    $comment = $false
     try {
         foreach ($line in [IO.File]::ReadLines($OpportunityMap)) {
             $text = [string]$line
+            if ($text -clike '*<!--*') { $comment = $true }
+            if ($text -clike '*-->*') { $comment = $false; continue }
+            if ($comment) { continue }
             $head = [regex]::Match($text, '^###\s+(.*)$')
             if ($head.Success) {
                 if ($building -and $result['title'].Length -gt 0) { break }
@@ -6749,7 +7747,9 @@ function Get-NSReceiptShiftLines {
     if ($artifactView -or (([string]$Context['workMode']) -ceq 'artifact')) {
         Add-NSReceiptField $lines 'receipts' ([string](Get-NSReceiptsCount ([string]$Context['workspace'])))
     }
-    else {
+    elseif (([string]$Context['workTarget']).Length -gt 0) {
+        # No work target, no commit count: there is no repository to count in, and a zero would
+        # read as a night that committed nothing.
         Add-NSReceiptField $lines 'commits' (Get-NSReceiptCommitCount -Target ([string]$Context['workTarget']) -Since ([string]$Context['started']))
     }
     $profile = [string]$Context['profile']
@@ -7052,5 +8052,1192 @@ function Invoke-NSMorningReceiptCommand {
     }
 }
 
+
+
+# ---------------------------------------------------------------- the punch list, one item at a
+# time
+#
+# Twin of lib/state.sh's ns_punch_* readers and runtime/punch-list.sh. Same bounded rule for what
+# an item is, same two digests, same bytes out.
+
+# Get-NSPunchLines <punch-list> - the file as lines, with line endings already flattened. Both
+# digests are a property of what the list says, never of how the filesystem it sits on ends a line.
+function Get-NSPunchLines {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return @() }
+    $text = ''
+    try { $text = [IO.File]::ReadAllText($PunchList, $script:NSUtf8NoBom) }
+    catch { return @() }
+    if ([string]::IsNullOrEmpty($text)) { return @() }
+    # A file ending in a newline splits to a trailing empty element; awk never prints that line.
+    $text = $text -creplace '(\r\n|\n|\r)\z', ''
+    return @($text -split "`r`n|`n|`r")
+}
+
+# Get-NSPunchGates <punch-list> - the gates block verbatim, heading included. Never digested and
+# always reprinted: the owner may change it mid-shift by design.
+function Get-NSPunchGates {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in (Get-NSPunchLines $PunchList)) {
+        if ($line -cmatch '^## Gates[ \t]*$') { $on = $true; $out.Add($line); continue }
+        if (-not $on) { continue }
+        if ($line -cmatch '^## ') { break }
+        $out.Add($line)
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchItemsSection <punch-list> - the lines under `## Items`, up to the next top-level
+# heading.
+function Get-NSPunchItemsSection {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in (Get-NSPunchLines $PunchList)) {
+        if (-not $on) {
+            if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $on = $true }
+            continue
+        }
+        if ($line -cmatch '^## ') { break }
+        $out.Add($line)
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchItem <punch-list> <id> - one item with its sub-bullets, exactly as written. An empty
+# id means the first still-open one. An item runs from its checkbox line to the next unindented
+# line, so fenced code and nested lists inside it come through whole.
+function Get-NSPunchItem {
+    param(
+        [Parameter(Mandatory = $true)][string]$PunchList,
+        [AllowEmptyString()][string]$Id = ''
+    )
+    $out = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        if (-not $on) {
+            if ($line -cnotmatch '^- \[[ xX]\]') { continue }
+            if ([string]::IsNullOrEmpty($Id)) {
+                if ($line -cnotmatch '^- \[ \]') { continue }
+            }
+            else {
+                $found = $line
+                $found = $found -creplace '^- \[[ xX]\][ \t]*\*\*', ''
+                $found = $found -creplace '[ \t]*[—-].*$', ''
+                $found = $found -creplace '\*\*.*$', ''
+                if ($found.TrimEnd() -cne $Id) { continue }
+            }
+            $on = $true
+            $out.Add($line)
+            continue
+        }
+        # Anything unindented and non-empty is the next item, a heading, or a note: this one ended.
+        if (($line -cnotmatch '^[ \t]') -and ($line -cne '')) { break }
+        $out.Add($line)
+    }
+    # The blank lines between this item and the next belong to neither.
+    while (($out.Count -gt 0) -and ($out[$out.Count - 1].Trim() -ceq '')) {
+        $out.RemoveAt($out.Count - 1)
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchContract <punch-list> - everything above `## Items` except the gates block: the shift
+# contract the owner wrote and nobody may edit while a shift is armed.
+function Get-NSPunchContract {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    $skip = $false
+    foreach ($line in (Get-NSPunchLines $PunchList)) {
+        if ($line -cmatch '^## Items[ \t]*$') { break }
+        if ($line -cmatch '^## Gates[ \t]*$') { $skip = $true; continue }
+        if ($skip -and ($line -cmatch '^## ')) { $skip = $false }
+        if ($skip) { continue }
+        $out.Add($line)
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchItemsNormalised <punch-list> - every item line and sub-bullet with the checkbox state
+# flattened, so ticking a box changes nothing and rewording, deleting or inserting an item changes
+# everything.
+function Get-NSPunchItemsNormalised {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        $out.Add(($line -creplace '^- \[[xX]\]', '- [ ]'))
+    }
+    return $out.ToArray()
+}
+
+# Get-NSPunchDigest <lines> - the same 64 lowercase hex characters the POSIX side produces: each
+# line terminated with a single newline, UTF-8, no byte-order mark.
+function Get-NSPunchDigest {
+    param([AllowNull()][AllowEmptyCollection()][string[]]$Lines)
+    $text = ''
+    if (($null -ne $Lines) -and ($Lines.Count -gt 0)) {
+        $text = [string]::Join("`n", $Lines) + "`n"
+    }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha.ComputeHash((New-Object Text.UTF8Encoding($false)).GetBytes($text))
+    }
+    finally {
+        $sha.Dispose()
+    }
+    return ([BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
+}
+
+function Get-NSPunchContractDigest {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    return (Get-NSPunchDigest (Get-NSPunchContract $PunchList))
+}
+
+function Get-NSPunchItemsDigest {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    return (Get-NSPunchDigest (Get-NSPunchItemsNormalised $PunchList))
+}
+
+# Get-NSGateContractMismatch <workspace> <punch-list> - the sentence to block with, or ''.
+#
+# A file's own editor cannot be its watchman. The gate records the digests at arming, so it checks
+# rather than asking the model to notice. A snapshot written without these fields compares nothing,
+# which is not the same as a mismatch.
+function Get-NSGateContractMismatch {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$PunchList
+    )
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
+    $which = ''
+    $policy = Get-NSShiftPolicy $Workspace
+    if ($null -eq $policy) { return '' }
+    $recorded = Get-NSMapValue $policy 'contractDigest'
+    if (-not [string]::IsNullOrEmpty($recorded)) {
+        if ((Get-NSPunchContractDigest $PunchList) -cne $recorded) { $which = 'contract' }
+    }
+    if ([string]::IsNullOrEmpty($which)) {
+        $recorded = Get-NSMapValue $policy 'itemsDigest'
+        if (-not [string]::IsNullOrEmpty($recorded)) {
+            if ((Get-NSPunchItemsDigest $PunchList) -cne $recorded) { $which = 'items' }
+        }
+    }
+    if ([string]::IsNullOrEmpty($which)) { return '' }
+
+    if ($which -ceq 'contract') {
+        return ('DO NOT STOP - the shift contract above the Items heading in ' + $PunchList +
+            ' has changed since this shift armed. It is the agreement the night is working to,' +
+            ' and it is not editable while a shift runs. Restore the punch list from the' +
+            ' work-target history or the receipts, or end the shift and let the owner edit the' +
+            ' contract with nothing armed. Nothing else about the shift has changed: your ticks' +
+            ' stand.')
+    }
+    return ('DO NOT STOP - an item in ' + $PunchList + ' has been reworded, removed or inserted' +
+        ' since this shift armed. Ticking a box is invisible to this check, so something other' +
+        ' than a tick changed. Restore the punch list from the work-target history or the' +
+        ' receipts, or end the shift and let the owner edit the list with nothing armed. Nothing' +
+        ' else about the shift has changed: your ticks stand.')
+}
+
+# Invoke-NSPunchListCommand - runtime/windows/punch-list.ps1's whole body.
+function Invoke-NSPunchListCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Project,
+        [Parameter(Mandatory = $true)][ValidateSet('next', 'item')][string]$Verb,
+        [AllowEmptyString()][string]$Id = ''
+    )
+    $workspace = Resolve-NSWorkspaceRoot $Project
+    if ([string]::IsNullOrEmpty($workspace)) {
+        [Console]::Error.WriteLine('punch-list: invalid .nightshift-link - Nightshift will not guess a workspace')
+        return 2
+    }
+    $punch = Join-Path (Join-Path $workspace '.nightshift') 'punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) {
+        [Console]::Error.WriteLine('punch-list: no punch list at ' + $punch)
+        return 2
+    }
+
+    foreach ($line in @(Get-NSPunchGates $punch)) { [Console]::Out.WriteLine($line) }
+
+    $body = @(Get-NSPunchItem -PunchList $punch -Id $(if ($Verb -ceq 'next') { '' } else { $Id }))
+    if ($body.Count -eq 0) {
+        if ($Verb -ceq 'item') {
+            [Console]::Error.WriteLine('punch-list: no item ' + $Id + ' in ' + $punch)
+            return 2
+        }
+        [Console]::Out.WriteLine('none')
+        return 0
+    }
+    foreach ($line in $body) { [Console]::Out.WriteLine($line) }
+    return 0
+}
+
+
+# ---------------------------------------------------------------- preflight explanations
+#
+# Twin of ns_explain_* in lib/state.sh, reading the same lib/preflight-explain.txt. One copy of the
+# text, so the two hosts cannot word the same verdict differently.
+
+# Get-NSExplainLines <file> <kind> <topic> - the records of that kind for that topic, in file
+# order. A topic with no record returns nothing, which is not an error.
+function Get-NSExplainLines {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Kind,
+        [Parameter(Mandatory = $true)][string]$Topic
+    )
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $out.ToArray() }
+    $text = ''
+    try { $text = [IO.File]::ReadAllText($Path, $script:NSUtf8NoBom) }
+    catch { return $out.ToArray() }
+    foreach ($line in ($text -split "`r`n|`n|`r")) {
+        if ($line.StartsWith('#')) { continue }
+        $fields = $line -split "`t"
+        if ($fields.Count -lt 3) { continue }
+        if (($fields[0] -ceq $Kind) -and ($fields[1] -ceq $Topic)) { $out.Add($fields[2]) }
+    }
+    return $out.ToArray()
+}
+
+# Get-NSExplainTopic <verdict text> - the first word, which every verdict leads with.
+function Get-NSExplainTopic {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
+    $space = $Text.IndexOf(' ')
+    if ($space -lt 0) { return $Text }
+    return $Text.Substring(0, $space)
+}
+
+# ---------------------------------------------------------------- the facts Status renders
+#
+# Twins of the ns_status_* readers in lib/state.sh. Bounded readers, never Markdown parsers: each
+# takes the first line of an entry under the shape the file already has, so a file the owner has
+# written prose into still yields facts rather than a guess.
+
+function Get-NSStatusFileLines {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    if (Test-NSReparsePoint $Path) { return @() }
+    try { return @([IO.File]::ReadAllText($Path, $script:NSUtf8NoBom) -split "`r`n|`n|`r") }
+    catch { return @() }
+}
+
+# Get-NSStatusOpenTitle <punch-list> - the title of the first still-open item, without its checkbox
+# or bold markers.
+function Get-NSStatusOpenTitle {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $item = @(Get-NSPunchItem -PunchList $PunchList -Id '')
+    if ($item.Count -eq 0) { return '' }
+    $title = $item[0]
+    $title = $title -creplace '^- \[[ xX]\][ \t]*', ''
+    $title = $title -creplace '\*\*', ''
+    return $title.TrimEnd()
+}
+
+# Get-NSStatusEntryTitles <file> <max> - the first line of each top-level `- ` entry. Used for the
+# parking lot and the snag log, which share that shape.
+function Get-NSStatusEntryTitles {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$Max = 0
+    )
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if (-not $line.StartsWith('- ')) { continue }
+        $entry = ($line.Substring(2) -creplace '\*\*', '').TrimEnd()
+        if ($entry.Length -gt 100) { $entry = $entry.Substring(0, 97) + '...' }
+        $out.Add($entry)
+    }
+    if (($Max -gt 0) -and ($out.Count -gt $Max)) {
+        return @($out.GetRange($out.Count - $Max, $Max).ToArray())
+    }
+    return $out.ToArray()
+}
+
+function Get-NSStatusEntryCount {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $n = 0
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line.StartsWith('- ')) { $n++ }
+    }
+    return $n
+}
+
+# The map ships as a commented-out template. A template heading is not an opportunity.
+function Get-NSStatusOpportunityCounts {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $counts = @{ candidate = 0; building = 0; shipped = 0; rejected = 0; parked = 0 }
+    $comment = $false
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line -clike '*<!--*') { $comment = $true }
+        if ($line -clike '*-->*') { $comment = $false; continue }
+        if ($comment) { continue }
+        if ($line -cmatch '^[ \t]*Status:[ \t]*([A-Za-z]+)') {
+            $state = $Matches[1].ToLowerInvariant()
+            if ($counts.ContainsKey($state)) { $counts[$state]++ }
+        }
+    }
+    return ('candidate=' + $counts.candidate + ' building=' + $counts.building +
+        ' shipped=' + $counts.shipped + ' rejected=' + $counts.rejected +
+        ' parked=' + $counts.parked)
+}
+
+# Get-NSStatusBuilding <map> - `<key>`tab`<value>` for the building entry's title, phase, next
+# action and remaining verification. Nothing when none is building.
+function Get-NSStatusBuilding {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    $comment = $false
+    $title = ''
+    $building = $false
+    $found = $false
+    foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line -clike '*<!--*') { $comment = $true }
+        if ($line -clike '*-->*') { $comment = $false; continue }
+        if ($comment) { continue }
+        if ($line -cmatch '^#{2,}[ \t]') {
+            if ($found) { break }
+            $title = ($line -creplace '^#+[ \t]*', '') -creplace '\*\*', ''
+            $building = $false
+            continue
+        }
+        if ($line -cmatch '^[ \t]*Status:[ \t]*building') {
+            $building = $true
+            $found = $true
+            $out.Add("title`t" + $title)
+            continue
+        }
+        if ($building -and ($line -cmatch '^[ \t]*(Phase|Next|Verify remaining):[ \t]*(.*)$')) {
+            $out.Add($Matches[1].ToLowerInvariant() + "`t" + $Matches[2])
+        }
+    }
+    return $out.ToArray()
+}
+
+function Get-NSStatusStopReason {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $lines = @(Get-NSStatusFileLines (Join-Path $NightshiftDir 'STOP'))
+    if ($lines.Count -eq 0) { return '' }
+    return $lines[0]
+}
+
+# A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
+# would catch an item summary that merely mentions one.
+function Get-NSStatusTransitions {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [int]$Max = 3
+    )
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($raw in (Get-NSStatusFileLines $Path)) {
+        $line = $raw -creplace '^-[ \t]*', ''
+        $line = $line -creplace '^[0-9][0-9:TZ .-]*', ''
+        $line = $line -creplace "^$([char]0x00B7)[ \t]*", ''
+        if ($line -inotmatch '^(watchman|the watchman|shift started|shift ended|the session ended|revived|host change)') { continue }
+        if ($line.Length -gt 120) { $line = $line.Substring(0, 117) + '...' }
+        $out.Add($line)
+    }
+    if (($Max -gt 0) -and ($out.Count -gt $Max)) {
+        return @($out.GetRange($out.Count - $Max, $Max).ToArray())
+    }
+    return $out.ToArray()
+}
+
+# The clock is read once, here, rather than in the skill.
+function Get-NSStatusDeadlineRemaining {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $lines = @(Get-NSStatusFileLines (Join-Path $NightshiftDir 'deadline'))
+    if ($lines.Count -eq 0) { return '' }
+    $epoch = 0
+    if (-not [long]::TryParse($lines[0].Trim(), [ref]$epoch)) { return '' }
+    $now = Get-NSUnixTime
+    if ($epoch -le $now) { return 'passed' }
+    $left = $epoch - $now
+    return ('{0}h{1:00}m remaining' -f [int][math]::Floor($left / 3600), [int][math]::Floor(($left % 3600) / 60))
+}
+# Write-NSStatusReport <workspace> - the same facts the POSIX helper prints, in the same order.
+#
+# It writes to the console rather than the pipeline. A function that both prints and returns cannot
+# be called as an expression: `exit (Write-NSStatusReport ...)` captured every line as the value of
+# that expression and the owner saw an empty response with exit 0.
+function Write-NSStatusReport {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+
+    function Say { param([AllowEmptyString()][string]$Text) [Console]::Out.Write($Text + "`n") }
+    # A fact whose value is empty is still a fact: `none` is an answer, a blank line is not.
+    function Fact {
+        param([string]$Label, [AllowEmptyString()][AllowNull()][string]$Value)
+        if ([string]::IsNullOrEmpty($Value)) { $Value = 'none' }
+        Say ($Label + ' ' + $Value)
+    }
+
+    $ns = Join-Path $Workspace '.nightshift'
+    if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
+        Say 'Nightshift Status'
+        Say ('Nightshift: missing at ' + $Workspace)
+        return 0
+    }
+    $punch = Join-Path $ns 'punch-list.md'
+    $open = 0; $ticked = 0
+    if (Test-NSPathEntry $punch) {
+        $counts = Get-NSBoxCounts $punch
+        $open = [int]$counts.Open
+        $ticked = [int]$counts.Ticked
+    }
+    $armed = Test-NSPathEntry (Join-Path $ns '.shift-armed')
+    $watch = 0
+    try { $watch = [int](Get-NSRule $Workspace 'watchMinutes' '') } catch { $watch = 0 }
+
+    Say 'Nightshift Status'
+    Say ('Workspace:   ' + $Workspace)
+    Say ('Shift:       ' + ($(if ($armed) { 'armed' } else { 'not armed' })))
+    Say ('Items:       open=' + $open + ' ticked=' + $ticked)
+    Say ('evidence:    ' + (Get-NSEvidenceCountSummary $Workspace))
+    Say ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
+    $activity = Get-NSStatusLastActivity $Workspace
+    Say ('last activity: ' + ($(if ($activity.Length -gt 0) { $activity } else { 'none' })))
+    Say ('last checkpoint: ' + (Get-NSGateCheckpointToken $Workspace))
+    Say ('stall attempts: ' + (Get-NSStatusStallAttempts $Workspace))
+
+    # The facts, derived here rather than by hand in the skill. One per line, stable label first,
+    # so the model renders them rather than recomputing them.
+    Say ''
+    Say 'facts'
+    $schema = ''
+    try { $schema = [string](Get-NSStateVersion $Workspace) } catch { $schema = '' }
+    Fact 'schema' $schema
+
+    # Unarmed with work still open is the one state that reads wrong at a glance: a punch list
+    # nobody is holding is a to-do file, and only Start makes it a shift.
+    if ((-not $armed) -and ($open -gt 0)) {
+        Fact 'armed' 'no (the punch list is a to-do file, not a shift; Start begins one)'
+    }
+    else {
+        Fact 'armed' $(if ($armed) { 'yes' } else { 'no' })
+    }
+
+    Fact 'open item' (Get-NSStatusOpenTitle $punch)
+    Fact 'parked' ([string](Get-NSStatusEntryCount (Join-Path $ns 'parking-lot.md')))
+    foreach ($entry in (Get-NSStatusEntryTitles (Join-Path $ns 'parking-lot.md') 0)) {
+        if (-not [string]::IsNullOrEmpty($entry)) { Fact 'parked entry' $entry }
+    }
+
+    $drafts = 0
+    try { $drafts = [int](Get-NSOpenDrafts (Join-Path $ns 'drafting-table.md')) } catch { $drafts = 0 }
+    $orders = 0
+    try { $orders = [int](Get-NSOpenBoxesInFile (Join-Path $ns 'work-orders.md')) } catch { $orders = 0 }
+    # With approved work open, staged work is informational and nothing else: Start works the punch
+    # list exactly as the owner left it.
+    $staged = 'drafts=' + $drafts + ' orders=' + $orders
+    if ($open -gt 0) { $staged += ' (informational while items are open)' }
+    Fact 'staged' $staged
+
+    foreach ($entry in (Get-NSStatusEntryTitles (Join-Path $ns 'snag-log.md') 3)) {
+        if (-not [string]::IsNullOrEmpty($entry)) { Fact 'snag' $entry }
+    }
+
+    Fact 'opportunities' (Get-NSStatusOpportunityCounts (Join-Path $ns 'opportunity-map.md'))
+    foreach ($row in (Get-NSStatusBuilding (Join-Path $ns 'opportunity-map.md'))) {
+        $fields = $row -split "`t", 2
+        if ($fields.Count -eq 2) { Fact ('building ' + $fields[0]) $fields[1] }
+    }
+
+    $deadline = Get-NSStatusDeadlineRemaining $ns
+    if ([string]::IsNullOrEmpty($deadline)) { $deadline = 'none (finite list)' }
+    Fact 'deadline' $deadline
+
+    if (Test-NSPathEntry (Join-Path $ns 'STOP')) {
+        $reason = Get-NSStatusStopReason $ns
+        Fact 'stop' ('present' + $(if ([string]::IsNullOrEmpty($reason)) { '' } else { ' (' + $reason + ')' }))
+    }
+    else {
+        Fact 'stop' 'absent'
+    }
+    Fact 'session' $(if (Test-NSPathEntry (Join-Path $ns '.shift-session')) { 'bound' } else { 'none' })
+    $lease = 'absent or unowned'
+    try { if ($null -ne (Read-NSLease $ns)) { $lease = 'held' } } catch { $lease = 'absent or unowned' }
+    Fact 'lease' $lease
+
+    if (Test-NSPathEntry (Join-Path $ns '.watch-reason')) {
+        $code = ''
+        try { $code = [string](Get-NSReasonCode $ns) } catch { $code = '' }
+        if ([string]::IsNullOrEmpty($code)) { Fact 'watch reason' 'none' }
+        else { Fact 'watch reason' ($code + ' (' + (Get-NSReasonLabel $code) + ')') }
+    }
+    else {
+        Fact 'watch reason' 'none'
+    }
+
+    $mode = ''
+    try { $mode = [string](Get-NSWorkMode $Workspace) } catch { $mode = '' }
+    Fact 'work mode' $mode
+    $target = ''
+    try { $target = [string](Resolve-NSWorkTarget $Workspace) } catch { $target = '' }
+    Fact 'work target' $target
+    $receipts = 0
+    try { $receipts = [int](Get-NSReceiptsCount $Workspace) } catch { $receipts = 0 }
+    Fact 'artifact receipts' ([string]$receipts)
+    $latest = ''
+    try { $latest = [string](Get-NSLatestReceipt $Workspace) } catch { $latest = '' }
+    Fact 'latest artifact receipt' $latest
+    # A path that is not a directory answers 0 the same way an empty one does, so it is reported
+    # for what it is and the empty-ticks warning is not also raised for it.
+    if ($mode -ceq 'artifact') {
+        $recvPath = Get-NSReceiptsDir $Workspace
+        $present = Test-Path -LiteralPath $recvPath
+        $usable = $false
+        try { $usable = [bool](Test-NSUsableReceiptsDir $Workspace) } catch { $usable = $false }
+        if ($present -and (-not $usable)) {
+            Fact 'receipts warning' 'the artifact receipts path is not a usable directory'
+        }
+        elseif (($ticked -gt 0) -and ($receipts -eq 0)) {
+            # Ticked boxes with nothing to review are not completion anybody can check.
+            Fact 'receipts warning' 'ticked items with no receipts are not reviewable completion'
+        }
+    }
+
+    foreach ($entry in (Get-NSStatusTransitions (Join-Path $ns 'shift-log.md') 3)) {
+        if (-not [string]::IsNullOrEmpty($entry)) { Fact 'transition' $entry }
+    }
+
+    Say ''
+    Say 'resolved policy'
+    $table = Resolve-NSPolicy -Workspace $Workspace -Table
+    if ([string]::IsNullOrEmpty($table)) { Say 'none' } else { Say $table }
+    Say ''
+    Say 'preflight gaps'
+    $preflight = Get-NSPreflightNeeds $Workspace
+    if ([string]::IsNullOrEmpty($preflight)) { Say 'none' } else { Say $preflight }
+    return 0
+}
+
+
+# ---------------------------------------------------------------------------------------------
+# Usage accounting, the native Windows half.
+#
+# The module carried the three readers and nothing that used them: no record, no marks, no total,
+# no report line. A shift on native Windows measured its transcripts and then threw the numbers
+# away. These are the POSIX functions in `lib/usage.sh` and `hooks/shared/gate-core.sh`, ported to
+# the same file formats — `segments.tsv` and `marks.tsv`, tab separated, the same columns in the
+# same order, including the eighth that carries the last response identity across a read.
+#
+# The formats are the contract between the two halves, not an implementation detail: a shift that
+# starts on one host and is revived on the other reads what the first one wrote.
+
+$script:NSUsageDimensions = @('input', 'cache_write', 'cache_read', 'output', 'reasoning')
+
+function Get-NSUsageDir { param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return (Join-Path $NightshiftDir 'usage') }
+function Get-NSUsageStatePath { param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return (Join-Path (Get-NSUsageDir $NightshiftDir) 'segments.tsv') }
+function Get-NSUsageMarksPath { param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return (Join-Path (Get-NSUsageDir $NightshiftDir) 'marks.tsv') }
+
+# Get-NSFileSize <path> - bytes, or -1 when the file cannot be measured.
+function Get-NSFileSize {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    try { return (Get-Item -LiteralPath $Path -Force).Length } catch { return -1 }
+}
+
+# Get-NSUsageField <fields> <dimension> - one dimension out of a snapshot, or ''.
+function Get-NSUsageField {
+    param([AllowEmptyString()][string]$Fields, [Parameter(Mandatory = $true)][string]$Key)
+    if ([string]::IsNullOrEmpty($Fields)) { return '' }
+    foreach ($pair in $Fields.Split(',')) {
+        $i = $pair.IndexOf('=')
+        if ($i -lt 1) { continue }
+        if ($pair.Substring(0, $i) -ceq $Key) { return $pair.Substring($i + 1) }
+    }
+    return ''
+}
+
+# A dimension the host did not report is absent, never zero: zero is a measurement.
+function Add-NSUsageFields {
+    param([AllowEmptyString()][string]$A, [AllowEmptyString()][string]$B)
+    $out = @()
+    foreach ($dim in $script:NSUsageDimensions) {
+        $x = Get-NSUsageField $A $dim
+        $y = Get-NSUsageField $B $dim
+        if ([string]::IsNullOrEmpty($x) -and [string]::IsNullOrEmpty($y)) { continue }
+        if ([string]::IsNullOrEmpty($x)) { $x = '0' }
+        if ([string]::IsNullOrEmpty($y)) { $y = '0' }
+        $out += ($dim + '=' + ([long]$x + [long]$y))
+    }
+    return ($out -join ',')
+}
+
+function Get-NSUsageSubtract {
+    param([AllowEmptyString()][string]$A, [AllowEmptyString()][string]$B)
+    $out = @()
+    foreach ($dim in $script:NSUsageDimensions) {
+        $x = Get-NSUsageField $A $dim
+        if ([string]::IsNullOrEmpty($x)) { continue }
+        $y = Get-NSUsageField $B $dim
+        if ([string]::IsNullOrEmpty($y)) { $y = '0' }
+        $one = [long]$x - [long]$y
+        if ($one -lt 0) { $one = 0 }
+        $out += ($dim + '=' + $one)
+    }
+    return ($out -join ',')
+}
+
+# One segment line, seven fields plus the carried identity. Written whole so a partial line can
+# never be read back as a complete one.
+function Write-NSUsageSegments {
+    # `[string[]]` refuses an empty array under a Mandatory binding, and an empty segment file is an
+    # ordinary state — a workspace that has armed and read nothing yet.
+    param([Parameter(Mandatory = $true)][string]$Path,
+          [AllowEmptyCollection()][string[]]$Lines = @())
+    $text = ''
+    foreach ($l in $Lines) { if (-not [string]::IsNullOrEmpty($l)) { $text += $l + "`n" } }
+    [IO.File]::WriteAllText($Path, $text, (New-Object Text.UTF8Encoding($false)))
+}
+
+function Get-NSUsageSegmentLines {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    return @([IO.File]::ReadAllLines($Path) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+}
+
+function Get-NSUsageSegField {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Id,
+          [Parameter(Mandatory = $true)][int]$Column)
+    foreach ($line in (Get-NSUsageSegmentLines $Path)) {
+        $parts = $line.Split("`t")
+        if ($parts.Length -ge 1 -and $parts[0] -ceq $Id) {
+            if ($parts.Length -ge $Column) { return $parts[$Column - 1] }
+            return ''
+        }
+    }
+    return ''
+}
+
+# Get-NSUsageOffset / Get-NSUsageCarry - where reading got to, and the response it stopped inside.
+function Get-NSUsageOffset {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Id)
+    $v = Get-NSUsageSegField (Get-NSUsageStatePath $NightshiftDir) $Id 5
+    if ([string]::IsNullOrEmpty($v)) { return 0 }
+    $n = 0
+    if ([long]::TryParse($v, [ref]$n)) { return $n }
+    return 0
+}
+
+function Get-NSUsageCarry {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Id)
+    return (Get-NSUsageSegField (Get-NSUsageStatePath $NightshiftDir) $Id 8)
+}
+
+# Write-NSUsageRecord - one reading folded into the segment for that transcript.
+#
+# Claude's reader hands back only what was appended since the last offset, so its segment total
+# accumulates; the other hosts hand back a counter already cumulative for the session. A stored
+# current that is higher than the new reading means a different counter, and the segment is split
+# rather than pretending one ran backwards.
+function Write-NSUsageRecord {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$HostName,
+          [AllowEmptyString()][string]$Model,
+          [Parameter(Mandatory = $true)][string]$Source,
+          [Parameter(Mandatory = $true)][string]$Id,
+          [AllowEmptyString()][string]$Offset,
+          [AllowEmptyString()][string]$Fields,
+          [AllowEmptyString()][string]$Carry = '')
+    if ([string]::IsNullOrEmpty($Id) -or [string]::IsNullOrEmpty($Fields)) { return $false }
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageStatePath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-NSUsageSegments $file @() }
+    $newId = $Id
+    if ($Source -ceq 'transcript-incremental') {
+        $seg = Get-NSUsageSegField $file $Id 7
+        $Fields = Add-NSUsageFields $seg $Fields
+    }
+    $start = Get-NSUsageSegField $file $Id 6
+    $cur = Get-NSUsageSegField $file $Id 7
+    if ((-not [string]::IsNullOrEmpty($cur)) -and
+        ((Get-NSUsageSubtract $cur $Fields) -cne (Get-NSUsageSubtract $cur $cur))) {
+        $newId = $Id + '#' + (Get-NSUnixTime)
+        $start = ''
+        $cur = ''
+    }
+    if ([string]::IsNullOrEmpty($start)) {
+        if ($Source -ceq 'transcript-incremental') { $start = Get-NSUsageSubtract $Fields $Fields }
+        else { $start = $Fields }
+    }
+    $row = @($newId, $HostName, $Model, $Source, $Offset, $start, $Fields, $Carry) -join "`t"
+    $out = @()
+    $found = $false
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        if ($line.Split("`t")[0] -ceq $newId) { $out += $row; $found = $true }
+        else { $out += $line }
+    }
+    if (-not $found) { $out += $row }
+    Write-NSUsageSegments $file $out
+    return $true
+}
+
+# Get-NSUsageTotal - what the shift has spent: each segment's advance past where it was first seen.
+function Get-NSUsageTotal {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageStatePath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $total = ''
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        $p = $line.Split("`t")
+        if ($p.Length -lt 7) { continue }
+        if ([string]::IsNullOrEmpty($p[6])) { continue }
+        $total = Add-NSUsageFields $total (Get-NSUsageSubtract $p[6] $p[5])
+    }
+    return $total
+}
+
+# The baseline segment: this transcript starts here, with nothing charged for what came before.
+function Write-NSUsageSegBaseline {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$Id, [Parameter(Mandatory = $true)][long]$Offset)
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageStatePath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-NSUsageSegments $file @() }
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        if ($line.Split("`t")[0] -ceq $Id) { return $false }
+    }
+    $row = @($Id, 'claude', '', 'transcript-incremental', $Offset, '', '', '') -join "`t"
+    $lines = @(Get-NSUsageSegmentLines $file) + $row
+    Write-NSUsageSegments $file $lines
+    return $true
+}
+
+function Get-NSUsageMarkCount {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return 0 }
+    return @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) }).Count
+}
+
+function Write-NSUsageMark {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    $total = Get-NSUsageTotal $NightshiftDir
+    $line = @((Get-NSUnixTime), $Label, $total) -join "`t"
+    [IO.File]::AppendAllText($file, $line + "`n", (New-Object Text.UTF8Encoding($false)))
+    return $true
+}
+
+# The shift's own start, written before the first reading so it stands at zero, and the transcripts
+# stamped where they already stood so what preceded the shift is not billed to its first item.
+function Write-NSUsageMarkArm {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [string[]]$Transcripts = @())
+    $dir = Get-NSUsageDir $NightshiftDir
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if ((Test-Path -LiteralPath $file -PathType Leaf) -and (Get-NSFileSize $file) -gt 0) { return $true }
+    foreach ($t in $Transcripts) {
+        if ([string]::IsNullOrEmpty($t)) { continue }
+        if (-not (Test-Path -LiteralPath $t -PathType Leaf)) { continue }
+        $size = Get-NSFileSize $t
+        if ($size -lt 0) { continue }
+        $null = Write-NSUsageSegBaseline $NightshiftDir $t $size
+    }
+    [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`tarm`t`n"),
+        (New-Object Text.UTF8Encoding($false)))
+    return $true
+}
+
+function Get-NSUsageSinceLastMark {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    $now = Get-NSUnixTime
+    if ((-not (Test-Path -LiteralPath $file -PathType Leaf)) -or (Get-NSFileSize $file) -le 0) {
+        return ("`t0")
+    }
+    $lines = @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    $last = $lines[$lines.Length - 1].Split("`t")
+    $epoch = $now
+    $n = 0
+    if ($last.Length -ge 1 -and [long]::TryParse($last[0], [ref]$n)) { $epoch = $n }
+    $prevTotal = $(if ($last.Length -ge 3) { $last[2] } else { '' })
+    return ((Get-NSUsageSubtract (Get-NSUsageTotal $NightshiftDir) $prevTotal) + "`t" + ($now - $epoch))
+}
+
+function Get-NSUsageLastItem {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $lines = @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    if ($lines.Length -lt 2) { return '' }
+    $prev = $lines[$lines.Length - 2].Split("`t")
+    $last = $lines[$lines.Length - 1].Split("`t")
+    $pt = $(if ($prev.Length -ge 3) { $prev[2] } else { '' })
+    $lt = $(if ($last.Length -ge 3) { $last[2] } else { '' })
+    $seconds = [long]$last[0] - [long]$prev[0]
+    $label = $(if ($last.Length -ge 2) { $last[1] } else { '' })
+    return ((Get-NSUsageSubtract $lt $pt) + "`t" + $seconds + "`t" + $label)
+}
+
+function Get-NSUsageDuration {
+    param([AllowEmptyString()][string]$Seconds)
+    $s = 0
+    if ([string]::IsNullOrEmpty($Seconds) -or -not [long]::TryParse($Seconds, [ref]$s)) {
+        return 'unavailable'
+    }
+    if ($s -lt 60) { return ("{0}s" -f $s) }
+    if ($s -lt 3600) { return ("{0}m {1}s" -f [math]::Floor($s / 60), ($s % 60)) }
+    return ("{0}h {1}m" -f [math]::Floor($s / 3600), [math]::Floor(($s % 3600) / 60))
+}
+
+function Get-NSUsageSegmentCount {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return @(Get-NSUsageSegmentLines (Get-NSUsageStatePath $NightshiftDir)).Count
+}
+
+function Get-NSUsageHosts {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $lines = @(Get-NSUsageSegmentLines (Get-NSUsageStatePath $NightshiftDir))
+    if ($lines.Count -eq 0) { return '' }
+    $seen = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($line in $lines) {
+        $p = $line.Split("`t")
+        $pair = (($(if ($p.Length -ge 2) { $p[1] } else { '' })) + ' ' +
+                 ($(if ($p.Length -ge 3) { $p[2] } else { '' })))
+        if (-not $seen.Contains($pair)) { $null = $seen.Add($pair) }
+    }
+    $sorted = @($seen | Sort-Object -CaseSensitive)
+    return ($sorted -join '; ')
+}
+
+# What each host's figures overlap. Stated rather than corrected: a total that quietly reconciled
+# three different accounting conventions would be a number nobody could check against their bill.
+function Get-NSUsageOverlapText {
+    param([AllowEmptyString()][string]$HostName)
+    switch ($HostName) {
+        'claude' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
+        'codex' { return 'Cached input is already inside the input figure, and reasoning is already inside output.' }
+        'cursor' { return 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' }
+        default { return 'Overlap between the dimensions is unknown for this host.' }
+    }
+}
+
+function Get-NSUsageLine {
+    param([AllowEmptyString()][string]$Fields, [AllowEmptyString()][string]$Sources,
+          [AllowEmptyString()][string]$Segments, [AllowEmptyString()][string]$HostName = '')
+    $parts = @()
+    foreach ($dim in $script:NSUsageDimensions) {
+        $v = Get-NSUsageField $Fields $dim
+        if ([string]::IsNullOrEmpty($v)) { $v = 'unavailable' }
+        $parts += ($dim + ' ' + $v)
+    }
+    return ('Usage: ' + ($parts -join ' · ') + "`n  Source: " + $Sources +
+            ', cumulative counters, segments ' + $Segments + "`n  " +
+            (Get-NSUsageOverlapText $HostName))
+}
+
+# The item's own section of the report, written where the model already writes its account of the
+# work. An existing section is spliced into rather than appended after, so one item is one section.
+function Add-NSGateUsageAppend {
+    param([Parameter(Mandatory = $true)][string]$Report, [Parameter(Mandatory = $true)][string]$Label,
+          [Parameter(Mandatory = $true)][string]$Usage, [Parameter(Mandatory = $true)][string]$Duration)
+    if ([string]::IsNullOrEmpty($Report)) { return }
+    if (Test-NSReparsePoint $Report) { return }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    if (-not (Test-Path -LiteralPath $Report -PathType Leaf)) {
+        [IO.File]::WriteAllText($Report, "# Shift report`n", $utf8)
+    }
+    $heading = '### ' + $Label
+    $lines = @([IO.File]::ReadAllLines($Report))
+    if ($lines -ccontains $heading) {
+        $out = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($l in $lines) {
+            $null = $out.Add($l)
+            if ($l -ceq $heading) {
+                $null = $out.Add('')
+                foreach ($u in $Usage.Split("`n")) { $null = $out.Add($u) }
+                $null = $out.Add('Duration: ' + $Duration)
+            }
+        }
+        [IO.File]::WriteAllText($Report, (($out -join "`n") + "`n"), $utf8)
+        return
+    }
+    $tail = "`n" + $heading + "`n`n" + $Usage + "`nDuration: " + $Duration + "`n"
+    [IO.File]::AppendAllText($Report, $tail, $utf8)
+}
+
+# Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it.
+function Get-NSGateItemLabel {
+    param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Which)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
+    $n = 0
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        if ($line -cmatch '^- \[x\]') {
+            $n++
+            if ($n -ne $Which) { continue }
+            $t = $line -creplace '^- \[x\][ \t]*\*\*', ''
+            $t = $t -creplace '[ \t]*[—-].*$', ''
+            $t = $t -creplace '\*\*.*$', ''
+            return $t.TrimEnd()
+        }
+    }
+    return ''
+}
+
+# Write-NSUsagePause <nightshift-dir> <reason> - a gap the runtime knows was not work.
+#
+# A session that ended and was revived, or a shift held at STOP, is wall-clock time nobody spent.
+# It is recorded so the duration line can list it, and never subtracted silently.
+function Write-NSUsagePause {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Reason = '')
+    $dir = Get-NSUsageDir $NightshiftDir
+    if (Test-NSReparsePoint $dir) { return $false }
+    try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch { return $false }
+    $why = $Reason
+    if ([string]::IsNullOrEmpty($why)) { $why = 'paused' }
+    $file = Join-Path $dir 'pauses.tsv'
+    if (Test-NSReparsePoint $file) { return $false }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    try { [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`t" + $why + "`n"), $utf8) }
+    catch { return $false }
+    return $true
+}
+
+# Get-NSUsageResumedAt <nightshift-dir> <epoch> - when work was next seen after a pause, from the
+# marks the runtime was already keeping.
+function Get-NSUsageResumedAt {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$After)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    foreach ($line in @([IO.File]::ReadAllLines($file))) {
+        $at = $line.Split("`t")[0]
+        if ($at -notmatch '^[0-9]+$') { continue }
+        if ([long]$at -gt $After) { return $at }
+    }
+    return ''
+}
+
+# Get-NSUsagePausedSince <nightshift-dir> <epoch> - how long was recorded as not-work since that
+# moment, and why: `<seconds>`t<reason>`, empty when the runtime knows of no gap.
+#
+# A pause is closed by the next thing that happens. Where nothing followed, the gap is open and is
+# reported as such rather than guessed at.
+function Get-NSUsagePausedSince {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From)
+    $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'pauses.tsv'
+    if (Test-NSReparsePoint $file) { return '' }
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $total = [long]0
+    $lastReason = ''
+    foreach ($line in @([IO.File]::ReadAllLines($file))) {
+        $parts = $line.Split("`t")
+        $at = $parts[0]
+        if ($at -notmatch '^[0-9]+$') { continue }
+        if ([long]$at -lt $From) { continue }
+        $next = Get-NSUsageResumedAt $NightshiftDir ([long]$at)
+        if ([string]::IsNullOrEmpty($next)) { continue }
+        $total += ([long]$next - [long]$at)
+        $lastReason = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
+    }
+    if ($total -le 0) { return '' }
+    return ([string]$total + "`t" + $lastReason)
+}
+
+# Get-NSUsageItemStart <nightshift-dir> - when the item that just closed began: the mark before the
+# one just written.
+function Get-NSUsageItemStart {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '0' }
+    $lines = @([IO.File]::ReadAllLines($file))
+    if ($lines.Count -lt 2) { return '0' }
+    return $lines[$lines.Count - 2].Split("`t")[0]
+}
+
+# One item's slice, marked and written into its report section.
+function Invoke-NSGateUsageTick {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$Project, [Parameter(Mandatory = $true)][string]$Label)
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
+    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    if (-not (Write-NSUsageMark $NightshiftDir $Label)) { return $false }
+    $span = Get-NSUsageLastItem $NightshiftDir
+    if ([string]::IsNullOrEmpty($span)) { return $false }
+    $parts = $span.Split("`t")
+    $fields = $parts[0]
+    if ([string]::IsNullOrEmpty($fields)) { return $false }
+    $seconds = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
+    $hosts = Get-NSUsageHosts $NightshiftDir
+    if ([string]::IsNullOrEmpty($hosts)) { $hosts = 'unknown' }
+    $first = $hosts.Split(' ')[0]
+    $line = Get-NSUsageLine $fields $hosts (Get-NSUsageSegmentCount $NightshiftDir) $first
+    # Wall clock, and beside it any gap the runtime knows was not work. Listed, never subtracted.
+    $duration = Get-NSUsageDuration $seconds
+    $start = Get-NSUsageItemStart $NightshiftDir
+    if ($start -match '^[0-9]+$') {
+        $paused = Get-NSUsagePausedSince $NightshiftDir ([long]$start)
+        if (-not [string]::IsNullOrEmpty($paused)) {
+            $pp = $paused.Split("`t")
+            $duration = $duration + ' (paused ' + (Get-NSUsageDuration $pp[0]) + ', ' + $pp[1] + ')'
+        }
+    }
+    Add-NSGateUsageAppend (Get-NSReportPath $Project) $Label $line $duration
+    return $true
+}
+
+# The catch-up. Every item ticked since the last mark gets one, in order, so a pulse that never
+# fired does not cost the shift its accounting. The arm mark is the shift's start, not an item.
+function Invoke-NSGateUsageSync {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Ticked,
+          [string[]]$Transcripts = @())
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return $false }
+    # Accounting belongs to an armed shift with the report on. Before Start there is no shift to
+    # bill, and an arm mark written then would stand in the way of the baseline arming records.
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
+    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
+    if ($Ticked -lt 0) { return $false }
+    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    $marked = Get-NSUsageMarkCount $NightshiftDir
+    if ($marked -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts; $marked = 1 }
+    while (($marked - 1) -lt $Ticked) {
+        $label = Get-NSGateItemLabel $PunchList $marked
+        if ([string]::IsNullOrEmpty($label)) { $label = 'item ' + $marked }
+        if (-not (Invoke-NSGateUsageTick $NightshiftDir $Project $label)) { return $false }
+        $marked++
+    }
+    return $true
+}
+
+# Read-NSUsageCursor <payload> - the counter from a Cursor stop payload.
+#
+# Cursor delivers the figures on the hook payload itself; there is no transcript to read. The fields
+# are optional and undocumented, so each is read defensively: a payload without them is not zero
+# usage, it is no measurement, and the caller says `unavailable`.
+function Read-NSUsageCursor {
+    param([AllowEmptyString()][string]$Payload)
+    if ([string]::IsNullOrEmpty($Payload)) { return $null }
+    $input = Get-NSUsageNumber $Payload 'input_tokens'
+    $output = Get-NSUsageNumber $Payload 'output_tokens'
+    if ($input -lt 0 -and $output -lt 0) { return $null }
+    $cacher = Get-NSUsageNumber $Payload 'cache_read_tokens'
+    $cachew = Get-NSUsageNumber $Payload 'cache_write_tokens'
+    $model = Get-NSUsageString $Payload 'model'
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    if ($input -ge 0) { $null = $parts.Add('input=' + $input) }
+    if ($cachew -ge 0) { $null = $parts.Add('cache_write=' + $cachew) }
+    if ($cacher -ge 0) { $null = $parts.Add('cache_read=' + $cacher) }
+    if ($output -ge 0) { $null = $parts.Add('output=' + $output) }
+    return (($parts -join ',') + "`t0`t" + $model + "`t0")
+}
+
+# Get-NSUsageSubagents <transcript> - the subagent transcripts belonging to one session, if any.
+#
+# A Task-spawned agent writes its own file beside the session's, and its usage is there rather than
+# in the parent. Only this session's own directory is looked at.
+function Get-NSUsageSubagents {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $dir = [IO.Path]::GetDirectoryName($Path)
+    if ([string]::IsNullOrEmpty($dir)) { return @() }
+    $base = [IO.Path]::GetFileName($Path)
+    if ($base.EndsWith('.jsonl', [StringComparison]::Ordinal)) {
+        $base = $base.Substring(0, $base.Length - 6)
+    }
+    $sub = Join-Path (Join-Path $dir $base) 'subagents'
+    if (Test-NSReparsePoint $sub) { return @() }
+    if (-not (Test-Path -LiteralPath $sub -PathType Container)) { return @() }
+    return @(Get-ChildItem -LiteralPath $sub -File -Filter 'agent-*.jsonl' -ErrorAction SilentlyContinue |
+        Sort-Object -Property FullName |
+        ForEach-Object { $_.FullName })
+}
+
+# Invoke-NSPulseUsage <ns> <host> <session-id> <source> - take one reading, if the owner wants usage
+# measured.
+#
+# The pulse fires on every tool call, so the reading rides on something that was going to happen
+# anyway. The arm mark is stood up first, with the transcripts beside it: whatever the setting-up
+# conversation already wrote is where reading begins, not byte zero.
+function Invoke-NSPulseUsage {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir,
+          [Parameter(Mandatory = $true)][string]$HostName,
+          [AllowEmptyString()][string]$SessionId,
+          [AllowEmptyString()][string]$Source)
+    if ([string]::IsNullOrEmpty($Source)) { return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
+    $project = [IO.Path]::GetDirectoryName($NightshiftDir)
+    if ((Get-NSRule $project 'report.usage' '') -ceq 'off') { return $false }
+    $agents = @()
+    if ($HostName -ceq 'claude') { $agents = Get-NSUsageSubagents $Source }
+    if ($HostName -ceq 'claude') {
+        $null = Write-NSUsageMarkArm $NightshiftDir (@($Source) + $agents)
+    }
+    else {
+        $null = Write-NSUsageMarkArm $NightshiftDir
+    }
+    switch ($HostName) {
+        'claude' {
+            foreach ($t in (@($Source) + $agents)) {
+                $reading = Read-NSUsageClaude $t (Get-NSUsageOffset $NightshiftDir $t) `
+                    (Get-NSUsageCarry $NightshiftDir $t)
+                if ([string]::IsNullOrEmpty($reading)) { continue }
+                $f = $reading.Split("`t")
+                $null = Write-NSUsageRecord $NightshiftDir 'claude' $f[2] 'transcript-incremental' `
+                    $t $f[1] $f[0] $f[4]
+            }
+            return $true
+        }
+        'codex' {
+            $reading = Read-NSUsageCodex $Source
+            if ([string]::IsNullOrEmpty($reading)) { return $false }
+            $f = $reading.Split("`t")
+            return (Write-NSUsageRecord $NightshiftDir 'codex' $f[2] 'rollout' $Source '0' $f[0])
+        }
+        'cursor' {
+            $reading = Read-NSUsageCursor $Source
+            if ([string]::IsNullOrEmpty($reading)) { return $false }
+            $f = $reading.Split("`t")
+            return (Write-NSUsageRecord $NightshiftDir 'cursor' $f[2] 'stop-payload' ('cursor:' + $SessionId) '0' $f[0])
+        }
+    }
+    return $false
+}
+
+# Invoke-NSPulseMarks <ns> <project> - mark every item ticked since the last mark, at this moment.
+#
+# The gate marks on a stop attempt, so two items ticked between stops both get the reading taken at
+# the stop. The pulse fires on the tool call that ticked the box, so a mark taken here carries the
+# reading at the moment the work finished. It calls the gate's own sync: one code path writes the
+# marks and the report lines, whichever side gets there first.
+function Invoke-NSPulseMarks {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [AllowEmptyString()][string]$Source = '')
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
+    $punch = Join-Path $NightshiftDir 'punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return $false }
+    $counts = Get-NSBoxCounts $punch
+    if (-not $counts.Readable) { return $false }
+    $transcripts = @()
+    if (-not [string]::IsNullOrEmpty($Source) -and (Test-Path -LiteralPath $Source -PathType Leaf)) { $transcripts = @($Source) }
+    return (Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts)
+}
+
+# Move-NSUsageRetire - a finished shift's accounting, set aside so the next shift starts clean.
+function Move-NSUsageRetire {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$ShiftId)
+    $dir = Get-NSUsageDir $NightshiftDir
+    if (Test-NSReparsePoint $dir) { return '' }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return '' }
+    $id = $ShiftId
+    if ([string]::IsNullOrEmpty($id) -or $id -match '[\\/]' -or $id.StartsWith('.')) {
+        $id = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+    }
+    $dest = Join-Path $NightshiftDir ('usage-' + $id)
+    if (Test-Path -LiteralPath $dest) { $dest = $dest + '-' + (Get-NSUnixTime) }
+    try { Move-Item -LiteralPath $dir -Destination $dest -Force } catch { return '' }
+    return $dest
+}
 
 Export-ModuleMember -Function *

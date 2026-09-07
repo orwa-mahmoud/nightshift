@@ -59,8 +59,8 @@ REF="$PLUGIN_ROOT/skills/nightshift/references"
 NS="$PROJECT/.nightshift"
 mkdir -p "$NS"
 for f in punch-list drafting-table parking-lot snag-log product-research opportunity-map work-orders; do
-  [ -f "$REF/$f-template.md" ] || die "missing template $f-template.md"
-  cp "$REF/$f-template.md" "$NS/$f.md"
+  [ -f "$REF/templates/$f.md" ] || die "missing template templates/$f.md"
+  cp "$REF/templates/$f.md" "$NS/$f.md"
 done
 [ -f "$REF/nightshift-rules-template.json" ] || die 'missing rules template'
 cp "$REF/nightshift-rules-template.json" "$NS/rules.json"
@@ -83,17 +83,50 @@ rc=$?
 [ "$rc" -eq 0 ] || die "ns_rules_check failed ($rc): $check"
 say 'ns_rules_check → 0'
 
+# Composition records tonight's choices, and none of them may quietly stop applying on a host
+# with no jq and no python3. This writes a snapshot that differs from every built-in default,
+# then reads it back through the same helper the hooks use.
+cand="$NS/candidate-policy.json"
+cat >"$cand" <<'JSON'
+{
+  "schemaVersion": 1,
+  "shiftId": "aa11bb22cc33dd44",
+  "createdAt": "2026-09-05T12:00:00Z",
+  "source": "composition",
+  "deadlineEpoch": null,
+  "verificationLevel": "per-item",
+  "toolingPolicy": "auto-add",
+  "completionMode": "no-regression-plus-selected-debt",
+  "selectedDebt": ["f1"],
+  "allowances": [
+    { "category": "containers", "scope": "category", "provenance": "one-shift" }
+  ]
+}
+JSON
 policy_out=""
 policy_rc=0
-policy_out="$(bash "$PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PROJECT" get 2>&1)" || policy_rc=$?
-case "$policy_rc" in
-  0) die 'shift-policy get succeeded without a parser; expected fail-closed' ;;
-  2 | 3)
-    say "shift-policy get → $policy_rc (no parser / absent; arm from rules.json alone)"
-    ;;
-  *) die "shift-policy get unexpected status $policy_rc: $policy_out" ;;
-esac
-[ ! -e "$NS/shift-policy.json" ] || die 'Start must not write shift-policy.json without a parser'
+policy_out="$(bash "$PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PROJECT" set --from-json "$cand" 2>&1)" ||
+  policy_rc=$?
+[ "$policy_rc" -eq 0 ] || die "shift-policy set failed without a parser ($policy_rc): $policy_out"
+rm -f "$cand"
+[ -f "$NS/shift-policy.json" ] || die 'shift-policy set wrote no snapshot'
+say 'shift-policy set → wrote tonight-s snapshot with no parser'
+
+policy_out="$(bash "$PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PROJECT" get 2>&1)" ||
+  die "shift-policy get failed without a parser: $policy_out"
+printf '%s' "$policy_out" | grep -q '"verificationLevel":"per-item"' ||
+  die "shift-policy get lost the chosen level: $policy_out"
+say 'shift-policy get → read it back'
+
+table="$(bash "$PLUGIN_ROOT/runtime/shift-policy.sh" --project "$PROJECT" resolve --table 2>&1)" ||
+  die "resolve failed without a parser: $table"
+for want in 'verificationLevel=per-item (one-shift, shift)' \
+  'toolingPolicy=auto-add (one-shift, shift)' \
+  'elevation.containers=allow (one-shift, shift)' \
+  'elevation.daemons=deny (rules, permanent)'; do
+  printf '%s\n' "$table" | grep -qxF "$want" || die "resolve lost: $want"
+done
+say 'resolve → the chosen level, tooling and one-shift allowance all survive with no parser'
 
 needs_out=""
 needs_rc=0
@@ -103,7 +136,7 @@ say 'preflight-needs → 2 (fail closed; not on the armed path)'
 
 : >"$NS/.shift-armed"
 [ -f "$NS/.shift-armed" ] || die 'failed to write .shift-armed'
-say 'Start armed .shift-armed from rules.json'
+say 'Start armed .shift-armed from rules.json and tonight-s snapshot'
 
 hardhat() {
   printf '%s' "$1" | env CLAUDE_PROJECT_DIR="$PROJECT" bash "$HOOKS/hardhat.sh"

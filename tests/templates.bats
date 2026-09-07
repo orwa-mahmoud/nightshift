@@ -3,19 +3,19 @@ load helpers
 REF="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references"
 OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
 
-# Setup copies punch-list-template.md into .nightshift/punch-list.md after substituting
+# `ns scaffold` copies templates/punch-list.md into .nightshift/punch-list.md after substituting
 # $NIGHTSHIFT_WORKSPACE with the resolved workspace path. The clock-out gate blocks on any
 # open "- [ ]" it finds there. A single illustrative checkbox in the template — even inside
 # a comment, which the gate does not understand — would trap every freshly scaffolded
 # project in a shift it never started.
 @test "the punch-list template ships with no open checkbox" {
-  n="$(grep -cE "$OPEN_BOX" "$REF/punch-list-template.md" || true)"
+  n="$(grep -cE "$OPEN_BOX" "$REF/templates/punch-list.md" || true)"
   [ "${n:-0}" -eq 0 ]
 }
 
 @test "a scaffolded punch list leaves the gate inert until the owner adds an item" {
   p="$(new_project)"
-  cp "$REF/punch-list-template.md" "$p/.nightshift/punch-list.md"
+  cp "$REF/templates/punch-list.md" "$p/.nightshift/punch-list.md"
   run gate "$p"
   is_release
   run hardhat_ask "$p"
@@ -23,33 +23,70 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
 }
 
 @test "the punch-list template carries the headings the gate and setup depend on" {
-  grep -q '^## Items' "$REF/punch-list-template.md"
-  grep -q '^## Gates' "$REF/punch-list-template.md"
-  grep -qF 'right before its commit or artifact receipt' "$REF/punch-list-template.md"
+  grep -q '^## Items' "$REF/templates/punch-list.md"
+  grep -q '^## Gates' "$REF/templates/punch-list.md"
+  grep -qF 'right before its commit or artifact receipt' "$REF/templates/punch-list.md"
 }
 
 # The drafting table is where work waits, so it must show the item shape. It is never read by
 # the gate — only the punch list is — which is exactly why proposals land there first.
 @test "the drafting table and catalog entries do show the item shape" {
-  [ "$(grep -cE "$OPEN_BOX" "$REF/drafting-table-template.md" || true)" -gt 0 ]
-  grep -qF 'runtime/write-receipt.sh' "$REF/drafting-table-template.md"
-  grep -qF 'runtime\windows\write-receipt.ps1' "$REF/drafting-table-template.md"
-  grep -qF 'Commit line (repository) or receipt (artifact)' "$REF/punch-list-template.md"
-  for f in "$REF"/shifts/*.md; do
+  [ "$(grep -cE "$OPEN_BOX" "$REF/templates/drafting-table.md" || true)" -gt 0 ]
+  grep -qE 'ns"? write-receipt' "$REF/templates/drafting-table.md"
+  grep -qF 'Commit line (repository) or receipt (artifact)' "$REF/templates/punch-list.md"
+  for f in "$REF"/compose/shifts/*.md; do
     [ "$(grep -cE "$OPEN_BOX" "$f" || true)" -gt 0 ] || { echo "no item shape: $f"; return 1; }
   done
 }
 
-@test "every template setup copies is present" {
+@test "the helper copies every template, and Setup names none of them" {
+  scaffold="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
+  setup="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/setup/SKILL.md"
+
+  # Setup runs the verb; copying a file does not require reading its text.
+  grep -qE 'ns"? scaffold' "$setup"
+  if grep -qF 'references/templates/' "$setup"; then
+    echo "setup still points at a template file"
+    return 1
+  fi
+
+  p="$(new_project templates-scaffold)"
+  rm -f "$p/.nightshift"/*.md
+  run bash "$scaffold" --project "$p"
+  [ "$status" -eq 0 ]
   for t in punch-list drafting-table parking-lot snag-log product-research opportunity-map work-orders; do
-    [ -f "$REF/$t-template.md" ] || { echo "missing $t-template.md"; return 1; }
-    grep -qF "$t-template.md" "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/setup/SKILL.md" \
-      || { echo "setup does not scaffold $t-template.md"; return 1; }
+    [ -f "$REF/templates/$t.md" ] || { echo "missing templates/$t.md"; return 1; }
+    [ -f "$p/.nightshift/$t.md" ] || { echo "scaffold did not write $t.md"; return 1; }
+    printf '%s\n' "$output" | grep -qF "wrote $t.md" \
+      || { echo "scaffold did not report $t.md"; return 1; }
   done
+
+  # The owner's own file is theirs, whatever it now holds.
+  printf 'the owner wrote this\n' >"$p/.nightshift/punch-list.md"
+  run bash "$scaffold" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'kept punch-list.md'
+  grep -qxF 'the owner wrote this' "$p/.nightshift/punch-list.md"
+}
+
+@test "a scaffolded copy carries resolved paths, and the shipped template does not" {
+  scaffold="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
+  p="$(new_project templates-resolved)"
+  rm -f "$p/.nightshift"/*.md
+  bash "$scaffold" --project "$p" >/dev/null
+
+  # A person pasting a command out of their own punch list has no $NS.
+  if grep -q '\$NS' "$p/.nightshift/punch-list.md"; then
+    echo "the owner's copy still carries an unresolved token"
+    return 1
+  fi
+  grep -qF "$(cd -P "$p" && pwd)/.nightshift" "$p/.nightshift/punch-list.md"
+  # And the shipped file is untouched.
+  grep -q '\$NS' "$REF/templates/punch-list.md"
 }
 
 @test "the opportunity map carries a resumable single-building record" {
-  t="$REF/opportunity-map-template.md"
+  t="$REF/templates/opportunity-map.md"
   grep -qF 'Only one opportunity may be `building` at a time' "$t"
   grep -qF 'Current phase:' "$t"
   grep -qF 'Completed:' "$t"

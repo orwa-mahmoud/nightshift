@@ -38,11 +38,20 @@ source
 deadlineEpoch
 verificationLevel
 toolingPolicy
+launchScope
+launchProvenance
 budgets
 completionMode
 selectedDebt
 allowances
-gatesDigest"
+gatesDigest
+contractDigest
+itemsDigest
+shift
+recovery
+handoff
+archive
+report"
 
 NS_POLICY_RULES_STATE=""
 NS_POLICY_RULES_VALS=""
@@ -120,6 +129,24 @@ ns_policy_builtin() {
     forbiddenCommands | protectedDirs | neverCommitPatterns | expectedEmail) printf '""' ;;
     stallMax) printf '0' ;;
     watchMinutes) printf '10' ;;
+    archive.automatic | report.legacyItemReceipts) printf 'false' ;;
+    archive.layout) printf '"date"' ;;
+    archive.root) printf '"archive"' ;;
+    handoff.detail) printf '"concise"' ;;
+    handoff.enabled | report.enabled) printf 'true' ;;
+    handoff.language) printf '"auto"' ;;
+    handoff.sections) printf '[]' ;;
+    handoff.view) printf '"owner"' ;;
+    recovery.launchScope) printf '"inherit-recorded-scope"' ;;
+    report.progressMinutes) printf '20' ;;
+    report.progressMode) printf '"time"' ;;
+    report.progressTokens) printf '100000' ;;
+    report.usage) printf '"when-available"' ;;
+    shift.execution) printf '"review-first"' ;;
+    shift.hours) printf 'null' ;;
+    shift.toolingPolicy) printf '"existing-tools"' ;;
+    shift.verificationProfile) printf '"fast"' ;;
+    archive.templatePath | handoff.templatePath | report.templatePath) printf '""' ;;
     *) return 1 ;;
   esac
 }
@@ -134,6 +161,7 @@ ns_policy_settings() {
       [ -n "$c" ] || continue
       printf 'elevation.%s\n' "$c"
     done
+    printf '%s\n' "$NS_RULES_GROUP_KEYS"
   } | LC_ALL=C sort
 }
 
@@ -259,7 +287,17 @@ NS_POLICY_SHIFT_PY='
 import json, re, sys
 
 SCALARS = ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
-           "verificationLevel", "toolingPolicy", "completionMode", "gatesDigest"]
+           "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
+           "completionMode", "gatesDigest", "contractDigest", "itemsDigest"]
+# The owner preference blocks tonight'"'"'s snapshot freezes. A block the snapshot does not carry
+# emits its type and no fields, which is how a policy written before this feature is told apart
+# from one whose owner left a block empty.
+PREF = [("shift", ["execution", "hours", "toolingPolicy", "verificationProfile"]),
+        ("recovery", ["launchScope"]),
+        ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
+        ("archive", ["automatic", "layout", "root", "templatePath"]),
+        ("report", ["enabled", "legacyItemReceipts", "progressMinutes", "progressMode",
+                    "progressTokens", "templatePath", "usage"])]
 out = []
 
 
@@ -331,6 +369,10 @@ if not isinstance(P, dict):
     sys.exit(0)
 ks(".", P)
 sc(".", P, SCALARS)
+for block, fields in PREF:
+    ty(block, P.get(block))
+    if block in P:
+        sc(block, P.get(block), fields)
 ty("budgets", P.get("budgets"))
 for key, value in obj(P.get("budgets")).items():
     out.append("b\t%s\t%s" % (scrub(key), enc(value)))
@@ -384,8 +426,20 @@ sys.stdout.write("".join(
 # _ns_policy_facts <operation> <python-program> <file> — the fact stream on stdout.
 # Status 1 when the file is not JSON, 2 when no parser is installed.
 _ns_policy_facts() {
-  local tool win
-  tool="$(ns_policy_json_tool)" || return 2
+  local tool win bin mode
+  tool="$(ns_policy_json_tool)" || {
+    # The snapshot carries what the owner chose for tonight — a deadline, a verification
+    # level, an elevation allowance. None of that may quietly stop applying because a host
+    # has no jq and no python3, so the bounded reader emits the same fact stream.
+    case "$1" in
+      shift) mode=policy ;;
+      defaults) mode=defaults ;;
+      *) return 2 ;;
+    esac
+    bin="$(ns_rules_awk_bin)" || return 2
+    "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" <"$3" 2>/dev/null || return 1
+    return 0
+  }
   # Bash opens the document. jq -f still needs a path the jq binary can open:
   # Git's jq wants /d/..., native jq.exe wants D:\...
   if [ "$tool" = jq ]; then
@@ -398,11 +452,27 @@ _ns_policy_facts() {
   python3 -c "$2" "$(ns_native_display_path "$3")" 2>/dev/null || return 1
 }
 
+# _ns_policy_awk_json <mode> [file] — the bounded reader as the third engine behind the two
+# canonical writers. LC_ALL=C so the reader sees bytes, which is what its UTF-8 escaping needs.
+_ns_policy_awk_json() {
+  local bin mode="$1"
+  bin="$(ns_rules_awk_bin)" || return 2
+  shift
+  if [ "$#" -ge 1 ]; then
+    LC_ALL=C "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" <"$1" 2>/dev/null || return 1
+  else
+    LC_ALL=C "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" 2>/dev/null || return 1
+  fi
+}
+
 # ns_policy_canon_json <file> — the document as compact canonical JSON: sorted keys, \uXXXX
 # escaping. The one wire form the bash and PowerShell resolvers both emit.
 ns_policy_canon_json() {
   local tool
-  tool="$(ns_policy_json_tool)" || return 2
+  tool="$(ns_policy_json_tool)" || {
+    _ns_policy_awk_json canon "$1"
+    return $?
+  }
   if [ "$tool" = jq ]; then
     jq -caS . <"$1" 2>/dev/null || return 1
   else
@@ -415,7 +485,10 @@ sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",
 # ns_policy_canon_text — compact canonical JSON of the document on stdin.
 ns_policy_canon_text() {
   local tool
-  tool="$(ns_policy_json_tool)" || return 2
+  tool="$(ns_policy_json_tool)" || {
+    _ns_policy_awk_json canon
+    return $?
+  }
   if [ "$tool" = jq ]; then
     jq -caS . 2>/dev/null || return 1
   else
@@ -429,7 +502,10 @@ sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",
 # opens and edits by hand.
 ns_policy_pretty_text() {
   local tool
-  tool="$(ns_policy_json_tool)" || return 2
+  tool="$(ns_policy_json_tool)" || {
+    _ns_policy_awk_json pretty
+    return $?
+  }
   if [ "$tool" = jq ]; then
     jq -S . 2>/dev/null || return 1
   else
@@ -463,7 +539,7 @@ _ns_policy_load_rules() {
     [ -n "$line" ] || continue
     _ns_pf_split "$line"
     case "$NS_PF1" in
-      r) NS_POLICY_RULES_VALS="$NS_POLICY_RULES_VALS$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_TAB$NS_PF4$NS_POLICY_NL" ;;
+      r | g) NS_POLICY_RULES_VALS="$NS_POLICY_RULES_VALS$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_TAB$NS_PF4$NS_POLICY_NL" ;;
       e) NS_POLICY_RULES_ELEV="$NS_POLICY_RULES_ELEV$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_TAB$NS_PF4$NS_POLICY_NL" ;;
       p) NS_POLICY_RULES_PAT="$NS_POLICY_RULES_PAT$NS_PF2$NS_POLICY_TAB$NS_PF3$NS_POLICY_NL" ;;
     esac
@@ -751,6 +827,22 @@ _ns_policy_validate_shift() {
       return 1
       ;;
   esac
+  # The launch record is optional — a snapshot written before it existed is still valid — but a
+  # value that is there has to be readable, because a revival inherits from it.
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchScope)" in
+    null | '"'*'"') ;;
+    *)
+      _ns_policy_shift_fail launchScope "must be the host's own name for the scope, as a string"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchProvenance)" in
+    null | '"observed"' | '"unavailable"') ;;
+    *)
+      _ns_policy_shift_fail launchProvenance "must be observed or unavailable"
+      return 1
+      ;;
+  esac
   val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" deadlineEpoch)"
   if [ "$val" != null ] && ! _ns_json_uint "$val"; then
     _ns_policy_shift_fail deadlineEpoch "must be a UNIX epoch or null"
@@ -759,6 +851,16 @@ _ns_policy_validate_shift() {
   val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" gatesDigest)"
   if [ "$val" != null ] && [ "$val" != '""' ] && ! _ns_json_hex "$val" 64; then
     _ns_policy_shift_fail gatesDigest "must be 64 lowercase hex characters"
+    return 1
+  fi
+  val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" contractDigest)"
+  if [ "$val" != null ] && [ "$val" != '""' ] && ! _ns_json_hex "$val" 64; then
+    _ns_policy_shift_fail contractDigest "must be 64 lowercase hex characters"
+    return 1
+  fi
+  val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" itemsDigest)"
+  if [ "$val" != null ] && [ "$val" != '""' ] && ! _ns_json_hex "$val" 64; then
+    _ns_policy_shift_fail itemsDigest "must be 64 lowercase hex characters"
     return 1
   fi
   case "$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" budgets)" in
@@ -893,6 +995,110 @@ _ns_policy_load_shift() {
   _ns_policy_load_shift_file "$1/.nightshift/shift-policy.json"
 }
 
+# ns_policy_launch <workspace> <scope|provenance> — what the snapshot recorded about the scope the
+# shift was started under, or empty when it recorded nothing.
+ns_policy_launch() {
+  local raw
+  _ns_policy_load_shift "$1"
+  [ "$NS_POLICY_SHIFT_STATE" = ok ] || return 1
+  case "$2" in
+    scope) raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchScope)" ;;
+    provenance) raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" launchProvenance)" ;;
+    *) return 1 ;;
+  esac
+  case "$raw" in
+    '"'*'"')
+      raw="${raw#\"}"
+      printf '%s' "${raw%\"}"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# ns_policy_freeze_pref <workspace> <block> — the block as it applies tonight, compact JSON, ready
+# to be written into the snapshot. Every supported field is present: the owner's value where their
+# file states one, the shipped default where it does not, so the frozen block answers on its own
+# and a later edit to the owner's file cannot change what tonight resolved to.
+ns_policy_freeze_pref() {
+  local f="$1/.nightshift/rules.json" facts line name val out="" first=1
+  facts=""
+  if [ -f "$f" ]; then
+    facts="$(ns_rules_facts "$f" 2>/dev/null)" || facts=""
+  fi
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    case "$name" in "$2".*) ;; *) continue ;; esac
+    val=""
+    while IFS= read -r line; do
+      case "$line" in
+        "g${NS_POLICY_TAB}${name}${NS_POLICY_TAB}1${NS_POLICY_TAB}"*)
+          val="${line#*"$NS_POLICY_TAB"*"$NS_POLICY_TAB"1"$NS_POLICY_TAB"}"
+          break
+          ;;
+      esac
+    done <<FACTS
+$facts
+FACTS
+    [ -n "$val" ] || val="$(ns_policy_builtin "$name")" || val=null
+    [ "$first" -eq 1 ] || out="$out,"
+    first=0
+    out="$out\"${name#*.}\":$val"
+  done <<KEYS
+$NS_RULES_GROUP_KEYS
+KEYS
+  [ "$first" -eq 0 ] || return 1
+  printf '{%s}' "$out"
+}
+
+# ns_policy_pref <workspace> <block> <field> — one owner preference, as it applies right now.
+#
+# The owner's file is where a preference is written; tonight's snapshot is where it is fixed. Once
+# a shift has a policy, that policy answers: an edit to rules.json mid-shift changes the next
+# shift, not the one running, so a report cadence or an archive destination cannot move under a
+# night that already started. Composition is the authorized update path, and it writes a new
+# snapshot.
+#
+# Three cases, and none of them is a silent fallback:
+#
+#   the snapshot froze the block   its value, whatever the owner has since written
+#   the snapshot predates this     the owner's file, because there is nothing frozen to honour
+#   the snapshot cannot be read    empty, so the caller takes its own built-in default — never
+#                                  the mutable file the unreadable snapshot was supposed to fix
+#
+# With no snapshot at all there is no shift to fix anything for, and the owner's file answers.
+ns_policy_pref() {
+  local kind raw f ended
+  _ns_policy_load_shift "$1"
+  case "$NS_POLICY_SHIFT_STATE" in
+    ok)
+      kind="$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" "$2")" || kind=""
+      if [ "$kind" = object ]; then
+        raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$2.$3")" || raw=null
+        [ "$raw" = null ] && return 0
+        ns_json_text "$raw"
+        return 0
+      fi
+      ;;
+    malformed | noparser) return 0 ;;
+    absent)
+      # The shift ended and its policy was archived. Where it files is still its own decision, so
+      # the ending marker answers for the two settings a later Archive needs.
+      ended=""
+      case "$2.$3" in
+        archive.root) ended="$(ns_ended_field "$1" archiveRoot)" ;;
+        archive.layout) ended="$(ns_ended_field "$1" archiveLayout)" ;;
+      esac
+      if [ -n "$ended" ]; then
+        printf '%s' "$ended"
+        return 0
+      fi
+      ;;
+  esac
+  f="$1/.nightshift/rules.json"
+  [ -f "$f" ] || return 0
+  ns_rules_get_in "$f" "$2" "$3"
+}
+
 # ns_policy_validate_shift_file <file>
 # Status 0 the document is a valid shift policy · 2 prints one diagnostic naming the offending
 # field · 3 the file is absent · 4 no JSON parser is installed. Composition validates a candidate
@@ -936,6 +1142,23 @@ ns_policy_deadline_epoch() {
   val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" deadlineEpoch)" || return 1
   _ns_json_uint "$val" || return 1
   printf '%s' "$val"
+}
+
+# ns_policy_shift_field <workspace> <name> — one recorded string field of tonight's snapshot, or
+# nothing. Used for the digests the gate compares the punch list against; a policy that predates a
+# field simply has nothing to say about it, which is not the same as a mismatch.
+ns_policy_shift_field() {
+  local raw
+  _ns_policy_load_shift "$1"
+  [ "$NS_POLICY_SHIFT_STATE" = ok ] || return 1
+  raw="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$2")" || return 1
+  case "$raw" in
+    '"'*'"')
+      raw="${raw#\"}"
+      printf '%s' "${raw%\"}"
+      ;;
+    *) return 1 ;;
+  esac
 }
 
 # ns_policy_shift_id <workspace> — the identity this shift's allowances are bound to.
@@ -990,7 +1213,7 @@ ns_policy_selected_debt() {
 # valid, 1 when it is malformed — either way the built-in defaults are printed, because these
 # choices only prefill a question and must never decide anything.
 ns_policy_read_defaults() {
-  local ws="$1" f facts line rc bad=0
+  local ws="$1" f facts line rc bad=0 canon v
   local profile='"fast"' hours=null tooling='"existing-tools"'
   local execution='"review-first"' updated=null
   f="$ws/.nightshift/shift-defaults.json"
@@ -1054,6 +1277,30 @@ EOF
     execution='"review-first"'
     updated=null
   fi
+  # The shift block of the owner file is where these live now. A value stated there is the
+  # owner's answer and wins over the older file, which stays readable only so a workspace that
+  # has not migrated yet still reports the choice it remembers.
+  canon="$ws/.nightshift/rules.json"
+  if [ -f "$canon" ]; then
+    v="$(ns_rules_get_in "$canon" shift verificationProfile)"
+    case "$v" in
+      fast | balanced | strict | custom) profile="\"$v\"" ;;
+    esac
+    v="$(ns_rules_get_in "$canon" shift hours)"
+    case "$v" in
+      null) hours=null ;;
+      '' | *[!0-9]*) ;;
+      *) hours="$v" ;;
+    esac
+    v="$(ns_rules_get_in "$canon" shift toolingPolicy)"
+    case "$v" in
+      existing-tools | review-missing | auto-add) tooling="\"$v\"" ;;
+    esac
+    v="$(ns_rules_get_in "$canon" shift execution)"
+    case "$v" in
+      review-first | run-direct) execution="\"$v\"" ;;
+    esac
+  fi
   NS_POLICY_DEF_PROFILE="$profile"
   NS_POLICY_DEF_HOURS="$hours"
   NS_POLICY_DEF_TOOLING="$tooling"
@@ -1061,6 +1308,29 @@ EOF
   NS_POLICY_DEF_UPDATED="$updated"
   ns_policy_defaults_json || return 2
   [ "$bad" -eq 0 ]
+}
+
+# ns_policy_defaults_stated <workspace> <field> — the value the legacy file explicitly states
+# for that field, as compact JSON. Status 1 when the file says nothing about it, which is what
+# separates a remembered choice from a built-in default during a migration.
+ns_policy_defaults_stated() {
+  local f facts line
+  f="$1/.nightshift/shift-defaults.json"
+  [ -f "$f" ] || return 1
+  facts="$(_ns_policy_facts defaults "$NS_POLICY_DEFAULTS_PY" "$f")" || return 1
+  facts="$(printf '%s' "$facts" | tr -d '\r')"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    _ns_pf_split "$line"
+    [ "$NS_PF1" = d ] || continue
+    [ "$NS_PF2" = "$2" ] || continue
+    [ "$NS_PF3" = 1 ] || return 1
+    printf '%s' "$NS_PF4"
+    return 0
+  done <<EOF
+$facts
+EOF
+  return 1
 }
 
 # ns_policy_defaults_json — the NS_POLICY_DEF_* fields as compact canonical JSON.
@@ -1118,6 +1388,28 @@ _ns_policy_setting() {
       return 0
       ;;
   esac
+  # A preference tonight's policy froze is what tonight uses, whatever the owner has since
+  # written. The view says so: the source is this shift, and it expires with it.
+  case "$name" in
+    *.*)
+      if [ "$NS_POLICY_SHIFT_STATE" = ok ]; then
+        category="${name%%.*}"
+        case "$category" in
+          shift | recovery | handoff | archive | report)
+            if [ "$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" "$category")" = object ]; then
+              val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$name")" || val=""
+              if [ -n "$val" ] && [ "$val" != null ]; then
+                NS_POLICY_V="$val"
+                NS_POLICY_S=one-shift
+                NS_POLICY_E='shift'
+                return 0
+              fi
+            fi
+            ;;
+        esac
+      fi
+      ;;
+  esac
   [ "$NS_POLICY_RULES_STATE" = ok ] || return 0
   row="$(_ns_policy_pick "$NS_POLICY_RULES_VALS" "$name")" || return 0
   present="${row%%"$NS_POLICY_TAB"*}"
@@ -1139,8 +1431,11 @@ _ns_policy_setting() {
 #   3. an exact-plan allowance permits only its listed commands; a category allowance permits the
 #      whole category; with both present the category applies.
 #   4. shift-defaults.json is never the source of an effective value.
-#   6. a malformed shift-policy.json grants nothing: the view is built-in plus rules, and the
-#      caller names the field.
+#   5. an owner preference the shift-policy froze is this shift's answer, reported one-shift and
+#      expiring with the shift; the owner's file answers only where nothing was frozen.
+#   6. a malformed shift-policy.json grants nothing. Elevation falls to built-in plus rules, and
+#      a frozen preference falls to its built-in rather than to the file it was fixed against.
+#      Either way the caller names the field.
 # A key the owner wrote is the owner's answer: a setting present in rules.json reports source
 # rules and expiry permanent even when its value is an empty string or a zero, and a category
 # present under rules.elevation reports rules whichever way its policy points. built-in and `-`
@@ -1149,14 +1444,7 @@ _ns_policy_setting() {
 ns_policy_resolve() {
   local ws="$1" out name first=1
   _ns_policy_load_rules "$ws"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    _ns_policy_load_shift "$ws"
-  else
-    NS_POLICY_SHIFT_STATE=absent
-    NS_POLICY_SHIFT_ALLOW=""
-    NS_POLICY_SHIFT_PLAN=""
-    NS_POLICY_SHIFT_PLANIDX=""
-  fi
+  _ns_policy_load_shift "$ws"
   if [ "$NS_POLICY_SHIFT_STATE" != ok ]; then
     NS_POLICY_SHIFT_ALLOW=""
     NS_POLICY_SHIFT_PLAN=""
@@ -1173,11 +1461,7 @@ ns_policy_resolve() {
 $(ns_policy_settings)
 EOF
   out="$out}}"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    printf '%s\n' "$out" | ns_policy_canon_text || return 2
-  else
-    printf '%s\n' "$out"
-  fi
+  printf '%s\n' "$out" | ns_policy_canon_text || return 2
 }
 
 # ns_policy_resolve_table <workspace>
@@ -1187,14 +1471,7 @@ EOF
 ns_policy_resolve_table() {
   local ws="$1" name text
   _ns_policy_load_rules "$ws"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    _ns_policy_load_shift "$ws"
-  else
-    NS_POLICY_SHIFT_STATE=absent
-    NS_POLICY_SHIFT_ALLOW=""
-    NS_POLICY_SHIFT_PLAN=""
-    NS_POLICY_SHIFT_PLANIDX=""
-  fi
+  _ns_policy_load_shift "$ws"
   if [ "$NS_POLICY_SHIFT_STATE" != ok ]; then
     NS_POLICY_SHIFT_ALLOW=""
     NS_POLICY_SHIFT_PLAN=""
@@ -1289,14 +1566,7 @@ ns_policy_allowed() {
   local ws="$1" category="$2" norm rest line
   ns_policy_default_pattern "$category" >/dev/null || return 1
   _ns_policy_load_rules "$ws"
-  if ns_policy_json_tool >/dev/null 2>&1; then
-    _ns_policy_load_shift "$ws"
-  else
-    NS_POLICY_SHIFT_STATE=absent
-    NS_POLICY_SHIFT_ALLOW=""
-    NS_POLICY_SHIFT_PLAN=""
-    NS_POLICY_SHIFT_PLANIDX=""
-  fi
+  _ns_policy_load_shift "$ws"
   if [ "$NS_POLICY_SHIFT_STATE" != ok ]; then
     NS_POLICY_SHIFT_ALLOW=""
     NS_POLICY_SHIFT_PLAN=""

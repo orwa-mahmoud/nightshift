@@ -9,6 +9,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $helper = Join-Path $repository 'plugins/nightshift/runtime/windows/archive-receipts.ps1'
 $hostExecutable = (Get-Process -Id $PID).Path
+Import-Module (Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1') -Force -DisableNameChecking
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $onWin32 = [Environment]::OSVersion.Platform -eq 'Win32NT'
 
@@ -213,6 +214,47 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Containment of the whole destination path, not just its last component. The escape that matters
+# is a link on the way to the root: `linked\history` is an ordinary directory name and passes any
+# check that only looks at where it ends.
+$containment = Join-Path ([IO.Path]::GetTempPath()) ('ns-contain-' + [guid]::NewGuid().ToString('N'))
+$state = Join-Path $containment '.nightshift'
+try {
+    New-Item -ItemType Directory -Force -Path $state | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $containment 'outside') | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $state 'archive-old') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $state 'afile'), "not a directory`n")
+
+    foreach ($allowed in @('archive', 'history', 'nested/deep', 'archive-old')) {
+        Expect-True ($null -ne (Get-NSStatePath $state $allowed)) "an ordinary name is allowed: $allowed"
+    }
+    foreach ($refused in @('../escape', '/tmp/elsewhere', '.hidden', 'afile', 'afile/history', '', '.')) {
+        Expect-True ($null -eq (Get-NSStatePath $state $refused)) "a name that leaves the state area is refused: $refused"
+    }
+
+    # A directory link on the way to the root, where the platform allows one to be made.
+    $linked = Join-Path $state 'linked'
+    $made = $false
+    try {
+        New-Item -ItemType SymbolicLink -Path $linked -Target (Join-Path $containment 'outside') -ErrorAction Stop | Out-Null
+        $made = $true
+    }
+    catch {
+        Write-Host 'skipped: this host does not allow creating a directory link'
+    }
+    if ($made) {
+        Expect-True ($null -eq (Get-NSStatePath $state 'linked/history')) 'an intermediate link is refused'
+        Expect-True ($null -eq (Get-NSStatePath $state 'linked')) 'a link at the root is refused'
+    }
+
+    # The leaf a record is about to land on is checked too.
+    Expect-True (Test-NSArchiveDest (Join-Path $state 'fresh.md')) 'a name nothing occupies may be written'
+    Expect-True (-not (Test-NSArchiveDest $state)) 'a directory in the way is refused'
+}
+finally {
+    Remove-Item -LiteralPath $containment -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($failures.Count -gt 0) {

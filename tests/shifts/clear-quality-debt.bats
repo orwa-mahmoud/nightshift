@@ -1,4 +1,4 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/clear-quality-debt.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/clear-quality-debt.md"
 
 # This entry works the same findings /nightshift:quality only reports. It must fix causes, never
 # silence them — the one failure mode that would make a quality shift worse than nothing.

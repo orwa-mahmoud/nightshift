@@ -14,6 +14,301 @@ rule() {
   ns_rules_get "$f" "$2"
 }
 
+# ns_report <project-dir> <field> — one field of the report block, or empty.
+ns_report() {
+  ns_policy_pref "$1" report "$2"
+}
+
+# ns_report_enabled <project-dir> — status 0 unless the owner turned the report off. A shift that
+# writes no report still keeps its punch status, its outputs, its continuity and its verification.
+ns_report_enabled() {
+  [ "$(ns_report "$1" enabled)" != false ]
+}
+
+# ns_report_legacy_receipts <project-dir> — status 0 when the owner still wants the separate
+# per-item receipt file beside the report section. Off by default: the section completes the item.
+ns_report_legacy_receipts() {
+  [ "$(ns_report "$1" legacyItemReceipts)" = true ]
+}
+
+# ns_report_path <project-dir> — the one report for the current shift.
+ns_report_path() {
+  printf '%s/.nightshift/shift-report.md' "$1"
+}
+
+# ns_archive <project-dir> <field> — one field of the archive block, or empty.
+ns_archive() {
+  ns_policy_pref "$1" archive "$2"
+}
+
+# The ending marker carries what filing still needs after the live policy has moved.
+#
+# Clock-out archives the policy, and a later Archive would then have no shift id to name a
+# directory after and no frozen archive settings to file into — so one shift's records could land
+# half under its own name and half under a date, and an owner edit between the two would move the
+# destination. The marker that already says the shift ended says which shift, and where it files.
+# One line per field, `key=value`, and an empty marker stays a valid ending.
+#
+# ns_ended_record <state-dir> <shift-id> <archive-root-name> <archive-layout>
+ns_ended_record() {
+  local ns="$1"
+  [ -d "$ns" ] || return 0
+  [ -L "$ns/.ended" ] && rm -f "$ns/.ended"
+  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\n' "$2" "$3" "$4" >"$ns/.ended" 2>/dev/null || :
+}
+
+# ns_ended_field <project-dir> <key> — one field of the ending marker, or empty.
+ns_ended_field() {
+  local f="$1/.nightshift/.ended"
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  sed -n "s/^$2=//p" "$f" 2>/dev/null | head -n1
+}
+
+# ns_state_path <state-dir> <relative-name> — a nested path under the Nightshift state area, or
+# status 2. The whole chain is checked, not just its last component: a link anywhere along it is
+# what an escape actually looks like, because `linked/history` reaches outside while `history` is
+# an ordinary directory nobody would question.
+#
+# Refused: an absolute or ~ path, any component that is empty, `.`, `..` or begins with a dot,
+# an existing component that is a symlink, an existing component that is not a directory, and the
+# state directory itself. Then the deepest ancestor that exists is canonicalised and checked to
+# be the state directory or inside it — comparing the real paths rather than trusting that the
+# text of one is a prefix of the other.
+ns_state_path() {
+  local ns="$1" rel="$2" path comp rest deepest canon_ns canon_deep
+  case "$rel" in
+    '' | . | /* | '~'*) return 2 ;;
+  esac
+  path="$ns"
+  deepest="$ns"
+  rest="$rel"
+  while [ -n "$rest" ]; do
+    comp="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    case "$comp" in
+      '' | .*) return 2 ;;
+    esac
+    path="$path/$comp"
+    [ ! -L "$path" ] || return 2
+    if [ -e "$path" ]; then
+      [ -d "$path" ] || return 2
+      deepest="$path"
+    fi
+  done
+  canon_ns="$(cd -P "$ns" 2>/dev/null && pwd -P)" || return 2
+  canon_deep="$(cd -P "$deepest" 2>/dev/null && pwd -P)" || return 2
+  case "$canon_deep" in
+    "$canon_ns" | "$canon_ns"/*) ;;
+    *) return 2 ;;
+  esac
+  printf '%s' "$path"
+}
+
+# ns_archive_root <project-dir> — the directory dated archives live in, as an absolute path.
+# The name is the owner's; where it may sit is not. It stays inside the Nightshift state area,
+# and a request to leave it is refused with status 2 so the caller says so rather than writing
+# the owner's records somewhere they cannot find them. Writing outside the state area is an
+# unsupported request, not a setting.
+ns_archive_root() {
+  local ns="$1/.nightshift" name
+  name="$(ns_archive "$1" root)"
+  [ -n "$name" ] || name=archive
+  # The live records are not an archive destination: filing into them would file a shift on top
+  # of the shift that is still running.
+  case "$name" in
+    receipts | receipts/*) return 2 ;;
+  esac
+  ns_state_path "$ns" "$name" || return 2
+}
+
+# ns_archive_dest <path> — status 0 when one file may be written at that exact path. A directory
+# containment check says nothing about the leaf: a link left where a receipt is about to land
+# would still carry its bytes somewhere else.
+ns_archive_dest() {
+  [ ! -L "$1" ] || return 2
+  [ ! -e "$1" ] || [ -f "$1" ] || return 2
+}
+
+# ns_archive_dir <project-dir> <date> <shift-id> — the directory one shift is filed into.
+# The date layout groups a night together; the shift layout gives each shift its own directory.
+# The shift id names the files inside either way, so two shifts on one day never collide.
+ns_archive_dir() {
+  local root layout
+  root="$(ns_archive_root "$1")" || return 2
+  layout="$(ns_archive "$1" layout)"
+  if [ "$layout" = shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
+    printf '%s/shift-%s' "$root" "$3"
+    return 0
+  fi
+  printf '%s/%s' "$root" "$2"
+}
+
+# ns_archive_automatic <project-dir> — status 0 when the owner asked for filing at clock-out.
+# Filing is a copy; it never implies deleting anything.
+ns_archive_automatic() {
+  [ "$(ns_archive "$1" automatic)" = true ]
+}
+
+# ns_handoff <project-dir> <field> — one field of the handoff block, or empty when the file says
+# nothing. Presentation only: none of it decides whether a check ran.
+ns_handoff() {
+  ns_policy_pref "$1" handoff "$2"
+}
+
+# ns_handoff_enabled <project-dir> — status 0 unless the owner turned the page off. A shift that
+# writes no page still keeps every factual record it made.
+ns_handoff_enabled() {
+  [ "$(ns_handoff "$1" enabled)" != false ]
+}
+
+# ns_handoff_view <project-dir> — the configured reader, or owner.
+ns_handoff_view() {
+  local v
+  v="$(ns_handoff "$1" view)"
+  case "$v" in
+    owner | reviewer | release | artifact) printf '%s' "$v" ;;
+    *) printf 'owner' ;;
+  esac
+}
+
+# ns_recovery_launch_scope <project-dir> — the permission scope a revived session starts under.
+# host-grant is the documented grant for the host; host-default adds no permission argument and
+# takes whatever the host gives. Anything else, or an unreadable file, is host-grant: recovery
+# keeps working, and the scope in force is logged either way. The watchman never widens it.
+ns_recovery_launch_scope() {
+  local v=""
+  if [ -n "${NIGHTSHIFT_LAUNCH_SCOPE:-}" ]; then
+    v="$NIGHTSHIFT_LAUNCH_SCOPE"
+  else
+    v="$(ns_policy_pref "$1" recovery launchScope)"
+  fi
+  case "$v" in
+    host-default) printf 'host-default' ;;
+    host-grant) printf 'host-grant' ;;
+    *) printf 'inherit-recorded-scope' ;;
+  esac
+}
+
+# ns_policy_host_name — which host this session is, from what the host itself sets.
+ns_policy_host_name() {
+  if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
+    printf 'cursor'
+  elif [ -n "${CODEX_PROJECT_DIR:-}${CODEX_SANDBOX:-}${CODEX_SANDBOX_MODE:-}" ]; then
+    printf 'codex'
+  elif [ -n "${CLAUDE_PLUGIN_ROOT:-}${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf 'claude'
+  else
+    printf 'unknown'
+  fi
+}
+
+# ns_launch_scope_supported <host> <scope> — true when the host can actually be asked to start a
+# session at that scope. A recorded scope is only useful if a revival can name it on the command
+# line, so this is the vocabulary the watchmen are allowed to pass through, and nothing else
+# reaches a native flag.
+ns_launch_scope_supported() {
+  case "$1" in
+    codex)
+      case "$2" in
+        read-only | workspace-write | danger-full-access) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
+# ns_launch_observed <host> — the execution scope this session is running under, in the host's own
+# words, and whether the host actually told us. Read only from what the host already exposes; a
+# scope nobody reported is unavailable, never assumed.
+#
+# Only Codex names a session's sandbox, and only in its own environment. Claude Code and Cursor
+# hand a session its permissions at launch and expose no name for them anywhere a hook can read,
+# so there is nothing to observe and this says so. Calling that 'inherited' would have been a
+# label for a measurement never taken.
+ns_launch_observed() {
+  case "$1" in
+    codex)
+      if [ -n "${CODEX_SANDBOX_MODE:-}" ]; then
+        printf '%s\tobserved' "$CODEX_SANDBOX_MODE"
+        return 0
+      fi
+      if [ -n "${CODEX_SANDBOX:-}" ]; then
+        printf '%s\tobserved' "$CODEX_SANDBOX"
+        return 0
+      fi
+      ;;
+  esac
+  printf 'unknown\tunavailable'
+}
+
+# ns_recovery_effective_scope <project-dir> <host> — what a revival may actually ask for.
+#
+# The shipped choice inherits the scope the shift was started under, so recovery reproduces the
+# session rather than improving on it. Nothing here ever widens what the original session had — an
+# owner who wants the documented broad grant writes host-grant in their own file, and that is the
+# only way it happens.
+#
+# There are four answers, and the caller logs the one it got:
+#
+#   host-default      the owner asked for it, or no scope was ever recorded. No permission
+#                     argument is passed and the host decides. This is the baseline, not a proof
+#                     that it is narrower than the original session — no host reports enough for
+#                     that claim, and it is not made.
+#   host-grant        the owner wrote it by name. Only ever from their own file.
+#   recorded:<scope>  the shift recorded a scope the host observed and can be asked for again.
+#   unavailable:<s>   a scope was recorded that this host has no way to request. A revival would
+#                     run at some other scope, so the caller refuses rather than guess.
+ns_recovery_effective_scope() {
+  local configured recorded provenance
+  configured="$(ns_recovery_launch_scope "$1")"
+  case "$configured" in
+    host-default | host-grant)
+      printf '%s' "$configured"
+      return 0
+      ;;
+  esac
+  _ns_policy_load_shift "$1"
+  case "$NS_POLICY_SHIFT_STATE" in
+    ok) ;;
+    absent)
+      printf 'unavailable:unrecorded'
+      return 0
+      ;;
+    *)
+      printf 'unavailable:unreadable'
+      return 0
+      ;;
+  esac
+  recorded="$(ns_policy_launch "$1" scope 2>/dev/null)" || recorded=""
+  provenance="$(ns_policy_launch "$1" provenance 2>/dev/null)" || provenance=""
+  if [ "$provenance" = observed ] && [ -n "$recorded" ] && [ "$recorded" != unknown ]; then
+    if ns_launch_scope_supported "$2" "$recorded"; then
+      printf 'recorded:%s' "$recorded"
+    else
+      printf 'unavailable:unsupported:%s' "$recorded"
+    fi
+    return 0
+  fi
+  printf 'unavailable:unrecorded'
+}
+
+# ns_recovery_refusal <effective-scope> — the one sentence that says why a revival is refused.
+# Status 1 for a scope that is not a refusal.
+ns_recovery_refusal() {
+  case "$1" in
+    unavailable:unrecorded)
+      printf 'the host named no scope for the session this shift was started in, so there is nothing to inherit and no way to show a revival would be no broader'
+      ;;
+    unavailable:unreadable)
+      printf 'the policy that records the launch scope cannot be read, so what this shift was started under is unknown'
+      ;;
+    unavailable:unsupported:*)
+      printf "the shift was started under '%s', which this host has no way to be asked for again" "${1#unavailable:unsupported:}"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 # toolDeny requires exact key matching. The shipped reader accepts the template's
 # object-of-strings shape and nothing else. Malformed input fails closed.
 ns_tool_map_ok() { # stdin = a JSON object of string values
@@ -113,6 +408,7 @@ ns_reason_label() {
     unreadable-rules) printf 'rules file missing or incomplete' ;;
     fresh-fallback) printf 'fresh session - punch list is the handover' ;;
     unsupported-state) printf 'workspace state-version is unsupported' ;;
+    recovery-scope-unavailable) printf 'recorded launch scope cannot be requested on this host' ;;
     process-evidence-unavailable) printf 'process evidence is unavailable' ;;
     clock-out-failed) printf 'terminal clock-out failed without releasing the shift' ;;
     *) printf 'unknown watchman outcome' ;;
@@ -123,7 +419,7 @@ ns_record_reason() { # <nightshift-dir> <code> [detail]
   local dir="$1" code="$2" detail="${3:-}"
   [ -d "$dir" ] || return 1
   case "$code" in
-    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed) ;;
+    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable) ;;
     *) code="stand-down" ;;
   esac
   detail="$(printf '%s' "$detail" | tr -d '\000-\037' | sed 's/[[:space:]]*$//')"
@@ -498,4 +794,314 @@ ns_receipt_slug() {
   s="$(printf '%s' "$s" | cut -c1-40)"
   [ -n "$s" ] || s=item
   printf '%s' "$s"
+}
+
+# ---------------------------------------------------------------------------------------------
+# Reading one item out of the punch list, and holding the contract to what it was
+#
+# The bounded rule the gate and Status already use: a top-level checkbox line owns the indented
+# lines that follow it, up to the next top-level line. Fenced code and nested lists inside an item
+# are indented, so they belong to it and come through whole. This is not a Markdown parser and is
+# not trying to be one.
+
+# ns_punch_gates <punch-list> — the gates block verbatim, heading included, or nothing.
+# The owner may change it mid-shift by design, so it is never digested and always reprinted.
+ns_punch_gates() {
+  awk '
+    /^## Gates[[:space:]]*$/ { on = 1; print; next }
+    on && /^## / { exit }
+    on { print }
+  ' "$1" 2>/dev/null
+}
+
+# ns_punch_items <punch-list> — the lines under `## Items`, stopping at the next top-level heading.
+#
+# Not ns_items_section, which runs to the end of the file: that is the right boundary for counting
+# boxes and the wrong one for a digest, because it would put a `## Notes` section the owner is free
+# to edit inside the thing the gate holds still.
+ns_punch_items() {
+  awk '
+    { sub(/\r$/, "") }
+    !on { if ($0 ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; next }
+    /^## / { exit }
+    { print }
+  ' "$1" 2>/dev/null
+}
+
+# ns_punch_item <punch-list> <id> — one item with its sub-bullets, exactly as written. An empty id
+# means the first still-open one. Prints nothing when there is no such item.
+ns_punch_item() {
+  ns_punch_items "$1" | awk -v want="$2" '
+    function starts_item(line) { return line ~ /^- \[[ xX]\]/ }
+    # A top-level line is anything not indented: the next item, a heading, a note. Either way this
+    # item has ended.
+    function top_level(line) { return line !~ /^[[:space:]]/ && line != "" }
+    {
+      if (!on && starts_item($0)) {
+        if (want == "") {
+          if ($0 !~ /^- \[ \]/) next
+          on = 1
+          print
+          next
+        }
+        id = $0
+        sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", id)
+        sub(/[[:space:]]*[—-].*$/, "", id)
+        sub(/\*\*.*$/, "", id)
+        gsub(/[[:space:]]+$/, "", id)
+        if (id != want) next
+        on = 1
+        print
+        next
+      }
+      if (on) {
+        if (top_level($0)) exit
+        print
+      }
+    }
+  '
+}
+
+# ns_punch_contract <punch-list> — everything above `## Items` except the gates block: the shift
+# contract the owner wrote and nobody may edit while a shift is armed.
+#
+# The gates block is excluded from this digest and from the items one. It sits above `## Items` in
+# the file, but the owner is meant to be able to change it mid-shift — tightening a gate after a
+# near miss, relaxing one that is costing more than it catches — and `gatesDigest` already tracks
+# it on its own terms.
+ns_punch_contract() {
+  awk '
+    { sub(/\r$/, "") }
+    /^## Items[[:space:]]*$/ { exit }
+    /^## Gates[[:space:]]*$/ { skip = 1; next }
+    skip && /^## / { skip = 0 }
+    skip { next }
+    { print }
+  ' "$1" 2>/dev/null
+}
+
+# ns_punch_items_normalised <punch-list> — every item line and sub-bullet with the checkbox state
+# flattened, so ticking a box changes nothing and any other edit — a reworded item, a deleted one,
+# an inserted one — changes everything.
+#
+# Line endings are flattened with it, here and in the contract. A shift can be handed from a macOS
+# host to a Windows one, and a checkout that converts on the way would otherwise present a contract
+# nobody touched as tampered with. The digest is a property of what the list says, not of how the
+# filesystem it is sitting on ends a line.
+ns_punch_items_normalised() {
+  ns_punch_items "$1" | sed 's/^- \[[xX]\]/- [ ]/'
+}
+
+# ns_punch_digest — a stable digest of stdin, from whatever the machine has. Same shape as every
+# other digest Nightshift records: 64 lowercase hex characters.
+ns_punch_digest() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 2>/dev/null | cut -d' ' -f1
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum 2>/dev/null | cut -d' ' -f1
+  else
+    return 1
+  fi
+}
+
+# ns_punch_contract_digest <punch-list> / ns_punch_items_digest <punch-list>
+ns_punch_contract_digest() { ns_punch_contract "$1" | ns_punch_digest; }
+ns_punch_items_digest() { ns_punch_items_normalised "$1" | ns_punch_digest; }
+
+# ---------------------------------------------------------------- preflight explanations
+#
+# The explanation belongs on the verdict line that occurred, not in a paragraph the model reads on
+# every Start for verdicts that did not. It is printed here from lib/preflight-explain.txt, which
+# the PowerShell twin reads too: one copy of the text, so the two hosts cannot word the same
+# verdict differently.
+
+# ns_explain_lines <kind> <topic> — the records of that kind for that topic, in file order.
+# Prints nothing when the topic has none, which is not an error: a topic without a record keeps
+# its verdict and its own repairs.
+ns_explain_lines() {
+  local file
+  file="${NS_EXPLAIN_FILE:-}"
+  [ -n "$file" ] || return 0
+  [ -f "$file" ] || return 0
+  awk -F '\t' -v kind="$1" -v topic="$2" '
+    /^#/ || NF < 3 { next }
+    $1 == kind && $2 == topic { print $3 }
+  ' "$file" 2>/dev/null
+}
+
+# ns_explain_emit <topic> — the explanation for a topic, then any repairs the table carries for it.
+# Called by the warn and refuse emitters, so no verdict site has to remember to do it.
+ns_explain_emit() {
+  ns_explain_lines explain "$1" | while IFS= read -r line; do
+    [ -n "$line" ] && printf 'explain %s %s\n' "$1" "$line"
+  done
+  ns_explain_lines repair "$1" | while IFS= read -r line; do
+    [ -n "$line" ] && printf 'repair %s\n' "$line"
+  done
+}
+
+# ns_explain_topic <verdict text> — the first word, which every verdict leads with.
+ns_explain_topic() {
+  case "$1" in
+    *' '*) printf '%s' "${1%% *}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# ---------------------------------------------------------------- the facts Status renders
+#
+# Counting is mechanics — the boxes below a heading, drafting-table boxes only after the first
+# rule, the deadline against the clock, the stall counter. The skill renders; these produce, so
+# none of it is derived by hand.
+#
+# Bounded readers, never Markdown parsers: each one takes the first line of an entry under the
+# shape the file already has, so a file the owner has written prose into still yields facts rather
+# than a guess.
+
+# ns_status_open_title <punch-list> — the title line of the first still-open item, without its
+# checkbox or bold markers. Empty when nothing is open.
+ns_status_open_title() {
+  ns_punch_item "$1" "" 2>/dev/null | awk '
+    NR == 1 {
+      sub(/^- \[[ xX]\][[:space:]]*/, "")
+      gsub(/\*\*/, "")
+      sub(/[[:space:]]+$/, "")
+      print
+      exit
+    }
+  '
+}
+
+# ns_status_entry_titles <file> <max> — the first line of each top-level `- ` entry, trimmed.
+# Used for the parking lot and the snag log, which share that shape.
+ns_status_entry_titles() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v max="${2:-0}" '
+    /^- / {
+      line = $0
+      sub(/^- /, "", line)
+      gsub(/\*\*/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (length(line) > 100) line = substr(line, 1, 97) "..."
+      out[++n] = line
+    }
+    END {
+      first = 1
+      if (max > 0 && n > max) first = n - max + 1
+      for (i = first; i <= n; i++) print out[i]
+    }
+  ' "$1" 2>/dev/null
+}
+
+# ns_status_entry_count <file> — how many such entries the file holds.
+ns_status_entry_count() {
+  if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf '0'; return 0; fi
+  awk '/^- / { n++ } END { printf "%d", n + 0 }' "$1" 2>/dev/null || printf '0'
+}
+
+# ns_status_opportunity_counts <opportunity-map> — `candidate=N building=N shipped=N rejected=N
+# parked=N` from the `Status:` lines the map already carries.
+ns_status_opportunity_counts() {
+  if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'; return 0; fi
+  awk '
+    /<!--/ { comment = 1 }
+    /-->/  { comment = 0; next }
+    comment { next }
+    /^[[:space:]]*Status:[[:space:]]*/ {
+      s = $0
+      sub(/^[[:space:]]*Status:[[:space:]]*/, "", s)
+      sub(/[[:space:]].*$/, "", s)
+      gsub(/[^a-zA-Z]/, "", s)
+      if (s != "") c[tolower(s)]++
+    }
+    END {
+      printf "candidate=%d building=%d shipped=%d rejected=%d parked=%d",
+        c["candidate"] + 0, c["building"] + 0, c["shipped"] + 0, c["rejected"] + 0, c["parked"] + 0
+    }
+  ' "$1" 2>/dev/null || printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'
+}
+
+# ns_status_building <opportunity-map> — the building entry's title, then its `Phase:`, `Next:` and
+# `Verify remaining:` lines, one per line. Nothing when none is building.
+#
+# An entry runs from a heading to the next heading. More than one building entry is inconsistent
+# state the model reports without changing; this prints the first, and the count says there is more.
+ns_status_building() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk '
+    /<!--/ { comment = 1 }
+    /-->/  { comment = 0; next }
+    comment { next }
+    /^#{2,}[[:space:]]/ {
+      if (found) exit
+      title = $0
+      sub(/^#+[[:space:]]*/, "", title)
+      gsub(/\*\*/, "", title)
+      building = 0
+      next
+    }
+    /^[[:space:]]*Status:[[:space:]]*building/ {
+      building = 1
+      found = 1
+      print "title\t" title
+      next
+    }
+    building && /^[[:space:]]*(Phase|Next|Verify remaining):/ {
+      line = $0
+      sub(/^[[:space:]]*/, "", line)
+      key = line
+      sub(/:.*$/, "", key)
+      sub(/^[^:]*:[[:space:]]*/, "", line)
+      print tolower(key) "\t" line
+    }
+  ' "$1" 2>/dev/null
+}
+
+# ns_status_stop_reason <ns> — the first line of the stop-work marker, or nothing.
+ns_status_stop_reason() {
+  ns_marker="$1/STOP"
+  [ -f "$ns_marker" ] && [ ! -L "$ns_marker" ] || return 0
+  IFS= read -r ns_line <"$ns_marker" 2>/dev/null || return 0
+  printf '%s' "$ns_line"
+}
+
+# ns_status_transitions <shift-log> <max> — the journal lines that record a shift changing hands:
+# a stand-down, a revival, a host change. Compacted to their first sentence.
+ns_status_transitions() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v max="${2:-3}" '
+    {
+      line = $0
+      # Both writers lead with a dash, a timestamp and a separator before the message. Everything up
+      # to the first letter is that preamble, in any locale and with any separator byte.
+      sub(/^[^A-Za-z]*/, "", line)
+    }
+    # A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
+    # would catch an item summary that merely mentions one.
+    tolower(line) ~ /^(watchman|the watchman|shift started|shift ended|the session ended|revived|host change)/ {
+      if (length(line) > 120) line = substr(line, 1, 117) "..."
+      out[++n] = line
+    }
+    END {
+      first = 1
+      if (max > 0 && n > max) first = n - max + 1
+      for (i = first; i <= n; i++) print out[i]
+    }
+  ' "$1" 2>/dev/null
+}
+
+# ns_status_deadline_remaining <ns> — `<n>h<m>m remaining`, `passed`, or nothing when there is no
+# deadline. The clock is read once, here, rather than in the skill.
+ns_status_deadline_remaining() {
+  ns_file="$1/deadline"
+  [ -f "$ns_file" ] && [ ! -L "$ns_file" ] || return 0
+  IFS= read -r ns_epoch <"$ns_file" 2>/dev/null || return 0
+  case "$ns_epoch" in '' | *[!0-9]*) return 0 ;; esac
+  ns_now="$(date +%s 2>/dev/null)" || return 0
+  if [ "$ns_epoch" -le "$ns_now" ]; then
+    printf 'passed'
+    return 0
+  fi
+  ns_left=$((ns_epoch - ns_now))
+  printf '%dh%02dm remaining' "$((ns_left / 3600))" "$(((ns_left % 3600) / 60))"
 }

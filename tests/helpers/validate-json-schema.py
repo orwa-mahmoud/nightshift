@@ -52,14 +52,13 @@ def validate(instance, schema, path="$"):
     if "enum" in schema:
         if instance not in schema["enum"]:
             ok = fail(path, "not in enum")
-    if "minimum" in schema:
-        if isinstance(instance, bool) or not isinstance(instance, (int, float)):
-            return fail(path, "minimum requires a number")
+    # A keyword applies to its own type and says nothing about any other, so a nullable field
+    # carrying a bound validates when it is unset. `type` is what rejects a wrong type.
+    numeric = not isinstance(instance, bool) and isinstance(instance, (int, float))
+    if "minimum" in schema and numeric:
         if instance < schema["minimum"]:
             ok = fail(path, "below minimum %s" % schema["minimum"])
-    if "maximum" in schema:
-        if isinstance(instance, bool) or not isinstance(instance, (int, float)):
-            return fail(path, "maximum requires a number")
+    if "maximum" in schema and numeric:
         if instance > schema["maximum"]:
             ok = fail(path, "above maximum %s" % schema["maximum"])
     if "minLength" in schema and isinstance(instance, str):

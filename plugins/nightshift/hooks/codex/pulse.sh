@@ -18,4 +18,9 @@ case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
 ns_pulse_emit "$PROJECT_DIR/.nightshift" "${CODEX_SESSION_ID:-}"
+# The rollout the host handed this hook carries the session's running token total; one tail reads
+# it. Nothing else is opened, and no other session is looked at.
+ns_pulse_usage "$PROJECT_DIR/.nightshift" codex "${CODEX_SESSION_ID:-}" "${CODEX_TRANSCRIPT_PATH:-}"
+ns_pulse_marks "$PROJECT_DIR/.nightshift" "$PROJECT_DIR" "${CODEX_SESSION_ID:-}" "${CODEX_TRANSCRIPT_PATH:-}"
+ns_pulse_context codex "$(ns_pulse_report_due "$PROJECT_DIR/.nightshift" "$PROJECT_DIR")"
 exit 0

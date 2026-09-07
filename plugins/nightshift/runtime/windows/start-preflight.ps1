@@ -38,12 +38,32 @@ function Write-Verdict {
     [Console]::Out.Write($Text + "`n")
 }
 function Write-Ok { param([string]$Text) Write-Verdict "ok $Text" }
-function Write-Warn { param([string]$Text) Write-Verdict "warn $Text" }
 function Write-Repair { param([string]$Text) Write-Verdict "repair $Text" }
+
+$script:ExplainFile = Join-Path $pluginRoot 'lib/preflight-explain.txt'
+
+# A warn or a refuse carries its own explanation, so no verdict site has to remember to print one.
+# `ok` lines get none: a resolved fact explains itself.
+function Write-Explain {
+    param([string]$Text)
+    $topic = Get-NSExplainTopic $Text
+    foreach ($line in (Get-NSExplainLines $script:ExplainFile 'explain' $topic)) {
+        Write-Verdict "explain $topic $line"
+    }
+    foreach ($line in (Get-NSExplainLines $script:ExplainFile 'repair' $topic)) {
+        Write-Verdict "repair $line"
+    }
+}
+function Write-Warn {
+    param([string]$Text)
+    Write-Verdict "warn $Text"
+    Write-Explain $Text
+}
 function Write-Refuse {
     param([string]$Text)
     $script:Refused = $true
     Write-Verdict "refuse $Text"
+    Write-Explain $Text
 }
 
 if ([string]::IsNullOrEmpty($HostName)) {
@@ -177,7 +197,9 @@ if (Test-NSPathEntry (Join-Path $ns '.shift-lease')) {
     else {
         $leaseState = 'malformed'
         Write-Refuse 'lease malformed - ownership cannot be proven, so this is unowned state'
-        Write-Repair "issue STOP, then run stop-shift.ps1 -Project `"$workspace`" in a terminal and start again; never edit or delete .shift-lease by hand"
+        Write-Repair "issue STOP, then run ns stop-shift in a terminal and start again; never edit or delete .shift-lease by hand"
+        # The owner runs this themselves, in a terminal, after STOP. Never from the blocked session.
+        Write-Repair "if the lease is still unowned after that, reset it yourself with: Reset-NSStaleLease `"`$NS`" from the imported module - a false result is a refusal, not permission to delete the lease directly"
     }
 }
 
@@ -186,17 +208,17 @@ if ($null -ne $session) {
     $sessionState = Test-NSRecordedProcess ([string]$session.ProcessId) ([string]$session.Start)
     if ($sessionState -eq 'Alive') {
         Write-Refuse ('session an agent is already working this punch list on ' + [string]$session.HostName)
-        Write-Repair "ask Nightshift for status, or pause it with stop-shift.ps1 -Project `"$workspace`" before starting a second shift"
+        Write-Repair "ask Nightshift for status, or pause it with ns stop-shift before starting a second shift"
     }
     elseif ($sessionState -eq 'Unavailable') {
         Write-Refuse 'session process-evidence-unavailable - a pid this host cannot classify is not a dead session'
-        Write-Repair "run Start from a shell that can see the recorded process, or pause the shift with stop-shift.ps1 -Project `"$workspace`""
+        Write-Repair "run Start from a shell that can see the recorded process, or pause the shift with ns stop-shift"
     }
 }
 
 if ($leaseState -eq 'valid' -and (Test-NSLeasePidLive $ns)) {
     Write-Refuse ('lease a live process holds generation ' + [string]$lease.Generation + ' of this shift')
-    Write-Repair "wait for that worker to exit, or pause the shift with stop-shift.ps1 -Project `"$workspace`""
+    Write-Repair "wait for that worker to exit, or pause the shift with ns stop-shift"
 }
 
 if ((Get-NSReasonCode $ns) -eq 'clock-out-failed' -and $leaseState -eq 'valid' -and
@@ -219,7 +241,10 @@ if ((Test-Path -LiteralPath $watchmanPath -PathType Leaf) -and -not (Test-NSRepa
 }
 if ($watchmanLive -and (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) -and $open -gt 0) {
     Write-Refuse 'watchman a live watchman is recovering this shift, including between recovery attempts'
-    Write-Repair "ask Nightshift for status, or pause it with stop-shift.ps1 -Project `"$workspace`"; never kill that watchman as stale"
+    Write-Repair "ask Nightshift for status, or pause it with ns stop-shift; never kill that watchman as stale"
+    # The panic form when the helper cannot be run: it only writes the marker, so the watchman
+    # stands down at its next Stop event rather than immediately.
+    Write-Repair "if you cannot run that, write the marker yourself with: New-Item -ItemType File -Force `"$ns\STOP`" - the watchman then stands down at its next Stop event"
 }
 
 if ($script:Refused) { exit 1 }
@@ -232,11 +257,11 @@ if ($leaseState -eq 'valid') {
     }
     elseif ([int]$fence.ExitCode -eq 1) {
         Write-Refuse 'fence the on-disk fence does not permit takeover'
-        Write-Repair "pause the shift with stop-shift.ps1 -Project `"$workspace`", then start again"
+        Write-Repair "pause the shift with ns stop-shift, then start again"
     }
     else {
         Write-Refuse 'fence the on-disk fence is missing or unreadable'
-        Write-Repair "pause the shift with stop-shift.ps1 -Project `"$workspace`", then start again"
+        Write-Repair "pause the shift with ns stop-shift, then start again"
     }
 }
 else {
@@ -255,7 +280,7 @@ if (-not [string]::IsNullOrEmpty((Get-NSControlStartRefuseReason $ns))) {
 if (-not $DryRun) {
     if ((Stop-NSWatchman $ns) -eq 'unverified') {
         Write-Refuse 'watchman a recorded watchman pid could not be verified, so it was left running'
-        Write-Repair "pause the shift with stop-shift.ps1 -Project `"$workspace`", then start again"
+        Write-Repair "pause the shift with ns stop-shift, then start again"
         exit 1
     }
     $cleared = New-Object 'System.Collections.Generic.List[string]'
@@ -263,6 +288,11 @@ if (-not $DryRun) {
             '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.lock.d')) {
         if (Test-NSPathEntry (Join-Path $ns $marker)) { $null = $cleared.Add($marker) }
     }
+    # The finished shift's accounting goes with its markers. Left in place, the next shift would open
+    # transcripts at the last shift's offsets and add to its totals. Renamed, not dropped: Archive
+    # files it with the rest.
+    $retiredUsage = Move-NSUsageRetire $ns (Get-NSEndedField $workspace 'shiftId')
+    if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
     Remove-NSPath (Join-Path $ns 'STOP')
     $deadlinePath = Join-Path $ns 'deadline'
     $deadlineSpent = $false
@@ -371,7 +401,7 @@ if (Test-NSPathEntry (Join-Path $ns 'provision-transaction.json')) {
     }
     else {
         Write-Refuse 'provision an interrupted install cannot be proven recovered'
-        Write-Repair '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again'
+        Write-Repair '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run ns provision rollback after fixing the target, then Start again'
     }
 }
 else {
@@ -403,6 +433,13 @@ if ($open -eq 0) {
     else {
         Write-Warn 'punch-list empty and nothing is staged - Setup, Hunt, or a hand-written item is the next step'
     }
+}
+
+# A shift that asked for filing at clock-out and ended before it could. The next explicit Archive
+# is where it gets picked up; Start neither files nor clears it.
+$pendingFiling = Join-Path $ns '.pending-filing'
+if ((Test-Path -LiteralPath $pendingFiling -PathType Leaf) -and -not (Test-NSReparsePoint $pendingFiling)) {
+    Write-Warn 'pending-filing the last shift asked for filing at clock-out and ended before it could - the next explicit Archive picks it up from .nightshift/.pending-filing'
 }
 
 $openEnded = $false

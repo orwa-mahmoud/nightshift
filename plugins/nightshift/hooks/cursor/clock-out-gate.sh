@@ -106,11 +106,13 @@ release_lease() {
     || log_line "process lease release deferred: lease mutex remained busy"
 }
 
-# The morning receipt — the one page the owner reads over coffee. Rendered from records only.
-# Best effort: an absent or failing renderer leaves one line in the shift log and the release
-# stands. $1 is tonight's shiftId, empty when no policy was written.
+# The morning receipt — the one page the owner reads over coffee. It renders from the live ledger,
+# so it runs before the archive truncates it. Best effort: an absent or failing renderer leaves one
+# line in the shift log and the release stands, and the archive still runs, so a night whose
+# receipt could not be written still keeps its evidence. $1 is tonight's shiftId, empty when no
+# policy was written.
 render_morning_receipt() {
-  local renderer="$_here/../../runtime/morning-receipt.sh" dir="$NS/receipts" err
+  local renderer="$_here/../../runtime/morning-receipt.sh" dir="$NS/receipts" err out
   if [ ! -f "$renderer" ]; then
     log_line "morning receipt skipped: runtime/morning-receipt.sh is not installed"
     return 0
@@ -123,8 +125,15 @@ render_morning_receipt() {
     log_line "morning receipt render failed: cannot create $dir"
     return 0
   }
-  err="$(bash "$renderer" --project "$PROJECT_DIR" --view owner \
-    --out "$dir/morning-$(date '+%Y-%m-%d')${1:+-$1}.md" 2>&1)" && return 0
+  out="$dir/morning-$(date '+%Y-%m-%d')${1:+-$1}.md"
+  # A page already standing for this shift is the one the owner asked for — a custom handoff the
+  # model wrote to the owner's template, or the page a duplicate stop event already rendered.
+  # Neither is replaced by the built-in renderer.
+  if [ -e "$out" ] || [ -L "$out" ]; then
+    log_line "morning receipt kept: $out already exists for this shift"
+    return 0
+  fi
+  err="$(bash "$renderer" --project "$PROJECT_DIR" --out "$out" 2>&1)" && return 0
   log_line "morning receipt render failed: $(printf '%s' "$err" | head -n1)"
 }
 
@@ -153,10 +162,31 @@ end_shift() {
   release_lease
   # A shift that never wrote a policy has no id, and its receipt is named for the date alone.
   shift_id="$(ns_policy_shift_id "$PROJECT_DIR" 2>/dev/null)" || shift_id=""
+  if ns_handoff_enabled "$PROJECT_DIR"; then
+    render_morning_receipt "$shift_id"
+  else
+    log_line "morning receipt disabled by the owner (handoff.enabled) - every record stands"
+  fi
+  # The marker that says this shift ended also says which shift and where it files, and notes that
+  # filing is due when the owner asked for it.
+  ns_gate_record_ending "$NS" "$PROJECT_DIR" "${shift_id:-unknown}"
   archive_findings_ledger "${shift_id:-unknown}"
-  render_morning_receipt "$shift_id"
   receipts_commit "$1"
   whistle "$1"
+}
+
+# Every ending runs through here. The shift is over by now, so asking the model to file is a
+# request it can carry out, and that request is the one hold left in a finished shift. Asking is
+# recorded, so the next stop releases either way.
+end_and_stop() {
+  end_shift "$1"
+  if ns_gate_filing_due "$NS"; then
+    log_line "archive.automatic is on - holding once so this shift can be filed before the session ends"
+    cursor_emit_block "$(ns_gate_filing_message "$NS")"
+  else
+    cursor_emit_release
+  fi
+  exit 0
 }
 
 PUNCH_UNREADABLE=0
@@ -169,10 +199,10 @@ honor_stop() {
   if [ -f "$PUNCH" ]; then
     reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
     summary="shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
-    end_shift "$summary"
+    end_and_stop "$summary"
   else
     reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-    end_shift "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
+    end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
   fi
 }
 
@@ -181,6 +211,7 @@ honor_stop() {
 # writes .shift-armed; without it the punch list is a to-do file and every session stops freely —
 # including the one that just wrote the list while planning.
 if [ ! -f "$NS/.shift-armed" ]; then cursor_emit_release; exit 0; fi
+
 
 # Owner interrupt — live Stop button sends status "aborted" (Cursor 3.17.21).
 # Same meaning as Claude Esc: release, do not reinject, do not clock out.
@@ -195,9 +226,8 @@ fi
 # owner-issued order through clock-out; process ownership must never make emergency stop unusable.
 if [ -f "$STOP" ]; then
   if [ -d "$NS" ] && ns_lock "$NS"; then trap 'ns_unlock "$NS"' EXIT; fi
+  # honor_stop ends the shift and terminates: every path through it releases or holds.
   honor_stop
-  cursor_emit_release
-  exit 0
 fi
 
 LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
@@ -237,25 +267,29 @@ if [ -d "$NS" ] && ns_lock "$NS"; then
   trap 'ns_unlock "$NS"' EXIT
 fi
 
+# What the shift has cost so far, closed off item by item. The gate sees ticked boxes rather than
+# ticks, so it catches the marks up to them: everything spent between two ticks belongs to the
+# item ticked second. It runs here, once this session has been shown to own the shift and holds
+# the site's lock: a stop from a second conversation on the same workspace must leave the ledger
+# exactly as it found it.
+if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
+  ns_gate_usage_sync "$NS" "$PROJECT_DIR" "$PUNCH" "$TICKED" || :
+fi
+
 # 1. Stop-work order — honor at once; open boxes are left open on purpose.
 if [ -f "$STOP" ]; then
+  # honor_stop ends the shift and terminates: every path through it releases or holds.
   honor_stop
-  cursor_emit_release
-  exit 0
 fi
 
 # 2. Done — no punch list at all, or every box ticked. An unreadable punch
 # list is not zero open: do not release.
 if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
   if [ ! -f "$PUNCH" ]; then
-    end_shift "shift done: $TICKED/$TOTAL"
-    cursor_emit_release
-    exit 0
+    end_and_stop "shift done: $TICKED/$TOTAL"
   fi
   if [ "$OPEN" -eq 0 ]; then
-    end_shift "shift done: $TICKED/$TOTAL"
-    cursor_emit_release
-    exit 0
+    end_and_stop "shift done: $TICKED/$TOTAL"
   fi
 fi
 
@@ -263,9 +297,7 @@ fi
 if [ -f "$DEADLINE" ] && deadline_passed; then
   log_line "quitting time — shift ended, $TICKED/$TOTAL done, items left open"
   printf 'deadline\n' >"$STOP"
-  end_shift "quitting time: $TICKED/$TOTAL done, items left open"
-  cursor_emit_release
-  exit 0
+  end_and_stop "quitting time: $TICKED/$TOTAL done, items left open"
 fi
 
 # Stall guard — consecutive stop attempts with no progress. Progress = a box ticked OR a
@@ -290,9 +322,7 @@ if [ "$STALL_OK" -eq 1 ]; then
     if [ "$attempts" -ge "$STALL_MAX" ]; then
       log_line "stalled — auto-ended, $attempts attempts no progress, $TICKED/$TOTAL done, items left open"
       printf 'stalled\n' >"$STOP"
-      end_shift "stalled: $TICKED/$TOTAL done, $attempts attempts no progress"
-      cursor_emit_release
-      exit 0
+      end_and_stop "stalled: $TICKED/$TOTAL done, $attempts attempts no progress"
     fi
   elif [ "$attempts" -ge "$STALL_WARN" ]; then
     log_line "stall warning — session active, no durable checkpoint since the last $attempts stop attempts, $TICKED/$TOTAL done; keeping shift open"
@@ -312,9 +342,25 @@ fi
 # text lives in the rules file (clockOutMessage) — the one copy; the emitter in lib-io.sh
 # escapes it, so the owner's text cannot break the decision. The block itself never depends
 # on config: an unreadable message still blocks, fail closed, with the repair named.
-if [ -n "$GATE_MESSAGE" ]; then
-  cursor_emit_block "$GATE_MESSAGE"
+# Which form this block takes. The push is unchanged — the turn is still blocked, with a reason
+# the host feeds back — but a block that repeats a message the model read a few calls ago can say
+# so in one line instead. The gate only shortens when it positively knows nothing moved.
+# A contract that moved is answered in full, before any question of shortening arises: the whole
+# point of the short line is that the model already holds the contract, and here it may not.
+NS_CONTRACT_MOVED="$(ns_gate_contract_mismatch "$PROJECT_DIR" "$PUNCH")" || NS_CONTRACT_MOVED=""
+if [ -n "$NS_CONTRACT_MOVED" ]; then
+  log_line "punch list changed since arming — blocking until it is restored"
+  cursor_emit_block "$NS_CONTRACT_MOVED"
   exit 0
 fi
-cursor_emit_block "$(ns_expand_injected_paths "$PROJECT_DIR" "DO NOT STOP — the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item's gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage — unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)")"
+NS_GATE_FP="$(ns_gate_reminder_fingerprint "$OPEN" "$TICKED" "$(ns_gate_open_item "$PUNCH")" \
+  "$([ -f "$STOP" ] && printf yes || printf no)" \
+  "$(deadline_passed && printf passed || printf pending)" \
+  "$(ns_gate_stall_state "$STALL" "$STALL_WARN")")"
+if [ -n "$GATE_MESSAGE" ]; then
+  cursor_emit_block "$(ns_gate_reminder_text "$PROJECT_DIR" "$GATE_MESSAGE" "$OPEN" "$TICKED" \
+    "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"
+  exit 0
+fi
+cursor_emit_block "$(ns_gate_reminder_text "$PROJECT_DIR" "$(ns_expand_injected_paths "$PROJECT_DIR" "DO NOT STOP — the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item's gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage — unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)")" "$OPEN" "$TICKED" "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"
 exit 0

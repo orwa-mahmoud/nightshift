@@ -1,0 +1,37 @@
+# What each preflight verdict means, and what to do about it.
+#
+# The explanation belongs on the verdict line that occurred, not in a paragraph the model reads on
+# every Start for verdicts that did not. It lives here and the helper prints it, and both hosts
+# read this one file, so neither can word the same verdict differently.
+#
+# One record per line: <kind> TAB <topic> TAB <text>. `explain` says what the verdict means;
+# `repair` is an action the owner takes, printed after the explanation and before any repair the
+# helper builds for itself, in file order when a topic has more than one. A topic with no record
+# here prints its verdict and its own repairs.
+#
+# Both the POSIX helper and the PowerShell one read this file, so the two hosts cannot drift into
+# different wordings of the same verdict. Lines starting with # and blank lines are ignored, and
+# the text is printed verbatim - keep each record on one line.
+
+explain	control	A paused shift whose deadline has passed does not get a silent new budget. Do not clear STOP, do not ask for hours, do not invent a time budget. The decision is ns_control_start_refuse_reason, or Get-NSControlStartRefuseReason on native Windows.
+
+explain	binding	The host opened one project and this Start was given another, and the two resolve to different workspaces. A shift would arm in one and record its session and lease against the other, so nothing is armed. Print both paths the verdict names, and both ways forward. Without the owner naming which they meant, never pick one, never search for a target, and never overwrite a binding that is already there.
+
+explain	provision	A provisioning transaction is unrecovered, and product work on top of it would build on a half-applied change.
+
+explain	fence	The cross-host handoff fence refused. Model-authored flags never grant takeover, and two active workers are never permitted.
+repair	fence	to see the fence object for yourself, read the same lease, session and pid with: ns continuity-handoff fence-check
+
+explain	lease	An agent is already working this punch list, or its state is unowned. Hand the owner the running thread and stop: never start a second shift beside it, and never kill a live watchman as stale. For malformed lease state the owner runs the stale-lease reset themselves in a terminal - never run it from the blocked session. When the verdict says the terminal clock-out failed without releasing the shift, do not run the reset at all: reopen the recorded conversation.
+explain	session	An agent is already working this punch list, or its state is unowned. Hand the owner the running thread and stop: never start a second shift beside it, and never kill a live watchman as stale. When the verdict says the terminal clock-out failed without releasing the shift, do not run the stale-lease reset: reopen the recorded conversation.
+explain	watchman	A watchman is alive on this workspace, or its pid could not be verified. Liveness is process evidence, never a guess: the primary tell is kill -0 on a recorded numeric pid, and on native Windows Get-Process -Id plus the recorded UTC start time. A pid that cannot be classified is process-evidence-unavailable - the helper leaves it running and refuses, because missing tools are not a dead session and a watchman must never be able to advance the old lease while markers are being removed.
+
+explain	policy	Tonight's snapshot reads the same on every host, with or without jq and python3, so a verification level, a tooling policy or an elevation allowance the owner recorded still applies. A refusal means this host has no reader for it at all, and a shift does not arm on a policy nobody can read. A warning means the subset reader has already run: arm using rules.json alone. Never install jq or python3 for any of this - the helper works without either.
+
+explain	permissions	A prompt mid-shift could freeze the night. Say the cost once and proceed: the choice stays the owner's.
+
+explain	work-mode	The work mode decides where the work happens. A malformed one, or a missing one where Setup would propose artifact, refuses: send the owner to Setup and never git init a notes folder to make it a repository.
+explain	work-target	When the work target is unrecorded the resolver takes the workspace itself, or its single immediate child repository. A symlink or reparse child is skipped; it is not a nested checkout. Several child repositories make the choice ambiguous, and Nightshift never guesses.
+explain	receipts	In artifact mode the receipts directory is where completion lands, so a path that exists but is not a usable directory refuses rather than arming into nowhere.
+
+explain	state-version	Start never writes the state marker, and a newer marker is never rewritten or downgraded. Migration is a Setup or Doctor repair.

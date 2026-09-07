@@ -27,10 +27,10 @@ bundle_mode() {
   after="$(fingerprint "$p")"
   [ "$before" = "$after" ]
   [ ! -d "$p/.nightshift/support" ]
-  grep -qF 'export-support.sh' "$DOCTOR_SKILL"
+  grep -qE 'ns"? export-support' "$DOCTOR_SKILL"
   grep -qF 'Invoking Doctor alone must not create' "$DOCTOR_SKILL"
-  grep -qF 'runtime/export-support.sh' "$BATS_TEST_DIRNAME/../docs/commands.md"
-  grep -qF 'runtime\windows\export-support.ps1' "$BATS_TEST_DIRNAME/../docs/commands.md"
+  grep -qE 'ns"? export-support' "$BATS_TEST_DIRNAME/../docs/commands.md"
+  grep -qE 'ns\.ps1"? export-support' "$BATS_TEST_DIRNAME/../docs/commands.md"
 }
 
 @test "export writes a 0600 local bundle and never phones home" {

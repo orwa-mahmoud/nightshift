@@ -17,9 +17,13 @@
 # Before either spawn, the watchman advances a process lease and passes its generation/nonce to
 # the child. An older Desktop or terminal process on that conversation then loses observed tools.
 #
-# The sandbox grant is danger-full-access because the workspace-write sandbox protects .git —
-# a revived session could edit but never commit (verified live: "Git cannot create
-# .git/index.lock"), and one commit per item IS the contract in repository mode.
+# The sandbox grant is the owner's to choose, in rules.json under recovery.launchScope. The
+# shipped host-grant starts a revived session with danger-full-access, because the workspace-write
+# sandbox protects .git — a revived session could edit but never commit (verified live: "Git
+# cannot create .git/index.lock"), and one commit per item IS the contract in repository mode.
+# host-default passes no sandbox argument at all and takes whatever the host gives, which is
+# narrower and may leave a revived session unable to commit. Whichever is in force is named in the
+# shift log on every revival, and a failed rung is retried at the same scope, never a broader one.
 # Artifact mode writes a receipt instead. The fence around that access is
 # nightshift's own guards: the hardhat denies what the owner forbade, in every mode — the same
 # trade Claude Code makes with bypassPermissions.
@@ -153,7 +157,16 @@ elif [ -f "$PIDFILE" ]; then
   fi
 fi
 printf '%s\n' "$$" >"$PIDFILE"
-trap 'rm -f "$PIDFILE"' EXIT
+# The pidfile is this loop's claim on the site, and a claim can change hands: Reset and Purge
+# remove it, a takeover replaces the pid inside it. Removing it on the way out is only right while
+# it still names this process — otherwise a watchman that has already been replaced would delete
+# the new one's claim as it exits, and the site would be left watched by a loop nothing records.
+holds_pidfile() {
+  [ -f "$PIDFILE" ] || return 1
+  [ ! -L "$PIDFILE" ] || return 1
+  [ "$(sed -n 1p "$PIDFILE" 2>/dev/null)" = "$$" ]
+}
+trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
 WATCH_CLOCK="$(date +%s)"
 
 sid()        { [ -L "$NS/.shift-session" ] && return; sed -n 1p "$NS/.shift-session" 2>/dev/null; }
@@ -212,8 +225,48 @@ rollout_grew() {
 # headless run with the punch list as its handover.
 # A non-resumable recorded id is never passed to `codex exec resume` and never treated as a
 # successful resume of that thread.
+# A fresh headless run at the resolved scope. The scope never widens between rungs: a revival that
+# failed is retried at the same permissions, never at broader ones.
+spawn_fresh() {
+  local mode
+  log_line "watchman: reviving under launch scope $1"
+  case "$1" in
+    host-default)
+      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+        CODEX_PROJECT_DIR "$PROJECT" \
+        codex exec "$PROMPT_FRESH"
+      return $?
+      ;;
+    recorded:*)
+      mode="${1#recorded:}"
+      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+        CODEX_PROJECT_DIR "$PROJECT" \
+        codex exec -s "$mode" "$PROMPT_FRESH"
+      return $?
+      ;;
+  esac
+  # host-grant, and only host-grant: the owner wrote it in their own file.
+  ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+    CODEX_PROJECT_DIR "$PROJECT" \
+    codex exec -s danger-full-access "$PROMPT_FRESH"
+}
+
+# Set once when a revival is refused because the recorded scope cannot be reproduced. Retrying
+# cannot change that answer, so the ladder stops instead of spending its rungs on it.
+RECOVERY_REFUSED=0
+
 spawn() { # $1 = rung (1|2)
-  local prompt kind rc
+  local prompt kind rc scope
+  scope="$(ns_recovery_effective_scope "$PROJECT" codex)"
+  case "$scope" in
+    unavailable:*)
+      RECOVERY_REFUSED=1
+      log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
+      log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
+      note recovery-scope-unavailable
+      return 1
+      ;;
+  esac
   if [ -n "$AGENT" ]; then
     if [ "$1" -eq 1 ]; then prompt="$PROMPT_RESUME"; else prompt="$PROMPT_FRESH"; fi
     # shellcheck disable=SC2086 # owner-provided command line; splitting is intentional
@@ -222,18 +275,29 @@ spawn() { # $1 = rung (1|2)
   elif [ "$1" -eq 1 ]; then
     kind="$(ns_codex_identity_kind "$(sid)")"
     if [ "$kind" = "resumable" ]; then
-      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-        CODEX_PROJECT_DIR "$PROJECT" \
-        codex exec resume -c 'sandbox_mode="danger-full-access"' "$(sid)" "$PROMPT_RESUME"
+      log_line "watchman: reviving under launch scope $scope"
+      case "$scope" in
+        host-default)
+          ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+            CODEX_PROJECT_DIR "$PROJECT" \
+            codex exec resume "$(sid)" "$PROMPT_RESUME"
+          ;;
+        recorded:*)
+          ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+            CODEX_PROJECT_DIR "$PROJECT" \
+            codex exec resume -c "sandbox_mode=\"${scope#recorded:}\"" "$(sid)" "$PROMPT_RESUME"
+          ;;
+        *)
+          ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
+            CODEX_PROJECT_DIR "$PROJECT" \
+            codex exec resume -c 'sandbox_mode="danger-full-access"' "$(sid)" "$PROMPT_RESUME"
+          ;;
+      esac
     else
-      ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-        CODEX_PROJECT_DIR "$PROJECT" \
-        codex exec -s danger-full-access "$PROMPT_FRESH"
+      spawn_fresh "$scope"
     fi
   else
-    ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-      CODEX_PROJECT_DIR "$PROJECT" \
-      codex exec -s danger-full-access "$PROMPT_FRESH"
+    spawn_fresh "$scope"
   fi
   rc=$?
   if [ "$rc" -eq 3 ]; then
@@ -370,6 +434,7 @@ while :; do
     attempt=$((attempt + 1))
     [ "$attempt" -le "$total" ] || break
     log_line "watchman: site dead quiet mid-shift — resume attempt $attempt ($(rung_name $attempt))"
+    if [ "$RECOVERY_REFUSED" -eq 1 ]; then break; fi
     if spawn "$attempt"; then
       revived=0
       if [ "$attempt" -ge 2 ] || [ -z "$(sid)" ]; then

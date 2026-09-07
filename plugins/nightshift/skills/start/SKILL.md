@@ -1,38 +1,25 @@
 ---
 name: start
-description: Begin the shift — preflight, cut whatever is queued, arm the site, work the punch list. Asks nothing, so a scheduled or headless run works exactly like an interactive one.
+description: Begin the shift from the punch list without asking, so scheduled and headless runs behave like interactive ones.
 ---
 
 Start a Nightshift run in the host-opened project.
 
-Resolve the host-opened project folder to an absolute `$TASK_ROOT`: use `${CLAUDE_PROJECT_DIR}` on
-Claude Code; on Codex honor Nightshift's `${CODEX_PROJECT_DIR}` recovery override when present,
-otherwise capture `pwd -P` before any other shell call. If `$TASK_ROOT/.nightshift-link` exists,
-validate the one absolute workspace path inside it and call that `$NIGHTSHIFT_WORKSPACE`; otherwise
-set `NIGHTSHIFT_WORKSPACE="$TASK_ROOT"`.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/start/SKILL.md`). Run every command below through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
+in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
+verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
+`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
+directory persists between calls.
 
-Bind the Nightshift directory once: `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"`. On native Windows,
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`. After this bind, Nightshift files are
-`$NS/<name>` for every read, write, and shell command. Owner-facing prose may use the short names
-(`punch-list.md`, `parking-lot.md`, `STOP`). Never re-resolve, never search surrounding folders.
-Helpers that take `--project` or `-Project` still receive `"$NIGHTSHIFT_WORKSPACE"`. The shell's
-working directory persists between Bash calls, so never rely on a bare relative path.
+When a verdict names your host — permission modes, resume commands, the sandbox and identity
+rules that belong to it — open
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/hosts/<host>.md` for the host you are on,
+and no other. Not before a verdict names it.
 
-Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT`: use
-`${CLAUDE_PLUGIN_ROOT}` on Claude Code; on Codex use `$PLUGIN_ROOT` when available; on Cursor use
-`${CURSOR_PLUGIN_ROOT}` when available; otherwise derive it from the absolute path attached to
-this skill (`skills/start/SKILL.md`). Substitute that absolute path in every command below; never
-search for the plugin.
-
-Host detail — native Windows paths, permission modes, resume commands, work-mode rules, the
-stale-lease reset, and linking another workspace — lives in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/start-hosts.md`. Open it when a verdict
-below names your host, and not before.
-
-**State map:** `punch-list.md` → owner-approved work active in this shift;
-`drafting-table.md` → known work staged for a later shift; `parking-lot.md` → unresolved owner
-decisions plus the default chosen so work continues; `work-orders.md` → timed catalog work composed
-only through Hunt. Ordinary known plans never become work orders.
+## 1. Preflight — one helper, one verdict per line
 
 **With work in the punch list, this command asks nothing.** It reads the list, arms the site and
 works — which is what lets cron run it at 04:00 and lets the watchman revive it after a crash. It
@@ -41,111 +28,40 @@ promotes nothing on its own: what is in the punch list is the shift, exactly as 
 The one time it speaks is when the punch list is **empty**. Then there is no work to do silently,
 so it looks at staged drafts and pending Hunt orders and asks which to promote.
 
-## 1. Preflight — one helper, one verdict per line
-
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/start-preflight.sh" --project "$NIGHTSHIFT_WORKSPACE" --host claude
-```
-
-Native Windows:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\start-preflight.ps1" `
- -Project "$NIGHTSHIFT_WORKSPACE" -HostName claude
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" start-preflight --host claude
 ```
 
 Pass the host you are actually running on (`claude`, `codex`, or `cursor`). Every line it prints is
-one verdict:
+one verdict, and it explains itself:
 
 - **`ok <topic> <detail>`** — a resolved fact. Report it if the owner asked; otherwise continue.
 - **`warn <topic> <detail>`** — say it once in plain English, then arm anyway. The choice stays the
   owner's.
-- **`refuse <topic> <detail>`** — do not arm. The `repair` line that follows is the exact repair;
-  print it verbatim and stop. Exit status 0 means the shift may arm; non-zero is a refusal; 2 is a
-  usage error in the call you just made.
+- **`refuse <topic> <detail>`** — do not arm. Print the `explain` and `repair` lines that follow it
+  verbatim and stop.
 
-The helper owns all of it, so the skill re-derives none of it: workspace and `.nightshift-link`
-resolution, `state-version` (Start never writes the marker; migration is a Setup or Doctor repair
-with `migrate-state.sh`, or
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\migrate-state.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`
-on native Windows), `$NS/work-mode` and `$NS/work-target`, the artifact receipts directory, the
-process lease, `$NS/.shift-session`, a live watchman, the cross-host fence, an unrecovered
-provisioning transaction, `rules.json` and the watchman recovery keys, the shift policy,
-punch-list and staged counts, the deadline projection, and the host's permission mode. It reads
-`rules.json` through `ns_rules_check`, so a broken file refuses to arm with one named reason
-instead of a guess. Do not repeat any of those checks in the skill, and never install
-`jq` or `python3` for them — the helper works without either.
+Exit status 0 means the shift may arm; non-zero is a refusal; 2 is a usage error in the call you
+just made. An `explain` line says what the verdict means and a `repair` line is the exact action —
+relay them, do not restate them, and never invent an explanation the helper did not print.
 
-The work-mode verdicts decide where the work happens. A malformed work mode, or a missing one where
-Setup would propose artifact, refuse to arm and send the owner to Setup;
-do not `git init` a notes folder. In artifact mode a receipts path that
-exists but is not a usable directory refuses too. When `$NS/work-target` is unrecorded the
-resolver takes the workspace or its single immediate child repository.
-Skip a symlink or reparse child; it is not a nested checkout.
+Two rules are policy rather than mechanics, so they are yours to hold whatever a verdict says:
+never kill a live watchman and never start a second shift beside one; and never clear `STOP` or
+invent a time budget for a paused shift whose deadline has passed.
 
-Liveness is process evidence, never a guess: the primary tell is `kill -0` on a recorded numeric
-pid, and a pid that cannot be classified is `process-evidence-unavailable` — the helper stops
-rather than reading a missing tool as a dead session.
-
-Once it has proved no shift is live, the helper clears the leftovers itself: `STOP`, `.stall`,
-`.notified`, `.ended`, `.session-end`, `.shift-pulse`, `.mint-failed`, `.shift-session`,
-`.shift-armed`, `.watchman-tick`, `.lock.d/`, a stale `.watchman` pidfile, and the lease with its
-temporary files. It never writes `.shift-armed`, never writes `$NS/deadline`, and never asks a
-question, so a scheduled run behaves exactly like an interactive one.
-
-These refusals carry a repair the owner must read word for word:
-
-- `refuse control` — a paused shift with an expired deadline does not get a silent new budget. Do
-  not clear `STOP`, do not ask for hours, do not invent a time budget. The decision comes from
-  `ns_control_start_refuse_reason` (native Windows: `Get-NSControlStartRefuseReason`); the owner
-  writes a new UNIX epoch to `$NS/deadline` or runs Reset then Start.
-- `refuse provision` — recover before any product work with
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/provision.sh" --project "$NIGHTSHIFT_WORKSPACE" recover`
-  (native Windows: `provision.ps1 -Project "$NIGHTSHIFT_WORKSPACE" recover`). When recovery exits
-  unproven, Start refuses to arm and names the repair:
-  `.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again.`
-- `refuse fence` — the cross-host handoff fence refused. It is the same on-disk read as
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/continuity-handoff.sh" fence-check --project "$NIGHTSHIFT_WORKSPACE"`,
-  which you may run to see the fence object; model-authored flags never grant takeover and two
-  active workers are never permitted.
-- `refuse lease` / `refuse session` / `refuse watchman` — an agent is already working this punch
-  list, or its state is unowned. Hand the owner the running thread and stop; never start a second
-  shift beside it and never kill a live watchman as stale. The trusted lever is
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/stop-shift.sh" --project "$NIGHTSHIFT_WORKSPACE"`, which writes
-  `STOP` and stands the watchman down. The panic form that only writes the marker —
-  `touch "$NS/STOP"` on POSIX, or `New-Item -ItemType File -Force "$NS\STOP"` in native Windows
-  PowerShell — waits for the next Stop event. For malformed lease state, print the stale-lease
-  reset command from `start-hosts.md` for the owner to run themselves; do not run
-  `ns_lease_reset_stale` from the blocked session, and when the verdict says
-  `terminal clock-out failed without releasing the shift` do not run the stale-lease reset at all —
-  reopen the recorded conversation.
-
-Two warnings shape the night without stopping it. `warn policy` with no JSON parser means
-arm using `$NS/rules.json` alone — the subset reader has already run. `warn permissions` means a
-prompt mid-shift could freeze the night: say the cost once and proceed, because the choice stays
-the owner's.
-
-**Artifact mode completes with receipts, not commits.** When the verdict is
-`ok work-mode artifact`, complete each item with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/write-receipt.sh" --project "$NIGHTSHIFT_WORKSPACE"` (native
-Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\write-receipt.ps1" -Project "$NIGHTSHIFT_WORKSPACE"`)
-instead of a work-target commit. Completion there is `$NS/receipts/`, not a git log.
+## 2. The punch list is the shift
 
 **Inspect capabilities in the skill.** Read manifests, lockfiles, and `## Gates` in the work
 target. `$NS/capabilities.json` is a cache the model may update after a successful tooling commit
 only; no detector is required.
 
 **Permission gaps are parked, never asked.** Run
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/preflight-needs.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-(native Windows: `preflight-needs.ps1 -Project "$NIGHTSHIFT_WORKSPACE"`) against every item now in
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" preflight-needs` against every item now in
 `## Items`. For each item with a gap, run
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/park-needs.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-(native Windows: `park-needs.ps1 -Project "$NIGHTSHIFT_WORKSPACE"`) to add its entry to
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" park-needs` to add its entry to
 `$NS/parking-lot.md` naming the missing category, then append one `$NS/shift-log.md` line listing
 every gapped item. Work everything else. If either helper exits because no JSON parser is
 installed, park the gaps in the skill and continue; neither is on the armed path.
-
-## 2. The punch list is the shift
 
 If `$NS/punch-list.md` has at least one open `- [ ]` under `## Items`, that is the work — start it.
 Do not promote, cut, or add anything: parked orders and drafts stay exactly where the owner left
@@ -239,8 +155,8 @@ claim. Never create or edit the lease directly.
 
 The probe must execute cleanly with no hook denial or hook error. On native Windows this is also
 the live check that the filesystem can make an atomic private session claim and lease. If it fails,
-remove `$NS/.shift-armed`, run Stop, and use the stale-lease reset procedure in `start-hosts.md`;
-do not begin item work or arm a watchman on an assumed claim.
+remove `$NS/.shift-armed`, run Stop, and follow the stale-lease reset the preflight prints as a
+repair; do not begin item work or arm a watchman on an assumed claim.
 
 ### Codex identity checkpoint — before the watchman
 
@@ -248,11 +164,11 @@ Codex exposes the current task identity through hook payloads, not as a shell en
 so this runs after the probe and before the watchman:
 
 ```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/start-preflight.sh" --project "$NIGHTSHIFT_WORKSPACE" --phase bind
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" start-preflight --phase bind
 ```
 
-Native Windows: the same script with `-Phase bind`. It classifies `$NS/.shift-session` line 1 with
-`ns_codex_identity_kind` (native Windows: `Get-NSCodexIdentityKind` after
+It classifies `$NS/.shift-session` line 1 with `ns_codex_identity_kind` (native Windows:
+`Get-NSCodexIdentityKind` after
 `Import-Module "$NIGHTSHIFT_PLUGIN_ROOT\lib\Nightshift.psm1" -Force`).
 
 - `ok codex-identity resumable`, or `not-applicable` on another host — continue.
@@ -280,61 +196,25 @@ are the owner's review material, and Archive files those on the owner's order.
 
 ## 6. Arm the night watchman
 
-Each host arms its own; both read their cadence from the rules file, and each stands down on a
-shift the other host owns. Unless the `ok watch-minutes 0 (watchman disarmed)` verdict says
-otherwise, arm it in the background.
-
-On Claude Code:
+Each host has its own watchman and the verb resolves to it; all of them read their cadence from
+the rules file, and each stands down on a shift another host owns. Unless the
+`ok watch-minutes 0 (watchman disarmed)` verdict says otherwise, arm it in the background.
 
 ```bash
-nohup "$NIGHTSHIFT_PLUGIN_ROOT/runtime/claude/watchman.sh" --project "$NIGHTSHIFT_WORKSPACE" >/dev/null 2>&1 &
-```
-
-On Codex:
-
-```bash
-nohup "$NIGHTSHIFT_PLUGIN_ROOT/runtime/codex/watchman.sh" --project "$NIGHTSHIFT_WORKSPACE" >/dev/null 2>&1 &
-```
-
-On Cursor:
-
-```bash
-nohup "$NIGHTSHIFT_PLUGIN_ROOT/runtime/cursor/watchman.sh" --project "$NIGHTSHIFT_WORKSPACE" >/dev/null 2>&1 &
-```
-
-On native Windows, start the same bundled PowerShell watchman for the active host:
-
-```powershell
-& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\start-watchman.ps1" `
- -Project "$NIGHTSHIFT_WORKSPACE" -HostName claude
-# Codex uses: -HostName codex
-# Cursor uses: -HostName cursor
+nohup "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" watchman >/dev/null 2>&1 &
 ```
 
 It revives a session that DIES mid-shift — an API outage, a crash, a killed terminal — by spawning
 a fresh session that resumes from the punch list. Every host stands down on done, a stop-work
-order, or quitting time; per-host revival detail is in `start-hosts.md`. `STOP` remains the
+order, or quitting time; per-host revival detail is in `hosts/<host>.md`. `STOP` remains the
 stop-work order on every host, and the only stop a headless run can receive.
 
 ## 7. Work
 
-Begin item 1 and follow the nightshift skill: one item at a time,
-gate before each commit or artifact receipt, tick only after the item is complete, park don't ask,
-leave pushing to the owner unless the punch list says otherwise. From here the clock-out gate owns the session — it will not
-let you stop while any box is open.
-
-Whenever an item answers a tool, a scan, or a report, write that source's baseline before the first
-fix — once per source class — using the receipt templates in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md`. Before a risky
-cluster, write a checkpoint receipt naming the touched paths, the rollback ref, and the
-verification plan. The model writes the receipt; no evidence helper is required, and Python never
-is. Cited reports follow
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/cited-research.md` and
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/check-report.sh"` (native Windows:
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\check-report.ps1"`).
-
-At clock-out the gate renders the morning receipt itself. When it reports
-`JSON parser unavailable` in `$NS/shift-log.md`, write that one page by hand into
-`$NS/receipts/morning-<YYYY-MM-DD>.md` from the Morning receipt block in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipt-templates.md`, naming the shift id
-when a policy carries one. Every shift leaves a receipt.
+Read `$NS/punch-list.md` in full, then begin item 1 and follow the nightshift skill, which owns the loop, the gates, the receipts, cited
+research and the shift report: one item at a time, tick only after the item is complete, park don't
+ask, leave pushing to the owner unless the punch list says otherwise. From here the clock-out gate
+owns the session — it will not let you stop while any box is open. When the gate logs
+`JSON parser unavailable`, write the morning page by hand from
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/morning.md`, which names the file
+to write and the fields to fill. Every shift leaves a receipt.

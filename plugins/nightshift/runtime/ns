@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# ns — one verb per helper. The runtime picks the host, the file and the workspace.
+#
+#   ns <verb> [args…]     run the helper that implements <verb> on this host
+#   ns bind               the six resolved facts, for a skill or owner that wants to see them
+#   ns help               this host's verb table, with the exact invocation per line
+#
+# A skill names one verb, not one spelling of it per platform — POSIX, native Windows, and a
+# Codex variant, all read on every host. No host loads a skill per platform, so the per-host
+# command file is made executable here instead of read there.
+#
+# The boundary: this decides which file implements a verb here, how that file spells its flags,
+# and where the workspace is. It never decides whether a verb runs, in what order, or what is
+# done with the output. Every helper keeps its own path and flags and stays callable directly —
+# delete this file and nothing beneath it breaks.
+#
+# Verbs are derived, never registered: `ns <name>` is `runtime/<name>.sh`, or
+# `runtime/<host>/<name>.sh` when the helper is per-host. A new helper is a verb the day it
+# lands and a deleted one stops resolving, so there is no second list to keep in step.
+#
+# Exit: the helper's own status, streams passed through untouched. 1 usage · 2 refused.
+#
+# bash, like every other helper: the shared library this reuses for workspace resolution is bash,
+# and reimplementing that rule here to keep the dispatcher POSIX would put a second copy of it in
+# the tree — the one thing a dispatcher exists to avoid.
+set -u
+
+# The verbs that change something on disk. Identical in the native Windows dispatcher.
+NS_WRITING_VERBS="scaffold write-receipt archive-receipts stop-shift link-workspace evidence-archive migrate-state apply-profile"
+
+NS_SELF="$0"
+case "$NS_SELF" in
+  */*) NS_RUNTIME="${NS_SELF%/*}" ;;
+  *) NS_RUNTIME="." ;;
+esac
+NS_RUNTIME="$(cd -P "$NS_RUNTIME" 2>/dev/null && pwd)" || {
+  printf 'ns: cannot resolve my own directory\n' >&2
+  exit 1
+}
+NS_PLUGIN_ROOT="${NS_RUNTIME%/*}"
+# shellcheck source=plugins/nightshift/lib/lib.sh
+. "$NS_PLUGIN_ROOT/lib/lib.sh"
+
+# The host, from the environment the hooks already read. Never from searching, and never from a
+# model-authored file: a wrong answer here picks the wrong watchman.
+ns_dispatch_host() {
+  if [ -n "${NIGHTSHIFT_HOST:-}" ]; then
+    printf '%s' "$NIGHTSHIFT_HOST"
+  elif [ -n "${CLAUDE_PROJECT_DIR:-}${CLAUDECODE:-}${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    printf 'claude'
+  elif [ -n "${CODEX_PROJECT_DIR:-}${CODEX_HOME:-}${CODEX_SANDBOX:-}" ]; then
+    printf 'codex'
+  elif [ -n "${CURSOR_PROJECT_DIR:-}${CURSOR_PLUGIN_ROOT:-}${CURSOR_TRACE_ID:-}" ]; then
+    printf 'cursor'
+  else
+    printf 'unknown'
+  fi
+}
+
+# The file that implements a verb here: the host's own copy when there is one, else the shared
+# helper. Prints nothing and fails when the verb does not resolve.
+ns_dispatch_target() {
+  ns_verb="$1"
+  case "$ns_verb" in
+    '' | -* | */* | *..*) return 1 ;;
+  esac
+  if [ -f "$NS_RUNTIME/$2/$ns_verb.sh" ]; then
+    printf '%s' "$NS_RUNTIME/$2/$ns_verb.sh"
+    return 0
+  fi
+  if [ -f "$NS_RUNTIME/$ns_verb.sh" ]; then
+    printf '%s' "$NS_RUNTIME/$ns_verb.sh"
+    return 0
+  fi
+  return 1
+}
+
+# Every verb this host can run, one per line. Derived from what is on disk, so it cannot drift.
+ns_dispatch_verbs() {
+  {
+    for ns_f in "$NS_RUNTIME"/*.sh; do
+      [ -f "$ns_f" ] || continue
+      ns_f="${ns_f##*/}"
+      printf '%s\n' "${ns_f%.sh}"
+    done
+    if [ -d "$NS_RUNTIME/$1" ]; then
+      for ns_f in "$NS_RUNTIME/$1"/*.sh; do
+        [ -f "$ns_f" ] || continue
+        ns_f="${ns_f##*/}"
+        printf '%s\n' "${ns_f%.sh}"
+      done
+    fi
+  } | sort -u
+}
+
+HOST="$(ns_dispatch_host)"
+[ $# -ge 1 ] || {
+  printf 'ns: usage: ns <verb> [args…] — run ns help for this host'"'"'s verbs\n' >&2
+  exit 1
+}
+VERB="$1"
+shift
+
+# The workspace, by the one rule the skills already state. An invalid link refuses in the Start
+# preflight's format rather than guessing a workspace.
+TASK_ROOT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-${CURSOR_PROJECT_DIR:-$PWD}}}"
+if ! DERIVED="$(ns_workspace_root "$TASK_ROOT" 2>/dev/null)"; then
+  printf 'refuse workspace invalid .nightshift-link at %s\n' "$TASK_ROOT"
+  printf 'repair Fix or remove .nightshift-link so it holds one absolute path to a folder containing .nightshift/, then run the command again.\n'
+  exit 2
+fi
+WORKSPACE="$DERIVED"
+SOURCE=derived
+
+# A session bound to one workspace and standing in another is not a preference to reconcile: the
+# writing verbs would scaffold or file into whichever the dispatcher picked. So the bound value
+# wins where it is the only one that resolves, and a disagreement refuses before any verb runs.
+ns_canonical() { (cd -P -- "$1" 2>/dev/null && pwd) || printf '%s' "$1"; }
+if [ -n "${NIGHTSHIFT_WORKSPACE:-}" ]; then
+  if ! BOUND="$(ns_workspace_root "$NIGHTSHIFT_WORKSPACE" 2>/dev/null)"; then
+    printf 'refuse workspace invalid .nightshift-link at %s\n' "$NIGHTSHIFT_WORKSPACE"
+    printf 'repair Fix or remove .nightshift-link so it holds one absolute path to a folder containing .nightshift/, then run the command again.\n'
+    exit 2
+  fi
+  WORKSPACE="$BOUND"
+  SOURCE=bound
+  if [ "$(ns_canonical "$BOUND")" != "$(ns_canonical "$DERIVED")" ]; then
+    printf 'refuse workspace bound %s differs from derived %s\n' "$BOUND" "$DERIVED"
+    printf 'repair cd to the bound workspace, or unset NIGHTSHIFT_WORKSPACE, then run the command again.\n'
+    exit 2
+  fi
+fi
+
+case "$VERB" in
+  help)
+    printf 'ns <verb> [args…] — host %s\n\n' "$HOST"
+    ns_dispatch_verbs "$HOST" | while IFS= read -r v; do
+      t="$(ns_dispatch_target "$v" "$HOST")" || continue
+      printf '  %-22s %s\n' "$v" "$t"
+    done
+    exit 0
+    ;;
+  bind)
+    printf 'TASK_ROOT\t%s\n' "$TASK_ROOT"
+    printf 'NIGHTSHIFT_WORKSPACE\t%s\n' "$WORKSPACE"
+    printf 'NS\t%s\n' "$WORKSPACE/.nightshift"
+    printf 'NIGHTSHIFT_PLUGIN_ROOT\t%s\n' "$NS_PLUGIN_ROOT"
+    printf 'HOST\t%s\n' "$HOST"
+    printf 'SOURCE\t%s\n' "$SOURCE"
+    exit 0
+    ;;
+esac
+
+TARGET="$(ns_dispatch_target "$VERB" "$HOST")" || {
+  printf 'ns: no verb %s on %s — run ns help for this host'"'"'s verbs\n' "$VERB" "$HOST" >&2
+  exit 1
+}
+
+# A verb that writes says where before it does. One line, first on stdout, so an owner reading a
+# transcript can see which workspace took the change without reconstructing the resolution.
+case " $NS_WRITING_VERBS " in
+  *" $VERB "*) printf 'workspace %s\n' "$WORKSPACE" ;;
+esac
+
+# The workspace is passed only to helpers that take it, and only when the caller did not say so
+# themselves. Which helpers those are is read off the helper, not held in a list here.
+PASS_PROJECT=no
+if grep -q -- '--project' "$TARGET" 2>/dev/null; then
+  PASS_PROJECT=yes
+  for arg in "$@"; do
+    [ "$arg" = "--project" ] && PASS_PROJECT=no && break
+  done
+fi
+
+if [ "$PASS_PROJECT" = yes ]; then
+  exec "$TARGET" --project "$WORKSPACE" "$@"
+fi
+exec "$TARGET" "$@"

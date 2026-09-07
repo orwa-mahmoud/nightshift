@@ -299,6 +299,18 @@ try {
             Expect-True ($reason -ceq $expected) "create-state deny $command : $reason"
         }
     }
+    # The Windows guard scrubs commit messages and nothing else, so a here-document reaches it
+    # whole. An interpreter reading its script from one is inspected like any other command.
+    $heredoc = @(
+        "bash <<'EOF'`nsudo id`nEOF",
+        "cat <<'EOF' | bash`nsudo id`nEOF",
+        "python3 - <<'PY'`nrun('sudo id')`nPY"
+    )
+    foreach ($command in $heredoc) {
+        $reason = Get-ElevationReason $command
+        Expect-True ($reason -match 'needs allowance: sudo') "heredoc into an interpreter: $reason"
+    }
+
     $messageOnly = Get-ElevationReason "git commit -m 'sudo apt-get install jq and docker compose up'"
     Expect-True ([string]::IsNullOrEmpty($messageOnly)) "a commit message names no category: $messageOnly"
 

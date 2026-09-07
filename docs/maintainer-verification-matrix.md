@@ -27,7 +27,7 @@ parallel `tests/run-shard.sh` jobs.
 | Artifact receipts and archive | `plugins/nightshift/runtime/write-receipt.sh`, `plugins/nightshift/runtime/archive-receipts.sh`, `plugins/nightshift/runtime/evidence-archive.sh` | `tests/artifact-receipts.bats`, `tests/archive-receipts.bats`, `tests/work-mode.bats` |
 | Cited reports | `plugins/nightshift/runtime/check-report.sh` | `tests/cited-research.bats`, `tests/redaction-malicious.bats` |
 | Cross-host handoff | `plugins/nightshift/runtime/continuity-handoff.sh` | `tests/continuity-handoff.bats` |
-| Receipt templates the model writes from | `plugins/nightshift/skills/nightshift/references/receipt-templates.md` | `tests/quality-workflow.bats`, `tests/coverage-risk.bats`, `tests/defect-cycle.bats`, `tests/history-context.bats`, `tests/shift-planner.bats`, `tests/source-policy-evidence.bats`, `tests/specialist-evidence.bats` |
+| Receipt templates the model writes from | `plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md` | `tests/quality-workflow.bats`, `tests/coverage-risk.bats`, `tests/defect-cycle.bats`, `tests/history-context.bats`, `tests/shift-planner.bats`, `tests/source-policy-evidence.bats`, `tests/specialist-evidence.bats` |
 
 Schemas: `plugins/nightshift/skills/nightshift/references/schemas/v1/`. Fixtures: `tests/fixtures/`.
 

@@ -32,7 +32,7 @@ scaffold() { # <workspace> — the files setup copies, via the shipped templates
   local w="$1"
   mkdir -p "$w/.nightshift"
   for f in punch-list drafting-table parking-lot snag-log product-research opportunity-map work-orders; do
-    cp "$REF/$f-template.md" "$w/.nightshift/$f.md"
+    cp "$REF/templates/$f.md" "$w/.nightshift/$f.md"
   done
   cp "$REF/nightshift-rules-template.json" "$w/.nightshift/rules.json"
   printf '# Shift Log\n' >"$w/.nightshift/shift-log.md"
@@ -206,11 +206,11 @@ STUB
     bash "$RUNTIME/apply-profile.sh" --project "$p" --profile fast --mode fill --apply
   [ "$status" -eq 0 ] || { echo "apply-profile failed on the no-python3 PATH: $output"; return 1; }
   printf '%s\n' "$output" | grep -qF 'Wrote'
-  [ -f "$p/.nightshift/shift-defaults.json" ]
+  # The remembered choices land in the shift block of the owner file, where composition reads them.
   jq -e '
-    .verificationProfile == "fast" and .toolingPolicy == "existing-tools"
-    and .execution == "run-direct"
-  ' "$p/.nightshift/shift-defaults.json" >/dev/null
+    .shift.verificationProfile == "fast" and .shift.toolingPolicy == "existing-tools"
+    and .shift.execution == "run-direct"
+  ' "$p/.nightshift/rules.json" >/dev/null
   grep -qF '_None configured._' "$p/.nightshift/punch-list.md"
 
   # Start writes safe defaults when no policy is queued: existing-tools, no allowances, and the

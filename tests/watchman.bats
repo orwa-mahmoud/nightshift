@@ -12,6 +12,11 @@ setup() {
   cp "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" "$P/.nightshift/rules.json"
   printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
   : >"$P/.nightshift/.shift-armed" # as start does — the watchman only works an armed site
+  # An unattended revival needs a scope it can vouch for. Claude Code names none, so the shipped
+  # inherit setting has nothing to inherit and refuses; a site that means to be revived says which
+  # scope a revival may use. These tests are about reviving, so they say it.
+  jq '.recovery.launchScope = "host-default"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
 
   BIN="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$BIN"
@@ -928,9 +933,45 @@ STUB
   grep -q 'claude --resume sid-shift' "$wl"
 }
 
+# Inheriting a scope means reproducing what the session had. Claude Code names no scope for a
+# session's permissions, so the shipped inherit setting has nothing to inherit — and a revival at
+# whatever the host defaults to is a guess about permissions, not a narrowing.
+
+@test "a revival is refused when there is nothing to inherit, and says what would authorize one" {
+  jq 'del(.recovery)' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" NIGHTSHIFT_WATCH_TRANSCRIPTS=/tmp/nowhere \
+    "$WATCHMAN" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 2
+  # No child was ever spawned, and the work is exactly where it was.
+  [ ! -f "$P/.nightshift/agent-calls" ]
+  grep -qE '^- \[ \]' "$P/.nightshift/punch-list.md"
+  grep -qF 'nothing to inherit' "$P/.nightshift/shift-log.md"
+  grep -qF 'recovery.launchScope to host-default or host-grant' "$P/.nightshift/shift-log.md"
+  [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = recovery-scope-unavailable ]
+}
+
+@test "an owner who authorized a scope by name still gets their revival" {
+  # The same site, with the one line that says which scope a revival may use.
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 5
+  [ "$status" -eq 0 ]
+  [ -f "$P/.nightshift/agent-calls" ]
+  grep -qF 'reviving under launch scope host-default' "$P/.nightshift/shift-log.md"
+}
+
+@test "a policy that cannot be read refuses in its own words, not as an unrecorded scope" {
+  printf '{ "schemaVersion": 1,\n' >"$P/.nightshift/shift-policy.json"
+  jq 'del(.recovery)' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" NIGHTSHIFT_WATCH_TRANSCRIPTS=/tmp/nowhere \
+    "$WATCHMAN" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 2
+  [ ! -f "$P/.nightshift/agent-calls" ]
+  grep -qF 'cannot be read' "$P/.nightshift/shift-log.md"
+}
+
 # One copy: the watchman reads its orders from the rules file; env stays the override.
 @test "the revival order is read from the rules file" {
-  jq '.revivalPrompt = "weld from the file"' \
+  jq '.revivalPrompt = "weld from the file" | .recovery.launchScope = "host-default"' \
     "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$P/.nightshift/rules.json"
   cat >"$BIN/hear2.sh" <<'STUB'
 #!/usr/bin/env bash
@@ -1362,4 +1403,190 @@ STUB
   [ "$status" -eq 0 ]
   grep -qF 'watchman: another watchman owns this site — standing down' "$P/.nightshift/shift-log.md"
   [ "$(sed -n 1p "$P/.nightshift/.watchman")" = "999999" ] # the other claim survives the exit
+}
+
+# ---------------------------------------------------------------------------------------------
+# What a revived session is allowed to do is the owner's, and the same words in a message are not
+# the host reporting a failure.
+
+@test "a revival inherits the scope the shift was started under, and never widens it" {
+  p="$(new_project watch-scope)"
+  # Shipped: inherit whatever the shift itself was running under.
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = inherit-recorded-scope ]
+
+  # With nothing recorded there is nothing to inherit, and the host's own default is a guess about
+  # permissions rather than a narrowing. So the answer is a refusal, and it says why.
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "unavailable:unrecorded" ]
+  run bash -c '. "$1"; ns_recovery_refusal unavailable:unrecorded' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  printf '%s' "$output" | grep -qF 'nothing to inherit'
+
+  # With the scope the arming session actually reported, that is what a revival asks for.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools",
+          launchScope: "workspace-write", launchProvenance: "observed"}' \
+    >"$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "recorded:workspace-write" ]
+
+  # A scope the host never reported is not something to inherit either.
+  jq '.launchProvenance = "unavailable" | .launchScope = "unknown"' \
+    "$p/.nightshift/shift-policy.json" >"$p/pol.json"
+  mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "unavailable:unrecorded" ]
+
+  # A policy that cannot be read says so in its own words, rather than reporting no scope.
+  printf '{ "schemaVersion": 1,\n' >"$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "unavailable:unreadable" ]
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools"}' \
+    >"$p/.nightshift/shift-policy.json"
+
+  # The broad grant happens only because the owner wrote it in their own file.
+  jq '.recovery.launchScope = "host-grant"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-grant ]
+
+  # And the narrowest choice is still available by name.
+  jq '.recovery.launchScope = "host-default"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-default ]
+}
+
+@test "a workspace that predates the setting is not read as having chosen the broad grant" {
+  p="$(new_project watch-scope-legacy)"
+  # A rules file from before recovery.launchScope existed. Its old behaviour was the built-in
+  # broad launch, but that was a default nobody chose — so it inherits rather than escalates.
+  jq 'del(.recovery)' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = inherit-recorded-scope ]
+  # And it inherits nothing, because nothing was recorded — so the revival is refused rather than
+  # launched at a scope nobody can vouch for.
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "unavailable:unrecorded" ]
+}
+
+@test "what the host reports is what gets recorded, and silence is not a scope" {
+  run bash -c '. "$1"; CODEX_SANDBOX_MODE=workspace-write ns_launch_observed codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  [ "$output" = "$(printf 'workspace-write\tobserved')" ]
+  run bash -c '. "$1"; unset CODEX_SANDBOX_MODE CODEX_SANDBOX; ns_launch_observed codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  [ "$output" = "$(printf 'unknown\tunavailable')" ]
+  # Claude Code and Cursor hand a session its permissions at launch and name none of it
+  # anywhere a hook can read, so there is nothing to observe and nothing claims otherwise.
+  for h in claude cursor; do
+    run bash -c '. "$1"; ns_launch_observed "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$h"
+    [ "$output" = "$(printf 'unknown\tunavailable')" ] || { echo "$h claimed $output"; return 1; }
+  done
+}
+
+@test "a recorded scope this host cannot ask for refuses the revival instead of guessing" {
+  p="$(new_project watch-scope-unsupported)"
+  # The arming session reported a sandbox mode codex exec has no flag for. Reviving anyway would
+  # run at some other scope, so the answer says so and the watchman stands down on it.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools",
+          launchScope: "some-future-mode", launchProvenance: "observed"}' \
+    >"$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "unavailable:unsupported:some-future-mode" ]
+  run bash -c '. "$1"; ns_recovery_refusal unavailable:unsupported:some-future-mode' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  printf '%s' "$output" | grep -qF "'some-future-mode'"
+
+  # Only the modes codex actually takes pass through to a flag.
+  for m in read-only workspace-write danger-full-access; do
+    jq --arg m "$m" '.launchScope = $m' "$p/.nightshift/shift-policy.json" >"$p/pol.json"
+    mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
+    run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+    [ "$output" = "recorded:$m" ] || { echo "$m -> $output"; return 1; }
+  done
+
+  # Claude and Cursor name no scope at all, so a recorded one is never handed to them.
+  jq '.launchScope = "workspace-write"' "$p/.nightshift/shift-policy.json" >"$p/pol.json"
+  mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
+  for h in claude cursor; do
+    run bash -c '. "$1"; ns_recovery_effective_scope "$2" "$3"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p" "$h"
+    [ "$output" = "unavailable:unsupported:workspace-write" ] || { echo "$h -> $output"; return 1; }
+  done
+}
+
+@test "the Codex watchman stops the ladder when it cannot reproduce the recorded scope" {
+  codex="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/codex/watchman.sh"
+  # It refuses rather than spawns, says what the owner can do about it, and does not spend the
+  # remaining rungs re-asking a question whose answer cannot change.
+  grep -qF 'unavailable:*' "$codex"
+  grep -qF 'RECOVERY_REFUSED=1' "$codex"
+  grep -qF 'recovery-scope-unavailable' "$codex"
+  grep -qF 'recovery.launchScope to host-default or host-grant' "$codex"
+  # The broad grant is reachable only from the owner writing host-grant.
+  awk '/^spawn_fresh\(\)/, /^}/' "$codex" | grep -qF 'host-grant, and only host-grant'
+}
+
+@test "the Codex and Cursor revivals ask for the scope rather than assuming one" {
+  codex="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/codex/watchman.sh"
+  cursor="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh"
+  win="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/watchman.ps1"
+  for f in "$codex" "$cursor"; do
+    grep -qF 'ns_recovery_effective_scope' "$f" || { echo "$f assumes a scope"; return 1; }
+    grep -qF 'reviving under launch scope' "$f" || { echo "$f does not say which scope"; return 1; }
+  done
+  # The recorded scope is passed through rather than replaced by the broad one.
+  grep -qF 'recorded:*' "$codex"
+  grep -qF 'Get-NSRecoveryEffectiveScope' "$win"
+  grep -qF 'reviving under launch scope' "$win"
+  # Windows resolves the same four answers, so the broad flags are behind host-grant by name.
+  grep -qF "-ceq 'host-grant'" "$win"
+  grep -qF 'unavailable:*' "$win"
+  # And Windows CI runs the resolver suite that proves it, rather than assuming parity.
+  logic="$BATS_TEST_DIRNAME/windows/recovery-scope-logic.ps1"
+  [ -f "$logic" ]
+  grep -qF 'recovery-scope-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
+}
+
+@test "Windows resolves the recovery scope the same way POSIX does" {
+  if ! command -v pwsh >/dev/null 2>&1; then
+    return 0
+  fi
+  run pwsh -NoProfile -NonInteractive -File "$BATS_TEST_DIRNAME/windows/recovery-scope-logic.ps1"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "a quoted API error is text about a failure, not the host reporting one" {
+  # The shipped tell requires the host's own marker on the line, so the check below is the
+  # program that actually runs and not a copy of it that could drift.
+  W="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/claude/watchman.sh"
+  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'isApiErrorMessage' \
+    || { echo "the outage tell no longer requires the host marker"; return 1; }
+  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'tolower($0) ~ /error' \
+    && { echo "the outage tell still reads any line that mentions an error"; return 1; }
+
+  # The same words a person can type, with no marker from the host: the ordinary interval stands.
+  T="$BATS_TEST_TMPDIR/quoted"
+  mkdir -p "$T"
+  printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","content":"API Error: 429 rate_limit_error"}]}}' >"$T/shift.jsonl"
+  run bash -c '
+    tail -n 25 "$1" | awk "
+      /[^\\\\]\"isApiErrorMessage\"[[:space:]]*:[[:space:]]*true/ { last = tolower(\$0) }
+      END {
+        exit (last ~ /(rate|usage)[ _-]?limit/ ||
+              last ~ /(^|[^0-9])(429|529)([^0-9]|\$)/ ||
+              last ~ /(^|[^a-z])api([^a-z]|\$)/) ? 0 : 1
+      }"' _ "$T/shift.jsonl"
+  [ "$status" -ne 0 ]
+  # The host marking its own API error is evidence, and still is.
+  printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"API Error: 429 rate_limit_error"}]},"isApiErrorMessage":true,"apiErrorStatus":429}' >>"$T/shift.jsonl"
+  run bash -c '
+    tail -n 25 "$1" | awk "
+      /[^\\\\]\"isApiErrorMessage\"[[:space:]]*:[[:space:]]*true/ { last = tolower(\$0) }
+      END {
+        exit (last ~ /(rate|usage)[ _-]?limit/ ||
+              last ~ /(^|[^0-9])(429|529)([^0-9]|\$)/ ||
+              last ~ /(^|[^a-z])api([^a-z]|\$)/) ? 0 : 1
+      }"' _ "$T/shift.jsonl"
+  [ "$status" -eq 0 ]
 }

@@ -1,7 +1,7 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/dependency-upgrade-sweep.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/dependency-upgrade-sweep.md"
 
 @test "dependency upgrade sweep batches with engineering evidence" {
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 # A version bump that compiles is not an upgrade. The release notes are the work, and skipping

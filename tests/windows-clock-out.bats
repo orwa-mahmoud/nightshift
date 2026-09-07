@@ -53,3 +53,24 @@ CURSOR="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/cursor/clock-out-gate.sh"
   grep -qF '[ -L "$NOTIFIED" ]' "$CODEX"
   grep -qF 'Test-NSReparsePoint $notified' "$HELPER"
 }
+
+# order_of <file> <pattern> — the line number a call sits on, so an ordering claim is checked
+# against the file rather than asserted in prose.
+order_of() { grep -n "$2" "$1" | head -n1 | cut -d: -f1; }
+
+@test "every clock-out renders the receipt before the archives truncate what it reads" {
+  # The findings ledger is the receipt's only source for its evidence sections, and the archive
+  # empties it. Every host renders first.
+  for f in "$CORE" "$CODEX" "$CURSOR"; do
+    r="$(order_of "$f" '^ *render_morning_receipt ')"
+    a="$(order_of "$f" '^ *archive_findings_ledger ')"
+    [ -n "$r" ] && [ -n "$a" ]
+    [ "$r" -lt "$a" ]
+  done
+  r="$(order_of "$HELPER" '^    Save-NSMorningReceipt$')"
+  e="$(order_of "$HELPER" '^    Save-NSEvidenceArchive$')"
+  p="$(order_of "$HELPER" '^    Save-NSPolicyArchive$')"
+  [ -n "$r" ] && [ -n "$e" ] && [ -n "$p" ]
+  [ "$r" -lt "$e" ]
+  [ "$r" -lt "$p" ]
+}

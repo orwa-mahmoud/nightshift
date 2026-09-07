@@ -1330,3 +1330,164 @@ MD
 4. Query the dev stack.|psql -c 'select 1'
 ROWS
 }
+
+# ---------------------------------------------------------------------------------------------
+# A quoted here-document body is the file being written, not a command. Writing documentation about
+# Nightshift — its elevation categories, its owner file, its control files — must not read as a
+# request to do any of it. What the command actually writes to is inspected whatever the body says.
+
+# hd <delimiter-quote> <target> <body> — a here-document command.
+hd() {
+  printf 'cat > %s <<%s%s%s\n%s\n%s' "$2" "$1" EOF "$1" "$3" EOF
+}
+
+@test "a quoted heredoc naming every elevation category is documentation" {
+  p="$(new_project hd-elevation)"
+  punch_open "$p"
+  run hardhat_bash "$p" \
+    "$(hd "'" docs/elevation.md 'sudo and doas, docker run, brew install -g, systemctl, gh auth login')"
+  is_allow
+}
+
+@test "a quoted heredoc naming the owner file and control files is documentation" {
+  p="$(new_project hd-names)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(hd "'" docs/knobs.md 'edit .nightshift/rules.json to set a knob')"
+  is_allow
+  run hardhat_bash "$p" \
+    "$(hd "'" .nightshift/shift-log.md 'work-mode, deadline and STOP were all read this cycle')"
+  is_allow
+}
+
+@test "what the heredoc writes to is still what decides" {
+  p="$(new_project hd-target)"
+  punch_open "$p"
+  # The body is harmless; the target is the owner's file.
+  run hardhat_bash "$p" "$(hd "'" .nightshift/rules.json 'harmless words')"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(hd "'" .nightshift/work-mode 'artifact')"
+  is_deny "$output"
+}
+
+@test "an unquoted heredoc body is still code" {
+  p="$(new_project hd-unquoted)"
+  punch_open "$p"
+  # No quotes on the delimiter: the shell expands this, and the substitution really runs.
+  run hardhat_bash "$p" "$(printf 'cat > out.txt <<EOF\n$(sudo id)\nEOF')"
+  is_deny "$output"
+}
+
+@test "an unterminated quoted heredoc is never treated as data" {
+  p="$(new_project hd-unterminated)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "cat > x.md <<'EOF'\nsudo apt-get install ripgrep")"
+  is_deny "$output"
+}
+
+@test "a real command after a closed heredoc is still a real command" {
+  p="$(new_project hd-after)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "cat > d.md <<'EOF'\nharmless\nEOF\nsudo id")"
+  is_deny "$output"
+}
+
+# An interpreter reading its script from a quoted here-document is still an interpreter. Quoting
+# the delimiter stops the outer shell expanding the body; it does not stop bash from running it.
+# These feed strings to the hook and assert its decision — no payload is ever executed.
+
+@test "a quoted heredoc fed to an interpreter is code, not documentation" {
+  p="$(new_project hd-interpreter)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "bash <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "sh <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "python3 - <<'PY'\nrun('sudo id')\nPY")"
+  is_deny "$output"
+}
+
+@test "a heredoc piped into an interpreter is code" {
+  p="$(new_project hd-pipe)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "cat <<'EOF' | bash\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "tee /dev/null <<'EOF' | sh\nsudo id\nEOF")"
+  is_deny "$output"
+}
+
+@test "eval and source forms keep their heredoc bodies visible" {
+  p="$(new_project hd-eval)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "eval <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf ". /dev/stdin <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+}
+
+@test "a backslash-quoted delimiter is not an exemption either" {
+  p="$(new_project hd-backslash)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf 'bash <<\\EOF\nsudo id\nEOF')"
+  is_deny "$output"
+}
+
+@test "a substituted or non-literal destination keeps its body visible" {
+  p="$(new_project hd-dynamic)"
+  punch_open "$p"
+  # Where it writes is not on the line, so the body is not taken on trust.
+  run hardhat_bash "$p" "$(printf 'cat > "$out" <<%s\nsudo id\nEOF' "'EOF'")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf 'cat > "$(mktemp)" <<%s\nsudo id\nEOF' "'EOF'")"
+  is_deny "$output"
+}
+
+@test "a command list on the opening line keeps its body visible" {
+  p="$(new_project hd-list)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "true; cat > d.md <<'EOF'\nsudo id\nEOF")"
+  is_deny "$output"
+  run hardhat_bash "$p" "$(printf "cat > d.md <<'EOF' &\nsudo id\nEOF")"
+  is_deny "$output"
+}
+
+@test "tee writes and tab-stripped bodies are still documentation" {
+  p="$(new_project hd-tee)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "tee docs/e.md <<'EOF'\nsudo and doas, docker run, systemctl\nEOF")"
+  is_allow
+  run hardhat_bash "$p" "$(printf "tee -a docs/e.md <<'EOF'\nbrew install -g something\nEOF")"
+  is_allow
+  run hardhat_bash "$p" "$(printf "cat > docs/e.md <<-'EOF'\n\tsudo and doas\n\tEOF")"
+  is_allow
+}
+
+@test "one documentation heredoc does not exempt the next interpreter one" {
+  p="$(new_project hd-multi)"
+  punch_open "$p"
+  run hardhat_bash "$p" \
+    "$(printf "cat > d.md <<'A'\nharmless words\nA\nbash <<'B'\nsudo id\nB")"
+  is_deny "$output"
+  # And the reverse order: the first body is inspected even though a safe write follows.
+  run hardhat_bash "$p" \
+    "$(printf "bash <<'A'\nsudo id\nA\ncat > d.md <<'B'\nharmless words\nB")"
+  is_deny "$output"
+}
+
+@test "two heredocs on one line are never exempt" {
+  p="$(new_project hd-two-on-one)"
+  punch_open "$p"
+  run hardhat_bash "$p" "$(printf "cat <<'A' <<'B'\nsudo id\nA\nB")"
+  is_deny "$output"
+}
+
+@test "the owner's own forbidden pattern still holds inside and outside a heredoc" {
+  p="$(new_project hd-owner-rule)"
+  punch_open "$p"
+  # The owner's pattern is theirs: a real push is denied.
+  run hardhat_bash "$p" "git push" NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push'
+  is_deny "$output"
+  # And documentation about it is documentation.
+  run hardhat_bash "$p" "$(hd "'" docs/push.md 'the owner may forbid git push for the night')" \
+    NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push'
+  is_allow
+}

@@ -1,12 +1,12 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/developer-onboarding.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/developer-onboarding.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
 
 @test "developer onboarding follows public checkout through one verified change" {
   grep -qi 'Discovery' "$E"
   grep -qi 'public checkout/setup path' "$E"
   grep -qi 'representative verified change' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
 }
 
 @test "developer onboarding applies a fresh-reader pass" {

@@ -313,11 +313,17 @@ if [ -f "$PUNCH" ] && [ "$OPEN" -eq 0 ]; then
     act confirm "review punch-list.md contract and Gates before composing a new campaign; Archive files ticked items but never resets them"
   fi
 fi
-if [ "$ORDERS" -gt 0 ] && [ "$ARMED" -eq 0 ]; then
+# Staged work is only an offer when there is nothing already approved to do. An open checkbox
+# under ## Items is the shift, so Doctor reports what is staged and stops there — the same
+# precedence Start applies, said the same way.
+if [ "$ORDERS" -gt 0 ] && [ "$ARMED" -eq 0 ] && [ "$OPEN" -eq 0 ]; then
   act confirm "start to promote a parked Hunt order, or hunt to compose a new one"
 fi
-if [ "$DRAFTS" -gt 0 ] && [ "$ARMED" -eq 0 ]; then
+if [ "$DRAFTS" -gt 0 ] && [ "$ARMED" -eq 0 ] && [ "$OPEN" -eq 0 ]; then
   act confirm "promote agreed drafting-table items into punch-list.md, or start to be offered them"
+fi
+if [ "$OPEN" -gt 0 ] && { [ "$ORDERS" -gt 0 ] || [ "$DRAFTS" -gt 0 ]; }; then
+  fact "staged work is informational while $OPEN punch-list items are open — start works the current list, and drafts and Hunt orders stay staged for a later shift"
 fi
 
 json_is_object() {

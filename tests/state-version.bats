@@ -254,13 +254,18 @@ codex_ask() {
     "$root/runtime/link-workspace.sh"; then
     return 1
   fi
-  grep -qF 'runtime/migrate-state.sh' "$SETUP"
+  grep -qE 'ns"? migrate-state' "$SETUP"
   grep -qF 'state-version' "$SETUP"
-  grep -qF 'state-version' "$START"
-  grep -qiF 'start never writes' "$START"
-  grep -qF 'never run migration from status' "$STATUS"
+  # The verdict carries its own rule: Start reports the marker and never writes one, and migration
+  # belongs to Setup or Doctor.
+  EXPLAIN="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'Start never writes the state marker' "$EXPLAIN"
+  grep -qF 'Migration is a Setup or Doctor repair' "$EXPLAIN"
+  grep -qF 'state-version' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  # Status modifies nothing at all, which covers migration and everything else.
+  grep -qF 'Modify no file, begin no work' "$STATUS"
   grep -qF 'never migrate' "$ARCHIVE"
-  grep -qF 'migrate-state.sh' "$DOCTOR_SKILL"
+  grep -qE 'ns"? migrate-state' "$DOCTOR_SKILL"
   grep -qF 'separate owner actions, never Doctor' "$DOCTOR_SKILL"
 }
 

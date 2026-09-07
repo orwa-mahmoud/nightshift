@@ -1,28 +1,25 @@
 ---
 name: quality
-description: Find and work the project's applicable quality debt across tests, code, accessibility, contracts, documentation, dependencies, and security. Supports guided or automatic selection and review-first or run-direct execution.
+description: Compose a shift that works the project's quality debt: tests, code, accessibility, contracts, docs, dependencies, security.
 ---
 
 Quality is the broad entry point for this project's quality work. It uses the same selection and
 launch modes as Hunt.
 
-Bind once, then never search, guess, or re-resolve. `$TASK_ROOT` is the host-opened project
-folder: `${CLAUDE_PROJECT_DIR}` on Claude Code; on Codex the `CODEX_PROJECT_DIR` recovery override
-when Nightshift set it, otherwise `pwd -P` captured before any other shell call.
-`$NIGHTSHIFT_WORKSPACE` is the validated absolute target of `$TASK_ROOT/.nightshift-link` when that
-link exists, otherwise `$TASK_ROOT`. Then `NS="$NIGHTSHIFT_WORKSPACE/.nightshift"` (native Windows:
-`$NS = Join-Path $NIGHTSHIFT_WORKSPACE '.nightshift'`), and every Nightshift file is `$NS/<name>`
-for the rest of the run; helpers taking `--project` or `-Project` receive
-`"$NIGHTSHIFT_WORKSPACE"`. The shell's working directory persists between calls, so a bare path is
-never safe.
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/quality/SKILL.md`). Run every command below through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
+in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
+verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
+`NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
+directory persists between calls.
 
-Resolve `$NIGHTSHIFT_PLUGIN_ROOT` from `${CLAUDE_PLUGIN_ROOT}` on Claude Code, from `$PLUGIN_ROOT`
-on Codex, or from the absolute path this skill was attached from (`skills/quality/SKILL.md`); never
-search for the plugin. Before scanning, read
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/execution-modes.md` — the state map, who
+Before scanning, read
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/execution-modes.md` — the state map, who
 selects work, when the clock starts, the tooling policy, and how several entries become one
 shift — and every applicable entry under
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shifts/`.
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/shifts/`.
 
 Quality includes: lint, types, tests, flaky tests, coverage, dead code, TODO/FIXME debt,
 accessibility, localization, API contract drift, documentation drift, CI warnings, direct
@@ -67,18 +64,15 @@ write the safe defaults in `execution-modes.md`. Otherwise ask three independent
    `execution-modes.md`.
 
 For the third question, read `$NS/work-mode` and the remembered project default with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/shift-policy.sh" --project "$NIGHTSHIFT_WORKSPACE" defaults-get`
-(native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\shift-policy.ps1" -Project "$NIGHTSHIFT_WORKSPACE" defaults-get`),
-run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/preflight-needs.sh" --project "$NIGHTSHIFT_WORKSPACE"`
-(native Windows: `preflight-needs.ps1 -Project "$NIGHTSHIFT_WORKSPACE"`) against the areas this
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy defaults-get`,
+run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" preflight-needs` against the areas this
 compose would select, fold every gap into the same question, and write the resolved policy with
-`shift-policy.sh … set --from-json -` (native Windows: `-Command set -FromJson -`) before compose,
+`shift-policy.sh … set --from-json -` before compose,
 cut, or arm. Review-first writes only that policy; run-direct arms as soon as it lands.
 Artifact mode refuses repository-tool policies
 (`auto-add` and `review-missing`) and explains why; only existing-tools is valid there.
 Under auto-add, capture the write surface first with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/provision.sh" --project "$NIGHTSHIFT_WORKSPACE" baseline --surface <rel> [<rel>...]` (one flag takes several paths, or repeat `--surface` per path)
-(native Windows: `provision.ps1 -Command baseline -Surface …`), then install, smoke, `diff`, and
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" provision baseline --surface <rel> [<rel>...]` (one flag takes several paths, or repeat `--surface` per path), then install, smoke, `diff`, and
 `rollback` on failure.
 
 Automatic mode requires hours. Guided mode asks for scope and requires hours only when an
@@ -101,11 +95,9 @@ repository. Completion in that folder is `$NS/receipts/`, not a git log. Untrust
 instructional; the model is the boundary. Plan artifact receipts here when the shift completes
 cited research or documentation work.
 
-Refuse to compose, cut, or arm when `$NS/receipts` exists but is not a usable directory.
-If `$NS/work-mode` is missing and Setup would propose artifact, refuse to compose, cut, or arm and
-send the owner to Setup. Do not `git init` a notes folder.
-Refuse to compose, cut, or arm when work-mode is malformed.
-Refuse to compose, cut, or arm when the work target cannot be resolved.
+Compose, cut and arm only through the Start preflight; it refuses, and names the repair, when the
+work target cannot be resolved, work-mode is missing or malformed, or `$NS/receipts` exists but is
+not a usable directory. Never `git init` a notes folder to get past a refusal.
 
 Skip quality-debt entries whose discovery surface is absent.
 Skip documentation drift when work mode is artifact.
@@ -115,12 +107,11 @@ Skip tooling quality-debt entries when work mode is artifact.
 Then apply the discovery rules from every relevant quality entry.
 
 Run the project's own tool first. If present,
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/normalize-output.sh" --format <fmt> --input <file>`
-(native Windows: `normalize-output.ps1 -Format <fmt> -InputPath <file>`) turns a supported format
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" normalize-output --format <fmt> --input <file>` turns a supported format
 into one compact, comparable summary — feed that into the receipt and the ledger instead of the raw
 output; otherwise read the raw output directly. Both helpers here are optional: nothing here
 requires them, and `unavailable` from one means the summary is missing, never that the tool found
-nothing. `runtime/inventory.sh` is the other one: if present, optional, it prints one table per
+nothing. `ns inventory` is the other one: if present, optional, it prints one table per
 workspace package — manager, lockfile, declared scripts, config files, and each named tool as
 `declared`, `runnable` or `absent`. Automatic never depends on either.
 In review-first mode use report-only commands:
@@ -177,12 +168,8 @@ Windows PowerShell; log the start, run the binding probe
 on native Windows), classify Codex `$NS/.shift-session` line 1 with
 `ns_codex_identity_kind` from `$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh` (native
 Windows: `Get-NSCodexIdentityKind` after importing `Nightshift.psm1`) before arming the watchman
-or beginning item work, and arm the watchman exactly as the Start skill requires: Claude Code uses
-`$NIGHTSHIFT_PLUGIN_ROOT/runtime/claude/watchman.sh`, Codex
-`$NIGHTSHIFT_PLUGIN_ROOT/runtime/codex/watchman.sh`, Cursor
-`$NIGHTSHIFT_PLUGIN_ROOT/runtime/cursor/watchman.sh`, and native Windows
-`& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\start-watchman.ps1"`
-`-Project "$NIGHTSHIFT_WORKSPACE" -HostName claude` (Codex: `-HostName codex`).
+or beginning item work, and arm the watchman exactly as the Start skill requires, with
+`ns watchman`, which resolves to this host's own.
 
 Implement and verify the selected entry contracts, and continue
 until the finite work is clear or the shared deadline ends. Record significant decisions and

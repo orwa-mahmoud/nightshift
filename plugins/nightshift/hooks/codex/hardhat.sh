@@ -141,10 +141,10 @@ fi
 
 # The active agent never inspects or changes the owner's rules through any observable tool.
 # Inspect target-bearing arguments and patch headers, not unrelated prose in a payload.
-if ns_hardhat_payload_targets_rules "$TOOL" "$CODEX_RAW" "$CMD"; then
+if ns_hardhat_payload_targets_rules "$TOOL" "$CODEX_RAW" "$SCRUBBED"; then
   deny "BLOCKED: the rules file is the owner's — the night neither reads nor rewrites its own rules. Park the need in .nightshift/parking-lot.md and keep working."
 fi
-if ns_hardhat_payload_targets_control "$TOOL" "$CODEX_RAW" "$CMD"; then
+if ns_hardhat_payload_targets_control "$TOOL" "$CODEX_RAW" "$SCRUBBED"; then
   deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in .nightshift/parking-lot.md and keep working."
 fi
 

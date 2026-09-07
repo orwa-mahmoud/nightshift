@@ -22,10 +22,10 @@ CASES="sample edge broken"
 all_cases() {
   case "$1" in
     eslint-json) printf '%s strings' "$CASES" ;;
-    tsc) printf '%s continuation' "$CASES" ;;
+    tsc) printf '%s continuation pretty colour summary-only partial watch clean' "$CASES" ;;
     coverage-summary) printf '%s unmeasured' "$CASES" ;;
     sarif) printf '%s wide' "$CASES" ;;
-    junit) printf '%s nested cdata' "$CASES" ;;
+    junit) printf '%s nested cdata truncated cut mismatched torn-cdata torn-comment empty-suite no-counts' "$CASES" ;;
     lcov) printf '%s unmeasured' "$CASES" ;;
     *) printf '%s' "$CASES" ;;
   esac
@@ -317,7 +317,8 @@ digest_of() {
 # The ledger's severity words are not a tool's. The template carries the mapping, and every
 # word a summary can print has to survive the trip through it.
 @test "every summary severity maps to a severity the ledger accepts" {
-  TEMPLATES="$PLUGIN/skills/nightshift/references/receipt-templates.md"
+  # The mapping travels with the receipt kind that uses it.
+  TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/tool-output.md"
   for pair in 'critical` → `critical' 'error` → `high' 'high` → `high' 'warning` → `medium' \
     'moderate` → `medium' 'note` → `info' 'low` → `low' 'info` → `info'; do
     grep -qF "$pair" "$TEMPLATES" || { echo "the template does not map: $pair"; return 1; }
@@ -512,14 +513,119 @@ digest_of() {
 
 @test "the composition and quality skills name the helper as optional" {
   QUALITY="$PLUGIN/skills/quality/SKILL.md"
-  grep -qF 'runtime/normalize-output.sh' "$QUALITY"
+  grep -qE 'ns"? normalize-output' "$QUALITY"
   grep -qF 'If present,' "$QUALITY"
   grep -qF 'Both helpers here are optional' "$QUALITY"
   for shift in clear-quality-debt coverage-hunt vulnerability-sweep flaky-test-repair \
     api-contract-drift seo-audit; do
-    grep -qF 'normalize-output.sh' "$PLUGIN/skills/nightshift/references/shifts/$shift.md" \
+    grep -qF 'ns normalize-output' "$PLUGIN/skills/nightshift/references/compose/shifts/$shift.md" \
       || { echo "$shift does not name the helper"; return 1; }
   done
-  grep -qF 'tool-output' "$PLUGIN/skills/nightshift/references/receipt-templates.md"
-  grep -qF 'runtime/normalize-output.sh' "$ROOT/docs/evidence-capabilities.md"
+  grep -qF 'tool-output' "$PLUGIN/skills/nightshift/references/receipts/tool-output.md"
+  # The capabilities page names the verb an owner types, on both hosts.
+  grep -qF 'ns normalize-output' "$ROOT/docs/evidence-capabilities.md"
+  grep -qF 'ns.ps1 normalize-output' "$ROOT/docs/evidence-capabilities.md"
+}
+
+# The report's own total is the authority on how many errors there were. Reading fewer than it
+# counted means a diagnostic shape this parser does not know, and a count it cannot stand behind
+# is unavailable — never rounded down to what happened to parse.
+@test "a tsc report never reports fewer errors than it counted" {
+  cd "$ROOT"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/summary-only.txt
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable tsc: the report counts 3 errors and this parser read 0' ]
+
+  normalize --format tsc --input tests/fixtures/normalize/tsc/partial.txt
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable tsc: the report counts 3 errors and this parser read 1' ]
+
+  # No row is invented to reach the total.
+  normalize --format tsc --input tests/fixtures/normalize/tsc/summary-only.txt --json
+  [ "$status" -eq 3 ]
+  case "$output" in *'"items"'*) return 1 ;; esac
+}
+
+@test "a --pretty tsc diagnostic is read, with or without its colours" {
+  cd "$ROOT"
+  for name in pretty colour; do
+    normalize --format tsc --input "tests/fixtures/normalize/tsc/$name.txt" --json
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | jq -e '.counts.errors == 1' >/dev/null
+    printf '%s\n' "$output" | jq -e '.items[0].file == "src/index.ts"' >/dev/null
+    printf '%s\n' "$output" | jq -e '.items[0].line == 1' >/dev/null
+    printf '%s\n' "$output" | jq -e '.items[0].code == "TS2322"' >/dev/null
+  done
+  # The two reports say the same thing, so they carry the same result digest.
+  normalize --format tsc --input tests/fixtures/normalize/tsc/pretty.txt --json
+  a="$(printf '%s\n' "$output" | jq -r .digest)"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/colour.txt --json
+  [ "$(printf '%s\n' "$output" | jq -r .digest)" = "$a" ]
+}
+
+@test "a watch log is several reports, and none of them is the answer" {
+  cd "$ROOT"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/watch.txt
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable tsc: the input holds more than one TypeScript report' ]
+}
+
+@test "a tsc report that counted no errors is a clean compile" {
+  cd "$ROOT"
+  normalize --format tsc --input tests/fixtures/normalize/tsc/clean.txt --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.errors == 0 and .counts.warnings == 0' >/dev/null
+}
+
+# A reader that closes elements nobody closed is answering about a document nobody wrote. The
+# JUnit reader stays a bounded format reader: it refuses what it cannot finish, naming the reason,
+# and never returns a confident summary of a report that was cut off.
+@test "an unfinished JUnit report is unavailable, never a clean run" {
+  cd "$ROOT"
+  normalize --format junit --input tests/fixtures/normalize/junit/truncated.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report ends with an unclosed testsuite element' ]
+
+  normalize --format junit --input tests/fixtures/normalize/junit/cut.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report holds a tag that never closes' ]
+
+  normalize --format junit --input tests/fixtures/normalize/junit/mismatched.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report holds a testsuite that closes without opening' ]
+}
+
+@test "a payload section that never ends is unavailable, not a shorter document" {
+  cd "$ROOT"
+  normalize --format junit --input tests/fixtures/normalize/junit/torn-cdata.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report ends inside an unterminated CDATA section' ]
+
+  normalize --format junit --input tests/fixtures/normalize/junit/torn-comment.xml
+  [ "$status" -eq 3 ]
+  [ "$output" = 'unavailable junit: the report ends inside an unterminated comment' ]
+}
+
+@test "a finished JUnit report still reads, counts and all" {
+  cd "$ROOT"
+  # A suite that closes with nothing in it ran nothing, and says so.
+  normalize --format junit --input tests/fixtures/normalize/junit/empty-suite.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 0 and .files == 1' >/dev/null
+
+  # A suite that states no counts is read as the zeros it states, not refused.
+  normalize --format junit --input tests/fixtures/normalize/junit/no-counts.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 0 and .files == 1' >/dev/null
+
+  # Nesting, escaped text and a valid CDATA payload are unchanged by any of this.
+  normalize --format junit --input tests/fixtures/normalize/junit/nested.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 5 and .files == 2' >/dev/null
+  normalize --format junit --input tests/fixtures/normalize/junit/cdata.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 2 and .counts.failures == 1' >/dev/null
+  normalize --format junit --input tests/fixtures/normalize/junit/sample.xml --json
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | jq -e '.counts.tests == 14 and .counts.failures == 3' >/dev/null
 }

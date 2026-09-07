@@ -299,10 +299,15 @@ SH
   is_release
   out="$p/.nightshift/receipts/morning-$today-9f2c40ab77e51d63.md"
   [ -f "$out" ]
-  grep -qF -- '--view owner' "$out"
+  # The gate names no view: the owner's configured reader decides, and the shipped default is
+  # owner. Forcing one here would override a setting the owner made.
+  if grep -qF -- '--view' "$out"; then
+    echo "the gate forced a view over the owner's"
+    return 1
+  fi
   grep -qF -- "--out " "$out"
   grep -qF "morning-$today-9f2c40ab77e51d63.md" "$out"
-  # The policy is filed first, so the receipt is named from a shiftId that was still readable.
+  # The shiftId is read before anything moves, so the receipt is named for tonight either way.
   [ -f "$p/.nightshift/archive/$today/shift-policy-9f2c40ab77e51d63.json" ]
   if [ -f "$p/.nightshift/shift-log.md" ]; then
     if grep -qF 'morning receipt' "$p/.nightshift/shift-log.md"; then
@@ -380,7 +385,12 @@ SH
     "$hooks/cursor/clock-out-gate.sh"; do
     grep -qF 'render_morning_receipt "$shift_id"' "$h" \
       || { echo "no receipt render in end_shift: $h"; return 1; }
-    grep -qF -- '--view owner' "$h" || { echo "no owner view: $h"; return 1; }
+    if grep -qF -- '--view owner' "$h"; then
+      echo "the gate forces a view over the owner's configured one: $h"
+      return 1
+    fi
+    grep -qF 'ns_handoff_enabled' "$h" || { echo "no handoff switch: $h"; return 1; }
+    grep -qF 'morning receipt kept:' "$h" || { echo "a custom handoff is overwritable: $h"; return 1; }
     grep -qF 'morning receipt render failed:' "$h" || { echo "no failure line: $h"; return 1; }
     grep -qF 'morning receipt skipped: runtime/morning-receipt.sh is not installed' "$h" \
       || { echo "no absent-renderer line: $h"; return 1; }
@@ -519,20 +529,22 @@ SH
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
 }
 
-@test "an artifact receipt resets the stall counter" {
+# A receipt is the shift describing what it did, not the doing. In artifact mode progress is a
+# tick or a substantive checkpoint; tests/artifact-receipts.bats holds the full contract.
+@test "an artifact receipt is not stall progress on its own" {
   p="$(new_project art-stall)"
   printf 'artifact\n' >"$p/.nightshift/work-mode"
   punch_open "$p"
-  run gate "$p"
-  run gate "$p"
+  run gate "$p" NIGHTSHIFT_STALL_WARN=20
+  run gate "$p" NIGHTSHIFT_STALL_WARN=20
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "2" ]
   printf 'ok\n' >"$p/note.md"
   run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/write-receipt.sh" \
     --project "$p" --item 'x' --verify 'ok' --output "$p/note.md"
   [ "$status" -eq 0 ]
-  run gate "$p"
+  run gate "$p" NIGHTSHIFT_STALL_WARN=20
   is_block "$output"
-  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
+  [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "3" ]
 }
 
 @test "a symlink work-mode does not treat receipts as stall progress" {
@@ -858,4 +870,341 @@ FOREIGN_NONCE=claude.2.4711.8.9
   is_release
   [ ! -f "$q/.nightshift/.ended" ]
   [ "$(reclaim_log_count "$q")" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------------------------
+# The receipt is rendered from the live ledger, so it runs before the archive truncates it.
+# These use the real renderer and the real archiver: a stub would prove nothing about ordering.
+
+# seeded_ledger <project> — a baseline that saw two ids, one of them since fixed, and a second
+# source that could not run. Enough that every evidence section of the receipt has content.
+seeded_ledger() {
+  local p="$1" ev="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/evidence.sh"
+  bash "$ev" --project "$p" init >/dev/null
+  bash "$ev" --project "$p" append --record "$(jq -nc '{
+    schemaVersion: 1, id: "b1", domain: "baseline", sourceClass: "eslint", source: "eslint .",
+    scope: "src/", severity: "info", confidence: "high", impact: "developer", status: "open",
+    ladder: "measured", locator: "src/", digest: "digest-b1",
+    firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z", action: "",
+    host: "claude", workTarget: "/repo",
+    details: { sourceCommand: "eslint .", environmentDigest: "env-1", rawDigest: "raw-b1",
+               seen: [ { id: "i1", digest: "di1" }, { id: "i2", digest: "di2" } ] }
+  }')" >/dev/null
+  bash "$ev" --project "$p" append --record "$(jq -nc '{
+    schemaVersion: 1, id: "i1", domain: "lint", sourceClass: "eslint", source: "eslint .",
+    scope: "src/", severity: "medium", confidence: "high", impact: "developer", status: "fixed",
+    ladder: "observed", locator: "src/app.js:1", digest: "di1",
+    firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z", action: "",
+    host: "claude", workTarget: "/repo"
+  }')" >/dev/null
+  bash "$ev" --project "$p" append --record "$(jq -nc '{
+    schemaVersion: 1, id: "t1", domain: "types", sourceClass: "tsc", source: "tsc --noEmit",
+    scope: "src/", severity: "high", confidence: "high", impact: "developer",
+    status: "unavailable", ladder: "observed", locator: "src/", digest: "dt1",
+    firstSeen: "2026-09-02T00:00:00Z", lastChecked: "2026-09-02T00:00:00Z", action: "",
+    host: "claude", workTarget: "/repo"
+  }')" >/dev/null
+}
+
+# the_receipt <project> — tonight's morning file, whatever it ended up named.
+the_receipt() {
+  printf '%s' "$1/.nightshift/receipts/morning-$(date '+%Y-%m-%d')-9f2c40ab77e51d63.md"
+}
+
+@test "the morning receipt keeps its evidence when the ledger is archived on the way out" {
+  root="$(plugin_copy receipt-evidence)"
+  p="$(new_project gate-receipt-evidence)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  lines_before="$(wc -l <"$p/.nightshift/evidence/findings.jsonl")"
+
+  run gate_from "$root" "$p"
+  is_release
+
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  # The three sections that read from the ledger, which an emptied ledger renders as nothing.
+  grep -q '^## Baseline' "$out"
+  grep -qF 'b1: eslint' "$out"
+  grep -q '^## What changed' "$out"
+  grep -qF '| i1 |' "$out"
+  grep -qF 'Summary:' "$out"
+  # The archive copy is complete, and the live ledger starts the next shift lean.
+  arch="$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl"
+  [ -f "$arch" ]
+  [ "$(wc -l <"$arch")" -eq "$lines_before" ]
+  [ ! -s "$p/.nightshift/evidence/findings.jsonl" ]
+}
+
+@test "a stop-work order keeps the same evidence on its way out" {
+  root="$(plugin_copy receipt-evidence-stop)"
+  p="$(new_project gate-receipt-evidence-stop)"
+  punch_open "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  printf 'owner said so\n' >"$p/.nightshift/STOP"
+
+  run gate_from "$root" "$p"
+  is_release
+
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  grep -q '^## Baseline' "$out"
+  grep -qF '| i1 |' "$out"
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "quitting time keeps the same evidence on its way out" {
+  root="$(plugin_copy receipt-evidence-deadline)"
+  p="$(new_project gate-receipt-evidence-deadline)"
+  punch_open "$p"
+  write_policy_with_deadline "$p" 1
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  grep -q '^## Baseline' "$out"
+  grep -qF '| i1 |' "$out"
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "a second stop event never overwrites a complete receipt with an empty one" {
+  root="$(plugin_copy receipt-evidence-twice)"
+  p="$(new_project gate-receipt-evidence-twice)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+  out="$(the_receipt "$p")"
+  first="$(cat "$out")"
+
+  # The shift is no longer armed, so the second event releases without ending anything again.
+  run gate_from "$root" "$p"
+  is_release
+  [ "$(cat "$out")" = "$first" ]
+  grep -q '^## Baseline' "$out"
+  [ "$(find "$p/.nightshift/archive" -name 'findings-*.jsonl' | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "a renderer that fails still leaves the evidence archived" {
+  root="$(plugin_copy receipt-evidence-fail)"
+  renderer_fail "$root"
+  p="$(new_project gate-receipt-evidence-fail)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -f "$(the_receipt "$p")" ]
+  grep -qF 'morning receipt render failed' "$p/.nightshift/shift-log.md"
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/.ended" ]
+}
+
+# ---------------------------------------------------------------------------------------------
+# The morning page is the owner's: which reader it is written for, which sections it carries,
+# whether it is written at all, and whether the model wrote its own instead.
+
+# handoff <project> <jq-expression> — set the handoff block the owner's way.
+handoff() {
+  jq "$2" "$1/.nightshift/rules.json" >"$1/r.json"
+  mv "$1/r.json" "$1/.nightshift/rules.json"
+}
+
+@test "the configured reader decides the page, not the gate" {
+  root="$(plugin_copy handoff-view)"
+  p="$(new_project gate-handoff-view)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.handoff.view = "reviewer"'
+
+  run gate_from "$root" "$p"
+  is_release
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  # The reviewer page is the baseline and the comparison, and carries no Shift section.
+  grep -q '^## Baseline' "$out"
+  grep -q '^## What changed' "$out"
+  if grep -q '^## Shift' "$out"; then
+    echo "the reviewer view rendered the owner page"
+    return 1
+  fi
+}
+
+@test "an owner section list picks and orders what the page carries" {
+  root="$(plugin_copy handoff-sections)"
+  p="$(new_project gate-handoff-sections)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.handoff.sections = ["changed", "shift"]'
+
+  run gate_from "$root" "$p"
+  is_release
+  out="$(the_receipt "$p")"
+  [ -f "$out" ]
+  # Both asked-for sections, in the order asked, and nothing else.
+  [ "$(grep -c '^## ' "$out")" -eq 2 ]
+  [ "$(grep -n '^## What changed' "$out" | cut -d: -f1)" -lt "$(grep -n '^## Shift' "$out" | cut -d: -f1)" ]
+  if grep -q '^## Baseline' "$out"; then
+    echo "a section the owner did not ask for was rendered"
+    return 1
+  fi
+  # Dropping a section changes the page, never the evidence.
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "a page the owner turned off is not written, and nothing else is lost" {
+  root="$(plugin_copy handoff-off)"
+  p="$(new_project gate-handoff-off)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.handoff.enabled = false'
+
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -f "$(the_receipt "$p")" ]
+  grep -qF 'morning receipt disabled by the owner' "$p/.nightshift/shift-log.md"
+  # Every factual record still stands.
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy-9f2c40ab77e51d63.json" ]
+  [ -f "$p/.nightshift/.ended" ]
+}
+
+@test "a handoff the model already wrote is never overwritten" {
+  root="$(plugin_copy handoff-custom)"
+  p="$(new_project gate-handoff-custom)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  out="$(the_receipt "$p")"
+  mkdir -p "$(dirname "$out")"
+  printf '# تقرير الليلة\n\nكل شيء تم.\n' >"$out"
+  before="$(cat "$out")"
+
+  run gate_from "$root" "$p"
+  is_release
+  [ "$(cat "$out")" = "$before" ]
+  grep -qF 'morning receipt kept:' "$p/.nightshift/shift-log.md"
+  # The evidence is still archived around it.
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+}
+
+@test "two shifts on one day get their own page, and a repeat event writes neither twice" {
+  root="$(plugin_copy handoff-two)"
+  p="$(new_project gate-handoff-two)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  run gate_from "$root" "$p"
+  is_release
+  first="$(the_receipt "$p")"
+  [ -f "$first" ]
+  stamp="$(cksum <"$first")"
+
+  # A second stop event for the same shift changes nothing.
+  run gate_from "$root" "$p"
+  is_release
+  [ "$(cksum <"$first")" = "$stamp" ]
+
+  # A second shift the same day, with its own id, gets its own page beside the first.
+  : >"$p/.nightshift/.shift-armed"
+  rm -f "$p/.nightshift/.ended"
+  printf '{"schemaVersion":1,"shiftId":"1122334455667788","createdAt":"2026-09-02T02:30:00Z","source":"composition","deadlineEpoch":null,"verificationLevel":"final","toolingPolicy":"existing-tools"}\n' \
+    >"$p/.nightshift/shift-policy.json"
+  run gate_from "$root" "$p"
+  is_release
+  second="$p/.nightshift/receipts/morning-$(date '+%Y-%m-%d')-1122334455667788.md"
+  [ -f "$second" ]
+  [ -f "$first" ]
+  [ "$first" != "$second" ]
+}
+
+# archive.automatic asks for filing at clock-out, and filing decides which records are closed —
+# which means reading the punch list and the work, which a hook cannot do. So the gate ends the
+# shift, records that filing is due, and holds the session once more so the model can file before
+# it terminates. By then the shift has genuinely ended, which is what makes the request executable.
+
+@test "a shift that asked for filing is held once, after it has ended, so the model can file" {
+  root="$(plugin_copy archive-auto)"
+  p="$(new_project gate-archive-auto)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.archive.automatic = true'
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'a receipt\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+
+  # The stop that ends the shift. It ends: the marker is written and the site is disarmed.
+  run gate_from "$root" "$p"
+  is_block "$output"
+  printf '%s' "$output" | jq -r .reason | grep -qF 'file it before the session terminates'
+  [ -f "$p/.nightshift/.ended" ]
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+  [ -f "$p/.nightshift/.pending-filing" ]
+  grep -qF 'shiftId=9f2c40ab77e51d63' "$p/.nightshift/.pending-filing"
+  # The gate filed nothing and removed nothing: that judgement is the model's.
+  [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+
+  # Stopping again releases, whether or not the model managed to file. An unfiled marker is left
+  # for the next explicit Archive rather than holding the session forever.
+  run gate_from "$root" "$p"
+  is_release
+  [ -f "$p/.nightshift/.pending-filing" ]
+}
+
+@test "a model that filed is not asked again" {
+  root="$(plugin_copy archive-filed)"
+  p="$(new_project gate-archive-filed)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.archive.automatic = true'
+
+  run gate_from "$root" "$p"
+  is_block "$output"
+  # The model files and clears the marker, the way Archive is told to.
+  rm -f "$p/.nightshift/.pending-filing"
+  run gate_from "$root" "$p"
+  is_release
+}
+
+@test "an ordinary conversation afterwards never re-arms the finished shift" {
+  root="$(plugin_copy archive-after)"
+  p="$(new_project gate-archive-after)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+  handoff "$p" '.archive.automatic = true'
+  run gate_from "$root" "$p"
+  is_block "$output"
+  rm -f "$p/.nightshift/.pending-filing"
+
+  # Someone adds work to the list afterwards and keeps talking. The shift is over.
+  printf '## Items\n- [x] **1. done.**\n- [ ] **2. added after the ending.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+}
+
+@test "the default is explicit filing, and no note is left" {
+  root="$(plugin_copy archive-manual)"
+  p="$(new_project gate-archive-manual)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  seeded_ledger "$p"
+
+  run gate_from "$root" "$p"
+  is_release
+  [ ! -e "$p/.nightshift/.pending-filing" ]
 }

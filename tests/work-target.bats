@@ -58,12 +58,18 @@ resolve_target() {
   start_skill="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
   status_skill="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/status/SKILL.md"
   doctor_skill="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/doctor/SKILL.md"
+  pre="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  explain="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  doctor="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
+  # Setup writes the record; the preflight reads it and refuses on what it finds. One contract,
+  # stated once on each side of it.
   grep -qF '$NS/work-target' "$setup_skill"
-  grep -qF '$NS/work-target' "$start_skill"
-  grep -qF 'several child repositories' "$setup_skill"
-  grep -qF 'refuse to arm' "$start_skill"
-  grep -qF 'work target could not be resolved; treating workspace as the code root' "$status_skill"
+  grep -qF 'work-target cannot be resolved from' "$pre"
+  grep -qF 'Several child repositories make the choice ambiguous' "$explain"
+  # Doctor is the one that says the workspace is standing in, and Status relays what it says.
+  grep -qF 'work target could not be resolved; treating workspace as the code root' "$doctor"
   grep -qF 'work target could not be resolved; treating workspace as the code root' "$doctor_skill"
+  grep -qF 'Relay every Warning' "$status_skill"
 }
 
 planted_repo() {

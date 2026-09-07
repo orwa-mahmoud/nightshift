@@ -39,7 +39,7 @@ The native path uses the same on-disk contract and marker names as macOS and Lin
   child's environment, and runs recovery in the persisted work target;
 - the scheduler emits a daily Task Scheduler definition with `IgnoreNew`, so Task Scheduler and
   the process lease both refuse overlapping starts;
-- Start runs the same preflight through `runtime/windows/start-preflight.ps1`, and its `ok`,
+- Start runs the same preflight through `ns.ps1 start-preflight`, and its `ok`,
   `warn` and `refuse` sentences are byte-identical to the POSIX helper's;
 - Doctor, status's lease inspector, import-issues, archive retention, migrate-state,
   apply-profile, and export-support use bundled PowerShell helpers beside the POSIX scripts.
@@ -62,8 +62,8 @@ is native Windows.
 The mechanical scaffold is also available without a model turn:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\setup.ps1" `
-  -Project (Get-Location) -WorkTarget C:\path\to\repository -Mode repository
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" setup `
+  --project (Get-Location) --work-target C:\path\to\repository --mode repository
 ```
 
 Setup still asks before choosing gates, changing project permissions, migrating legacy state, or
@@ -73,20 +73,20 @@ When the opened folder is not the Nightshift workspace, the same plugin-root hel
 explicit link after the owner confirms both absolute paths:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\link-workspace.ps1" `
-  -HostRoot C:\path\to\task -Workspace C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" link-workspace `
+  --host-root C:\path\to\task --workspace C:\path\to\workspace
 ```
 
 The immediate pause from any folder, with an explicit project path, is:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\stop-shift.ps1" `
-  -Project C:\path\to\task
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" stop-shift `
+  --project C:\path\to\task
 ```
 
-Reset drops the deadline afterward (`reset-shift.ps1`). Purge deletes only that project's
+Reset drops the deadline afterward (`ns.ps1 reset-shift`). Purge deletes only that project's
 `.nightshift/` after `-ConfirmPath` matches the canonical directory
-(`purge-workspace.ps1`). None of them uninstall the plugin.
+(`ns.ps1 purge-workspace`). None of them uninstall the plugin.
 
 The panic stop from the Nightshift workspace — the folder that contains `.nightshift/`,
 not a linked task root — waits for the next Stop event:
@@ -100,14 +100,14 @@ New-Item -ItemType File -Force .nightshift\STOP
 Generate and inspect a task without registering it:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
-  -Project C:\path\to\workspace -Preflight
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
-  -Project C:\path\to\workspace -At 04:05
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
-  -Project C:\path\to\workspace -List
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\schedule.ps1" `
-  -Project C:\path\to\workspace -Remove
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" schedule `
+  --project C:\path\to\workspace --preflight
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" schedule `
+  --project C:\path\to\workspace --at 04:05
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" schedule `
+  --project C:\path\to\workspace --list
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" schedule `
+  --project C:\path\to\workspace --remove
 ```
 
 The generator prints one PowerShell registration command and the complete XML. The action invokes
@@ -128,33 +128,33 @@ The same plugin-root PowerShell helpers cover Doctor, archive retention, import-
 profiles, a local support bundle, and artifact-mode completion receipts:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\doctor.ps1" -Project C:\path\to\workspace
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\migrate-state.ps1" -Project C:\path\to\workspace
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\retain-history.ps1" -Project C:\path\to\workspace
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\import-issues.ps1" -Project C:\path\to\workspace -ListProposed
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\apply-profile.ps1" -Project C:\path\to\workspace -List
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\export-support.ps1" -Project C:\path\to\workspace
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\write-receipt.ps1" -Project C:\path\to\workspace -Item 'title' -Verify 'checks' -Output C:\path\to\file.md
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\archive-receipts.ps1" -Project C:\path\to\workspace
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\check-report.ps1" -Project C:\path\to\workspace -Report C:\path\to\report.md -Manifest C:\path\to\sources.tsv -Output C:\path\to\report.md
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" doctor --project C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" migrate-state --project C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" retain-history --project C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" import-issues --project C:\path\to\workspace --list-proposed
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" apply-profile --project C:\path\to\workspace --list
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" export-support --project C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" write-receipt --project C:\path\to\workspace --item 'title' --verify 'checks' --output C:\path\to\file.md
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" archive-receipts --project C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" check-report --project C:\path\to\workspace --report C:\path\to\report.md --manifest C:\path\to\sources.tsv --output C:\path\to\report.md
 ```
 
 Two optional read-only reports ship beside them and never need `jq` on this host:
 
 ```powershell
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\normalize-output.ps1" -Format eslint-json -InputPath C:\path\to\eslint.json
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\inventory.ps1" -Project C:\path\to\workspace
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" normalize-output --format eslint-json --input-path C:\path\to\eslint.json
+& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" inventory --project C:\path\to\workspace
 ```
 
-`normalize-output.ps1` prints one compact summary of a tool's raw output — the same bytes the POSIX
-helper prints for the same file — and `inventory.ps1` prints one table per workspace package. Both
+`ns.ps1 normalize-output` prints one compact summary of a tool's raw output — the same bytes the POSIX
+helper prints for the same file — and `ns.ps1 inventory` prints one table per workspace package. Both
 write nothing, and both print one `unavailable` line and exit 3 rather than an empty report.
 
 Missing or empty receipts create no dated receipts folder.
 
 In artifact mode Doctor reports `artifact receipts N` and, when any exist, `latest artifact receipt`
 with the filename only of the most recently written receipt. It warns `artifact mode has ticked items but no receipts` when ticks exist
-without a receipt; write the receipt with `write-receipt.ps1` rather than a work-target commit.
+without a receipt; write the receipt with `ns.ps1 write-receipt` rather than a work-target commit.
 It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
 Automatic Hunt and Quality skip quality-debt entries the folder cannot support.
 The GitHub issue hunt is skipped in artifact mode.

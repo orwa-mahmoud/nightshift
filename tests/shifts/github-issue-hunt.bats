@@ -1,7 +1,7 @@
-E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/shifts/github-issue-hunt.md"
+E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/github-issue-hunt.md"
 HUNT="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/hunt/SKILL.md"
 QUALITY="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/quality/SKILL.md"
-MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/execution-modes.md"
+MODES="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 COMMANDS="$BATS_TEST_DIRNAME/../../docs/commands.md"
 HOW="$BATS_TEST_DIRNAME/../../docs/how-it-works.md"
 
@@ -25,11 +25,14 @@ HOW="$BATS_TEST_DIRNAME/../../docs/how-it-works.md"
 }
 
 @test "the hunt cuts drafts into one punch list and keeps one commit per issue" {
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/import-issues.sh' "$E"
-  grep -qF -- '--project "$NIGHTSHIFT_WORKSPACE"' "$E"
+  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues' "$E"
+  # The dispatcher supplies the project, so the entry names the verb and its own flag and nothing
+  # else — and carries no second spelling for another host to keep in step.
   grep -qF -- '--promote' "$E"
-  grep -qF 'receipt-templates.md' "$E"
-  grep -qF 'receipt-templates.md' "$E"
+  ! grep -qF -- '-Promote' "$E" || { echo 'carries a second spelling'; return 1; }
+  ! grep -qF -- '--project' "$E" || { echo 'restates a flag the runtime supplies'; return 1; }
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
   grep -qi 'Cut, never copy' "$E"
   grep -qi 'Do not paste' "$E"
   grep -qi 'One conventional commit per issue' "$E"

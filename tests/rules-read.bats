@@ -105,12 +105,23 @@ no_json_bin() {
   [ "$status" -eq 1 ]
   [ "$output" = "trailing comma" ]
 
-  grep -qF 'ns_rules_check' "$START"
-  grep -qF 'refuse to arm' "$START"
-  grep -qF 'named reason' "$START"
+  # The preflight calls the reader and refuses on what it says, so the reason the owner reads is
+  # the reason the reader gave — not a paraphrase in a skill.
+  PRE="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  EXPLAIN="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
+  grep -qF 'ns_rules_check' "$PRE"
+  grep -qF 'rules.json is not the accepted shape' "$PRE"
+  grep -qF 'fix that named reason' "$PRE"
+  grep -qF 'a shift does not arm on a policy nobody can read' "$EXPLAIN"
+  # Reading a policy never asks for a parser: the rule is stated once, on the verdict. The single
+  # place a parser is offered is the repair for a host with no text environment at all, which is
+  # not this verdict and not a policy question.
+  grep -qF 'Never install jq or python3 for any of this' "$EXPLAIN"
   if grep -qF 'install jq or python3' "$START"; then
+    echo 'the skill asks for a parser'
     return 1
   fi
+  grep -qF 'restore a POSIX text environment, or install jq or python3' "$PRE"
   if grep -qiE '\bawk\b' "$START"; then
     return 1
   fi
@@ -170,4 +181,64 @@ no_json_bin() {
   if grep -qiE '\bawk\b' "$ROOT/plugins/nightshift/skills/status/SKILL.md"; then
     return 1
   fi
+}
+
+# The three settings blocks are one level of named values: a string, an integer, a bool, a null,
+# or a string array. The reader carries every one of them, because a field it quietly skipped
+# would read as a setting the owner never wrote.
+@test "the settings blocks read back exactly as written" {
+  run bash -c '. "$1"; ns_rules_get "$2" shift' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"verificationProfile":"fast","hours":null,"execution":"review-first","toolingPolicy":"existing-tools"}' ]
+  run bash -c '. "$1"; ns_rules_get "$2" handoff' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"enabled":true,"view":"owner","language":"auto","detail":"concise","sections":[],"templatePath":""}' ]
+  run bash -c '. "$1"; ns_rules_get "$2" archive' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ "$output" = '{"automatic":false,"root":"archive","layout":"date","templatePath":""}' ]
+}
+
+@test "one field of a settings block reads on its own" {
+  run bash -c '. "$1"; ns_rules_get_in "$2" shift verificationProfile' _ "$LIB" "$TEMPLATE"
+  [ "$output" = fast ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" shift hours' _ "$LIB" "$TEMPLATE"
+  [ "$output" = null ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff enabled' _ "$LIB" "$TEMPLATE"
+  [ "$output" = true ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff sections' _ "$LIB" "$TEMPLATE"
+  [ "$output" = '[]' ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" archive root' _ "$LIB" "$TEMPLATE"
+  [ "$output" = archive ]
+  # A field nobody wrote reads as nothing, never as a guess.
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff nosuchfield' _ "$LIB" "$TEMPLATE"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "a populated section list and an owner value survive the round trip" {
+  f="$BATS_TEST_TMPDIR/populated.json"
+  printf '%s\n' '{"toolDeny":{"AskUserQuestion":"","request_user_input":"","AskQuestion":""},"shift":{"verificationProfile":"strict","hours":6},"handoff":{"sections":["shift","changed","next"],"language":"de"}}' >"$f"
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff sections' _ "$LIB" "$f"
+  [ "$output" = '["shift","changed","next"]' ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" shift hours' _ "$LIB" "$f"
+  [ "$output" = 6 ]
+  run bash -c '. "$1"; ns_rules_get_in "$2" handoff language' _ "$LIB" "$f"
+  [ "$output" = de ]
+  run bash -c '. "$1"; ns_rules_get "$2" shift' _ "$LIB" "$f"
+  [ "$output" = '{"verificationProfile":"strict","hours":6}' ]
+}
+
+@test "a settings block still refuses a shape the schema does not describe" {
+  d="$BATS_TEST_TMPDIR/deep"
+  mkdir -p "$d/.nightshift"
+  base='{"toolDeny":{"AskUserQuestion":"","request_user_input":"","AskQuestion":""},'
+  printf '%s\n' "$base"'"handoff":{"view":{"nested":"deeper"}}}' >"$d/.nightshift/deep.json"
+  run bash -c '. "$1"; ns_rules_load "$2"' _ "$LIB" "$d/.nightshift/deep.json"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$base"'"handoff":{"sections":[["nested"]]}}' >"$d/.nightshift/arr.json"
+  run bash -c '. "$1"; ns_rules_load "$2"' _ "$LIB" "$d/.nightshift/arr.json"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$base"'"shift":{"hours":nul}}' >"$d/.nightshift/nul.json"
+  run bash -c '. "$1"; ns_rules_load "$2"' _ "$LIB" "$d/.nightshift/nul.json"
+  [ "$status" -ne 0 ]
 }

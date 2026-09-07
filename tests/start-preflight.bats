@@ -9,7 +9,7 @@ PLUGIN="$ROOT/plugins/nightshift"
 PREFLIGHT="$PLUGIN/runtime/start-preflight.sh"
 PS1_TWIN="$PLUGIN/runtime/windows/start-preflight.ps1"
 START="$PLUGIN/skills/start/SKILL.md"
-HOSTS="$PLUGIN/skills/nightshift/references/start-hosts.md"
+HOSTS="$PLUGIN/skills/nightshift/references/hosts/"
 
 load helpers
 
@@ -38,7 +38,7 @@ setup_site() { # <name> [punch-body]
   printf '%s\n' "$output" | grep -qE '^ok provision none pending$'
   while IFS= read -r line; do
     case "$line" in
-      ok\ * | warn\ * | repair\ * | refuse\ *) ;;
+      ok\ * | warn\ * | explain\ * | repair\ * | refuse\ *) ;;
       *) echo "not a verdict: $line"; return 1 ;;
     esac
   done < <(printf '%s\n' "$output")
@@ -181,7 +181,7 @@ setup_site() { # <name> [punch-body]
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF 'refuse provision an interrupted install cannot be proven recovered'
   printf '%s\n' "$output" | grep -qF '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run'
-  printf '%s\n' "$output" | grep -qF 'provision.sh rollback after fixing the target, then Start again'
+  printf '%s\n' "$output" | grep -qF 'ns provision rollback after fixing the target, then Start again'
 }
 
 @test "an empty punch list warns rather than refusing, and names what is staged" {
@@ -250,8 +250,12 @@ setup_site() { # <name> [punch-body]
   done
   run env -i HOME="$HOME" PATH="$bin" bash "$PREFLIGHT" --project "$p" --host claude
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qF 'warn policy no JSON parser is installed, so arm using'
-  printf '%s\n' "$output" | grep -qF 'never install Python or jq for this'
+  # The snapshot is read either way, so the preflight never downgrades to the rules file alone.
+  if printf '%s\n' "$output" | grep -qF 'no JSON parser is installed'; then
+    echo "the preflight still bypasses tonight's policy without a parser"
+    return 1
+  fi
+  printf '%s\n' "$output" | grep -qE '^(ok|warn) policy '
 }
 
 @test "the dry run reports without touching the site" {
@@ -300,13 +304,13 @@ setup_site() { # <name> [punch-body]
 }
 
 @test "Start routes through the helper instead of restating its rules" {
-  grep -qF 'runtime/start-preflight.sh' "$START"
-  grep -qF 'runtime\windows\start-preflight.ps1' "$START"
+  grep -qE 'ns"? start-preflight' "$START"
   grep -qF -- '--phase bind' "$START"
   grep -qF 'refuse' "$START"
   grep -qF 'repair' "$START"
-  [ -f "$HOSTS" ]
-  grep -qF 'start-hosts.md' "$START"
+  grep -qF 'explain' "$START"
+  [ -d "$HOSTS" ]
+  grep -qF 'references/hosts/<host>.md' "$START"
 }
 
 # The helpers these skills used to name are gone from the runtime. A skill that still names one
@@ -330,4 +334,232 @@ setup_site() { # <name> [punch-body]
   fi
   run pwsh -NoProfile -NonInteractive -File "$BATS_TEST_DIRNAME/windows/start-preflight-logic.ps1"
   [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------------------------
+# A host launched in a parent folder, with the working directory moved afterwards, would arm the
+# shift in one workspace and record its session against another. Nightshift names both and stops.
+
+@test "a host opened on one project and a start given another refuses before arming" {
+  parent="$BATS_TEST_TMPDIR/parent"
+  mkdir -p "$parent"
+  p="$(setup_site bind-mismatch)"
+  run env CLAUDE_PROJECT_DIR="$parent" bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q '^refuse binding '
+  printf '%s\n' "$output" | grep -qF "$parent"
+  printf '%s\n' "$output" | grep -qF "$p"
+  printf '%s\n' "$output" | grep -q '^repair '
+  # Nothing was armed, and no marker was left behind in either place.
+  [ ! -f "$p/.nightshift/.shift-armed" ]
+  [ ! -e "$parent/.nightshift" ]
+}
+
+@test "the ordinary direct launch is unaffected" {
+  p="$(setup_site bind-direct)"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -q '^refuse binding '; then
+    echo "a direct launch was refused"
+    return 1
+  fi
+}
+
+@test "a linked workspace is a binding, not a mismatch" {
+  ws="$(setup_site bind-linked)"
+  opened="$BATS_TEST_TMPDIR/opened-elsewhere"
+  mkdir -p "$opened"
+  printf '%s\n' "$ws" >"$opened/.nightshift-link"
+  run env CLAUDE_PROJECT_DIR="$opened" bash "$PREFLIGHT" --project "$ws" --host claude
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -q '^refuse binding '; then
+    echo "a linked workspace was read as a mismatch"
+    return 1
+  fi
+}
+
+@test "a host that names no project at all still starts" {
+  p="$(setup_site bind-no-env)"
+  run env -u CLAUDE_PROJECT_DIR -u CODEX_PROJECT_DIR bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -q '^refuse binding '; then
+    echo "a host with no project variable was refused"
+    return 1
+  fi
+}
+
+# The explanation arrives on the verdict that occurred.
+#
+# The Start skill carried a paragraph per topic and the model read all of them on every Start,
+# including the ones for verdicts that did not occur. These hold the move: what each warn and
+# refuse says about itself, that `ok` says nothing extra, that a consumer wanting only verdicts can
+# still filter, and that the two hosts word the same verdict identically — which they cannot fail
+# to do, since both read one file.
+
+TABLE="$PLUGIN/lib/preflight-explain.txt"
+
+ps_ready() {
+  command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"
+}
+
+# verdicts_only <output> — the lines a consumer that only wants verdicts keeps.
+verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
+
+@test "every explanation in the table is one line, tab-separated, on a known kind" {
+  while IFS= read -r line; do
+    case "$line" in '' | '#'*) continue ;; esac
+    kind="${line%%	*}"
+    rest="${line#*	}"
+    topic="${rest%%	*}"
+    text="${rest#*	}"
+    case "$kind" in
+      explain | repair) ;;
+      *) echo "unknown kind: $kind"; return 1 ;;
+    esac
+    [ -n "$topic" ] || { echo "no topic: $line"; return 1; }
+    [ -n "$text" ] || { echo "no text: $line"; return 1; }
+    [ "$text" != "$rest" ] || { echo "not tab-separated: $line"; return 1; }
+  done <"$TABLE"
+}
+
+@test "every topic the table explains is one the helper can actually emit" {
+  for topic in $(grep -E '^(explain|repair)	' "$TABLE" | cut -f2 | sort -u); do
+    grep -qE "(refuse|warn) \"$topic " "$PREFLIGHT" \
+      || { echo "table explains '$topic', which no verdict emits"; return 1; }
+  done
+}
+
+@test "a refusal carries its explanation and then its repair, in that order" {
+  p="$(setup_site preflight-explain-order)"
+  printf 'nonsense\n' >"$p/.nightshift/work-mode"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -ne 0 ]
+
+  printf '%s\n' "$output" | grep -qF 'refuse work-mode'
+  printf '%s\n' "$output" | grep -qF 'explain work-mode The work mode decides where the work happens.'
+  printf '%s\n' "$output" | grep -qE '^repair '
+
+  refuse_at="$(printf '%s\n' "$output" | grep -n '^refuse work-mode' | head -1 | cut -d: -f1)"
+  explain_at="$(printf '%s\n' "$output" | grep -n '^explain work-mode' | head -1 | cut -d: -f1)"
+  repair_at="$(printf '%s\n' "$output" | grep -n -A 3 '^refuse work-mode' | grep '^[0-9]*.repair' | head -1 | cut -d- -f1)"
+  [ "$explain_at" -gt "$refuse_at" ]
+  [ "$repair_at" -gt "$explain_at" ]
+}
+
+@test "an ok line explains nothing: a resolved fact speaks for itself" {
+  p="$(setup_site preflight-explain-ok)"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  # A topic that only ever resolved is never explained, even when the table has wording for it.
+  for topic in $(printf '%s\n' "$output" | grep -E '^ok ' | awk '{print $2}' | sort -u); do
+    printf '%s\n' "$output" | grep -qE "^(warn|refuse) $topic " && continue
+    if printf '%s\n' "$output" | grep -qE "^explain $topic "; then
+      echo "explained '$topic', which only ever resolved"
+      return 1
+    fi
+  done
+}
+
+@test "a verdict-only filter still yields exactly the verdicts" {
+  p="$(setup_site preflight-explain-filter)"
+  printf 'nonsense\n' >"$p/.nightshift/work-mode"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  kept="$(verdicts_only "$output")"
+  [ -n "$kept" ]
+  # Every kept line is a verdict, and no explanation survives the filter.
+  ! printf '%s\n' "$kept" | grep -qE '^(explain|repair) '
+  printf '%s\n' "$kept" | grep -qF 'refuse work-mode'
+}
+
+@test "the binding refusal offers both ways forward, relaunch first" {
+  p="$(setup_site preflight-explain-binding)"
+  other="$(setup_site preflight-explain-binding-other)"
+  run env CLAUDE_PROJECT_DIR="$other" bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -qF 'refuse binding'
+  printf '%s\n' "$output" | grep -qF 'explain binding The host opened one project'
+
+  first="$(printf '%s\n' "$output" | grep -n '^repair reopen the host' | head -1 | cut -d: -f1)"
+  second="$(printf '%s\n' "$output" | grep -n '^repair or, if' | head -1 | cut -d: -f1)"
+  [ -n "$first" ] && [ -n "$second" ]
+  [ "$second" -gt "$first" ]
+  printf '%s\n' "$output" | grep -qF 'ns link-workspace'
+}
+
+@test "the lease refusal hands the owner the reset to run themselves, never the session" {
+  p="$(setup_site preflight-explain-lease)"
+  printf 'garbage\n' >"$p/.nightshift/.shift-lease"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  printf '%s\n' "$output" | grep -qF 'explain lease An agent is already working this punch list'
+  printf '%s\n' "$output" | grep -qF 'never run it from the blocked session'
+  printf '%s\n' "$output" | grep -qF 'ns_lease_reset_stale'
+  printf '%s\n' "$output" | grep -qF 'a false result is a refusal'
+}
+
+@test "every repair names a verb, never the helper file behind it" {
+  for f in "$PREFLIGHT" "$PS1_TWIN"; do
+    if grep -nE '(repair|Write-Repair) .*(stop-shift\.(sh|ps1)|link-workspace\.(sh|ps1)|provision\.sh)' "$f"; then
+      echo "$f offers a repair naming a helper file rather than its verb"
+      return 1
+    fi
+  done
+}
+
+@test "both hosts word the same verdict identically" {
+  ps_ready
+  p="$(setup_site preflight-explain-twin)"
+  printf 'nonsense\n' >"$p/.nightshift/work-mode"
+
+  bash "$PREFLIGHT" --project "$p" --host claude >"$p/posix.txt" 2>&1 || true
+  pwsh -NoProfile -NonInteractive -File "$PS1_TWIN" -Project "$p" -HostName claude \
+    >"$p/windows.txt" 2>&1 || true
+
+  # The verdict details carry absolute paths each host canonicalises its own way; the explanations
+  # are the shared text, and those must match byte for byte.
+  diff -u <(grep '^explain ' "$p/posix.txt") <(grep '^explain ' "$p/windows.txt")
+  [ -s "$p/posix.txt" ]
+  grep -q '^explain ' "$p/posix.txt"
+}
+
+@test "the Start skill relays the verdicts instead of restating them" {
+  # The moved paragraphs are gone.
+  for phrase in 'Liveness is process evidence' \
+    'a paused shift with an expired deadline does not get a silent new budget' \
+    'the cross-host handoff fence refused' \
+    'Once it has proved no shift is live, the helper clears the leftovers itself' \
+    'The work-mode verdicts decide where the work happens'; do
+    if grep -qF "$phrase" "$START"; then
+      echo "Start still restates: $phrase"
+      return 1
+    fi
+  done
+
+  # The verdict rule and the two policy sentences stay.
+  grep -qF 'one verdict, and it explains itself' "$START"
+  grep -qF 'Print the `explain` and `repair` lines that follow it' "$START"
+  grep -qF 'never invent an explanation the helper did not print' "$START"
+  grep -qF 'never kill a live watchman and never start a second shift beside one' "$START"
+  grep -qF 'never clear `STOP` or' "$START"
+}
+
+@test "each host page carries its own detail and explains no verdict" {
+  # One page per host, so the model opens the host it is on and nothing else. A verdict explanation
+  # on any of them is a second wording of what the preflight already prints.
+  for phrase in '## Process evidence' '## Work mode and work target' \
+    '## Linking another workspace' '## State version'; do
+    if grep -rqF "$phrase" "$HOSTS"; then
+      echo "a host page explains a verdict: $phrase"
+      return 1
+    fi
+  done
+  # The resume mechanism is the host detail that most obviously differs, and each page carries only
+  # its own: a page that named another host's would send the model to the wrong command.
+  for pair in 'claude.md:claude --resume' 'codex.md:codex resume' \
+    'cursor.md:agent --resume' 'windows.md:Import-Module'; do
+    page="${pair%%:*}"
+    phrase="${pair#*:}"
+    [ -f "$HOSTS/$page" ] || { echo "no host page $page"; return 1; }
+    grep -qF "$phrase" "$HOSTS/$page" || { echo "$page lost $phrase"; return 1; }
+    grep -qF '# Start on ' "$HOSTS/$page" || { echo "$page has no title"; return 1; }
+  done
 }

@@ -18,6 +18,15 @@ owned_docs() {
   find "$ROOT/docs" -name '*.md' | LC_ALL=C sort
 }
 
+# Link targets are checked more widely than backticked paths and helper names are. A skill page
+# names `defect-cycle.sh` in order to forbid it and `Chart.yaml` as an example of a stack it might
+# meet; neither is a path this repository holds. A link, though, is a promise that something is
+# there — and one that moved with the P21 split pointed at nothing until this widened.
+linked_docs() {
+  owned_docs
+  find "$PLUGIN/skills" -name '*.md' | LC_ALL=C sort
+}
+
 # Every path-shaped word inside a backtick span, unquoted and unpunctuated.
 backticked_paths() {
   grep -o '`[^`]*`' "$1" \
@@ -103,7 +112,7 @@ resolves() {
       [ -e "$dir/$target" ] || dead="$dead
   ${f#"$ROOT/"}: $target"
     done < <(grep -o ']([^)]*)' "$f" | sed -e 's/^](//' -e 's/)$//')
-  done < <(owned_docs)
+  done < <(linked_docs)
 
   [ -z "$dead" ] || { echo "dead links:$dead"; return 1; }
 }

@@ -9,7 +9,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $helper = Join-Path $repository 'plugins/nightshift/runtime/windows/doctor.ps1'
 $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
-$draftTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/drafting-table-template.md'
+$draftTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/templates/drafting-table.md'
 $hostExecutable = (Get-Process -Id $PID).Path
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $onWin32 = [Environment]::OSVersion.Platform -eq 'Win32NT'

@@ -8,8 +8,8 @@ already exist — the evidence ledger, the resolved shift policy, `punch-list.md
 described as passed, and a model's own claim about its work is never upgraded into proof; only a
 ledger record, a commit, or a receipt earns a line in the receipt.
 
-`runtime/morning-receipt.sh --project DIR [--view owner|reviewer|release|artifact] [--out PATH]`
-(native Windows: `runtime/windows/morning-receipt.ps1`) renders it on demand. The clock-out gate
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" morning-receipt [--view owner|reviewer|release|artifact] [--out PATH]`
+(native Windows: `ns.ps1 morning-receipt`) renders it on demand. The clock-out gate
 also writes the owner view automatically, best effort, to
 `.nightshift/receipts/morning-<YYYY-MM-DD>-<shiftId>.md`, or
 `.nightshift/receipts/morning-<YYYY-MM-DD>.md` when the shift wrote no policy and so has no id —

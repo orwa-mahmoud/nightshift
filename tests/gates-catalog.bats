@@ -1,4 +1,4 @@
-CAT="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/gates-catalog.md"
+CAT="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/gates-catalog.md"
 
 @test "proposes the TypeScript toolchain for a package.json + tsconfig.json project" {
   grep -q 'package.json' "$CAT"

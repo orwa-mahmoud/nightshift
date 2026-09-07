@@ -6,10 +6,10 @@ for the owner.
 
 The contract itself is a knob too: the punch-list text above `## Items` and the rules file's
 `clockOutMessage` are the owner's words. The shipped default asks one commit per item in
-repository mode, or one artifact receipt per item in artifact mode — the
-receipts story — but the gate releases on ticks, and the stall guard counts a tick as progress
-on its own, so a contract with the commit rule stripped runs a full night with no commits at
-all (on Codex, such a night needs only the `workspace-write` sandbox).
+repository mode, and in artifact mode completes an item with its section in the shift report — but
+the gate releases on ticks, and the stall guard counts a tick as progress on its own, so a contract
+with the commit rule stripped runs a full night with no commits at all (on Codex, such a night
+needs only the `workspace-write` sandbox).
 
 **One file drives them all:** setup copies a ready template to `.nightshift/rules.json` —
 clean JSON, yours to edit: the tool-deny map, the guard patterns, the cadences, the watchman's
@@ -18,6 +18,55 @@ so an edit applies from your very next action — no sync, no restart, no second
 shift the file itself is guarded: the session working the night is denied touching it, so only
 you set or lift a rule. The env vars below remain as session-start overrides for tests and
 one-off exceptions.
+
+## Where a setting comes from
+
+A setting has one permanent home and one place it may be varied for a single night. Four sources
+decide the value in force, in this order:
+
+1. **The built-in default.** What the plugin does when no file says anything.
+2. **`.nightshift/rules.json`.** Your permanent answer. A key you wrote is your answer even when
+   its value is an empty string or a zero — that reads as `rules`/`permanent`, not as silence.
+3. **The shift snapshot**, `.nightshift/shift-policy.json`. The resolved policy for the night that
+   is running, written before the gate arms and guarded once it is. It carries the deadline, the
+   verification level, the tooling policy, the completion mode, and any elevation the owner
+   granted for that shift alone. It is a record, not a second settings file.
+4. **Your host's permission boundary**, which is a ceiling rather than a step. Claude Code, Codex,
+   and Cursor each decide what the agent may do at all; no Nightshift key lifts that, and an
+   organization policy above it stays above it.
+
+`.nightshift/shift-defaults.json` sits outside this order on purpose. It remembers the choices a
+composition step would otherwise ask for again — execution mode, hours, tooling policy,
+verification profile — and is never itself the source of an effective value. Those four now live
+in the `shift` block below. To move a workspace that still has the older file:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy migrate --dry-run
+```
+
+The dry run prints what it would write and touches nothing; drop `--dry-run` to do it. It keeps a
+`.bak` of what it read, refuses while a shift is armed, and does nothing the second time. If a
+value you set in the rules file disagrees with one the older file remembers, it names both and
+changes neither — delete whichever you do not want and run it again.
+
+Some rows are not negotiable by an allowance at all. Protected paths, never-commit patterns, the
+expected commit identity, and `forbiddenCommands` come from the rules file alone; a one-shift
+elevation allowance authorizes its own category and nothing else. Allowing `containers` does not
+lift a `git .*push` you put in `forbiddenCommands` — the two are separate rules, and a command
+blocked by either is blocked.
+
+To see the values in force, with where each one came from:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy resolve --table
+```
+
+Each row ends in its origin — `built-in`, `rules`, or `one-shift` — so a surprising value names
+the file to edit. Native Windows runs the same verb: `ns.ps1 shift-policy`.
+
+An edit to the rules file applies from the next tool call; the hooks read it every time. The shift
+snapshot is frozen for the night, so a change of mind mid-shift means stopping the shift and
+starting again with the new setting.
 
 ## Editor schema
 
@@ -169,7 +218,7 @@ and the next shift tool call reads the change.
 thread is currently only how the owner refreshes a stale panel before inspecting or interacting;
 the linked upstream refresh work would make that handoff smoother, not enable recovery itself.
 
-**Local profiles.** `runtime/apply-profile.sh` (native Windows: `runtime/windows/apply-profile.ps1`)
+**Local profiles.** `ns apply-profile` (native Windows: `ns.ps1 apply-profile`)
 can preview or copy every version-1 or version-2 JSON file in
 `plugins/nightshift/skills/nightshift/references/profiles/`; the shipped `balanced`, `fast`, and
 `strict` profiles are version 2 and also carry shift defaults and a Gates block. That is a
@@ -189,6 +238,137 @@ read only by Nightshift Archive. Both `runtimeLogDays` and `archiveDays` default
 (keep forever). A positive integer is an opt-in age in days. Archive prints the exact
 eligible paths first; deletion needs an explicit yes and never runs from a hook, start,
 status, Doctor, or recovery.
+
+## Shift, handoff and archive
+
+Three blocks group the settings that are not guards. They are all optional, and an absent key keeps
+the default in the table.
+
+`shift` holds the choices a composition step would otherwise ask for every time.
+
+| Key | Default | Values |
+|---|---|---|
+| `verificationProfile` | `fast` | `fast` never runs the punch list's `## Gates`, `balanced` runs them once before clock-out, `strict` before every tick and once at the end, `custom` is the cadence the punch list itself names |
+| `hours` | `null` | A whole number of hours for a composed shift, or `null` to be asked. A finite punch list can still end at its last tick with no clock |
+| `execution` | `review-first` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
+| `toolingPolicy` | `existing-tools` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
+
+A new workspace verifies nothing, because the gates a new owner has not written yet should not fail
+a shift. Set a profile once you have commands worth running.
+
+`handoff` is the morning receipt — presentation only. It never decides whether a check ran, and it
+cannot turn an unavailable check into a passed one.
+
+| Key | Default | Values |
+|---|---|---|
+| `enabled` | `true` | `false` writes no page and leaves the ledger, the archive and the shift log exactly as they are |
+| `view` | `owner` | `owner`, `reviewer`, `release`, `artifact` |
+| `language` | `auto` | Follows the language of the conversation that ran the shift. Paths, commands and identifiers are never translated |
+| `detail` | `concise` | `concise` or `detailed` |
+| `sections` | `[]` | Any of `shift`, `baseline`, `changed`, `parked`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view |
+| `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
+
+`report` is the shift report — one page the night writes as it goes, a section per punch-list
+item, saying what was delivered and why. It never reaches a public commit message.
+
+| Key | Default | Values |
+|---|---|---|
+| `enabled` | `true` | `false` writes no report. Punch status, real outputs, continuity and your selected verification are all still kept, and no per-item receipt comes back in its place |
+| `progressMode` | `time` | `completion-only` writes a section once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first |
+| `progressMinutes` | `20` | Minutes of work on the current item before an update is due. Checked when a tool returns, so it never interrupts a running command |
+| `progressTokens` | `100000` | Tokens of work before an update is due. A starting value to tune, not a host limit |
+| `usage` | `when-available` | Record what each item cost, from the numbers your host already exposes. `off` records none. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out |
+| `legacyItemReceipts` | `false` | Artifact items are completed by their report section. `true` also writes the older per-item receipt file. Baseline, checkpoint and source receipts are unaffected |
+| `templatePath` | `""` | A Markdown template for the report, on the same terms as the handoff template: wording only |
+
+The measuring is the runtime's, not the model's. No host shows a model its own token counts from
+inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
+Nightshift already registers do see the numbers, and they take the readings. The tick is the
+boundary: everything spent between two ticks belongs to the item ticked second, and the gate writes
+that item's usage and duration lines into its section as it releases.
+
+Where each host's figures come from, and what each one leaves out:
+
+- **Claude Code** — the session transcript the hook is handed. One response is written once per
+  content block and every copy repeats the same usage, so readings are deduplicated on the request
+  id; summing lines instead would overstate a real session by more than half. Cache creation and
+  cache read are reported separately from input and are additive.
+- **Codex** — the rollout's running `token_count`, read with one tail. Codex counts cached input
+  inside its input figure and reasoning inside its output figure, and the report says so rather
+  than rearranging the numbers.
+- **Cursor** — the stop payload, which is the only place the figures appear; the local agent
+  transcripts carry none. Input overlaps the cache figures, and Cursor reports no reasoning and no
+  subagent tokens. The Cursor CLI the watchman revives into has no per-turn source at all, so a
+  revived segment there is `unavailable`.
+
+A dimension a host does not report reads `unavailable` — never zero, because zero is a
+measurement and silence is not. Totals are never summed across hosts, and no token count is ever
+turned into a price.
+
+[`examples/shift-report.md`](../examples/shift-report.md) shows the shape, including an item still
+in progress and usage that is only partly available.
+
+### When the gate repeats itself
+
+Every turn that ends with work still open is blocked, and the reason goes back into the
+conversation. That does not change. What can change is how often the whole message is repeated: a
+model ends turns to narrate — "gate green, committing" — many times per item, and each block was
+re-injecting a message it had read a few calls earlier.
+
+`clockOutReminderMode` is the switch. `full`, the default, sends `clockOutMessage` every time —
+today's behaviour exactly. `changed-only` sends the whole message when something moved and the one
+line in `clockOutReminder` when nothing did.
+
+Something moved means: a box was ticked, an item changed, a stop-work order appeared, the deadline
+passed, or the stall guard started warning. **Anything the gate cannot be sure about also counts as
+moved** — the first block of a shift, a missing or unreadable comparison file, a compacted
+conversation, and `clockOutReminderLimit` short lines in a row all send the whole message again.
+The block itself is never skipped and its reason is never empty.
+
+On Claude Code a compaction or a resume is detected and sends the full message next time. Codex and
+Cursor expose no such event, so on those hosts `clockOutReminderLimit` is the only reset — which is
+why it exists.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `clockOutReminderMode` | `full` | `full` repeats the whole message on every block. `changed-only` shortens the ones where nothing changed. |
+| `clockOutReminder` | a one-line reminder | The short line. `{item}`, `{open}`, `{ticked}` and `{total}` are filled in; drop any of them and your sentence stands. |
+| `clockOutReminderLimit` | `10` | How many short lines may follow one another before the whole message is sent again regardless. |
+
+`recovery` decides what a session the watchman revives is allowed to do. It never widens what your
+host permits, and it never lifts a rule in this file.
+
+| Key | Default | Values |
+|---|---|---|
+| `launchScope` | `inherit-recorded-scope` | Revive with the permissions the shift was started under, as recorded when it armed. `host-grant` starts a revived session with the documented grant for that host — on Codex `danger-full-access`, on Cursor `--trust --yolo`. `host-default` passes no permission argument at all |
+
+**A revival never gets more than the session it is replacing had.** The shipped choice reads what
+the shift recorded about itself when it armed and asks for exactly that. Where the host reported no
+scope — or the shift predates the recording — it falls back to the host's own default and says so
+in `shift-log.md`, rather than reaching for the broader grant. A revived Codex session under
+`workspace-write` can edit but not commit, and it reports that rather than widening to make a
+commit possible.
+
+`host-grant` is how you say you want the broad grant anyway, and it happens only because you wrote
+it here — a workspace that predates this setting has not chosen it. Whichever scope is in force is
+named on every revival, and a failed revival is retried at the same one, never a broader one.
+Claude Code inherits its own launch in every case. `watchAgent` remains the advanced override for
+the whole command.
+
+`archive` decides where finished shift state is filed. Filing is a copy: `retention` above is the
+only setting that removes anything, and only Nightshift Archive prunes, after showing you the exact
+paths and asking.
+
+| Key | Default | Values |
+|---|---|---|
+| `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
+| `root` | `archive` | Directory for dated archives, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
+| `layout` | `date` | `date` groups a night under `YYYY-MM-DD`; `shift` gives each shift its own directory. The shift id names the files either way, so two shifts in a day never collide |
+
+Changing `root` never moves or hides what is already filed: an older history under the previous
+root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live
+ones in place, so a shift still in progress keeps the receipts its own progress checks read.
+| `templatePath` | `""` | A Markdown template for the archive summary |
 
 Every rule above is **shift-scoped**: it applies to the bound session while `.shift-armed` exists,
 `.nightshift/punch-list.md` has an open `- [ ]`, and the gate has not ended the shift. With no
