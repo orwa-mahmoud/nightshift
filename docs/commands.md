@@ -172,9 +172,11 @@ alternative is pre-allowing the punch list's own tools. nightshift's guards are 
 armed in every permission mode, bypass included. Decline both and a mid-shift prompt costs the
 night; that trade is the owner's.
 
-On Codex, a committing unattended run uses `codex -a never -s danger-full-access`;
-`workspace-write` protects `.git` and cannot create the per-item commits. The owner-defined
-Nightshift guards remain active in either sandbox mode.
+On Codex, unattended execution is `-a never` and the sandbox is a separate choice. A contract
+that does not commit runs under `-s workspace-write`, because ticks alone finish a night. Under
+Codex's `workspace-write` sandbox `.git` is protected, so a contract that commits cannot run under
+it and needs `codex -a never -s danger-full-access`. The owner-defined Nightshift guards remain
+active in either sandbox mode.
 
 ### Start it at a fixed time
 

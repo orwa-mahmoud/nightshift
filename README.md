@@ -99,9 +99,11 @@ link described under [Workspaces and repositories](docs/how-it-works.md#workspac
 Nightshift never guesses which nearby folder owns a shift.
 
 An unattended run cannot answer permission prompts. Claude Code can use a project-local
-`bypassPermissions` setting offered by setup. A Codex run whose contract commits needs
-`codex -a never -s danger-full-access`; `workspace-write` protects `.git` and therefore cannot
-create the per-item commits. Nightshift's configured guards remain active in either mode.
+`bypassPermissions` setting offered by setup. On Codex, unattended execution is `-a never` and the
+sandbox is a separate choice: a contract that does not commit runs under `-s workspace-write`,
+because ticks alone finish a night. Under Codex's `workspace-write` sandbox `.git` is protected, so
+a contract that commits cannot run under it and needs `codex -a never -s danger-full-access`.
+Nightshift's configured guards remain active in either sandbox.
 
 Only four ideas matter on the first run:
 
