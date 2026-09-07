@@ -4,3 +4,4 @@ CLAUDE.md
 .nightshift/
 coverage/
 .scannerwork/
+.env
