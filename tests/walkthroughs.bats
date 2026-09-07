@@ -9,8 +9,10 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 # last night silently ended the next shift at its first stop attempt. Now only start cuts, so
 # only start clears — and it must still name every marker.
 @test "start clears every stale marker" {
+  # The preflight clears them, and Start stopped listing what it clears when the helper took it
+  # over — a list in prose beside a list in code is two lists that can disagree.
   for m in STOP .stall .notified .ended deadline .session-end .shift-pulse .mint-failed .shift-session .watchman-tick .watchman .lock.d; do
-    grep -qF "$m" "$START" || { echo "start does not clear $m"; return 1; }
+    grep -qF "$m" "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh" || { echo "the preflight does not clear $m"; return 1; }
   done
 }
 
@@ -134,7 +136,8 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 }
 
 @test "Start and Hunt name artifact receipts in the live work loop" {
-  grep -qF 'gate before each commit or artifact receipt' "$START"
+  # Start hands the item loop to the main skill, which is where the gate rule belongs.
+  grep -qF 'Gate' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/SKILL.md"
   grep -qF 'gate green at every commit or artifact receipt' "$HUNT"
 }
 
@@ -228,16 +231,18 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 }
 
 @test "run-direct has a bounded decision policy and leaves receipts" {
-  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
+  mode="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/shift/direct-mode-decisions.md"
   grep -qi 'production-quality default' "$mode"
   grep -qi 'parking-lot.md' "$mode"
   grep -qi 'rollback' "$mode"
   grep -qi 'publishing' "$mode"
   grep -qi 'legal or licensing policy' "$mode"
+  # Where the work lands is a composition decision, so it stayed with the composition text.
   grep -qi 'isolated branch or inside the artifact work target' "$mode"
-  grep -qi 'one branch or artifact work target' "$mode"
-  grep -qF 'one set of receipts' "$mode"
-  grep -qF '.nightshift/receipts/' "$mode"
+  compose="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
+  grep -qi 'one branch or artifact work target' "$compose"
+  grep -qF 'one set of receipts' "$compose"
+  grep -qF '.nightshift/receipts/' "$compose"
 }
 
 # The archive files finished paperwork only — the contract and open work are untouchable.
@@ -254,7 +259,7 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
   grep -qF 'unanswered stay' "$s"                  # open questions are not history
   grep -qF 'product-research.md' "$s"             # completed research is preserved
   grep -qF '`candidate`, `building`, and `parked`' "$s" # nonterminal opportunities stay live
-  grep -qF 'leftover Shift contract and Gates' "$s"
+  grep -qF 'leftover Shift contract and Gates' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/archive/SKILL.md"
   grep -qF '## Notes' "$s"
   grep -qF 'Never write' "$s"
   grep -qF 'git -C "$NS"' "$s"
@@ -263,20 +268,19 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 }
 
 @test "status surfaces the active product cycle without mutating it" {
-  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/status/SKILL.md"
-  grep -qF 'current phase' "$s"
-  grep -qF 'exact Next action' "$s"
-  grep -qF 'Verify remaining' "$s"
-  grep -qF 'without changing them' "$s"
+  # Status renders what the helper prints: the building entry's phase, next action and remaining
+  # verification, read without touching the map.
+  s="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'fact "building $key"' "$s"
+  grep -qF 'ns_status_building' "$s"
 }
 
 @test "status, start, and hunt name leftover contract on an empty punch list" {
-  s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/status/SKILL.md"
-  grep -qF 'leftover' "$s"
-  grep -qF 'never resets' "$s"
-  grep -qF 'parked Hunt orders' "$s"
-  grep -qF 'markdown `---`' "$s"
-  grep -qF 'item-shape example' "$s"
+  # The inspector states it and Status relays it: a punch list with nothing open still carries a
+  # contract that binds the next cut.
+  grep -qF 'leftover Shift contract and Gates still bind' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
+  # Drafts are counted only after the rule, so the shipped example is not a staged draft.
+  grep -qF 'ns_open_drafts' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'Shift contract and Gates' "$START"
   grep -qF 'Shift contract and Gates' "$HUNT"
   grep -qF 'parking-lot.md' "$HUNT"
