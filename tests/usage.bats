@@ -452,3 +452,65 @@ mark_at() {
   run lib ns_handoff_enabled "$q"
   [ "$status" -ne 0 ]
 }
+
+# ---------------------------------------------------------------------------------------------
+# A mark is taken when the work finishes, not when the session tries to stop.
+#
+# The gate marks on a stop attempt, so two items ticked between stops both got the reading taken at
+# the stop: the first was billed everything since the previous mark and the second nothing. The
+# pulse fires on the PostToolUse of the edit that ticks the box, so a mark taken there carries the
+# reading at that moment. These drive the hooks as processes, because that is the only way the
+# ordering is real.
+
+PULSE="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"
+GATE="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/clock-out-gate.sh"
+
+# three_open <name> — an armed workspace with three open items and an empty transcript.
+three_open() {
+  local p
+  p="$(new_project "$1")"
+  printf '# Punch list\n\n## Items\n\n- [ ] **A1 — one.**\n- [ ] **A2 — two.**\n- [ ] **A3 — three.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  : >"$p/.nightshift/.shift-armed"
+  printf 'sess-marks\n' >"$p/.nightshift/.shift-session"
+  : >"$p/transcript.jsonl"
+  printf '%s' "$p"
+}
+
+tick() { sed -i.bak "s/- \[ \] \*\*$2/- [x] **$2/" "$1/.nightshift/punch-list.md"; rm -f "$1/.nightshift/punch-list.md.bak"; }
+grow() { cat "$FIX/claude-multiline.jsonl" >>"$1/transcript.jsonl"; }
+fire() {
+  run env CLAUDE_PROJECT_DIR="$1" bash "$PULSE" <<<"$(printf '{"session_id":"sess-marks","transcript_path":"%s/transcript.jsonl","cwd":"%s","tool_name":"Edit","tool_input":{}}' "$1" "$1")"
+  [ "$status" -eq 0 ]
+}
+marks() { cat "$1/.nightshift/usage/marks.tsv"; }
+
+@test "an item ticked in its own turn is marked with the reading from that turn" {
+  p="$(three_open marks-at-tick)"
+  grow "$p"; fire "$p"                     # arm, and a first reading
+  tick "$p" A1; grow "$p"; fire "$p"       # A1 finishes here
+  tick "$p" A2; tick "$p" A3; grow "$p"; fire "$p"
+
+  [ "$(marks "$p" | wc -l | tr -d ' ')" -eq 4 ]
+  [ "$(marks "$p" | sed -n '2p' | cut -f2)" = A1 ]
+  # The point of the change: A1 does not carry the total that A2 does.
+  a1="$(marks "$p" | sed -n '2p' | cut -f3)"
+  a2="$(marks "$p" | sed -n '3p' | cut -f3)"
+  [ -n "$a1" ] && [ "$a1" != "$a2" ] || { echo "A1=$a1 A2=$a2"; return 1; }
+}
+
+@test "two items ticked in one turn share that turn's reading, and the report says so" {
+  # Not a defect and not hidden: one pulse, one reading. The alternative would be inventing a split.
+  p="$(three_open marks-same-turn)"
+  grow "$p"; fire "$p"
+  tick "$p" A1; tick "$p" A2; grow "$p"; fire "$p"
+  [ "$(marks "$p" | sed -n '2p' | cut -f3)" = "$(marks "$p" | sed -n '3p' | cut -f3)" ]
+}
+
+@test "the gate still catches up when no pulse ever fired" {
+  p="$(three_open marks-catchup)"
+  tick "$p" A1; tick "$p" A2; tick "$p" A3
+  cp "$FIX/claude-multiline.jsonl" "$p/transcript.jsonl"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$GATE" <<<"$(printf '{"session_id":"sess-marks","transcript_path":"%s/transcript.jsonl","cwd":"%s","hook_event_name":"Stop"}' "$p" "$p")"
+  [ "$(marks "$p" | wc -l | tr -d ' ')" -eq 4 ]
+}

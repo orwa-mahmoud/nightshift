@@ -163,6 +163,36 @@ ns_pulse_context() {
   esac
 }
 
+# ns_pulse_marks <ns> <project> — mark every item ticked since the last mark, at this moment.
+#
+# The gate marks on a stop attempt, so two items ticked between stops both get the reading taken at
+# the stop: the first is billed everything since the previous mark and the second nothing. The pulse
+# fires on the PostToolUse of the edit that ticked the box, so a mark taken here carries the reading
+# at the moment the work finished.
+#
+# It calls the gate's own sync rather than a parallel loop. One code path writes the marks and the
+# report lines, whichever side gets there first, and the gate stays as the catch-up for a pulse that
+# never fired.
+ns_pulse_marks() {
+  local ns="$1" project="$2" punch ticked core
+  [ -d "$ns" ] || return 0
+  punch="$ns/punch-list.md"
+  [ -f "$punch" ] || return 0
+  # This file's own directory, never the caller's. The Codex and Cursor pulses source this file and
+  # set `_here` to their own folder, which has no `shared/` in it.
+  core="${BASH_SOURCE[0]%/*}"
+  [ "$core" != "${BASH_SOURCE[0]}" ] || core=.
+  core="$core/shared/gate-core.sh"
+  if ! command -v ns_gate_usage_sync >/dev/null 2>&1; then
+    [ -f "$core" ] || return 0
+    # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
+    . "$core" || return 0
+  fi
+  ticked="$(ns_ticked_boxes "$punch" 2>/dev/null)" || return 0
+  case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
+  ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" || return 0
+}
+
 # Executed as the Claude wrapper: parse stdin, emit, stay silent.
 #
 # This block is last on purpose. Bash defines a function when it reaches the definition, so a
@@ -194,6 +224,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   fi
   ns_pulse_emit "$NS" "$SID"
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"
+  ns_pulse_marks "$NS" "$PROJECT_DIR"
   ns_pulse_context claude "$(ns_pulse_report_due "$NS" "$PROJECT_DIR")"
   exit 0
 fi
