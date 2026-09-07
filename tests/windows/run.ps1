@@ -1219,6 +1219,7 @@ exit 1
 
     $clockOkWorkspace = Join-Path $root 'clock-out ok workspace'
     $null = Initialize-TestWorkspace $clockOkWorkspace
+    Set-TestRecoveryScope $clockOkWorkspace
     Set-TestPunch $clockOkWorkspace $true
     [IO.File]::WriteAllText((Join-Path $clockOkWorkspace '.nightshift/.shift-armed'), '')
     $clockOkSession = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
@@ -1252,6 +1253,7 @@ exit 0
 
     $clockDeadlineWorkspace = Join-Path $root 'clock-out deadline workspace'
     $null = Initialize-TestWorkspace $clockDeadlineWorkspace
+    Set-TestRecoveryScope $clockDeadlineWorkspace
     Set-TestPunch $clockDeadlineWorkspace $true
     [IO.File]::WriteAllText((Join-Path $clockDeadlineWorkspace '.nightshift/.shift-armed'), '')
     [IO.File]::WriteAllText((Join-Path $clockDeadlineWorkspace '.nightshift/deadline'), '1')

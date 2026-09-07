@@ -83,7 +83,7 @@ Trailing prose that belongs to no item.
     Expect-True ((Get-NSPunchItemsDigest $punch) -ceq $items) 'a tick is invisible to the items digest'
 
     # A Windows checkout converts line endings; a contract nobody touched has not moved.
-    [IO.File]::WriteAllText($punch, ($text -creplace "`n", "`r`n"))
+    [IO.File]::WriteAllText($punch, (($text -creplace "`r`n", "`n") -creplace "`n", "`r`n"))
     Expect-True ((Get-NSPunchContractDigest $punch) -ceq $contract) 'CRLF is not a changed contract'
     Expect-True ((Get-NSPunchItemsDigest $punch) -ceq $items) 'CRLF is not a changed item'
 
