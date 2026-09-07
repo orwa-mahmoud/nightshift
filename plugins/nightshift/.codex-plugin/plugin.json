@@ -62,6 +62,9 @@
     "privacyPolicyURL": "https://nightshift.orwamahmoud.com/privacy",
     "termsOfServiceURL": "https://nightshift.orwamahmoud.com/terms",
     "composerIcon": "./assets/nightshift-logo.png",
-    "logo": "./assets/nightshift-logo.png"
+    "logo": "./assets/nightshift-logo.png",
+    "screenshots": [
+      "./assets/directory-listing.png"
+    ]
   }
 }
