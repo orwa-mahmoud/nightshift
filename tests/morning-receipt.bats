@@ -75,3 +75,38 @@ write_shift_policy() {
   [[ "$output" == *'- Verified: none — no shift policy was written'* ]]
   [[ "$output" == *'- Disabled by owner: none'* ]]
 }
+
+# The morning page is the one artefact an owner reads without being asked, so the two renderers
+# have to agree on it byte for byte. They did not: the Windows reader read the opportunity map's
+# commented-out example as a live `building` entry and printed the template's own placeholders,
+# and it named the workspace as the work target where the POSIX renderer, unable to resolve one,
+# said nothing.
+@test "both renderers write the same morning page" {
+  command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"
+  local posix win a b
+  posix="$(gated_project receipt-parity-posix)"
+  win="$(gated_project receipt-parity-win)"
+  for p in "$posix" "$win"; do
+    # The map as Setup scaffolds it: every entry shape lives inside one HTML comment, and the
+    # example the comment carries is `Status: building`.
+    cp "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/opportunity-map.md" \
+      "$p/.nightshift/opportunity-map.md"
+    write_shift_policy "$p" none
+  done
+
+  run bash "$RECEIPT" --project "$posix" --out "$posix/m.md"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  run pwsh -NoProfile -NonInteractive -File \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/morning-receipt.ps1" \
+    -Project "$win" -Out "$win/m.md"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+
+  # Each page names its own workspace; everything else has to match.
+  a="$(sed "s|$posix|WS|g" "$posix/m.md")"
+  b="$(sed "s|$win|WS|g" "$win/m.md")"
+  diff -u <(printf '%s\n' "$a") <(printf '%s\n' "$b")
+
+  # And neither leaks the template it read past.
+  ! printf '%s' "$a" | grep -qF '<title>'
+  ! printf '%s' "$b" | grep -qF '<title>'
+}

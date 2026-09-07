@@ -6908,13 +6908,16 @@ function Get-NSBaselineSeenMap {
     return $map
 }
 
+# A receipt records what the run knew. A work target that could not be resolved is not the
+# workspace by default — naming it would put a path on the morning page that nothing ever chose —
+# so this answers with nothing and the field is left out, which is what the POSIX renderer does.
 function Get-NSEvidenceWorkTarget {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     try {
         return (Resolve-NSWorkTarget $Workspace)
     }
     catch {
-        return (Get-NSAbsolutePath $Workspace)
+        return ''
     }
 }
 
@@ -7534,9 +7537,16 @@ function Get-NSReceiptBuilding {
     if (-not (Test-Path -LiteralPath $OpportunityMap -PathType Leaf)) { return $result }
     $title = ''
     $building = $false
+    # The shipped map carries its entry catalogue inside an HTML comment, and that example is
+    # `Status: building`. Reading it makes a freshly scaffolded workspace look like a cycle in
+    # progress and puts the template's own placeholders on the owner's morning page.
+    $comment = $false
     try {
         foreach ($line in [IO.File]::ReadLines($OpportunityMap)) {
             $text = [string]$line
+            if ($text -clike '*<!--*') { $comment = $true }
+            if ($text -clike '*-->*') { $comment = $false; continue }
+            if ($comment) { continue }
             $head = [regex]::Match($text, '^###\s+(.*)$')
             if ($head.Success) {
                 if ($building -and $result['title'].Length -gt 0) { break }
@@ -7727,7 +7737,9 @@ function Get-NSReceiptShiftLines {
     if ($artifactView -or (([string]$Context['workMode']) -ceq 'artifact')) {
         Add-NSReceiptField $lines 'receipts' ([string](Get-NSReceiptsCount ([string]$Context['workspace'])))
     }
-    else {
+    elseif (([string]$Context['workTarget']).Length -gt 0) {
+        # No work target, no commit count: there is no repository to count in, and a zero would
+        # read as a night that committed nothing.
         Add-NSReceiptField $lines 'commits' (Get-NSReceiptCommitCount -Target ([string]$Context['workTarget']) -Since ([string]$Context['started']))
     }
     $profile = [string]$Context['profile']
