@@ -189,3 +189,23 @@ on() {
   done
   [ "$windows_only" = " setup start-watchman watchman" ]
 }
+
+@test "every runtime helper is executable, because the dispatcher execs it" {
+  # `ns` uses exec, so a helper without the bit fails with Permission denied rather than a message
+  # anyone can act on — and the docs tell owners to run these verbs themselves.
+  missing=""
+  for f in "$RT"/*.sh "$RT"/*/*.sh "$RT/ns"; do
+    [ -f "$f" ] || continue
+    case "$f" in */windows/*) continue ;; esac
+    [ -x "$f" ] || missing="$missing ${f##*/}"
+  done
+  [ -z "$missing" ] || { echo "not executable:$missing"; return 1; }
+}
+
+@test "every verb ns offers can actually be executed" {
+  p="$(new_project ns-executable)"
+  for verb in $(on claude "$p" help | awk 'NF == 2 && $1 !~ /^ns/ {print $1}'); do
+    target="$(on claude "$p" help | awk -v v="$verb" '$1 == v {print $2}')"
+    [ -x "$target" ] || { echo "$verb resolves to a file that cannot be executed: $target"; return 1; }
+  done
+}
