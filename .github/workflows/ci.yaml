@@ -1,10 +1,8 @@
 name: ci
 
-# Branch work is covered by `pull_request`; `push` covers main, where there is no PR to carry it
-# and where a green run is what lets release publish.
+# Every change reaches main through a pull request whose branch must be up to date with main
+# before it merges, so the merge commit carries the tree the pull request already tested.
 on:
-  push:
-    branches: [main]
   pull_request:
 
 # Nothing here writes to the repository: the suite reads the tree and reports. Declaring it means
@@ -15,17 +13,32 @@ permissions:
 # Path buckets decide which expensive steps run. Required job names (shellcheck, validate,
 # bats (1-6), bats-macos (1-6)) always start so a docs-only or Release Please pull request is
 # not left waiting on a check that never reported. Workflow-level `paths` would skip the whole
-# workflow and revive that pending state.
+# workflow and revive that pending state. A job that only reports a skip runs on Linux, where a
+# runner is available at once.
+#
+# The filter matches a file when any one pattern matches it, and a `!` pattern matches every
+# file but the one it names. The plugin tree is therefore filtered in its own step under the
+# `every` quantifier, where a file must match `plugins/**` and each exclusion.
 jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      suite: ${{ steps.filter.outputs.runtime == 'true' || steps.filter.outputs.workflow == 'true' }}
+      suite: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.runtime == 'true' || steps.filter.outputs.workflow == 'true' }}
       lint: ${{ steps.filter.outputs.shell == 'true' || steps.filter.outputs.workflow == 'true' }}
-      validate: ${{ steps.filter.outputs.runtime == 'true' || steps.filter.outputs.manifest == 'true' || steps.filter.outputs.workflow == 'true' }}
-      docs: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.runtime != 'true' && steps.filter.outputs.workflow != 'true' }}
+      validate: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.runtime == 'true' || steps.filter.outputs.manifest == 'true' || steps.filter.outputs.workflow == 'true' }}
+      docs: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.runtime != 'true' && steps.plugin.outputs.runtime != 'true' && steps.filter.outputs.workflow != 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
+        id: plugin
+        with:
+          predicate-quantifier: every
+          filters: |
+            runtime:
+              - 'plugins/**'
+              - '!plugins/nightshift/.claude-plugin/plugin.json'
+              - '!plugins/nightshift/.codex-plugin/plugin.json'
+              - '!plugins/nightshift/.cursor-plugin/plugin.json'
       - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: filter
         with:
@@ -35,10 +48,6 @@ jobs:
             shell:
               - '**/*.sh'
             runtime:
-              - 'plugins/**'
-              - '!plugins/nightshift/.claude-plugin/plugin.json'
-              - '!plugins/nightshift/.codex-plugin/plugin.json'
-              - '!plugins/nightshift/.cursor-plugin/plugin.json'
               - 'tests/**'
               - 'evals/**'
               - '.claude-plugin/**'
@@ -126,7 +135,7 @@ jobs:
 
   bats-macos:
     needs: changes
-    runs-on: macos-latest
+    runs-on: ${{ needs.changes.outputs.suite == 'true' && 'macos-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
