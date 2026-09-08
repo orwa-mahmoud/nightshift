@@ -2,7 +2,7 @@
 
 Nightshift accepts documentation, tests, shell, recovery, platform, and shift-catalog work. Start
 with the row that matches what you already know, then read
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) before changing files.
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#contributing-to-nightshift) before changing files.
 
 If no linked issue fits, open an issue before doing anything beyond a typo or small fix. The
 [good first issue list](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
@@ -18,8 +18,8 @@ is the shortest current queue.
 | **Runtime** | Fix a diagnosed setup, state, scheduling, import, or support-bundle problem | Portable Bash 3.2, filesystem safety, and the matching runtime contract | `plugins/nightshift/runtime/`, `plugins/nightshift/lib/lib.sh`, `plugins/nightshift/lib/Nightshift.psm1`, matching `tests/*.bats` | Run the matching Bats file, then `bats tests/` and `git ls-files '*.sh' \| xargs shellcheck -x` | [Open runtime work](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+runtime%22) |
 | **Recovery** | Add evidence for an observed recovery failure or fix a proven classification bug | Process evidence, session identity, process leases, transcripts, and conservative stand-down behavior | `plugins/nightshift/runtime/claude/watchman.sh`, `plugins/nightshift/runtime/codex/watchman.sh`, `plugins/nightshift/runtime/cursor/watchman.sh`, `plugins/nightshift/runtime/windows/watchman.ps1`, `plugins/nightshift/runtime/windows/start-watchman.ps1`, `tests/watchman.bats`, `tests/codex/watchman.bats`, `tests/cursor/watchman.bats`, `tests/windows-watchman.bats`, `tests/process-lease.bats` | `bats tests/watchman.bats tests/codex/watchman.bats tests/cursor/watchman.bats tests/windows-watchman.bats tests/process-lease.bats tests/process-evidence.bats tests/degradation.bats tests/watch-reason.bats tests/e2e-lifecycle.bats` and shellcheck for changed scripts | [Open recovery work](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+recovery%22) |
 | **Hooks and guards** | Fix a reproducible gate or deny-rule defect | Host hook payloads, fail-closed behavior, and the distinction between mechanical enforcement and the working convention | `plugins/nightshift/hooks/`, `plugins/nightshift/hooks/windows/hardhat.ps1`, `plugins/nightshift/hooks/windows/clock-out-gate.ps1`, `tests/clock-out-gate.bats`, `tests/hardhat.bats`, `tests/windows-hardhat.bats`, `tests/codex/`, `tests/process-lease.bats` | `bats tests/clock-out-gate.bats tests/hardhat.bats tests/windows-hardhat.bats tests/codex/gate.bats tests/codex/hardhat.bats tests/process-lease.bats`, then `bats tests/` and `git ls-files '*.sh' \| xargs shellcheck -x` | Check [open bugs](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3Abug); if the queue is empty, open an issue with blocked-stop and permitted-stop evidence |
-| **Platform support** | Extend the verified matrix, or reproduce an unsupported boundary before designing a fix | The target OS/container, native shell constraints, scheduling, paths, process evidence, and filesystem semantics | `plugins/nightshift/runtime/`, `plugins/nightshift/hooks/`, `tests/windows/`, `tests/environments/`, [Native Windows](windows.md), [Remote environments](remote-environments.md) | Run the platform-native suite and receipt probe, then preserve the exact supported and refused boundary in docs; also run `bats -r tests/`, shellcheck, `tests/coverage.sh`, and strict plugin validation | Open [Linux](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22platform%3A+linux%22), [Windows](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22platform%3A+windows%22), and [container](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22platform%3A+containers%22) work |
-| **Run receipts** | Report one documented public-repository shift, including what failed | A run you can disclose and permanent links to its commits or PR | [`examples/bad-night-template.md`](../examples/bad-night-template.md) or an issue comment | `bats tests/bad-night-template.bats`, check every link, and remove private identifiers | [#22](https://github.com/orwa-mahmoud/nightshift/issues/22) |
+| **Platform support** | Extend the verified matrix, or reproduce an unsupported boundary before designing a fix | The target OS/container, native shell constraints, scheduling, paths, process evidence, and filesystem semantics | `plugins/nightshift/runtime/`, `plugins/nightshift/hooks/`, `tests/windows/`, `tests/environments/`, [Native Windows](windows.md#native-windows), [Remote environments](remote-environments.md#remote-ssh-and-devcontainers) | Run the platform-native suite and receipt probe, then preserve the exact supported and refused boundary in docs; also run `bats -r tests/`, shellcheck, `tests/coverage.sh`, and strict plugin validation | Open [Linux](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22platform%3A+linux%22), [Windows](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22platform%3A+windows%22), and [container](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22platform%3A+containers%22) work |
+| **Run receipts** | Report one documented public-repository shift, including what failed | A run you can disclose and permanent links to its commits or PR | [`examples/bad-night-template.md`](../examples/bad-night-template.md#bad-night-receipt-template) or an issue comment | `bats tests/bad-night-template.bats`, check every link, and remove private identifiers | [#22](https://github.com/orwa-mahmoud/nightshift/issues/22) |
 
 ## The easiest code-free path
 
@@ -31,7 +31,7 @@ tests/shifts/<your-shift>.bats
 ```
 
 Read the complete
-[`catalog-recipe.md`](../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md). It
+[`catalog-recipe.md`](../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md#adding-a-shift-to-the-catalog). It
 defines the required ending, discovery method, definition of done, refusals, verification, and
 supported stacks.
 
@@ -43,3 +43,7 @@ supported stacks.
    [`CONTRIBUTING.md`](../CONTRIBUTING.md#checks) when the change can affect shared behavior.
 4. Keep the pull request to one concern and report the exact commands and results.
 5. Do not edit release manifests or `CHANGELOG.md`; Release Please owns them.
+
+---
+
+[Read the contribution requirements](../CONTRIBUTING.md#contributing-to-nightshift) · [Documentation index](README.md#documentation)

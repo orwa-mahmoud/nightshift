@@ -19,7 +19,8 @@ a second agent runtime.
 
 Installing Git for Windows is optional for Claude Code itself. Repository mode's work-target,
 commit, and local receipts-repository snapshot require native Git. Artifact mode records
-completion receipts without a work-target commit. If Git Bash is installed, Claude Code may choose
+completion in the shift report, with optional per-item receipts and no work-target commit.
+If Git Bash is installed, Claude Code may choose
 it as the hook shell. The bundled launcher is written to detect Windows and transfer the hook to
 PowerShell. That Git Bash transfer is not yet a CI-verified claim; prefer a native PowerShell host
 session until it is.
@@ -153,8 +154,9 @@ write nothing, and both print one `unavailable` line and exit 3 rather than an e
 Missing or empty receipts create no dated receipts folder.
 
 In artifact mode Doctor reports `artifact receipts N` and, when any exist, `latest artifact receipt`
-with the filename only of the most recently written receipt. It warns `artifact mode has ticked items but no receipts` when ticks exist
-without a receipt; write the receipt with `ns.ps1 write-receipt` rather than a work-target commit.
+with the filename only of the most recently written receipt. Review the shift report and output
+files; use `ns.ps1 write-receipt` when the contract calls for an additional receipt through
+`report.legacyItemReceipts`.
 It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
 Automatic Hunt and Quality skip quality-debt entries the folder cannot support.
 The GitHub issue hunt is skipped in artifact mode.
@@ -225,5 +227,9 @@ PowerShell 7. It uses local host fixtures—no account or model subscription—t
 The checked Windows runner is x64. Native Windows on ARM64 is not yet a verified claim.
 
 An authenticated first shift remains part of the
-[first-night safety checklist](first-night-checklist.md), because CI can verify Nightshift's host
+[first-night safety checklist](first-night-checklist.md#first-night-safety-checklist), because CI can verify Nightshift's host
 boundary without pretending to verify an owner's account, permissions, or desktop UI.
+
+---
+
+[Check your first attended run](first-night-checklist.md#first-night-safety-checklist) · [Documentation index](README.md#documentation)

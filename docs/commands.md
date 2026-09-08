@@ -1,5 +1,8 @@
 # Command reference
 
+Choose work with [Shift modes](shift-modes.md#shift-modes), inspect [reports and token usage](shift-report.md#shift-report-and-token-usage),
+or [archive finished shifts](archive.md#archive-and-continue). The commands below operate those workflows.
+
 ```text
 /nightshift:setup      # scaffold .nightshift/ + propose quality gates (ask, never impose)
 /nightshift:quality    # survey quality debt; choose review first or run directly
@@ -7,9 +10,9 @@
 /nightshift:import-issues  # stage explicitly named GitHub issues onto the drafting table
 # or write your items in the punch list by hand — one checkbox per task
 #   item anatomy, with filled items: examples/overnight-webapp.md
-/nightshift:start      # asks nothing: cuts what is queued, arms the site, works the list
+/nightshift:start      # works queued items without questions; offers drafts only when empty
 /nightshift:status     # morning: what got done, what got parked, what got stuck
-/nightshift:doctor     # diagnose the site: facts, warnings, classified next actions; never repairs
+/nightshift:doctor     # diagnose the workspace: facts, warnings, next actions; never repairs
                        # optional follow-up: export a local support bundle (never uploaded)
 /nightshift:stop       # pause now; open boxes stay open; deadline is preserved
 /nightshift:reset      # drop runtime markers and the deadline; keep punch list and history
@@ -18,7 +21,9 @@
 # you review the local commits or artifact receipts — push only in repository mode, or forbid pushing outright (one env line below)
 ```
 
-Start asks nothing. It runs one native preflight —
+With work in the punch list, Start asks nothing and promotes no other work. If the list is empty,
+it offers staged drafts and orders for approval; an empty unattended start cannot choose for the
+owner. It runs one native preflight —
 `ns start-preflight`, or
 `ns.ps1 start-preflight` on native Windows — which prints one
 verdict per line (`ok`, `warn`, `refuse`) and exits non-zero when the site must not arm. Those
@@ -28,7 +33,7 @@ behind a host-specific verdict is in
 
 Quality uses the same Guided or Automatic selection and Review first or Run directly launch modes
 as Hunt. Both compose in the skill; the model plans. Copyable owner requests for each combination
-are in [Shift modes](shift-modes.md). A review-first survey is read-only until the owner chooses what happens next: **fix now**
+are in [Shift modes](shift-modes.md#shift-modes). A review-first survey is read-only until the owner chooses what happens next: **fix now**
 appends a Hunt work order then cuts and starts it, **draft for later** writes only to the drafting
 table, and **ignore** writes nothing. Run directly composes that same work order, arms, and starts
 the selected work without a second approval pause.
@@ -99,9 +104,8 @@ A panic `touch .nightshift/STOP` (POSIX) or `New-Item -ItemType File -Force .nig
 `.nightshift/` — not beside `.nightshift-link`. A STOP next to `.nightshift-link` is not
 the order. That marker waits for the next Stop event or watchman wake; it does not disarm
 immediately. On Claude Code, Escape
-pauses the interactive session and its watchman reads that interrupt before reviving. Codex exposes
-no equivalent owner-interrupt signal, so closing an interactive Codex session with open Items hands
-the shift to its watchman.
+pauses the interactive session and its watchman reads that interrupt before reviving. Codex SessionEnd stands the watchman down: closing, archiving, or idle unload pauses recovery.
+Start re-arms the shift. A crash that fires no SessionEnd can still be recovered.
 
 When a paused Stop left an expired deadline, Start refuses to invent a new time budget. Write a
 new UNIX epoch to `.nightshift/deadline`, or run Reset then Start.
@@ -109,10 +113,11 @@ new UNIX epoch to `.nightshift/deadline`, or run Reset then Start.
 When a shift is not where you think it is — wrong folder, broken `.nightshift-link`, leftover
 `STOP`, watchman stood down, or a stale process rejected by the process lease — run
 `/nightshift:doctor` on Claude Code or ask Nightshift to diagnose on Codex, then walk
-[Troubleshooting](troubleshooting.md) before changing files. Doctor reports; it never repairs.
+[Troubleshooting](troubleshooting.md#troubleshooting) before changing files. Doctor reports; it never repairs.
 In artifact mode it also reports `artifact receipts N`, `latest artifact receipt` with the
-filename of the most recently written receipt when any exist, and warns `artifact mode has ticked items but no receipts` when boxes
-were ticked without `write-receipt`. It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
+filename of the most recently written receipt when any exist. Review artifact outputs and their
+shift-report sections; `report.legacyItemReceipts` enables additional per-item receipts.
+It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
 
 A local support bundle from a terminal (never uploaded). Known sensitive fields
 are omitted:
@@ -212,7 +217,8 @@ shell that spends no tokens and needs no session:
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --remove      # the command that unregisters it
 ```
 
-Run it from a terminal, or copy the single file anywhere. It refuses a second entry for a project
+Run it from a terminal with `NIGHTSHIFT_PLUGIN_ROOT` set to the absolute installed plugin directory.
+Keep the bundled runtime and libraries together. It refuses a second entry for a project
 that already has one, and identifies projects by path rather than folder name, so two checkouts
 called `api` never collide. It cannot queue your work for you, though — that part has to be in the
 punch list already. Preflight also fails `work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm` when the mode file is missing and Setup would propose artifact.
@@ -231,8 +237,12 @@ ns.ps1 schedule --project . --remove
 
 It emits a current-user Task Scheduler definition with overlap prevention and `StartWhenAvailable`.
 It does not wake the machine or run after logout as a stored-credential account; see
-[Native Windows](windows.md).
+[Native Windows](windows.md#native-windows).
 
 One more appears in Claude Code's slash menu: `/nightshift:nightshift` is the method itself — how to
 work an item, park a decision, keep a snag log, and run product evolution. The agent loads it on its
 own whenever a shift is running, so you rarely invoke it directly.
+
+---
+
+[Troubleshoot a stopped or refused shift](troubleshooting.md#troubleshooting) · [Documentation index](README.md#documentation)

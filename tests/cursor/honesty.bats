@@ -32,10 +32,11 @@ CURSOR_MARKET="$ROOT/.cursor-plugin/marketplace.json"
   grep -qF 'not a Nightshift skip' "$HOW"
 }
 
-@test "public install copy still waits on a verified Cursor shift" {
-  if grep -qE '^### Cursor' "$README"; then
-    return 1
-  fi
+@test "Cursor installation names the repository flow and retains recovery limits" {
+  grep -qE '^### Cursor$' "$README"
+  grep -qF 'Customize → Add → From GitHub Repository' "$README"
+  grep -qF 'is for discovery' "$README"
+  grep -qF '](docs/how-it-works.md#recovery)' "$README"
   grep -qF 'marketplace listing waits' "$HOW"
   if grep -qi cursor "$MARKET"; then
     return 1

@@ -139,10 +139,15 @@ refresh-inventory.sh recipe-audit.sh"
 }
 
 # The documentation index and the pages it points at must stay in step.
-@test "the README documentation index lists every page under docs/" {
-  local readme="$ROOT/README.md" missing="" page
+@test "the README reaches a documentation index that lists every reference page" {
+  local index="$ROOT/docs/README.md" missing="" page relative
+  grep -qF '](docs/README.md#documentation)' "$ROOT/README.md"
+  [ -f "$index" ]
   while read -r page; do
-    grep -qF "docs/$(basename "$page")" "$readme" || missing="$missing $(basename "$page")"
+    [ "$page" = "$index" ] && continue
+    relative="${page#"$ROOT/docs/"}"
+    grep -qF "]($relative#" "$index" || missing="$missing $relative"
+    grep -qF '](README.md#documentation)' "$page" || missing="$missing $relative:return-to-index"
   done < <(find "$ROOT/docs" -name '*.md' | LC_ALL=C sort)
-  [ -z "$missing" ] || { echo "not linked from README:$missing"; return 1; }
+  [ -z "$missing" ] || { echo "not linked from docs/README.md:$missing"; return 1; }
 }

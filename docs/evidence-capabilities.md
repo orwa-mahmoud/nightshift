@@ -7,6 +7,47 @@ The model writes the receipts. Nightshift ships the templates it writes them fro
 ledger it can record them in, and a renderer that turns those records into one morning page.
 Nothing here scans a project or judges a finding on the model's behalf.
 
+## Reviewing a shift
+
+Open the [morning receipt](morning-receipt.md#the-morning-receipt) first to see how the shift ended and what needs
+attention. Then use the report to find the actual changes and their verification.
+
+| Record | What to look for |
+| --- | --- |
+| `.nightshift/shift-report.md` | Each item's result or current progress, checks run, limitations, and output locations. |
+| Local commits or output files | The change itself, including anything the report did not mention. |
+| `.nightshift/parking-lot.md` | Decisions to accept or reverse, with the default and rollback. |
+| `.nightshift/snag-log.md` | Unresolved findings and the reasons others were fixed or rejected. |
+| `.nightshift/receipts/` | Source and checkpoint evidence, the morning receipt, and optional per-item artifact receipts. |
+
+The [example shift report](../examples/shift-report.md#shift-report) includes a completed item, an unfinished
+item, and a correction to an earlier result. Read the verification and limitations together:
+passing a focused test does not mean an unrun integration suite passed. Usage comes from host
+records when available; an unavailable dimension is never zero or an estimated price.
+The [shift report guide](shift-report.md#shift-report-and-token-usage) explains token accounting, duration, and progress cadence.
+
+A report can be disabled by owner policy. That does not remove the work contract or other records,
+and it does not make an unchecked output verified. The report and handoff settings are in
+[Owner knobs](knobs.md#shift-handoff-and-archive).
+
+### Artifact receipts and archive
+
+In a persistent folder without Git, the item's report section records completion. Set
+`report.legacyItemReceipts` to also write a per-item artifact receipt through `ns write-receipt`.
+Source and checkpoint receipts remain separate from that setting.
+
+Doctor names the most recently written file when artifact receipts exist. It warns
+`artifact receipts path is not a usable directory` when the path cannot hold receipt files.
+Start, Hunt, Quality, and Schedule refuse an unusable path rather than begin
+work that cannot land receipts. Use [Troubleshooting](troubleshooting.md#troubleshooting) to diagnose the workspace before changing it.
+
+Archive copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
+and leaves the live copies in place. Missing or empty receipts create no dated receipts folder.
+Other finished records can be moved out of the live working files during Archive; open work and
+unanswered decisions stay live. Removing old archived history is a separate retention choice.
+See [Archive and continue](archive.md#archive-and-continue), the [Archive contract](../plugins/nightshift/skills/archive/SKILL.md), and
+[command reference](commands.md#command-reference) for the file operations.
+
 ## What ships
 
 | Helper | What it does |
@@ -27,7 +68,7 @@ half-record. Hooks never depend on either — see
 
 ## What the model writes
 
-[`receipts/cycle-specialist-evidence.md`](../plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md)
+[`receipts/cycle-specialist-evidence.md`](../plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md#cycle--specialist--evidence)
 carries a block per receipt shape: cycle, coverage, defect, source policy, history, specialist. The
 model copies the matching block and fills every field. A field the tools did not produce is
 `unavailable` — never "no findings", never passed. Untrusted fetched text is instructional
@@ -40,7 +81,7 @@ Two receipts have a fixed trigger:
   whose undo is not obvious.
 
 Cited reports, SEO audits, sourced documentation, and research synthesis follow
-[`cited-research.md`](../plugins/nightshift/skills/nightshift/references/shift/cited-research.md). Source
+[`cited-research.md`](../plugins/nightshift/skills/nightshift/references/shift/cited-research.md#cited-research-and-report). Source
 policies (`closed-list`, `bounded-discovery`, `connected-corpus`) decide what may be fetched.
 
 ## Policy behind a receipt
@@ -49,7 +90,7 @@ Three layers resolve before the site arms — permanent rules, remembered defaul
 snapshot. The receipt names the resolved verification level, the tooling policy, the completion
 mode, and every elevation allowance with its provenance. The layers themselves are described in
 [How Nightshift works](how-it-works.md#three-policy-layers-and-one-resolved-view) and every
-individual key in [Owner knobs](knobs.md).
+individual key in [Owner knobs](knobs.md#owner-knobs).
 
 Verification profiles (`fast`, `balanced`, `strict`, `custom`) live in
 [`references/profiles/`](../plugins/nightshift/skills/nightshift/references/profiles/) alongside the
@@ -63,12 +104,12 @@ The tooling policy decides what a shift may add: `existing-tools` scans with wha
 `review-missing` holds the clock until the owner approves a plan, `auto-add` may install under the
 elevation categories the shift already allows. Artifact mode is always `existing-tools`.
 
-[`tooling-hints.md`](../plugins/nightshift/skills/nightshift/references/compose/tooling-hints.md) names the
+[`tooling-hints.md`](../plugins/nightshift/skills/nightshift/references/compose/tooling-hints.md#tooling-hints) names the
 tools commonly used for a capability, by ecosystem. It is a starting point, not authority: what the
 project already configures wins, and a capability that cannot be satisfied is reported
 `unavailable` rather than skipped quietly. When something is added, `ns provision` captures
 the write surface first so the change can be undone — the seatbelt described in
-[`provisioning-engine.md`](../plugins/nightshift/skills/nightshift/references/compose/provisioning-engine.md).
+[`provisioning-engine.md`](../plugins/nightshift/skills/nightshift/references/compose/provisioning-engine.md#auto-add-seatbelt-frozen).
 
 ## Optional read-only helpers
 
@@ -100,13 +141,14 @@ first-class answer: a tool that did not report is never recorded as a tool that 
 
 ## Modes
 
-**Repository mode** ends each work package in one conventional commit; the morning handoff is the
-punch list, the parking lot, the snag log, and `git log` on the work target.
+**Repository mode** leaves local conventional commits as the punch-list contract specifies:
+usually one per item, or a coherent batch when requested. A contract can also request uncommitted
+changes. The report must state what was actually recorded.
 
-**Artifact mode** completes through `ns write-receipt` into `.nightshift/receipts/`,
-recording item text, verification commands, optional decisions, and hashed outputs. Status and
-Doctor surface receipt counts; Archive files them with the shift. No git terminology appears in an
-artifact-mode receipt because no repository is behind it.
+**Artifact mode** records an item's completion in its section of `.nightshift/shift-report.md`.
+Optional per-item receipts from `ns write-receipt` carry the item, verification, and hashed output
+locations. Review the output files themselves in either case. No work-target Git repository is
+required, and no Git terminology appears in artifact-mode receipts.
 
 ## Cross-host continuity
 
@@ -131,4 +173,8 @@ and size. They do not run a host-agent matrix; a catalog contribution is still r
 - No telemetry. Product measures live in local receipts only.
 - Optional **SonarQube Community Edition** can back a site inspection when
   `sonar-project.properties` exists and a local instance answers; Sonar is never a per-item gate.
-  See [`gates-catalog.md`](../plugins/nightshift/skills/nightshift/references/compose/gates-catalog.md).
+  See [`gates-catalog.md`](../plugins/nightshift/skills/nightshift/references/compose/gates-catalog.md#gates-catalog).
+
+---
+
+[Read real shifts and their reviews](../examples/README.md#nightshift-receipts) · [Documentation index](README.md#documentation)

@@ -12,7 +12,7 @@ machines, or infer that a process on one side of a connection is the process rec
 | Layout | Status | Required placement | Recovery boundary |
 |---|---|---|---|
 | Local macOS or Linux | Supported | Host, plugin, repository, state, and watchman are local | Existing macOS and Linux CI |
-| Native Windows | Runtime fixture verified (x86_64) | Host, plugin, repository, state, and watchman are in native Windows | See [Native Windows](windows.md). CI covers the bundled PowerShell path with local host fixtures; an authenticated Claude Code or Codex process on Windows remains an attended check |
+| Native Windows | Runtime fixture verified (x86_64) | Host, plugin, repository, state, and watchman are in native Windows | See [Native Windows](windows.md#native-windows). CI covers the bundled PowerShell path with local host fixtures; an authenticated Claude Code or Codex process on Windows remains an attended check |
 | WSL | Supported as Linux | Everything is inside one WSL distribution | No split Windows/WSL process or path state |
 | Remote SSH to Linux | Runtime fixture verified (x86_64) | Hook scripts, plugin, repository, state, and watchman are on the SSH target; the authenticated host remains an attended check | The fixture proves a detached watchman across separate SSH connections; account logout policy remains administrator-owned |
 | Linux devcontainer | Runtime fixture verified (x86_64) | Hook scripts, plugin, repository, state, and watchman are in the same container; the authenticated host remains an attended check | The fixture proves a detached watchman across separate container exec connections; stopping or rebuilding the container stops it |
@@ -109,3 +109,7 @@ verify Nightshift's paths, hook scripts, process evidence, lease storage, and wa
 they do not pretend to verify plugin loading by an authenticated host, third-party authentication,
 editor UI synchronization, abrupt transport failure, or the target administrator's logout and
 container-lifecycle policy.
+
+---
+
+[Check your first attended run](first-night-checklist.md#first-night-safety-checklist) · [Documentation index](README.md#documentation)

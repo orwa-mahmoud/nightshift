@@ -26,6 +26,7 @@ Setup creates a local `.nightshift/` workspace. The important files are plain Ma
   evolution;
 - `snag-log.md` — problems found and their disposition;
 - `shift-log.md` — progress, stalls, recovery, and clock-out.
+- `shift-report.md` — live item progress, results, verification, and measured token usage and duration.
 
 Completion lives in checkboxes, not in a conversational claim. Normal clock-out is reached only
 when every open `- [ ]` under `## Items` is ticked; checkboxes elsewhere in the file do not belong
@@ -52,7 +53,8 @@ Archive files ticked items and never resets the leftover Shift contract or Gates
 composing a new campaign. Status and Doctor report the leftover; Archive writes a Notes reminder
 when a campaign is fully filed.
 
-Start asks nothing. Before it arms, it runs one native preflight —
+Start asks nothing when items are queued; an empty list offers staged work for approval.
+Before it arms, it runs one native preflight —
 `ns start-preflight` (native Windows: `ns.ps1 start-preflight`) — which prints
 one verdict per line: `ok` for a fact worth stating, `warn` for something the owner should hear
 while the shift still arms, and `refuse` for a condition that stops it. The sentences are
@@ -156,7 +158,7 @@ for morning review; publishing, destructive changes, and owner policy remain out
 explicitly authorized.
 
 Review-first Hunt and Quality runs scan or draft only and arm nothing until the owner approves.
-Copyable owner requests for each combination are in [Shift modes](shift-modes.md).
+Copyable owner requests for each combination are in [Shift modes](shift-modes.md#shift-modes).
 Run-direct paths perform the same Start preflight before arming.
 
 A no-progress stop attempt is logged as a stall while the finite contract remains open. Owners who
@@ -206,7 +208,7 @@ the host ancestor through `Win32_Process`, verify a recorded PID with its UTC st
 protect lease capabilities with a private Windows ACL. Task Scheduler generation is the Windows
 counterpart to launchd, cron, and systemd generation. The complete parity and the conservative
 limits around process evidence, login state, and filesystems are documented in
-[Native Windows](windows.md).
+[Native Windows](windows.md#native-windows).
 
 Claude Code provides additional transcript and session signals. Its liveness ladder checks the
 shift transcript for the owner's Escape first, then checks current transcript activity, the
@@ -311,8 +313,9 @@ expired preserved deadline is not silently replaced; write a new UNIX epoch or r
 
 ## Receipts
 
-Nightshift leaves timestamps, per-item commits, cycle logs, parked decisions, and snag
-dispositions under `.nightshift/`. The folder is ignored by the project repository. Setup can
+Nightshift leaves reports, timestamps, cycle logs, parked decisions, and snag dispositions under
+`.nightshift/`; work-target commits live in the project's own Git history. The state folder is
+ignored by the project repository. Setup can
 optionally version it in a separate local-only Git repository. That repository is off by default;
 Nightshift gives it no remote and never pushes it. Clock-out and Archive commit it with `git -C`,
 identity `nightshift@localhost`, and `commit.gpgsign=false` so a global signing requirement cannot
@@ -322,6 +325,9 @@ The gate blocks every turn that ends with work still open, and the reason it ret
 
 Archiving moves finished work under the archive root — `.nightshift/archive/<YYYY-MM-DD>/` by default, or wherever `archive.root` and `archive.layout` say — while keeping the current working
 files small.
+
+For the review workflow, see [Shift report and token usage](shift-report.md#shift-report-and-token-usage) and
+[Archive and continue](archive.md#archive-and-continue).
 
 ## Different strengths on each host
 
@@ -470,16 +476,18 @@ refuses `/workspace/scratch/` and any path under it — that ChatGPT workspace i
 Start, Status, Doctor, Archive, Schedule, and workspace links read the same mode record. Existing
 repository workspaces stay repository mode when `work-mode` is absent.
 
-Completion in artifact mode is a file under `$NS/receipts/`, written by
-`ns write-receipt` (native Windows: `ns.ps1 write-receipt`). The receipt
+Artifact mode records item completion in the shift report by default. When
+`report.legacyItemReceipts=true`, it also writes a file under `$NS/receipts/` with
+`ns write-receipt` (native Windows: `ns.ps1 write-receipt`). That optional receipt
 records the item, output paths, verification, optional decisions and sources, timestamps, and
 file identity (bytes, SHA-256, mtime). Missing or empty outputs are refused. The stall guard
 treats a new receipt like a commit; Doctor reports `artifact receipts N` and, when any exist,
-`latest artifact receipt` with the filename only of the most recently written receipt, and warns when ticked items have no receipts;
+`latest artifact receipt` with the filename only of the most recently written receipt;
 it warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt; Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts;
 Archive copies receipts with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
-into the dated folder and leaves the live files in place. Missing or empty receipts create no dated receipts folder. Repository mode still requires a
-work-target git commit.
+into the dated folder and leaves the live files in place. Missing or empty receipts create no dated receipts folder.
+Repository mode follows the contract's commit policy: per-item commits, a coherent batch, or
+uncommitted work when requested.
 
 Cited reports in that folder follow `cited-research.md` and
 `ns check-report` (native Windows: `ns.ps1 check-report`). Hunt's SEO audit,
@@ -517,7 +525,7 @@ This repository is maintained with a parent state workspace and a nested public 
 
 Remote SSH and devcontainers use these same layouts only when the host process, plugin, repository,
 state workspace, hooks, and watchman all run inside the remote environment. The reproducible matrix
-and the refused split-runtime boundary are in [Remote environments](remote-environments.md).
+and the refused split-runtime boundary are in [Remote environments](remote-environments.md#remote-ssh-and-devcontainers).
 
 ## Guarantees and limits
 
@@ -548,6 +556,10 @@ and the refused split-runtime boundary are in [Remote environments](remote-envir
   ChatGPT scratch workspace), observe stop and recovery behavior, and review every local commit or
   artifact receipt before relying on an overnight run.
 
-Continue with the [first-night safety checklist](first-night-checklist.md),
-[Shift modes](shift-modes.md), the
-[owner knobs](knobs.md), or the [command reference](commands.md).
+Continue with the [first-night safety checklist](first-night-checklist.md#first-night-safety-checklist),
+[Shift modes](shift-modes.md#shift-modes), the
+[owner knobs](knobs.md#owner-knobs), or the [command reference](commands.md#command-reference).
+
+---
+
+[Choose the rules for your project](knobs.md#owner-knobs) · [Documentation index](README.md#documentation)

@@ -1,22 +1,23 @@
 # Vocabulary
 
-Everything is named after construction-site work — learn one term, guess the rest:
+The working files and the terms you will see during a shift:
 
 | Term | File / mechanism | Meaning |
 |---|---|---|
-| **punch list** | `.nightshift/punch-list.md` | construction's final acceptance list — the job isn't done until every item is cleared and signed off; the Shift contract above Items survives Archive and binds the next cut |
+| **punch list** | `.nightshift/punch-list.md` | approved work and self-reported completion; the Shift contract above Items survives Archive and binds the next cut |
 | **state workspace** | `.nightshift/` | the folder that owns run state — punch list, rules, receipts; may sit beside or above the work target |
 | **work target** | `.nightshift/work-target` | the folder that receives inspection and verification — a Git repository in repository mode, a persistent non-Git folder in artifact mode |
-| **work mode** | `.nightshift/work-mode` | `repository` or `artifact`; missing means repository |
+| **work mode** | `.nightshift/work-mode` | `repository` or `artifact`; legacy repositories can omit it, but a non-Git folder needs Setup to record artifact mode |
 | **clock-out gate** | Stop hook + `.shift-armed` | the bound session can't clock out while the armed punch list has open Items |
 | **hardhat** | PreToolUse hook | mandatory safety equipment — your forbidden commands, protected dirs, secret patterns, and expected commit identity; denied, not discouraged |
 | **process lease** | `.nightshift/.shift-lease` | transient ownership of the active shift process — each watchman recovery advances its generation, admitting the recovered worker and fencing stale processes on the same conversation without locking other tabs |
-| **item gate** | per-item commands | work isn't accepted until it passes inspection — once per item, right before its commit or artifact receipt |
-| **artifact receipt** | `.nightshift/receipts/` | durable completion record in artifact mode — item, outputs, verification, identity hashes; replaces a work-target commit. A path that is not a usable directory is a refuse, not an empty night. |
+| **item gate** | project verification commands | checks run at the selected cadence: per item, final, custom, or none; a check that runs must pass |
+| **shift report** | `.nightshift/shift-report.md` | live item progress, results, verification, output locations, and measured usage and duration where available |
+| **artifact receipt** | `.nightshift/receipts/` | optional per-item record of outputs, verification, and hashes; the report section is the default completion record in artifact mode |
 | **archive** | `.nightshift/archive/<YYYY-MM-DD>/` by default; `archive.root` and `archive.layout` move it | filing of shipped items, the journal, handled snags, and copied artifact receipts. Filing is a copy: a live record is retired only when Archive is told it is closed. Missing or empty receipts create no dated receipts folder. |
 | **site inspection** | interval commands | the scheduled heavy inspection (coverage, dead code, Sonar) every N items or H hours |
-| **walkthrough** | template item | the open-ended scan → fix loop that hunts defects until the clock runs out |
-| **hunt** | Nightshift Hunt | writes a ready-made walkthrough as a work order; cuts it into the punch list only on your word |
+| **walkthrough** | catalog item | an ongoing work loop with a required deadline; some entries can finish early at convergence or verified objective satisfaction |
+| **hunt** | Nightshift Hunt | composes catalog work with Guided or Automatic selection and review-first or direct execution |
 | **work order** | `.nightshift/work-orders.md` | a prepared job ticket — the item plus its hours, clock not running until the cut |
 | **snag log** | `.nightshift/snag-log.md` | findings ledger across runs — cycle 4 never re-reports cycle 1 |
 | **product research** | `.nightshift/product-research.md` | dated evidence about the product, users, comparable tools, and unmet needs; conclusions keep their source links |
@@ -32,3 +33,7 @@ Everything is named after construction-site work — learn one term, guess the r
 | **stop-work order** | `.nightshift/STOP` | Nightshift Stop — or the platform-native terminal command that creates this file — ends the shift at the agent's next stop attempt; the site rules stay armed until it actually stops |
 | **morning whistle** | `NIGHTSHIFT_NOTIFY_CMD` | optional shift-end ping (ntfy / Pushover / `say`) |
 | **night watchman** | `plugins/nightshift/runtime/` | one per host and operating-system runtime — after positive death evidence it advances the process lease and resumes its recorded session; host-specific pause and close signals determine when it stands down |
+
+---
+
+[Follow a shift from start to finish](how-it-works.md#how-nightshift-works) · [Documentation index](README.md#documentation)
