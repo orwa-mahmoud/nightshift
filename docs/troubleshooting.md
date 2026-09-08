@@ -21,7 +21,7 @@ the model is stuck — run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift` (na
 `ns.ps1 stop-shift`). Reset drops the deadline but keeps work.
 `ns purge-workspace` permanently deletes that project's `.nightshift/` after an exact
 `--confirm-path`. None of them uninstall the plugin.
-The full Windows boundary is in [Native Windows](windows.md).
+The full Windows boundary is in [Native Windows](windows.md#native-windows).
 
 ## 0. Where is the site?
 
@@ -120,7 +120,8 @@ sed -n '1p' .nightshift/work-target 2>/dev/null
 Native Windows: `Get-Content -TotalCount 1 .nightshift\work-mode` and
 `Get-Content -TotalCount 1 .nightshift\work-target`.
 
-Missing `work-mode` means repository. In repository mode the code repository may be that same
+Missing `work-mode` means repository for legacy repositories; Start refuses a non-Git folder until
+Setup records artifact mode. In repository mode the code repository may be that same
 folder, or the single git child named in `.nightshift/work-target`:
 
 ```sh
@@ -131,7 +132,8 @@ Two git repositories as siblings of `.nightshift/` with no `work-target` is unde
 guards deny rather than pick one.
 
 In artifact mode the work target is the persistent folder itself. There is no work-target git
-history. Look at `.nightshift/receipts/` — Doctor reports `artifact receipts N` and, when any
+history. Review `.nightshift/shift-report.md` and the output files first. For additional evidence,
+look at `.nightshift/receipts/` — Doctor reports `artifact receipts N` and, when any
 exist, `latest artifact receipt` with the filename of the most recently written receipt. Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive
 copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
 into the dated folder and leaves the live copies in place. Missing or empty receipts create no dated receipts folder. A failing `git -C … rev-parse` here is
@@ -346,8 +348,12 @@ worker.
 
 ## See also
 
-- [Command reference](commands.md) — setup, start, status, doctor, stop, reset, purge, schedule
-- [Shift modes](shift-modes.md) — copyable Hunt and Quality launch combinations
-- [Owner knobs](knobs.md) — `rules.json` and env overrides
-- [First-night safety checklist](first-night-checklist.md)
-- [Security policy](../SECURITY.md) — public issues by default; private advisory is optional
+- [Command reference](commands.md#command-reference) — setup, start, status, doctor, stop, reset, purge, schedule
+- [Shift modes](shift-modes.md#shift-modes) — copyable Hunt and Quality launch combinations
+- [Owner knobs](knobs.md#owner-knobs) — `rules.json` and env overrides
+- [First-night safety checklist](first-night-checklist.md#first-night-safety-checklist)
+- [Security policy](../SECURITY.md#security-policy) — public issues by default; private advisory is optional
+
+---
+
+[Open the command reference](commands.md#command-reference) · [Documentation index](README.md#documentation)

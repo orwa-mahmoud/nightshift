@@ -1,5 +1,9 @@
 # The morning receipt
 
+Use this page for the compact clock-out summary. For live item progress and measured token usage,
+read [Shift report and token usage](shift-report.md#shift-report-and-token-usage). After reviewing, [archive the shift](archive.md#archive-and-continue)
+to preserve its report and evidence for later work.
+
 Everything else in `.nightshift/` is a working file: the punch list changes as items tick, the
 parking lot empties as decisions get read, the ledger keeps growing. The morning receipt is the
 one file meant to be read once, cover to cover, over coffee. It renders Markdown from records that
@@ -70,3 +74,7 @@ locator behind it — nothing in the receipt lacks a source record. Timestamps a
 (`%Y-%m-%dT%H:%M:%SZ`) and honor `NIGHTSHIFT_EVIDENCE_NOW` in tests. The bash and PowerShell
 renderers produce byte-identical Markdown from the same ledger, and the bash side produces the same
 bytes whether it reads JSON with `jq` or its `python3` fallback.
+
+---
+
+[Review the underlying evidence](evidence-capabilities.md#reviewing-a-shift) · [Documentation index](README.md#documentation)

@@ -305,7 +305,7 @@ A dimension a host does not report reads `unavailable` — never zero, because z
 measurement and silence is not. Totals are never summed across hosts, and no token count is ever
 turned into a price.
 
-[`examples/shift-report.md`](../examples/shift-report.md) shows the shape, including an item still
+[`examples/shift-report.md`](../examples/shift-report.md#shift-report) shows the shape, including an item still
 in progress and usage that is only partly available.
 
 ### When the gate repeats itself
@@ -355,20 +355,20 @@ named on every revival, and a failed revival is retried at the same one, never a
 Claude Code inherits its own launch in every case. `watchAgent` remains the advanced override for
 the whole command.
 
-`archive` decides where finished shift state is filed. Filing is a copy: `retention` above is the
-only setting that removes anything, and only Nightshift Archive prunes, after showing you the exact
-paths and asking.
+`archive` decides where finished shift state is filed. Filing copies evidence; Archive separately
+retires live records that finished work no longer needs. `retention` controls pruning old generated
+history, after previewing the exact paths and asking. See [Archive and continue](archive.md#archive-and-continue).
 
 | Key | Default | Values |
 |---|---|---|
 | `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
 | `root` | `archive` | Directory for dated archives, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
 | `layout` | `date` | `date` groups a night under `YYYY-MM-DD`; `shift` gives each shift its own directory. The shift id names the files either way, so two shifts in a day never collide |
+| `templatePath` | `""` | A Markdown template for the archive summary |
 
 Changing `root` never moves or hides what is already filed: an older history under the previous
 root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live
 ones in place, so a shift still in progress keeps the receipts its own progress checks read.
-| `templatePath` | `""` | A Markdown template for the archive summary |
 
 Every rule above is **shift-scoped**: it applies to the bound session while `.shift-armed` exists,
 `.nightshift/punch-list.md` has an open `- [ ]`, and the gate has not ended the shift. With no
@@ -386,3 +386,7 @@ recommended layout below as well as in-place. Commits there count as shift progr
 **Changed in v0.3.0:** by default a stalled agent is now held and red-flagged, never clocked out —
 in the clock-out gate. Set `NIGHTSHIFT_STALL_MAX=N` to restore
 auto-clock-out after N stuck attempts.
+
+---
+
+[Compose the work](shift-modes.md#shift-modes) · [Documentation index](README.md#documentation)

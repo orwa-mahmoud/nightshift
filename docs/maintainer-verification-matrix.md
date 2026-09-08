@@ -82,5 +82,9 @@ git ls-files '*.sh' | xargs shellcheck -x
 - Independent proof of a self-reported tick (by design)
 - Competitor comparisons in public artifacts
 
-Public documentation: [`docs/evidence-capabilities.md`](evidence-capabilities.md),
+Public documentation: [`docs/evidence-capabilities.md`](evidence-capabilities.md#evidence-and-receipts),
 [`docs/how-it-works.md`](how-it-works.md#three-policy-layers-and-one-resolved-view).
+
+---
+
+[Read the contribution requirements](../CONTRIBUTING.md#contributing-to-nightshift) · [Documentation index](README.md#documentation)

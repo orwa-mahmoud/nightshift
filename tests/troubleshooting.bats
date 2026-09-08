@@ -6,9 +6,9 @@ HOW="$BATS_TEST_DIRNAME/../docs/how-it-works.md"
 KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
 
 @test "README and command docs link the troubleshooting tree" {
-  grep -qF '[**Troubleshooting**](docs/troubleshooting.md)' "$README"
-  grep -qF '[Troubleshooting](troubleshooting.md)' "$COMMANDS"
-  grep -qF '[Troubleshooting](troubleshooting.md)' "$CHECKLIST"
+  grep -qF '](docs/troubleshooting.md#troubleshooting)' "$README"
+  grep -qF '[Troubleshooting](troubleshooting.md#troubleshooting)' "$COMMANDS"
+  grep -qF '[Troubleshooting](troubleshooting.md#troubleshooting)' "$CHECKLIST"
 }
 
 @test "troubleshooting covers the decision branches against live paths" {
@@ -81,7 +81,7 @@ KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
   [ -f "$BATS_TEST_DIRNAME/../docs/commands.md" ]
   [ -f "$BATS_TEST_DIRNAME/../docs/first-night-checklist.md" ]
   [ -f "$BATS_TEST_DIRNAME/../docs/shift-modes.md" ]
-  grep -qF '[Shift modes](shift-modes.md)' "$DOC"
+  grep -qF '[Shift modes](shift-modes.md#shift-modes)' "$DOC"
   [ -f "$BATS_TEST_DIRNAME/../SECURITY.md" ]
   [ -f "$BATS_TEST_DIRNAME/../.github/ISSUE_TEMPLATE/failed_shift.yml" ]
   grep -qF 'issues/new?template=failed_shift.yml' "$DOC"
@@ -89,7 +89,7 @@ KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
 }
 
 @test "recovery docs separate unattended work from the manual UI refresh" {
-  grep -qF 'owner does not need to watch it' "$README"
+  grep -qF 'headless worker can continue without you watching it' "$README"
   grep -qF 'needs no owner monitoring' "$HOW"
   grep -qi 'looks stuck' "$HOW"
   grep -qF 'project-file activity' "$HOW"
@@ -98,7 +98,7 @@ KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
   grep -qF 'does not require an owner to monitor it' "$KNOBS"
 
   for issue in 82655 28259 21743; do
-    grep -q "/issues/$issue" "$README"
+    grep -qF "](docs/how-it-works.md#how-nightshift-works)" "$README"
     grep -q "/issues/$issue" "$HOW"
     grep -q "/issues/$issue" "$DOC"
   done

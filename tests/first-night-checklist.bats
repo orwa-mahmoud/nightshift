@@ -2,7 +2,7 @@ README="$BATS_TEST_DIRNAME/../README.md"
 CHECKLIST="$BATS_TEST_DIRNAME/../docs/first-night-checklist.md"
 
 @test "README links the first-night checklist beside first-shift setup" {
-  grep -qF '[first-night safety checklist](docs/first-night-checklist.md)' "$README"
+  grep -qF '[first-night safety checklist](docs/first-night-checklist.md#first-night-safety-checklist)' "$README"
 }
 
 @test "first-night checklist covers unattended safety boundaries" {
@@ -18,33 +18,30 @@ CHECKLIST="$BATS_TEST_DIRNAME/../docs/first-night-checklist.md"
   grep -qF 'PID plus UTC start time' "$CHECKLIST"
   grep -qF 'shift-report.md' "$CHECKLIST"
   grep -qF 'reviewable commit' "$CHECKLIST"
-  grep -qF '$NS/receipts/' "$CHECKLIST"
-  grep -qE 'ns"? archive-receipts' "$CHECKLIST"
-  grep -qF 'ns.ps1 archive-receipts' "$CHECKLIST"
-  grep -qF 'Missing or empty receipts create no dated receipts folder' "$CHECKLIST"
-  grep -qF 'most recently written' "$CHECKLIST"
-  grep -qF 'artifact receipts path is not a usable directory' "$CHECKLIST"
-  grep -qF 'cannot land receipts' "$CHECKLIST"
+  grep -qF 'evidence-capabilities.md#reviewing-a-shift' "$CHECKLIST"
+  grep -qF '](archive.md#archive-and-continue)' "$CHECKLIST"
 }
 
 @test "first-night checklist relative links resolve" {
   [ -f "$BATS_TEST_DIRNAME/../docs/knobs.md" ]
   [ -f "$BATS_TEST_DIRNAME/../docs/commands.md" ]
   [ -f "$BATS_TEST_DIRNAME/../docs/shift-modes.md" ]
-  grep -qF '[Shift modes](shift-modes.md)' "$CHECKLIST"
+  grep -qF '[Shift modes](shift-modes.md#shift-modes)' "$CHECKLIST"
 }
 
 @test "first-run overnight guidance names persistent folders" {
   grep -qF 'persistent folder' "$README"
   grep -qF 'persistent local folder' "$README"
   grep -qF 'ChatGPT scratch' "$README"
-  grep -qF 'artifact receipt (notes folder)' "$README"
-  grep -qF '$NS/receipts/' "$README"
-  grep -qE 'ns"? archive-receipts' "$README"
-  grep -qF 'ns.ps1 archive-receipts' "$README"
-  grep -qF 'Missing or empty receipts create no dated receipts folder' "$README"
-  grep -qF 'artifact receipts path is not a usable directory' "$README"
-  grep -qF 'cannot land receipts' "$README"
+  grep -qF '.nightshift/shift-report.md' "$README"
+  grep -qF 'docs/evidence-capabilities.md#reviewing-a-shift' "$README"
+  local evidence="$BATS_TEST_DIRNAME/../docs/evidence-capabilities.md"
+  grep -qF '.nightshift/receipts/' "$evidence"
+  grep -qE 'ns"? archive-receipts' "$evidence"
+  grep -qF 'ns.ps1 archive-receipts' "$evidence"
+  grep -qF 'Missing or empty receipts create no dated receipts folder' "$evidence"
+  grep -qF 'artifact receipts path is not a usable directory' "$evidence"
+  grep -qF 'cannot land receipts' "$evidence"
   how="$BATS_TEST_DIRNAME/../docs/how-it-works.md"
   grep -qF 'First run attended' "$how"
   grep -qF 'persistent folder' "$how"

@@ -26,7 +26,7 @@ TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
 }
 
 @test "README links the morning receipt doc from the receipts section" {
-  grep -qF '[Morning receipt](docs/morning-receipt.md)' "$README"
+  grep -qF '](docs/morning-receipt.md#the-morning-receipt)' "$README"
 }
 
 @test "morning-receipt doc covers every section, view, and the zero-gate line" {
