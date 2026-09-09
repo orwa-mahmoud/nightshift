@@ -24,6 +24,16 @@ CODEX_HOOKS="$HOOKS/codex"
   [ -z "$(git -C "$host" status --short -- .nightshift-link)" ]
 }
 
+@test "link-workspace refuses an unknown flag with usage" {
+  host="$(new_project host)"
+  workspace="$BATS_TEST_TMPDIR/workspace-unknown-flag"
+  mkdir -p "$workspace/.nightshift"
+  run bash "$RUNTIME/link-workspace.sh" --host-root "$host" --bogus x --workspace "$workspace"
+  [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'link-workspace: unknown argument: --bogus'
+  [ ! -e "$host/.nightshift-link" ]
+}
+
 @test "link-workspace rejects relative and uninitialized targets" {
   host="$(new_project host)"
   mkdir -p "$BATS_TEST_TMPDIR/no-state"

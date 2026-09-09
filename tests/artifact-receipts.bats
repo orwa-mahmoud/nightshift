@@ -2,9 +2,6 @@ load helpers
 
 LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
 STATE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/state.sh"
-WRITE="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/write-receipt.sh"
-WRITE_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/write-receipt.ps1"
-WRITE_LOGIC="$BATS_TEST_DIRNAME/windows/write-receipt-logic.ps1"
 DOCTOR="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
 DOCTOR_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/doctor.ps1"
 PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
@@ -38,82 +35,6 @@ new_artifact() {
   printf '%s' "$p"
 }
 
-@test "write-receipt records a durable artifact receipt" {
-  p="$(new_artifact ok)"
-  printf 'research notes\n' >"$p/out/topic.md"
-  run bash "$WRITE" --project "$p" --item 'Write the brief' --verify 'file exists' \
-    --source 'https://example.com/doc' --output "$p/out/topic.md"
-  [ "$status" -eq 0 ]
-  dest="$output"
-  [ -f "$dest" ]
-  case "$dest" in */.nightshift/receipts/*.md) ;; *) echo "dest=$dest"; return 1 ;; esac
-  grep -qF '# Nightshift artifact receipt' "$dest"
-  grep -qF 'item: Write the brief' "$dest"
-  grep -qF 'verification: file exists' "$dest"
-  grep -qF 'mode: artifact' "$dest"
-  grep -qF 'https://example.com/doc' "$dest"
-  grep -qF 'sha256:' "$dest"
-  grep -qF 'bytes:' "$dest"
-  grep -qF 'mtime:' "$dest"
-  run bash -c '. "$1"; ns_receipts_count "$2"' _ "$LIB" "$p"
-  [ "$output" = 1 ]
-}
-
-@test "write-receipt refuses a symlink work-mode" {
-  p="$(new_artifact mode-link)"
-  mv "$p/.nightshift/work-mode" "$p/.nightshift/mode-plant"
-  ln -s mode-plant "$p/.nightshift/work-mode"
-  printf 'ok\n' >"$p/out/topic.md"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/topic.md"
-  [ "$status" -eq 3 ]
-  printf '%s' "$output$stderr" | grep -qF 'write-receipt: work-mode is malformed'
-  [ ! -d "$p/.nightshift/receipts" ]
-}
-
-@test "write-receipt refuses repository mode" {
-  p="$(new_project receipt-repo)"
-  printf 'ok\n' >"$p/out.md"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out.md"
-  [ "$status" -eq 3 ]
-  [ ! -d "$p/.nightshift/receipts" ]
-}
-
-@test "write-receipt rejects a missing output" {
-  p="$(new_artifact missing)"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/nope.md"
-  [ "$status" -eq 2 ]
-  [ ! -d "$p/.nightshift/receipts" ]
-}
-
-@test "write-receipt rejects an empty output" {
-  p="$(new_artifact empty)"
-  : >"$p/out/blank.md"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/blank.md"
-  [ "$status" -eq 2 ]
-  [ ! -d "$p/.nightshift/receipts" ]
-}
-
-@test "write-receipt rejects a symlink output" {
-  p="$(new_artifact link)"
-  printf 'ok\n' >"$p/out/real.md"
-  ln -s "$p/out/real.md" "$p/out/alias.md"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/alias.md"
-  [ "$status" -eq 2 ]
-  [ ! -d "$p/.nightshift/receipts" ]
-}
-
-@test "write-receipt omits secret lines" {
-  p="$(new_artifact secret)"
-  printf 'ok\n' >"$p/out/topic.md"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' \
-    --decision 'password=supersecret' --output "$p/out/topic.md"
-  [ "$status" -eq 0 ]
-  if grep -qF 'supersecret' "$output"; then
-    return 1
-  fi
-  grep -qF 'decision: (redacted)' "$output"
-}
-
 @test "Doctor reports artifact receipts only in artifact mode" {
   empty="$(new_artifact doctor-empty)"
   run bash "$DOCTOR" --project "$empty"
@@ -125,8 +46,8 @@ new_artifact() {
   fi
 
   a="$(new_artifact doctor)"
-  printf 'ok\n' >"$a/out/topic.md"
-  bash "$WRITE" --project "$a" --item 'x' --verify 'ok' --output "$a/out/topic.md" >/dev/null
+  mkdir -p "$a/.nightshift/receipts"
+  printf 'model text\n' >"$a/.nightshift/receipts/20260101T000000Z-topic.md"
   name="$(find "$a/.nightshift/receipts" -type f ! -name '.*' -print | awk -F/ '{print $NF}')"
   [ -n "$name" ]
   run bash "$DOCTOR" --project "$a"
@@ -235,31 +156,10 @@ new_artifact() {
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'artifact receipts 0'
   printf '%s' "$output" | grep -qF 'artifact receipts path is not a usable directory'
-  printf '%s' "$output" | grep -qF 'so write-receipt can land'
+  printf '%s' "$output" | grep -qF 'so receipts can land'
   if printf '%s' "$output" | grep -qF 'complete ticked items with'; then
     return 1
   fi
-}
-
-@test "write-receipt refuses a symlink receipts directory" {
-  p="$(new_artifact write-symlink-recv)"
-  printf 'ok\n' >"$p/out/topic.md"
-  mkdir -p "$p/outside"
-  ln -s "$p/outside" "$p/.nightshift/receipts"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/topic.md"
-  [ "$status" -eq 2 ]
-  n="$(find "$p/outside" -type f ! -name '.*' | wc -l | tr -d ' ')"
-  [ "$n" = 0 ]
-}
-
-@test "write-receipt refuses a non-directory receipts path" {
-  p="$(new_artifact write-receipts-file)"
-  printf 'ok\n' >"$p/out/topic.md"
-  printf 'not-a-dir\n' >"$p/.nightshift/receipts"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/topic.md"
-  [ "$status" -eq 2 ]
-  [ -f "$p/.nightshift/receipts" ]
-  grep -qF 'not-a-dir' "$p/.nightshift/receipts"
 }
 
 @test "Doctor warns when the receipts path is not a usable directory" {
@@ -269,7 +169,7 @@ new_artifact() {
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'artifact receipts 0'
   printf '%s' "$output" | grep -qF 'artifact receipts path is not a usable directory'
-  printf '%s' "$output" | grep -qF 'so write-receipt can land'
+  printf '%s' "$output" | grep -qF 'so receipts can land'
   if printf '%s' "$output" | grep -qF 'complete ticked items with'; then
     return 1
   fi
@@ -278,7 +178,7 @@ new_artifact() {
   fi
 }
 
-@test "Doctor does not offer write-receipt when ticks sit on an unusable receipts path" {
+@test "Doctor does not warn empty ticks when the receipts path is unusable" {
   a="$(new_artifact doctor-unusable-ticks)"
   punch_open "$a"
   printf 'not-a-dir\n' >"$a/.nightshift/receipts"
@@ -286,7 +186,7 @@ new_artifact() {
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'punch list open=1 ticked=1'
   printf '%s' "$output" | grep -qF 'artifact receipts path is not a usable directory'
-  printf '%s' "$output" | grep -qF 'so write-receipt can land'
+  printf '%s' "$output" | grep -qF 'so receipts can land'
   if printf '%s' "$output" | grep -qF 'artifact mode has ticked items but no receipts'; then
     return 1
   fi
@@ -331,14 +231,14 @@ new_artifact() {
   punch_open "$a"
   run bash "$DOCTOR" --project "$a"
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | grep -qF 'artifact mode has ticked items but no receipts'
-  printf '%s' "$output" | grep -qF 'write-receipt.sh'
+  printf '%s' "$output" | grep -qF 'ticked items have no receipt text'
+  printf '%s' "$output" | grep -qF 'write the missing receipts under .nightshift/receipts/'
 
-  printf 'ok\n' >"$a/out/topic.md"
-  bash "$WRITE" --project "$a" --item 'x' --verify 'ok' --output "$a/out/topic.md" >/dev/null
+  mkdir -p "$a/.nightshift/receipts"
+  printf '# 2. done.\n\nThe work is done.\n' >"$a/.nightshift/receipts/2-done.md"
   run bash "$DOCTOR" --project "$a"
   [ "$status" -eq 0 ]
-  if printf '%s' "$output" | grep -qF 'artifact mode has ticked items but no receipts'; then
+  if printf '%s' "$output" | grep -qF 'ticked items have no receipt text'; then
     return 1
   fi
 
@@ -346,7 +246,14 @@ new_artifact() {
   punch_open "$r"
   run bash "$DOCTOR" --project "$r"
   [ "$status" -eq 0 ]
-  if printf '%s' "$output" | grep -qF 'artifact mode has ticked items but no receipts'; then
+  printf '%s' "$output" | grep -qF 'ticked items have no receipt text'
+
+  jq '.receipts.enabled = false' "$r/.nightshift/rules.json" >"$r/.nightshift/rules.next"
+  mv "$r/.nightshift/rules.next" "$r/.nightshift/rules.json"
+  run bash "$DOCTOR" --project "$r"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'completion record none; the owner disabled receipts'
+  if printf '%s' "$output" | grep -qF 'ticked items have no receipt text'; then
     return 1
   fi
 }
@@ -376,15 +283,12 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   [ "$(stall_count "$p")" = "2" ]
   # A completion receipt, and a report section about the work: both are the shift describing
   # itself, and neither is the work moving.
-  printf 'ok\n' >"$p/out/topic.md"
-  run bash "$WRITE" --project "$p" --item 'x' --verify 'ok' --output "$p/out/topic.md"
-  [ "$status" -eq 0 ]
-  printf '# Shift report\n\n## item 1\n\nstill going.\n' >"$p/.nightshift/shift-report.md"
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'model text\n' >"$p/.nightshift/receipts/01-x.md"
   run gate "$p"
   is_block "$output"
   [ "$(stall_count "$p")" = "3" ]
-  # And again, with only the report changing.
-  printf '# Shift report\n\n## item 1\n\nstill going, more words.\n' >"$p/.nightshift/shift-report.md"
+  printf 'more model text\n' >"$p/.nightshift/receipts/01-x.md"
   run gate "$p"
   is_block "$output"
   [ "$(stall_count "$p")" = "4" ]
@@ -441,7 +345,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
 }
 
 @test "skills and docs name artifact receipts" {
-  grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
+  grep -qF '$NS/receipts/' "$NIGHTSHIFT"
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"
   # Start hands artifact completion to the main skill, which owns the item loop.
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"
@@ -454,16 +358,17 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
     "$SKILLS/nightshift/references/compose/execution-modes.md"
   grep -qF 'versioned in its own local-only git' "$SETUP"
   # Start hands the item loop, and its receipts, to the main skill.
-  grep -qE 'ns"? write-receipt' "$NIGHTSHIFT"
-  grep -qE 'ns"? write-receipt' "$SETUP"
+  grep -qF '$NS/receipts/' "$NIGHTSHIFT"
+  grep -qF '$NS/receipts/' "$SETUP"
   grep -qF '$NS/receipts/' "$SETUP"
   grep -qF 'do not treat artifact setup as complete' "$SETUP"
   grep -qF 'fact "artifact receipts"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'latest artifact receipt' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'ns_latest_receipt' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
-  grep -qF 'ticked items with no receipts are not reviewable completion' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'completion record' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'receipts missing model text' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'the artifact receipts path is not a usable directory' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
-  grep -qF 'the empty-ticks warning is not also raised' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'count missing receipt text for that path' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
   # Archive states the same guarantee at its source: what it writes is a copy, so the live files
   # Status reports are still there.
@@ -472,9 +377,10 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'artifact receipts N' "$DOCTOR_SKILL"
   grep -qF 'latest artifact receipt' "$DOCTOR_SKILL"
   grep -qF 'most recently written' "$DOCTOR_SKILL"
-  grep -qF 'artifact mode has ticked items but no receipts' "$DOCTOR_SKILL"
+  grep -qF 'completion record per-item receipt' "$DOCTOR_SKILL"
+  grep -qF 'N ticked items have no receipt text' "$DOCTOR_SKILL"
   grep -qF 'artifact receipts path is not a usable directory' "$DOCTOR_SKILL"
-  grep -qF 'so write-receipt can land' "$DOCTOR_SKILL"
+  grep -qF 'so receipts can land' "$DOCTOR_SKILL"
   grep -qF 'does not also warn empty ticks' "$DOCTOR_SKILL"
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$DOCTOR_SKILL"
   grep -qF 'do not replace the live files Doctor counts' "$DOCTOR_SKILL"
@@ -482,38 +388,35 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'artifact receipt' "$TEMPLATE"
   grep -qF '$NS/receipts/' "$TEMPLATE"
   grep -qF '$NS/receipts/' "$DRAFT_TEMPLATE"
-  grep -qE 'ns"? write-receipt' "$DOC"
+  grep -qF 'so receipts can land' "$DOC"
   grep -qE 'ns"? archive-receipts' "$DOC"
   grep -qF 'latest artifact receipt' "$DOC"
   grep -qF 'most recently written' "$DOC"
-  grep -qF 'Artifact mode records item completion in the shift report by default' "$DOC"
+  grep -qF 'Artifact mode records item completion in the per-item receipt files' "$DOC"
   grep -qF 'artifact receipts path is not a usable directory' "$DOC"
-  grep -qF 'replace it rather than write-receipt' "$DOC"
+  grep -qF 'replace it so receipts can land' "$DOC"
   grep -qF 'cannot land receipts' "$DOC"
-  grep -qF '**artifact receipt**' "$VOCAB"
-  grep -qF 'optional per-item record' "$VOCAB"
-  grep -qF 'report section is the default completion record' "$VOCAB"
+  grep -qF '**receipt**' "$VOCAB"
+  grep -qF 'one file per item' "$VOCAB"
   grep -qF '**archive**' "$VOCAB"
   grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
-  grep -qE 'ns"? write-receipt' "$COMMANDS"
-  grep -qF 'report.legacyItemReceipts' "$COMMANDS"
+  grep -qF 'so receipts can land' "$COMMANDS"
+  grep -qF 'per-item receipt files under `.nightshift/receipts/`' "$COMMANDS"
   grep -qF 'artifact receipts path is not a usable directory' "$COMMANDS"
-  grep -qF 'replace it rather than write-receipt' "$COMMANDS"
+  grep -qF 'replace it so receipts can land' "$COMMANDS"
   grep -qF 'cannot land receipts' "$COMMANDS"
   grep -qF 'latest artifact receipt' "$COMMANDS"
   grep -qF 'most recently written' "$COMMANDS"
   grep -qF 'local commits or artifact receipts' "$COMMANDS"
-  grep -qF 'ns.ps1 write-receipt' "$COMMANDS"
-  grep -qE 'ns\.ps1" write-receipt' "$WINDOC"
-  grep -qE 'ns\.ps1" archive-receipts' "$WINDOC"
+      grep -qE 'ns\.ps1" archive-receipts' "$WINDOC"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$WINDOC"
   grep -qF 'persistent folder' "$WINDOC"
   grep -qF 'latest artifact receipt' "$WINDOC"
   grep -qF 'most recently written' "$WINDOC"
-  grep -qF 'report.legacyItemReceipts' "$WINDOC"
+  grep -qF 'per-item receipts' "$WINDOC"
   grep -qF 'artifact receipts path is not a usable directory' "$WINDOC"
-  grep -qF 'replace it rather than write-receipt' "$WINDOC"
+  grep -qF 'replace it so receipts can land' "$WINDOC"
   grep -qF 'cannot land receipts' "$WINDOC"
   grep -qF 'The GitHub issue hunt is skipped in artifact mode' "$WINDOC"
   grep -qF 'The defect hunt is skipped in artifact mode' "$WINDOC"
@@ -546,50 +449,14 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'Get-NSLatestReceipt' "$DOCTOR_PS1"
   grep -qF 'artifact receipts' "$DOCTOR_PS1"
   grep -qF 'latest artifact receipt' "$DOCTOR_PS1"
-  grep -qF 'artifact mode has ticked items but no receipts' "$DOCTOR_PS1"
+  grep -qF 'ticked items have no receipt text' "$DOCTOR_PS1"
   grep -qF 'artifact receipts path is not a usable directory' "$DOCTOR_PS1"
-  grep -qF 'so write-receipt can land' "$DOCTOR_PS1"
+  grep -qF 'so receipts can land' "$DOCTOR_PS1"
   grep -qF 'unusableRecv' "$DOCTOR_PS1"
-  grep -qF 'so write-receipt can land' "$DOCTOR"
+  grep -qF 'so receipts can land' "$DOCTOR"
   grep -qF 'UNUSABLE_RECV' "$DOCTOR"
-  grep -qF "Join-Path \$here 'write-receipt.ps1'" "$DOCTOR_PS1"
   grep -qF 'Get-NSProgressToken' "$WIN_GATE"
   grep -qF 'ns_gate_progress_token' "$CORE"
   grep -qF 'ns_gate_progress_token' "$GATE"
   grep -qF 'ns_gate_progress_token' "$CODEX_GATE"
-  [ -f "$WRITE_PS1" ]
-  grep -qF 'Get-NSWorkMode' "$WRITE_PS1"
-  grep -qF 'exit 3' "$WRITE_PS1"
-  grep -qF 'exit 2' "$WRITE_PS1"
-  grep -qF 'symlink receipts path' "$WRITE"
-  grep -qF 'symlink receipts path' "$WRITE_PS1"
-  grep -qF 'receipts path is not a directory' "$WRITE"
-  grep -qF 'receipts path is not a directory' "$WRITE_PS1"
-}
-
-@test "Windows write-receipt logic passes when pwsh is present" {
-  [ -f "$WRITE_LOGIC" ]
-  grep -qF 'write-receipt-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
-  grep -qF 'Get-NSLatestReceipt' "$WRITE_LOGIC"
-  grep -qF 'latest ignores a hidden sibling' "$WRITE_LOGIC"
-  grep -qF 'symlink receipt is not counted' "$WRITE_LOGIC"
-  grep -qF 'symlink receipt is not latest' "$WRITE_LOGIC"
-  grep -qF 'nested receipt is not counted' "$WRITE_LOGIC"
-  grep -qF 'nested receipt is not latest' "$WRITE_LOGIC"
-  grep -qF 'does not write through a reparse receipts path' "$WRITE_LOGIC"
-  grep -qF 'symlink work-mode is malformed' "$WRITE_LOGIC"
-  grep -qF 'does not create receipts for a symlink work-mode' "$WRITE_LOGIC"
-  grep -qF 'does not replace a file receipts path' "$WRITE_LOGIC"
-  grep -qF 'Doctor warns when receipts path is not a usable directory' "$WRITE_LOGIC"
-  grep -qF 'symlink output is missing' "$WRITE_LOGIC"
-  grep -qF 'does not create receipts for a symlink output' "$WRITE_LOGIC"
-  grep -qF 'Doctor offers a replace-path action when receipts path is unusable' "$WRITE_LOGIC"
-  grep -qF 'Doctor does not offer write-receipt on an unusable receipts path' "$WRITE_LOGIC"
-  grep -qF 'Doctor does not warn empty ticks when receipts path is unusable' "$WRITE_LOGIC"
-  grep -qF 'artifact mode has ticked items but no receipts' "$WRITE_LOGIC"
-  if ! command -v pwsh >/dev/null 2>&1; then
-    return 0
-  fi
-  run pwsh -NoProfile -NonInteractive -File "$WRITE_LOGIC"
-  [ "$status" -eq 0 ]
 }

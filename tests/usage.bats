@@ -160,21 +160,19 @@ ns() { printf '%s/.nightshift' "$1"; }
 @test "the gate writes usage and duration under the item it just closed" {
   p="$(new_project usage-gate)"
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
-  printf '# Shift report\n\n### P01\n\nWhat it delivered.\n' >"$p/.nightshift/shift-report.md"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# P01\n\nWhat it delivered.\n' >"$p/.nightshift/receipts/P01.md"
   lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 \
     'input=10,cache_write=100,cache_read=1000,output=5,reasoning=2'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
 
-  grep -qF 'Usage: input 10 - cache_write 100 - cache_read 1000 - output 5 - reasoning 2' \
-    "$p/.nightshift/shift-report.md" ||
-    grep -qF 'input 10' "$p/.nightshift/shift-report.md"
-  grep -qF 'Duration:' "$p/.nightshift/shift-report.md"
-  grep -qF 'segments 1' "$p/.nightshift/shift-report.md"
+  rec="$p/.nightshift/receipts/P01.md"
+  grep -qF 'input 10' "$rec"
+  grep -qF '**Duration:**' "$rec"
+  grep -qF 'segments 1' "$rec"
   # The host's own overlap, so nothing downstream adds the same tokens twice.
-  grep -qF 'Cache reads and cache writes are separate from the input figure' \
-    "$p/.nightshift/shift-report.md"
-  # It landed under P01's heading, not at the end of the file.
-  awk '/^### P01/{f=1} f&&/^Usage:/{print "found"; exit}' "$p/.nightshift/shift-report.md" | grep -q found
+  grep -qF 'Cache reads and cache writes are separate from the input figure' "$rec"
+  grep -qF '# P01' "$rec"
 }
 
 @test "the gate writes the line even when the model has written no section yet" {
@@ -182,9 +180,9 @@ ns() { printf '%s/.nightshift' "$1"; }
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
   lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  [ -f "$p/.nightshift/shift-report.md" ]
-  grep -qF '### P01' "$p/.nightshift/shift-report.md"
-  grep -qF 'input 4' "$p/.nightshift/shift-report.md"
+  [ -f "$p/.nightshift/receipts/P01.md" ]
+  grep -qF '# P01' "$p/.nightshift/receipts/P01.md"
+  grep -qF 'input 4' "$p/.nightshift/receipts/P01.md"
 }
 
 @test "a second stop with nothing newly ticked writes nothing twice" {
@@ -193,7 +191,7 @@ ns() { printf '%s/.nightshift' "$1"; }
   lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  [ "$(grep -c '^Usage:' "$p/.nightshift/shift-report.md")" -eq 1 ]
+  [ "$(grep -c '^\*\*Usage:\*\*' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
 }
 
 @test "a dimension the host does not report reads unavailable, never zero" {
@@ -205,7 +203,7 @@ ns() { printf '%s/.nightshift' "$1"; }
   lib ns_usage_record "$p/.nightshift" cursor cursor-model stop-payload cursor:c1 0 \
     'input=200,cache_write=60,cache_read=1500,output=44'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  grep -qF 'reasoning unavailable' "$p/.nightshift/shift-report.md"
+  grep -qF 'reasoning unavailable' "$p/.nightshift/receipts/P01.md"
 }
 
 @test "usage off measures nothing and keeps no snapshot" {
@@ -214,10 +212,10 @@ ns() { printf '%s/.nightshift' "$1"; }
   # Set through the policy the shift was composed with, which is where the setting is fixed.
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{usage:"off"}}' >"$p/.nightshift/shift-policy.json"
+    receipts:{usage:"off"}}' >"$p/.nightshift/shift-policy.json"
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
   [ ! -e "$p/.nightshift/usage/marks.tsv" ]
-  [ ! -e "$p/.nightshift/shift-report.md" ]
+  [ ! -e "$p/.nightshift/receipts/P01.md" ]
 }
 
 # The cadence is the runtime's arithmetic against the same marks and the same counter. None of it
@@ -248,7 +246,7 @@ mark_at() {
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
+    receipts:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
     >"$p/.nightshift/shift-policy.json"
   now="$(date +%s)"
   mark_at "$p/.nightshift" "$((now - 60))" arm ''
@@ -266,7 +264,7 @@ mark_at() {
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{progressMode:"completion-only"}}' >"$p/.nightshift/shift-policy.json"
+    receipts:{progressMode:"completion-only"}}' >"$p/.nightshift/shift-policy.json"
   mark_at "$p/.nightshift" "$(( $(date +%s) - 90 * 60 ))" arm ''
   run lib ns_usage_progress_due "$p" P01
   [ "$status" -ne 0 ]
@@ -277,7 +275,7 @@ mark_at() {
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
+    receipts:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
     >"$p/.nightshift/shift-policy.json"
   # No readings at all: the host reported nothing usable.
   mark_at "$p/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
@@ -288,14 +286,15 @@ mark_at() {
 @test "refreshing the item's section restarts the window" {
   p="$(new_project cadence-window)"
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
-  printf '# Shift report\n\n### P01\n\nWhere it has got to.\n' >"$p/.nightshift/shift-report.md"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# P01\n\nWhere it has got to.\n' >"$p/.nightshift/receipts/P01.md"
   mark_at "$p/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
   run lib ns_usage_progress_due "$p" P01
   [ "$status" -eq 0 ]
 
   # The model refreshes the paragraph. The window starts again from that moment, and nothing had
   # to tell the runtime it happened.
-  printf '# Shift report\n\n### P01\n\nWhere it has got to, updated.\n' >"$p/.nightshift/shift-report.md"
+  printf '# P01\n\nWhere it has got to, updated.\n' >"$p/.nightshift/receipts/P01.md"
   run lib ns_usage_progress_due "$p" P01
   [ "$status" -ne 0 ]
 }
@@ -309,14 +308,14 @@ mark_at() {
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
   [ "$status" -eq 0 ]
-  [ "$output" = 'report: progress update due for P01' ]
-  [ -f "$p/.nightshift/.report-due" ]
+  [ "$output" = 'receipts: progress update due for P01 — refresh the progress paragraph in .nightshift/receipts/P01.md: where it stands, what is left.' ]
+  [ -f "$p/.nightshift/.receipt-due" ]
 
   # The same notice stands rather than being written afresh: the marker is what a revived session
   # or a dropped hook output finds at the next pulse.
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
-  [ "$output" = 'report: progress update due for P01' ]
+  [ "$output" = 'receipts: progress update due for P01 — refresh the progress paragraph in .nightshift/receipts/P01.md: where it stands, what is left.' ]
 }
 
 @test "the notice reaches the model in each host's own context field" {
@@ -346,10 +345,10 @@ mark_at() {
   lib ns_usage_record "$p/.nightshift" claude m transcript-incremental /t/a 1 'input=5,output=1'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
 
-  grep -qF 'paused' "$p/.nightshift/shift-report.md"
-  grep -qF 'the session ended and the shift was revived' "$p/.nightshift/shift-report.md"
+  grep -qF 'paused' "$p/.nightshift/receipts/P01.md"
+  grep -qF 'the session ended and the shift was revived' "$p/.nightshift/receipts/P01.md"
   # The wall clock still reads the full hour: the gap is listed next to it, not taken out of it.
-  grep -qE 'Duration: 1h 0m \(paused' "$p/.nightshift/shift-report.md"
+  grep -qE '\*\*Duration:\*\* 1h 0m \(paused' "$p/.nightshift/receipts/P01.md"
 }
 
 @test "Windows reads the same fixtures to the same bytes" {
@@ -430,7 +429,7 @@ mark_at() {
   : >"$p/.nightshift/.shift-armed"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{enabled:false},handoff:{enabled:true}}' >"$p/.nightshift/shift-policy.json"
+    receipts:{enabled:false},handoff:{enabled:true}}' >"$p/.nightshift/shift-policy.json"
   # Reporting is off, so no notice is ever due — the handoff is a separate page and unaffected.
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
@@ -444,7 +443,7 @@ mark_at() {
   : >"$q/.nightshift/.shift-armed"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{enabled:true},handoff:{enabled:false}}' >"$q/.nightshift/shift-policy.json"
+    receipts:{enabled:true},handoff:{enabled:false}}' >"$q/.nightshift/shift-policy.json"
   mark_at "$q/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$q"
@@ -676,7 +675,12 @@ parity_site() {
 # Everything the two sides cannot agree on because it is not accounting: where the workspace sits,
 # and what the clock said.
 parity_normalise() {
-  sed -e "s|$1|<workspace>|g" -e 's/^[0-9][0-9]*	/<epoch>	/' -e 's/^Duration: .*/Duration: <span>/'
+  sed -e "s|$1|<workspace>|g" \
+      -e 's/^[0-9][0-9]*	/<epoch>	/' \
+      -e 's/^Duration: .*/Duration: <span>/' \
+      -e 's/\*\*[0-9][0-9]*s\*\*/**<span>**/g' \
+      -e 's/\*\*[0-9][0-9]*m [0-9][0-9]*s\*\*/**<span>**/g' \
+      -e 's/\*\*[0-9][0-9]*h [0-9][0-9]*m\*\*/**<span>**/g'
 }
 
 @test "the PowerShell books match the POSIX books, file for file" {
@@ -707,7 +711,7 @@ parity_normalise() {
   '
   [ "$status" -eq 0 ]
 
-  for f in usage/segments.tsv usage/marks.tsv shift-report.md; do
+  for f in usage/segments.tsv usage/marks.tsv receipts/README.md; do
     [ -f "$a/.nightshift/$f" ]
     [ -f "$b/.nightshift/$f" ]
     diff <(parity_normalise "$a" <"$a/.nightshift/$f") <(parity_normalise "$b" <"$b/.nightshift/$f")
@@ -733,15 +737,15 @@ parity_normalise() {
 # ---------------------------------------------------------------------------------------------
 # A disabled report is not written by the accounting either.
 
-@test "report.enabled=false leaves no report behind, ticks or not" {
+@test "receipts.enabled=false leaves no item receipt behind, ticks or not" {
   p="$(three_open report-disabled-usage)"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{enabled:false}}' >"$p/.nightshift/shift-policy.json"
+    receipts:{enabled:false}}' >"$p/.nightshift/shift-policy.json"
   grow "$p"; fire "$p"
   tick "$p" A1; tick "$p" A2; grow "$p"; fire "$p"
   run env CLAUDE_PROJECT_DIR="$p" bash "$GATE" <<<"$(printf '{"session_id":"sess-marks","transcript_path":"%s/transcript.jsonl","cwd":"%s","hook_event_name":"Stop"}' "$p" "$p")"
-  [ ! -e "$p/.nightshift/shift-report.md" ]
+  [ ! -e "$p/.nightshift/receipts/A1.md" ]
   [ ! -e "$p/.nightshift/usage" ]
 }
 

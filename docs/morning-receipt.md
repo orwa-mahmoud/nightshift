@@ -1,16 +1,20 @@
 # The morning receipt
 
 Use this page for the compact clock-out summary. For live item progress and measured token usage,
-read [Shift report and token usage](shift-report.md#shift-report-and-token-usage). After reviewing, [archive the shift](archive.md#archive-and-continue)
-to preserve its report and evidence for later work.
+read [Receipts and token usage](receipts.md#receipts-and-token-usage). After reviewing, [archive the shift](archive.md#archive-and-continue)
+to preserve its receipts and evidence for later work.
 
 Everything else in `.nightshift/` is a working file: the punch list changes as items tick, the
 parking lot empties as decisions get read, the ledger keeps growing. The morning receipt is the
 one file meant to be read once, cover to cover, over coffee. It renders Markdown from records that
-already exist — the evidence ledger, the resolved shift policy, `punch-list.md`,
-`parking-lot.md`, and `shift-log.md` — and invents nothing. A check that did not run is never
+already exist — the evidence ledger, an accepted `shift-policy.json`, `punch-list.md`,
+`parking-lot.md`, `shift-log.md`, and the receipts index — and invents nothing. A check that did not run is never
 described as passed, and a model's own claim about its work is never upgraded into proof; only a
-ledger record, a commit, or a receipt earns a line in the receipt.
+ledger record, a commit, or a receipt earns a line in the receipt. Shift identity and every other
+policy-derived fact come only from a policy that validates. A missing file is `absent`; a file
+that is present but unreadable or fails the schema is `malformed`. The rest of the page still
+renders from the punch list, the ledger, and the other working files. A malformed policy never
+blocks STOP, the deadline, or clock-out.
 
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" morning-receipt [--view owner|reviewer|release|artifact] [--out PATH]`
 (native Windows: `ns.ps1 morning-receipt`) renders it on demand. The clock-out gate
@@ -21,6 +25,11 @@ a failed render never blocks the shift from ending, and `/nightshift:archive` mo
 the rest of the night's receipts.
 
 ## What each section means
+
+The page opens with a `Receipts:` line — `Receipts: [index](./README.md)` — then one relative
+link per ticked item, named from the item number and slug, in punch-list order. Directly under that, a
+`Policy record:` line names `accepted`, `absent — the shift wrote no policy`, or
+`malformed — the policy file is present but unreadable or fails the schema`.
 
 1. **Shift** — the shift id, host, and work target; when it started and ended and how it ended
    (done, a stop-work order, quitting time, or a stall); how many items were open versus ticked;
@@ -33,7 +42,8 @@ the rest of the night's receipts.
    check only when a shift policy set `verificationLevel` to `none`. A shift that wrote no policy
    runs on the built-in floor: a `Gates:` line names the commands the punch list's `## Gates`
    section asked for, `Verified:` reads `none — no shift policy was written`, and
-   `Disabled by owner:` reads `none`.
+   `Disabled by owner:` reads `none`. A present but unreadable or schema-failing policy is
+   named as malformed on both the `Policy record:` line and `Verified:`.
 2. **Baseline** — one line per originating source (the tool, its exact command, and its
    environment) with that source's environment digest and raw-output digest, so a reviewer can
    tell exactly what ran and against what versions.

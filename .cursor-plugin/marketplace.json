@@ -5,14 +5,14 @@
     "url": "https://github.com/orwa-mahmoud"
   },
   "metadata": {
-    "description": "Home of nightshift: accountable engineering shifts with persistent state, enforced boundaries, recovery, and evidence-backed product evolution."
+    "description": "Home of nightshift: accountable coding shifts with persistent state, enforced boundaries, recovery, and evidence-backed product evolution."
   },
   "plugins": [
     {
       "name": "nightshift",
       "source": "./plugins/nightshift",
       "displayName": "Nightshift",
-      "description": "Accountable, time-bounded engineering shifts with a persistent punch list, mechanical guards, and reviewable receipts.",
+      "description": "Accountable, time-bounded coding shifts with a persistent punch list, mechanical guards, and reviewable receipts.",
       "category": "productivity",
       "tags": [
         "autonomous",

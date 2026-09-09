@@ -1,7 +1,7 @@
 E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/compose/shifts/seo-audit.md"
 CHECK="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/check-report.sh"
 FIXTURE="$BATS_TEST_DIRNAME/../fixtures/seo-audit"
-WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-report.ps1"
+WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-receipts.ps1"
 
 @test "SEO audit uses receipt templates and refuses live-crawl without budgets" {
   grep -qF 'receipts/cycle-specialist-evidence.md' "$E"

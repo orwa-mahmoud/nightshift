@@ -287,6 +287,19 @@ SH
   [ ! -e "$p/.nightshift/shift-policy.json" ]
 }
 
+@test "clock-out morning receipt links the receipts index and each ticked item" {
+  p="$(new_project gate-receipt-links)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  today="$(date '+%Y-%m-%d')"
+  run gate "$p"
+  is_release
+  out="$p/.nightshift/receipts/morning-$today-9f2c40ab77e51d63.md"
+  [ -f "$out" ]
+  grep -qF 'Receipts: [index](./README.md), [1. first.](./1-first.md), [2. done.](./2-done.md)' "$out"
+  grep -qF -- '- Policy record: accepted' "$out"
+}
+
 @test "clock-out renders the owner receipt into receipts/, named for tonight's shift" {
   root="$(plugin_copy receipt-ok)"
   renderer_ok "$root"
@@ -341,7 +354,9 @@ SH
   [ ! -f "$p/.nightshift/.shift-armed" ]
   grep -qF 'morning receipt skipped: runtime/morning-receipt.sh is not installed' \
     "$p/.nightshift/shift-log.md"
-  [ ! -e "$p/.nightshift/receipts" ]
+  # The index may still be rewritten at the tick; the morning page is what must not appear.
+  [ ! -e "$p/.nightshift/receipts/morning-$(date '+%Y-%m-%d').md" ]
+  [ -z "$(find "$p/.nightshift/receipts" -name 'morning-*.md' -print -quit 2>/dev/null)" ]
 }
 
 @test "a failing morning-receipt renderer never blocks the release" {
@@ -538,10 +553,8 @@ SH
   run gate "$p" NIGHTSHIFT_STALL_WARN=20
   run gate "$p" NIGHTSHIFT_STALL_WARN=20
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "2" ]
-  printf 'ok\n' >"$p/note.md"
-  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/write-receipt.sh" \
-    --project "$p" --item 'x' --verify 'ok' --output "$p/note.md"
-  [ "$status" -eq 0 ]
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'model text\n' >"$p/.nightshift/receipts/01-x.md"
   run gate "$p" NIGHTSHIFT_STALL_WARN=20
   is_block "$output"
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "3" ]

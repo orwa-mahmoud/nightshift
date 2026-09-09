@@ -132,9 +132,9 @@ Two git repositories as siblings of `.nightshift/` with no `work-target` is unde
 guards deny rather than pick one.
 
 In artifact mode the work target is the persistent folder itself. There is no work-target git
-history. Review `.nightshift/shift-report.md` and the output files first. For additional evidence,
+history. Review `.nightshift/receipts/` and the output files first. For additional evidence,
 look at `.nightshift/receipts/` — Doctor reports `artifact receipts N` and, when any
-exist, `latest artifact receipt` with the filename of the most recently written receipt. Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive
+exist, `latest artifact receipt` with the filename of the most recently written receipt. Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive
 copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
 into the dated folder and leaves the live copies in place. Missing or empty receipts create no dated receipts folder. A failing `git -C … rev-parse` here is
 expected, not a broken site.

@@ -304,6 +304,55 @@ function Set-TestPunch {
     )
 }
 
+function Escape-NSJsonString {
+    param([AllowEmptyString()][string]$Value)
+    if ($null -eq $Value) { $Value = '' }
+    $builder = New-Object Text.StringBuilder ($Value.Length + 8)
+    foreach ($character in $Value.ToCharArray()) {
+        switch ([int][char]$character) {
+            34 { [void]$builder.Append('\"') }
+            92 { [void]$builder.Append('\\') }
+            10 { [void]$builder.Append('\n') }
+            13 { [void]$builder.Append('\r') }
+            9 { [void]$builder.Append('\t') }
+            8 { [void]$builder.Append('\b') }
+            12 { [void]$builder.Append('\f') }
+            default {
+                if ([int][char]$character -lt 32) {
+                    [void]$builder.AppendFormat('\u{0:x4}', [int][char]$character)
+                }
+                else {
+                    [void]$builder.Append($character)
+                }
+            }
+        }
+    }
+    return [string]$builder
+}
+
+function ConvertTo-NSHookJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$SessionId,
+        [AllowEmptyString()][string]$Cwd,
+        [Parameter(Mandatory = $true)][string]$Tool,
+        [Parameter(Mandatory = $true)][hashtable]$ToolInput
+    )
+    $fields = New-Object Collections.Generic.List[string]
+    foreach ($key in @($ToolInput.Keys)) {
+        $fields.Add(('"{0}":"{1}"' -f (Escape-NSJsonString ([string]$key)), (Escape-NSJsonString ([string]$ToolInput[$key]))))
+    }
+    $payload = '{"session_id":"' + (Escape-NSJsonString $SessionId) +
+        '","transcript_path":"","cwd":"' + (Escape-NSJsonString $Cwd) +
+        '","tool_name":"' + (Escape-NSJsonString $Tool) +
+        '","tool_input":{' + ($fields -join ',') + '}}'
+    $command = [string]$ToolInput['command']
+    if (-not [string]::IsNullOrEmpty($command) -and $command -notmatch '[\\"\r\n\t]' `
+        -and $payload.IndexOf($command, [StringComparison]::Ordinal) -lt 0) {
+        throw "hook JSON dropped the command: $command"
+    }
+    return $payload
+}
+
 function Invoke-Hardhat {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -312,13 +361,7 @@ function Invoke-Hardhat {
         [Parameter(Mandatory = $true)][hashtable]$ToolInput,
         [hashtable]$ExtraEnvironment = @{}
     )
-    $payload = @{
-        session_id = $SessionId
-        transcript_path = ''
-        cwd = $Workspace
-        tool_name = $Tool
-        tool_input = $ToolInput
-    } | ConvertTo-Json -Compress -Depth 10
+    $payload = ConvertTo-NSHookJson -SessionId $SessionId -Cwd $Workspace -Tool $Tool -ToolInput $ToolInput
     $environment = @{ CODEX_PROJECT_DIR = $Workspace }
     foreach ($key in $ExtraEnvironment.Keys) {
         $environment[$key] = $ExtraEnvironment[$key]
@@ -493,10 +536,10 @@ try {
     $exportSupportLogicRun = Invoke-TestScript $exportSupportLogic
     Assert-Equal 0 $exportSupportLogicRun.ExitCode `
         "export-support allowlist: $($exportSupportLogicRun.Stdout) $($exportSupportLogicRun.Stderr)"
-    $writeReceiptLogic = Join-Path $PSScriptRoot 'write-receipt-logic.ps1'
-    $writeReceiptLogicRun = Invoke-TestScript $writeReceiptLogic
-    Assert-Equal 0 $writeReceiptLogicRun.ExitCode `
-        "write-receipt artifact mode: $($writeReceiptLogicRun.Stdout) $($writeReceiptLogicRun.Stderr)"
+    $receiptsLogic = Join-Path $PSScriptRoot 'receipts-logic.ps1'
+    $receiptsLogicRun = Invoke-TestScript $receiptsLogic
+    Assert-Equal 0 $receiptsLogicRun.ExitCode `
+        "receipts layout: $($receiptsLogicRun.Stdout) $($receiptsLogicRun.Stderr)"
     $archiveReceiptsLogic = Join-Path $PSScriptRoot 'archive-receipts-logic.ps1'
     $archiveReceiptsLogicRun = Invoke-TestScript $archiveReceiptsLogic
     Assert-Equal 0 $archiveReceiptsLogicRun.ExitCode `
@@ -517,10 +560,22 @@ try {
     $controlLogicRun = Invoke-TestScript $controlLogic
     Assert-Equal 0 $controlLogicRun.ExitCode `
         "control stop/reset/purge: $($controlLogicRun.Stdout) $($controlLogicRun.Stderr)"
+    $purgeWorkspaceLogic = Join-Path $PSScriptRoot 'purge-workspace-logic.ps1'
+    $purgeWorkspaceLogicRun = Invoke-TestScript $purgeWorkspaceLogic
+    Assert-Equal 0 $purgeWorkspaceLogicRun.ExitCode `
+        "purge-workspace entry point: $($purgeWorkspaceLogicRun.Stdout) $($purgeWorkspaceLogicRun.Stderr)"
+    $resetShiftLogic = Join-Path $PSScriptRoot 'reset-shift-logic.ps1'
+    $resetShiftLogicRun = Invoke-TestScript $resetShiftLogic
+    Assert-Equal 0 $resetShiftLogicRun.ExitCode `
+        "reset-shift entry point: $($resetShiftLogicRun.Stdout) $($resetShiftLogicRun.Stderr)"
     $fenceCheckLogic = Join-Path $PSScriptRoot 'fence-check-logic.ps1'
     $fenceCheckLogicRun = Invoke-TestScript $fenceCheckLogic
     Assert-Equal 0 $fenceCheckLogicRun.ExitCode `
         "fence-check on-disk lease: $($fenceCheckLogicRun.Stdout) $($fenceCheckLogicRun.Stderr)"
+    $linkWorkspaceLogic = Join-Path $PSScriptRoot 'link-workspace-logic.ps1'
+    $linkWorkspaceLogicRun = Invoke-TestScript $linkWorkspaceLogic
+    Assert-Equal 0 $linkWorkspaceLogicRun.ExitCode `
+        "link-workspace usage: $($linkWorkspaceLogicRun.Stdout) $($linkWorkspaceLogicRun.Stderr)"
     $evidenceLogic = Join-Path $PSScriptRoot 'evidence-logic.ps1'
     $evidenceLogicRun = Invoke-TestScript $evidenceLogic
     Assert-Equal 0 $evidenceLogicRun.ExitCode `
@@ -569,6 +624,10 @@ try {
     $sessionStartLogicRun = Invoke-TestScript $sessionStartLogic
     Assert-Equal 0 $sessionStartLogicRun.ExitCode `
         "SessionStart context reset: $($sessionStartLogicRun.Stdout) $($sessionStartLogicRun.Stderr)"
+    $pulseLogic = Join-Path $PSScriptRoot 'pulse-logic.ps1'
+    $pulseLogicRun = Invoke-TestScript $pulseLogic
+    Assert-Equal 0 $pulseLogicRun.ExitCode `
+        "receipt duty injection: $($pulseLogicRun.Stdout) $($pulseLogicRun.Stderr)"
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost
@@ -721,11 +780,11 @@ try {
     }
     Assert-True ($addDeleted.Stdout -match 'protected directory') 'git add -A sees a staged protected deletion'
 
-    $gitDirAdd = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=C:\elsewhere\.git add x' } @{
+    $gitDirAdd = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=/somewhere/else/.git add x' } @{
         NIGHTSHIFT_PROTECTED_DIRS = 'ai_docs'
     }
     Assert-True ($gitDirAdd.Stdout -match 'protected-directory guard cannot verify') `
-        'a --git-dir add is unverifiable under protectedDirs'
+        "a --git-dir add is unverifiable under protectedDirs ($(Format-HookResult $gitDirAdd))"
 
     $forbidden = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git push origin HEAD' } `
         @{ NIGHTSHIFT_FORBIDDEN_COMMANDS = 'git .*push' }
@@ -747,11 +806,11 @@ try {
     Assert-True ($overrideEmail.Stdout -match 'configured identity') `
         "a command-line identity override is denied ($(Format-HookResult $overrideEmail))"
 
-    $gitDirCommit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=C:\elsewhere\.git commit -m x' } @{
+    $gitDirCommit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=/somewhere/else/.git commit -m x' } @{
         NIGHTSHIFT_EXPECTED_EMAIL = 'dev@example.com'
     }
     Assert-True ($gitDirCommit.Stdout -match 'configured commit guards cannot verify') `
-        'a --git-dir commit is unverifiable under expectedEmail'
+        "a --git-dir commit is unverifiable under expectedEmail ($(Format-HookResult $gitDirCommit))"
 
     $secretFile = Join-Path $workTarget 'secret.txt'
     [IO.File]::WriteAllText($secretFile, "SECRET_KEY=abc`n")

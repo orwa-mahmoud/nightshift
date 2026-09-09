@@ -134,26 +134,186 @@ ns_usage_offset() {
   printf '0'
 }
 
-# ns_pulse_report_due <ns> <project> — the one line that tells the model an update is due, or
-# nothing.
-#
-# The notice is written to a marker before it is emitted, and cleared when the item's section
-# changes. A revived session, or a host that dropped the hook's output, still finds the notice at
-# the next pulse; nothing repeats until the window resets, so a long pause is one overdue notice
-# rather than one per minute that passed.
-ns_pulse_report_due() {
-  local ns="$1" project="$2" label
-  [ -f "$ns/.shift-armed" ] || return 1
-  [ "$(ns_report "$project" enabled)" != false ] || return 1
-  label="$(ns_pulse_active_item "$project")" || return 1
-  [ -n "$label" ] || return 1
-  if [ -f "$ns/.report-due" ] && [ ! -L "$ns/.report-due" ]; then
-    printf '%s' "$(cat "$ns/.report-due" 2>/dev/null)"
+# ns_pulse_receipts_enabled <project> — status 0 unless the owner turned receipts off.
+ns_pulse_receipts_enabled() {
+  [ "$(ns_receipts "$1" enabled)" != false ]
+}
+
+# ns_pulse_receipts_basename <label> — the file stem the notice names.
+ns_pulse_receipts_basename() {
+  ns_receipt_basename "$1"
+}
+
+# ns_pulse_receipts_sections <project> — the approach clause on an item-start notice.
+ns_pulse_receipts_sections() {
+  local path
+  path="$(ns_receipts "$1" templatePath 2>/dev/null)" || path=""
+  if [ -n "$path" ]; then
+    printf 'follow the owner'\''s template at %s' "$path"
     return 0
   fi
-  ns_usage_progress_due "$project" "$label" || return 1
-  printf 'report: progress update due for %s' "$label" >"$ns/.report-due" 2>/dev/null || return 1
-  printf 'report: progress update due for %s' "$label"
+  printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+}
+
+# ns_pulse_receipts_start_line <project> <label>
+ns_pulse_receipts_start_line() {
+  printf 'receipts: item %s started — open .nightshift/receipts/%s.md with one paragraph on the approach; %s' \
+    "$2" "$(ns_pulse_receipts_basename "$2")" "$(ns_pulse_receipts_sections "$1")"
+}
+
+# ns_pulse_receipts_tick_line <label>
+ns_pulse_receipts_tick_line() {
+  printf 'receipts: item %s is ticked — write its closing paragraph in .nightshift/receipts/%s.md now, before starting the next item.' \
+    "$1" "$(ns_pulse_receipts_basename "$1")"
+}
+
+# ns_pulse_receipts_cadence_line <label>
+ns_pulse_receipts_cadence_line() {
+  printf 'receipts: progress update due for %s — refresh the progress paragraph in .nightshift/receipts/%s.md: where it stands, what is left.' \
+    "$1" "$(ns_pulse_receipts_basename "$1")"
+}
+
+# ns_pulse_ticked_labels <project> — every ticked item label, punch-list order, one per line.
+ns_pulse_ticked_labels() {
+  local punch="$1/.nightshift/punch-list.md"
+  [ -f "$punch" ] || return 0
+  ns_items_section "$punch" 2>/dev/null | awk '
+    /^- \[[xX]\]/ {
+      line = $0
+      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[[xX]\][[:space:]]*/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      if (line != "") print line
+    }
+  '
+}
+
+# Previous-pulse facts live under usage/, never in the punch list.
+ns_pulse_previous_file() { printf '%s/usage/previous-pulse' "$1"; }
+ns_pulse_previous_ticked_file() { printf '%s/usage/previous-ticked' "$1"; }
+
+ns_pulse_previous_get() { # <ns> <key>
+  local file line
+  file="$(ns_pulse_previous_file "$1")"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "$2	"*)
+        printf '%s' "${line#*$'\t'}"
+        return 0
+        ;;
+    esac
+  done <"$file"
+  return 1
+}
+
+ns_pulse_previous_write() { # <ns> <active> <ticked>
+  local dir file
+  dir="$1/usage"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  [ -L "$dir" ] && return 0
+  file="$(ns_pulse_previous_file "$1")"
+  [ -L "$file" ] && rm -f "$file"
+  printf 'active\t%s\nticked\t%s\n' "$2" "$3" >"$file" 2>/dev/null || :
+}
+
+# ns_pulse_report_due <ns> <project> — the cadence line, or nothing.
+#
+# The notice is written to a marker before it is emitted, and cleared when the item's receipt
+# file changes or the item is ticked. A marker that names a different item than the one now
+# open is rewritten. A revived session still finds the notice; nothing repeats until the window
+# resets, so a long pause is one overdue notice rather than one per minute that passed.
+ns_pulse_report_due() {
+  local ns="$1" project="$2" label due want
+  [ -f "$ns/.shift-armed" ] || return 1
+  ns_pulse_receipts_enabled "$project" || return 1
+  label="$(ns_pulse_active_item "$project")" || return 1
+  [ -n "$label" ] || return 1
+  want="$(ns_pulse_receipts_cadence_line "$label")"
+  if [ -f "$ns/.receipt-due" ] && [ ! -L "$ns/.receipt-due" ]; then
+    due="$(cat "$ns/.receipt-due" 2>/dev/null)" || due=""
+    case "$due" in
+      *"for ${label} —"*|*"for ${label}")
+        printf '%s' "$due"
+        return 0
+        ;;
+    esac
+    # The marker names a different item than the one now open — regenerate.
+  fi
+  ns_usage_progress_due "$project" "$label" || {
+    # Stale marker for another item: still rewrite so the next pulse names this one.
+    if [ -n "${due:-}" ]; then
+      printf '%s' "$want" >"$ns/.receipt-due" 2>/dev/null || return 1
+      printf '%s' "$want"
+      return 0
+    fi
+    return 1
+  }
+  printf '%s' "$want" >"$ns/.receipt-due" 2>/dev/null || return 1
+  printf '%s' "$want"
+}
+
+# ns_pulse_receipts_notice <ns> <project> — start, tick, and cadence lines for this pulse.
+#
+# Previous-pulse facts are read and rewritten here. Each line is injected once for a change;
+# identical cadence text is not re-emitted after the item it names has been ticked.
+ns_pulse_receipts_notice() {
+  local ns="$1" project="$2" prev_active prev_ticked active ticked line first=1 due
+  local labels_file
+  [ -f "$ns/.shift-armed" ] || return 1
+  ns_pulse_receipts_enabled "$project" || return 1
+  prev_active="$(ns_pulse_previous_get "$ns" active 2>/dev/null)" || prev_active=""
+  prev_ticked="$(ns_pulse_previous_get "$ns" ticked 2>/dev/null)" || prev_ticked="0"
+  case "$prev_ticked" in '' | *[!0-9]*) prev_ticked=0 ;; esac
+  active="$(ns_pulse_active_item "$project" 2>/dev/null)" || active=""
+  ticked="$(ns_ticked_boxes "$ns/punch-list.md" 2>/dev/null)" || ticked=0
+  case "$ticked" in '' | *[!0-9]*) ticked=0 ;; esac
+  labels_file="$(ns_pulse_previous_ticked_file "$ns")"
+  mkdir -p "$ns/usage" 2>/dev/null || :
+  : >"$ns/usage/.ticked-now"
+  ns_pulse_ticked_labels "$project" >"$ns/usage/.ticked-now" 2>/dev/null || :
+  if [ "$ticked" -gt "$prev_ticked" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      if [ -f "$labels_file" ] && [ ! -L "$labels_file" ]; then
+        grep -Fqx -- "$line" "$labels_file" 2>/dev/null && continue
+      fi
+      if [ "$first" -eq 1 ]; then
+        printf '%s' "$(ns_pulse_receipts_tick_line "$line")"
+        first=0
+      else
+        printf '\n%s' "$(ns_pulse_receipts_tick_line "$line")"
+      fi
+    done <"$ns/usage/.ticked-now"
+  fi
+  if [ -n "$active" ] && [ "$active" != "$prev_active" ]; then
+    if [ "$first" -eq 1 ]; then
+      printf '%s' "$(ns_pulse_receipts_start_line "$project" "$active")"
+      first=0
+    else
+      printf '\n%s' "$(ns_pulse_receipts_start_line "$project" "$active")"
+    fi
+  fi
+  due="$(ns_pulse_report_due "$ns" "$project" 2>/dev/null)" || due=""
+  if [ -n "$due" ]; then
+    if [ "$first" -eq 1 ]; then
+      printf '%s' "$due"
+      first=0
+    else
+      printf '\n%s' "$due"
+    fi
+  fi
+  ns_pulse_previous_write "$ns" "$active" "$ticked"
+  if [ -L "$labels_file" ]; then
+    rm -f "$labels_file"
+  fi
+  if [ -d "$ns/usage" ] && [ ! -L "$ns/usage" ]; then
+    mv "$ns/usage/.ticked-now" "$labels_file" 2>/dev/null || :
+  fi
+  [ "$first" -eq 0 ]
 }
 
 # ns_pulse_active_item <project> — the first still-open item, which is the one being worked.
@@ -164,7 +324,8 @@ ns_pulse_active_item() {
     /^- \[ \]/ {
       line = $0
       sub(/^- \[ \][[:space:]]*\*\*/, "", line)
-      sub(/[[:space:]]*[—-].*$/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)
       gsub(/[[:space:]]+$/, "", line)
       print line
@@ -260,6 +421,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   ns_pulse_emit "$NS" "$SID"
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"
   ns_pulse_marks "$NS" "$PROJECT_DIR" "$SID" "$TPATH"
-  ns_pulse_context claude "$(ns_pulse_report_due "$NS" "$PROJECT_DIR")"
+  if ns_pulse_owner_ok "$NS" "$SID"; then
+    ns_pulse_context claude "$(ns_pulse_receipts_notice "$NS" "$PROJECT_DIR")"
+  fi
   exit 0
 fi

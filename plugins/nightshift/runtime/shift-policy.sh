@@ -232,7 +232,7 @@ cmd_set() {
   # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
   # here, so an edit to rules.json lands on the next shift rather than moving the ground under
   # this one. A candidate that already states a block is left exactly as it was written.
-  for block in shift recovery handoff archive report; do
+  for block in shift recovery handoff archive receipts; do
     printf '%s' "$(cat "$candidate")" | grep -q "\"$block\"" && continue
     frozen="$(ns_policy_freeze_pref "$WORKSPACE" "$block")" || continue
     if ns_rules_set_block "$candidate" "$block" "$frozen" >"$tmpd/with-$block.json"; then
@@ -463,6 +463,7 @@ cmd_migrate() {
   atomic_write "$RULES" <"$tmpd/next.json"
   rm -rf "$tmpd"
   rm -f "$DEFAULTS"
+  ns_migrate_receipts_layout "$WORKSPACE"
   printf '%s\n' "$RULES"
 }
 

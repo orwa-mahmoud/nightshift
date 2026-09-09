@@ -27,7 +27,7 @@ WIN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/windows/check-report.ps
   grep -qi 'fenced examples' "$E"
   grep -qi 'Repository mode' "$E"
   grep -qi 'Artifact mode' "$E"
-  grep -qi 'write-receipt' "$E"
+  grep -qF '$NS/receipts/' "$E"
   grep -qF '$NS/receipts/' "$E"
 }
 

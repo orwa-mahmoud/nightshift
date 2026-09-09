@@ -37,6 +37,9 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF "\$script:NSReceiptLabels['disabled'] = 'Disabled by owner'" "$MODULE"
   grep -qF "\$script:NSReceiptLabels['unavailable'] = 'Unavailable'" "$MODULE"
   grep -qF "\$script:NSReceiptVerifiedNoneFormat = 'none {0} verification level {1} (owner)'" "$MODULE"
+  grep -qF "\$script:NSReceiptVerifiedMalformedFormat" "$MODULE"
+  grep -qF 'Get-NSMorningReceiptsLine' "$MODULE"
+  grep -qF '[index](./README.md)' "$MODULE"
 }
 
 @test "the clock-out gate writes the receipt at the end, best effort" {
@@ -82,6 +85,10 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'the artifact view names no repository term' "$LOGIC"
   grep -qF 'every allowance carries its provenance' "$LOGIC"
   grep -qF 'an unreadable punch list reports Ending unknown, never done' "$LOGIC"
+  grep -qF 'the page links the index and each ticked item' "$LOGIC"
+  grep -qF 'an accepted policy is named at the top' "$LOGIC"
+  grep -qF 'a missing file is named as absent, not as malformed' "$LOGIC"
+  grep -qF 'the unreadable fixture is named as malformed' "$LOGIC"
 }
 
 @test "Windows morning-receipt logic covers the gate and the archive" {

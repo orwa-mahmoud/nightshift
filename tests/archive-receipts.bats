@@ -461,6 +461,69 @@ closed() { # <project> — the shift ended
   [ "$(cat "$p/.nightshift/receipts/baseline.md")" = 'the P02 baseline' ]
 }
 
+@test "a ticked item's receipt is filed and an open item's stays live, and each index says so" {
+  # A shift that ended with work still open: items 1 and 2 are done, item 3 is not. The receipt of
+  # an open item belongs to the work, not to the history, so it stays exactly where the next shift
+  # will keep writing it.
+  p="$(new_project rot-open-receipt)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf 'Date: 2026-09-05\n\n## Items\n- [x] **1. Fix the resolver.**\n- [x] **2. Cover the parser.**\n- [ ] **3. Trim the bundle.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '# 1. Fix the resolver.\n\nDone.\n\n**Usage:** input 100 · output 20\n  Source: claude claude-opus-5, cumulative counters, segments 1; exact: 100 / 0 / 0 / 20 / 0\n**Duration:** 10m 00s\n' \
+    >"$r/1-fix-the-resolver.md"
+  printf '# 2. Cover the parser.\n\nDone.\n\n**Duration:** 5m 00s\n' >"$r/2-cover-the-parser.md"
+  printf '# 3. Trim the bundle.\n\nIn progress: the loader is measured, the chunks are not.\n' \
+    >"$r/3-trim-the-bundle.md"
+  printf 'morning\n' >"$r/morning-2026-09-05-abc.md"
+  bash -c '. "$1"; shift; ns_receipts_write_index "$@"' _ "$LIB" "$p"
+  grep -qF '| 3. Trim the bundle. | open |' "$r/README.md"
+  open_before="$(cksum <"$r/3-trim-the-bundle.md")"
+  closed "$p"
+
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 \
+    --retire 1-fix-the-resolver.md --retire 2-cover-the-parser.md --retire morning-2026-09-05-abc.md
+  [ "$status" -eq 0 ]
+
+  d="$p/.nightshift/archive/2026-09-05/receipts"
+  [ -f "$d/1-fix-the-resolver.md" ]
+  [ -f "$d/2-cover-the-parser.md" ]
+  [ -f "$d/morning-2026-09-05-abc.md" ]
+  [ ! -f "$r/1-fix-the-resolver.md" ]
+  [ ! -f "$r/2-cover-the-parser.md" ]
+  # The open item's receipt is untouched, and it is not history yet.
+  [ "$(cksum <"$r/3-trim-the-bundle.md")" = "$open_before" ]
+  [ ! -e "$d/3-trim-the-bundle.md" ]
+
+  # Each index lists what its own folder holds, and the archived one carries the measurements.
+  grep -qF '| 3. Trim the bundle. | open |' "$r/README.md"
+  ! grep -qF 'Fix the resolver' "$r/README.md"
+  ! grep -qF 'Cover the parser' "$r/README.md"
+  grep -qF '# Receipts — 2026-09-05' "$d/README.md"
+  grep -qF '| 1. Fix the resolver. | ticked | **120** | **10m 00s** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |' \
+    "$d/README.md"
+  grep -qF '| 2. Cover the parser. | ticked |' "$d/README.md"
+  ! grep -qF 'Trim the bundle' "$d/README.md"
+  ! grep -qF 'morning-2026-09-05-abc.md' "$d/README.md"
+}
+
+@test "the live index goes away when nothing is left to list" {
+  p="$(new_project rot-index-gone)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf 'Date: 2026-09-05\n\n## Items\n- [x] **1. Fix the resolver.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '# 1. Fix the resolver.\n\nDone.\n' >"$r/1-fix-the-resolver.md"
+  bash -c '. "$1"; shift; ns_receipts_write_index "$@"' _ "$LIB" "$p"
+  [ -f "$r/README.md" ]
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 1-fix-the-resolver.md
+  [ "$status" -eq 0 ]
+  [ ! -e "$r/README.md" ]
+  [ ! -e "$r/1-fix-the-resolver.md" ]
+  grep -qF '| 1. Fix the resolver. | ticked |' "$p/.nightshift/archive/2026-09-05/receipts/README.md"
+}
+
 @test "a name this run did not file is refused rather than passed over" {
   p="$(new_project rot-unmatched)"
   mkdir -p "$p/.nightshift/receipts"
@@ -552,6 +615,48 @@ REPORT
   [ -f "$d/shift-report.original.md" ]
   cmp -s "$d/shift-report.original.md" <(sed 's/^$//' "$d/shift-report.original.md")
   grep -qF '(parking-lot.md#a-live-decision)' "$d/shift-report.original.md"
+}
+
+@test "a filed receipt reaches its index, its filed neighbours and what stayed live" {
+  # Receipts link to each other by bare name, because they were written side by side. Filed, the
+  # ones that travelled together are still side by side; the receipt of an item nobody finished
+  # stayed behind and has to be reached back through the archive.
+  p="$(new_project rot-sibling-links)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf 'Date: 2026-09-05\n\n## Items\n- [x] **1. Fix the resolver.**\n- [x] **2. Cover the parser.**\n- [ ] **3. Trim the bundle.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '# 1. Fix the resolver.\n\nNext: [2. Cover the parser.](./2-cover-the-parser.md), and\n[3. Trim the bundle.](./3-trim-the-bundle.md) is still open. Index: [receipts](./README.md).\nDecision: [the parking lot](../parking-lot.md).\n' \
+    >"$r/1-fix-the-resolver.md"
+  printf '# 2. Cover the parser.\n\nBack to [the resolver](1-fix-the-resolver.md).\n' \
+    >"$r/2-cover-the-parser.md"
+  printf '# 3. Trim the bundle.\n\nIn progress.\n' >"$r/3-trim-the-bundle.md"
+  printf '# Morning\n\nThe index of this shift: [receipts](./README.md).\n' \
+    >"$r/morning-2026-09-05-abc.md"
+  printf '# Parking\n' >"$p/.nightshift/parking-lot.md"
+  closed "$p"
+
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 \
+    --retire 1-fix-the-resolver.md --retire 2-cover-the-parser.md --retire morning-2026-09-05-abc.md
+  [ "$status" -eq 0 ]
+  d="$p/.nightshift/archive/2026-09-05/receipts"
+
+  # The index of the folder it landed in, not the one it was written beside.
+  grep -qF '(./README.md)' "$d/morning-2026-09-05-abc.md"
+  ( cd "$d" && [ -f ./README.md ] ) || { echo "the archived index is unreachable"; return 1; }
+
+  # A neighbour that travelled with it is still a neighbour, written with or without ./.
+  grep -qF '(./2-cover-the-parser.md)' "$d/1-fix-the-resolver.md"
+  ( cd "$d" && [ -f ./2-cover-the-parser.md ] ) || { echo "a filed neighbour is unreachable"; return 1; }
+  grep -qF '(1-fix-the-resolver.md)' "$d/2-cover-the-parser.md"
+
+  # The open item's receipt stayed live, so the link reaches back out of the archive to it.
+  grep -qF '(../../../receipts/3-trim-the-bundle.md)' "$d/1-fix-the-resolver.md"
+  ( cd "$d" && [ -f ../../../receipts/3-trim-the-bundle.md ] ) \
+    || { echo "the live receipt is unreachable"; return 1; }
+  # And a link that already climbed out of receipts/ climbed from there, not from the archive.
+  grep -qF '(../../../parking-lot.md)' "$d/1-fix-the-resolver.md"
+  ( cd "$d" && [ -f ../../../parking-lot.md ] ) || { echo "the live parking lot is unreachable"; return 1; }
 }
 
 @test "a report whose links all travelled is filed unchanged, with no second copy" {
@@ -797,4 +902,110 @@ composed() {
   [ "$status" -eq 0 ]
   [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
   [ "$(cat "$p/.nightshift/receipts/2026-09-05-an-item.md")" = 'the real record' ]
+}
+
+review_ended() { # <project> <shift-id> <layout>
+  printf 'shiftId=%s\narchiveRoot=archive\narchiveLayout=%s\n' "$2" "$3" >"$1/.nightshift/.ended"
+}
+
+@test "archive files handled snag entries only and writes one pointer" {
+  p="$(new_project review-snag-only)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n- still open · looking\n' \
+    >"$p/.nightshift/snag-log.md"
+  printf '# Parking Lot\n\n- wait for the owner\n' >"$p/.nightshift/parking-lot.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  dest="$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  [ -f "$dest" ]
+  grep -qF 'leak · tests/x.bats · fixed · 2026-09-09' "$dest"
+  ! grep -qF 'still open' "$dest"
+  [ ! -e "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/parking-lot.md" ]
+  grep -qF 'Filed: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)' \
+    "$p/.nightshift/snag-log.md"
+  grep -qF 'still open · looking' "$p/.nightshift/snag-log.md"
+  ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md"
+  ! grep -qF 'Filed:' "$p/.nightshift/parking-lot.md"
+}
+
+@test "filing nothing adds no pointer and creates no empty archive file" {
+  p="$(new_project review-noop)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- still open · looking\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md" ]
+  ! grep -qF 'Filed:' "$p/.nightshift/snag-log.md"
+}
+
+@test "a second archive run does not duplicate the pointer or the filed entry" {
+  p="$(new_project review-retry)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  dest="$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  before="$(cksum <"$dest")"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ "$(cksum <"$dest")" = "$before" ]
+  [ "$(grep -c '^Filed:' "$p/.nightshift/snag-log.md")" -eq 1 ]
+}
+
+@test "a custom archive.root is the pointer destination" {
+  p="$(new_project review-root)"
+  jq '.archive.root = "history"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  printf 'shiftId=aaaa1111bbbb2222\narchiveRoot=history\narchiveLayout=date\n' \
+    >"$p/.nightshift/.ended"
+  printf '# Parking Lot\n\n- ship it · answered · 2026-09-09\n' >"$p/.nightshift/parking-lot.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/history/2026-09-09/aaaa1111bbbb2222/parking-lot.md" ]
+  grep -qF 'Filed: [2026-09-09](history/2026-09-09/aaaa1111bbbb2222/parking-lot.md)' \
+    "$p/.nightshift/parking-lot.md"
+}
+
+@test "shift layout names the pointer with the shift id" {
+  p="$(new_project review-shift)"
+  jq '.archive.layout = "shift"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  review_ended "$p" aaaa1111bbbb2222 shift
+  printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/archive/shift-aaaa1111bbbb2222/snag-log.md" ]
+  grep -qF 'Filed: [aaaa1111bbbb2222](archive/shift-aaaa1111bbbb2222/snag-log.md)' \
+    "$p/.nightshift/snag-log.md"
+}
+
+@test "two shifts on one date keep distinct destinations" {
+  p="$(new_project review-two)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- first · x · fixed · 2026-09-09\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  review_ended "$p" cccc3333dddd4444 date
+  printf '# Snag Log\n\n- second · y · answered · 2026-09-09\n\nFiled: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)\n' \
+    >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  grep -qF 'first · x · fixed' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  grep -qF 'second · y · answered' "$p/.nightshift/archive/2026-09-09/cccc3333dddd4444/snag-log.md"
+  ! grep -qF 'second' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  [ "$(grep -c '^Filed:' "$p/.nightshift/snag-log.md")" -eq 2 ]
+}
+
+@test "a broken Filed pointer is reported in the snag log" {
+  p="$(new_project review-broken)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\nFiled: [2026-09-09](archive/missing/snag-log.md)\n' \
+    >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  grep -qF 'broken archive pointer · archive/missing/snag-log.md is not a readable file' \
+    "$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'broken archive pointer' "$p/.nightshift/snag-log.md")" -eq 1 ]
 }

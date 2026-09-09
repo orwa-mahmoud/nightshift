@@ -38,6 +38,7 @@ LIB="$ROOT/plugins/nightshift/lib/lib.sh"
   run bash "$CH" fence-check --project "$p"
   [ "$status" -eq 2 ]
   printf '%s' "$output" | jq -e '.takeoverAllowed == false and .action == "refuse"' >/dev/null
+  printf '%s' "$output" | awk 'NR == 1 { exit !($0 == "{") }'
 }
 
 @test "fence-check allows takeover only when the on-disk lease is fenced" {

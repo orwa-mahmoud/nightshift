@@ -17,13 +17,21 @@ if ([string]::IsNullOrWhiteSpace($Project)) {
     [Console]::Error.WriteLine('purge-workspace: -Project is required')
     exit 1
 }
-if ([string]::IsNullOrWhiteSpace($ConfirmPath)) {
-    [Console]::Error.WriteLine('purge-workspace: -ConfirmPath is required')
-    exit 1
-}
 
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+
+if ([string]::IsNullOrWhiteSpace($ConfirmPath)) {
+    try {
+        $ctx = Resolve-NSControlWorkspace $Project
+        $expected = Join-Path $ctx.Workspace '.nightshift'
+        [Console]::Error.WriteLine("purge-workspace: refusing without --confirm-path $expected")
+    }
+    catch {
+        [Console]::Error.WriteLine('purge-workspace: --confirm-path is required')
+    }
+    exit 1
+}
 
 try {
     $lines = @(Remove-NSNightshiftWorkspace -Project $Project -ConfirmPath $ConfirmPath)

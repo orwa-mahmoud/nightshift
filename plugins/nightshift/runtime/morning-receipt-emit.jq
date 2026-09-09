@@ -13,7 +13,9 @@
 #   details   the ledger as raw text. <index> $FS <key> $FS <value> $RS for every key of a
 #             record's details object, keys in byte order. A domain's extra fields live there,
 #             so they travel as opaque pairs the shell prints without knowing their names.
-#   policy    one shift-policy document. One h group — shiftId, createdAt, source,
+#   policy    one accepted shift-policy document. The shell classifies the file first
+#             (absent / malformed / accepted) and only asks for fields when the document
+#             validates. One h group — shiftId, createdAt, source,
 #             verificationLevel, toolingPolicy, completionMode, the selectedDebt ids joined by
 #             ", " — then one a group per allowance in document order: category, scope,
 #             provenance.

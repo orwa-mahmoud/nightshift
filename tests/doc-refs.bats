@@ -151,3 +151,37 @@ refresh-inventory.sh recipe-audit.sh"
   done < <(find "$ROOT/docs" -name '*.md' | LC_ALL=C sort)
   [ -z "$missing" ] || { echo "not linked from docs/README.md:$missing"; return 1; }
 }
+
+@test "committed docs and skills do not name the retired report words" {
+  local hit
+  hit="$(grep -R --include='*.md' -nE 'shift-report\.md|report\.templatePath|report\.legacyItemReceipts|write-receipt' \
+    "$ROOT/docs" "$ROOT/README.md" "$PLUGIN/README.md" "$PLUGIN/skills" || true)"
+  [ -z "$hit" ] || { echo "retired wording still present:$hit"; return 1; }
+}
+
+# The shift's record is its receipts: one file per item, the index beside them, and the morning
+# receipt. "Report" stays only where it names a deliverable of the work — a cited research report,
+# an SEO audit, a scanner's output — or is the verb. Every kept use the word-level pattern would
+# otherwise catch is named below as file:phrase.
+ALLOWED_REPORT_USES="plugins/nightshift/skills/nightshift/references/compose/tooling-hints.md:the shift reports"
+
+@test "no public page calls the shift's own record a report" {
+  local hit
+  hit="$(grep -R --include='*.md' -niE 'shift report|shift-report|report section|example report' \
+    "$ROOT/README.md" "$ROOT/docs" "$PLUGIN/README.md" "$ROOT/examples/README.md" "$PLUGIN/skills" \
+    | sed "s|^$ROOT/||" \
+    | awk -v allow="$ALLOWED_REPORT_USES" '
+        BEGIN { n = split(allow, pairs, "\n") }
+        {
+          for (i = 1; i <= n; i++) {
+            colon = index(pairs[i], ":")
+            if (colon == 0) continue
+            file = substr(pairs[i], 1, colon - 1)
+            phrase = substr(pairs[i], colon + 1)
+            if (index($0, file ":") == 1 && index($0, phrase) > 0) next
+          }
+          print
+        }
+      ' || true)"
+  [ -z "$hit" ] || { echo "the shift's record is its receipts, not a report:$hit"; return 1; }
+}

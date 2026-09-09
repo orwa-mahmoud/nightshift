@@ -83,7 +83,7 @@ write_policy() { # <project> [extra JSON]
   # Everything the candidate stated comes back exactly as it was written. What the snapshot adds
   # is what the shift needs fixed: the scope this session runs under, and the owner preferences
   # tonight was composed with.
-  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .report, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .receipts, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
   # And the contract as it stood at arming, so the gate can tell later whether it moved.
   printf '%s' "$output" | jq -e '
@@ -96,7 +96,7 @@ write_policy() { # <project> [extra JSON]
   # And every preference block, complete: the owner's value where their file states one and the
   # shipped default where it does not, so the frozen block answers on its own.
   printf '%s' "$output" | jq -e '
-    (.report | has("enabled") and has("progressMode") and has("progressMinutes"))
+    (.receipts | has("enabled") and has("progressMode") and has("progressMinutes"))
     and (.archive | has("root") and has("layout") and has("automatic"))
     and (.handoff | has("view") and has("sections") and has("enabled"))
     and (.recovery | has("launchScope"))
@@ -113,7 +113,7 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .report, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .receipts, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
 }
 

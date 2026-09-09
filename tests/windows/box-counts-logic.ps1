@@ -73,6 +73,24 @@ try {
     Expect-True ((Get-NSOpenDrafts $drafts) -eq 1) 'drafts after the first rule are counted'
     Expect-True ((Get-NSOpenDrafts (Join-Path $root 'missing-drafts.md')) -eq 0) `
         'a missing drafting table counts as zero'
+
+    $hyphen = Join-Path $root 'hyphen-punch.md'
+    [IO.File]::WriteAllText($hyphen, @'
+# Punch List
+
+## Items
+- [x] **2. Make the packed Node-only build reproducible.**
+- [ ] **3. Ship it — already reviewed**
+- [ ] **4. Re-index — later**
+'@)
+    Expect-True ((Get-NSGateItemLabel $hyphen 1) -ceq '2. Make the packed Node-only build reproducible.') `
+        'box-count lists still expose a hyphenated title whole'
+    $openHyphen = @(Get-NSPunchItem -PunchList $hyphen -Id '')
+    Expect-True ($openHyphen[0] -ceq '- [ ] **3. Ship it — already reviewed**') `
+        'the first open item is chosen by the spaced-dash suffix rule'
+    $reindex = @(Get-NSPunchItem -PunchList $hyphen -Id '4. Re-index')
+    Expect-True ($reindex[0] -ceq '- [ ] **4. Re-index — later**') `
+        'Re-index keeps its hyphen after the suffix is stripped'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

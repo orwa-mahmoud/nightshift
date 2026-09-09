@@ -95,6 +95,19 @@ fact_of() { # <project> <label>
   [ "$(fact_of "$p" 'armed')" = 'yes' ]
 }
 
+@test "Filed pointers are not parked or snag entries" {
+  p="$(new_project status-filed)"
+  printf '# Parking lot\n\n- **First decision.**\n\nFiled: [2026-09-09](archive/2026-09-09/parking-lot.md)\n' \
+    >"$p/.nightshift/parking-lot.md"
+  printf '# Snag log\n\n- **A snag.**\n\nFiled: [2026-09-09](archive/2026-09-09/snag-log.md)\n' \
+    >"$p/.nightshift/snag-log.md"
+  [ "$(fact_of "$p" 'parked')" = '1' ]
+  facts "$p" | grep -qF 'parked entry First decision.'
+  ! facts "$p" | grep -qF 'Filed:'
+  facts "$p" | grep -qF 'snag A snag.'
+  ! facts "$p" | grep -qF 'snag Filed'
+}
+
 @test "parked entries are counted and titled, one line each" {
   p="$(new_project status-parked)"
   printf '# Parking lot\n\n- **First decision.** Body that should not appear.\n\n- **Second one.**\n' \
@@ -234,11 +247,21 @@ LOG
   p="$(new_project status-artifact)"
   printf 'artifact\n' >"$p/.nightshift/work-mode"
   printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
-  facts "$p" | grep -qF 'receipts warning ticked items with no receipts are not reviewable completion'
+  facts "$p" | grep -qF 'completion record per-item receipt'
+  facts "$p" | grep -qF 'receipts missing model text 1'
 
   mkdir -p "$p/.nightshift/receipts"
-  printf '# receipt\n' >"$p/.nightshift/receipts/p01.md"
-  ! facts "$p" | grep -q '^receipts warning'
+  printf '# P01\n\nThe work is done.\n' >"$p/.nightshift/receipts/P01.md"
+  ! facts "$p" | grep -q 'receipts missing model text'
+}
+
+@test "disabled receipts are a fact, never a missing-text warning" {
+  p="$(new_project status-receipts-off)"
+  jq '.receipts.enabled = false' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
+  facts "$p" | grep -qF 'completion record none; the owner disabled receipts'
+  ! facts "$p" | grep -q 'receipts missing model text'
 }
 
 @test "nothing sensitive reaches the output" {
@@ -312,10 +335,10 @@ LOG
   # Not an empty night: something is there, and it is not a directory.
   printf 'not a directory\n' >"$p/.nightshift/receipts"
   facts "$p" | grep -qF 'receipts warning the artifact receipts path is not a usable directory'
-  ! facts "$p" | grep -qF 'ticked items with no receipts'
+  ! facts "$p" | grep -qF 'receipts missing model text'
 
   # An absent path is the empty case, not the planted one.
   rm -f "$p/.nightshift/receipts"
-  facts "$p" | grep -qF 'receipts warning ticked items with no receipts are not reviewable completion'
+  facts "$p" | grep -qF 'receipts missing model text 1'
   ! facts "$p" | grep -qF 'not a usable directory'
 }

@@ -37,6 +37,7 @@ write_shift_policy() {
   p="$(gated_project receipt-no-policy-verified)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]]
   [[ "$output" == *'- Verified: none — no shift policy was written'* ]]
 }
 
@@ -52,6 +53,7 @@ write_shift_policy() {
   write_shift_policy "$p" none
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
+  [[ "$output" == *'- Policy record: accepted'* ]]
   [[ "$output" == *'- Verified: none — verification level none (owner)'* ]]
   [[ "$output" == *'- Disabled by owner: npm run lint, npm test'* ]]
   [[ "$output" != *'- Gates:'* ]]
@@ -109,4 +111,54 @@ write_shift_policy() {
   # And neither leaks the template it read past.
   ! printf '%s' "$a" | grep -qF '<title>'
   ! printf '%s' "$b" | grep -qF '<title>'
+}
+
+FIX="$BATS_TEST_DIRNAME/fixtures/morning-receipt"
+RECEIPTS_LINE='Receipts: [index](./README.md), [2. Make the packed Node-only build reproducible.](./2-make-the-packed-node-only-build-reproducible.md)'
+
+policy_fixture_project() { # <name> <policy-file-or-absent>
+  local p
+  p="$(new_project "$1")"
+  cp "$FIX/punch-list.md" "$p/.nightshift/punch-list.md"
+  case "$2" in
+    absent) ;;
+    *) cp "$FIX/$2" "$p/.nightshift/shift-policy.json" ;;
+  esac
+  printf '%s' "$p"
+}
+
+@test "an accepted policy is named on the page and ticked items link from the index" {
+  p="$(policy_fixture_project receipt-policy-accepted shift-policy-valid.json)"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$RECEIPTS_LINE"* ]]
+  [[ "$output" == *'- Policy record: accepted'* ]]
+  [[ "$output" == *'- Shift: 9f2c40ab77e51d63'* ]]
+  [[ "$output" == *'- Started: 2026-09-02T02:30:00Z'* ]]
+  [[ "$output" != *'no shift policy was written'* ]]
+}
+
+@test "an absent policy is named as absent and still links ticked receipts" {
+  p="$(policy_fixture_project receipt-policy-absent absent)"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$RECEIPTS_LINE"* ]]
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]]
+  [[ "$output" == *'- Verified: none — no shift policy was written'* ]]
+  [[ "$output" != *'- Shift: 9f2c40ab77e51d63'* ]]
+}
+
+@test "unreadable and schema-failing policies are named as malformed and still render the page" {
+  local kind
+  for kind in shift-policy-malformed.json shift-policy-schema-fail.json; do
+    p="$(policy_fixture_project "receipt-policy-$kind" "$kind")"
+    run bash "$RECEIPT" --project "$p" --view owner
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"$RECEIPTS_LINE"* ]]
+    [[ "$output" == *'- Policy record: malformed — the policy file is present but unreadable or fails the schema'* ]]
+    [[ "$output" == *'- Verified: none — the policy file is present but unreadable or fails the schema'* ]]
+    [[ "$output" != *'no shift policy was written'* ]]
+    [[ "$output" != *'- Shift: 9f2c40ab77e51d63'* ]]
+    [[ "$output" == *'- Items: 1 ticked, 1 open'* ]]
+  done
 }

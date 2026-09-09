@@ -25,8 +25,15 @@ function Invoke-Hook {
     $previous = $env:CLAUDE_PROJECT_DIR
     try {
         $env:CLAUDE_PROJECT_DIR = $Workspace
-        $Json | & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $hook -HostName claude `
-            > $out 2>&1
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $Json | & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $hook -HostName claude `
+                > $out 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousEap
+        }
         $code = $LASTEXITCODE
         $text = ''
         if (Test-Path -LiteralPath $out) { $text = [IO.File]::ReadAllText($out) }
@@ -55,7 +62,9 @@ try {
     Expect-True ($compact.Text -match 'SessionStart') 'a compaction emits the SessionStart event name'
     Expect-True ($compact.Text -match 'reload the nightshift skill') 'the line names the skill'
     Expect-True ($compact.Text -match 'the contract in punch-list.md') 'the line names the contract'
-    Expect-True ($compact.Text -match 'shift-report.md') 'the line names the report section'
+    Expect-True ($compact.Text -match 'receipts/') 'the line names the receipts folder'
+    Expect-True ($compact.Text -match 'Receipts: one file per item under .nightshift/receipts/') `
+        'a compaction restates the receipts duty'
     Expect-True (Test-Path -LiteralPath $marker -PathType Leaf) 'a compaction leaves the context-reset marker'
 
     Remove-Item -LiteralPath $marker -Force

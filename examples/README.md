@@ -1,4 +1,4 @@
-# Nightshift receipts
+# Real runs
 
 Documented runs with public evidence. These are not benchmarks and ticks are not treated as proof; each
 receipt separates the agent's work from the owner's review and links to the permanent result.

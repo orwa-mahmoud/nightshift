@@ -32,7 +32,9 @@ bound() {
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null
   printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF 'context was compacted'
-  printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF 'shift-report.md'
+  printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF 'receipts/'
+  printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' \
+    | grep -qF 'Receipts: one file per item under .nightshift/receipts/'
   # A compacted conversation has lost the contract as surely as the report section, and the helper
   # in step 1 hands back an item, never the contract above it.
   printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' \

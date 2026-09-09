@@ -134,17 +134,27 @@ fact "work target" "$(ns_work_target "$WORKSPACE" 2>/dev/null)"
 RECEIPTS="$(ns_receipts_count "$WORKSPACE" 2>/dev/null)" || RECEIPTS=0
 fact "artifact receipts" "$RECEIPTS"
 fact "latest artifact receipt" "$(ns_latest_receipt "$WORKSPACE" 2>/dev/null)"
-# A path that is not a directory answers 0 the same way an empty one does, so it is reported for
-# what it is and the empty-ticks warning is not also raised for it.
+UNUSABLE_RECV=0
 if [ "$(ns_work_mode "$WORKSPACE" 2>/dev/null)" = artifact ]; then
   RECV_PATH="$(ns_receipts_dir "$WORKSPACE" 2>/dev/null)"
   if { [ -e "$RECV_PATH" ] || [ -L "$RECV_PATH" ]; } &&
     ! ns_receipts_usable_dir "$WORKSPACE" >/dev/null 2>&1; then
+    UNUSABLE_RECV=1
     fact "receipts warning" "the artifact receipts path is not a usable directory"
-  elif [ "${TICKED:-0}" -gt 0 ] && [ "${RECEIPTS:-0}" -eq 0 ]; then
-    # Ticked boxes with nothing to review are not completion anybody can check.
-    fact "receipts warning" "ticked items with no receipts are not reviewable completion"
   fi
+fi
+if ns_receipts_enabled "$WORKSPACE"; then
+  fact "completion record" "per-item receipt"
+  # A planted file where receipts/ belongs is reported as itself; do not also
+  # count missing receipt text for that path.
+  if [ "$UNUSABLE_RECV" -eq 0 ]; then
+    MISSING="$(ns_receipts_missing_count "$WORKSPACE" 2>/dev/null)" || MISSING=0
+    if [ "${MISSING:-0}" -gt 0 ]; then
+      fact "receipts missing model text" "$MISSING"
+    fi
+  fi
+else
+  fact "completion record" "none; the owner disabled receipts"
 fi
 
 ns_status_transitions "$NS/shift-log.md" 3 | while IFS= read -r line; do

@@ -66,6 +66,7 @@ function Invoke-Doctor {
 $root = Join-Path ([IO.Path]::GetTempPath()) ("ns-doctor-logic-" + [guid]::NewGuid().ToString('N'))
 $notes = $null
 $clockout = $null
+$receiptsSite = $null
 $linkNotes = $null
 $targetLink = $null
 $otherTarget = $null
@@ -150,6 +151,36 @@ try {
         'empty revivalPrompt is a warning'
     Expect-True ($emptyPrompt.Stdout -match 'watchman will refuse to arm') `
         'empty revivalPrompt names the watchman refuse'
+
+    $receiptsSite = $root + '-receipts'
+    $receiptsNs = Join-Path $receiptsSite '.nightshift'
+    $null = New-Item -ItemType Directory -Path $receiptsNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $receiptsNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $receiptsNs 'punch-list.md'),
+        "## Items`n- [x] **2. done.**`n")
+    $missingReceipt = Invoke-Doctor $receiptsSite
+    Expect-True ($missingReceipt.ExitCode -eq 0) `
+        "missing receipt doctor exits 0 (got $($missingReceipt.ExitCode) $($missingReceipt.Stderr))"
+    Expect-True ($missingReceipt.Stdout -match 'completion record per-item receipt') `
+        'Doctor names the per-item completion record'
+    Expect-True ($missingReceipt.Stdout -match 'ticked items have no receipt text') `
+        'Doctor warns when ticked items have no receipt text'
+    Expect-True ($missingReceipt.Stdout -match 'write the missing receipts under .nightshift/receipts/') `
+        'Doctor offers to write missing receipts'
+    $null = New-Item -ItemType Directory -Path (Join-Path $receiptsNs 'receipts') -Force
+    [IO.File]::WriteAllText((Join-Path (Join-Path $receiptsNs 'receipts') '2-done.md'),
+        "# 2. done.`n`nThe work is done.`n")
+    $haveReceipt = Invoke-Doctor $receiptsSite
+    Expect-True ($haveReceipt.Stdout -notmatch 'ticked items have no receipt text') `
+        'Doctor stops warning after the item receipt has model text'
+    $offRules = Get-Content -LiteralPath (Join-Path $receiptsNs 'rules.json') -Raw | ConvertFrom-Json
+    $offRules.receipts.enabled = $false
+    $offRules | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $receiptsNs 'rules.json') -Encoding utf8
+    $offReceipts = Invoke-Doctor $receiptsSite
+    Expect-True ($offReceipts.Stdout -match 'completion record none; the owner disabled receipts') `
+        'disabled receipts stay a fact'
+    Expect-True ($offReceipts.Stdout -notmatch 'ticked items have no receipt text') `
+        'disabled receipts never warn about missing text'
 
     $clockout = $root + '-clockout'
     $clockNs = Join-Path $clockout '.nightshift'
@@ -274,6 +305,9 @@ finally {
     }
     if ($null -ne $clockout) {
         Remove-Item -LiteralPath $clockout -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $receiptsSite) {
+        Remove-Item -LiteralPath $receiptsSite -Recurse -Force -ErrorAction SilentlyContinue
     }
     if ($null -ne $linkNotes) {
         Remove-Item -LiteralPath $linkNotes -Recurse -Force -ErrorAction SilentlyContinue

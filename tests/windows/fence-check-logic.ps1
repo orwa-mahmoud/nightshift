@@ -99,6 +99,23 @@ try {
                 "twins share priorOwnerFenced: bash=$($bashDoc.priorOwnerFenced) pwsh=$($pwsh.priorOwnerFenced)"
             Expect-True ($bashDoc.action -eq $pwsh.action) "twins share action: bash=$($bashDoc.action) pwsh=$($pwsh.action)"
         }
+        Expect-True ($bashLines.Count -gt 1 -and $bashLines[0] -eq '{') `
+            "bash fence JSON is readable: $($bashLines -join ' | ')"
+    }
+
+    $wrapperText = @(& $wrapper -Command fence-check -Project $root) -join "`n"
+    $wrapperLines = @($wrapperText -split '\r?\n')
+    Expect-True ($wrapperLines.Count -gt 1 -and $wrapperLines[0] -eq '{') `
+        "wrapper fence JSON is readable: $($wrapperLines -join ' | ')"
+    $wrapperDoc = $null
+    try {
+        $wrapperDoc = $wrapperText | ConvertFrom-Json
+    }
+    catch {
+        Expect-True $false "wrapper fence JSON parses: $($wrapperLines -join ' | ')"
+    }
+    if ($null -ne $wrapperDoc) {
+        Expect-True ($wrapperDoc.kind -eq 'handoff-fence') "wrapper keeps kind=$($wrapperDoc.kind)"
     }
 }
 finally {

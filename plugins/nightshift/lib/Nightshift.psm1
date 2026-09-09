@@ -375,11 +375,8 @@ function Get-NSReceiptSlug {
     param([AllowEmptyString()][string]$Text)
     $s = ([string]$Text).ToLowerInvariant() -replace '[^a-z0-9]+', '-'
     $s = $s.Trim('-')
-    if ($s.Length -gt 40) {
-        $s = $s.Substring(0, 40).TrimEnd('-')
-    }
-    if ([string]::IsNullOrEmpty($s)) {
-        $s = 'item'
+    if ($s.Length -gt 60) {
+        $s = $s.Substring(0, 60).TrimEnd('-')
     }
     return $s
 }
@@ -3714,13 +3711,12 @@ $script:NSPolicyGroupDefaults['handoff.sections'] = @()
 $script:NSPolicyGroupDefaults['handoff.templatePath'] = ''
 $script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
 $script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
-$script:NSPolicyGroupDefaults['report.enabled'] = $true
-$script:NSPolicyGroupDefaults['report.legacyItemReceipts'] = $false
-$script:NSPolicyGroupDefaults['report.progressMinutes'] = 20
-$script:NSPolicyGroupDefaults['report.progressMode'] = 'time'
-$script:NSPolicyGroupDefaults['report.progressTokens'] = 100000
-$script:NSPolicyGroupDefaults['report.templatePath'] = ''
-$script:NSPolicyGroupDefaults['report.usage'] = 'when-available'
+$script:NSPolicyGroupDefaults['receipts.enabled'] = $true
+$script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
+$script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
+$script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
+$script:NSPolicyGroupDefaults['receipts.templatePath'] = ''
+$script:NSPolicyGroupDefaults['receipts.usage'] = 'when-available'
 $script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
 $script:NSPolicyGroupDefaults['shift.hours'] = $null
 $script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
@@ -3748,13 +3744,12 @@ $script:NSPolicySettingNames = @(
     'neverCommitPatterns',
     'protectedDirs',
     'recovery.launchScope',
-    'report.enabled',
-    'report.legacyItemReceipts',
-    'report.progressMinutes',
-    'report.progressMode',
-    'report.progressTokens',
-    'report.templatePath',
-    'report.usage',
+    'receipts.enabled',
+    'receipts.progressMinutes',
+    'receipts.progressMode',
+    'receipts.progressTokens',
+    'receipts.templatePath',
+    'receipts.usage',
     'shift.execution',
     'shift.hours',
     'shift.toolingPolicy',
@@ -3905,7 +3900,7 @@ function Test-NSShiftPolicyDocument {
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
         'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
-        'shift', 'recovery', 'handoff', 'archive', 'report')
+        'shift', 'recovery', 'handoff', 'archive', 'receipts')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -4172,7 +4167,7 @@ function Set-NSShiftPolicy {
     # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
     # here, so an edit to rules.json lands on the next shift rather than moving the ground under
     # this one. A candidate that already states a block is left exactly as it was written.
-    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'report')) {
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts')) {
         if ($document.Contains($block)) { continue }
         $frozen = New-NSOrdinalMap
         foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
@@ -4388,42 +4383,42 @@ function Get-NSGateReminderText {
     $mode = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderMode')
     if ($mode -cne 'changed-only') {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $reset = Join-Path $ns '.context-reset'
     if (Test-Path -LiteralPath $reset) {
         Remove-Item -LiteralPath $reset -Force -ErrorAction SilentlyContinue
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $file = Join-Path $ns '.clock-out-reminder'
     if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf)) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $lines = @([IO.File]::ReadAllLines($file))
     if ($lines.Count -lt 2 -or [string]::IsNullOrEmpty($lines[0]) -or $lines[1].Trim() -notmatch '^\d+$') {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     if ($lines[0] -cne $Fingerprint) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $count = [int]$lines[1].Trim()
     $limit = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderLimit')
     if ($limit -notmatch '^\d+$' -or [int]$limit -le 0) { $limit = 10 }
     if ($count -ge [int]$limit) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $short = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminder')
     if ([string]::IsNullOrEmpty($short)) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     Save-NSGateReminder $ns $Fingerprint ($count + 1)
-    return (Format-NSGateReminder $short $Item $Open $Ticked)
+    return (Add-NSGateReceiptsMissingNote $Workspace (Format-NSGateReminder $short $Item $Open $Ticked))
 }
 
 function Save-NSGateReminder {
@@ -4659,17 +4654,159 @@ function Test-NSArchiveAutomatic {
     return ([string](Get-NSPolicyGroupSetting $Workspace 'archive.automatic')['value'] -ceq 'True')
 }
 
-# Convert-NSReportLinks <text> <archived> <back> - the report's own links, repointed for where it
-# now sits. The twin of runtime/archive-links.awk, and it must answer identically: a record that
-# travelled with the report is still a sibling, one that stayed live is reached back through the
+function Test-NSReviewHandled {
+    param([AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $false }
+    return [bool]($Text -imatch ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)')
+}
+
+function Get-NSArchiveReviewLabel {
+    param([string]$Date, [AllowEmptyString()][string]$ShiftId, [AllowEmptyString()][string]$Layout)
+    if ($Layout -ceq 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
+        return $ShiftId
+    }
+    return $Date
+}
+
+function Get-NSArchiveReviewDest {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId,
+        [Parameter(Mandatory = $true)][string]$BaseName
+    )
+    $group = Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $ShiftId
+    if ($null -eq $group) { return $null }
+    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
+    if ($layout -cne 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
+        return (Join-Path (Join-Path $group $ShiftId) $BaseName)
+    }
+    return (Join-Path $group $BaseName)
+}
+
+function Get-NSArchivePointerLine {
+    param([Parameter(Mandatory = $true)][string]$Label, [Parameter(Mandatory = $true)][string]$RelPath)
+    return ('Filed: [' + $Label + '](' + $RelPath + ')')
+}
+
+function Get-NSArchiveRelFromNs {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Dest)
+    $prefix = $NightshiftDir.TrimEnd('\', '/')
+    if (-not $Dest.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return '' }
+    $rel = $Dest.Substring($prefix.Length).TrimStart('\', '/')
+    return ($rel -replace '\\', '/')
+}
+
+function Save-NSArchiveReviewSource {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$BaseName,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId
+    )
+    $ns = Join-Path $Workspace '.nightshift'
+    $live = Join-Path $ns $BaseName
+    if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return }
+    $dest = Get-NSArchiveReviewDest $Workspace $Date $ShiftId $BaseName
+    if ([string]::IsNullOrEmpty($dest)) { throw 'archive.root must name a directory inside .nightshift/' }
+    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
+    $label = Get-NSArchiveReviewLabel $Date $ShiftId $layout
+    $rel = Get-NSArchiveRelFromNs $ns $dest
+    if ([string]::IsNullOrEmpty($rel) -or $rel.StartsWith('/')) { throw 'archive dest is outside .nightshift/' }
+    $keep = New-Object Collections.Generic.List[string]
+    $filed = New-Object Collections.Generic.List[string]
+    foreach ($line in [IO.File]::ReadAllLines($live)) {
+        if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) {
+            $keep.Add($line)
+            continue
+        }
+        if ($line.StartsWith('- ') -and (Test-NSReviewHandled $line)) {
+            $filed.Add($line)
+            continue
+        }
+        $keep.Add($line)
+    }
+    if ($filed.Count -eq 0) { return }
+    if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
+    $utf8 = $script:NSUtf8NoBom
+    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
+    if ((Test-Path -LiteralPath $dest -PathType Leaf) -and -not (Test-NSReparsePoint $dest)) {
+        [IO.File]::AppendAllText($dest, ([Environment]::NewLine + ($filed -join [Environment]::NewLine) + [Environment]::NewLine), $utf8)
+    }
+    else {
+        $title = $(if ($BaseName -ceq 'snag-log.md') { '# Snag Log' } else { '# Parking Lot' })
+        $body = $title + [Environment]::NewLine + [Environment]::NewLine + ($filed -join [Environment]::NewLine) + [Environment]::NewLine
+        [IO.File]::WriteAllText($dest, $body, $utf8)
+    }
+    $ptr = Get-NSArchivePointerLine $label $rel
+    if (-not ($keep -contains $ptr)) {
+        if ($keep.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($keep[$keep.Count - 1])) {
+            $keep.Add('')
+        }
+        $keep.Add($ptr)
+    }
+    [IO.File]::WriteAllLines($live, $keep.ToArray(), $utf8)
+}
+
+function Add-NSArchiveBrokenPointers {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $ns = Join-Path $Workspace '.nightshift'
+    $snag = Join-Path $ns 'snag-log.md'
+    $utf8 = $script:NSUtf8NoBom
+    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
+    foreach ($name in @('snag-log.md', 'parking-lot.md')) {
+        $live = Join-Path $ns $name
+        if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { continue }
+        foreach ($line in [IO.File]::ReadAllLines($live)) {
+            if ($line -cnotmatch '^Filed: \[[^]]+\]\(([^)]+)\)$') { continue }
+            $rel = $Matches[1]
+            if ([string]::IsNullOrEmpty($rel) -or $rel.StartsWith('/') -or $rel.Contains('..')) {
+                $ok = $false
+            }
+            else {
+                $target = Join-Path $ns ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
+                $ok = (Test-Path -LiteralPath $target -PathType Leaf) -and -not (Test-NSReparsePoint $target)
+            }
+            if ($ok) { continue }
+            $already = $false
+            if (Test-Path -LiteralPath $snag -PathType Leaf) {
+                $already = [IO.File]::ReadAllText($snag).Contains(
+                    'broken archive pointer · ' + $rel + ' ')
+            }
+            if ($already) { continue }
+            if (-not (Test-Path -LiteralPath $snag -PathType Leaf)) {
+                [IO.File]::WriteAllText($snag, "# Snag Log$([Environment]::NewLine)$([Environment]::NewLine)", $utf8)
+            }
+            [IO.File]::AppendAllText($snag, ('- broken archive pointer · ' + $rel + ' is not a readable file' + [Environment]::NewLine), $utf8)
+        }
+    }
+}
+
+function Save-NSArchiveReviewRecords {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId
+    )
+    Save-NSArchiveReviewSource $Workspace 'snag-log.md' $Date $ShiftId
+    Save-NSArchiveReviewSource $Workspace 'parking-lot.md' $Date $ShiftId
+    Add-NSArchiveBrokenPointers $Workspace
+}
+
+# Convert-NSReportLinks <text> <archived> <back> [dir] - one archived record's own links, repointed
+# for where it now sits. The twin of runtime/archive-links.awk, and it must answer identically: a
+# record that travelled with it is still a sibling, one that stayed live is reached back through the
 # archive. A scheme, a leading slash, a bare fragment and everything inside a fenced code block
-# are left exactly as written. A link that already climbs with ../ is rebased like any other: it
-# was written relative to the report's own directory, and the report has moved deeper.
+# are left exactly as written. Dir is the record's own directory before the move, relative to the
+# state directory, and every relative link resolves against it: a bare `name` or `./name` names a
+# file that sat right beside the record, and a link that climbs with ../ climbed from there.
 function Convert-NSReportLinks {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Archived,
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Back
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Back,
+        [AllowEmptyString()][string]$Dir = ''
     )
     $moved = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($entry in $Archived) {
@@ -4678,6 +4815,27 @@ function Convert-NSReportLinks {
     $prefix = $Back
     if (-not [string]::IsNullOrEmpty($prefix) -and -not $prefix.EndsWith('/', [StringComparison]::Ordinal)) {
         $prefix = $prefix + '/'
+    }
+    $from = $Dir
+    if (-not [string]::IsNullOrEmpty($from) -and $from.EndsWith('/', [StringComparison]::Ordinal)) {
+        $from = $from.Substring(0, $from.Length - 1)
+    }
+
+    # Where a relative link points, as a path relative to the state directory. ../ that climbs out
+    # of the state area is kept: back/ lands at the top of it before the climb starts.
+    $resolve = {
+        param([string]$path)
+        $joined = if ([string]::IsNullOrEmpty($from)) { $path } else { $from + '/' + $path }
+        $out = New-Object Collections.Generic.List[string]
+        foreach ($segment in ($joined -split '/')) {
+            if ($segment -ceq '' -or $segment -ceq '.') { continue }
+            if ($segment -ceq '..' -and $out.Count -gt 0 -and $out[$out.Count - 1] -cne '..') {
+                $out.RemoveAt($out.Count - 1)
+                continue
+            }
+            $out.Add($segment)
+        }
+        return ($out -join '/')
     }
 
     $repoint = {
@@ -4693,7 +4851,11 @@ function Convert-NSReportLinks {
         if ($path -cmatch '^[A-Za-z][A-Za-z0-9+.-]*:') { return $target }
         if ($path.StartsWith('/', [StringComparison]::Ordinal)) { return $target }
         if ($moved.Contains($path)) { return $target }
-        return ($prefix + $path + $fragment)
+        $rel = & $resolve $path
+        if ([string]::IsNullOrEmpty($rel)) { return $target }
+        # The file it names travelled here too: still a sibling, still reached exactly as written.
+        if ($moved.Contains($rel)) { return $target }
+        return ($prefix + $rel + $fragment)
     }
 
     # No max-substrings argument: a negative one means "the last N", which would hand back the
@@ -4754,10 +4916,207 @@ function Convert-NSReportLinks {
     return ($out -join "`n")
 }
 
-# Get-NSReportPath <workspace> - the shift's own report, the twin of ns_report_path.
+function Get-NSReceiptNn {
+    param([AllowEmptyString()][string]$Label)
+    if ($Label -cmatch '^([0-9]+)') { return $Matches[1] }
+    if ($Label -cmatch '^([A-Za-z]+[0-9]+)') { return $Matches[1] }
+    return ''
+}
+
+function Get-NSReceiptTitle {
+    param([AllowEmptyString()][string]$Label)
+    $t = $Label
+    $t = $t -creplace '^[0-9]+\.[ \t]*', ''
+    $t = $t -creplace '^[A-Za-z]+[0-9]+[ \t]+', ''
+    return $t
+}
+
+function Get-NSReceiptBasename {
+    param([AllowEmptyString()][string]$Label)
+    $nn = Get-NSReceiptNn $Label
+    $title = Get-NSReceiptTitle $Label
+    if ([string]::IsNullOrEmpty($title)) { $title = $Label }
+    if (-not [string]::IsNullOrEmpty($nn) -and $title -ceq $Label) { return $nn }
+    $slug = Get-NSReceiptSlug $title
+    if (-not [string]::IsNullOrEmpty($nn) -and -not [string]::IsNullOrEmpty($slug)) {
+        return ($nn + '-' + $slug)
+    }
+    if (-not [string]::IsNullOrEmpty($slug)) { return $slug }
+    return (Get-NSReceiptSlug $Label)
+}
+
+function Get-NSReceiptPath {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Label)
+    return (Join-Path (Get-NSReceiptsDir $Workspace) ((Get-NSReceiptBasename $Label) + '.md'))
+}
+
+function Get-NSReceiptsShiftDate {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
+        foreach ($line in [IO.File]::ReadAllLines($punch)) {
+            if ($line -cmatch '^Date:[ \t]*(.+)$') { return $Matches[1].Trim() }
+        }
+    }
+    $policy = Join-Path $Workspace '.nightshift/shift-policy.json'
+    if ((Test-Path -LiteralPath $policy -PathType Leaf) -and -not (Test-NSReparsePoint $policy)) {
+        $text = [IO.File]::ReadAllText($policy)
+        if ($text -cmatch '"createdAt"\s*:\s*"([0-9]{4}-[0-9]{2}-[0-9]{2})') { return $Matches[1] }
+    }
+    return [DateTime]::UtcNow.ToString('yyyy-MM-dd')
+}
+
+function Get-NSReceiptUsageCells {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $dash = [string][char]0x2014
+    $cells = @{ Sum = [long]0; Tokens = $dash; Time = $dash }
+    if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-NSReparsePoint $Path)) {
+        $text = [IO.File]::ReadAllText($Path)
+        if ($text -cmatch 'exact:\s*([0-9]+)\s*/\s*[0-9]+\s*/\s*[0-9]+\s*/\s*([0-9]+)') {
+            $cells['Sum'] = [long]$Matches[1] + [long]$Matches[2]
+            $cells['Tokens'] = Get-NSUsageScale $cells['Sum']
+        }
+        if ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') { $cells['Time'] = $Matches[1].Trim() }
+    }
+    return $cells
+}
+
+function Get-NSReceiptsIndexPage {
+    param(
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyCollection()][string[]]$Rows = @(),
+        [long]$TokenTotal = 0
+    )
+    $dash = [string][char]0x2014
+    $tokCell = $(if ($TokenTotal -gt 0) { Get-NSUsageScale $TokenTotal } else { $dash })
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.AppendLine('# Receipts — ' + $Date)
+    [void]$sb.AppendLine()
+    [void]$sb.AppendLine('| Item | State | **Tokens** | **Time** | Receipt |')
+    [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
+    foreach ($row in $Rows) { [void]$sb.AppendLine($row) }
+    [void]$sb.AppendLine(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $dash))
+    return $sb.ToString()
+}
+
+# The receipts of items nobody finished. A receipt travels into the archive when its item is
+# ticked; one whose box is still open stays live, exactly as the box stays in the punch list, so
+# the next shift extends the same file rather than a copy of it.
+function Get-NSOpenReceiptNames {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $names = New-Object Collections.Generic.List[string]
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
+        foreach ($line in (Get-NSPunchItemsSection $punch)) {
+            if ($line -cnotmatch '^- \[[ ]\]') { continue }
+            $label = Get-NSPulseItemLabelFromLine $line 'open'
+            if ([string]::IsNullOrEmpty($label)) { continue }
+            $names.Add((Get-NSReceiptBasename $label) + '.md')
+        }
+    }
+    return $names.ToArray()
+}
+
+# Write-NSArchiveReceiptsIndex <directory> <date> - the index of the item receipts filed in that
+# directory, written only when at least one landed there. Links stay siblings, because the
+# receipts it lists are in that directory too.
+function Write-NSArchiveReceiptsIndex {
+    param(
+        [Parameter(Mandatory = $true)][string]$Directory,
+        [Parameter(Mandatory = $true)][string]$Date
+    )
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return }
+    if (Test-NSReparsePoint $Directory) { return }
+    $index = Join-Path $Directory 'README.md'
+    if (Test-NSReparsePoint $index) { return }
+    $names = @(Get-ChildItem -LiteralPath $Directory -File -Force -ErrorAction SilentlyContinue |
+        Where-Object {
+            -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+            $_.Name.EndsWith('.md', [StringComparison]::Ordinal)
+        } | ForEach-Object { $_.Name })
+    if ($names.Count -gt 1) { [Array]::Sort($names, [StringComparer]::Ordinal) }
+    $rows = New-Object Collections.Generic.List[string]
+    $tokTotal = [long]0
+    foreach ($name in $names) {
+        if ($name -ceq 'README.md' -or
+            $name.StartsWith('morning-', [StringComparison]::Ordinal) -or
+            $name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
+        $path = Join-Path $Directory $name
+        $label = ''
+        foreach ($line in [IO.File]::ReadAllLines($path)) {
+            if ($line -cmatch '^# (.+)$') { $label = $Matches[1]; break }
+        }
+        if ([string]::IsNullOrEmpty($label)) { continue }
+        $cells = Get-NSReceiptUsageCells $path
+        if ($cells['Sum'] -gt 0) { $tokTotal += [long]$cells['Sum'] }
+        $rows.Add(('| {0} | ticked | **{1}** | **{2}** | [./{3}](./{3}) |' -f
+            $label, $cells['Tokens'], $cells['Time'], $name))
+    }
+    if ($rows.Count -eq 0) { return }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($index,
+        (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() -TokenTotal $tokTotal), $utf8)
+}
+
+# Write-NSReceiptsIndex <workspace> [-Remaining] - rewrite receipts/README.md from the list, marks
+# and files. -Remaining writes the index a live receipts folder still needs, every open item and
+# every ticked item whose receipt is still there, and removes it when nothing is left.
+function Write-NSReceiptsIndex {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [switch]$Remaining)
+    $dir = Get-NSReceiptsDir $Workspace
+    if ([string]::IsNullOrEmpty($dir)) { return }
+    if ($Remaining) {
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    }
+    else {
+        try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch { return }
+    }
+    if (Test-NSReparsePoint $dir) { return }
+    $index = Join-Path $dir 'README.md'
+    if (Test-NSReparsePoint $index) { return }
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    $rows = New-Object Collections.Generic.List[string]
+    $tokTotal = [long]0
+    if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
+        foreach ($line in (Get-NSPunchItemsSection $punch)) {
+            if ($line -cnotmatch '^- \[[ xX]\]') { continue }
+            $state = $(if ($line -cmatch '^- \[[xX]\]') { 'ticked' } else { 'open' })
+            $kind = $(if ($state -ceq 'ticked') { 'x' } else { 'open' })
+            $label = Get-NSPulseItemLabelFromLine $line $kind
+            if ([string]::IsNullOrEmpty($label)) { continue }
+            $base = Get-NSReceiptBasename $label
+            $file = './' + $base + '.md'
+            $path = Join-Path $dir ($base + '.md')
+            if ($Remaining -and $state -ceq 'ticked' -and
+                -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            $cells = Get-NSReceiptUsageCells $path
+            if ($cells['Sum'] -gt 0) { $tokTotal += [long]$cells['Sum'] }
+            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f
+                $label, $state, $cells['Tokens'], $cells['Time'], $file))
+        }
+    }
+    if ($Remaining -and $rows.Count -eq 0) {
+        Remove-Item -LiteralPath $index -Force -ErrorAction SilentlyContinue
+        return
+    }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($index,
+        (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
+            -TokenTotal $tokTotal), $utf8)
+}
+function Get-NSUsageScale {
+    param($Value)
+    $n = 0
+    if (-not [long]::TryParse([string]$Value, [ref]$n)) { return [string]$Value }
+    if ($n -lt 1000) { return [string]$n }
+    if ($n -lt 1000000) { return ('{0:0.0}k' -f ($n / 1000.0)) }
+    return ('{0:0.0}M' -f ($n / 1000000.0))
+}
+
+# Get-NSReportPath kept as the receipts folder path only for callers not yet moved.
 function Get-NSReportPath {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    return (Join-Path (Join-Path $Workspace '.nightshift') 'shift-report.md')
+    return (Get-NSReceiptsDir $Workspace)
 }
 
 # Get-NSPolicyHostName - which host this session is, from what the host itself sets.
@@ -5321,7 +5680,9 @@ function Get-NSPreflightTitle {
     $title = $Line.Trim()
     $title = [regex]::Replace($title, '^-\s*\[[ xX]\]\s*', '')
     $title = [regex]::Replace($title, '^#+\s*', '')
-    $title = $title.Replace('**', '')
+    $title = $title.Replace('*', '').Replace('`', '')
+    $title = [regex]::Replace($title, '[\u0001-\u001F\u007F]', ' ')
+    $title = [regex]::Replace($title, '\s+', ' ')
     return $title.Trim()
 }
 
@@ -5334,12 +5695,10 @@ function Get-NSPreflightSectionItems {
     $items = New-Object Collections.Generic.List[object]
     $current = $null
     $sawBox = $false
+    $boxIndex = 0
     $text = New-Object Text.StringBuilder
     foreach ($line in $Lines) {
-        # A ticked box is finished work: it closes the item above it and starts
-        # nothing, so no allowance is ever reported or parked for it.
-        if ($line -match '^-\s*\[[xX]\]') {
-            $sawBox = $true
+        if ($line -match '^##\s') {
             if ($null -ne $current) {
                 $current['text'] = $text.ToString()
                 $items.Add($current)
@@ -5347,8 +5706,22 @@ function Get-NSPreflightSectionItems {
             }
             continue
         }
-        if ($line -match '^-\s*\[ \]') {
+        # A ticked box is finished work: it closes the item above it and starts
+        # nothing, so no allowance is ever reported or parked for it. The file
+        # number still advances, matching the POSIX report.
+        if ($line -match '^\s*-\s*\[[xX]\]') {
             $sawBox = $true
+            $boxIndex++
+            if ($null -ne $current) {
+                $current['text'] = $text.ToString()
+                $items.Add($current)
+                $current = $null
+            }
+            continue
+        }
+        if ($line -match '^\s*-\s*\[ \]') {
+            $sawBox = $true
+            $boxIndex++
             if ($null -ne $current) {
                 $current['text'] = $text.ToString()
                 $items.Add($current)
@@ -5356,6 +5729,7 @@ function Get-NSPreflightSectionItems {
             $current = New-NSOrdinalMap
             $current['title'] = Get-NSPreflightTitle $line
             $current['source'] = $Source
+            $current['index'] = $boxIndex
             $text = New-Object Text.StringBuilder
         }
         if ($null -ne $current) {
@@ -5410,32 +5784,16 @@ function Get-NSPreflightItems {
     }
 
     $orderLines = New-Object Collections.Generic.List[string]
-    $orderTitle = ''
+    $inOrders = $false
     foreach ($line in (Get-NSPreflightFileLines $paths['orders'])) {
-        if ($line -match '^##\s+Work order') {
-            if (-not [string]::IsNullOrEmpty($orderTitle)) {
-                foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-order' -FallbackTitle $orderTitle)) {
-                    $items.Add($item)
-                }
-            }
-            $orderTitle = Get-NSPreflightTitle $line
-            $orderLines = New-Object Collections.Generic.List[string]
-            continue
+        if (-not $inOrders) {
+            if ($line -match '^##\s+Work order') { $inOrders = $true }
+            else { continue }
         }
-        if ($line -match '^##\s') {
-            if (-not [string]::IsNullOrEmpty($orderTitle)) {
-                foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-order' -FallbackTitle $orderTitle)) {
-                    $items.Add($item)
-                }
-            }
-            $orderTitle = ''
-            $orderLines = New-Object Collections.Generic.List[string]
-            continue
-        }
-        if (-not [string]::IsNullOrEmpty($orderTitle)) { $orderLines.Add($line) }
+        $orderLines.Add($line)
     }
-    if (-not [string]::IsNullOrEmpty($orderTitle)) {
-        foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-order' -FallbackTitle $orderTitle)) {
+    if ($orderLines.Count -gt 0) {
+        foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-orders' -FallbackTitle '')) {
             $items.Add($item)
         }
     }
@@ -5472,8 +5830,14 @@ function Get-NSPreflightReport {
         $needs = New-Object Collections.Generic.List[object]
         foreach ($category in $script:NSPolicyCategories) {
             $regex = $patterns[$category]
-            if ($null -eq $regex) { continue }
-            if (-not $regex.IsMatch($text)) { continue }
+            $matched = $false
+            if ($null -eq $regex) {
+                $matched = $true
+            }
+            elseif ($regex.IsMatch($text)) {
+                $matched = $true
+            }
+            if (-not $matched) { continue }
             $value = [string]$resolution['settings']['elevation.' + $category]['value']
             $need = New-NSOrdinalMap
             $need['category'] = $category
@@ -5484,12 +5848,14 @@ function Get-NSPreflightReport {
                 $gap = New-NSOrdinalMap
                 $gap['category'] = $category
                 $gap['title'] = $item['title']
+                $gap['index'] = $item['index']
                 $gaps.Add($gap)
             }
         }
         $entry = New-NSOrdinalMap
         $entry['title'] = $item['title']
         $entry['source'] = $item['source']
+        $entry['index'] = $item['index']
         $entry['needs'] = $needs.ToArray()
         $items.Add($entry)
     }
@@ -5508,39 +5874,69 @@ function Get-NSPreflightNeeds {
     )
     $report = Get-NSPreflightReport $Workspace
     if ($Json) {
-        return (ConvertTo-NSCanonicalJson $report -Compact)
+        $document = New-NSOrdinalMap
+        $document['schemaVersion'] = $report['schemaVersion']
+        $document['gaps'] = @(foreach ($gap in @($report['gaps'])) {
+                $row = New-NSOrdinalMap
+                $row['category'] = $gap['category']
+                $row['title'] = $gap['title']
+                $row
+            })
+        $document['items'] = @(foreach ($item in @($report['items'])) {
+                $row = New-NSOrdinalMap
+                $row['needs'] = $item['needs']
+                $row['source'] = $item['source']
+                $row['title'] = $item['title']
+                $row
+            })
+        $document['patternErrors'] = $report['patternErrors']
+        return (ConvertTo-NSCanonicalJson $document -Compact)
     }
     $lines = New-Object Collections.Generic.List[string]
-    $index = 0
+    $open = @($report['items']).Count
+    $gapped = 0
     foreach ($item in $report['items']) {
-        $index++
-        $lines.Add(('item {0} ({1}): {2}' -f $index, $item['source'], $item['title']))
+        $hasGap = $false
+        foreach ($need in @($item['needs'])) {
+            if (-not $need['allowed']) { $hasGap = $true; break }
+        }
+        if ($hasGap) { $gapped++ }
+    }
+    $lines.Add(('preflight: {0} open items, {1} with gaps' -f $open, $gapped))
+    foreach ($item in $report['items']) {
+        $index = $item['index']
+        if ($null -eq $index) { $index = 0 }
+        $lines.Add(('item {0} [{1}] {2}' -f $index, $item['source'], $item['title']))
         if (@($item['needs']).Count -eq 0) {
-            $lines.Add('  needs: none')
+            $lines.Add('  needs nothing')
             continue
         }
         foreach ($need in $item['needs']) {
-            $state = 'denied'
-            if ($need['allowed']) { $state = 'allowed' }
-            elseif ([string]$need['resolved'] -ceq 'exact-plan') { $state = 'exact-plan only' }
-            $lines.Add(('  needs {0}: {1}' -f $need['category'], $state))
+            if ($need['allowed']) {
+                $lines.Add(('  needs {0} (allowed)' -f $need['category']))
+            }
+            elseif ([string]$need['resolved'] -ceq 'exact-plan') {
+                $lines.Add(('  needs {0} (allowed only for the approved plan)' -f $need['category']))
+            }
+            else {
+                $lines.Add(('  needs {0} (denied)' -f $need['category']))
+            }
         }
     }
-    if ($index -eq 0) {
-        $lines.Add('items: none')
-    }
     foreach ($category in $report['patternErrors']) {
-        $lines.Add('pattern error: ' + $category + ' (rules.elevation pattern does not compile)')
+        $lines.Add(('pattern error: elevation.{0}.pattern is not a valid grep -E pattern; the category counts as needed' -f $category))
     }
-    $categories = New-Object Collections.Generic.List[string]
+    $gapParts = New-Object Collections.Generic.List[string]
     foreach ($gap in $report['gaps']) {
-        if (-not ($categories -ccontains [string]$gap['category'])) { $categories.Add([string]$gap['category']) }
+        $gapIndex = $gap['index']
+        if ($null -eq $gapIndex) { $gapIndex = 0 }
+        $gapParts.Add(('{0} (item {1})' -f $gap['category'], $gapIndex))
     }
-    if ($categories.Count -eq 0) {
+    if ($gapParts.Count -eq 0) {
         $lines.Add('gaps: none')
     }
     else {
-        $lines.Add('gaps: ' + ((Sort-NSOrdinal $categories.ToArray()) -join ', '))
+        $lines.Add('gaps: ' + ($gapParts -join ', '))
     }
     return ($lines -join "`n")
 }
@@ -6763,6 +7159,9 @@ $script:NSReceiptAllowanceFormat = '{0} ({1}, {2})'
 $script:NSReceiptBaselineFormat = '{0} `{1}` {2} env {3} raw {4} ({5})'
 $script:NSReceiptVerifiedNoneFormat = 'none {0} verification level {1} (owner)'
 $script:NSReceiptVerifiedNoPolicyFormat = 'none {0} no shift policy was written'
+$script:NSReceiptPolicyMalformedReason = 'the policy file is present but unreadable or fails the schema'
+$script:NSReceiptVerifiedMalformedFormat = 'none {0} the policy file is present but unreadable or fails the schema'
+$script:NSReceiptPolicyAbsentReason = 'the shift wrote no policy'
 $script:NSReceiptGatesFormat = '{0} (punch list)'
 $script:NSReceiptChosenSource = 'one-shift'
 $script:NSReceiptNextFormat = '{0} {1} next: {2}'
@@ -7609,13 +8008,20 @@ function Get-NSReceiptContext {
     $context['baselines'] = Get-NSCompareBaselineRecords $records
 
     $policy = $null
+    $policyKind = 'absent'
     try {
-        $policy = Get-NSShiftPolicy $workspacePath
+        $policyState = Get-NSShiftPolicyState $workspacePath
+        switch ([string]$policyState['state']) {
+            'valid' { $policyKind = 'accepted'; $policy = $policyState['policy'] }
+            'malformed' { $policyKind = 'malformed' }
+        }
     }
     catch {
         $policy = $null
+        $policyKind = 'absent'
     }
     $context['policy'] = $policy
+    $context['policyKind'] = $policyKind
 
     $mode = 'repository'
     try {
@@ -7774,6 +8180,9 @@ function Get-NSReceiptShiftLines {
     }
     elseif ($chosen) {
         Add-NSReceiptField $lines 'verified' ($script:NSReceiptVerifiedNoneFormat -f (Get-NSEvidenceDash), ([string]$Context['verificationLevel']))
+    }
+    elseif (([string]$Context['policyKind']) -ceq 'malformed') {
+        Add-NSReceiptField $lines 'verified' ($script:NSReceiptVerifiedMalformedFormat -f (Get-NSEvidenceDash))
     }
     else {
         Add-NSReceiptField $lines 'verified' ($script:NSReceiptVerifiedNoPolicyFormat -f (Get-NSEvidenceDash))
@@ -7957,6 +8366,25 @@ function Get-NSReceiptSectionLines {
 
 # Markdown from records only. It invents nothing, never upgrades a claim into
 # proof, and omits a section it has no record for.
+function Get-NSMorningReceiptsLine {
+    param([AllowEmptyString()][string]$PunchList)
+    $parts = New-Object Collections.Generic.List[string]
+    $parts.Add('[index](./README.md)')
+    if (-not [string]::IsNullOrEmpty($PunchList) -and (Test-Path -LiteralPath $PunchList -PathType Leaf)) {
+        foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+            if ($line -cnotmatch '^- \[[xX]\]') { continue }
+            $t = $line -creplace '^- \[[xX]\][ \t]*', ''
+            $t = $t -creplace '^\*\*', ''
+            $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
+            $t = $t -creplace '\*\*.*$', ''
+            $label = $t.TrimEnd()
+            if ([string]::IsNullOrEmpty($label)) { continue }
+            $parts.Add(('[{0}](./{1}.md)' -f $label, (Get-NSReceiptBasename $label)))
+        }
+    }
+    return ('Receipts: ' + ($parts -join ', '))
+}
+
 function Get-NSMorningReceipt {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -7966,6 +8394,17 @@ function Get-NSMorningReceipt {
     $context = Get-NSReceiptContext -Workspace $Workspace -View $View
     $lines = New-Object Collections.Generic.List[string]
     $lines.Add($script:NSReceiptTitle)
+    $lines.Add((Get-NSMorningReceiptsLine ([string]$context['punch'])))
+    $dash = Get-NSEvidenceDash
+    switch ([string]$context['policyKind']) {
+        'accepted' { $lines.Add('- Policy record: accepted') }
+        'malformed' {
+            $lines.Add(('- Policy record: malformed {0} {1}' -f $dash, $script:NSReceiptPolicyMalformedReason))
+        }
+        default {
+            $lines.Add(('- Policy record: absent {0} {1}' -f $dash, $script:NSReceiptPolicyAbsentReason))
+        }
+    }
     foreach ($key in @($script:NSReceiptViewSections[$View])) {
         $body = Get-NSReceiptSectionLines -Key ([string]$key) -Context $context
         if ($null -eq $body -or @($body).Count -eq 0) { continue }
@@ -8125,7 +8564,7 @@ function Get-NSPunchItem {
             else {
                 $found = $line
                 $found = $found -creplace '^- \[[ xX]\][ \t]*\*\*', ''
-                $found = $found -creplace '[ \t]*[—-].*$', ''
+                $found = $found -creplace '[ \t]+(—|-[ \t]).*$', ''
                 $found = $found -creplace '\*\*.*$', ''
                 if ($found.TrimEnd() -cne $Id) { continue }
             }
@@ -8345,6 +8784,7 @@ function Get-NSStatusEntryTitles {
     )
     $out = New-Object 'System.Collections.Generic.List[string]'
     foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) { continue }
         if (-not $line.StartsWith('- ')) { continue }
         $entry = ($line.Substring(2) -creplace '\*\*', '').TrimEnd()
         if ($entry.Length -gt 100) { $entry = $entry.Substring(0, 97) + '...' }
@@ -8360,6 +8800,7 @@ function Get-NSStatusEntryCount {
     param([Parameter(Mandatory = $true)][string]$Path)
     $n = 0
     foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) { continue }
         if ($line.StartsWith('- ')) { $n++ }
     }
     return $n
@@ -8582,20 +9023,26 @@ function Write-NSStatusReport {
     $latest = ''
     try { $latest = [string](Get-NSLatestReceipt $Workspace) } catch { $latest = '' }
     Fact 'latest artifact receipt' $latest
-    # A path that is not a directory answers 0 the same way an empty one does, so it is reported
-    # for what it is and the empty-ticks warning is not also raised for it.
+    $unusableRecv = $false
     if ($mode -ceq 'artifact') {
         $recvPath = Get-NSReceiptsDir $Workspace
         $present = Test-Path -LiteralPath $recvPath
         $usable = $false
         try { $usable = [bool](Test-NSUsableReceiptsDir $Workspace) } catch { $usable = $false }
         if ($present -and (-not $usable)) {
+            $unusableRecv = $true
             Fact 'receipts warning' 'the artifact receipts path is not a usable directory'
         }
-        elseif (($ticked -gt 0) -and ($receipts -eq 0)) {
-            # Ticked boxes with nothing to review are not completion anybody can check.
-            Fact 'receipts warning' 'ticked items with no receipts are not reviewable completion'
+    }
+    if (Test-NSReceiptsEnabled $Workspace) {
+        Fact 'completion record' 'per-item receipt'
+        if (-not $unusableRecv) {
+            $missing = Get-NSReceiptsMissingNns $Workspace
+            if ($null -ne $missing -and $missing.Count -gt 0) { Fact 'receipts missing model text' ([string]$missing.Count) }
         }
+    }
+    else {
+        Fact 'completion record' 'none; the owner disabled receipts'
     }
 
     foreach ($entry in (Get-NSStatusTransitions (Join-Path $ns 'shift-log.md') 3)) {
@@ -8926,44 +9373,37 @@ function Get-NSUsageLine {
     param([AllowEmptyString()][string]$Fields, [AllowEmptyString()][string]$Sources,
           [AllowEmptyString()][string]$Segments, [AllowEmptyString()][string]$HostName = '')
     $parts = @()
+    $exact = @()
     foreach ($dim in $script:NSUsageDimensions) {
         $v = Get-NSUsageField $Fields $dim
         if ([string]::IsNullOrEmpty($v)) { $v = 'unavailable' }
+        $raw = $v
+        if ($v -cne 'unavailable') { $v = Get-NSUsageScale $v }
         $parts += ($dim + ' ' + $v)
+        $exact += $raw
     }
-    return ('Usage: ' + ($parts -join ' · ') + "`n  Source: " + $Sources +
-            ', cumulative counters, segments ' + $Segments + "`n  " +
-            (Get-NSUsageOverlapText $HostName))
+    return ('**Usage:** ' + ($parts -join ' · ') + "`n  Source: " + $Sources +
+            ', cumulative counters, segments ' + $Segments + '; exact: ' + ($exact -join ' / ') +
+            "`n  " + (Get-NSUsageOverlapText $HostName))
 }
 
 # The item's own section of the report, written where the model already writes its account of the
 # work. An existing section is spliced into rather than appended after, so one item is one section.
 function Add-NSGateUsageAppend {
-    param([Parameter(Mandatory = $true)][string]$Report, [Parameter(Mandatory = $true)][string]$Label,
+    param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label,
           [Parameter(Mandatory = $true)][string]$Usage, [Parameter(Mandatory = $true)][string]$Duration)
-    if ([string]::IsNullOrEmpty($Report)) { return }
-    if (Test-NSReparsePoint $Report) { return }
+    if ([string]::IsNullOrEmpty($Receipt)) { return }
+    if (Test-NSReparsePoint $Receipt) { return }
     $utf8 = New-Object Text.UTF8Encoding($false)
-    if (-not (Test-Path -LiteralPath $Report -PathType Leaf)) {
-        [IO.File]::WriteAllText($Report, "# Shift report`n", $utf8)
+    $dir = Split-Path -Parent $Receipt
+    if (-not [string]::IsNullOrEmpty($dir)) {
+        $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
     }
-    $heading = '### ' + $Label
-    $lines = @([IO.File]::ReadAllLines($Report))
-    if ($lines -ccontains $heading) {
-        $out = New-Object 'System.Collections.Generic.List[string]'
-        foreach ($l in $lines) {
-            $null = $out.Add($l)
-            if ($l -ceq $heading) {
-                $null = $out.Add('')
-                foreach ($u in $Usage.Split("`n")) { $null = $out.Add($u) }
-                $null = $out.Add('Duration: ' + $Duration)
-            }
-        }
-        [IO.File]::WriteAllText($Report, (($out -join "`n") + "`n"), $utf8)
-        return
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf)) {
+        [IO.File]::WriteAllText($Receipt, ('# ' + $Label + "`n"), $utf8)
     }
-    $tail = "`n" + $heading + "`n`n" + $Usage + "`nDuration: " + $Duration + "`n"
-    [IO.File]::AppendAllText($Report, $tail, $utf8)
+    $tail = "`n" + $Usage + "`n**Duration:** " + $Duration + "`n"
+    [IO.File]::AppendAllText($Receipt, $tail, $utf8)
 }
 
 # Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it.
@@ -8976,7 +9416,7 @@ function Get-NSGateItemLabel {
             $n++
             if ($n -ne $Which) { continue }
             $t = $line -creplace '^- \[x\][ \t]*\*\*', ''
-            $t = $t -creplace '[ \t]*[—-].*$', ''
+            $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
             $t = $t -creplace '\*\*.*$', ''
             return $t.TrimEnd()
         }
@@ -9059,8 +9499,8 @@ function Invoke-NSGateUsageTick {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir,
           [Parameter(Mandatory = $true)][string]$Project, [Parameter(Mandatory = $true)][string]$Label)
     if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
-    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
-    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
+    if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
     if (-not (Write-NSUsageMark $NightshiftDir $Label)) { return $false }
     $span = Get-NSUsageLastItem $NightshiftDir
     if ([string]::IsNullOrEmpty($span)) { return $false }
@@ -9082,7 +9522,10 @@ function Invoke-NSGateUsageTick {
             $duration = $duration + ' (paused ' + (Get-NSUsageDuration $pp[0]) + ', ' + $pp[1] + ')'
         }
     }
-    Add-NSGateUsageAppend (Get-NSReportPath $Project) $Label $line $duration
+    Add-NSGateUsageAppend (Get-NSReceiptPath $Project $Label) $Label $line $duration
+    $due = Join-Path $NightshiftDir '.receipt-due'
+    if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
+    Write-NSReceiptsIndex $Project
     return $true
 }
 
@@ -9097,9 +9540,9 @@ function Invoke-NSGateUsageSync {
     # Accounting belongs to an armed shift with the report on. Before Start there is no shift to
     # bill, and an arm mark written then would stand in the way of the baseline arming records.
     if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
-    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
+    if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
     if ($Ticked -lt 0) { return $false }
-    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
     $marked = Get-NSUsageMarkCount $NightshiftDir
     if ($marked -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts; $marked = 1 }
     while (($marked - 1) -lt $Ticked) {
@@ -9167,7 +9610,7 @@ function Invoke-NSPulseUsage {
     if ([string]::IsNullOrEmpty($Source)) { return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
     $project = [IO.Path]::GetDirectoryName($NightshiftDir)
-    if ((Get-NSRule $project 'report.usage' '') -ceq 'off') { return $false }
+    if ((Get-NSRule $project 'receipts.usage' '') -ceq 'off') { return $false }
     $agents = @()
     if ($HostName -ceq 'claude') { $agents = Get-NSUsageSubagents $Source }
     if ($HostName -ceq 'claude') {
@@ -9222,6 +9665,272 @@ function Invoke-NSPulseMarks {
     $transcripts = @()
     if (-not [string]::IsNullOrEmpty($Source) -and (Test-Path -LiteralPath $Source -PathType Leaf)) { $transcripts = @($Source) }
     return (Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts)
+}
+
+function Get-NSPulseItemLabelFromLine {
+    param([AllowEmptyString()][string]$Line, [string]$Box = 'x')
+    if ([string]::IsNullOrEmpty($Line)) { return '' }
+    $t = $Line
+    if ($Box -ceq 'open') {
+        $t = $t -creplace '^- \[ \][ \t]*\*\*', ''
+        $t = $t -creplace '^- \[ \][ \t]*', ''
+    }
+    else {
+        $t = $t -creplace '^- \[[xX]\][ \t]*\*\*', ''
+        $t = $t -creplace '^- \[[xX]\][ \t]*', ''
+    }
+    $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
+    $t = $t -creplace '\*\*.*$', ''
+    return $t.TrimEnd()
+}
+
+function Get-NSPulseActiveItem {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return '' }
+    foreach ($line in (Get-NSPunchItemsSection $punch)) {
+        if ($line -cnotmatch '^- \[ \]') { continue }
+        return (Get-NSPulseItemLabelFromLine $line 'open')
+    }
+    return ''
+}
+
+function Get-NSPulseTickedLabels {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $out = New-Object Collections.Generic.List[string]
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return [string[]]@() }
+    foreach ($line in (Get-NSPunchItemsSection $punch)) {
+        if ($line -cnotmatch '^- \[[xX]\]') { continue }
+        $label = Get-NSPulseItemLabelFromLine $line 'x'
+        if (-not [string]::IsNullOrEmpty($label)) { $out.Add($label) }
+    }
+    $arr = $out.ToArray()
+    if ($arr.Length -eq 0) { return [string[]]@() }
+    return , $arr
+}
+
+function Get-NSReceiptsBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = Join-Path $Workspace '.nightshift/rules.json'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch { return $null }
+    if (-not ($document -is [Collections.IDictionary])) { return $null }
+    if (-not $document.Contains('receipts')) { return $null }
+    $block = $document['receipts']
+    if (-not ($block -is [Collections.IDictionary])) { return $null }
+    return $block
+}
+
+function Test-NSReceiptsEnabled {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $block = Get-NSReceiptsBlock $Workspace
+    if ($null -eq $block) { return $true }
+    if (-not $block.Contains('enabled')) { return $true }
+    $value = $block['enabled']
+    if ($value -is [bool]) { return [bool]$value }
+    return ([string]$value -cne 'false')
+}
+
+function Get-NSReceiptsField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Name)
+    $block = Get-NSReceiptsBlock $Workspace
+    if ($null -eq $block -or -not $block.Contains($Name)) { return '' }
+    return [string]$block[$Name]
+}
+
+function Get-NSPulseReceiptsSections {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = Get-NSReceiptsField $Workspace 'templatePath'
+    if (-not [string]::IsNullOrEmpty($path)) {
+        return ('follow the owner''s template at ' + $path)
+    }
+    return 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+}
+
+function Get-NSPulseReceiptsStartLine {
+    param([string]$Workspace, [string]$Label)
+    $dash = [string][char]0x2014
+    return ('receipts: item ' + $Label + ' started ' + $dash + ' open .nightshift/receipts/' +
+        (Get-NSReceiptBasename $Label) + '.md with one paragraph on the approach; ' +
+        (Get-NSPulseReceiptsSections $Workspace))
+}
+
+function Get-NSPulseReceiptsTickLine {
+    param([string]$Label)
+    $dash = [string][char]0x2014
+    return ('receipts: item ' + $Label + ' is ticked ' + $dash +
+        ' write its closing paragraph in .nightshift/receipts/' +
+        (Get-NSReceiptBasename $Label) + '.md now, before starting the next item.')
+}
+
+function Get-NSPulseReceiptsCadenceLine {
+    param([string]$Label)
+    $dash = [string][char]0x2014
+    return ('receipts: progress update due for ' + $Label + ' ' + $dash +
+        ' refresh the progress paragraph in .nightshift/receipts/' +
+        (Get-NSReceiptBasename $Label) + '.md: where it stands, what is left.')
+}
+
+function Test-NSReceiptHasModelText {
+    param([AllowEmptyString()][string]$Path)
+    if ([string]::IsNullOrEmpty($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    if (Test-NSReparsePoint $Path) { return $false }
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line.StartsWith('# ')) { continue }
+        if ($line.StartsWith('**Usage:**')) { continue }
+        if ($line.StartsWith('**Duration:**')) { continue }
+        if ($line.StartsWith('  Source:')) { continue }
+        if ($line.StartsWith('  Cache reads')) { continue }
+        return $true
+    }
+    return $false
+}
+
+function Get-NSReceiptsMissingNns {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return [string[]]@() }
+    $ns = Join-Path $Workspace '.nightshift'
+    $parts = New-Object Collections.Generic.List[string]
+    $labels = Get-NSPulseTickedLabels $Workspace
+    if ($null -eq $labels) { $labels = [string[]]@() }
+    foreach ($label in $labels) {
+        $path = Join-Path (Join-Path $ns 'receipts') ((Get-NSReceiptBasename $label) + '.md')
+        if (Test-NSReceiptHasModelText $path) { continue }
+        $nn = Get-NSReceiptNn $label
+        if ([string]::IsNullOrEmpty($nn)) { $nn = $label }
+        $parts.Add($nn)
+    }
+    $arr = $parts.ToArray()
+    if ($arr.Length -eq 0) { return [string[]]@() }
+    return , $arr
+}
+
+function Get-NSGateReceiptsMissingNote {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $parts = Get-NSReceiptsMissingNns $Workspace
+    if ($null -eq $parts -or $parts.Count -eq 0) { return '' }
+    return ('Receipts missing model text: ' + ($parts -join ', '))
+}
+
+function Add-NSGateReceiptsMissingNote {
+    param([string]$Workspace, [AllowEmptyString()][string]$Text)
+    $note = Get-NSGateReceiptsMissingNote $Workspace
+    if ([string]::IsNullOrEmpty($note)) { return $Text }
+    if ([string]::IsNullOrEmpty($Text)) { return $note }
+    return ($Text + ' ' + $note)
+}
+
+function Test-NSUsageProgressDue {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Label)
+    $mode = Get-NSReceiptsField $Workspace 'progressMode'
+    if ([string]::IsNullOrEmpty($mode)) { $mode = 'time' }
+    if ($mode -ceq 'completion-only') { return $false }
+    if ((Get-NSReceiptsField $Workspace 'usage') -ceq 'off') { return $false }
+    $ns = Join-Path $Workspace '.nightshift'
+    $marks = Get-NSUsageMarksPath $ns
+    if (-not (Test-Path -LiteralPath $marks -PathType Leaf)) { return $false }
+    $last = @([IO.File]::ReadAllLines($marks)) | Select-Object -Last 1
+    if ([string]::IsNullOrEmpty($last)) { return $false }
+    $epoch = [long]0
+    [void][long]::TryParse($last.Split("`t")[0], [ref]$epoch)
+    $minutes = Get-NSReceiptsField $Workspace 'progressMinutes'
+    if ($minutes -notmatch '^\d+$') { $minutes = '20' }
+    return ((Get-NSUnixTime) - $epoch) -ge ([long]$minutes * 60)
+}
+
+function Get-NSPulseReportDue {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return '' }
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return '' }
+    $label = Get-NSPulseActiveItem $Workspace
+    if ([string]::IsNullOrEmpty($label)) { return '' }
+    $want = Get-NSPulseReceiptsCadenceLine $label
+    $duePath = Join-Path $NightshiftDir '.receipt-due'
+    if ((Test-Path -LiteralPath $duePath -PathType Leaf) -and -not (Test-NSReparsePoint $duePath)) {
+        $due = [IO.File]::ReadAllText($duePath).TrimEnd("`r", "`n")
+        if ($due.Contains('for ' + $label + ' ') -or $due.EndsWith('for ' + $label)) { return $due }
+    }
+    if (-not (Test-NSUsageProgressDue $Workspace $label)) {
+        if ((Test-Path -LiteralPath $duePath -PathType Leaf) -and -not (Test-NSReparsePoint $duePath)) {
+            [IO.File]::WriteAllText($duePath, $want, (New-Object Text.UTF8Encoding($false)))
+            return $want
+        }
+        return ''
+    }
+    [IO.File]::WriteAllText($duePath, $want, (New-Object Text.UTF8Encoding($false)))
+    return $want
+}
+
+function Get-NSPulseReceiptsNotice {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return '' }
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return '' }
+    $usage = Join-Path $NightshiftDir 'usage'
+    $prevFile = Join-Path $usage 'previous-pulse'
+    $labelsFile = Join-Path $usage 'previous-ticked'
+    $prevActive = ''
+    $prevTicked = 0
+    if ((Test-Path -LiteralPath $prevFile -PathType Leaf) -and -not (Test-NSReparsePoint $prevFile)) {
+        foreach ($row in [IO.File]::ReadAllLines($prevFile)) {
+            if ($row.StartsWith('active' + "`t")) { $prevActive = $row.Substring(7) }
+            elseif ($row.StartsWith('ticked' + "`t")) {
+                $n = 0
+                if ([int]::TryParse($row.Substring(7), [ref]$n)) { $prevTicked = $n }
+            }
+        }
+    }
+    $prevLabels = @()
+    if ((Test-Path -LiteralPath $labelsFile -PathType Leaf) -and -not (Test-NSReparsePoint $labelsFile)) {
+        $prevLabels = @([IO.File]::ReadAllLines($labelsFile))
+    }
+    $active = Get-NSPulseActiveItem $Workspace
+    $labels = Get-NSPulseTickedLabels $Workspace
+    if ($null -eq $labels) { $labels = [string[]]@() }
+    $ticked = $labels.Count
+    $lines = New-Object Collections.Generic.List[string]
+    if ($ticked -gt $prevTicked) {
+        foreach ($label in $labels) {
+            if ($prevLabels -ccontains $label) { continue }
+            $lines.Add((Get-NSPulseReceiptsTickLine $label))
+        }
+    }
+    if (-not [string]::IsNullOrEmpty($active) -and $active -cne $prevActive) {
+        $lines.Add((Get-NSPulseReceiptsStartLine $Workspace $active))
+    }
+    $cadence = Get-NSPulseReportDue $NightshiftDir $Workspace
+    if (-not [string]::IsNullOrEmpty($cadence)) { $lines.Add($cadence) }
+    if (-not (Test-Path -LiteralPath $usage -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $usage -Force -ErrorAction SilentlyContinue
+    }
+    if ((Test-Path -LiteralPath $usage -PathType Container) -and -not (Test-NSReparsePoint $usage)) {
+        [IO.File]::WriteAllText($prevFile, ("active`t$active`nticked`t$ticked`n"),
+            (New-Object Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllText($labelsFile, (($labels -join "`n") + $(if ($labels.Count -gt 0) { "`n" } else { '' })),
+            (New-Object Text.UTF8Encoding($false)))
+    }
+    if ($lines.Count -eq 0) { return '' }
+    return ($lines -join "`n")
+}
+
+function Write-NSPulseContext {
+    param([string]$HostName, [AllowEmptyString()][string]$Line)
+    if ([string]::IsNullOrEmpty($Line)) { return }
+    if ($HostName -ceq 'cursor') {
+        Write-Output (ConvertTo-Json -Compress ([pscustomobject]@{ additional_context = $Line }))
+        return
+    }
+    $hook = [pscustomobject]@{
+        hookSpecificOutput = [pscustomobject]@{
+            hookEventName     = 'PostToolUse'
+            additionalContext = $Line
+        }
+    }
+    Write-Output (ConvertTo-Json -Compress $hook)
 }
 
 # Move-NSUsageRetire - a finished shift's accounting, set aside so the next shift starts clean.

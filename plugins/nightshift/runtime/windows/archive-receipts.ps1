@@ -182,10 +182,16 @@ function Copy-NSArchiveRecord {
 }
 
 if (Test-Path -LiteralPath $src -PathType Container) {
+    # The index is a view of a set of receipts, so each side of the move gets its own, written
+    # below from what is actually there. The live one is never filed as a record of its own, and
+    # the receipt of an item that is still open stays live with the box it belongs to.
+    $openNames = @(Get-NSOpenReceiptNames $workspace)
     $files = @(Get-ChildItem -LiteralPath $src -File -Force -ErrorAction SilentlyContinue |
         Where-Object {
             -not $_.Name.StartsWith('.') -and
-            -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)
+            -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+            $_.Name -cne 'README.md' -and
+            -not ($openNames -ccontains $_.Name)
         })
     if ($files.Count -gt 0) {
         $null = New-Item -ItemType Directory -Path $dest -Force
@@ -201,7 +207,7 @@ if (Test-Path -LiteralPath $src -PathType Container) {
 }
 
 # The shift report travels with the receipts it describes, and keeps working from where it lands.
-$report = Get-NSReportPath $workspace
+$report = Join-Path $ns 'shift-report.md'
 $reportBase = ''
 $reportRelocated = $false
 if ((Test-Path -LiteralPath $report -PathType Leaf) -and -not (Test-NSReparsePoint $report)) {
@@ -228,29 +234,64 @@ if ((Test-Path -LiteralPath $report -PathType Leaf) -and -not (Test-NSReparsePoi
     }
 }
 
-# A record that travelled with the report is still a sibling; one that stayed live is now further
+# A record that travelled with this one is still a sibling; one that stayed live is now further
 # away and its link has to say so. Rewriting changes bytes, so the untouched original is kept
 # beside the relocated view rather than replaced by it.
-$archivedPage = Join-Path $group $reportBase
-if ($reportBase -cne '' -and -not $reportRelocated -and
-    (Test-Path -LiteralPath $archivedPage -PathType Leaf) -and -not (Test-NSReparsePoint $archivedPage)) {
-    $relative = $group.Substring($ns.Length).Trim([char]'/', [char]'\')
+# Convert-NSArchivedPageLinks <page> <its directory before the move, relative to the state area>
+function Convert-NSArchivedPageLinks {
+    param([string]$Page, [AllowEmptyString()][string]$From)
+    if (-not (Test-Path -LiteralPath $Page -PathType Leaf)) { return }
+    if (Test-NSReparsePoint $Page) { return }
+    $base = [IO.Path]::GetFileName($Page)
+    if ($base.EndsWith('.original.md', [StringComparison]::Ordinal)) { return }
+    $relative = ([IO.Path]::GetDirectoryName($Page)).Substring($ns.Length).Trim([char]'/', [char]'\')
     $back = ''
     foreach ($component in ($relative -split '[\\/]')) {
         if (-not [string]::IsNullOrEmpty($component)) { $back = $back + '../' }
     }
-    $source = [IO.File]::ReadAllText($archivedPage, $utf8)
-    $relocated = Convert-NSReportLinks -Text $source -Archived $archivedPaths.ToArray() -Back $back
-    if ($relocated -cne $source) {
-        $original = Join-Path $group ([IO.Path]::GetFileNameWithoutExtension($reportBase) + '.original.md')
-        if (Test-NSArchiveDest $original) {
-            [IO.File]::WriteAllText($original, $source, $utf8)
-            [IO.File]::WriteAllText($archivedPage, $relocated, $utf8)
-        }
-        else {
-            $kept.Add($reportBase + ' (its links were left as written: the original could not be preserved beside a relocated view)')
-        }
+    $source = [IO.File]::ReadAllText($Page, $utf8)
+    $relocated = Convert-NSReportLinks -Text $source -Archived $archivedPaths.ToArray() -Back $back -Dir $From
+    if ($relocated -ceq $source) { return }
+    $original = Join-Path ([IO.Path]::GetDirectoryName($Page)) `
+        ([IO.Path]::GetFileNameWithoutExtension($base) + '.original.md')
+    if (Test-NSArchiveDest $original) {
+        [IO.File]::WriteAllText($original, $source, $utf8)
+        [IO.File]::WriteAllText($Page, $relocated, $utf8)
     }
+    else {
+        $kept.Add($base + ' (its links were left as written: the original could not be preserved beside a relocated view)')
+    }
+}
+
+# The archive gets the index of what landed in it. Written before the relocation pass, so a receipt
+# that links to its index has an index to link to: the archived folder holds one of its own, and
+# that is the sibling the link still names.
+$receiptsRel = $src.Substring($ns.Length).Trim([char]'/', [char]'\').Replace('\', '/')
+Write-NSArchiveReceiptsIndex -Directory $dest -Date (Get-NSReceiptsShiftDate $workspace)
+if (Test-Path -LiteralPath (Join-Path $dest 'README.md') -PathType Leaf) {
+    $archivedPaths.Add($receiptsRel + '/README.md')
+}
+if (Test-Path -LiteralPath $dest -PathType Container) {
+    foreach ($page in @(Get-ChildItem -LiteralPath $dest -File -Force -Filter '*.md' -ErrorAction SilentlyContinue)) {
+        # The index is written into the folder it describes: its links are already siblings there.
+        if ($page.Name -ceq 'README.md') { continue }
+        Convert-NSArchivedPageLinks $page.FullName $receiptsRel
+    }
+}
+if ($reportBase -cne '' -and -not $reportRelocated) {
+    Convert-NSArchivedPageLinks (Join-Path $group $reportBase) ''
+}
+
+# The live folder lists the work still in hand - losing its index when there is nothing left
+# to list.
+Write-NSReceiptsIndex -Workspace $workspace -Remaining
+
+try {
+    Save-NSArchiveReviewRecords $workspace $Date $shiftId
+}
+catch {
+    Write-NSArchiveReceiptsError 'archive-receipts: could not file snag or parking records'
+    exit 2
 }
 
 $unmatched = @($Retire | Where-Object { -not $filed.Contains($_) })

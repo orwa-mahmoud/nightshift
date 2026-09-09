@@ -286,6 +286,281 @@ ns_hardhat_canon_write_target() {
   fi
 }
 
+# Absolute lexical path for walking components. Does not follow symlinks.
+ns_hardhat_lex_write_target() {
+  local p="$1" base
+  [ -n "$p" ] || return 1
+  p="$(printf '%s' "$p" | sed "s#\\\\#/#g; s#[\"']##g")"
+  [ -n "$p" ] || return 1
+  case "$p" in
+    /*) ;;
+    *)
+      if [ -n "${CWD:-}" ]; then
+        base="${CWD%/}"
+      elif [ -n "${PROJECT_DIR:-}" ]; then
+        base="${PROJECT_DIR%/}"
+      else
+        return 1
+      fi
+      case "$base" in
+        /*) ;;
+        *)
+          [ -n "${PROJECT_DIR:-}" ] || return 1
+          base="${PROJECT_DIR%/}/$base"
+          ;;
+      esac
+      p="$base/$p"
+      ;;
+  esac
+  ns_hardhat_lex_abs "$p"
+}
+
+ns_hardhat_rules_expected() {
+  [ -n "${NS:-}" ] || return 1
+  ns_hardhat_canon_write_target "$NS/rules.json"
+}
+
+ns_hardhat_parking_expected() {
+  [ -n "${NS:-}" ] || return 1
+  ns_hardhat_canon_write_target "$NS/parking-lot.md"
+}
+
+# Follow one symlink hop to a canonical write target. Missing or non-link: empty.
+ns_hardhat_follow_symlink() {
+  local p="$1" dest dir
+  [ -n "$p" ] && [ -L "$p" ] || return 1
+  dest="$(readlink "$p")" || return 1
+  [ -n "$dest" ] || return 1
+  case "$dest" in
+    /*) ns_hardhat_canon_write_target "$dest" ;;
+    *)
+      dir="${p%/*}"
+      [ -n "$dir" ] || dir=/
+      ns_hardhat_canon_write_target "$dir/$dest"
+      ;;
+  esac
+}
+
+# True when this write target, or any symlink/junction on the way to it, is the rules file.
+ns_hardhat_write_target_reaches_rules() {
+  local raw="$1" rules lex acc rest part hop canon
+  rules="$(ns_hardhat_rules_expected)" || return 1
+  canon="$(ns_hardhat_canon_write_target "$raw")" || return 1
+  [ "$canon" = "$rules" ] && return 0
+  hop="$(ns_hardhat_follow_symlink "$canon")" && [ "$hop" = "$rules" ] && return 0
+  lex="$(ns_hardhat_lex_write_target "$raw")" || return 1
+  rest="${lex#/}"
+  acc=""
+  while [ -n "$rest" ]; do
+    case "$rest" in
+      */*)
+        part="${rest%%/*}"
+        rest="${rest#*/}"
+        ;;
+      *)
+        part="$rest"
+        rest=""
+        ;;
+    esac
+    case "$part" in
+      '' | .) continue ;;
+      ..) acc="${acc%/*}" ;;
+      *) acc="$acc/$part" ;;
+    esac
+    [ -n "$acc" ] || acc=/
+    hop="$(ns_hardhat_follow_symlink "$acc")" || continue
+    [ "$hop" = "$rules" ] && return 0
+  done
+  return 1
+}
+
+# Sole target is the live parking lot, and no intermediate reaches the rules file.
+ns_hardhat_is_real_parking_lot() {
+  local raw="$1" canon parking
+  ns_hardhat_write_target_reaches_rules "$raw" && return 1
+  parking="$(ns_hardhat_parking_expected)" || return 1
+  canon="$(ns_hardhat_canon_write_target "$raw")" || return 1
+  [ "$canon" = "$parking" ]
+}
+
+# Print the >> target of a sole literal append. Anything else fails.
+# No general shell parser: substitutions, lists, pipes, extra redirects, and
+# globs keep today's refusal.
+ns_hardhat_literal_append_target() {
+  local s="$1"
+  local i=0 n q="" c next
+  local appends=0 extra_redir=0 extras=0
+  local target="" collecting=0 word="" first=""
+  n=${#s}
+  while [ "$i" -lt "$n" ]; do
+    c="${s:$i:1}"
+    next="${s:$((i + 1)):1}"
+    if [ -n "$q" ]; then
+      if [ "$c" = $'\\' ] && [ "$q" = '"' ]; then
+        i=$((i + 2))
+        continue
+      fi
+      if [ "$c" = "$q" ]; then
+        q=""
+        i=$((i + 1))
+        continue
+      fi
+      if [ "$q" = '"' ]; then
+        case "$c" in
+          '$' | '`') return 1 ;;
+        esac
+      fi
+      i=$((i + 1))
+      continue
+    fi
+    case "$c" in
+      "'" | '"')
+        if [ "$collecting" -eq 1 ]; then
+          q="$c"
+          i=$((i + 1))
+          while [ "$i" -lt "$n" ] && [ "${s:$i:1}" != "$q" ]; do
+            if [ "$q" = '"' ]; then
+              case "${s:$i:1}" in
+                '$' | '`') return 1 ;;
+              esac
+            fi
+            word="$word${s:$i:1}"
+            i=$((i + 1))
+          done
+          [ "$i" -ge "$n" ] && return 1
+          target="$word"
+          collecting=0
+          word=""
+          q=""
+          i=$((i + 1))
+          continue
+        fi
+        q="$c"
+        i=$((i + 1))
+        continue
+        ;;
+      '$' | '`' | '(') return 1 ;;
+    esac
+    if [ "$c" = '>' ] && [ "$next" = '>' ]; then
+      appends=$((appends + 1))
+      collecting=1
+      word=""
+      i=$((i + 2))
+      while [ "$i" -lt "$n" ]; do
+        case "${s:$i:1}" in
+          ' ' | $'\t') i=$((i + 1)) ;;
+          *) break ;;
+        esac
+      done
+      continue
+    fi
+    if [ "$c" = '>' ]; then
+      extra_redir=$((extra_redir + 1))
+      i=$((i + 1))
+      continue
+    fi
+    if [ "$c" = '<' ] && [ "$next" = '<' ]; then
+      collecting=0
+      i=$((i + 2))
+      continue
+    fi
+    if [ "$c" = '<' ]; then
+      extra_redir=$((extra_redir + 1))
+      i=$((i + 1))
+      continue
+    fi
+    case "$c" in
+      '|' | ';')
+        extras=$((extras + 1))
+        collecting=0
+        i=$((i + 1))
+        continue
+        ;;
+      '&')
+        extras=$((extras + 1))
+        collecting=0
+        if [ "$next" = '&' ]; then
+          i=$((i + 2))
+        else
+          i=$((i + 1))
+        fi
+        continue
+        ;;
+    esac
+    if [ "$collecting" -eq 1 ]; then
+      case "$c" in
+        ' ' | $'\t' | $'\n')
+          if [ -n "$word" ]; then
+            target="$word"
+            collecting=0
+            word=""
+          fi
+          i=$((i + 1))
+          continue
+          ;;
+      esac
+      word="$word$c"
+      i=$((i + 1))
+      continue
+    fi
+    i=$((i + 1))
+  done
+  [ -n "$q" ] && return 1
+  [ "$appends" -eq 1 ] || return 1
+  [ "$extra_redir" -eq 0 ] || return 1
+  [ "$extras" -eq 0 ] || return 1
+  [ -n "$target" ] || target="$word"
+  [ -n "$target" ] || return 1
+  case "$target" in
+    *'*'* | *'?'* | *'['*) return 1 ;;
+  esac
+  first="${s#"${s%%[![:space:]]*}"}"
+  first="${first%%[[:space:]]*}"
+  case "$first" in
+    echo | printf | cat) ;;
+    \' | \'*) ;;
+    \" | \"*) ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$target"
+}
+
+ns_hardhat_command_is_inert_parking_append() {
+  local target
+  target="$(ns_hardhat_literal_append_target "$1")" || return 1
+  ns_hardhat_is_real_parking_lot "$target"
+}
+
+ns_hardhat_collect_one() {
+  NS_HARDHAT_COLLECTED="${NS_HARDHAT_COLLECTED}$1$NS_HARDHAT_NL"
+  return 1
+}
+
+ns_hardhat_file_tool_is_inert_parking() {
+  local t count=0
+  NS_HARDHAT_COLLECTED=""
+  ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_collect_one
+  while IFS= read -r t; do
+    [ -n "$t" ] || continue
+    count=$((count + 1))
+    ns_hardhat_is_real_parking_lot "$t" || return 1
+  done <<EOF
+$NS_HARDHAT_COLLECTED
+EOF
+  [ "$count" -eq 1 ]
+}
+
+ns_hardhat_is_inert_parking_lot_write() {
+  case "$1" in
+    Bash | PowerShell | Shell)
+      ns_hardhat_command_is_inert_parking_append "$3"
+      ;;
+    *)
+      ns_hardhat_file_tool_is_inert_parking "$1" "$2" "$3"
+      ;;
+  esac
+}
+
 ns_hardhat_control_expected() {
   [ -n "${NS:-}" ] || return 1
   ns_hardhat_canon_write_target "$NS/$1"
@@ -365,7 +640,33 @@ ns_hardhat_payload_targets_control() {
   ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_control_targeted
 }
 
+# True when a collected file-tool path, or a sole literal append, reaches the rules file.
+ns_hardhat_payload_write_reaches_rules() {
+  local t
+  case "$1" in
+    Bash | PowerShell | Shell)
+      t="$(ns_hardhat_literal_append_target "$3")" || return 1
+      ns_hardhat_write_target_reaches_rules "$t"
+      ;;
+    *)
+      NS_HARDHAT_COLLECTED=""
+      ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_collect_one
+      while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        ns_hardhat_write_target_reaches_rules "$t" && return 0
+      done <<EOF
+$NS_HARDHAT_COLLECTED
+EOF
+      return 1
+      ;;
+  esac
+}
+
 ns_hardhat_payload_targets_rules() {
+  if ns_hardhat_is_inert_parking_lot_write "$1" "$2" "$3"; then
+    return 1
+  fi
+  ns_hardhat_payload_write_reaches_rules "$1" "$2" "$3" && return 0
   ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_rules_targeted
 }
 

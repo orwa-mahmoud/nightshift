@@ -395,6 +395,7 @@ ns_usage_mark_arm() {
     _ns_usage_seg_baseline "$ns" "$t" "$size" || true
   done
   printf '%s\t%s\t\n' "$(date +%s)" arm >>"$file" 2>/dev/null || return 1
+  ns_receipts_write_index "${ns%/.nightshift}"
 }
 
 # ns_usage_mark_count <nightshift-dir> — how many marks stand.
@@ -503,19 +504,25 @@ ns_usage_overlap() {
   esac
 }
 
-# ns_usage_line <fields> <host-and-model> <segments> — the usage line as the report carries it.
-# Every dimension by name, `unavailable` for one the host does not report, never a total across
-# hosts, and never a price.
+# ns_usage_line <fields> <host-and-model> <segments> — the usage block as a receipt carries it.
+# Every dimension by name, scaled on the Usage line, exact integers on Source, `unavailable`
+# for one the host does not report, never a total across hosts, and never a price.
 ns_usage_line() {
-  local fields="$1" dim v out=""
+  local fields="$1" dim v raw out="" exact=""
   for dim in $NS_USAGE_DIMENSIONS; do
     v="$(ns_usage_field "$fields" "$dim")" || v=unavailable
     [ -n "$v" ] || v=unavailable
+    raw="$v"
+    if [ "$v" != unavailable ]; then
+      v="$(ns_usage_scale "$v")"
+    fi
     [ -z "$out" ] || out="$out · "
     out="$out$dim $v"
+    [ -z "$exact" ] || exact="$exact / "
+    exact="${exact}$raw"
   done
-  printf 'Usage: %s\n  Source: %s, cumulative counters, segments %s\n  %s' \
-    "$out" "$2" "$3" "$(ns_usage_overlap "${4:-}")"
+  printf '**Usage:** %s\n  Source: %s, cumulative counters, segments %s; exact: %s\n  %s' \
+    "$out" "$2" "$3" "$exact" "$(ns_usage_overlap "${4:-}")"
 }
 
 # ns_usage_duration <seconds> — a wall-clock span in the words a person reads.
@@ -530,25 +537,20 @@ ns_usage_duration() {
 # ---------------------------------------------------------------------------------------------
 # The progress cadence, evaluated by the runtime
 #
-# `report.progressMode` decides when the model should refresh the active item's progress
+# `receipts.progressMode` decides when the model should refresh the active item's progress
 # paragraph. The model does not evaluate it: `time` needs a clock it would have to keep itself,
 # and `tokens` needs a counter it cannot see. The pulse already fires on every tool call, so it
 # does the arithmetic against the same marks and the same counter everything else here uses.
 #
-# The last update is detected mechanically. The pulse hashes the active item's section in the
-# report; a changed hash means the model refreshed it, and the window restarts. Nothing asks the
-# model to remember when it last wrote, and nothing believes it if it says.
+# The last update is detected mechanically. The pulse hashes the item's receipt file; a changed
+# hash means the model refreshed it, and the window restarts. Nothing asks the model to remember
+# when it last wrote, and nothing believes it if it says.
 
-# ns_usage_section_hash <report> <item-label> — a hash of that item's section, or empty.
-ns_usage_section_hash() {
-  local report="$1" label="$2" body
-  [ -f "$report" ] && [ ! -L "$report" ] || return 1
-  body="$(awk -v want="### $label" '
-    $0 == want { on = 1; next }
-    on && /^### / { exit }
-    on { print }
-  ' "$report" 2>/dev/null)" || return 1
-  printf '%s' "$body" | ns_usage_sum
+# ns_usage_receipt_hash <receipt-file> — a hash of that file, or empty.
+ns_usage_receipt_hash() {
+  local file="$1"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  ns_usage_sum <"$file"
 }
 
 # ns_usage_sum — a short stable digest of stdin, from whatever the machine has.
@@ -562,21 +564,21 @@ ns_usage_sum() {
   fi
 }
 
-# ns_usage_window <nightshift-dir> <item-label> <report> — where the current cadence window
+# ns_usage_window <nightshift-dir> <item-label> <receipt-file> — where the current cadence window
 # started, as `<epoch>\t<total-fields>`. The later of the item's own start mark and the last time
-# its section changed, so a progress update restarts the window and nothing else does.
+# its receipt file changed, so a progress update restarts the window and nothing else does.
 ns_usage_window() {
-  local ns="$1" label="$2" report="$3" file line epoch total hash stamp
+  local ns="$1" label="$2" receipt="$3" file line epoch total hash stamp
   file="$(_ns_usage_marks "$ns")"
   [ -f "$file" ] || return 1
   line="$(tail -n1 "$file")"
   epoch="$(printf '%s' "$line" | cut -f1)"
   total="$(printf '%s' "$line" | cut -f3)"
-  hash="$(ns_usage_section_hash "$report" "$label")" || hash=""
+  hash="$(ns_usage_receipt_hash "$receipt")" || hash=""
   stamp="$(ns_usage_dir "$ns")/window"
   if [ -n "$hash" ]; then
     if [ ! -f "$stamp" ] || [ -L "$stamp" ]; then
-      # First sight of this section. Recording what it looks like is not the same as the model
+      # First sight of this file. Recording what it looks like is not the same as the model
       # having just refreshed it, so the window stays where the item started — otherwise nothing
       # would ever fall due, because every first look would restart the clock.
       mkdir -p "$(ns_usage_dir "$ns")" 2>/dev/null || return 1
@@ -584,7 +586,7 @@ ns_usage_window() {
     elif [ "$(cut -f2 "$stamp" 2>/dev/null)" != "$hash" ]; then
       # It changed, so the model refreshed it: the window starts again from here.
       printf '%s\t%s\t%s\n' "$(date +%s)" "$hash" "$(ns_usage_total "$ns")" >"$stamp" 2>/dev/null || :
-      rm -f "$ns/.report-due" 2>/dev/null || :
+      rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
     fi
   fi
   if [ -f "$stamp" ] && [ ! -L "$stamp" ]; then
@@ -602,17 +604,17 @@ ns_usage_window() {
 # the time cadence rather than quietly never firing.
 ns_usage_progress_due() {
   local project="$1" label="$2" ns="$1/.nightshift" mode minutes tokens window epoch base now spent moved
-  mode="$(ns_report "$project" progressMode)"
+  mode="$(ns_receipts "$project" progressMode)"
   [ -n "$mode" ] || mode="time"
   [ "$mode" != completion-only ] || return 1
-  [ "$(ns_report "$project" usage)" != off ] || return 1
-  window="$(ns_usage_window "$ns" "$label" "$(ns_report_path "$project")")" || return 1
+  [ "$(ns_receipts "$project" usage)" != off ] || return 1
+  window="$(ns_usage_window "$ns" "$label" "$(ns_receipt_path "$project" "$label")")" || return 1
   epoch="$(printf '%s' "$window" | cut -f1)"
   base="$(printf '%s' "$window" | cut -f2)"
   now="$(date +%s)"
-  minutes="$(ns_report "$project" progressMinutes)"
+  minutes="$(ns_receipts "$project" progressMinutes)"
   case "$minutes" in '' | *[!0-9]*) minutes=20 ;; esac
-  tokens="$(ns_report "$project" progressTokens)"
+  tokens="$(ns_receipts "$project" progressTokens)"
   case "$tokens" in '' | *[!0-9]*) tokens=100000 ;; esac
   case "$mode" in
     time) [ "$((now - epoch))" -ge "$((minutes * 60))" ] && return 0 ;;

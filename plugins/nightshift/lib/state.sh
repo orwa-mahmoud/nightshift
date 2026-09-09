@@ -14,26 +14,382 @@ rule() {
   ns_rules_get "$f" "$2"
 }
 
-# ns_report <project-dir> <field> — one field of the report block, or empty.
+# ns_receipts <project-dir> <field> — one field of the receipts block, or empty.
+ns_receipts() {
+  ns_policy_pref "$1" receipts "$2"
+}
+
+# ns_report — the old name. Same fields live under receipts now.
 ns_report() {
-  ns_policy_pref "$1" report "$2"
+  ns_receipts "$@"
 }
 
-# ns_report_enabled <project-dir> — status 0 unless the owner turned the report off. A shift that
-# writes no report still keeps its punch status, its outputs, its continuity and its verification.
+# ns_receipts_enabled <project-dir> — status 0 unless the owner turned receipts off.
+ns_receipts_enabled() {
+  [ "$(ns_receipts "$1" enabled)" != false ]
+}
+
 ns_report_enabled() {
-  [ "$(ns_report "$1" enabled)" != false ]
+  ns_receipts_enabled "$1"
 }
 
-# ns_report_legacy_receipts <project-dir> — status 0 when the owner still wants the separate
-# per-item receipt file beside the report section. Off by default: the section completes the item.
-ns_report_legacy_receipts() {
-  [ "$(ns_report "$1" legacyItemReceipts)" = true ]
+# ns_receipts_dir <project-dir> — the folder that holds the index, morning page, and item files.
+ns_receipts_dir() {
+  printf '%s/.nightshift/receipts' "$1"
 }
 
-# ns_report_path <project-dir> — the one report for the current shift.
-ns_report_path() {
-  printf '%s/.nightshift/shift-report.md' "$1"
+# ns_receipt_slug <title> — title lowercased, non-alphanumerics collapsed to one -, trimmed, 60.
+ns_receipt_slug() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    {
+      s = ""
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        o = index("ABCDEFGHIJKLMNOPQRSTUVWXYZ", c)
+        if (o) c = substr("abcdefghijklmnopqrstuvwxyz", o, 1)
+        if (c ~ /[a-z0-9]/) s = s c
+        else s = s "-"
+      }
+      gsub(/-+/, "-", s)
+      gsub(/^-|-$/, "", s)
+      if (length(s) > 60) {
+        s = substr(s, 1, 60)
+        gsub(/-$/, "", s)
+      }
+      print s
+    }
+  '
+}
+
+# ns_receipt_nn <label> — the item number as written: leading digits, or a letter+digits id.
+ns_receipt_nn() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    {
+      if (match($0, /^[0-9]+/)) { print substr($0, RSTART, RLENGTH); exit }
+      if (match($0, /^[A-Za-z]+[0-9]+/)) { print substr($0, RSTART, RLENGTH); exit }
+    }
+  '
+}
+
+# ns_receipt_title <label> — the words after the written number, for the slug.
+ns_receipt_title() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    {
+      sub(/^[0-9]+\.[[:space:]]*/, "")
+      sub(/^[A-Za-z]+[0-9]+[[:space:]]+/, "")
+      print
+    }
+  '
+}
+
+# ns_receipt_basename <label> — NN-slug, no suffix.
+ns_receipt_basename() {
+  local label="$1" nn title slug
+  nn="$(ns_receipt_nn "$label")"
+  title="$(ns_receipt_title "$label")"
+  [ -n "$title" ] || title="$label"
+  if [ -n "$nn" ] && [ "$title" = "$label" ]; then
+    printf '%s' "$nn"
+    return 0
+  fi
+  slug="$(ns_receipt_slug "$title")"
+  if [ -n "$nn" ] && [ -n "$slug" ]; then
+    printf '%s-%s' "$nn" "$slug"
+  elif [ -n "$slug" ]; then
+    printf '%s' "$slug"
+  else
+    printf '%s' "$(ns_receipt_slug "$label")"
+  fi
+}
+
+# ns_receipt_path <project-dir> <label> — the item's file under receipts/.
+ns_receipt_path() {
+  printf '%s/%s.md' "$(ns_receipts_dir "$1")" "$(ns_receipt_basename "$2")"
+}
+
+# ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime block
+# and the gate-written heading.
+ns_receipt_has_model_text() {
+  local f="$1"
+  { [ -f "$f" ] && [ ! -L "$f" ]; } || return 1
+  awk '
+    /^[[:space:]]*$/ { next }
+    /^# / { next }
+    /^\*\*Usage:\*\*/ { next }
+    /^\*\*Duration:\*\*/ { next }
+    /^  Source:/ { next }
+    /^  Cache reads/ { next }
+    { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$f"
+}
+
+# ns_receipts_missing_nns <project> — one item number per ticked item with no model text.
+ns_receipts_missing_nns() {
+  local project="$1" punch ns label base nn
+  ns="$project/.nightshift"
+  punch="$ns/punch-list.md"
+  [ -f "$punch" ] || return 0
+  ns_receipts_enabled "$project" || return 0
+  ns_items_section "$punch" 2>/dev/null | awk '
+    /^- \[[xX]\]/ {
+      line = $0
+      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[[xX]\][[:space:]]*/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      if (line != "") print line
+    }
+  ' | while IFS= read -r label || [ -n "$label" ]; do
+    [ -n "$label" ] || continue
+    base="$(ns_receipt_basename "$label")"
+    ns_receipt_has_model_text "$ns/receipts/${base}.md" && continue
+    nn="$(ns_receipt_nn "$label")"
+    [ -n "$nn" ] || nn="$label"
+    printf '%s\n' "$nn"
+  done
+}
+
+ns_receipts_missing_count() {
+  local n
+  n="$(ns_receipts_missing_nns "$1" | grep -c . || true)"
+  printf '%s' "${n:-0}"
+}
+
+# ns_usage_scale <n> — integer below 1000, one decimal k, one decimal M.
+ns_usage_scale() {
+  local n="$1"
+  case "$n" in '' | *[!0-9]*) printf '%s' "$n"; return 0 ;; esac
+  awk -v n="$n" 'BEGIN {
+    if (n < 1000) { printf "%d", n; exit }
+    if (n < 1000000) { printf "%.1fk", n / 1000; exit }
+    printf "%.1fM", n / 1000000
+  }'
+}
+
+# ns_receipts_shift_date <project-dir> — Date: on the punch list, else the policy day, else today.
+ns_receipts_shift_date() {
+  local punch="$1/.nightshift/punch-list.md" policy="$1/.nightshift/shift-policy.json" day
+  if [ -f "$punch" ]; then
+    day="$(sed -n 's/^Date:[[:space:]]*//p' "$punch" | head -n1)"
+    day="${day%%[$'\r\n']*}"
+    [ -n "$day" ] && { printf '%s' "$day"; return 0; }
+  fi
+  if [ -f "$policy" ]; then
+    day="$(sed -n 's/.*"createdAt"[[:space:]]*:[[:space:]]*"\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\).*/\1/p' "$policy" | head -n1)"
+    [ -n "$day" ] && { printf '%s' "$day"; return 0; }
+  fi
+  date -u +%Y-%m-%d
+}
+
+# ns_receipt_usage_cells <file> — the token sum, the scaled token cell and the duration cell of one
+# receipt, tab separated. A receipt with no runtime block, or none at all, reads as dashes.
+ns_receipt_usage_cells() {
+  local f="$1" tok_in tok_out tok_sum=0 tokens='—' time='—'
+  if [ -f "$f" ]; then
+    tok_in="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]*\) \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*.*/\1/p' "$f" | head -n1)"
+    tok_out="$(sed -n 's/.*exact:[[:space:]]*[0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ \([0-9][0-9]*\).*/\1/p' "$f" | head -n1)"
+    if [ -n "$tok_in" ] && [ -n "$tok_out" ]; then
+      tok_sum=$((tok_in + tok_out))
+      tokens="$(ns_usage_scale "$tok_sum")"
+    fi
+    time="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$f" | head -n1)"
+    [ -n "$time" ] || time='—'
+  fi
+  printf '%s\t%s\t%s\n' "$tok_sum" "$tokens" "$time"
+}
+
+# ns_receipts_index_head <date> — the title and column headers of an index page.
+ns_receipts_index_head() {
+  printf '# Receipts — %s\n\n' "$1"
+  printf '| Item | State | **Tokens** | **Time** | Receipt |\n'
+  printf '| --- | --- | --- | --- | --- |\n'
+}
+# ns_receipts_index_totals <token-total> — the closing totals row of an index page.
+ns_receipts_index_totals() {
+  if [ "$1" -gt 0 ]; then
+    printf '| **Totals** |  | **%s** | **%s** |  |\n' "$(ns_usage_scale "$1")" '—'
+  else
+    printf '| **Totals** |  | **%s** | **%s** |  |\n' '—' '—'
+  fi
+}
+
+# ns_receipts_open_names <project-dir> — the receipt file name of every still-open punch-list item.
+# A receipt travels into the archive when its item is ticked; an item that is still open keeps its
+# receipt live, exactly as it keeps its box, and the next shift writes into the same file.
+ns_receipts_open_names() {
+  local punch="$1/.nightshift/punch-list.md" label
+  [ -f "$punch" ] || return 0
+  ns_items_section "$punch" 2>/dev/null | awk '
+    /^- \[[[:space:]]\]/ {
+      line = $0
+      sub(/^- \[[[:space:]]\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[[[:space:]]\][[:space:]]*/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      if (line != "") print line
+    }
+  ' | while IFS= read -r label || [ -n "$label" ]; do
+    [ -n "$label" ] || continue
+    printf '%s.md\n' "$(ns_receipt_basename "$label")"
+  done
+}
+
+# ns_receipts_write_archive_index <dir> <date> — the index of the item receipts filed in <dir>,
+# written only when at least one landed there. Links stay siblings, because the receipts it lists
+# are in that directory too.
+ns_receipts_write_archive_index() {
+  local dir="$1" date_s="$2" index rows f base label cells tok_sum tokens time tok_total=0
+  { [ -d "$dir" ] && [ ! -L "$dir" ]; } || return 0
+  index="$dir/README.md"
+  [ -L "$index" ] && return 0
+  rows="$(mktemp "${TMPDIR:-/tmp}/ns-archive-index.XXXXXX")" || return 0
+  : >"$rows"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+    base="${f##*/}"
+    case "$base" in README.md | morning-* | *.original.md) continue ;; esac
+    label="$(sed -n 's/^# //p' "$f" | head -n1)"
+    [ -n "$label" ] || continue
+    cells="$(ns_receipt_usage_cells "$f")"
+    tok_sum="${cells%%$'\t'*}"
+    cells="${cells#*$'\t'}"
+    tokens="${cells%%$'\t'*}"
+    time="${cells#*$'\t'}"
+    [ "$tok_sum" -gt 0 ] && tok_total=$((tok_total + tok_sum))
+    printf '| %s | ticked | **%s** | **%s** | [./%s](./%s) |\n' \
+      "$label" "$tokens" "$time" "$base" "$base" >>"$rows"
+  done <<FIND
+$(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
+FIND
+  if [ ! -s "$rows" ]; then
+    rm -f "$rows"
+    return 0
+  fi
+  {
+    ns_receipts_index_head "$date_s"
+    cat "$rows"
+    ns_receipts_index_totals "$tok_total"
+  } >"$index" 2>/dev/null || :
+  rm -f "$rows"
+}
+
+# ns_receipts_write_index <project-dir> [remaining] — rewrite receipts/README.md from the list,
+# marks, files. `remaining` writes the index a live receipts folder still needs — every open item
+# and every ticked item whose receipt is still there — and removes it when nothing is left.
+ns_receipts_write_index() {
+  local project="$1" mode="${2:-}" punch="$1/.nightshift/punch-list.md"
+  local dir index date_s state base file tokens time cells
+  local tok_sum tok_total=0
+  local label line items rows
+  dir="$(ns_receipts_dir "$project")"
+  [ -n "$dir" ] || return 0
+  if [ "$mode" = remaining ]; then
+    [ -d "$dir" ] || return 0
+  else
+    mkdir -p "$dir" 2>/dev/null || return 0
+  fi
+  [ ! -L "$dir" ] || return 0
+  index="$dir/README.md"
+  [ -L "$index" ] && return 0
+  date_s="$(ns_receipts_shift_date "$project")"
+  items="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-index.XXXXXX")" || return 0
+  rows="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-rows.XXXXXX")" || { rm -f "$items"; return 0; }
+  : >"$items"
+  if [ -f "$punch" ]; then
+    ns_items_section "$punch" >"$items" 2>/dev/null || :
+  fi
+  : >"$rows"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '- [ ] '*|'- [x] '*|'- [X] '*) ;;
+      *) continue ;;
+    esac
+    state=open
+    case "$line" in '- [x] '*|'- [X] '*) state=ticked ;; esac
+    label="$(printf '%s' "$line" | awk '{
+      sub(/^- \[[xX ]\][[:space:]]*\*\*/, "")
+      sub(/^- \[[xX ]\][[:space:]]*/, "")
+      sub(/[[:space:]]+—.*$/, "")
+      sub(/[[:space:]]+-[[:space:]].*$/, "")
+      sub(/\*\*.*$/, "")
+      gsub(/[[:space:]]+$/, "")
+      print
+    }')"
+    [ -n "$label" ] || continue
+    base="$(ns_receipt_basename "$label")"
+    if [ "$mode" = remaining ] && [ "$state" = ticked ] && [ ! -f "$dir/${base}.md" ]; then
+      continue
+    fi
+    file="./${base}.md"
+    cells="$(ns_receipt_usage_cells "$dir/${base}.md")"
+    tok_sum="${cells%%$'\t'*}"
+    cells="${cells#*$'\t'}"
+    tokens="${cells%%$'\t'*}"
+    time="${cells#*$'\t'}"
+    [ "$tok_sum" -gt 0 ] && tok_total=$((tok_total + tok_sum))
+    printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
+      "$label" "$state" "$tokens" "$time" "$file" "$file" >>"$rows"
+  done <"$items"
+  if [ "$mode" = remaining ] && [ ! -s "$rows" ]; then
+    rm -f "$index" "$items" "$rows"
+    return 0
+  fi
+  {
+    ns_receipts_index_head "$date_s"
+    cat "$rows"
+    ns_receipts_index_totals "$tok_total"
+  } >"$index" 2>/dev/null || :
+  rm -f "$items" "$rows"
+}
+
+# ns_migrate_receipts_layout <workspace> — report→receipts; shift-report.md → previous-report.md.
+# Idempotent. Does not bump state-version. Leaves timestamp-named receipt files untouched.
+ns_migrate_receipts_layout() {
+  local ws="$1" ns="$1/.nightshift" rules policy report dest dir tmp
+  [ -d "$ns" ] || return 0
+  for rules in "$ns/rules.json" "$ns/shift-policy.json"; do
+    { [ -f "$rules" ] && [ ! -L "$rules" ]; } || continue
+    if grep -q '"report"' "$rules" 2>/dev/null; then
+      tmp="$rules.receipts-mig.$$"
+      if command -v jq >/dev/null 2>&1; then
+        jq 'if has("report") then
+              .receipts = ((.receipts // .report) | del(.legacyItemReceipts))
+              | del(.report)
+            else . end' "$rules" >"$tmp" 2>/dev/null && mv "$tmp" "$rules"
+      elif command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+p = sys.argv[1]
+with open(p, encoding="utf-8") as f:
+    d = json.load(f)
+if "report" in d:
+    src = dict(d.get("receipts") or d["report"])
+    src.pop("legacyItemReceipts", None)
+    d["receipts"] = src
+    del d["report"]
+    with open(p, "w", encoding="utf-8") as o:
+        json.dump(d, o, indent=2, ensure_ascii=False)
+        o.write("\n")
+' "$rules" 2>/dev/null || rm -f "$tmp"
+      fi
+      rm -f "$tmp"
+    fi
+  done
+  report="$ns/shift-report.md"
+  dir="$ns/receipts"
+  dest="$dir/previous-report.md"
+  if [ -f "$report" ] && [ ! -L "$report" ]; then
+    mkdir -p "$dir" 2>/dev/null || return 0
+    if [ ! -e "$dest" ]; then
+      mv "$report" "$dest" 2>/dev/null || :
+    fi
+  fi
 }
 
 # ns_archive <project-dir> <field> — one field of the archive block, or empty.
@@ -147,6 +503,154 @@ ns_archive_dir() {
 # Filing is a copy; it never implies deleting anything.
 ns_archive_automatic() {
   [ "$(ns_archive "$1" automatic)" = true ]
+}
+
+# ns_review_handled <text> — status 0 when the entry carries a filing disposition.
+ns_review_handled() {
+  printf '%s\n' "$1" | grep -qiE ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)'
+}
+
+# ns_archive_review_label <date> <shift-id> <layout>
+ns_archive_review_label() {
+  if [ "$3" = shift ] && [ -n "$2" ] && [ "$2" != unknown ]; then
+    printf '%s' "$2"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+# ns_archive_review_dest <project> <date> <shift-id> <basename>
+# Date layout names the file with the shift so two nights on one day stay distinct.
+ns_archive_review_dest() {
+  local group layout
+  group="$(ns_archive_dir "$1" "$2" "$3")" || return 2
+  layout="$(ns_archive "$1" layout)"
+  if [ "$layout" != shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
+    printf '%s/%s/%s' "$group" "$3" "$4"
+    return 0
+  fi
+  printf '%s/%s' "$group" "$4"
+}
+
+# ns_archive_pointer_line <label> <relpath>
+ns_archive_pointer_line() {
+  printf 'Filed: [%s](%s)' "$1" "$2"
+}
+
+# ns_archive_rel_from_ns <nightshift-dir> <absolute-dest>
+ns_archive_rel_from_ns() {
+  local ns="$1" dest="$2"
+  printf '%s' "${dest#"$ns"/}"
+}
+
+# ns_archive_file_review_source <project> <basename> <date> <shift-id>
+# Moves handled entries from the live review file into the archive dest and appends one pointer.
+ns_archive_file_review_source() {
+  local project="$1" base="$2" date="$3" shift_id="$4"
+  local ns live dest label rel layout tmp filed ptr title
+  ns="$project/.nightshift"
+  live="$ns/$base"
+  [ -f "$live" ] && [ ! -L "$live" ] || return 0
+  dest="$(ns_archive_review_dest "$project" "$date" "$shift_id" "$base")" || return 2
+  layout="$(ns_archive "$project" layout)"
+  label="$(ns_archive_review_label "$date" "$shift_id" "$layout")"
+  rel="$(ns_archive_rel_from_ns "$ns" "$dest")"
+  case "$rel" in
+    '' | /*) return 2 ;;
+  esac
+  tmp="$(mktemp)" || return 2
+  filed="$(mktemp)" || {
+    rm -f "$tmp"
+    return 2
+  }
+  awk -v filed="$filed" '
+    function handled(s) {
+      t = tolower(s)
+      return t ~ / · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)/
+    }
+    /^Filed:/ { print; next }
+    /^- Filed:/ { print; next }
+    /^- / {
+      if (handled($0)) { print $0 >> filed; next }
+    }
+    { print }
+  ' "$live" >"$tmp" || {
+    rm -f "$tmp" "$filed"
+    return 2
+  }
+  if [ ! -s "$filed" ]; then
+    rm -f "$tmp" "$filed"
+    return 0
+  fi
+  if ! ns_archive_dest "$dest"; then
+    rm -f "$tmp" "$filed"
+    return 2
+  fi
+  mkdir -p "${dest%/*}" || {
+    rm -f "$tmp" "$filed"
+    return 2
+  }
+  if [ -f "$dest" ] && [ ! -L "$dest" ]; then
+    printf '\n' >>"$dest"
+    cat "$filed" >>"$dest"
+  else
+    if [ "$base" = snag-log.md ]; then
+      title='# Snag Log'
+    else
+      title='# Parking Lot'
+    fi
+    printf '%s\n\n' "$title" >"$dest"
+    cat "$filed" >>"$dest"
+  fi
+  ptr="$(ns_archive_pointer_line "$label" "$rel")"
+  if ! grep -qxF "$ptr" "$tmp"; then
+    printf '\n%s\n' "$ptr" >>"$tmp"
+  fi
+  mv "$tmp" "$live" || {
+    rm -f "$tmp" "$filed"
+    return 2
+  }
+  rm -f "$filed"
+  return 0
+}
+
+# ns_archive_check_review_pointers <project> — one snag per missing Filed: target.
+ns_archive_check_review_pointers() {
+  local project="$1" ns live dest rel line snag
+  ns="$project/.nightshift"
+  snag="$ns/snag-log.md"
+  for live in "$ns/snag-log.md" "$ns/parking-lot.md"; do
+    { [ -f "$live" ] && [ ! -L "$live" ]; } || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '%s\n' "$line" | grep -qE '^Filed: \[[^]]+\]\([^)]+\)$' || continue
+      rel="${line#*']('}"
+      rel="${rel%')'}"
+      [ -n "$rel" ] || continue
+      dest=""
+      case "$rel" in
+        /* | *..*) dest="" ;;
+        *) dest="$ns/$rel" ;;
+      esac
+      if [ -n "$dest" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
+        continue
+      fi
+      if [ -f "$snag" ] && grep -qF "broken archive pointer · $rel " "$snag"; then
+        continue
+      fi
+      if [ ! -f "$snag" ]; then
+        printf '# Snag Log\n\n' >"$snag" || return 2
+      fi
+      printf -- '- broken archive pointer · %s is not a readable file\n' "$rel" >>"$snag"
+    done <"$live"
+  done
+  return 0
+}
+
+# ns_archive_file_review_records <project> <date> <shift-id>
+ns_archive_file_review_records() {
+  ns_archive_file_review_source "$1" snag-log.md "$2" "$3" || return $?
+  ns_archive_file_review_source "$1" parking-lot.md "$2" "$3" || return $?
+  ns_archive_check_review_pointers "$1"
 }
 
 # ns_handoff <project-dir> <field> — one field of the handoff block, or empty when the file says
@@ -565,12 +1069,14 @@ ns_migrate_state() {
   kind="$(ns_state_kind "$ws")"
   case "$kind" in
     current)
+      ns_migrate_receipts_layout "$ws"
       return 0
       ;;
     legacy)
       if [ -f "$ws/.nightshift/.shift-armed" ]; then
         return 1
       fi
+      ns_migrate_receipts_layout "$ws"
       ns_write_state_version "$ws" "$NS_STATE_VERSION" || return 3
       return 0
       ;;
@@ -703,10 +1209,6 @@ EOF
 # Artifact completion receipts live in .nightshift/receipts/. They replace a work-target
 # git commit only while work-mode is artifact. Repository mode still requires a real commit.
 
-ns_receipts_dir() {
-  printf '%s' "$1/.nightshift/receipts"
-}
-
 # Real receipts directory only. A symlink here would let count, latest, and
 # fingerprint follow files outside .nightshift/.
 ns_receipts_usable_dir() {
@@ -786,16 +1288,6 @@ ns_receipts_fingerprint() {
   printf '%s\n' "$out" | cksum | awk '{print $1"-"$2}'
 }
 
-ns_receipt_slug() {
-  local s
-  s="$(printf '%s' "$1" | tr -cs 'A-Za-z0-9' '-' | tr '[:upper:]' '[:lower:]')"
-  s="${s#-}"
-  s="${s%-}"
-  s="$(printf '%s' "$s" | cut -c1-40)"
-  [ -n "$s" ] || s=item
-  printf '%s' "$s"
-}
-
 # ---------------------------------------------------------------------------------------------
 # Reading one item out of the punch list, and holding the contract to what it was
 #
@@ -846,7 +1338,8 @@ ns_punch_item() {
         }
         id = $0
         sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", id)
-        sub(/[[:space:]]*[—-].*$/, "", id)
+        sub(/[[:space:]]+—.*$/, "", id)
+        sub(/[[:space:]]+-[[:space:]].*$/, "", id)
         sub(/\*\*.*$/, "", id)
         gsub(/[[:space:]]+$/, "", id)
         if (id != want) next
@@ -977,6 +1470,8 @@ ns_status_open_title() {
 ns_status_entry_titles() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
   awk -v max="${2:-0}" '
+    /^Filed:/ { next }
+    /^- Filed:/ { next }
     /^- / {
       line = $0
       sub(/^- /, "", line)
@@ -996,7 +1491,7 @@ ns_status_entry_titles() {
 # ns_status_entry_count <file> — how many such entries the file holds.
 ns_status_entry_count() {
   if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf '0'; return 0; fi
-  awk '/^- / { n++ } END { printf "%d", n + 0 }' "$1" 2>/dev/null || printf '0'
+  awk '/^Filed:/ { next } /^- Filed:/ { next } /^- / { n++ } END { printf "%d", n + 0 }' "$1" 2>/dev/null || printf '0'
 }
 
 # ns_status_opportunity_counts <opportunity-map> — `candidate=N building=N shipped=N rejected=N

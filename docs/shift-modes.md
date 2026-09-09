@@ -137,16 +137,16 @@ surface is absent. In artifact mode:
 - Coverage hunt is skipped in artifact mode.
 - Tooling quality-debt entries are skipped in artifact mode.
 
-Review local commits in repository mode and output files plus the shift report in artifact mode.
+Review local commits in repository mode and output files plus the receipts in artifact mode.
 [Evidence and receipts](evidence-capabilities.md#reviewing-a-shift) explains the records under
 `.nightshift/receipts/` and how they are archived. Ticks are self-reported; they do not prove the work.
 
 ## Continue
 
-- [Read the shift report and token usage](shift-report.md#shift-report-and-token-usage) while the work runs or after clock-out.
+- [Read the receipts and token usage](receipts.md#receipts-and-token-usage) while the work runs or after clock-out.
 - [Archive finished work](archive.md#archive-and-continue) and keep the next shift's open items and decisions live.
 - [Run the first-night safety checklist](first-night-checklist.md#first-night-safety-checklist) before leaving work unattended.
-- [Choose owner settings](knobs.md#owner-knobs) for verification, permissions, and the report.
+- [Choose owner settings](knobs.md#owner-knobs) for verification, permissions, and the receipts.
 - [Use the command reference](commands.md#command-reference) for scheduling, stopping, and offline controls.
 - [Read a completed run](../examples/adapttable-overnight.md#example--an-overnight-run-on-a-production-library) to see the contract and its review.
 

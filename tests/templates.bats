@@ -32,7 +32,7 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
 # the gate — only the punch list is — which is exactly why proposals land there first.
 @test "the drafting table and catalog entries do show the item shape" {
   [ "$(grep -cE "$OPEN_BOX" "$REF/templates/drafting-table.md" || true)" -gt 0 ]
-  grep -qE 'ns"? write-receipt' "$REF/templates/drafting-table.md"
+  grep -qF '$NS/receipts/' "$REF/templates/drafting-table.md"
   grep -qF 'Commit line (repository) or receipt (artifact)' "$REF/templates/punch-list.md"
   for f in "$REF"/compose/shifts/*.md; do
     [ "$(grep -cE "$OPEN_BOX" "$f" || true)" -gt 0 ] || { echo "no item shape: $f"; return 1; }

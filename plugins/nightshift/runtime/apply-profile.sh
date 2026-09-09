@@ -249,7 +249,7 @@ proposed="$(PROFILE_MODE="$MODE" jq -n --argjson cur "$current" \
     # preference blocks, which no guard profile is asking about: a profile that forbids a push
     # has nothing to say about the verification cadence or where archives are filed, and
     # resetting those would take away a choice nobody made here.
-    + (["shift", "handoff", "archive", "recovery", "report"]
+    + (["shift", "handoff", "archive", "recovery", "receipts"]
        | map(select($cur[.] != null) | {(.): $cur[.]})
        | add // {});
   if env.PROFILE_MODE == "fill" then fill else replace end

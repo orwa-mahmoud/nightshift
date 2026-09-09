@@ -132,7 +132,7 @@ try {
         if ((Test-NSPathEntry $recv) -and -not (Test-NSUsableReceiptsDir $workspace)) {
             $unusableRecv = $true
             Add-NSWarn 'artifact receipts path is not a usable directory'
-            Add-NSAct confirm 'replace the unusable receipts path with a real directory so write-receipt can land; Doctor does not rewrite it'
+            Add-NSAct confirm 'replace the unusable receipts path with a real directory so receipts can land; Doctor does not rewrite it'
         }
     }
 }
@@ -216,9 +216,19 @@ else {
 }
 
 try {
-    if ((Get-NSWorkMode $workspace) -eq 'artifact' -and $ticked -gt 0 -and (Get-NSReceiptsCount $workspace) -eq 0 -and -not $unusableRecv) {
-        Add-NSWarn 'artifact mode has ticked items but no receipts'
-        Add-NSAct confirm "complete ticked items with $(Join-Path $here 'write-receipt.ps1') or untick them; Doctor does not rewrite the punch list"
+    if (Test-NSReceiptsEnabled $workspace) {
+        Add-NSFact 'completion record per-item receipt'
+        if (-not $unusableRecv) {
+            $missing = @(Get-NSReceiptsMissingNns $workspace)
+            if ($missing.Count -gt 0) {
+                Add-NSFact ('receipts missing model text ' + $missing.Count)
+                Add-NSWarn ($missing.Count.ToString() + ' ticked items have no receipt text; each item completes through its receipt file')
+                Add-NSAct confirm 'write the missing receipts under .nightshift/receipts/; Doctor does not rewrite the punch list'
+            }
+        }
+    }
+    else {
+        Add-NSFact 'completion record none; the owner disabled receipts'
     }
 }
 catch {

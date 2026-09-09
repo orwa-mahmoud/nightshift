@@ -168,6 +168,250 @@ function Test-NSRulesTarget {
         -or ($normalized -match '(?i)\.nightshift' -and $normalized -match '(?i)rules\.json')
 }
 
+function Resolve-NSFollowSymlink {
+    param([AllowEmptyString()][string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    $raw = $null
+    if ($item.PSObject.Properties['LinkType'] -and $item.LinkType) {
+        $raw = $item.Target
+    }
+    elseif ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        $raw = $item.Target
+    }
+    if ($null -eq $raw) {
+        return $null
+    }
+    $dest = if ($raw -is [System.Array]) { [string]$raw[0] } else { [string]$raw }
+    if ([string]::IsNullOrEmpty($dest)) {
+        return $null
+    }
+    if (-not [IO.Path]::IsPathRooted($dest)) {
+        $parent = Split-Path -Parent $Path
+        if ([string]::IsNullOrEmpty($parent)) {
+            return Resolve-NSWriteTarget $dest
+        }
+        $dest = Join-Path $parent $dest
+    }
+    return Resolve-NSWriteTarget $dest
+}
+
+function Test-NSWriteTargetReachesRules {
+    param([AllowEmptyString()][string]$Target)
+    if ([string]::IsNullOrWhiteSpace($Target) -or [string]::IsNullOrEmpty($script:ns)) {
+        return $false
+    }
+    $rules = Resolve-NSWriteTarget (Join-Path $script:ns 'rules.json')
+    if ($null -eq $rules) {
+        return $false
+    }
+    $canon = Resolve-NSWriteTarget $Target
+    if ($null -eq $canon) {
+        return $false
+    }
+    if ($canon -ceq $rules) {
+        return $true
+    }
+    $hop = Resolve-NSFollowSymlink $canon
+    if ($null -ne $hop -and $hop -ceq $rules) {
+        return $true
+    }
+    $lex = $Target.Replace('"', '').Replace("'", '').Replace('\', '/')
+    if (-not [IO.Path]::IsPathRooted($lex)) {
+        $base = if (-not [string]::IsNullOrEmpty($script:cwd)) { $script:cwd } else { Split-Path -Parent $script:ns }
+        if ([string]::IsNullOrEmpty($base)) {
+            return $false
+        }
+        $lex = (Join-Path $base $lex).Replace('\', '/')
+    }
+    $acc = ''
+    foreach ($part in ($lex.TrimStart('/') -split '/')) {
+        if ([string]::IsNullOrEmpty($part) -or $part -eq '.') {
+            continue
+        }
+        if ($part -eq '..') {
+            $acc = if ([string]::IsNullOrEmpty($acc) -or $acc -eq '/') { '/' } else { $acc.Substring(0, $acc.LastIndexOf('/')) }
+            continue
+        }
+        $acc = if ([string]::IsNullOrEmpty($acc) -or $acc -eq '/') { "/$part" } else { "$acc/$part" }
+        $hop = Resolve-NSFollowSymlink ($acc.Replace('/', [IO.Path]::DirectorySeparatorChar))
+        if ($null -ne $hop -and $hop -ceq $rules) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-NSRealParkingLot {
+    param([AllowEmptyString()][string]$Target)
+    if ([string]::IsNullOrWhiteSpace($Target)) {
+        return $false
+    }
+    if (Test-NSWriteTargetReachesRules $Target) {
+        return $false
+    }
+    $parking = Resolve-NSWriteTarget (Join-Path $script:ns 'parking-lot.md')
+    $canon = Resolve-NSWriteTarget $Target
+    return ($null -ne $parking -and $null -ne $canon -and $canon -ceq $parking)
+}
+
+function Get-NSLiteralAppendTarget {
+    param([AllowEmptyString()][string]$Command)
+    if ([string]::IsNullOrEmpty($Command)) {
+        return $null
+    }
+    $s = $Command
+    $n = $s.Length
+    $i = 0
+    $q = $null
+    $appends = 0
+    $extraRedir = 0
+    $extras = 0
+    $target = ''
+    $collecting = $false
+    $word = ''
+    while ($i -lt $n) {
+        $c = $s[$i]
+        $next = if ($i + 1 -lt $n) { $s[$i + 1] } else { [char]0 }
+        if ($null -ne $q) {
+            if ($c -eq '\' -and $q -eq '"') {
+                $i += 2
+                continue
+            }
+            if ($c -eq $q) {
+                $q = $null
+                $i += 1
+                continue
+            }
+            if ($q -eq '"' -and ($c -eq '$' -or $c -eq '`')) {
+                return $null
+            }
+            $i += 1
+            continue
+        }
+        if ($c -eq "'" -or $c -eq '"') {
+            if ($collecting) {
+                $q = $c
+                $i += 1
+                while ($i -lt $n -and $s[$i] -ne $q) {
+                    if ($q -eq '"' -and ($s[$i] -eq '$' -or $s[$i] -eq '`')) {
+                        return $null
+                    }
+                    $word += $s[$i]
+                    $i += 1
+                }
+                if ($i -ge $n) {
+                    return $null
+                }
+                $target = $word
+                $collecting = $false
+                $word = ''
+                $q = $null
+                $i += 1
+                continue
+            }
+            $q = $c
+            $i += 1
+            continue
+        }
+        if ($c -eq '$' -or $c -eq '`' -or $c -eq '(') {
+            return $null
+        }
+        if ($c -eq '>' -and $next -eq '>') {
+            $appends += 1
+            $collecting = $true
+            $word = ''
+            $i += 2
+            while ($i -lt $n -and ($s[$i] -eq ' ' -or $s[$i] -eq "`t")) {
+                $i += 1
+            }
+            continue
+        }
+        if ($c -eq '>') {
+            $extraRedir += 1
+            $i += 1
+            continue
+        }
+        if ($c -eq '<' -and $next -eq '<') {
+            $collecting = $false
+            $i += 2
+            continue
+        }
+        if ($c -eq '<') {
+            $extraRedir += 1
+            $i += 1
+            continue
+        }
+        if ($c -eq '|' -or $c -eq ';') {
+            $extras += 1
+            $collecting = $false
+            $i += 1
+            continue
+        }
+        if ($c -eq '&') {
+            $extras += 1
+            $collecting = $false
+            $i += $(if ($next -eq '&') { 2 } else { 1 })
+            continue
+        }
+        if ($collecting) {
+            if ($c -eq ' ' -or $c -eq "`t" -or $c -eq "`n") {
+                if (-not [string]::IsNullOrEmpty($word)) {
+                    $target = $word
+                    $collecting = $false
+                    $word = ''
+                }
+                $i += 1
+                continue
+            }
+            $word += $c
+            $i += 1
+            continue
+        }
+        $i += 1
+    }
+    if ($null -ne $q) {
+        return $null
+    }
+    if ($appends -ne 1 -or $extraRedir -ne 0 -or $extras -ne 0) {
+        return $null
+    }
+    if ([string]::IsNullOrEmpty($target)) {
+        $target = $word
+    }
+    if ([string]::IsNullOrEmpty($target) -or $target -match '[*?[]') {
+        return $null
+    }
+    $trimmed = $s.TrimStart()
+    $first = ($trimmed -split '\s+', 2)[0]
+    if ([string]::IsNullOrEmpty($first)) {
+        return $null
+    }
+    if ($first -notin @('echo', 'printf', 'cat') -and $first[0] -notin @([char]"'", [char]'"')) {
+        return $null
+    }
+    return $target
+}
+
+function Test-NSInertParkingLotWrite {
+    param(
+        [AllowEmptyString()][string]$ToolName,
+        [AllowNull()][object]$ToolInput,
+        [AllowEmptyString()][string]$Command
+    )
+    if ($ToolName -in @('Bash', 'PowerShell', 'Shell')) {
+        $appendTarget = Get-NSLiteralAppendTarget $Command
+        return (Test-NSRealParkingLot $appendTarget)
+    }
+    $paths = @(Get-NSPayloadTargets $ToolInput $ToolName $Command)
+    if ($paths.Count -ne 1) {
+        return $false
+    }
+    return Test-NSRealParkingLot ([string]$paths[0])
+}
+
 function Test-NSLeaseTarget {
     param([AllowEmptyString()][string]$Target)
     $normalized = $Target.Replace('\', '/').Replace('"', '').Replace("'", '')
@@ -687,12 +931,24 @@ function Get-NSCommandDenyReason {
 
     $isGitWrite = (Test-NSGitVerb $Scrubbed 'add') -or (Test-NSGitVerb $Scrubbed 'commit') `
         -or (Test-NSGitVerb $Scrubbed 'tag') -or (Test-NSGitVerb $Scrubbed 'remote')
+    $pointsElsewhere = [regex]::IsMatch($Scrubbed, '--git-dir|--work-tree',
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($pointsElsewhere -and [regex]::IsMatch($Scrubbed, '(?i)(^|[^A-Za-z0-9_-])git(?:\.exe)?([^A-Za-z0-9]|$)')) {
+        if ([regex]::IsMatch($Scrubbed, '(?i)(^|[^A-Za-z0-9_-])add([^A-Za-z0-9]|$)') `
+            -and -not [string]::IsNullOrEmpty($ProtectedDirectories)) {
+            return 'BLOCKED: --git-dir/--work-tree point this add somewhere the protected-directory guard cannot verify. Run it from inside the repository instead.'
+        }
+        if ([regex]::IsMatch($Scrubbed, '(?i)(^|[^A-Za-z0-9_-])commit([^A-Za-z0-9]|$)') `
+            -and (-not [string]::IsNullOrEmpty($ExpectedEmail) -or $null -ne $neverRegex)) {
+            return 'BLOCKED: --git-dir/--work-tree point this commit somewhere the configured commit guards cannot verify. Run the commit from inside the repository instead.'
+        }
+    }
     if ($isGitWrite -and -not [string]::IsNullOrEmpty($ProtectedDirectories)) {
         $verb = $null
         if (Test-NSGitVerb $Scrubbed 'add') { $verb = 'add' }
         if (Test-NSGitVerb $Scrubbed 'commit') { $verb = 'commit' }
         if ($null -ne $verb) {
-            if ($Scrubbed -match '(?i)--git-dir|--work-tree') {
+            if ($pointsElsewhere) {
                 return "BLOCKED: --git-dir/--work-tree point this $verb somewhere the protected-directory guard cannot verify. Run it from inside the repository instead."
             }
             $repository = Resolve-NSCommandRepository $Command $CurrentDirectory $Workspace
@@ -731,7 +987,7 @@ function Get-NSCommandDenyReason {
 
     $isCommit = Test-NSGitVerb $Scrubbed 'commit'
     if ($isCommit -and (-not [string]::IsNullOrEmpty($ExpectedEmail) -or $null -ne $neverRegex)) {
-        if ($Scrubbed -match '(?i)--git-dir|--work-tree') {
+        if ($pointsElsewhere) {
             return 'BLOCKED: --git-dir/--work-tree point this commit somewhere the configured commit guards cannot verify. Run the commit from inside the repository instead.'
         }
         if (-not [string]::IsNullOrEmpty($ExpectedEmail) `
@@ -924,8 +1180,21 @@ catch {
     Write-Deny 'BLOCKED: toolDeny is not a JSON object of string values, so the tool rules cannot run. Fix .nightshift/rules.json or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex).'
 }
 
-foreach ($target in $targets) {
-    if (Test-NSRulesTarget ([string]$target)) {
+if (-not (Test-NSInertParkingLotWrite $tool $toolInput $command)) {
+    $rulesHit = $false
+    if ($tool -in @('Bash', 'PowerShell', 'Shell')) {
+        if (Test-NSRulesTarget $command) { $rulesHit = $true }
+        $appendTarget = Get-NSLiteralAppendTarget $command
+        if (-not [string]::IsNullOrEmpty($appendTarget) -and (Test-NSWriteTargetReachesRules $appendTarget)) {
+            $rulesHit = $true
+        }
+    }
+    foreach ($target in $targets) {
+        if ((Test-NSRulesTarget ([string]$target)) -or (Test-NSWriteTargetReachesRules ([string]$target))) {
+            $rulesHit = $true
+        }
+    }
+    if ($rulesHit) {
         Write-Deny 'BLOCKED: the rules file is the owner''s - the night neither reads nor rewrites its own rules. Park the need in .nightshift/parking-lot.md and keep working.'
     }
 }

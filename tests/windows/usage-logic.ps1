@@ -71,10 +71,11 @@ try {
     Expect-True ($marks.Count -eq 3) "arm plus one mark per ticked item (got $($marks.Count))"
     Expect-True ($marks[1].Split("`t")[1] -ceq 'A1') 'the first mark carries the first item label'
     Expect-True ($marks[2].Split("`t")[1] -ceq 'A2') 'the second mark carries the second item label'
-    $report = [IO.File]::ReadAllText((Get-NSReportPath $w))
-    Expect-True ($report.Contains('### A1')) 'the first item has a report section'
-    Expect-True ($report.Contains('### A2')) 'the second item has a report section'
-    Expect-True (([regex]::Matches($report, 'Duration: ')).Count -eq 2) 'each closed item gets one duration line'
+    $a1 = [IO.File]::ReadAllText((Get-NSReceiptPath $w 'A1'))
+    $a2 = [IO.File]::ReadAllText((Get-NSReceiptPath $w 'A2'))
+    Expect-True ($a1.Contains('# A1')) 'the first item has a receipt'
+    Expect-True ($a2.Contains('# A2')) 'the second item has a receipt'
+    Expect-True ($a1.Contains('**Duration:**') -and $a2.Contains('**Duration:**')) 'each closed item gets one duration line'
     Expect-True (Invoke-NSGateUsageSync $ns $w $punch 2) 'a second sync is accepted'
     Expect-True (@([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns))).Count -eq 3) `
         'a second sync with nothing newly ticked writes no mark'
@@ -95,7 +96,7 @@ try {
     $r = (Read-NSUsageClaude $t 0 '').Split("`t")
     $null = Write-NSUsageRecord $ns 'claude' $r[2] 'transcript-incremental' $t $r[1] $r[0] $r[4]
     $null = Invoke-NSGateUsageSync $ns $w (Join-Path $ns 'punch-list.md') 1
-    $report = [IO.File]::ReadAllText((Get-NSReportPath $w))
+    $report = [IO.File]::ReadAllText((Get-NSReceiptPath $w 'A1'))
     Expect-True ($report.Contains('(paused ')) 'the duration line lists the gap the runtime knows about'
     Expect-True ($report.Contains('the session ended and the shift was revived')) 'the pause names its reason'
 

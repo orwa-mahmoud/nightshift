@@ -174,6 +174,5 @@ resolve_work_target() {
       fi
     done
   done
-  # What is true: the report section completes the item, and the older file is opt-in.
-  grep -qF 'legacyItemReceipts' "$ROOT/docs/knobs.md"
+  grep -qF '`receipts`' "$ROOT/docs/knobs.md"
 }

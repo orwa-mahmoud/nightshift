@@ -199,6 +199,28 @@ MD
   printf '%s\n' "$output" | grep -qF 'pattern error: elevation.containers.pattern'
 }
 
+@test "shared fixture: mixed needs, one missing allowance, and no gaps" {
+  p="$(unarmed pre-shared)"
+  fixture_list "$p"
+  run pre "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'preflight: 3 open items, 2 with gaps'
+  printf '%s\n' "$output" | grep -qxF 'gaps: containers (item 1), sudo (item 2), global-packages (item 2)'
+  policy "$p" '"allowances":[{"category":"containers","scope":"category","provenance":"one-shift"}]'
+  run pre "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'preflight: 3 open items, 1 with gaps'
+  printf '%s\n' "$output" | grep -qxF 'gaps: sudo (item 2), global-packages (item 2)'
+  policy "$p" '"allowances":[
+    {"category":"containers","scope":"category","provenance":"one-shift"},
+    {"category":"sudo","scope":"category","provenance":"one-shift"},
+    {"category":"global-packages","scope":"category","provenance":"one-shift"}]'
+  run pre "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'preflight: 3 open items, 0 with gaps'
+  printf '%s\n' "$output" | grep -qxF 'gaps: none'
+}
+
 @test "the text report names the item, its needs, and the gap summary" {
   p="$(unarmed pre-text)"
   fixture_list "$p"

@@ -26,9 +26,9 @@ then archive the shift with its evidence intact.
 | **Start without writing a backlog** | Ready-made shifts through Hunt and Quality. Choose the work yourself or let the agent compose it; review first or run directly. |
 | **Keep a long run moving** | Progress across compaction, parked decisions, deduplicated findings, and recovery under the host's supported signals. |
 | **See what the work consumed** | Runtime-measured token usage and duration per item, with host-specific gaps clearly marked. |
-| **Review today and continue tomorrow** | A live shift report, a morning receipt, and archived history that keeps unfinished work available for the next shift. |
+| **Review today and continue tomorrow** | Live receipts, a morning receipt, and archived history that keeps unfinished work available for the next shift. |
 
-[Choose a shift](#two-kinds-of-shift) · [Reports and token usage](docs/shift-report.md#shift-report-and-token-usage) ·
+[Choose a shift](#two-kinds-of-shift) · [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) ·
 [Archive and continue](docs/archive.md#archive-and-continue)
 
 The [four-hour first night](examples/adapttable-overnight.md#example--an-overnight-run-on-a-production-library) left nine focused items as reviewable
@@ -120,46 +120,52 @@ Start with one small task in a project you trust. Keep the first run attended an
 3. **Start.** With work queued, Start checks the workspace and permissions, then arms the shift
    and works the list without another question. If it refuses, it names the repair. An empty
    list offers staged work instead of silently starting something new.
-4. **Review.** Inspect the change, the checks that ran, and the shift report. Push only when you
+4. **Review.** Inspect the change, the checks that ran, and each item's receipt. Push only when you
    decide to. If progress looks wrong, Doctor reports the workspace state without changing it;
    follow [Troubleshooting](docs/troubleshooting.md#troubleshooting).
 
 The **punch list** holds the work. **Gates** are the project checks, run on the verification
 cadence you choose. The **parking lot** records decisions and defaults; the **shift log** records
-progress and problems. A tick is the agent's completion claim, not independent proof of quality.
+progress and problems, and the [vocabulary](docs/vocabulary.md#vocabulary) names every working
+file. A tick is the agent's completion claim, not independent proof of quality.
 
-A persistent folder without Git works too: artifact mode completes an item through its section in
-`.nightshift/shift-report.md`. Source, checkpoint, and optional per-item artifact receipts stay
-local. See [Evidence and receipts](docs/evidence-capabilities.md#reviewing-a-shift) for what to review.
+A persistent folder without Git works too: artifact mode completes an item through artifact receipts
+under `.nightshift/receipts/`. Source and checkpoint receipts stay local. See
+[Evidence and receipts](docs/evidence-capabilities.md#reviewing-a-shift) for what to review.
 
 ## The morning
 
 Start with the [morning receipt](docs/morning-receipt.md#the-morning-receipt): how the shift ended, what verification
-ran, what was unavailable or disabled, and what needs your attention. Then review:
+ran, what was unavailable or disabled, and what needs your attention. Then read in this order:
 
+- **The receipts index** — `.nightshift/receipts/README.md` lists every item with its state, its
+  tokens, and its time, so the shape of the night is one table.
+- **Any item's receipt** — `.nightshift/receipts/NN-slug.md` holds that item's story: what was
+  delivered, what was tried and rejected, how it was verified, and where the output landed. It
+  updates during the work, so you can read a long-running item before it finishes.
 - **The diff or output files** — the work you will accept, revise, or reject.
-- **The shift report** — one section per item with results, verification, and output locations.
-  It updates during the work, so you can inspect a long-running item before it finishes.
-- **Parked decisions and snags** — defaults to accept or reverse, and unresolved findings to address.
+- **The parking lot and the snag log** — defaults to accept or reverse, and the findings whose
+  disposition is something other than fixed.
 
 ### Token usage and time, per item
 
-The runtime adds token usage and duration from host records to each completed item's report.
-Input, output, cache, and reasoning figures retain the host's counting rules; missing readings
-stay explicit. Choose progress updates by time, tokens, either, or completion only. These control
-reporting, not a spending limit. [Reports and token usage](docs/shift-report.md#shift-report-and-token-usage) explains the
-measurements and limits; the [example report](examples/shift-report.md#shift-report) shows them in context.
+The runtime appends a bold **Usage:** line and a bold **Duration:** line to each item's receipt at
+its tick, and repeats both in the index. Input, output, cache, and reasoning figures retain the
+host's counting rules; missing readings stay explicit. Choose progress updates by time, tokens,
+either, or completion only. These control what is written, not a spending limit.
+[Receipts and token usage](docs/receipts.md#receipts-and-token-usage) explains the measurements and
+limits; the [example receipts](examples/receipts.md#receipts) show them in context.
 
 ### Archive the shift, keep the next step
 
 Ask Nightshift to archive the finished work (`/nightshift:archive` in Claude Code). Completed
 items and handled records move into dated history; open work, unanswered decisions, and the
-punch-list contract stay live. Reports keep working links to their evidence, and a history index
-makes prior shifts easier to revisit. Enable automatic filing at clock-out if you want that part
-handled too. Pruning old history is a separate, explicit retention choice.
+punch-list contract stay live. Filed receipts keep working links to their evidence, and a history
+index makes prior shifts easier to revisit. Enable automatic filing at clock-out if you want
+that part handled too. Pruning old history is a separate, explicit retention choice.
 [Archive and continue](docs/archive.md#archive-and-continue) explains what is filed and what the next shift inherits.
 
-The [public evidence library](examples/README.md#nightshift-receipts) follows real shifts through their review,
+The [real runs](examples/README.md#real-runs) library follows real shifts through their review,
 including a 45-hour contract that survived a host handoff and became a human-reviewed 67-commit
 pull request. It also includes a template for reporting a bad night without hiding what happened.
 
@@ -210,7 +216,7 @@ terminal path that needs no live model session or remaining allowance.
 ## Before you leave it alone
 
 - **Choose permissions and checks.** An unattended run cannot approve prompts. Verification can
-  run per item, at the end, on a custom cadence, or never; the report states what actually ran.
+  run per item, at the end, on a custom cadence, or never; the receipts state what actually ran.
   Configure optional guards through [Owner knobs](docs/knobs.md#owner-knobs). They are hardening, not a sandbox.
 - **Stop always wins.** Ask Nightshift to stop or use the [offline stop command](docs/commands.md#command-reference).
   Unfinished boxes stay open; the terminal path needs no live model session.
@@ -231,11 +237,12 @@ The recovery signals, process lease, host differences, and limits are in
 
 Use the [documentation index](docs/README.md#documentation) for the full reference, grouped by task.
 
+- [Vocabulary](docs/vocabulary.md#vocabulary) — the names of the working files and mechanisms.
 - [How Nightshift works](docs/how-it-works.md#how-nightshift-works) — lifecycle, policy, recovery, and limits.
 - [Shift modes](docs/shift-modes.md#shift-modes) — choose and compose the work.
 - [Command reference](docs/commands.md#command-reference) — skills, scheduling, and offline controls.
-- [Owner knobs](docs/knobs.md#owner-knobs) — permissions, verification, reports, and retention.
-- [Shift report and token usage](docs/shift-report.md#shift-report-and-token-usage) — live progress, per-item measurements, and host limits.
+- [Owner knobs](docs/knobs.md#owner-knobs) — permissions, verification, receipts, and retention.
+- [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) — live progress, per-item measurements, and host limits.
 - [Archive and continue](docs/archive.md#archive-and-continue) — preserve finished shifts and carry open work forward.
 - [Troubleshooting](docs/troubleshooting.md#troubleshooting) — diagnose before repairing.
 

@@ -26,7 +26,7 @@
 set -u
 
 # The verbs that change something on disk. Identical in the native Windows dispatcher.
-NS_WRITING_VERBS="scaffold write-receipt archive-receipts stop-shift link-workspace evidence-archive migrate-state apply-profile"
+NS_WRITING_VERBS="scaffold archive-receipts stop-shift link-workspace evidence-archive migrate-state apply-profile"
 
 NS_SELF="$0"
 case "$NS_SELF" in

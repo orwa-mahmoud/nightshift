@@ -39,6 +39,7 @@ stop_cmd() { # <project>
   printf 'keep-me\n' >"$p/.nightshift/parking-lot.md"
   run "$STOP" --project "$p"
   [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'watchman absent'
   printf '%s' "$output" | grep -qF 'deadline preserved'
   [ -f "$p/.nightshift/STOP" ]
   [ -f "$p/.nightshift/.shift-armed" ]
@@ -271,6 +272,7 @@ stop_cmd() { # <project>
   ns="$(cd -P "$p/.nightshift" && pwd -P)"
   run "$PURGE" --project "$p"
   [ "$status" -eq 1 ]
+  printf '%s' "$output" | grep -qF "purge-workspace: refusing without --confirm-path $ns"
   [ -d "$p/.nightshift" ]
   run "$PURGE" --project "$p" --confirm-path /tmp/wrong
   [ "$status" -eq 1 ]

@@ -177,7 +177,7 @@ if WORK_MODE="$(ns_work_mode "$WORKSPACE" 2>/dev/null)"; then
     recv="$(ns_receipts_dir "$WORKSPACE")"
     if { [ -e "$recv" ] || [ -L "$recv" ]; } && ! ns_receipts_usable_dir "$WORKSPACE" >/dev/null; then
       refuse "receipts artifact receipts path exists but is not a usable directory"
-      repair "replace $recv with a real directory so write-receipt can land"
+      repair "replace $recv with a real directory so receipts can land"
     fi
   fi
 else

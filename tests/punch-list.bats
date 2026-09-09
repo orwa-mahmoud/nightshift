@@ -15,7 +15,11 @@ LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
 CORE="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/shared/gate-core.sh"
 GATE="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/clock-out-gate.sh"
 
+PULSE="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"
+
 lib() { bash -c '. "$1"; shift; "$@"' _ "$LIB" "$@"; }
+core() { bash -c '. "$1"; . "$2"; shift 2; "$@"' _ "$LIB" "$CORE" "$@"; }
+pulse() { bash -c '. "$1"; . "$2"; shift 2; "$@"' _ "$LIB" "$PULSE" "$@"; }
 
 # a_list <project> — a punch list with a contract, a gates block, and three items, one of which
 # carries fenced code and a nested list.
@@ -297,6 +301,47 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   run block "$p"
   reason "$output" | grep -qF 'shift contract above the Items heading'
   ! reason "$output" | grep -qF 'still binds'
+}
+
+# A hyphen inside a word is part of the title. A spaced dash introduces a suffix and is stripped.
+hyphen_list() {
+  cat >"$1/.nightshift/punch-list.md" <<'LIST'
+# Punch list
+
+## Items
+
+- [x] **2. Make the packed Node-only build reproducible.**
+
+- [ ] **3. Ship it — already reviewed**
+
+- [ ] **4. Re-index — later**
+LIST
+}
+
+@test "a hyphenated title stays whole; a spaced dash is a suffix" {
+  p="$(new_project pl-hyphen)"
+  hyphen_list "$p"
+  list="$p/.nightshift/punch-list.md"
+
+  [ "$(core ns_gate_item_label "$list" 1)" = '2. Make the packed Node-only build reproducible.' ]
+  [ "$(core ns_gate_open_item "$list")" = '3. Ship it' ]
+  [ "$(pulse ns_pulse_active_item "$p")" = '3. Ship it' ]
+  [ "$(lib ns_punch_item "$list" '2. Make the packed Node-only build reproducible.' | head -n1)" \
+    = '- [x] **2. Make the packed Node-only build reproducible.**' ]
+  [ "$(lib ns_punch_item "$list" '4. Re-index' | head -n1)" = '- [ ] **4. Re-index — later**' ]
+  [ -z "$(lib ns_punch_item "$list" '2. Make the packed Node')" ]
+
+  printf '## Items\n- [ ] **2. Make the packed Node-only build reproducible.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  [ "$(pulse ns_pulse_active_item "$p")" = '2. Make the packed Node-only build reproducible.' ]
+}
+
+@test "the gate usage mark carries a hyphenated title whole" {
+  p="$(new_project pl-hyphen-mark)"
+  printf '## Items\n- [x] **2. Make the packed Node-only build reproducible.**\n- [ ] **3. Ship it — already reviewed**\n' \
+    >"$p/.nightshift/punch-list.md"
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
+  grep -q $'\t2. Make the packed Node-only build reproducible.\t' "$p/.nightshift/usage/marks.tsv"
 }
 
 # The Windows twin. Not "looks equivalent" — the same bytes and the same digests, checked against

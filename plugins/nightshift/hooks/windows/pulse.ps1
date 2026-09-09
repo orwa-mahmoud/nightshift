@@ -80,8 +80,7 @@ $counts = Get-NSBoxCounts $punch
 if (-not (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) `
     -or -not (Test-Path -LiteralPath $punch -PathType Leaf) `
     -or ((Test-Path -LiteralPath (Join-Path $ns '.ended') -PathType Leaf) `
-        -and -not (Test-NSReparsePoint (Join-Path $ns '.ended'))) `
-    -or $counts.Open -eq 0) {
+        -and -not (Test-NSReparsePoint (Join-Path $ns '.ended')))) {
     exit 0
 }
 
@@ -107,12 +106,14 @@ elseif ($null -eq $session -or [string]::IsNullOrEmpty($session.SessionId) -or $
     exit 0
 }
 
-$pulse = Join-Path $ns '.shift-pulse'
-if (Test-NSReparsePoint $pulse) {
-    Remove-Item -LiteralPath $pulse -Force -ErrorAction SilentlyContinue
+if ($counts.Open -gt 0) {
+    $pulse = Join-Path $ns '.shift-pulse'
+    if (Test-NSReparsePoint $pulse) {
+        Remove-Item -LiteralPath $pulse -Force -ErrorAction SilentlyContinue
+    }
+    $line = '{0} {1}{2}' -f (Get-NSUnixTime), $sessionId, [Environment]::NewLine
+    [IO.File]::WriteAllText($pulse, $line, (New-Object Text.UTF8Encoding($false)))
 }
-$line = '{0} {1}{2}' -f (Get-NSUnixTime), $sessionId, [Environment]::NewLine
-[IO.File]::WriteAllText($pulse, $line, (New-Object Text.UTF8Encoding($false)))
 
 # The reading rides on the pulse: no daemon, no timer, no second session. Cursor carries its figures
 # on the payload; the other two name a transcript. Never fatal - a host that reports nothing leaves
@@ -124,5 +125,11 @@ try {
 }
 catch {
     [Console]::Error.WriteLine('nightshift: usage accounting skipped - ' + $_.Exception.Message)
+}
+try {
+    Write-NSPulseContext $HostName (Get-NSPulseReceiptsNotice $ns $workspace)
+}
+catch {
+    [Console]::Error.WriteLine('nightshift: receipts notice skipped - ' + $_.Exception.Message)
 }
 exit 0

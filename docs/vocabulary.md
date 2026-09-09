@@ -12,8 +12,7 @@ The working files and the terms you will see during a shift:
 | **hardhat** | PreToolUse hook | mandatory safety equipment — your forbidden commands, protected dirs, secret patterns, and expected commit identity; denied, not discouraged |
 | **process lease** | `.nightshift/.shift-lease` | transient ownership of the active shift process — each watchman recovery advances its generation, admitting the recovered worker and fencing stale processes on the same conversation without locking other tabs |
 | **item gate** | project verification commands | checks run at the selected cadence: per item, final, custom, or none; a check that runs must pass |
-| **shift report** | `.nightshift/shift-report.md` | live item progress, results, verification, output locations, and measured usage and duration where available |
-| **artifact receipt** | `.nightshift/receipts/` | optional per-item record of outputs, verification, and hashes; the report section is the default completion record in artifact mode |
+| **receipt** | `.nightshift/receipts/` | the runtime's records: one file per item, the index, and the morning receipt; live progress, results, verification, output locations, and measured usage and duration where available |
 | **archive** | `.nightshift/archive/<YYYY-MM-DD>/` by default; `archive.root` and `archive.layout` move it | filing of shipped items, the journal, handled snags, and copied artifact receipts. Filing is a copy: a live record is retired only when Archive is told it is closed. Missing or empty receipts create no dated receipts folder. |
 | **site inspection** | interval commands | the scheduled heavy inspection (coverage, dead code, Sonar) every N items or H hours |
 | **walkthrough** | catalog item | an ongoing work loop with a required deadline; some entries can finish early at convergence or verified objective satisfaction |

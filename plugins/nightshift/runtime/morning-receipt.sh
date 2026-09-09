@@ -181,6 +181,8 @@ SOURCE_SEP=', '
 NONE='none'
 GATES_FROM='punch list'
 NO_POLICY='no shift policy was written'
+POLICY_MALFORMED='the policy file is present but unreadable or fails the schema'
+POLICY_KIND=absent
 
 # _short_digest FULL -> SHORT_DIGEST: the first twelve hex chars PowerShell shows.
 _short_digest() {
@@ -534,9 +536,49 @@ _find_policy() {
   POLICY_FILE="$cand"
 }
 
+_classify_policy() {
+  POLICY_KIND=absent
+  [ -n "$POLICY_FILE" ] || return 0
+  _ns_policy_load_shift_file "$POLICY_FILE" >/dev/null 2>&1
+  case "$NS_POLICY_SHIFT_STATE" in
+    ok) POLICY_KIND=accepted ;;
+    absent) POLICY_KIND=absent ;;
+    *) POLICY_KIND=malformed ;;
+  esac
+}
+
+_receipts_line() {
+  local punch="$NS/punch-list.md" line label base
+  printf 'Receipts: [index](./README.md)'
+  [ -f "$punch" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in
+      '- [x] '*) label="${line#'- [x] '}" ;;
+      '- [X] '*) label="${line#'- [X] '}" ;;
+      *) continue ;;
+    esac
+    label="${label#\*\*}"
+    label="$(printf '%s' "$label" | awk '{
+      sub(/[[:space:]]+—.*$/, "")
+      sub(/[[:space:]]+-[[:space:]].*$/, "")
+      sub(/\*\*.*$/, "")
+      gsub(/[[:space:]]+$/, "")
+      print
+    }')"
+    [ -n "$label" ] || continue
+    base="$(ns_receipt_basename "$label")"
+    [ -n "$base" ] || continue
+    printf ', [%s](./%s.md)' "$label" "$base"
+  done <<NSITEMS
+$(ns_items_section "$punch" 2>/dev/null || :)
+NSITEMS
+}
+
 _load_policy() {
   local kind h1 h2 h3 h4 h5 h6 h7
   [ -n "$POLICY_FILE" ] || return 0
+  [ "$POLICY_KIND" = accepted ] || return 0
   _emit_policy "$POLICY_FILE" >"$TMPD/policy" 2>/dev/null || return 0
   while IFS="$FS" read -r -d "$RS" kind h1 h2 h3 h4 h5 h6 h7; do
     case "$kind" in
@@ -872,6 +914,8 @@ EOF
     sec_add "- Verified: $JOINED"
   elif [ "$chosen" = one-shift ]; then
     sec_add "- Verified: none $DASH verification level $level (owner)"
+  elif [ "$POLICY_KIND" = malformed ]; then
+    sec_add "- Verified: none $DASH $POLICY_MALFORMED"
   else
     sec_add "- Verified: none $DASH $NO_POLICY"
   fi
@@ -1161,6 +1205,7 @@ _lines_next() {
 
 _load_ledger
 _find_policy
+_classify_policy
 _load_policy
 ns_policy_resolve_table "$WORKSPACE" >"$TMPD/resolved" 2>/dev/null ||
   : >"$TMPD/resolved"
@@ -1170,6 +1215,12 @@ _building
 _ending
 
 add '# Morning receipt'
+add "$(_receipts_line)"
+case "$POLICY_KIND" in
+  accepted) add "- Policy record: accepted" ;;
+  malformed) add "- Policy record: malformed $DASH $POLICY_MALFORMED" ;;
+  *) add "- Policy record: absent $DASH the shift wrote no policy" ;;
+esac
 
 # Without an explicit --view, the owner's configured reader decides. The sections a view renders
 # are the documented factual ones; an owner list picks from those and orders them, and an empty

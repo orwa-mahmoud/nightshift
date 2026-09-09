@@ -45,6 +45,9 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'a fully ticked work order reports neither its box nor its heading' "$LOGIC"
   grep -qF 'only the Items section is read' "$LOGIC"
   grep -qF 'a work order is matched against the same patterns' "$LOGIC"
+  grep -qF 'the open-item and gap summary leads' "$LOGIC"
+  grep -qF 'shared fixture: no gaps' "$LOGIC"
+  grep -qF 'shared fixture mixed needs: gap summary' "$LOGIC"
 }
 
 @test "Windows preflight logic checks gaps against the resolver and never refuses" {

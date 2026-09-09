@@ -17,12 +17,12 @@ retiring a live record is a separate choice based on whether unfinished work sti
 | Snags and parked decisions | Files handled entries; unresolved findings and unanswered decisions stay live. |
 | Work orders | Keeps pending work available for a later shift. |
 | Product research and opportunity map | Preserves research and terminal outcomes with their evidence. Candidate, building, and parked opportunities stay live. |
-| Reports, receipts, and usage records | Files the finished shift's records. Live receipts are copied; records still needed for continuation remain available. |
+| Receipts and usage records | Files the receipt of every ticked item, the morning receipt, and the shift's usage readings; the receipt of an item that is still open stays live with its box, and the receipts index is rebuilt on both sides of the move. |
 
-The archived report's links are adjusted so its evidence remains reachable. An untouched original
-is preserved beside it. Archive also writes a history index with objectives, outcomes, verification,
-evidence locations, and continuation context, so later shifts can revisit earlier work without
-reconstructing every conversation. Missing information stays marked as missing.
+The links inside a filed receipt are adjusted so its evidence remains reachable, and an untouched
+original is preserved beside it. Archive also writes a history index with objectives, outcomes,
+verification, evidence locations, and continuation context, so later shifts can revisit earlier
+work without reconstructing every conversation. Missing information stays marked as missing.
 
 ## File automatically at clock-out
 
@@ -49,5 +49,5 @@ before deleting them. Live work and owner-authored files are outside that prunin
 See [retention and archive settings](knobs.md#shift-handoff-and-archive) and the
 [Archive contract](../plugins/nightshift/skills/archive/SKILL.md) for the precise boundaries.
 
-[Read the shift report and token usage](shift-report.md#shift-report-and-token-usage) ·
+[Read the receipts and token usage](receipts.md#receipts-and-token-usage) ·
 [Review the morning receipt](morning-receipt.md#the-morning-receipt) · [Documentation index](README.md#documentation)
