@@ -569,6 +569,10 @@ try {
     $sessionStartLogicRun = Invoke-TestScript $sessionStartLogic
     Assert-Equal 0 $sessionStartLogicRun.ExitCode `
         "SessionStart context reset: $($sessionStartLogicRun.Stdout) $($sessionStartLogicRun.Stderr)"
+    $pulseLogic = Join-Path $PSScriptRoot 'pulse-logic.ps1'
+    $pulseLogicRun = Invoke-TestScript $pulseLogic
+    Assert-Equal 0 $pulseLogicRun.ExitCode `
+        "receipt duty injection: $($pulseLogicRun.Stdout) $($pulseLogicRun.Stderr)"
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost

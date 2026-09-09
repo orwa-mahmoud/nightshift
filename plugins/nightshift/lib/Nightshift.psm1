@@ -4383,42 +4383,42 @@ function Get-NSGateReminderText {
     $mode = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderMode')
     if ($mode -cne 'changed-only') {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $reset = Join-Path $ns '.context-reset'
     if (Test-Path -LiteralPath $reset) {
         Remove-Item -LiteralPath $reset -Force -ErrorAction SilentlyContinue
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $file = Join-Path $ns '.clock-out-reminder'
     if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf)) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $lines = @([IO.File]::ReadAllLines($file))
     if ($lines.Count -lt 2 -or [string]::IsNullOrEmpty($lines[0]) -or $lines[1].Trim() -notmatch '^\d+$') {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     if ($lines[0] -cne $Fingerprint) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $count = [int]$lines[1].Trim()
     $limit = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderLimit')
     if ($limit -notmatch '^\d+$' -or [int]$limit -le 0) { $limit = 10 }
     if ($count -ge [int]$limit) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $short = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminder')
     if ([string]::IsNullOrEmpty($short)) {
         Save-NSGateReminder $ns $Fingerprint 0
-        return $Full
+        return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     Save-NSGateReminder $ns $Fingerprint ($count + 1)
-    return (Format-NSGateReminder $short $Item $Open $Ticked)
+    return (Add-NSGateReceiptsMissingNote $Workspace (Format-NSGateReminder $short $Item $Open $Ticked))
 }
 
 function Save-NSGateReminder {
@@ -9298,6 +9298,259 @@ function Invoke-NSPulseMarks {
     $transcripts = @()
     if (-not [string]::IsNullOrEmpty($Source) -and (Test-Path -LiteralPath $Source -PathType Leaf)) { $transcripts = @($Source) }
     return (Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts)
+}
+
+function Get-NSPulseItemLabelFromLine {
+    param([AllowEmptyString()][string]$Line, [string]$Box = 'x')
+    if ([string]::IsNullOrEmpty($Line)) { return '' }
+    $t = $Line
+    if ($Box -ceq 'open') {
+        $t = $t -creplace '^- \[ \][ \t]*\*\*', ''
+        $t = $t -creplace '^- \[ \][ \t]*', ''
+    }
+    else {
+        $t = $t -creplace '^- \[[xX]\][ \t]*\*\*', ''
+        $t = $t -creplace '^- \[[xX]\][ \t]*', ''
+    }
+    $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
+    $t = $t -creplace '\*\*.*$', ''
+    return $t.TrimEnd()
+}
+
+function Get-NSPulseActiveItem {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return '' }
+    foreach ($line in (Get-NSPunchItemsSection $punch)) {
+        if ($line -cnotmatch '^- \[ \]') { continue }
+        return (Get-NSPulseItemLabelFromLine $line 'open')
+    }
+    return ''
+}
+
+function Get-NSPulseTickedLabels {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $out = New-Object Collections.Generic.List[string]
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return , @() }
+    foreach ($line in (Get-NSPunchItemsSection $punch)) {
+        if ($line -cnotmatch '^- \[[xX]\]') { continue }
+        $label = Get-NSPulseItemLabelFromLine $line 'x'
+        if (-not [string]::IsNullOrEmpty($label)) { $out.Add($label) }
+    }
+    return , $out.ToArray()
+}
+
+function Get-NSReceiptsBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = Join-Path $Workspace '.nightshift/rules.json'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
+    }
+    catch { return $null }
+    if (-not ($document -is [Collections.IDictionary])) { return $null }
+    if (-not $document.Contains('receipts')) { return $null }
+    $block = $document['receipts']
+    if (-not ($block -is [Collections.IDictionary])) { return $null }
+    return $block
+}
+
+function Test-NSReceiptsEnabled {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $block = Get-NSReceiptsBlock $Workspace
+    if ($null -eq $block) { return $true }
+    if (-not $block.Contains('enabled')) { return $true }
+    $value = $block['enabled']
+    if ($value -is [bool]) { return [bool]$value }
+    return ([string]$value -cne 'false')
+}
+
+function Get-NSReceiptsField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Name)
+    $block = Get-NSReceiptsBlock $Workspace
+    if ($null -eq $block -or -not $block.Contains($Name)) { return '' }
+    return [string]$block[$Name]
+}
+
+function Get-NSPulseReceiptsSections {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = Get-NSReceiptsField $Workspace 'templatePath'
+    if (-not [string]::IsNullOrEmpty($path)) {
+        return ('follow the owner''s template at ' + $path)
+    }
+    return 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+}
+
+function Get-NSPulseReceiptsStartLine {
+    param([string]$Workspace, [string]$Label)
+    $dash = [string][char]0x2014
+    return ('receipts: item ' + $Label + ' started ' + $dash + ' open .nightshift/receipts/' +
+        (Get-NSReceiptBasename $Label) + '.md with one paragraph on the approach; ' +
+        (Get-NSPulseReceiptsSections $Workspace))
+}
+
+function Get-NSPulseReceiptsTickLine {
+    param([string]$Label)
+    $dash = [string][char]0x2014
+    return ('receipts: item ' + $Label + ' is ticked ' + $dash +
+        ' write its closing paragraph in .nightshift/receipts/' +
+        (Get-NSReceiptBasename $Label) + '.md now, before starting the next item.')
+}
+
+function Get-NSPulseReceiptsCadenceLine {
+    param([string]$Label)
+    $dash = [string][char]0x2014
+    return ('receipts: progress update due for ' + $Label + ' ' + $dash +
+        ' refresh the progress paragraph in .nightshift/receipts/' +
+        (Get-NSReceiptBasename $Label) + '.md: where it stands, what is left.')
+}
+
+function Test-NSReceiptHasModelText {
+    param([AllowEmptyString()][string]$Path)
+    if ([string]::IsNullOrEmpty($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    if (Test-NSReparsePoint $Path) { return $false }
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        if ($line.StartsWith('# ')) { continue }
+        if ($line.StartsWith('**Usage:**')) { continue }
+        if ($line.StartsWith('**Duration:**')) { continue }
+        if ($line.StartsWith('  Source:')) { continue }
+        if ($line.StartsWith('  Cache reads')) { continue }
+        return $true
+    }
+    return $false
+}
+
+function Get-NSGateReceiptsMissingNote {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return '' }
+    $ns = Join-Path $Workspace '.nightshift'
+    $parts = New-Object Collections.Generic.List[string]
+    foreach ($label in @(Get-NSPulseTickedLabels $Workspace)) {
+        $path = Join-Path (Join-Path $ns 'receipts') ((Get-NSReceiptBasename $label) + '.md')
+        if (Test-NSReceiptHasModelText $path) { continue }
+        $nn = Get-NSReceiptNn $label
+        if ([string]::IsNullOrEmpty($nn)) { $nn = $label }
+        $parts.Add($nn)
+    }
+    if ($parts.Count -eq 0) { return '' }
+    return ('Receipts missing model text: ' + ($parts -join ', '))
+}
+
+function Add-NSGateReceiptsMissingNote {
+    param([string]$Workspace, [AllowEmptyString()][string]$Text)
+    $note = Get-NSGateReceiptsMissingNote $Workspace
+    if ([string]::IsNullOrEmpty($note)) { return $Text }
+    if ([string]::IsNullOrEmpty($Text)) { return $note }
+    return ($Text + ' ' + $note)
+}
+
+function Test-NSUsageProgressDue {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Label)
+    $mode = Get-NSReceiptsField $Workspace 'progressMode'
+    if ([string]::IsNullOrEmpty($mode)) { $mode = 'time' }
+    if ($mode -ceq 'completion-only') { return $false }
+    if ((Get-NSReceiptsField $Workspace 'usage') -ceq 'off') { return $false }
+    $ns = Join-Path $Workspace '.nightshift'
+    $marks = Get-NSUsageMarksPath $ns
+    if (-not (Test-Path -LiteralPath $marks -PathType Leaf)) { return $false }
+    $last = @([IO.File]::ReadAllLines($marks)) | Select-Object -Last 1
+    if ([string]::IsNullOrEmpty($last)) { return $false }
+    $epoch = [long]0
+    [void][long]::TryParse($last.Split("`t")[0], [ref]$epoch)
+    $minutes = Get-NSReceiptsField $Workspace 'progressMinutes'
+    if ($minutes -notmatch '^\d+$') { $minutes = '20' }
+    return ((Get-NSUnixTime) - $epoch) -ge ([long]$minutes * 60)
+}
+
+function Get-NSPulseReportDue {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return '' }
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return '' }
+    $label = Get-NSPulseActiveItem $Workspace
+    if ([string]::IsNullOrEmpty($label)) { return '' }
+    $want = Get-NSPulseReceiptsCadenceLine $label
+    $duePath = Join-Path $NightshiftDir '.receipt-due'
+    if ((Test-Path -LiteralPath $duePath -PathType Leaf) -and -not (Test-NSReparsePoint $duePath)) {
+        $due = [IO.File]::ReadAllText($duePath).TrimEnd("`r", "`n")
+        if ($due.Contains('for ' + $label + ' ') -or $due.EndsWith('for ' + $label)) { return $due }
+    }
+    if (-not (Test-NSUsageProgressDue $Workspace $label)) {
+        if ((Test-Path -LiteralPath $duePath -PathType Leaf) -and -not (Test-NSReparsePoint $duePath)) {
+            [IO.File]::WriteAllText($duePath, $want, (New-Object Text.UTF8Encoding($false)))
+            return $want
+        }
+        return ''
+    }
+    [IO.File]::WriteAllText($duePath, $want, (New-Object Text.UTF8Encoding($false)))
+    return $want
+}
+
+function Get-NSPulseReceiptsNotice {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return '' }
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return '' }
+    $usage = Join-Path $NightshiftDir 'usage'
+    $prevFile = Join-Path $usage 'previous-pulse'
+    $labelsFile = Join-Path $usage 'previous-ticked'
+    $prevActive = ''
+    $prevTicked = 0
+    if ((Test-Path -LiteralPath $prevFile -PathType Leaf) -and -not (Test-NSReparsePoint $prevFile)) {
+        foreach ($row in [IO.File]::ReadAllLines($prevFile)) {
+            if ($row.StartsWith('active' + "`t")) { $prevActive = $row.Substring(7) }
+            elseif ($row.StartsWith('ticked' + "`t")) {
+                $n = 0
+                if ([int]::TryParse($row.Substring(7), [ref]$n)) { $prevTicked = $n }
+            }
+        }
+    }
+    $prevLabels = @()
+    if ((Test-Path -LiteralPath $labelsFile -PathType Leaf) -and -not (Test-NSReparsePoint $labelsFile)) {
+        $prevLabels = @([IO.File]::ReadAllLines($labelsFile))
+    }
+    $active = Get-NSPulseActiveItem $Workspace
+    $labels = @(Get-NSPulseTickedLabels $Workspace)
+    $ticked = $labels.Count
+    $lines = New-Object Collections.Generic.List[string]
+    if ($ticked -gt $prevTicked) {
+        foreach ($label in $labels) {
+            if ($prevLabels -ccontains $label) { continue }
+            $lines.Add((Get-NSPulseReceiptsTickLine $label))
+        }
+    }
+    if (-not [string]::IsNullOrEmpty($active) -and $active -cne $prevActive) {
+        $lines.Add((Get-NSPulseReceiptsStartLine $Workspace $active))
+    }
+    $cadence = Get-NSPulseReportDue $NightshiftDir $Workspace
+    if (-not [string]::IsNullOrEmpty($cadence)) { $lines.Add($cadence) }
+    if (-not (Test-Path -LiteralPath $usage -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $usage -Force -ErrorAction SilentlyContinue
+    }
+    if ((Test-Path -LiteralPath $usage -PathType Container) -and -not (Test-NSReparsePoint $usage)) {
+        [IO.File]::WriteAllText($prevFile, ("active`t$active`nticked`t$ticked`n"),
+            (New-Object Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllText($labelsFile, (($labels -join "`n") + $(if ($labels.Count -gt 0) { "`n" } else { '' })),
+            (New-Object Text.UTF8Encoding($false)))
+    }
+    if ($lines.Count -eq 0) { return '' }
+    return ($lines -join "`n")
+}
+
+function Write-NSPulseContext {
+    param([string]$HostName, [AllowEmptyString()][string]$Line)
+    if ([string]::IsNullOrEmpty($Line)) { return }
+    if ($HostName -ceq 'cursor') {
+        Write-Output (ConvertTo-Json -Compress ([pscustomobject]@{ additional_context = $Line }))
+        return
+    }
+    $hook = [pscustomobject]@{
+        hookSpecificOutput = [pscustomobject]@{
+            hookEventName     = 'PostToolUse'
+            additionalContext = $Line
+        }
+    }
+    Write-Output (ConvertTo-Json -Compress $hook)
 }
 
 # Move-NSUsageRetire - a finished shift's accounting, set aside so the next shift starts clean.

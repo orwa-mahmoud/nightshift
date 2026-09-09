@@ -98,6 +98,22 @@ catch {
 
 $line = 'nightshift: context was compacted — reload the nightshift skill, the contract in ' +
     'punch-list.md, and the active section of shift-report.md before continuing.'
+$active = ''
+$punch = Join-Path $ns 'punch-list.md'
+if (Test-Path -LiteralPath $punch -PathType Leaf) {
+    foreach ($row in (Get-NSPunchItemsSection $punch)) {
+        if ($row -cnotmatch '^- \[ \]') { continue }
+        $t = $row -creplace '^- \[ \][ \t]*\*\*', ''
+        $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
+        $t = $t -creplace '\*\*.*$', ''
+        $active = $t.TrimEnd()
+        break
+    }
+}
+if (-not [string]::IsNullOrEmpty($active)) {
+    $line = $line + ' Receipts: one file per item under .nightshift/receipts/; the current item is ' +
+        $active + ' → ' + (Get-NSReceiptBasename $active) + '.md.'
+}
 $out = [pscustomobject]@{
     hookSpecificOutput = [pscustomobject]@{
         hookEventName    = 'SessionStart'

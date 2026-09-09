@@ -281,7 +281,79 @@ ns_gate_stall_state() {
 # Prints the reason this block should carry. The full owner text unless the gate positively knows
 # nothing has changed since the last block, in which case the owner's short line with the item and
 # counts put in.
+# ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime block
+# and the gate-written heading.
+ns_receipt_has_model_text() {
+  local f="$1"
+  [ -f "$f" ] && [ ! -L "$f" ] || return 1
+  awk '
+    /^[[:space:]]*$/ { next }
+    /^# / { next }
+    /^\*\*Usage:\*\*/ { next }
+    /^\*\*Duration:\*\*/ { next }
+    /^  Source:/ { next }
+    /^  Cache reads/ { next }
+    { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$f"
+}
+
+# ns_gate_receipts_missing_note <project> — "Receipts missing model text: NN, NN" or empty.
+ns_gate_receipts_missing_note() {
+  local project="$1" punch ns label base nn list=""
+  ns="$project/.nightshift"
+  punch="$ns/punch-list.md"
+  [ -f "$punch" ] || return 0
+  [ "$(ns_receipts "$project" enabled 2>/dev/null)" != false ] || return 0
+  while IFS= read -r label || [ -n "$label" ]; do
+    [ -n "$label" ] || continue
+    base="$(ns_receipt_basename "$label")"
+    if ns_receipt_has_model_text "$ns/receipts/${base}.md"; then
+      continue
+    fi
+    nn="$(ns_receipt_nn "$label")"
+    [ -n "$nn" ] || nn="$label"
+    if [ -z "$list" ]; then
+      list="$nn"
+    else
+      list="$list, $nn"
+    fi
+  done <<EOF
+$(ns_items_section "$punch" 2>/dev/null | awk '
+  /^- \[[xX]\]/ {
+    line = $0
+    sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
+    sub(/^- \[[xX]\][[:space:]]*/, "", line)
+    sub(/[[:space:]]+—.*$/, "", line)
+    sub(/[[:space:]]+-[[:space:]].*$/, "", line)
+    sub(/\*\*.*$/, "", line)
+    gsub(/[[:space:]]+$/, "", line)
+    if (line != "") print line
+  }
+')
+EOF
+  [ -n "$list" ] || return 0
+  printf 'Receipts missing model text: %s' "$list"
+}
+
+ns_gate_receipts_missing_append() {
+  local note
+  note="$(ns_gate_receipts_missing_note "$1")"
+  if [ -n "$note" ]; then
+    printf '%s %s' "$2" "$note"
+  else
+    printf '%s' "$2"
+  fi
+}
+
 ns_gate_reminder_text() {
+  local project="$1" full="$2" open="$3" ticked="$4" item="$5" fp="$6"
+  local ns="$1/.nightshift" mode file previous count limit short text
+  text="$(ns_gate_reminder_text_body "$project" "$full" "$open" "$ticked" "$item" "$fp")"
+  ns_gate_receipts_missing_append "$project" "$text"
+}
+
+ns_gate_reminder_text_body() {
   local project="$1" full="$2" open="$3" ticked="$4" item="$5" fp="$6"
   local ns="$1/.nightshift" mode file previous count limit short
   mode="$(rule "$project" clockOutReminderMode "${NIGHTSHIFT_CLOCKOUT_REMINDER_MODE:-}")"

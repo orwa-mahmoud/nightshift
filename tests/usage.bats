@@ -308,14 +308,14 @@ mark_at() {
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
   [ "$status" -eq 0 ]
-  [ "$output" = 'receipts: progress update due for P01' ]
+  [ "$output" = 'receipts: progress update due for P01 — refresh the progress paragraph in .nightshift/receipts/P01.md: where it stands, what is left.' ]
   [ -f "$p/.nightshift/.receipt-due" ]
 
   # The same notice stands rather than being written afresh: the marker is what a revived session
   # or a dropped hook output finds at the next pulse.
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
-  [ "$output" = 'receipts: progress update due for P01' ]
+  [ "$output" = 'receipts: progress update due for P01 — refresh the progress paragraph in .nightshift/receipts/P01.md: where it stands, what is left.' ]
 }
 
 @test "the notice reaches the model in each host's own context field" {
@@ -429,7 +429,7 @@ mark_at() {
   : >"$p/.nightshift/.shift-armed"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{enabled:false},handoff:{enabled:true}}' >"$p/.nightshift/shift-policy.json"
+    receipts:{enabled:false},handoff:{enabled:true}}' >"$p/.nightshift/shift-policy.json"
   # Reporting is off, so no notice is ever due — the handoff is a separate page and unaffected.
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
@@ -443,7 +443,7 @@ mark_at() {
   : >"$q/.nightshift/.shift-armed"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{enabled:true},handoff:{enabled:false}}' >"$q/.nightshift/shift-policy.json"
+    receipts:{enabled:true},handoff:{enabled:false}}' >"$q/.nightshift/shift-policy.json"
   mark_at "$q/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
   run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$q"
