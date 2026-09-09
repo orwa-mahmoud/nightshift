@@ -174,4 +174,4 @@ and size. They do not run a host-agent matrix; a catalog contribution is still r
 
 ---
 
-[Read real shifts and their reviews](../examples/README.md#nightshift-receipts) · [Documentation index](README.md#documentation)
+[Read real runs](../examples/README.md#real-runs) · [Documentation index](README.md#documentation)

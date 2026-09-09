@@ -4,7 +4,7 @@ T="$BATS_TEST_DIRNAME/../examples/bad-night-template.md"
 SECURITY="$BATS_TEST_DIRNAME/../SECURITY.md"
 
 @test "README points at the receipt index" {
-  grep -qF '](examples/README.md#nightshift-receipts)' "$README"
+  grep -qF '](examples/README.md#real-runs)' "$README"
 }
 
 @test "receipt index organizes real runs and the bad-night template" {
