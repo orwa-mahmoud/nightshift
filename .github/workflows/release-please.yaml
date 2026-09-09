@@ -4,8 +4,9 @@ name: release-please
 # release x.y.z" — holding the next version and its changelog, and refreshes it on every merge.
 # Merging that pull request is the release: it tags the commit and creates the GitHub release.
 #
-# Commit subjects decide the version: `fix:` a patch, `feat:` a minor, `!` or a BREAKING CHANGE
-# footer a major. Subjects that reach no user — docs, chore, ci, test, refactor — open nothing.
+# Commit subjects decide the version: `fix:` a patch, `feat:` a minor. A `!` or BREAKING
+# CHANGE footer is a major only at 1.x; on 0.x it is a minor, so 1.0.0 stays an explicit
+# decision. Subjects that reach no user — docs, chore, ci, test, refactor — open nothing.
 
 on:
   push:
