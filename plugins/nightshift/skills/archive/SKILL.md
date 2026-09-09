@@ -60,10 +60,10 @@ Today's date is `date +%Y-%m-%d` on POSIX, or `Get-Date -Format yyyy-MM-dd` on n
 One folder per archive run; create parents, and re-running on the same day appends to that day's
 files.
 
-**The report keeps working from where it lands.** The helper repoints its links: a record that
-travelled with it stays a sibling, a record that stayed live is reached back through the archive.
-That rewriting changes bytes, so the untouched original is preserved beside it, under the report's
-own name with an "original" suffix. Do not hand-edit either one.
+**The receipts keep working from where they land.** The helper repoints their links: a record that
+travelled with them stays a sibling, a record that stayed live is reached back through the archive.
+That rewriting changes bytes, so the untouched original is preserved beside each rewritten file,
+under the same name with an "original" suffix. Do not hand-edit either one.
 
 ## What moves, what stays
 
@@ -89,7 +89,7 @@ own name with an "original" suffix. Do not hand-edit either one.
  writes no pointer and creates no empty archive file. Do not hand-copy those entries.
  Entries still awaiting the owner stay live: an open question is not history yet.
 - **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/parking-lot.md`.
- Unanswered entries stay. Read live entries first; when checking whether a finding or decision
+ Unanswered stay. Read live entries first; when checking whether a finding or decision
  was already handled, follow the pointer and search the linked file by topic or identifier.
  Historical decisions are evidence, not fresh authorization. A broken pointer is reported in the
  snag log; never guess or delete history.
