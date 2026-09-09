@@ -336,12 +336,12 @@ function praw_pref(path,    n, i, out, kind) {
 # emits its type and no fields, which is how a policy written before this feature is told apart
 # from one whose owner left a block empty.
 function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
-  count = split("shift recovery handoff archive report", blocks, " ")
+  count = split("shift recovery handoff archive receipts", blocks, " ")
   fields["shift"] = "execution hours toolingPolicy verificationProfile"
   fields["recovery"] = "launchScope"
   fields["handoff"] = "detail enabled language sections templatePath view"
   fields["archive"] = "automatic layout root templatePath"
-  fields["report"] = "enabled legacyItemReceipts progressMinutes progressMode progressTokens templatePath usage"
+  fields["receipts"] = "enabled progressMinutes progressMode progressTokens templatePath usage"
   for (j = 1; j <= count; j++) {
     put("ty\t" blocks[j] "\t" ptype(blocks[j]))
     if (!(blocks[j] in V_TYPE)) {
@@ -1129,7 +1129,7 @@ function parse_top_value(key,    c) {
       return
     }
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
-        key == "report") {
+        key == "receipts") {
       emit(key, "", "", "o", "")
       parse_settings_object(key)
       return

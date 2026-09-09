@@ -14,26 +14,236 @@ rule() {
   ns_rules_get "$f" "$2"
 }
 
-# ns_report <project-dir> <field> — one field of the report block, or empty.
+# ns_receipts <project-dir> <field> — one field of the receipts block, or empty.
+ns_receipts() {
+  ns_policy_pref "$1" receipts "$2"
+}
+
+# ns_report — the old name. Same fields live under receipts now.
 ns_report() {
-  ns_policy_pref "$1" report "$2"
+  ns_receipts "$@"
 }
 
-# ns_report_enabled <project-dir> — status 0 unless the owner turned the report off. A shift that
-# writes no report still keeps its punch status, its outputs, its continuity and its verification.
+# ns_receipts_enabled <project-dir> — status 0 unless the owner turned receipts off.
+ns_receipts_enabled() {
+  [ "$(ns_receipts "$1" enabled)" != false ]
+}
+
 ns_report_enabled() {
-  [ "$(ns_report "$1" enabled)" != false ]
+  ns_receipts_enabled "$1"
 }
 
-# ns_report_legacy_receipts <project-dir> — status 0 when the owner still wants the separate
-# per-item receipt file beside the report section. Off by default: the section completes the item.
-ns_report_legacy_receipts() {
-  [ "$(ns_report "$1" legacyItemReceipts)" = true ]
+# ns_receipts_dir <project-dir> — the folder that holds the index, morning page, and item files.
+ns_receipts_dir() {
+  printf '%s/.nightshift/receipts' "$1"
 }
 
-# ns_report_path <project-dir> — the one report for the current shift.
-ns_report_path() {
-  printf '%s/.nightshift/shift-report.md' "$1"
+# ns_receipt_slug <title> — title lowercased, non-alphanumerics collapsed to one -, trimmed, 60.
+ns_receipt_slug() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    {
+      s = ""
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        o = index("ABCDEFGHIJKLMNOPQRSTUVWXYZ", c)
+        if (o) c = substr("abcdefghijklmnopqrstuvwxyz", o, 1)
+        if (c ~ /[a-z0-9]/) s = s c
+        else s = s "-"
+      }
+      gsub(/-+/, "-", s)
+      gsub(/^-|-$/, "", s)
+      if (length(s) > 60) {
+        s = substr(s, 1, 60)
+        gsub(/-$/, "", s)
+      }
+      print s
+    }
+  '
+}
+
+# ns_receipt_nn <label> — the item number as written: leading digits, or a letter+digits id.
+ns_receipt_nn() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    {
+      if (match($0, /^[0-9]+/)) { print substr($0, RSTART, RLENGTH); exit }
+      if (match($0, /^[A-Za-z]+[0-9]+/)) { print substr($0, RSTART, RLENGTH); exit }
+    }
+  '
+}
+
+# ns_receipt_title <label> — the words after the written number, for the slug.
+ns_receipt_title() {
+  printf '%s' "$1" | LC_ALL=C awk '
+    {
+      sub(/^[0-9]+\.[[:space:]]*/, "")
+      sub(/^[A-Za-z]+[0-9]+[[:space:]]+/, "")
+      print
+    }
+  '
+}
+
+# ns_receipt_basename <label> — NN-slug, no suffix.
+ns_receipt_basename() {
+  local label="$1" nn title slug
+  nn="$(ns_receipt_nn "$label")"
+  title="$(ns_receipt_title "$label")"
+  [ -n "$title" ] || title="$label"
+  if [ -n "$nn" ] && [ "$title" = "$label" ]; then
+    printf '%s' "$nn"
+    return 0
+  fi
+  slug="$(ns_receipt_slug "$title")"
+  if [ -n "$nn" ] && [ -n "$slug" ]; then
+    printf '%s-%s' "$nn" "$slug"
+  elif [ -n "$slug" ]; then
+    printf '%s' "$slug"
+  else
+    printf '%s' "$(ns_receipt_slug "$label")"
+  fi
+}
+
+# ns_receipt_path <project-dir> <label> — the item's file under receipts/.
+ns_receipt_path() {
+  printf '%s/%s.md' "$(ns_receipts_dir "$1")" "$(ns_receipt_basename "$2")"
+}
+
+# ns_usage_scale <n> — integer below 1000, one decimal k, one decimal M.
+ns_usage_scale() {
+  local n="$1"
+  case "$n" in '' | *[!0-9]*) printf '%s' "$n"; return 0 ;; esac
+  awk -v n="$n" 'BEGIN {
+    if (n < 1000) { printf "%d", n; exit }
+    if (n < 1000000) { printf "%.1fk", n / 1000; exit }
+    printf "%.1fM", n / 1000000
+  }'
+}
+
+# ns_receipts_shift_date <project-dir> — Date: on the punch list, else the policy day, else today.
+ns_receipts_shift_date() {
+  local punch="$1/.nightshift/punch-list.md" policy="$1/.nightshift/shift-policy.json" day
+  if [ -f "$punch" ]; then
+    day="$(sed -n 's/^Date:[[:space:]]*//p' "$punch" | head -n1)"
+    day="${day%%[$'\r\n']*}"
+    [ -n "$day" ] && { printf '%s' "$day"; return 0; }
+  fi
+  if [ -f "$policy" ]; then
+    day="$(sed -n 's/.*"createdAt"[[:space:]]*:[[:space:]]*"\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\).*/\1/p' "$policy" | head -n1)"
+    [ -n "$day" ] && { printf '%s' "$day"; return 0; }
+  fi
+  date -u +%Y-%m-%d
+}
+
+# ns_receipts_write_index <project-dir> — rewrite receipts/README.md from the list, marks, files.
+ns_receipts_write_index() {
+  local project="$1" punch="$1/.nightshift/punch-list.md"
+  local dir index date_s state base file tokens time
+  local tok_in tok_out tok_sum tok_total=0
+  local label line items rows
+  dir="$(ns_receipts_dir "$project")"
+  [ -n "$dir" ] || return 0
+  mkdir -p "$dir" 2>/dev/null || return 0
+  [ ! -L "$dir" ] || return 0
+  index="$dir/README.md"
+  [ -L "$index" ] && return 0
+  date_s="$(ns_receipts_shift_date "$project")"
+  items="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-index.XXXXXX")" || return 0
+  rows="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-rows.XXXXXX")" || { rm -f "$items"; return 0; }
+  : >"$items"
+  [ -f "$punch" ] && ns_items_section "$punch" >"$items" 2>/dev/null || :
+  : >"$rows"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '- [ ] '*|'- [x] '*|'- [X] '*) ;;
+      *) continue ;;
+    esac
+    state=open
+    case "$line" in '- [x] '*|'- [X] '*) state=ticked ;; esac
+    label="$line"
+    label="${label#- [ ] }"
+    label="${label#- [x] }"
+    label="${label#- [X] }"
+    label="${label#\*\*}"
+    label="$(printf '%s' "$label" | awk '{
+      sub(/[[:space:]]+—.*$/, "")
+      sub(/[[:space:]]+-[[:space:]].*$/, "")
+      sub(/\*\*.*$/, "")
+      gsub(/[[:space:]]+$/, "")
+      print
+    }')"
+    [ -n "$label" ] || continue
+    base="$(ns_receipt_basename "$label")"
+    file="./${base}.md"
+    tokens='—'; time='—'; tok_sum=0
+    if [ -f "$dir/${base}.md" ]; then
+      tok_in="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]*\) \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*.*/\1/p' "$dir/${base}.md" | head -n1)"
+      tok_out="$(sed -n 's/.*exact:[[:space:]]*[0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ \([0-9][0-9]*\).*/\1/p' "$dir/${base}.md" | head -n1)"
+      if [ -n "$tok_in" ] && [ -n "$tok_out" ]; then
+        tok_sum=$((tok_in + tok_out))
+        tok_total=$((tok_total + tok_sum))
+        tokens="$(ns_usage_scale "$tok_sum")"
+      fi
+      time="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$dir/${base}.md" | head -n1)"
+      [ -n "$time" ] || time='—'
+    fi
+    printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
+      "$label" "$state" "$tokens" "$time" "$file" "$file" >>"$rows"
+  done <"$items"
+  {
+    printf '# Receipts — %s\n\n' "$date_s"
+    printf '| Item | State | **Tokens** | **Time** | Receipt |\n'
+    printf '| --- | --- | --- | --- | --- |\n'
+    cat "$rows"
+    if [ "$tok_total" -gt 0 ]; then
+      printf '| **Totals** |  | **%s** | **%s** |  |\n' "$(ns_usage_scale "$tok_total")" '—'
+    else
+      printf '| **Totals** |  | **%s** | **%s** |  |\n' '—' '—'
+    fi
+  } >"$index" 2>/dev/null || :
+  rm -f "$items" "$rows"
+}
+
+# ns_migrate_receipts_layout <workspace> — report→receipts; shift-report.md → previous-report.md.
+# Idempotent. Does not bump state-version. Leaves timestamp-named receipt files untouched.
+ns_migrate_receipts_layout() {
+  local ws="$1" ns="$1/.nightshift" rules policy report dest dir tmp
+  [ -d "$ns" ] || return 0
+  for rules in "$ns/rules.json" "$ns/shift-policy.json"; do
+    [ -f "$rules" ] && [ ! -L "$rules" ] || continue
+    if grep -q '"report"' "$rules" 2>/dev/null; then
+      tmp="$rules.receipts-mig.$$"
+      if command -v jq >/dev/null 2>&1; then
+        jq 'if has("report") then
+              .receipts = ((.receipts // .report) | del(.legacyItemReceipts))
+              | del(.report)
+            else . end' "$rules" >"$tmp" 2>/dev/null && mv "$tmp" "$rules"
+      elif command -v python3 >/dev/null 2>&1; then
+        python3 -c '
+import json, sys
+p = sys.argv[1]
+with open(p, encoding="utf-8") as f:
+    d = json.load(f)
+if "report" in d:
+    src = dict(d.get("receipts") or d["report"])
+    src.pop("legacyItemReceipts", None)
+    d["receipts"] = src
+    del d["report"]
+    with open(p, "w", encoding="utf-8") as o:
+        json.dump(d, o, indent=2, ensure_ascii=False)
+        o.write("\n")
+' "$rules" 2>/dev/null || rm -f "$tmp"
+      fi
+      rm -f "$tmp"
+    fi
+  done
+  report="$ns/shift-report.md"
+  dir="$ns/receipts"
+  dest="$dir/previous-report.md"
+  if [ -f "$report" ] && [ ! -L "$report" ]; then
+    mkdir -p "$dir" 2>/dev/null || return 0
+    if [ ! -e "$dest" ]; then
+      mv "$report" "$dest" 2>/dev/null || :
+    fi
+  fi
 }
 
 # ns_archive <project-dir> <field> — one field of the archive block, or empty.
@@ -565,12 +775,14 @@ ns_migrate_state() {
   kind="$(ns_state_kind "$ws")"
   case "$kind" in
     current)
+      ns_migrate_receipts_layout "$ws"
       return 0
       ;;
     legacy)
       if [ -f "$ws/.nightshift/.shift-armed" ]; then
         return 1
       fi
+      ns_migrate_receipts_layout "$ws"
       ns_write_state_version "$ws" "$NS_STATE_VERSION" || return 3
       return 0
       ;;
@@ -703,10 +915,6 @@ EOF
 # Artifact completion receipts live in .nightshift/receipts/. They replace a work-target
 # git commit only while work-mode is artifact. Repository mode still requires a real commit.
 
-ns_receipts_dir() {
-  printf '%s' "$1/.nightshift/receipts"
-}
-
 # Real receipts directory only. A symlink here would let count, latest, and
 # fingerprint follow files outside .nightshift/.
 ns_receipts_usable_dir() {
@@ -784,16 +992,6 @@ ns_receipts_fingerprint() {
     return 0
   fi
   printf '%s\n' "$out" | cksum | awk '{print $1"-"$2}'
-}
-
-ns_receipt_slug() {
-  local s
-  s="$(printf '%s' "$1" | tr -cs 'A-Za-z0-9' '-' | tr '[:upper:]' '[:lower:]')"
-  s="${s#-}"
-  s="${s%-}"
-  s="$(printf '%s' "$s" | cut -c1-40)"
-  [ -n "$s" ] || s=item
-  printf '%s' "$s"
 }
 
 # ---------------------------------------------------------------------------------------------

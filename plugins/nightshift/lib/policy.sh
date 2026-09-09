@@ -51,7 +51,7 @@ shift
 recovery
 handoff
 archive
-report"
+receipts"
 
 NS_POLICY_RULES_STATE=""
 NS_POLICY_RULES_VALS=""
@@ -129,24 +129,24 @@ ns_policy_builtin() {
     forbiddenCommands | protectedDirs | neverCommitPatterns | expectedEmail) printf '""' ;;
     stallMax) printf '0' ;;
     watchMinutes) printf '10' ;;
-    archive.automatic | report.legacyItemReceipts) printf 'false' ;;
+    archive.automatic) printf 'false' ;;
     archive.layout) printf '"date"' ;;
     archive.root) printf '"archive"' ;;
     handoff.detail) printf '"concise"' ;;
-    handoff.enabled | report.enabled) printf 'true' ;;
+    handoff.enabled | receipts.enabled) printf 'true' ;;
     handoff.language) printf '"auto"' ;;
     handoff.sections) printf '[]' ;;
     handoff.view) printf '"owner"' ;;
     recovery.launchScope) printf '"inherit-recorded-scope"' ;;
-    report.progressMinutes) printf '20' ;;
-    report.progressMode) printf '"time"' ;;
-    report.progressTokens) printf '100000' ;;
-    report.usage) printf '"when-available"' ;;
+    receipts.progressMinutes) printf '20' ;;
+    receipts.progressMode) printf '"time"' ;;
+    receipts.progressTokens) printf '100000' ;;
+    receipts.usage) printf '"when-available"' ;;
     shift.execution) printf '"review-first"' ;;
     shift.hours) printf 'null' ;;
     shift.toolingPolicy) printf '"existing-tools"' ;;
     shift.verificationProfile) printf '"fast"' ;;
-    archive.templatePath | handoff.templatePath | report.templatePath) printf '""' ;;
+    archive.templatePath | handoff.templatePath | receipts.templatePath) printf '""' ;;
     *) return 1 ;;
   esac
 }
@@ -296,7 +296,7 @@ PREF = [("shift", ["execution", "hours", "toolingPolicy", "verificationProfile"]
         ("recovery", ["launchScope"]),
         ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
         ("archive", ["automatic", "layout", "root", "templatePath"]),
-        ("report", ["enabled", "legacyItemReceipts", "progressMinutes", "progressMode",
+        ("receipts", ["enabled", "progressMinutes", "progressMode",
                     "progressTokens", "templatePath", "usage"])]
 out = []
 
@@ -1395,7 +1395,7 @@ _ns_policy_setting() {
       if [ "$NS_POLICY_SHIFT_STATE" = ok ]; then
         category="${name%%.*}"
         case "$category" in
-          shift | recovery | handoff | archive | report)
+          shift | recovery | handoff | archive | receipts)
             if [ "$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" "$category")" = object ]; then
               val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$name")" || val=""
               if [ -n "$val" ] && [ "$val" != null ]; then

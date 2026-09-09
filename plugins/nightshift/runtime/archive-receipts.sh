@@ -274,8 +274,8 @@ FIND
   fi
 done
 
-# The shift report travels with the receipts it describes.
-report="$(ns_report_path "$WORKSPACE")"
+# A leftover shift-report.md (not yet migrated into receipts/) still travels.
+report="$WORKSPACE/.nightshift/shift-report.md"
 report_base=""
 report_relocated=0
 if [ -f "$report" ] && [ ! -L "$report" ]; then
@@ -303,43 +303,52 @@ if [ -f "$report" ] && [ ! -L "$report" ]; then
   fi
 fi
 
-# The report is the shift's reading entry point, so its links have to keep working from where it
-# now sits. A record that travelled with it is still a sibling and its link is already right; one
-# that stayed live — a parking decision nobody has answered, a snag log the next shift adds to —
-# is now further away, and the link has to say so.
-#
-# Rewriting changes bytes, so the untouched original is kept beside the relocated view rather than
-# replaced by it. Evidence stays evidence; the page you open is the one that navigates.
-if [ -n "$report_base" ] && [ "$report_relocated" -eq 0 ] &&
-  [ -f "$group/$report_base" ] && [ ! -L "$group/$report_base" ]; then
+# Every moved receipt has to keep working from where it now sits. A record that travelled
+# with it is still a sibling; one that stayed live is further away. Rewriting changes bytes,
+# so the untouched original is kept beside the relocated view as <name>.original.md.
+rewrite_moved() {
+  local page="$1" base original back rel saved_ifs awk_bin
+  [ -f "$page" ] && [ ! -L "$page" ] || return 0
+  case "$page" in *.original.md) return 0 ;; esac
+  base="${page##*/}"
   back=""
-  rel="${group#"$NS"/}"
+  rel="${page#"$NS"/}"
+  rel="${rel%/*}"
   saved_ifs="$IFS"
   IFS=/
-  # shellcheck disable=SC2086 # splitting the relative path into components is the point
+  # shellcheck disable=SC2086
   set -- $rel
   IFS="$saved_ifs"
   for _ in "$@"; do back="../$back"; done
   awk_bin="$(ns_rules_awk_bin)" || awk_bin="awk"
   if NS_ARCHIVED_PATHS="$ARCHIVED_PATHS" "$awk_bin" -v back="$back" \
-    -f "$_here/archive-links.awk" <"$group/$report_base" >"$group/.$report_base.relocated" 2>/dev/null; then
-    if cmp -s "$group/$report_base" "$group/.$report_base.relocated"; then
-      rm -f "$group/.$report_base.relocated"
+    -f "$_here/archive-links.awk" <"$page" >"${page%/*}/.$base.relocated" 2>/dev/null; then
+    if cmp -s "$page" "${page%/*}/.$base.relocated"; then
+      rm -f "${page%/*}/.$base.relocated"
     else
-      original="${report_base%.md}.original.md"
-      if ns_archive_dest "$group/$original" && cp "$group/$report_base" "$group/$original"; then
-        mv "$group/.$report_base.relocated" "$group/$report_base" || rm -f "$group/.$report_base.relocated"
+      original="${base%.md}.original.md"
+      if ns_archive_dest "${page%/*}/$original" && cp "$page" "${page%/*}/$original"; then
+        mv "${page%/*}/.$base.relocated" "$page" || rm -f "${page%/*}/.$base.relocated"
       else
-        rm -f "$group/.$report_base.relocated"
-        kept="$kept$report_base (its links were left as written: the original could not be preserved beside a relocated view)
+        rm -f "${page%/*}/.$base.relocated"
+        kept="$kept$base (its links were left as written: the original could not be preserved beside a relocated view)
 "
       fi
     fi
   else
-    rm -f "$group/.$report_base.relocated"
-    kept="$kept$report_base (its links were left as written)
+    rm -f "${page%/*}/.$base.relocated"
+    kept="$kept$base (its links were left as written)
 "
   fi
+}
+if [ -d "$dest" ]; then
+  for page in "$dest"/*.md; do
+    [ -e "$page" ] || continue
+    rewrite_moved "$page"
+  done
+fi
+if [ -n "$report_base" ] && [ "$report_relocated" -eq 0 ]; then
+  rewrite_moved "$group/$report_base"
 fi
 
 unmatched=""

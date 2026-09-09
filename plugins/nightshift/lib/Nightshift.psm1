@@ -375,11 +375,8 @@ function Get-NSReceiptSlug {
     param([AllowEmptyString()][string]$Text)
     $s = ([string]$Text).ToLowerInvariant() -replace '[^a-z0-9]+', '-'
     $s = $s.Trim('-')
-    if ($s.Length -gt 40) {
-        $s = $s.Substring(0, 40).TrimEnd('-')
-    }
-    if ([string]::IsNullOrEmpty($s)) {
-        $s = 'item'
+    if ($s.Length -gt 60) {
+        $s = $s.Substring(0, 60).TrimEnd('-')
     }
     return $s
 }
@@ -3714,13 +3711,12 @@ $script:NSPolicyGroupDefaults['handoff.sections'] = @()
 $script:NSPolicyGroupDefaults['handoff.templatePath'] = ''
 $script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
 $script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
-$script:NSPolicyGroupDefaults['report.enabled'] = $true
-$script:NSPolicyGroupDefaults['report.legacyItemReceipts'] = $false
-$script:NSPolicyGroupDefaults['report.progressMinutes'] = 20
-$script:NSPolicyGroupDefaults['report.progressMode'] = 'time'
-$script:NSPolicyGroupDefaults['report.progressTokens'] = 100000
-$script:NSPolicyGroupDefaults['report.templatePath'] = ''
-$script:NSPolicyGroupDefaults['report.usage'] = 'when-available'
+$script:NSPolicyGroupDefaults['receipts.enabled'] = $true
+$script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
+$script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
+$script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
+$script:NSPolicyGroupDefaults['receipts.templatePath'] = ''
+$script:NSPolicyGroupDefaults['receipts.usage'] = 'when-available'
 $script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
 $script:NSPolicyGroupDefaults['shift.hours'] = $null
 $script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
@@ -3748,13 +3744,12 @@ $script:NSPolicySettingNames = @(
     'neverCommitPatterns',
     'protectedDirs',
     'recovery.launchScope',
-    'report.enabled',
-    'report.legacyItemReceipts',
-    'report.progressMinutes',
-    'report.progressMode',
-    'report.progressTokens',
-    'report.templatePath',
-    'report.usage',
+    'receipts.enabled',
+    'receipts.progressMinutes',
+    'receipts.progressMode',
+    'receipts.progressTokens',
+    'receipts.templatePath',
+    'receipts.usage',
     'shift.execution',
     'shift.hours',
     'shift.toolingPolicy',
@@ -4754,10 +4749,53 @@ function Convert-NSReportLinks {
     return ($out -join "`n")
 }
 
-# Get-NSReportPath <workspace> - the shift's own report, the twin of ns_report_path.
+function Get-NSReceiptNn {
+    param([AllowEmptyString()][string]$Label)
+    if ($Label -cmatch '^([0-9]+)') { return $Matches[1] }
+    if ($Label -cmatch '^([A-Za-z]+[0-9]+)') { return $Matches[1] }
+    return ''
+}
+
+function Get-NSReceiptTitle {
+    param([AllowEmptyString()][string]$Label)
+    $t = $Label
+    $t = $t -creplace '^[0-9]+\.[ \t]*', ''
+    $t = $t -creplace '^[A-Za-z]+[0-9]+[ \t]+', ''
+    return $t
+}
+
+function Get-NSReceiptBasename {
+    param([AllowEmptyString()][string]$Label)
+    $nn = Get-NSReceiptNn $Label
+    $title = Get-NSReceiptTitle $Label
+    if ([string]::IsNullOrEmpty($title)) { $title = $Label }
+    if (-not [string]::IsNullOrEmpty($nn) -and $title -ceq $Label) { return $nn }
+    $slug = Get-NSReceiptSlug $title
+    if (-not [string]::IsNullOrEmpty($nn) -and -not [string]::IsNullOrEmpty($slug)) {
+        return ($nn + '-' + $slug)
+    }
+    if (-not [string]::IsNullOrEmpty($slug)) { return $slug }
+    return (Get-NSReceiptSlug $Label)
+}
+
+function Get-NSReceiptPath {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Label)
+    return (Join-Path (Get-NSReceiptsDir $Workspace) ((Get-NSReceiptBasename $Label) + '.md'))
+}
+
+function Get-NSUsageScale {
+    param($Value)
+    $n = 0
+    if (-not [long]::TryParse([string]$Value, [ref]$n)) { return [string]$Value }
+    if ($n -lt 1000) { return [string]$n }
+    if ($n -lt 1000000) { return ('{0:0.0}k' -f ($n / 1000.0)) }
+    return ('{0:0.0}M' -f ($n / 1000000.0))
+}
+
+# Get-NSReportPath kept as the receipts folder path only for callers not yet moved.
 function Get-NSReportPath {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    return (Join-Path (Join-Path $Workspace '.nightshift') 'shift-report.md')
+    return (Get-NSReceiptsDir $Workspace)
 }
 
 # Get-NSPolicyHostName - which host this session is, from what the host itself sets.
@@ -8926,44 +8964,37 @@ function Get-NSUsageLine {
     param([AllowEmptyString()][string]$Fields, [AllowEmptyString()][string]$Sources,
           [AllowEmptyString()][string]$Segments, [AllowEmptyString()][string]$HostName = '')
     $parts = @()
+    $exact = @()
     foreach ($dim in $script:NSUsageDimensions) {
         $v = Get-NSUsageField $Fields $dim
         if ([string]::IsNullOrEmpty($v)) { $v = 'unavailable' }
+        $raw = $v
+        if ($v -cne 'unavailable') { $v = Get-NSUsageScale $v }
         $parts += ($dim + ' ' + $v)
+        $exact += $raw
     }
-    return ('Usage: ' + ($parts -join ' · ') + "`n  Source: " + $Sources +
-            ', cumulative counters, segments ' + $Segments + "`n  " +
-            (Get-NSUsageOverlapText $HostName))
+    return ('**Usage:** ' + ($parts -join ' · ') + "`n  Source: " + $Sources +
+            ', cumulative counters, segments ' + $Segments + '; exact: ' + ($exact -join ' / ') +
+            "`n  " + (Get-NSUsageOverlapText $HostName))
 }
 
 # The item's own section of the report, written where the model already writes its account of the
 # work. An existing section is spliced into rather than appended after, so one item is one section.
 function Add-NSGateUsageAppend {
-    param([Parameter(Mandatory = $true)][string]$Report, [Parameter(Mandatory = $true)][string]$Label,
+    param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label,
           [Parameter(Mandatory = $true)][string]$Usage, [Parameter(Mandatory = $true)][string]$Duration)
-    if ([string]::IsNullOrEmpty($Report)) { return }
-    if (Test-NSReparsePoint $Report) { return }
+    if ([string]::IsNullOrEmpty($Receipt)) { return }
+    if (Test-NSReparsePoint $Receipt) { return }
     $utf8 = New-Object Text.UTF8Encoding($false)
-    if (-not (Test-Path -LiteralPath $Report -PathType Leaf)) {
-        [IO.File]::WriteAllText($Report, "# Shift report`n", $utf8)
+    $dir = Split-Path -Parent $Receipt
+    if (-not [string]::IsNullOrEmpty($dir)) {
+        $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
     }
-    $heading = '### ' + $Label
-    $lines = @([IO.File]::ReadAllLines($Report))
-    if ($lines -ccontains $heading) {
-        $out = New-Object 'System.Collections.Generic.List[string]'
-        foreach ($l in $lines) {
-            $null = $out.Add($l)
-            if ($l -ceq $heading) {
-                $null = $out.Add('')
-                foreach ($u in $Usage.Split("`n")) { $null = $out.Add($u) }
-                $null = $out.Add('Duration: ' + $Duration)
-            }
-        }
-        [IO.File]::WriteAllText($Report, (($out -join "`n") + "`n"), $utf8)
-        return
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf)) {
+        [IO.File]::WriteAllText($Receipt, ('# ' + $Label + "`n"), $utf8)
     }
-    $tail = "`n" + $heading + "`n`n" + $Usage + "`nDuration: " + $Duration + "`n"
-    [IO.File]::AppendAllText($Report, $tail, $utf8)
+    $tail = "`n" + $Usage + "`n**Duration:** " + $Duration + "`n"
+    [IO.File]::AppendAllText($Receipt, $tail, $utf8)
 }
 
 # Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it.
@@ -9059,8 +9090,8 @@ function Invoke-NSGateUsageTick {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir,
           [Parameter(Mandatory = $true)][string]$Project, [Parameter(Mandatory = $true)][string]$Label)
     if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
-    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
-    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
+    if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
     if (-not (Write-NSUsageMark $NightshiftDir $Label)) { return $false }
     $span = Get-NSUsageLastItem $NightshiftDir
     if ([string]::IsNullOrEmpty($span)) { return $false }
@@ -9082,7 +9113,9 @@ function Invoke-NSGateUsageTick {
             $duration = $duration + ' (paused ' + (Get-NSUsageDuration $pp[0]) + ', ' + $pp[1] + ')'
         }
     }
-    Add-NSGateUsageAppend (Get-NSReportPath $Project) $Label $line $duration
+    Add-NSGateUsageAppend (Get-NSReceiptPath $Project $Label) $Label $line $duration
+    $due = Join-Path $NightshiftDir '.receipt-due'
+    if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
     return $true
 }
 
@@ -9097,9 +9130,9 @@ function Invoke-NSGateUsageSync {
     # Accounting belongs to an armed shift with the report on. Before Start there is no shift to
     # bill, and an arm mark written then would stand in the way of the baseline arming records.
     if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
-    if ((Get-NSRule $Project 'report.enabled' '') -ceq 'false') { return $false }
+    if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
     if ($Ticked -lt 0) { return $false }
-    if ((Get-NSRule $Project 'report.usage' '') -ceq 'off') { return $false }
+    if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
     $marked = Get-NSUsageMarkCount $NightshiftDir
     if ($marked -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts; $marked = 1 }
     while (($marked - 1) -lt $Ticked) {
@@ -9167,7 +9200,7 @@ function Invoke-NSPulseUsage {
     if ([string]::IsNullOrEmpty($Source)) { return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
     $project = [IO.Path]::GetDirectoryName($NightshiftDir)
-    if ((Get-NSRule $project 'report.usage' '') -ceq 'off') { return $false }
+    if ((Get-NSRule $project 'receipts.usage' '') -ceq 'off') { return $false }
     $agents = @()
     if ($HostName -ceq 'claude') { $agents = Get-NSUsageSubagents $Source }
     if ($HostName -ceq 'claude') {

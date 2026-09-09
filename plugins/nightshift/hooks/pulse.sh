@@ -147,13 +147,13 @@ ns_pulse_report_due() {
   [ "$(ns_report "$project" enabled)" != false ] || return 1
   label="$(ns_pulse_active_item "$project")" || return 1
   [ -n "$label" ] || return 1
-  if [ -f "$ns/.report-due" ] && [ ! -L "$ns/.report-due" ]; then
-    printf '%s' "$(cat "$ns/.report-due" 2>/dev/null)"
+  if [ -f "$ns/.receipt-due" ] && [ ! -L "$ns/.receipt-due" ]; then
+    printf '%s' "$(cat "$ns/.receipt-due" 2>/dev/null)"
     return 0
   fi
   ns_usage_progress_due "$project" "$label" || return 1
-  printf 'report: progress update due for %s' "$label" >"$ns/.report-due" 2>/dev/null || return 1
-  printf 'report: progress update due for %s' "$label"
+  printf 'receipts: progress update due for %s' "$label" >"$ns/.receipt-due" 2>/dev/null || return 1
+  printf 'receipts: progress update due for %s' "$label"
 }
 
 # ns_pulse_active_item <project> — the first still-open item, which is the one being worked.

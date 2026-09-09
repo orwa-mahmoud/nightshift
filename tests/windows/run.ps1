@@ -493,10 +493,10 @@ try {
     $exportSupportLogicRun = Invoke-TestScript $exportSupportLogic
     Assert-Equal 0 $exportSupportLogicRun.ExitCode `
         "export-support allowlist: $($exportSupportLogicRun.Stdout) $($exportSupportLogicRun.Stderr)"
-    $writeReceiptLogic = Join-Path $PSScriptRoot 'write-receipt-logic.ps1'
-    $writeReceiptLogicRun = Invoke-TestScript $writeReceiptLogic
-    Assert-Equal 0 $writeReceiptLogicRun.ExitCode `
-        "write-receipt artifact mode: $($writeReceiptLogicRun.Stdout) $($writeReceiptLogicRun.Stderr)"
+    $receiptsLogic = Join-Path $PSScriptRoot 'receipts-logic.ps1'
+    $receiptsLogicRun = Invoke-TestScript $receiptsLogic
+    Assert-Equal 0 $receiptsLogicRun.ExitCode `
+        "receipts layout: $($receiptsLogicRun.Stdout) $($receiptsLogicRun.Stderr)"
     $archiveReceiptsLogic = Join-Path $PSScriptRoot 'archive-receipts-logic.ps1'
     $archiveReceiptsLogicRun = Invoke-TestScript $archiveReceiptsLogic
     Assert-Equal 0 $archiveReceiptsLogicRun.ExitCode `

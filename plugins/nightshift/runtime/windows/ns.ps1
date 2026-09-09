@@ -36,7 +36,7 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 
 # The verbs that change something on disk. Identical in the POSIX dispatcher.
-$NSWritingVerbs = @('scaffold', 'write-receipt', 'archive-receipts', 'stop-shift', 'link-workspace',
+$NSWritingVerbs = @('scaffold', 'archive-receipts', 'stop-shift', 'link-workspace',
     'evidence-archive', 'migrate-state', 'apply-profile')
 
 # The host, from the environment the hooks already read. Never from searching.

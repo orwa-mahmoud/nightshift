@@ -142,7 +142,7 @@ ns_gate_usage_tick() {
   fields="$(printf '%s' "$span" | cut -f1)"
   seconds="$(printf '%s' "$span" | cut -f2)"
   host="$(ns_usage_hosts "$ns")" || host="unknown"
-  report="$(ns_report_path "$project")"
+  receipt="$(ns_receipt_path "$project" "$label")"
   [ -n "$fields" ] || return 0
   line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
   # Wall clock, and beside it any gap the runtime knows was not work — a revival after a session
@@ -152,7 +152,9 @@ ns_gate_usage_tick() {
   paused="$(ns_usage_paused_since "$ns" "$(_ns_usage_item_start "$ns")")" && {
     duration="$duration (paused $(ns_usage_duration "$(printf '%s' "$paused" | cut -f1)"), $(printf '%s' "$paused" | cut -f2))"
   }
-  ns_gate_usage_append "$report" "$label" "$line" "$duration"
+  ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
+  rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
+  ns_receipts_write_index "$project"
 }
 
 # _ns_usage_item_start <nightshift-dir> — when the item that just closed began: the mark before
@@ -164,33 +166,21 @@ _ns_usage_item_start() {
   tail -n2 "$file" | head -n1 | cut -f1
 }
 
-# ns_gate_usage_append <report> <item-label> <usage-line> <duration> — put the two runtime-written
-# lines under the item's heading. If the model has not written that section yet, the lines still
-# land under a heading of their own: the measurement does not wait on the narrative.
+# ns_gate_usage_append <receipt> <item-label> <usage-line> <duration> — append the runtime
+# block to the item's receipt. If the model has not written the file yet, it is created with
+# a `# <NN. title>` heading. The measurement does not wait on the narrative.
 ns_gate_usage_append() {
-  local report="$1" label="$2" usage="$3" duration="$4" tmp existing
-  [ -n "$report" ] || return 0
-  [ ! -L "$report" ] || return 0
-  if [ ! -f "$report" ]; then
-    printf '# Shift report\n' >"$report" 2>/dev/null || return 0
-  fi
-  tmp="$report.usage.$$"
-  if grep -qF "### $label" "$report" 2>/dev/null; then
-    # Spliced in the shell rather than handed to awk: the usage block is three lines, and awk's
-    # -v cannot carry a newline.
-    : >"$tmp" || return 0
-    while IFS= read -r existing || [ -n "$existing" ]; do
-      printf '%s\n' "$existing" >>"$tmp"
-      if [ "$existing" = "### $label" ]; then
-        printf '\n%s\nDuration: %s\n' "$usage" "$duration" >>"$tmp"
-      fi
-    done <"$report"
-    mv "$tmp" "$report" 2>/dev/null || rm -f "$tmp"
-    return 0
+  local receipt="$1" label="$2" usage="$3" duration="$4" dir
+  [ -n "$receipt" ] || return 0
+  [ ! -L "$receipt" ] || return 0
+  dir="${receipt%/*}"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  if [ ! -f "$receipt" ]; then
+    printf '# %s\n' "$label" >"$receipt" 2>/dev/null || return 0
   fi
   {
-    printf '\n### %s\n\n%s\nDuration: %s\n' "$label" "$usage" "$duration"
-  } >>"$report" 2>/dev/null || :
+    printf '\n%s\n**Duration:** %s\n' "$usage" "$duration"
+  } >>"$receipt" 2>/dev/null || :
 }
 
 # ns_gate_usage_sync <nightshift-dir> <project-dir> <punch-list> <ticked> — catch the marks up to

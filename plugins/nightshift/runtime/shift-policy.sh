@@ -463,6 +463,7 @@ cmd_migrate() {
   atomic_write "$RULES" <"$tmpd/next.json"
   rm -rf "$tmpd"
   rm -f "$DEFAULTS"
+  ns_migrate_receipts_layout "$WORKSPACE"
   printf '%s\n' "$RULES"
 }
 
