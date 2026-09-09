@@ -141,9 +141,9 @@ how the night went.
 From the table you already read, the `receipts.*` rows decide the receipts. `receipts.enabled=false`
 means write no receipt files; every other record stays exactly as honest.
 
-The shape of every item file is in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/templates/receipt-item.md`; read it once when
-the first item starts. When `receipts.templatePath` is set, follow that template instead.
+The shape of every item file is What was delivered · Why · Tried and rejected · Verification ·
+Outputs · Parked decisions and snags. Read that shape once when the first item starts. When
+`receipts.templatePath` is set, follow that template instead.
 
 **One file per punch-list item**, named `<NN-slug>.md`. It carries what was delivered, why, what
 was tried and rejected, the verification that actually ran, where the outputs or commits are, and
@@ -172,7 +172,7 @@ A missing morning page never holds up a stop or a deadline.
 
 Receipt shapes live one per kind in
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/`. Open the page whose title names
-the kind you are writing, and no other.
+the kind you are writing, for source, cycle and specialist receipts, and no other.
 
 Before the first fix that answers an originating source, write that source's baseline — once per
 source class — using
