@@ -8856,8 +8856,8 @@ function Write-NSStatusReport {
     if (Test-NSReceiptsEnabled $Workspace) {
         Fact 'completion record' 'per-item receipt'
         if (-not $unusableRecv) {
-            $missing = @(Get-NSReceiptsMissingNns $Workspace)
-            if ($missing.Count -gt 0) { Fact 'receipts missing model text' ([string]$missing.Count) }
+            $missing = Get-NSReceiptsMissingNns $Workspace
+            if ($null -ne $missing -and $missing.Count -gt 0) { Fact 'receipts missing model text' ([string]$missing.Count) }
         }
     }
     else {
@@ -9517,7 +9517,7 @@ function Get-NSPulseTickedLabels {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $out = New-Object Collections.Generic.List[string]
     $punch = Join-Path $Workspace '.nightshift/punch-list.md'
-    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return , @() }
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return [string[]]@() }
     foreach ($line in (Get-NSPunchItemsSection $punch)) {
         if ($line -cnotmatch '^- \[[xX]\]') { continue }
         $label = Get-NSPulseItemLabelFromLine $line 'x'
@@ -9611,10 +9611,12 @@ function Test-NSReceiptHasModelText {
 
 function Get-NSReceiptsMissingNns {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    if (-not (Test-NSReceiptsEnabled $Workspace)) { return , @() }
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return [string[]]@() }
     $ns = Join-Path $Workspace '.nightshift'
     $parts = New-Object Collections.Generic.List[string]
-    foreach ($label in @(Get-NSPulseTickedLabels $Workspace)) {
+    $labels = Get-NSPulseTickedLabels $Workspace
+    if ($null -eq $labels) { $labels = [string[]]@() }
+    foreach ($label in $labels) {
         $path = Join-Path (Join-Path $ns 'receipts') ((Get-NSReceiptBasename $label) + '.md')
         if (Test-NSReceiptHasModelText $path) { continue }
         $nn = Get-NSReceiptNn $label
@@ -9628,8 +9630,8 @@ function Get-NSReceiptsMissingNns {
 
 function Get-NSGateReceiptsMissingNote {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    $parts = @(Get-NSReceiptsMissingNns $Workspace)
-    if ($parts.Count -eq 0) { return '' }
+    $parts = Get-NSReceiptsMissingNns $Workspace
+    if ($null -eq $parts -or $parts.Count -eq 0) { return '' }
     return ('Receipts missing model text: ' + ($parts -join ', '))
 }
 
@@ -9705,7 +9707,8 @@ function Get-NSPulseReceiptsNotice {
         $prevLabels = @([IO.File]::ReadAllLines($labelsFile))
     }
     $active = Get-NSPulseActiveItem $Workspace
-    $labels = @(Get-NSPulseTickedLabels $Workspace)
+    $labels = Get-NSPulseTickedLabels $Workspace
+    if ($null -eq $labels) { $labels = [string[]]@() }
     $ticked = $labels.Count
     $lines = New-Object Collections.Generic.List[string]
     if ($ticked -gt $prevTicked) {
