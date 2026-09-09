@@ -132,7 +132,7 @@ try {
         if ((Test-NSPathEntry $recv) -and -not (Test-NSUsableReceiptsDir $workspace)) {
             $unusableRecv = $true
             Add-NSWarn 'artifact receipts path is not a usable directory'
-            Add-NSAct confirm 'replace the unusable receipts path with a real directory so write-receipt can land; Doctor does not rewrite it'
+            Add-NSAct confirm 'replace the unusable receipts path with a real directory so receipts can land; Doctor does not rewrite it'
         }
     }
 }

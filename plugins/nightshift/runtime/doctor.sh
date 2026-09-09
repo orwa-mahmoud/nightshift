@@ -114,7 +114,7 @@ if MODE="$(ns_work_mode "$WORKSPACE" 2>/dev/null)"; then
       if ! ns_receipts_usable_dir "$WORKSPACE" >/dev/null; then
         UNUSABLE_RECV=1
         warn "artifact receipts path is not a usable directory"
-        act confirm "replace the unusable receipts path with a real directory so write-receipt can land; Doctor does not rewrite it"
+        act confirm "replace the unusable receipts path with a real directory so receipts can land; Doctor does not rewrite it"
       fi
     fi
   fi

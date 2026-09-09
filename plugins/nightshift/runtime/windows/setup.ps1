@@ -196,7 +196,7 @@ if ($Receipts -or (Test-Path -LiteralPath $receiptRepo -PathType Container)) {
             '-c', 'user.name=nightshift',
             '-c', 'user.email=nightshift@localhost',
             '-c', 'commit.gpgsign=false',
-            'commit', '--quiet', '-m', 'Initialize Nightshift receipts'
+            'commit', '--quiet', '-m', 'Initialize the receipts store'
         )
         if ($committed.ExitCode -ne 0) {
             throw 'the initial local receipt could not be committed'

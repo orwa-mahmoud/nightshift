@@ -162,7 +162,7 @@ try {
         $receipts = Get-NSReceiptsDir $workspace
         if ((Test-NSPathEntry $receipts) -and -not (Test-NSUsableReceiptsDir $workspace)) {
             Write-Refuse 'receipts artifact receipts path exists but is not a usable directory'
-            Write-Repair "replace $receipts with a real directory so write-receipt can land"
+            Write-Repair "replace $receipts with a real directory so receipts can land"
         }
     }
 }
