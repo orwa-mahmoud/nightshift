@@ -3900,7 +3900,7 @@ function Test-NSShiftPolicyDocument {
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
         'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
-        'shift', 'recovery', 'handoff', 'archive', 'report')
+        'shift', 'recovery', 'handoff', 'archive', 'receipts')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -4167,7 +4167,7 @@ function Set-NSShiftPolicy {
     # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
     # here, so an edit to rules.json lands on the next shift rather than moving the ground under
     # this one. A candidate that already states a block is left exactly as it was written.
-    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'report')) {
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts')) {
         if ($document.Contains($block)) { continue }
         $frozen = New-NSOrdinalMap
         foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
@@ -4921,6 +4921,70 @@ function Get-NSReceiptBasename {
 function Get-NSReceiptPath {
     param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Label)
     return (Join-Path (Get-NSReceiptsDir $Workspace) ((Get-NSReceiptBasename $Label) + '.md'))
+}
+
+function Get-NSReceiptsShiftDate {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
+        foreach ($line in [IO.File]::ReadAllLines($punch)) {
+            if ($line -cmatch '^Date:[ \t]*(.+)$') { return $Matches[1].Trim() }
+        }
+    }
+    $policy = Join-Path $Workspace '.nightshift/shift-policy.json'
+    if ((Test-Path -LiteralPath $policy -PathType Leaf) -and -not (Test-NSReparsePoint $policy)) {
+        $text = [IO.File]::ReadAllText($policy)
+        if ($text -cmatch '"createdAt"\s*:\s*"([0-9]{4}-[0-9]{2}-[0-9]{2})') { return $Matches[1] }
+    }
+    return [DateTime]::UtcNow.ToString('yyyy-MM-dd')
+}
+
+function Write-NSReceiptsIndex {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $dir = Get-NSReceiptsDir $Workspace
+    if ([string]::IsNullOrEmpty($dir)) { return }
+    try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch { return }
+    if (Test-NSReparsePoint $dir) { return }
+    $index = Join-Path $dir 'README.md'
+    if (Test-NSReparsePoint $index) { return }
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    $rows = New-Object Collections.Generic.List[string]
+    $tokTotal = [long]0
+    $dash = [string][char]0x2014
+    if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
+        foreach ($line in (Get-NSPunchItemsSection $punch)) {
+            if ($line -cnotmatch '^- \[[ xX]\]') { continue }
+            $state = $(if ($line -cmatch '^- \[[xX]\]') { 'ticked' } else { 'open' })
+            $kind = $(if ($state -ceq 'ticked') { 'x' } else { 'open' })
+            $label = Get-NSPulseItemLabelFromLine $line $kind
+            if ([string]::IsNullOrEmpty($label)) { continue }
+            $base = Get-NSReceiptBasename $label
+            $file = './' + $base + '.md'
+            $path = Join-Path $dir ($base + '.md')
+            $tokens = $dash
+            $time = $dash
+            if ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-NSReparsePoint $path)) {
+                $text = [IO.File]::ReadAllText($path)
+                if ($text -cmatch 'exact:\s*([0-9]+)\s*/\s*[0-9]+\s*/\s*[0-9]+\s*/\s*([0-9]+)') {
+                    $sum = [long]$Matches[1] + [long]$Matches[2]
+                    $tokTotal += $sum
+                    $tokens = Get-NSUsageScale $sum
+                }
+                if ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') { $time = $Matches[1].Trim() }
+            }
+            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f $label, $state, $tokens, $time, $file))
+        }
+    }
+    $tokCell = $(if ($tokTotal -gt 0) { Get-NSUsageScale $tokTotal } else { $dash })
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.AppendLine('# Receipts — ' + (Get-NSReceiptsShiftDate $Workspace))
+    [void]$sb.AppendLine()
+    [void]$sb.AppendLine('| Item | State | **Tokens** | **Time** | Receipt |')
+    [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
+    foreach ($row in $rows) { [void]$sb.AppendLine($row) }
+    [void]$sb.AppendLine(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $dash))
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($index, $sb.ToString(), $utf8)
 }
 
 function Get-NSUsageScale {
@@ -9344,6 +9408,7 @@ function Invoke-NSGateUsageTick {
     Add-NSGateUsageAppend (Get-NSReceiptPath $Project $Label) $Label $line $duration
     $due = Join-Path $NightshiftDir '.receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
+    Write-NSReceiptsIndex $Project
     return $true
 }
 

@@ -209,12 +209,9 @@ ns_receipts_write_index() {
     esac
     state=open
     case "$line" in '- [x] '*|'- [X] '*) state=ticked ;; esac
-    label="$line"
-    label="${label#- [ ] }"
-    label="${label#- [x] }"
-    label="${label#- [X] }"
-    label="${label#\*\*}"
-    label="$(printf '%s' "$label" | awk '{
+    label="$(printf '%s' "$line" | awk '{
+      sub(/^- \[[xX ]\][[:space:]]*\*\*/, "")
+      sub(/^- \[[xX ]\][[:space:]]*/, "")
       sub(/[[:space:]]+—.*$/, "")
       sub(/[[:space:]]+-[[:space:]].*$/, "")
       sub(/\*\*.*$/, "")

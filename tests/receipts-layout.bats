@@ -24,7 +24,7 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   while IFS=$'\t' read -r title want; do
     [ -n "$title" ] || continue
     win="$(pwsh -NoProfile -NonInteractive -Command \
-      "Import-Module '$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1' -Force -DisableNameChecking; Get-NSReceiptSlug -Title '$title'")"
+      "Import-Module '$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1' -Force -DisableNameChecking; Get-NSReceiptSlug -Text '$title'")"
     [ "$win" = "$want" ] || { echo "win slug '$title' -> '$win' want '$want'"; return 1; }
   done <"$SLUGS"
 }
