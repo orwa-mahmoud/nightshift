@@ -84,7 +84,8 @@ own name with an "original" suffix. Do not hand-edit either one.
 - **Snag log — only what's handled.** `archive-receipts` moves entries that carry a disposition
  (fixed, ignored, answered, rejected-because, accepted-tradeoff) from `$NS/snag-log.md` into the
  archive dest that `archive.root` and `archive.layout` resolve, then appends one
- `Filed: [<YYYY-MM-DD or shift-id>](<relative path>)` pointer to the live file. Filing nothing
+ `Filed:` pointer (label: date or shift id; target: relative path to the archived file)
+ on the live file. Filing nothing
  writes no pointer and creates no empty archive file. Do not hand-copy those entries.
  Entries still awaiting the owner stay live: an open question is not history yet.
 - **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/parking-lot.md`.
