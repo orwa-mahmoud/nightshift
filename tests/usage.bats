@@ -246,7 +246,7 @@ mark_at() {
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
+    receipts:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
     >"$p/.nightshift/shift-policy.json"
   now="$(date +%s)"
   mark_at "$p/.nightshift" "$((now - 60))" arm ''
@@ -264,7 +264,7 @@ mark_at() {
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{progressMode:"completion-only"}}' >"$p/.nightshift/shift-policy.json"
+    receipts:{progressMode:"completion-only"}}' >"$p/.nightshift/shift-policy.json"
   mark_at "$p/.nightshift" "$(( $(date +%s) - 90 * 60 ))" arm ''
   run lib ns_usage_progress_due "$p" P01
   [ "$status" -ne 0 ]
@@ -275,7 +275,7 @@ mark_at() {
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
     source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    report:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
+    receipts:{progressMode:"tokens",progressTokens:1000,progressMinutes:20}}' \
     >"$p/.nightshift/shift-policy.json"
   # No readings at all: the host reported nothing usable.
   mark_at "$p/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
