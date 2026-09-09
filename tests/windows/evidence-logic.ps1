@@ -625,6 +625,31 @@ try {
     Expect-True ($missingNsRun.StderrText.Trim() -eq "evidence: no .nightshift/ at $missingNsProject") `
         "missing .nightshift/ stderr names the project path (got '$($missingNsRun.StderrText.Trim())')"
 
+    function Get-NSEvidenceExampleRecord {
+        param([Parameter(Mandatory = $true)][string]$Path)
+        $buf = New-Object Collections.Generic.List[string]
+        $in = $false
+        foreach ($line in [IO.File]::ReadAllLines($Path)) {
+            if (-not $in) {
+                if ($line -ceq '```json') { $in = $true }
+                continue
+            }
+            if ($line -ceq '```') { break }
+            $buf.Add($line)
+        }
+        return ($buf -join '')
+    }
+    foreach ($kind in @('baseline', 'checkpoint')) {
+        $page = Join-Path $plugin "skills/nightshift/references/evidence/$kind.md"
+        $guide = New-EvidenceScratchProject (Join-Path $root "guide-$kind")
+        $null = Invoke-EvidenceNative -ProjectPath $guide -Command init
+        $rec = Get-NSEvidenceExampleRecord $page
+        $appended = Invoke-EvidenceNative -ProjectPath $guide -Command append -Record $rec
+        Expect-True ($appended.ExitCode -eq 0) "$kind guidance example appends (got $($appended.ExitCode) $($appended.StderrText))"
+        $valid = Invoke-EvidenceNative -ProjectPath $guide -Command validate
+        Expect-True ($valid.ExitCode -eq 0) "$kind guidance example validates (got $($valid.ExitCode) $($valid.StderrText))"
+    }
+
     # === 7. python3 parity leg (skipped when the Python reference is absent) ===
     if (($null -ne $pythonCommand) -and (Test-Path -LiteralPath $pythonScript -PathType Leaf)) {
         $pyProject = Join-Path $root 'python-parity'

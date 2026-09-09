@@ -494,6 +494,30 @@ evidence_sequence() {
   done
 }
 
+example_record() {
+  sed -n '/^```json$/,/^```$/p' "$1" | sed '1d;$d'
+}
+
+@test "the baseline guidance example validates through the ledger" {
+  p="$(new_project ev-baseline-page)"
+  bash "$EV" --project "$p" init >/dev/null
+  rec="$(example_record "$ROOT/plugins/nightshift/skills/nightshift/references/evidence/baseline.md")"
+  run bash "$EV" --project "$p" append --record "$rec"
+  [ "$status" -eq 0 ]
+  run bash "$EV" --project "$p" validate
+  [ "$status" -eq 0 ]
+}
+
+@test "the checkpoint guidance example validates through the ledger" {
+  p="$(new_project ev-checkpoint-page)"
+  bash "$EV" --project "$p" init >/dev/null
+  rec="$(example_record "$ROOT/plugins/nightshift/skills/nightshift/references/evidence/checkpoint.md")"
+  run bash "$EV" --project "$p" append --record "$rec"
+  [ "$status" -eq 0 ]
+  run bash "$EV" --project "$p" validate
+  [ "$status" -eq 0 ]
+}
+
 @test "evidence temps are created mode 700" {
   grep -qF 'mktemp -d' "$EV"
   grep -qF 'chmod 700' "$EV"

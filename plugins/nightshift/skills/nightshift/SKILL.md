@@ -176,10 +176,11 @@ the kind you are writing, and no other.
 
 Before the first fix that answers an originating source, write that source's baseline — once per
 source class — using
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`, the page
-for source, cycle and specialist receipts, and reuse that id for every fix from that source. Before a risky cluster — a migration, a codemod, a
-provisioning step, anything whose undo is not obvious — write a checkpoint receipt naming
-touched paths, the rollback ref, and the verification plan. The model writes both receipts; nothing here requires a parser.
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/baseline.md`, and reuse that id for
+every later record from that source. Before a risky cluster — a migration, a codemod, a
+provisioning step, anything whose undo is not obvious — write a checkpoint using
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/checkpoint.md`, naming
+touched paths, the rollback ref, and remaining verification. Both are ledger records; nothing here requires a parser.
 
 Cited research, SEO audits, sourced documentation, and research synthesis follow
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/shift/cited-research.md`. Verify those reports with

@@ -12,6 +12,11 @@ hardcode `neverLeaveApprovedOrigins: true`.
 Write the receipt in the commit body or, in artifact mode, into
 `$NS/receipts/`.
 
+A baseline record follows
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/baseline.md`.
+A checkpoint record follows
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/checkpoint.md`.
+
 
 Native `evidence.sh` already fail-closes on bad ids, temp paths, and counts. Do not require
 it. Do not require Python for a ledger. The model may write a markdown receipt instead.
