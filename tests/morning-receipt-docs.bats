@@ -63,7 +63,7 @@ TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
   grep -qF "punch list's \`## Gates\`" "$DOC"
   grep -qF 'the policy file is present but unreadable or fails the schema' "$DOC"
   grep -qF 'Receipts: [index](./README.md)' "$DOC"
-  grep -qF '[NN. full title](./NN-slug.md)' "$DOC"
+  grep -qF 'item number and slug' "$DOC"
 }
 
 @test "morning-receipt doc claims nothing Status does not print" {

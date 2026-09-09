@@ -297,7 +297,7 @@ SH
   out="$p/.nightshift/receipts/morning-$today-9f2c40ab77e51d63.md"
   [ -f "$out" ]
   grep -qF 'Receipts: [index](./README.md), [1. first.](./1-first.md), [2. done.](./2-done.md)' "$out"
-  grep -qF '- Policy record: accepted' "$out"
+  grep -qF -- '- Policy record: accepted' "$out"
 }
 
 @test "clock-out renders the owner receipt into receipts/, named for tonight's shift" {
@@ -354,7 +354,9 @@ SH
   [ ! -f "$p/.nightshift/.shift-armed" ]
   grep -qF 'morning receipt skipped: runtime/morning-receipt.sh is not installed' \
     "$p/.nightshift/shift-log.md"
-  [ ! -e "$p/.nightshift/receipts" ]
+  # The index may still be rewritten at the tick; the morning page is what must not appear.
+  [ ! -e "$p/.nightshift/receipts/morning-$(date '+%Y-%m-%d').md" ]
+  [ -z "$(find "$p/.nightshift/receipts" -name 'morning-*.md' -print -quit 2>/dev/null)" ]
 }
 
 @test "a failing morning-receipt renderer never blocks the release" {
