@@ -54,6 +54,8 @@ try {
     Expect-True ($text.StartsWith('# 2. Make the packed Node-only build reproducible.')) `
         'a missing file is created with the item heading'
     Expect-True ($text.Contains('**Duration:** 44m 23s')) 'duration is bold'
+    $missing = @(Get-NSReceiptsMissingNns $w)
+    Expect-True ($missing.Count -eq 1) 'a usage-only receipt still needs model text'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

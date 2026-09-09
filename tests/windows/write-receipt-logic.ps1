@@ -119,7 +119,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), "## Items`n- [x] **done.**`n")
     $before = Invoke-Doctor $artifact
     Expect-True ($before.ExitCode -eq 0) "Doctor before receipts exits 0 (got $($before.ExitCode) $($before.Stderr))"
-    Expect-True ($before.Stdout -match 'artifact mode has ticked items but no receipts') `
+    Expect-True ($before.Stdout -match 'ticked items have no receipt text') `
         'Doctor warns when ticks exist without receipts'
 
     $note = Join-Path $outDir 'topic.md'
@@ -162,8 +162,8 @@ try {
         'Doctor names the newest receipt filename'
     Expect-True ($report.Stdout -notmatch [regex]::Escape("latest artifact receipt $firstName")) `
         'Doctor does not name the older receipt as latest'
-    Expect-True ($report.Stdout -notmatch 'artifact mode has ticked items but no receipts') `
-        'Doctor stops warning after receipts exist'
+    Expect-True ($report.Stdout -match 'ticked items have no receipt text') `
+        'timestamp receipts do not complete a named punch-list item'
 
     $empty = Join-Path $outDir 'blank.md'
     [IO.File]::WriteAllText($empty, '')
@@ -353,7 +353,7 @@ try {
         'Doctor still warns unusable path when ticks exist'
     Expect-True ($tickedUnusable.Stdout -match 'so write-receipt can land') `
         'Doctor still offers replace-path when ticks sit on an unusable receipts path'
-    Expect-True ($tickedUnusable.Stdout -notmatch 'artifact mode has ticked items but no receipts') `
+    Expect-True ($tickedUnusable.Stdout -notmatch 'ticked items have no receipt text') `
         'Doctor does not warn empty ticks when receipts path is unusable'
         Expect-True ($tickedUnusable.Stdout -notmatch 'complete ticked items with') `
             'Doctor does not offer write-receipt when ticks sit on an unusable receipts path'

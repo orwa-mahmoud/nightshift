@@ -234,11 +234,21 @@ LOG
   p="$(new_project status-artifact)"
   printf 'artifact\n' >"$p/.nightshift/work-mode"
   printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
-  facts "$p" | grep -qF 'receipts warning ticked items with no receipts are not reviewable completion'
+  facts "$p" | grep -qF 'completion record per-item receipt'
+  facts "$p" | grep -qF 'receipts missing model text 1'
 
   mkdir -p "$p/.nightshift/receipts"
-  printf '# receipt\n' >"$p/.nightshift/receipts/p01.md"
-  ! facts "$p" | grep -q '^receipts warning'
+  printf '# P01\n\nThe work is done.\n' >"$p/.nightshift/receipts/P01.md"
+  ! facts "$p" | grep -q 'receipts missing model text'
+}
+
+@test "disabled receipts are a fact, never a missing-text warning" {
+  p="$(new_project status-receipts-off)"
+  jq '.receipts.enabled = false' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
+  facts "$p" | grep -qF 'completion record none; the owner disabled receipts'
+  ! facts "$p" | grep -q 'receipts missing model text'
 }
 
 @test "nothing sensitive reaches the output" {
@@ -312,10 +322,10 @@ LOG
   # Not an empty night: something is there, and it is not a directory.
   printf 'not a directory\n' >"$p/.nightshift/receipts"
   facts "$p" | grep -qF 'receipts warning the artifact receipts path is not a usable directory'
-  ! facts "$p" | grep -qF 'ticked items with no receipts'
+  ! facts "$p" | grep -qF 'receipts missing model text'
 
   # An absent path is the empty case, not the planted one.
   rm -f "$p/.nightshift/receipts"
-  facts "$p" | grep -qF 'receipts warning ticked items with no receipts are not reviewable completion'
+  facts "$p" | grep -qF 'receipts missing model text 1'
   ! facts "$p" | grep -qF 'not a usable directory'
 }

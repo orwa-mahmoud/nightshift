@@ -191,11 +191,20 @@ if ns_policy_json_tool >/dev/null 2>&1; then
   fi
 fi
 
-if [ "$MODE" = artifact ]; then
-  if [ "${TICKED:-0}" -gt 0 ] && [ "$(ns_receipts_count "$WORKSPACE")" -eq 0 ] && [ "$UNUSABLE_RECV" -eq 0 ]; then
-    warn "artifact mode has ticked items but no receipts"
-    act confirm "complete ticked items with $_here/write-receipt.sh (native Windows: runtime/windows/write-receipt.ps1) or untick them; Doctor does not rewrite the punch list"
+if ns_receipts_enabled "$WORKSPACE"; then
+  fact "completion record per-item receipt"
+  # A planted file where receipts/ belongs is reported as itself; do not also warn
+  # about missing receipt text for that path.
+  if [ "${UNUSABLE_RECV:-0}" -eq 0 ]; then
+    MISSING="$(ns_receipts_missing_count "$WORKSPACE" 2>/dev/null)" || MISSING=0
+    if [ "${MISSING:-0}" -gt 0 ]; then
+      fact "receipts missing model text $MISSING"
+      warn "$MISSING ticked items have no receipt text; each item completes through its receipt file"
+      act confirm "write the missing receipts under .nightshift/receipts/; Doctor does not rewrite the punch list"
+    fi
   fi
+else
+  fact "completion record none; the owner disabled receipts"
 fi
 
 ORDERS="$(ns_open_boxes_file "$NS/work-orders.md")"

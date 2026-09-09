@@ -8663,20 +8663,26 @@ function Write-NSStatusReport {
     $latest = ''
     try { $latest = [string](Get-NSLatestReceipt $Workspace) } catch { $latest = '' }
     Fact 'latest artifact receipt' $latest
-    # A path that is not a directory answers 0 the same way an empty one does, so it is reported
-    # for what it is and the empty-ticks warning is not also raised for it.
+    $unusableRecv = $false
     if ($mode -ceq 'artifact') {
         $recvPath = Get-NSReceiptsDir $Workspace
         $present = Test-Path -LiteralPath $recvPath
         $usable = $false
         try { $usable = [bool](Test-NSUsableReceiptsDir $Workspace) } catch { $usable = $false }
         if ($present -and (-not $usable)) {
+            $unusableRecv = $true
             Fact 'receipts warning' 'the artifact receipts path is not a usable directory'
         }
-        elseif (($ticked -gt 0) -and ($receipts -eq 0)) {
-            # Ticked boxes with nothing to review are not completion anybody can check.
-            Fact 'receipts warning' 'ticked items with no receipts are not reviewable completion'
+    }
+    if (Test-NSReceiptsEnabled $Workspace) {
+        Fact 'completion record' 'per-item receipt'
+        if (-not $unusableRecv) {
+            $missing = @(Get-NSReceiptsMissingNns $Workspace)
+            if ($missing.Count -gt 0) { Fact 'receipts missing model text' ([string]$missing.Count) }
         }
+    }
+    else {
+        Fact 'completion record' 'none; the owner disabled receipts'
     }
 
     foreach ($entry in (Get-NSStatusTransitions (Join-Path $ns 'shift-log.md') 3)) {
@@ -9422,9 +9428,9 @@ function Test-NSReceiptHasModelText {
     return $false
 }
 
-function Get-NSGateReceiptsMissingNote {
+function Get-NSReceiptsMissingNns {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    if (-not (Test-NSReceiptsEnabled $Workspace)) { return '' }
+    if (-not (Test-NSReceiptsEnabled $Workspace)) { return , @() }
     $ns = Join-Path $Workspace '.nightshift'
     $parts = New-Object Collections.Generic.List[string]
     foreach ($label in @(Get-NSPulseTickedLabels $Workspace)) {
@@ -9434,6 +9440,12 @@ function Get-NSGateReceiptsMissingNote {
         if ([string]::IsNullOrEmpty($nn)) { $nn = $label }
         $parts.Add($nn)
     }
+    return , $parts.ToArray()
+}
+
+function Get-NSGateReceiptsMissingNote {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $parts = @(Get-NSReceiptsMissingNns $Workspace)
     if ($parts.Count -eq 0) { return '' }
     return ('Receipts missing model text: ' + ($parts -join ', '))
 }

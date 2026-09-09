@@ -1,6 +1,6 @@
 # Command reference
 
-Choose work with [Shift modes](shift-modes.md#shift-modes), inspect [reports and token usage](shift-report.md#shift-report-and-token-usage),
+Choose work with [Shift modes](shift-modes.md#shift-modes), inspect [receipts and token usage](shift-report.md#shift-report-and-token-usage),
 or [archive finished shifts](archive.md#archive-and-continue). The commands below operate those workflows.
 
 ```text
@@ -115,8 +115,8 @@ When a shift is not where you think it is — wrong folder, broken `.nightshift-
 `/nightshift:doctor` on Claude Code or ask Nightshift to diagnose on Codex, then walk
 [Troubleshooting](troubleshooting.md#troubleshooting) before changing files. Doctor reports; it never repairs.
 In artifact mode it also reports `artifact receipts N`, `latest artifact receipt` with the
-filename of the most recently written receipt when any exist. Review artifact outputs and their
-shift-report sections; `report.legacyItemReceipts` enables additional per-item receipts.
+filename of the most recently written receipt when any exist. Status and Doctor judge
+completion by the per-item receipt files under `.nightshift/receipts/`.
 It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
 
 A local support bundle from a terminal (never uploaded). Known sensitive fields

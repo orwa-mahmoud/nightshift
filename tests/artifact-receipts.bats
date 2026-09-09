@@ -331,14 +331,14 @@ new_artifact() {
   punch_open "$a"
   run bash "$DOCTOR" --project "$a"
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | grep -qF 'artifact mode has ticked items but no receipts'
-  printf '%s' "$output" | grep -qF 'write-receipt.sh'
+  printf '%s' "$output" | grep -qF 'ticked items have no receipt text'
+  printf '%s' "$output" | grep -qF 'write the missing receipts under .nightshift/receipts/'
 
-  printf 'ok\n' >"$a/out/topic.md"
-  bash "$WRITE" --project "$a" --item 'x' --verify 'ok' --output "$a/out/topic.md" >/dev/null
+  mkdir -p "$a/.nightshift/receipts"
+  printf '# 2. done.\n\nThe work is done.\n' >"$a/.nightshift/receipts/2-done.md"
   run bash "$DOCTOR" --project "$a"
   [ "$status" -eq 0 ]
-  if printf '%s' "$output" | grep -qF 'artifact mode has ticked items but no receipts'; then
+  if printf '%s' "$output" | grep -qF 'ticked items have no receipt text'; then
     return 1
   fi
 
@@ -346,7 +346,14 @@ new_artifact() {
   punch_open "$r"
   run bash "$DOCTOR" --project "$r"
   [ "$status" -eq 0 ]
-  if printf '%s' "$output" | grep -qF 'artifact mode has ticked items but no receipts'; then
+  printf '%s' "$output" | grep -qF 'ticked items have no receipt text'
+
+  jq '.receipts.enabled = false' "$r/.nightshift/rules.json" >"$r/.nightshift/rules.next"
+  mv "$r/.nightshift/rules.next" "$r/.nightshift/rules.json"
+  run bash "$DOCTOR" --project "$r"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'completion record none; the owner disabled receipts'
+  if printf '%s' "$output" | grep -qF 'ticked items have no receipt text'; then
     return 1
   fi
 }
@@ -461,7 +468,8 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'fact "artifact receipts"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'latest artifact receipt' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'ns_latest_receipt' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
-  grep -qF 'ticked items with no receipts are not reviewable completion' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'completion record' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'receipts missing model text' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'the artifact receipts path is not a usable directory' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'the empty-ticks warning is not also raised' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
@@ -472,7 +480,8 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'artifact receipts N' "$DOCTOR_SKILL"
   grep -qF 'latest artifact receipt' "$DOCTOR_SKILL"
   grep -qF 'most recently written' "$DOCTOR_SKILL"
-  grep -qF 'artifact mode has ticked items but no receipts' "$DOCTOR_SKILL"
+  grep -qF 'completion record per-item receipt' "$DOCTOR_SKILL"
+  grep -qF 'N ticked items have no receipt text' "$DOCTOR_SKILL"
   grep -qF 'artifact receipts path is not a usable directory' "$DOCTOR_SKILL"
   grep -qF 'so write-receipt can land' "$DOCTOR_SKILL"
   grep -qF 'does not also warn empty ticks' "$DOCTOR_SKILL"
@@ -497,7 +506,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
   grep -qE 'ns"? write-receipt' "$COMMANDS"
-  grep -qF 'report.legacyItemReceipts' "$COMMANDS"
+  grep -qF 'per-item receipt files under .nightshift/receipts/' "$COMMANDS"
   grep -qF 'artifact receipts path is not a usable directory' "$COMMANDS"
   grep -qF 'replace it rather than write-receipt' "$COMMANDS"
   grep -qF 'cannot land receipts' "$COMMANDS"
@@ -546,7 +555,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'Get-NSLatestReceipt' "$DOCTOR_PS1"
   grep -qF 'artifact receipts' "$DOCTOR_PS1"
   grep -qF 'latest artifact receipt' "$DOCTOR_PS1"
-  grep -qF 'artifact mode has ticked items but no receipts' "$DOCTOR_PS1"
+  grep -qF 'ticked items have no receipt text' "$DOCTOR_PS1"
   grep -qF 'artifact receipts path is not a usable directory' "$DOCTOR_PS1"
   grep -qF 'so write-receipt can land' "$DOCTOR_PS1"
   grep -qF 'unusableRecv' "$DOCTOR_PS1"
@@ -586,7 +595,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'Doctor offers a replace-path action when receipts path is unusable' "$WRITE_LOGIC"
   grep -qF 'Doctor does not offer write-receipt on an unusable receipts path' "$WRITE_LOGIC"
   grep -qF 'Doctor does not warn empty ticks when receipts path is unusable' "$WRITE_LOGIC"
-  grep -qF 'artifact mode has ticked items but no receipts' "$WRITE_LOGIC"
+  grep -qF 'ticked items have no receipt text' "$WRITE_LOGIC"
   if ! command -v pwsh >/dev/null 2>&1; then
     return 0
   fi

@@ -107,6 +107,57 @@ ns_receipt_path() {
   printf '%s/%s.md' "$(ns_receipts_dir "$1")" "$(ns_receipt_basename "$2")"
 }
 
+# ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime block
+# and the gate-written heading.
+ns_receipt_has_model_text() {
+  local f="$1"
+  [ -f "$f" ] && [ ! -L "$f" ] || return 1
+  awk '
+    /^[[:space:]]*$/ { next }
+    /^# / { next }
+    /^\*\*Usage:\*\*/ { next }
+    /^\*\*Duration:\*\*/ { next }
+    /^  Source:/ { next }
+    /^  Cache reads/ { next }
+    { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$f"
+}
+
+# ns_receipts_missing_nns <project> — one item number per ticked item with no model text.
+ns_receipts_missing_nns() {
+  local project="$1" punch ns label base nn
+  ns="$project/.nightshift"
+  punch="$ns/punch-list.md"
+  [ -f "$punch" ] || return 0
+  ns_receipts_enabled "$project" || return 0
+  ns_items_section "$punch" 2>/dev/null | awk '
+    /^- \[[xX]\]/ {
+      line = $0
+      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[[xX]\][[:space:]]*/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      if (line != "") print line
+    }
+  ' | while IFS= read -r label || [ -n "$label" ]; do
+    [ -n "$label" ] || continue
+    base="$(ns_receipt_basename "$label")"
+    ns_receipt_has_model_text "$ns/receipts/${base}.md" && continue
+    nn="$(ns_receipt_nn "$label")"
+    [ -n "$nn" ] || nn="$label"
+    printf '%s\n' "$nn"
+  done
+}
+
+ns_receipts_missing_count() {
+  local n
+  n="$(ns_receipts_missing_nns "$1" | grep -c . || true)"
+  printf '%s' "${n:-0}"
+}
+
 # ns_usage_scale <n> — integer below 1000, one decimal k, one decimal M.
 ns_usage_scale() {
   local n="$1"
