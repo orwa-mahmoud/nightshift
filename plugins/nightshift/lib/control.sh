@@ -122,13 +122,17 @@ ns_control_watchman_command_ok() { # <pid>
   printf '%s' "$args" | grep -qE 'watchman\.sh|watchman\.ps1|start-watchman'
 }
 
-# Kill only a verified live Nightshift watchman. 0 killed or absent · 1 unverified (left running)
+# Kill only a verified live Nightshift watchman.
+# Sets NS_CONTROL_WATCHMAN to absent | stopped | unverified.
+# 0 killed or absent · 1 unverified (left running)
 ns_control_stop_watchman() { # <ns>
   local ns="$1" pidfile pid start rc
+  NS_CONTROL_WATCHMAN=absent
   pidfile="$ns/.watchman"
   if [ -L "$pidfile" ]; then
     ns_control_drop "$pidfile"
     ns_control_drop "$ns/.watchman-tick"
+    NS_CONTROL_WATCHMAN=stopped
     return 0
   fi
   if [ ! -f "$pidfile" ]; then
@@ -157,14 +161,17 @@ ns_control_stop_watchman() { # <ns>
     return 0
   fi
   if [ "$rc" -ne 0 ]; then
+    NS_CONTROL_WATCHMAN=unverified
     return 1
   fi
   if [ -z "$start" ] && ! ns_control_watchman_command_ok "$pid"; then
+    NS_CONTROL_WATCHMAN=unverified
     return 1
   fi
   kill "$pid" 2>/dev/null || true
   ns_control_drop "$pidfile"
   ns_control_drop "$ns/.watchman-tick"
+  NS_CONTROL_WATCHMAN=stopped
   return 0
 }
 
@@ -218,7 +225,7 @@ ns_control_stop() { # <host-path> [reason]
   fi
   ns_control_write_stop "$NS_CONTROL_NS" "$reason"
   if ns_control_stop_watchman "$NS_CONTROL_NS"; then
-    watch="stopped"
+    watch="${NS_CONTROL_WATCHMAN:-absent}"
   else
     watch="unverified"
     rc=2
