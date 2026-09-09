@@ -1,6 +1,8 @@
 # Shared helpers for the nightshift hook tests.
-HOOKS="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks"
-RULES_TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+# Paths are relative to this file so suites under tests/<host>/ resolve the plugin too.
+_TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOOKS="$_TEST_ROOT/../plugins/nightshift/hooks"
+RULES_TEMPLATE="$_TEST_ROOT/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
 
 # Create an isolated project with its own git repo and a .nightshift dir. Echoes the path.
 # The suite must see only the env a test passes explicitly — a developer's own shell (or a

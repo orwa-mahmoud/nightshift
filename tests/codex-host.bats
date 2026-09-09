@@ -29,7 +29,8 @@ codex_hook() {
 
   run codex_hook pulse "$p" sess-1
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  printf '%s' "$output" | grep -qF 'additionalContext'
+  printf '%s' "$output" | grep -qF 'receipts: item'
   [ -f "$p/.nightshift/.shift-pulse" ]
   grep -qF sess-1 "$p/.nightshift/.shift-pulse"
 }

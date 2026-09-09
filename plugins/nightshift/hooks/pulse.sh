@@ -421,6 +421,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   ns_pulse_emit "$NS" "$SID"
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"
   ns_pulse_marks "$NS" "$PROJECT_DIR" "$SID" "$TPATH"
-  ns_pulse_context claude "$(ns_pulse_receipts_notice "$NS" "$PROJECT_DIR")"
+  if ns_pulse_owner_ok "$NS" "$SID"; then
+    ns_pulse_context claude "$(ns_pulse_receipts_notice "$NS" "$PROJECT_DIR")"
+  fi
   exit 0
 fi

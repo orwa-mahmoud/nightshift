@@ -51,5 +51,6 @@ cursor_pulse() {
   out="$(jq -nc --arg p "$p" \
     '{hook_event_name:"stop",conversation_id:"bound-id",session_id:"bound-id",cwd:$p,status:"completed"}' |
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_PULSE")"
-  [ -z "$out" ]
+  printf '%s' "$out" | grep -qF 'additional_context'
+  printf '%s' "$out" | grep -qF 'receipts: item'
 }

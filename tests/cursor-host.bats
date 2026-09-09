@@ -130,10 +130,11 @@ cursor_pulse() {
   [ -z "$output" ]
   [ ! -e "$p/.nightshift/.shift-pulse" ] || { echo "a stranger's pulse was recorded"; return 1; }
 
-  # The session that owns it is.
+  # The session that owns it is. Receipt duty rides on the same pulse, as additional_context.
   run cursor_pulse "$p" conv-1
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  printf '%s' "$output" | grep -qF 'additional_context'
+  printf '%s' "$output" | grep -qF 'receipts: item'
   [ -f "$p/.nightshift/.shift-pulse" ]
   grep -qF conv-1 "$p/.nightshift/.shift-pulse"
 }
