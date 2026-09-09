@@ -150,7 +150,7 @@ function Get-ItemBlock {
     $inside = $false
     foreach ($line in $lines) {
         if ($line.StartsWith('item ', [StringComparison]::Ordinal)) {
-            $inside = $line.EndsWith(': ' + $Title, [StringComparison]::Ordinal)
+            $inside = $line.Contains($Title)
             continue
         }
         if ($inside -and $line.StartsWith('  ', [StringComparison]::Ordinal)) { $block.Add($line.Trim()) }
@@ -173,23 +173,24 @@ try {
         'every open checkbox in the Items section is one item'
     Expect-True (-not $text.Contains('Retire the old runner.')) `
         'a ticked item is finished work and is never reported'
-    Expect-True $text.Contains('item 1 (punch-list): Bring the review stack up.') 'the item line carries the title and the source'
-    Expect-True ((Get-ItemBlock $text 'Bring the review stack up.') -ccontains 'needs containers: denied') `
+    Expect-True $text.Contains('preflight: 5 open items, 4 with gaps') 'the open-item and gap summary leads'
+    Expect-True $text.Contains('item 1 [punch-list] Bring the review stack up.') 'the item line carries the title and the source'
+    Expect-True ((Get-ItemBlock $text 'Bring the review stack up.') -ccontains 'needs containers (denied)') `
         'docker compose is a containers signal'
-    Expect-True ((Get-ItemBlock $text 'Install ripgrep on the runner.') -ccontains 'needs sudo: denied') `
+    Expect-True ((Get-ItemBlock $text 'Install ripgrep on the runner.') -ccontains 'needs sudo (denied)') `
         'sudo is a sudo signal'
-    Expect-True ((Get-ItemBlock $text 'Install ripgrep on the runner.') -ccontains 'needs global-packages: denied') `
+    Expect-True ((Get-ItemBlock $text 'Install ripgrep on the runner.') -ccontains 'needs global-packages (denied)') `
         'apt-get is a global-packages signal'
-    Expect-True ((Get-ItemBlock $text 'Publish the package.') -ccontains 'needs global-packages: denied') `
+    Expect-True ((Get-ItemBlock $text 'Publish the package.') -ccontains 'needs global-packages (denied)') `
         'npm install -g is a global-packages signal'
-    Expect-True ((Get-ItemBlock $text 'Publish the package.') -ccontains 'needs external-services: denied') `
+    Expect-True ((Get-ItemBlock $text 'Publish the package.') -ccontains 'needs external-services (denied)') `
         'npm login is an external-services signal'
-    Expect-True ((Get-ItemBlock $text 'Start the database service.') -ccontains 'needs daemons: denied') `
+    Expect-True ((Get-ItemBlock $text 'Start the database service.') -ccontains 'needs daemons (denied)') `
         'systemctl is a daemons signal'
-    Expect-True ((Get-ItemBlock $text 'Green the unit suite.') -ccontains 'needs: none') `
+    Expect-True ((Get-ItemBlock $text 'Green the unit suite.') -ccontains 'needs nothing') `
         'npm test needs no elevation'
-    Expect-True $text.Contains('gaps: containers, daemons, external-services, global-packages, sudo') `
-        'the summary lists every gap once, sorted'
+    Expect-True $text.Contains('gaps: containers (item 1), sudo (item 2), global-packages (item 2), global-packages (item 3), external-services (item 3), daemons (item 5)') `
+        'the summary lists every gap with its item number'
 
     # === 2. the resolver decides allowed, not the grep ===
     $allowed = Join-Path $root 'allowed'
@@ -209,10 +210,10 @@ try {
     $policy['allowances'] = @($containers)
     [IO.File]::WriteAllText((Join-Path $allowedNs 'shift-policy.json'), (ConvertTo-NSCanonicalJson $policy), $utf8)
     $allowedText = (Invoke-Preflight -Project $allowed).StdoutText.TrimEnd("`n")
-    Expect-True ((Get-ItemBlock $allowedText 'Bring the review stack up.') -ccontains 'needs containers: allowed') `
+    Expect-True ((Get-ItemBlock $allowedText 'Bring the review stack up.') -ccontains 'needs containers (allowed)') `
         'a one-shift allowance turns a need into an allowance'
-    Expect-True (-not $allowedText.Contains('gaps: containers')) 'an allowed category is no longer a gap'
-    Expect-True $allowedText.Contains('gaps: daemons, external-services, global-packages, sudo') `
+    Expect-True (-not $allowedText.Contains('containers (item 1)')) 'an allowed category is no longer a gap'
+    Expect-True $allowedText.Contains('gaps: sudo (item 2), global-packages (item 2), global-packages (item 3), external-services (item 3), daemons (item 5)') `
         'the remaining gaps stay listed'
 
     # === 3. work orders are read too ===
@@ -239,11 +240,11 @@ try {
     $withOrders = Join-Path $root 'with-orders'
     $null = New-PreflightProject $withOrders -Orders $orders
     $ordersText = (Invoke-Preflight -Project $withOrders).StdoutText.TrimEnd("`n")
-    Expect-True $ordersText.Contains('(work-order): Coverage hunt.') 'a boxed work order reports its box as the item'
-    Expect-True ((Get-ItemBlock $ordersText 'Coverage hunt.') -ccontains 'needs containers: denied') `
+    Expect-True $ordersText.Contains('item 1 [work-orders] Coverage hunt.') 'a boxed work order reports its box as the item'
+    Expect-True ((Get-ItemBlock $ordersText 'Coverage hunt.') -ccontains 'needs containers (denied)') `
         'a work order is matched against the same patterns'
-    Expect-True $ordersText.Contains('(work-order): Work order - 2026-09-03 22:00') `
-        'a work order with no box reports its heading as the item'
+    Expect-True (-not $ordersText.Contains('Work order - 2026-09-03 22:00')) `
+        'a work order with no box is not an item'
     Expect-True (-not $ordersText.Contains('Retired container hunt.')) `
         'a fully ticked work order reports neither its box nor its heading'
     Expect-True (-not $ordersText.Contains('2026-09-04 22:00')) `
@@ -274,17 +275,94 @@ try {
     [IO.File]::WriteAllText((Join-Path $brokenNs 'rules.json'), (ConvertTo-NSCanonicalJson $rules), $utf8)
     $brokenRun = Invoke-Preflight -Project $brokenPattern
     Expect-Equal 0 $brokenRun.ExitCode 'a broken pattern never makes the preflight refuse'
-    Expect-True $brokenRun.StdoutText.Contains('pattern error: daemons') 'the broken pattern is named once'
-    Expect-True (-not $brokenRun.StdoutText.Contains('needs daemons:')) `
-        'a category that cannot be tested is not claimed against every item'
+    Expect-True $brokenRun.StdoutText.Contains('pattern error: elevation.daemons.pattern is not a valid grep -E pattern; the category counts as needed') `
+        'the broken pattern is named once'
+    Expect-True $brokenRun.StdoutText.Contains('needs daemons (denied)') `
+        'an unreadable pattern fails closed and counts as needed'
 
     # === 6. an empty workspace reports nothing and still exits 0 ===
     $emptyProject = Join-Path $root 'empty'
     $null = New-Item -ItemType Directory -Path (Join-Path $emptyProject '.nightshift') -Force
     $emptyRun = Invoke-Preflight -Project $emptyProject
     Expect-Equal 0 $emptyRun.ExitCode 'an empty workspace exits 0'
-    Expect-True $emptyRun.StdoutText.Contains('items: none') 'an empty workspace reports no items'
+    Expect-True $emptyRun.StdoutText.Contains('preflight: 0 open items, 0 with gaps') 'an empty workspace reports no items'
     Expect-True $emptyRun.StdoutText.Contains('gaps: none') 'an empty workspace reports no gaps'
+
+    # === shared fixture: same punch list and policy as tests/preflight-needs.bats ===
+    $sharedList = @(
+        '## Items',
+        '',
+        '- [ ] **1. Bring up the database.**',
+        '  - Add postgres to docker-compose.yml and run `docker compose up -d`',
+        '  - Verify: `psql -c ''select 1''`',
+        '- [ ] **2. Install jq system-wide.**',
+        '  - `sudo apt-get install -y jq`',
+        '- [ ] **3. Run the tests.**',
+        '  - `npm test`',
+        '- [x] **4. Pin the linter.**',
+        '  - `brew install shellcheck`',
+        ''
+    ) -join "`n"
+    function Write-SharedPolicy {
+        param([string]$Ns, [object[]]$Allowances)
+        $policy = New-NSOrdinalMap
+        $policy['schemaVersion'] = 1
+        $policy['shiftId'] = '9f2c40ab77e51d63'
+        $policy['createdAt'] = '2026-09-02T02:30:00Z'
+        $policy['source'] = 'composition'
+        $policy['deadlineEpoch'] = $null
+        $policy['verificationLevel'] = 'final'
+        $policy['toolingPolicy'] = 'existing-tools'
+        $policy['allowances'] = @($Allowances)
+        [IO.File]::WriteAllText((Join-Path $Ns 'shift-policy.json'), (ConvertTo-NSCanonicalJson $policy), $utf8)
+    }
+    function New-SharedAllowance {
+        param([string]$Category)
+        $row = New-NSOrdinalMap
+        $row['category'] = $Category
+        $row['scope'] = 'category'
+        $row['provenance'] = 'one-shift'
+        return $row
+    }
+
+    $mixed = Join-Path $root 'shared-mixed'
+    $mixedNs = Join-Path $mixed '.nightshift'
+    $null = New-Item -ItemType Directory -Path $mixedNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $mixedNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $mixedNs 'punch-list.md'), $sharedList, $utf8)
+    $mixedText = (Invoke-Preflight -Project $mixed).StdoutText
+    Expect-True $mixedText.Contains('preflight: 3 open items, 2 with gaps') 'shared fixture mixed needs: open and gap counts'
+    Expect-True $mixedText.Contains('item 1 [punch-list] 1. Bring up the database.') 'shared fixture mixed needs: item 1'
+    Expect-True $mixedText.Contains('  needs containers (denied)') 'shared fixture mixed needs: containers denied'
+    Expect-True $mixedText.Contains('  needs nothing') 'shared fixture mixed needs: tests need nothing'
+    Expect-True $mixedText.Contains('gaps: containers (item 1), sudo (item 2), global-packages (item 2)') `
+        'shared fixture mixed needs: gap summary'
+
+    $oneGap = Join-Path $root 'shared-one-gap'
+    $oneGapNs = Join-Path $oneGap '.nightshift'
+    $null = New-Item -ItemType Directory -Path $oneGapNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $oneGapNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $oneGapNs 'punch-list.md'), $sharedList, $utf8)
+    Write-SharedPolicy $oneGapNs @((New-SharedAllowance 'containers'))
+    $oneGapText = (Invoke-Preflight -Project $oneGap).StdoutText
+    Expect-True $oneGapText.Contains('preflight: 3 open items, 1 with gaps') 'shared fixture one missing allowance: counts'
+    Expect-True $oneGapText.Contains('  needs containers (allowed)') 'shared fixture one missing allowance: containers allowed'
+    Expect-True $oneGapText.Contains('gaps: sudo (item 2), global-packages (item 2)') `
+        'shared fixture one missing allowance: remaining gaps'
+
+    $noGaps = Join-Path $root 'shared-no-gaps'
+    $noGapsNs = Join-Path $noGaps '.nightshift'
+    $null = New-Item -ItemType Directory -Path $noGapsNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $noGapsNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $noGapsNs 'punch-list.md'), $sharedList, $utf8)
+    Write-SharedPolicy $noGapsNs @(
+        (New-SharedAllowance 'containers'),
+        (New-SharedAllowance 'sudo'),
+        (New-SharedAllowance 'global-packages')
+    )
+    $noGapsText = (Invoke-Preflight -Project $noGaps).StdoutText
+    Expect-True $noGapsText.Contains('preflight: 3 open items, 0 with gaps') 'shared fixture: no gaps'
+    Expect-True $noGapsText.Contains('gaps: none') 'shared fixture: no gaps summary'
 
     # === 7. park-needs writes one entry per gap and repeats none ===
     $parkRun = Invoke-Park -Project $project

@@ -5498,7 +5498,9 @@ function Get-NSPreflightTitle {
     $title = $Line.Trim()
     $title = [regex]::Replace($title, '^-\s*\[[ xX]\]\s*', '')
     $title = [regex]::Replace($title, '^#+\s*', '')
-    $title = $title.Replace('**', '')
+    $title = $title.Replace('*', '').Replace('`', '')
+    $title = [regex]::Replace($title, '[\u0001-\u001F\u007F]', ' ')
+    $title = [regex]::Replace($title, '\s+', ' ')
     return $title.Trim()
 }
 
@@ -5511,12 +5513,10 @@ function Get-NSPreflightSectionItems {
     $items = New-Object Collections.Generic.List[object]
     $current = $null
     $sawBox = $false
+    $boxIndex = 0
     $text = New-Object Text.StringBuilder
     foreach ($line in $Lines) {
-        # A ticked box is finished work: it closes the item above it and starts
-        # nothing, so no allowance is ever reported or parked for it.
-        if ($line -match '^-\s*\[[xX]\]') {
-            $sawBox = $true
+        if ($line -match '^##\s') {
             if ($null -ne $current) {
                 $current['text'] = $text.ToString()
                 $items.Add($current)
@@ -5524,8 +5524,22 @@ function Get-NSPreflightSectionItems {
             }
             continue
         }
-        if ($line -match '^-\s*\[ \]') {
+        # A ticked box is finished work: it closes the item above it and starts
+        # nothing, so no allowance is ever reported or parked for it. The file
+        # number still advances, matching the POSIX report.
+        if ($line -match '^\s*-\s*\[[xX]\]') {
             $sawBox = $true
+            $boxIndex++
+            if ($null -ne $current) {
+                $current['text'] = $text.ToString()
+                $items.Add($current)
+                $current = $null
+            }
+            continue
+        }
+        if ($line -match '^\s*-\s*\[ \]') {
+            $sawBox = $true
+            $boxIndex++
             if ($null -ne $current) {
                 $current['text'] = $text.ToString()
                 $items.Add($current)
@@ -5533,6 +5547,7 @@ function Get-NSPreflightSectionItems {
             $current = New-NSOrdinalMap
             $current['title'] = Get-NSPreflightTitle $line
             $current['source'] = $Source
+            $current['index'] = $boxIndex
             $text = New-Object Text.StringBuilder
         }
         if ($null -ne $current) {
@@ -5587,32 +5602,16 @@ function Get-NSPreflightItems {
     }
 
     $orderLines = New-Object Collections.Generic.List[string]
-    $orderTitle = ''
+    $inOrders = $false
     foreach ($line in (Get-NSPreflightFileLines $paths['orders'])) {
-        if ($line -match '^##\s+Work order') {
-            if (-not [string]::IsNullOrEmpty($orderTitle)) {
-                foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-order' -FallbackTitle $orderTitle)) {
-                    $items.Add($item)
-                }
-            }
-            $orderTitle = Get-NSPreflightTitle $line
-            $orderLines = New-Object Collections.Generic.List[string]
-            continue
+        if (-not $inOrders) {
+            if ($line -match '^##\s+Work order') { $inOrders = $true }
+            else { continue }
         }
-        if ($line -match '^##\s') {
-            if (-not [string]::IsNullOrEmpty($orderTitle)) {
-                foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-order' -FallbackTitle $orderTitle)) {
-                    $items.Add($item)
-                }
-            }
-            $orderTitle = ''
-            $orderLines = New-Object Collections.Generic.List[string]
-            continue
-        }
-        if (-not [string]::IsNullOrEmpty($orderTitle)) { $orderLines.Add($line) }
+        $orderLines.Add($line)
     }
-    if (-not [string]::IsNullOrEmpty($orderTitle)) {
-        foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-order' -FallbackTitle $orderTitle)) {
+    if ($orderLines.Count -gt 0) {
+        foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-orders' -FallbackTitle '')) {
             $items.Add($item)
         }
     }
@@ -5649,8 +5648,14 @@ function Get-NSPreflightReport {
         $needs = New-Object Collections.Generic.List[object]
         foreach ($category in $script:NSPolicyCategories) {
             $regex = $patterns[$category]
-            if ($null -eq $regex) { continue }
-            if (-not $regex.IsMatch($text)) { continue }
+            $matched = $false
+            if ($null -eq $regex) {
+                $matched = $true
+            }
+            elseif ($regex.IsMatch($text)) {
+                $matched = $true
+            }
+            if (-not $matched) { continue }
             $value = [string]$resolution['settings']['elevation.' + $category]['value']
             $need = New-NSOrdinalMap
             $need['category'] = $category
@@ -5661,12 +5666,14 @@ function Get-NSPreflightReport {
                 $gap = New-NSOrdinalMap
                 $gap['category'] = $category
                 $gap['title'] = $item['title']
+                $gap['index'] = $item['index']
                 $gaps.Add($gap)
             }
         }
         $entry = New-NSOrdinalMap
         $entry['title'] = $item['title']
         $entry['source'] = $item['source']
+        $entry['index'] = $item['index']
         $entry['needs'] = $needs.ToArray()
         $items.Add($entry)
     }
@@ -5685,39 +5692,69 @@ function Get-NSPreflightNeeds {
     )
     $report = Get-NSPreflightReport $Workspace
     if ($Json) {
-        return (ConvertTo-NSCanonicalJson $report -Compact)
+        $document = New-NSOrdinalMap
+        $document['schemaVersion'] = $report['schemaVersion']
+        $document['gaps'] = @(foreach ($gap in @($report['gaps'])) {
+                $row = New-NSOrdinalMap
+                $row['category'] = $gap['category']
+                $row['title'] = $gap['title']
+                $row
+            })
+        $document['items'] = @(foreach ($item in @($report['items'])) {
+                $row = New-NSOrdinalMap
+                $row['needs'] = $item['needs']
+                $row['source'] = $item['source']
+                $row['title'] = $item['title']
+                $row
+            })
+        $document['patternErrors'] = $report['patternErrors']
+        return (ConvertTo-NSCanonicalJson $document -Compact)
     }
     $lines = New-Object Collections.Generic.List[string]
-    $index = 0
+    $open = @($report['items']).Count
+    $gapped = 0
     foreach ($item in $report['items']) {
-        $index++
-        $lines.Add(('item {0} ({1}): {2}' -f $index, $item['source'], $item['title']))
+        $hasGap = $false
+        foreach ($need in @($item['needs'])) {
+            if (-not $need['allowed']) { $hasGap = $true; break }
+        }
+        if ($hasGap) { $gapped++ }
+    }
+    $lines.Add(('preflight: {0} open items, {1} with gaps' -f $open, $gapped))
+    foreach ($item in $report['items']) {
+        $index = $item['index']
+        if ($null -eq $index) { $index = 0 }
+        $lines.Add(('item {0} [{1}] {2}' -f $index, $item['source'], $item['title']))
         if (@($item['needs']).Count -eq 0) {
-            $lines.Add('  needs: none')
+            $lines.Add('  needs nothing')
             continue
         }
         foreach ($need in $item['needs']) {
-            $state = 'denied'
-            if ($need['allowed']) { $state = 'allowed' }
-            elseif ([string]$need['resolved'] -ceq 'exact-plan') { $state = 'exact-plan only' }
-            $lines.Add(('  needs {0}: {1}' -f $need['category'], $state))
+            if ($need['allowed']) {
+                $lines.Add(('  needs {0} (allowed)' -f $need['category']))
+            }
+            elseif ([string]$need['resolved'] -ceq 'exact-plan') {
+                $lines.Add(('  needs {0} (allowed only for the approved plan)' -f $need['category']))
+            }
+            else {
+                $lines.Add(('  needs {0} (denied)' -f $need['category']))
+            }
         }
     }
-    if ($index -eq 0) {
-        $lines.Add('items: none')
-    }
     foreach ($category in $report['patternErrors']) {
-        $lines.Add('pattern error: ' + $category + ' (rules.elevation pattern does not compile)')
+        $lines.Add(('pattern error: elevation.{0}.pattern is not a valid grep -E pattern; the category counts as needed' -f $category))
     }
-    $categories = New-Object Collections.Generic.List[string]
+    $gapParts = New-Object Collections.Generic.List[string]
     foreach ($gap in $report['gaps']) {
-        if (-not ($categories -ccontains [string]$gap['category'])) { $categories.Add([string]$gap['category']) }
+        $gapIndex = $gap['index']
+        if ($null -eq $gapIndex) { $gapIndex = 0 }
+        $gapParts.Add(('{0} (item {1})' -f $gap['category'], $gapIndex))
     }
-    if ($categories.Count -eq 0) {
+    if ($gapParts.Count -eq 0) {
         $lines.Add('gaps: none')
     }
     else {
-        $lines.Add('gaps: ' + ((Sort-NSOrdinal $categories.ToArray()) -join ', '))
+        $lines.Add('gaps: ' + ($gapParts -join ', '))
     }
     return ($lines -join "`n")
 }
