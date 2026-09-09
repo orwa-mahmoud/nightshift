@@ -32,5 +32,5 @@ $payload = [ordered]@{
     takeoverAllowed = $result.takeoverAllowed
     twoActiveWorkersAllowed = $false
 }
-Write-Output ($payload | ConvertTo-Json -Compress)
+Write-Output ($payload | ConvertTo-Json -Depth 4)
 exit $result.ExitCode
