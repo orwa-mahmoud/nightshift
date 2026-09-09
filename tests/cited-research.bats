@@ -1,6 +1,7 @@
 load helpers
 
 CHECK="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-report.sh"
+CHECK_RECEIPTS="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-receipts.sh"
 CHECK_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-receipts.ps1"
 CHECK_REPORT_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-report.ps1"
 CHECK_LOGIC="$BATS_TEST_DIRNAME/windows/check-report-logic.ps1"
@@ -171,8 +172,8 @@ EOF
   grep -qF 'fabricated citation' "$CHECK_PS1"
   grep -qF 'Test-NSSecretLine' "$CHECK_PS1"
   grep -qF 'Test-NSReparsePoint' "$CHECK_PS1"
-  grep -qF '[ -L "$abs" ]' "$CHECK"
-  grep -qF 'symlink output is missing' "$CHECK_LOGIC"
+  grep -qF '[ -L "$abs" ]' "$CHECK_RECEIPTS"
+  grep -qF 'ns check-receipts' "$CHECK_LOGIC"
   [ -f "$CHECK_LOGIC" ]
   grep -qF 'check-report-logic.ps1' "$RUN"
   if ! command -v pwsh >/dev/null 2>&1; then

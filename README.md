@@ -128,7 +128,7 @@ The **punch list** holds the work. **Gates** are the project checks, run on the 
 cadence you choose. The **parking lot** records decisions and defaults; the **shift log** records
 progress and problems. A tick is the agent's completion claim, not independent proof of quality.
 
-A persistent folder without Git works too: artifact mode completes an item through its receipt
+A persistent folder without Git works too: artifact mode completes an item through artifact receipts
 under `.nightshift/receipts/`. Source and checkpoint receipts stay local. See
 [Evidence and receipts](docs/evidence-capabilities.md#reviewing-a-shift) for what to review.
 
