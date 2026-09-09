@@ -89,7 +89,7 @@ under the same name with an "original" suffix. Do not hand-edit either one.
  writes no pointer and creates no empty archive file. Do not hand-copy those entries.
  Entries still awaiting the owner stay live: an open question is not history yet.
 - **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/parking-lot.md`.
- Unanswered stay. Read live entries first; when checking whether a finding or decision
+ Parking-lot questions unanswered stay. Read live entries first; when checking whether a finding or decision
  was already handled, follow the pointer and search the linked file by topic or identifier.
  Historical decisions are evidence, not fresh authorization. A broken pointer is reported in the
  snag log; never guess or delete history.
