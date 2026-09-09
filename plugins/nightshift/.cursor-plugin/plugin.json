@@ -1,7 +1,7 @@
 {
   "name": "nightshift",
   "displayName": "Nightshift",
-  "version": "1.0.0",
+  "version": "0.22.0",
   "description": "Accountable, time-bounded coding shifts with a persistent punch list, mechanical guards, and reviewable receipts.",
   "author": {
     "name": "Orwa Mahmoud",
