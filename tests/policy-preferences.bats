@@ -66,7 +66,7 @@ resolve_table() { "$SH" --project "$1" resolve --table; }
   printf '%s\n' "$output" | grep -qxF 'archive.automatic=true (rules, permanent)'
 
   # A block the owner deleted falls back to the shipped default rather than disappearing.
-  jq 'del(.report)' "$p/.nightshift/rules.json" >"$p/r.json"
+  jq 'del(.receipts)' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run resolve_table "$p"
   printf '%s\n' "$output" | grep -qxF 'receipts.enabled=true (built-in, -)'
