@@ -364,6 +364,9 @@ try {
     Expect-Equal 'Shift|Baseline|What changed|Parked|Unsupported / unmeasured|Next' (Get-SectionOrder $owner) `
         'the owner view renders the six sections in interface order'
 
+    Expect-True $owner.Contains('Receipts: [index](./README.md), [Quiet the lint rule](./quiet-the-lint-rule.md)') `
+        'the page links the index and each ticked item'
+    Expect-True $owner.Contains('- Policy record: accepted') 'an accepted policy is named at the top'
     Expect-True $owner.Contains("- Shift: $shiftId") 'section 1 names the shift'
     Expect-True $owner.Contains('- Ending: unknown') 'an open punch list with no STOP is never reported as done'
     Expect-True $owner.Contains('- Items: 1 ticked, 1 open') 'section 1 counts ticked and open items'
@@ -460,6 +463,10 @@ try {
     $plainRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $plainProject)
     Expect-Equal 0 $plainRun.ExitCode "a shift with no policy renders ($($plainRun.StderrText))"
     $plain = $plainRun.StdoutText
+    Expect-True $plain.Contains('Receipts: [index](./README.md), [Tidy the changelog](./tidy-the-changelog.md)') `
+        'a shift with no policy still links ticked receipts'
+    Expect-True $plain.Contains("- Policy record: absent $dash the shift wrote no policy") `
+        'a missing file is named as absent, not as malformed'
     Expect-True $plain.Contains('- Gates: npm test (punch list)') `
         'a shift with no policy names the punch-list gates as its gate'
     Expect-True $plain.Contains("- Verified: none $dash no shift policy was written") `
@@ -493,6 +500,66 @@ try {
         'a shift with no policy files receipts/morning-<date>.md'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $plainGateNs 'receipts/morning-2026-09-02-unknown.md') -PathType Leaf)) `
         'no receipt is filed under an invented shift id'
+
+    # === 3c. Valid, absent, and malformed policy fixtures — same facts on both hosts ===
+    $fixtureDir = Join-Path $repository 'tests/fixtures/morning-receipt'
+    $receiptsLine = 'Receipts: [index](./README.md), [2. Make the packed Node-only build reproducible.](./2-make-the-packed-node-only-build-reproducible.md)'
+    $malformedReason = "the policy file is present but unreadable or fails the schema"
+    foreach ($case in @(
+            @{ Name = 'accepted'; File = 'shift-policy-valid.json' },
+            @{ Name = 'absent'; File = '' },
+            @{ Name = 'unreadable'; File = 'shift-policy-malformed.json' },
+            @{ Name = 'schema-fail'; File = 'shift-policy-schema-fail.json' }
+        )) {
+        $fixProject = Join-Path $root ("policy-" + $case.Name)
+        $fixNs = New-ReceiptProject -Path $fixProject -Items '' -WithPolicy $false
+        [IO.File]::WriteAllText((Join-Path $fixNs 'punch-list.md'),
+            ([IO.File]::ReadAllText((Join-Path $fixtureDir 'punch-list.md'))), $utf8)
+        if (-not [string]::IsNullOrEmpty($case.File)) {
+            [IO.File]::WriteAllText((Join-Path $fixNs 'shift-policy.json'),
+                ([IO.File]::ReadAllText((Join-Path $fixtureDir $case.File))), $utf8)
+        }
+        $fixRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $fixProject, '-View', 'owner')
+        Expect-Equal 0 $fixRun.ExitCode "the $($case.Name) policy fixture renders ($($fixRun.StderrText))"
+        Expect-True $fixRun.StdoutText.Contains($receiptsLine) `
+            "the $($case.Name) fixture links the index and the ticked item"
+        switch ($case.Name) {
+            'accepted' {
+                Expect-True $fixRun.StdoutText.Contains('- Policy record: accepted') `
+                    'a validating policy is named as accepted'
+                Expect-True $fixRun.StdoutText.Contains('- Shift: 9f2c40ab77e51d63') `
+                    'an accepted policy supplies the shift id'
+            }
+            'absent' {
+                Expect-True $fixRun.StdoutText.Contains("- Policy record: absent $dash the shift wrote no policy") `
+                    'a missing file is named as absent'
+                Expect-True $fixRun.StdoutText.Contains("- Verified: none $dash no shift policy was written") `
+                    'an absent policy keeps the historical verified line'
+            }
+            default {
+                Expect-True $fixRun.StdoutText.Contains("- Policy record: malformed $dash $malformedReason") `
+                    "the $($case.Name) fixture is named as malformed"
+                Expect-True $fixRun.StdoutText.Contains("- Verified: none $dash $malformedReason") `
+                    "the $($case.Name) fixture does not read as if nothing was written"
+                Expect-True (-not $fixRun.StdoutText.Contains('no shift policy was written')) `
+                    "the $($case.Name) fixture is not described as absent"
+                Expect-True $fixRun.StdoutText.Contains('- Items: 1 ticked, 1 open') `
+                    "a malformed policy still counts punch-list boxes ($($case.Name))"
+            }
+        }
+        if ((Test-Path -LiteralPath $bashReceipt -PathType Leaf) -and $null -ne $bashCommand) {
+            $fixBash = Invoke-ProcessBytes -FileName $bashCommand.Source `
+                -Arguments @($bashReceipt, '--project', $fixProject, '--view', 'owner') `
+                -EnvOverrides @{
+                    NIGHTSHIFT_EVIDENCE_NOW = $fixedNow
+                    LANG                    = 'C.UTF-8'
+                    LC_ALL                  = 'C.UTF-8'
+                    MSYS_NO_PATHCONV        = '1'
+                    MSYS2_ARG_CONV_EXCL     = '*'
+                }
+            Expect-NSRendererParity $fixRun $fixBash "both renderers report the $($case.Name) policy the same way"
+        }
+    }
 
     # === 4. The endings ===
     [IO.File]::WriteAllText((Join-Path $ns 'STOP'), "deadline`n", $utf8)

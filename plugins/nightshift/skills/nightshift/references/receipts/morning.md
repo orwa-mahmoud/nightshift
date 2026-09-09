@@ -24,6 +24,8 @@ nothing to report.
 
 ```text
 # Morning receipt
+Receipts: [index](./README.md), [<NN. full title>](./<NN-slug>.md)
+- Policy record: <accepted | absent — the shift wrote no policy | malformed — the policy file is present but unreadable or fails the schema>
 
 ## Shift
 

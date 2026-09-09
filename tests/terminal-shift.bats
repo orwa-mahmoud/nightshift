@@ -30,6 +30,33 @@ a_new_item() {
   terminal "$p"
 }
 
+@test "a malformed shift policy still ends the shift and keeps the evidence" {
+  p="$(new_project term-malformed-policy)"
+  punch_done "$p"
+  mkdir -p "$p/.nightshift/evidence"
+  printf '{"schemaVersion":1,"id":"keep-me","domain":"test","severity":"low","confidence":"medium","impact":"local","status":"open","ladder":"declared","locator":"x","source":"fixture","sourceClass":"test","host":"local"}\n' \
+    >"$p/.nightshift/evidence/findings.jsonl"
+  cp "$ROOT/tests/fixtures/morning-receipt/shift-policy-malformed.json" \
+    "$p/.nightshift/shift-policy.json"
+  run gate "$p"
+  is_release
+  terminal "$p"
+  today="$(date '+%Y-%m-%d')"
+  archived="$p/.nightshift/archive/$today/findings-unknown.jsonl"
+  live="$p/.nightshift/evidence/findings.jsonl"
+  if [ -f "$archived" ]; then
+    grep -qF '"id":"keep-me"' "$archived"
+  else
+    grep -qF '"id":"keep-me"' "$live"
+  fi
+  receipt="$p/.nightshift/receipts/morning-$today.md"
+  [ -f "$receipt" ]
+  grep -qF '- Policy record: malformed — the policy file is present but unreadable or fails the schema' \
+    "$receipt"
+  grep -qF 'Receipts: [index](./README.md), [1. first.](./1-first.md), [2. done.](./2-done.md)' \
+    "$receipt"
+}
+
 @test "quitting time with open items ends the shift" {
   p="$(new_project term-deadline)"
   punch_open "$p"

@@ -6801,6 +6801,9 @@ $script:NSReceiptAllowanceFormat = '{0} ({1}, {2})'
 $script:NSReceiptBaselineFormat = '{0} `{1}` {2} env {3} raw {4} ({5})'
 $script:NSReceiptVerifiedNoneFormat = 'none {0} verification level {1} (owner)'
 $script:NSReceiptVerifiedNoPolicyFormat = 'none {0} no shift policy was written'
+$script:NSReceiptPolicyMalformedReason = 'the policy file is present but unreadable or fails the schema'
+$script:NSReceiptVerifiedMalformedFormat = 'none {0} the policy file is present but unreadable or fails the schema'
+$script:NSReceiptPolicyAbsentReason = 'the shift wrote no policy'
 $script:NSReceiptGatesFormat = '{0} (punch list)'
 $script:NSReceiptChosenSource = 'one-shift'
 $script:NSReceiptNextFormat = '{0} {1} next: {2}'
@@ -7647,13 +7650,20 @@ function Get-NSReceiptContext {
     $context['baselines'] = Get-NSCompareBaselineRecords $records
 
     $policy = $null
+    $policyKind = 'absent'
     try {
-        $policy = Get-NSShiftPolicy $workspacePath
+        $policyState = Get-NSShiftPolicyState $workspacePath
+        switch ([string]$policyState['state']) {
+            'valid' { $policyKind = 'accepted'; $policy = $policyState['policy'] }
+            'malformed' { $policyKind = 'malformed' }
+        }
     }
     catch {
         $policy = $null
+        $policyKind = 'absent'
     }
     $context['policy'] = $policy
+    $context['policyKind'] = $policyKind
 
     $mode = 'repository'
     try {
@@ -7812,6 +7822,9 @@ function Get-NSReceiptShiftLines {
     }
     elseif ($chosen) {
         Add-NSReceiptField $lines 'verified' ($script:NSReceiptVerifiedNoneFormat -f (Get-NSEvidenceDash), ([string]$Context['verificationLevel']))
+    }
+    elseif (([string]$Context['policyKind']) -ceq 'malformed') {
+        Add-NSReceiptField $lines 'verified' ($script:NSReceiptVerifiedMalformedFormat -f (Get-NSEvidenceDash))
     }
     else {
         Add-NSReceiptField $lines 'verified' ($script:NSReceiptVerifiedNoPolicyFormat -f (Get-NSEvidenceDash))
@@ -7995,6 +8008,25 @@ function Get-NSReceiptSectionLines {
 
 # Markdown from records only. It invents nothing, never upgrades a claim into
 # proof, and omits a section it has no record for.
+function Get-NSMorningReceiptsLine {
+    param([AllowEmptyString()][string]$PunchList)
+    $parts = New-Object Collections.Generic.List[string]
+    $parts.Add('[index](./README.md)')
+    if (-not [string]::IsNullOrEmpty($PunchList) -and (Test-Path -LiteralPath $PunchList -PathType Leaf)) {
+        foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+            if ($line -cnotmatch '^- \[[xX]\]') { continue }
+            $t = $line -creplace '^- \[[xX]\][ \t]*', ''
+            $t = $t -creplace '^\*\*', ''
+            $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
+            $t = $t -creplace '\*\*.*$', ''
+            $label = $t.TrimEnd()
+            if ([string]::IsNullOrEmpty($label)) { continue }
+            $parts.Add(('[{0}](./{1}.md)' -f $label, (Get-NSReceiptBasename $label)))
+        }
+    }
+    return ('Receipts: ' + ($parts -join ', '))
+}
+
 function Get-NSMorningReceipt {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -8004,6 +8036,17 @@ function Get-NSMorningReceipt {
     $context = Get-NSReceiptContext -Workspace $Workspace -View $View
     $lines = New-Object Collections.Generic.List[string]
     $lines.Add($script:NSReceiptTitle)
+    $lines.Add((Get-NSMorningReceiptsLine ([string]$context['punch'])))
+    $dash = Get-NSEvidenceDash
+    switch ([string]$context['policyKind']) {
+        'accepted' { $lines.Add('- Policy record: accepted') }
+        'malformed' {
+            $lines.Add(('- Policy record: malformed {0} {1}' -f $dash, $script:NSReceiptPolicyMalformedReason))
+        }
+        default {
+            $lines.Add(('- Policy record: absent {0} {1}' -f $dash, $script:NSReceiptPolicyAbsentReason))
+        }
+    }
     foreach ($key in @($script:NSReceiptViewSections[$View])) {
         $body = Get-NSReceiptSectionLines -Key ([string]$key) -Context $context
         if ($null -eq $body -or @($body).Count -eq 0) { continue }

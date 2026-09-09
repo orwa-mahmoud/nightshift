@@ -83,7 +83,7 @@ def shift_policy:
                    "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
                    "completionMode", "gatesDigest",
                    "contractDigest", "itemsDigest"])),
-    (["shift", "recovery", "handoff", "archive", "receipts"][] as $b)
+    (["shift", "recovery", "handoff", "archive", "receipts"][] as $b
      | ($P[$b] | ty($b)),
        (if ($P | has($b)) then ($P[$b] | obj | sc($b; PREF[$b])) else empty end)),
     ($P.budgets | ty("budgets")),

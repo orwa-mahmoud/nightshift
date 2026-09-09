@@ -287,6 +287,19 @@ SH
   [ ! -e "$p/.nightshift/shift-policy.json" ]
 }
 
+@test "clock-out morning receipt links the receipts index and each ticked item" {
+  p="$(new_project gate-receipt-links)"
+  punch_done "$p"
+  write_policy_with_deadline "$p" null
+  today="$(date '+%Y-%m-%d')"
+  run gate "$p"
+  is_release
+  out="$p/.nightshift/receipts/morning-$today-9f2c40ab77e51d63.md"
+  [ -f "$out" ]
+  grep -qF 'Receipts: [index](./README.md), [1. first.](./1-first.md), [2. done.](./2-done.md)' "$out"
+  grep -qF '- Policy record: accepted' "$out"
+}
+
 @test "clock-out renders the owner receipt into receipts/, named for tonight's shift" {
   root="$(plugin_copy receipt-ok)"
   renderer_ok "$root"
