@@ -3,6 +3,39 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.22.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.21.0...v0.22.0) (2026-09-09)
+
+
+### Features
+
+* **archive:** link live review records to their filed history ([f0544dc](https://github.com/orwa-mahmoud/nightshift/commit/f0544dcb0b49f4fec955b443fe35963829f6d363))
+* **evidence:** define baseline and checkpoint evidence guidance ([c94585d](https://github.com/orwa-mahmoud/nightshift/commit/c94585d3f7289f493179826c7b1b99d4d99f287b))
+* **receipts:** inject the receipt duty at item start, cadence, tick, resume, and clock-out ([52bac79](https://github.com/orwa-mahmoud/nightshift/commit/52bac79d16ff5fce3512272e2047f15d815d2e7f))
+* replace the shift report with per-item receipts and a runtime index ([11eb48e](https://github.com/orwa-mahmoud/nightshift/commit/11eb48e2ab9159e0e5bbc2db1b49a2d670418804))
+
+
+### Bug Fixes
+
+* **archive:** file receipts by their item's state and keep their links whole ([4e47489](https://github.com/orwa-mahmoud/nightshift/commit/4e474892a2d5f7946207b009fba841cfa3174d48))
+* **archive:** report a broken Filed pointer and file leftover reports ([bb529e5](https://github.com/orwa-mahmoud/nightshift/commit/bb529e5ff20acdcc161b5d54887d60268e8020c9))
+* **doctor:** count receipt files, not report sections, when judging artifact completion ([475268f](https://github.com/orwa-mahmoud/nightshift/commit/475268f088a642d19c6e843f0e20139a41ed16e2))
+* **doctor:** point the unusable-path act at receipts ([d8890c7](https://github.com/orwa-mahmoud/nightshift/commit/d8890c70c7874b91c434090f2f5dd3457ba64c0e))
+* **hardhat:** allow a parking-lot entry to name the rules file it is about ([62b1793](https://github.com/orwa-mahmoud/nightshift/commit/62b1793d2a2be9ef5dc9ac423961afb701a5458b))
+* **hardhat:** quote a backslash without tripping shellcheck ([1039e7f](https://github.com/orwa-mahmoud/nightshift/commit/1039e7fc291be0aa2b19463392ba378acdf2982c))
+* **hardhat:** refuse a parking-lot write that reaches the rules file ([b83c5b0](https://github.com/orwa-mahmoud/nightshift/commit/b83c5b01601558d13cd3cc9c6695af8222a20797))
+* **labels:** keep hyphenated item titles whole ([394f990](https://github.com/orwa-mahmoud/nightshift/commit/394f990488fad8bb35a124fcdd53b93bdb40600e))
+* **manifests:** describe the plugin as coding shifts ([b82f3b2](https://github.com/orwa-mahmoud/nightshift/commit/b82f3b27b78c160730f9ae60190fcf0a289dcf00))
+* **preflight-needs:** print one report layout on every host ([cfeae3a](https://github.com/orwa-mahmoud/nightshift/commit/cfeae3ad93fd4093badadd350010cd64f1e4db2d))
+* **receipts:** freeze tonight's receipts block and keep titles on the index ([30e3f9b](https://github.com/orwa-mahmoud/nightshift/commit/30e3f9b8348e963d9f704a3d89fce0c736ad2642))
+* **receipts:** inject pulse notices only for the owning session ([2804790](https://github.com/orwa-mahmoud/nightshift/commit/28047901cfbfc5dc02d6b0c250413c8b3fed4115))
+* **receipts:** keep empty Windows label lists empty ([e0f7585](https://github.com/orwa-mahmoud/nightshift/commit/e0f75859a597a6101e442963c82938a6a6dce3d5))
+* **receipts:** print missing item numbers from the Windows list ([9dd2425](https://github.com/orwa-mahmoud/nightshift/commit/9dd24254bc22ced9864c673edc6cfa8733e150fd))
+* **receipts:** render the morning receipt from an accepted policy and link the index ([c37c646](https://github.com/orwa-mahmoud/nightshift/commit/c37c646a50c753fedc69c67e2308309d3d263451))
+* **runtime:** name the exact path in a purge confirmation refusal ([67f122f](https://github.com/orwa-mahmoud/nightshift/commit/67f122f5d8832bf9e88bba8fcf4d901e4526168c))
+* **runtime:** refuse an unknown link-workspace flag with usage ([acdbcbb](https://github.com/orwa-mahmoud/nightshift/commit/acdbcbb52fb254df729c571f12f13c7254d07394))
+* **runtime:** render the continuity fence as readable JSON ([361d474](https://github.com/orwa-mahmoud/nightshift/commit/361d474fea526e3db0a2f942d48bda11a36efd99))
+* **runtime:** say watchman absent when nothing ran ([78acb95](https://github.com/orwa-mahmoud/nightshift/commit/78acb955577e65b0e0d35f703cc746c325811e08))
+
 ## [0.21.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.20.0...v0.21.0) (2026-09-07)
 
 
