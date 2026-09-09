@@ -23,8 +23,15 @@ function Invoke-Linker {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
     $out = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.link-out')
     try {
-        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $helper @Arguments `
-            > $out 2>&1
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $helper @Arguments `
+                > $out 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousEap
+        }
         $code = $LASTEXITCODE
         $text = ''
         if (Test-Path -LiteralPath $out) { $text = [IO.File]::ReadAllText($out) }

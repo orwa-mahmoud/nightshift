@@ -284,7 +284,7 @@ ns_gate_stall_state() {
 # ns_gate_receipts_missing_note <project> — "Receipts missing model text: NN, NN" or empty.
 ns_gate_receipts_missing_note() {
   local list
-  list="$(ns_receipts_missing_nns "$1" | paste -sd ', ' - 2>/dev/null)" || list=""
+  list="$(ns_receipts_missing_nns "$1" | awk 'NF { if (n++) printf ", "; printf "%s", $0 }')" || list=""
   [ -n "$list" ] || return 0
   printf 'Receipts missing model text: %s' "$list"
 }

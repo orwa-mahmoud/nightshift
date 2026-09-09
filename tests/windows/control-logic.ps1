@@ -95,12 +95,20 @@ try {
     $expectedConfirm = Join-Path $ctx.Workspace '.nightshift'
     $purgeOut = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.purge-out')
     try {
-        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $purgeHelper -Project $root `
-            > $purgeOut 2>&1
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $purgeHelper -Project $root `
+                > $purgeOut 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousEap
+        }
         $purgeCode = $LASTEXITCODE
         $purgeText = if (Test-Path -LiteralPath $purgeOut) { [IO.File]::ReadAllText($purgeOut) } else { '' }
         Expect-True ($purgeCode -eq 1) "missing confirm-path exits 1: $purgeText"
-        Expect-True ($purgeText -like "*purge-workspace: refusing without --confirm-path $expectedConfirm*") `
+        $purgeFlat = [regex]::Replace($purgeText, '\s+', ' ')
+        Expect-True ($purgeFlat -like "*purge-workspace: refusing without --confirm-path $expectedConfirm*") `
             "missing confirm-path names the exact path: $purgeText"
         Expect-True (Test-Path -LiteralPath $ns -PathType Container) 'missing confirm-path removes nothing'
     }

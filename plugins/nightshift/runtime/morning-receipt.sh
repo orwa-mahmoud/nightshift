@@ -551,11 +551,13 @@ _receipts_line() {
   local punch="$NS/punch-list.md" line label base
   printf 'Receipts: [index](./README.md)'
   [ -f "$punch" ] || return 0
-  : >"$TMPD/receipt-items"
-  ns_items_section "$punch" >"$TMPD/receipt-items" 2>/dev/null || :
   while IFS= read -r line || [ -n "$line" ]; do
-    label="${line#- \[[xX]\] }"
-    [ "$label" != "$line" ] || continue
+    line="${line%$'\r'}"
+    case "$line" in
+      '- [x] '*) label="${line#'- [x] '}" ;;
+      '- [X] '*) label="${line#'- [X] '}" ;;
+      *) continue ;;
+    esac
     label="${label#\*\*}"
     label="$(printf '%s' "$label" | awk '{
       sub(/[[:space:]]+—.*$/, "")
@@ -566,8 +568,11 @@ _receipts_line() {
     }')"
     [ -n "$label" ] || continue
     base="$(ns_receipt_basename "$label")"
+    [ -n "$base" ] || continue
     printf ', [%s](./%s.md)' "$label" "$base"
-  done <"$TMPD/receipt-items"
+  done <<NSITEMS
+$(ns_items_section "$punch" 2>/dev/null || :)
+NSITEMS
 }
 
 _load_policy() {

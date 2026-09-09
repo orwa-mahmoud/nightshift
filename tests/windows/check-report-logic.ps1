@@ -24,7 +24,14 @@ $null = New-Item -ItemType Directory -Path (Join-Path $root '.nightshift/receipt
 try {
     $out = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.check-out')
     try {
-        & $hostExecutable -NoProfile -NonInteractive -File $helper -Project $root > $out 2>&1
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & $hostExecutable -NoProfile -NonInteractive -File $helper -Project $root > $out 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousEap
+        }
         $code = $LASTEXITCODE
         $text = if (Test-Path -LiteralPath $out) { [IO.File]::ReadAllText($out) } else { '' }
         Expect-True ($code -eq 0) "alias exits 0 (got $code $text)"

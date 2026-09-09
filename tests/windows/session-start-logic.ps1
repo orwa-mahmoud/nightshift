@@ -25,8 +25,15 @@ function Invoke-Hook {
     $previous = $env:CLAUDE_PROJECT_DIR
     try {
         $env:CLAUDE_PROJECT_DIR = $Workspace
-        $Json | & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $hook -HostName claude `
-            > $out 2>&1
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $Json | & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $hook -HostName claude `
+                > $out 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousEap
+        }
         $code = $LASTEXITCODE
         $text = ''
         if (Test-Path -LiteralPath $out) { $text = [IO.File]::ReadAllText($out) }

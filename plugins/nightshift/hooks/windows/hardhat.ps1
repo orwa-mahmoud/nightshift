@@ -931,12 +931,24 @@ function Get-NSCommandDenyReason {
 
     $isGitWrite = (Test-NSGitVerb $Scrubbed 'add') -or (Test-NSGitVerb $Scrubbed 'commit') `
         -or (Test-NSGitVerb $Scrubbed 'tag') -or (Test-NSGitVerb $Scrubbed 'remote')
+    $pointsElsewhere = [regex]::IsMatch($Scrubbed, '--git-dir|--work-tree',
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($pointsElsewhere -and [regex]::IsMatch($Scrubbed, '(?i)(^|[^A-Za-z0-9_-])git(?:\.exe)?([^A-Za-z0-9]|$)')) {
+        if ([regex]::IsMatch($Scrubbed, '(?i)(^|[^A-Za-z0-9_-])add([^A-Za-z0-9]|$)') `
+            -and -not [string]::IsNullOrEmpty($ProtectedDirectories)) {
+            return 'BLOCKED: --git-dir/--work-tree point this add somewhere the protected-directory guard cannot verify. Run it from inside the repository instead.'
+        }
+        if ([regex]::IsMatch($Scrubbed, '(?i)(^|[^A-Za-z0-9_-])commit([^A-Za-z0-9]|$)') `
+            -and (-not [string]::IsNullOrEmpty($ExpectedEmail) -or $null -ne $neverRegex)) {
+            return 'BLOCKED: --git-dir/--work-tree point this commit somewhere the configured commit guards cannot verify. Run the commit from inside the repository instead.'
+        }
+    }
     if ($isGitWrite -and -not [string]::IsNullOrEmpty($ProtectedDirectories)) {
         $verb = $null
         if (Test-NSGitVerb $Scrubbed 'add') { $verb = 'add' }
         if (Test-NSGitVerb $Scrubbed 'commit') { $verb = 'commit' }
         if ($null -ne $verb) {
-            if ($Scrubbed -match '(?i)--git-dir|--work-tree') {
+            if ($pointsElsewhere) {
                 return "BLOCKED: --git-dir/--work-tree point this $verb somewhere the protected-directory guard cannot verify. Run it from inside the repository instead."
             }
             $repository = Resolve-NSCommandRepository $Command $CurrentDirectory $Workspace
@@ -975,7 +987,7 @@ function Get-NSCommandDenyReason {
 
     $isCommit = Test-NSGitVerb $Scrubbed 'commit'
     if ($isCommit -and (-not [string]::IsNullOrEmpty($ExpectedEmail) -or $null -ne $neverRegex)) {
-        if ($Scrubbed -match '(?i)--git-dir|--work-tree') {
+        if ($pointsElsewhere) {
             return 'BLOCKED: --git-dir/--work-tree point this commit somewhere the configured commit guards cannot verify. Run the commit from inside the repository instead.'
         }
         if (-not [string]::IsNullOrEmpty($ExpectedEmail) `

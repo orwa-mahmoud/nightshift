@@ -25,8 +25,15 @@ function Invoke-Purge {
     param([string[]]$Arguments = @())
     $out = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.purge-ep')
     try {
-        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $helper @Arguments `
-            > $out 2>&1
+        $previousEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $helper @Arguments `
+                > $out 2>&1
+        }
+        finally {
+            $ErrorActionPreference = $previousEap
+        }
         $code = $LASTEXITCODE
         $text = ''
         if (Test-Path -LiteralPath $out) { $text = [IO.File]::ReadAllText($out) }
@@ -61,7 +68,8 @@ try {
     $expected = Join-Path $ctx.Workspace '.nightshift'
     $missingConfirm = Invoke-Purge @('-Project', $project)
     Expect-True ($missingConfirm.ExitCode -eq 1) "missing ConfirmPath exits 1: $($missingConfirm.Text)"
-    Expect-True ($missingConfirm.Text -like "*purge-workspace: refusing without --confirm-path $expected*") `
+    $missingFlat = [regex]::Replace($missingConfirm.Text, '\s+', ' ')
+    Expect-True ($missingFlat -like "*purge-workspace: refusing without --confirm-path $expected*") `
         "missing ConfirmPath names the exact path: $($missingConfirm.Text)"
     Expect-True (Test-Path -LiteralPath $ns -PathType Container) 'missing ConfirmPath removes nothing'
 

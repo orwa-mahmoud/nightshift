@@ -304,6 +304,55 @@ function Set-TestPunch {
     )
 }
 
+function Escape-NSJsonString {
+    param([AllowEmptyString()][string]$Value)
+    if ($null -eq $Value) { $Value = '' }
+    $builder = New-Object Text.StringBuilder ($Value.Length + 8)
+    foreach ($character in $Value.ToCharArray()) {
+        switch ([int][char]$character) {
+            34 { [void]$builder.Append('\"') }
+            92 { [void]$builder.Append('\\') }
+            10 { [void]$builder.Append('\n') }
+            13 { [void]$builder.Append('\r') }
+            9 { [void]$builder.Append('\t') }
+            8 { [void]$builder.Append('\b') }
+            12 { [void]$builder.Append('\f') }
+            default {
+                if ([int][char]$character -lt 32) {
+                    [void]$builder.AppendFormat('\u{0:x4}', [int][char]$character)
+                }
+                else {
+                    [void]$builder.Append($character)
+                }
+            }
+        }
+    }
+    return [string]$builder
+}
+
+function ConvertTo-NSHookJson {
+    param(
+        [Parameter(Mandatory = $true)][string]$SessionId,
+        [AllowEmptyString()][string]$Cwd,
+        [Parameter(Mandatory = $true)][string]$Tool,
+        [Parameter(Mandatory = $true)][hashtable]$ToolInput
+    )
+    $fields = New-Object Collections.Generic.List[string]
+    foreach ($key in @($ToolInput.Keys)) {
+        $fields.Add(('"{0}":"{1}"' -f (Escape-NSJsonString ([string]$key)), (Escape-NSJsonString ([string]$ToolInput[$key]))))
+    }
+    $payload = '{"session_id":"' + (Escape-NSJsonString $SessionId) +
+        '","transcript_path":"","cwd":"' + (Escape-NSJsonString $Cwd) +
+        '","tool_name":"' + (Escape-NSJsonString $Tool) +
+        '","tool_input":{' + ($fields -join ',') + '}}'
+    $command = [string]$ToolInput['command']
+    if (-not [string]::IsNullOrEmpty($command) -and $command -notmatch '[\\"\r\n\t]' `
+        -and $payload.IndexOf($command, [StringComparison]::Ordinal) -lt 0) {
+        throw "hook JSON dropped the command: $command"
+    }
+    return $payload
+}
+
 function Invoke-Hardhat {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -312,13 +361,7 @@ function Invoke-Hardhat {
         [Parameter(Mandatory = $true)][hashtable]$ToolInput,
         [hashtable]$ExtraEnvironment = @{}
     )
-    $payload = @{
-        session_id = $SessionId
-        transcript_path = ''
-        cwd = $Workspace
-        tool_name = $Tool
-        tool_input = $ToolInput
-    } | ConvertTo-Json -Compress -Depth 10
+    $payload = ConvertTo-NSHookJson -SessionId $SessionId -Cwd $Workspace -Tool $Tool -ToolInput $ToolInput
     $environment = @{ CODEX_PROJECT_DIR = $Workspace }
     foreach ($key in $ExtraEnvironment.Keys) {
         $environment[$key] = $ExtraEnvironment[$key]
@@ -737,11 +780,11 @@ try {
     }
     Assert-True ($addDeleted.Stdout -match 'protected directory') 'git add -A sees a staged protected deletion'
 
-    $gitDirAdd = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=C:\elsewhere\.git add x' } @{
+    $gitDirAdd = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=/somewhere/else/.git add x' } @{
         NIGHTSHIFT_PROTECTED_DIRS = 'ai_docs'
     }
     Assert-True ($gitDirAdd.Stdout -match 'protected-directory guard cannot verify') `
-        'a --git-dir add is unverifiable under protectedDirs'
+        "a --git-dir add is unverifiable under protectedDirs ($(Format-HookResult $gitDirAdd))"
 
     $forbidden = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git push origin HEAD' } `
         @{ NIGHTSHIFT_FORBIDDEN_COMMANDS = 'git .*push' }
@@ -763,11 +806,11 @@ try {
     Assert-True ($overrideEmail.Stdout -match 'configured identity') `
         "a command-line identity override is denied ($(Format-HookResult $overrideEmail))"
 
-    $gitDirCommit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=C:\elsewhere\.git commit -m x' } @{
+    $gitDirCommit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'git --git-dir=/somewhere/else/.git commit -m x' } @{
         NIGHTSHIFT_EXPECTED_EMAIL = 'dev@example.com'
     }
     Assert-True ($gitDirCommit.Stdout -match 'configured commit guards cannot verify') `
-        'a --git-dir commit is unverifiable under expectedEmail'
+        "a --git-dir commit is unverifiable under expectedEmail ($(Format-HookResult $gitDirCommit))"
 
     $secretFile = Join-Path $workTarget 'secret.txt'
     [IO.File]::WriteAllText($secretFile, "SECRET_KEY=abc`n")

@@ -112,7 +112,7 @@ if (Test-Path -LiteralPath $punch -PathType Leaf) {
 }
 if (-not [string]::IsNullOrEmpty($active)) {
     $line = $line + ' Receipts: one file per item under .nightshift/receipts/; the current item is ' +
-        $active + ' → ' + (Get-NSReceiptBasename $active) + '.md.'
+        $active + ' -> ' + (Get-NSReceiptBasename $active) + '.md.'
 }
 $out = [pscustomobject]@{
     hookSpecificOutput = [pscustomobject]@{

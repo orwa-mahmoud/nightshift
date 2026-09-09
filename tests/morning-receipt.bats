@@ -131,7 +131,7 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
   p="$(policy_fixture_project receipt-policy-accepted shift-policy-valid.json)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *$RECEIPTS_LINE* ]]
+  [[ "$output" == *"$RECEIPTS_LINE"* ]]
   [[ "$output" == *'- Policy record: accepted'* ]]
   [[ "$output" == *'- Shift: 9f2c40ab77e51d63'* ]]
   [[ "$output" == *'- Started: 2026-09-02T02:30:00Z'* ]]
@@ -142,7 +142,7 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
   p="$(policy_fixture_project receipt-policy-absent absent)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *$RECEIPTS_LINE* ]]
+  [[ "$output" == *"$RECEIPTS_LINE"* ]]
   [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]]
   [[ "$output" == *'- Verified: none — no shift policy was written'* ]]
   [[ "$output" != *'- Shift: 9f2c40ab77e51d63'* ]]
@@ -154,7 +154,7 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
     p="$(policy_fixture_project "receipt-policy-$kind" "$kind")"
     run bash "$RECEIPT" --project "$p" --view owner
     [ "$status" -eq 0 ]
-    [[ "$output" == *$RECEIPTS_LINE* ]]
+    [[ "$output" == *"$RECEIPTS_LINE"* ]]
     [[ "$output" == *'- Policy record: malformed — the policy file is present but unreadable or fails the schema'* ]]
     [[ "$output" == *'- Verified: none — the policy file is present but unreadable or fails the schema'* ]]
     [[ "$output" != *'no shift policy was written'* ]]

@@ -111,7 +111,7 @@ ns_receipt_path() {
 # and the gate-written heading.
 ns_receipt_has_model_text() {
   local f="$1"
-  [ -f "$f" ] && [ ! -L "$f" ] || return 1
+  { [ -f "$f" ] && [ ! -L "$f" ]; } || return 1
   awk '
     /^[[:space:]]*$/ { next }
     /^# / { next }
@@ -301,7 +301,9 @@ ns_receipts_write_index() {
   items="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-index.XXXXXX")" || return 0
   rows="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-rows.XXXXXX")" || { rm -f "$items"; return 0; }
   : >"$items"
-  [ -f "$punch" ] && ns_items_section "$punch" >"$items" 2>/dev/null || :
+  if [ -f "$punch" ]; then
+    ns_items_section "$punch" >"$items" 2>/dev/null || :
+  fi
   : >"$rows"
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
@@ -352,7 +354,7 @@ ns_migrate_receipts_layout() {
   local ws="$1" ns="$1/.nightshift" rules policy report dest dir tmp
   [ -d "$ns" ] || return 0
   for rules in "$ns/rules.json" "$ns/shift-policy.json"; do
-    [ -f "$rules" ] && [ ! -L "$rules" ] || continue
+    { [ -f "$rules" ] && [ ! -L "$rules" ]; } || continue
     if grep -q '"report"' "$rules" 2>/dev/null; then
       tmp="$rules.receipts-mig.$$"
       if command -v jq >/dev/null 2>&1; then
@@ -618,7 +620,7 @@ ns_archive_check_review_pointers() {
   ns="$project/.nightshift"
   snag="$ns/snag-log.md"
   for live in "$ns/snag-log.md" "$ns/parking-lot.md"; do
-    [ -f "$live" ] && [ ! -L "$live" ] || continue
+    { [ -f "$live" ] && [ ! -L "$live" ]; } || continue
     while IFS= read -r line || [ -n "$line" ]; do
       printf '%s\n' "$line" | grep -qE '^Filed: \[[^]]+\]\([^)]+\)$' || continue
       rel="${line#*']('}"
