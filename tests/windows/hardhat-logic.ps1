@@ -254,6 +254,39 @@ try {
         Expect-True (Test-NSControlTarget $canonStop) "absolute twin via canonical root $canonStop"
     }
 
+    [IO.File]::WriteAllText((Join-Path $script:ns 'parking-lot.md'), "lot`n")
+    $lotAppend = "echo 'needs a change to .nightshift/rules.json' >> .nightshift/parking-lot.md"
+    Expect-True (Test-NSInertParkingLotWrite 'Bash' $null $lotAppend) `
+        'literal parking-lot append naming rules.json is inert'
+    Expect-True (-not (Test-NSInertParkingLotWrite 'Bash' $null "echo '{}' > .nightshift/rules.json")) `
+        'a real write to rules.json is not an inert parking-lot append'
+    Expect-True (Test-NSRulesTarget "echo '{}' > .nightshift/rules.json") `
+        'a real write to rules.json still matches the rules-file guard'
+    Expect-True (-not (Test-NSInertParkingLotWrite 'Bash' $null 'echo $(cat .nightshift/rules.json) >> .nightshift/parking-lot.md')) `
+        'an executable substitution is not a literal append'
+    Expect-True (-not (Test-NSInertParkingLotWrite 'Bash' $null "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json")) `
+        'a compound append plus protected write is not inert'
+    $writeLot = [pscustomobject]@{ file_path = (Join-Path $script:ns 'parking-lot.md'); content = 'needs .nightshift/rules.json' }
+    Expect-True (Test-NSInertParkingLotWrite 'Write' $writeLot '') `
+        'a host file-edit of parking-lot.md is inert'
+    $writeRules = [pscustomobject]@{ file_path = (Join-Path $script:ns 'rules.json'); content = '{}' }
+    Expect-True (-not (Test-NSInertParkingLotWrite 'Write' $writeRules '')) `
+        'a host file-edit of rules.json is not inert'
+    $linkedLot = $false
+    try {
+        Remove-Item -LiteralPath (Join-Path $script:ns 'parking-lot.md') -Force
+        $null = New-Item -ItemType SymbolicLink -Path (Join-Path $script:ns 'parking-lot.md') `
+            -Target (Join-Path $script:ns 'rules.json') -ErrorAction Stop
+        $linkedLot = $true
+    }
+    catch { }
+    if ($linkedLot) {
+        Expect-True (-not (Test-NSInertParkingLotWrite 'Bash' $null $lotAppend)) `
+            'a parking-lot append through a symlink to the rules file does not qualify'
+        Remove-Item -LiteralPath (Join-Path $script:ns 'parking-lot.md') -Force
+        [IO.File]::WriteAllText((Join-Path $script:ns 'parking-lot.md'), "lot`n")
+    }
+
     # --- elevation categories ---
 
     $nightshift = Join-Path $root '.nightshift'

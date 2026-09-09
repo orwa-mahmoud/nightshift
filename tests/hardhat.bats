@@ -1491,3 +1491,52 @@ hd() {
     NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push'
   is_allow
 }
+
+@test "a literal parking-lot append may name the rules file" {
+  p="$(new_project lot-append)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run hardhat_bash "$p" "echo 'needs a change to .nightshift/rules.json' >> .nightshift/parking-lot.md"
+  is_allow
+  out="$(jq -nc --arg fp "$p/.nightshift/parking-lot.md" \
+    '{tool_name:"Write",tool_input:{file_path:$fp,content:"needs .nightshift/rules.json"}}' |
+    env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
+  [ -z "$out" ]
+}
+
+@test "a real write to the rules file is still refused" {
+  p="$(new_project lot-rules-write)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run hardhat_bash "$p" "echo '{}' > .nightshift/rules.json"
+  is_deny "$output"
+  printf '%s' "$output" | grep -q "rules file is the owner"
+  run hardhat_bash "$p" "echo 'see parking-lot.md' >> .nightshift/rules.json"
+  is_deny "$output"
+}
+
+@test "a parking-lot append through a symlink to the rules file is refused" {
+  p="$(new_project lot-symlink)"
+  punch_open "$p"
+  ln -s rules.json "$p/.nightshift/parking-lot.md"
+  run hardhat_bash "$p" "echo 'inert looking note' >> .nightshift/parking-lot.md"
+  is_deny "$output"
+  printf '%s' "$output" | grep -q "rules file is the owner"
+}
+
+@test "an executable substitution in a parking-lot append is refused" {
+  p="$(new_project lot-subst)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run hardhat_bash "$p" 'echo $(cat .nightshift/rules.json) >> .nightshift/parking-lot.md'
+  is_deny "$output"
+}
+
+@test "a parking-lot append plus a protected write is refused" {
+  p="$(new_project lot-compound)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run hardhat_bash "$p" "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json"
+  is_deny "$output"
+  printf '%s' "$output" | grep -q "rules file is the owner"
+}

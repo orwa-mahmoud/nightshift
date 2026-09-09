@@ -96,6 +96,16 @@ WRAPPER="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hardhat.sh"
   grep -qF 'a disarmed site holds nobody' "$LOGIC"
 }
 
+@test "Windows parking-lot append exemption matches POSIX" {
+  grep -qF 'ns_hardhat_is_inert_parking_lot_write' "$CORE"
+  grep -qF 'Test-NSInertParkingLotWrite' "$HELPER"
+  grep -qF 'ns_hardhat_literal_append_target' "$CORE"
+  grep -qF 'Get-NSLiteralAppendTarget' "$HELPER"
+  grep -qF 'ns_hardhat_write_target_reaches_rules' "$CORE"
+  grep -qF 'Test-NSWriteTargetReachesRules' "$HELPER"
+  grep -qF 'literal parking-lot append naming rules.json is inert' "$LOGIC"
+}
+
 @test "Windows hardhat lease-reclaim logic passes when pwsh is present" {
   if ! command -v pwsh >/dev/null 2>&1; then
     return 0

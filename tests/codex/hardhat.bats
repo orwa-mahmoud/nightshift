@@ -500,3 +500,42 @@ CMDS
   codex_every_rule_passes "$p" shift-session
   [ "$(reclaim_log_count "$p")" -eq 0 ]
 }
+
+@test "a literal parking-lot append may name the rules file" {
+  p="$(new_project)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run codex_hardhat_bash "$p" "echo 'needs a change to .nightshift/rules.json' >> .nightshift/parking-lot.md"
+  is_allow
+}
+
+@test "a real write to the rules file is still refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  run codex_hardhat_bash "$p" "echo '{}' > .nightshift/rules.json"
+  is_deny "$output"
+}
+
+@test "a parking-lot append through a symlink to the rules file is refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  ln -s rules.json "$p/.nightshift/parking-lot.md"
+  run codex_hardhat_bash "$p" "echo 'inert looking note' >> .nightshift/parking-lot.md"
+  is_deny "$output"
+}
+
+@test "an executable substitution in a parking-lot append is refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run codex_hardhat_bash "$p" 'echo $(cat .nightshift/rules.json) >> .nightshift/parking-lot.md'
+  is_deny "$output"
+}
+
+@test "a parking-lot append plus a protected write is refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run codex_hardhat_bash "$p" "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json"
+  is_deny "$output"
+}

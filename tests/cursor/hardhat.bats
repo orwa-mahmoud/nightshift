@@ -312,3 +312,42 @@ CMDS
   [ -z "$(lease_nonce "$p")" ]
   [ "$(reclaim_log_count "$p" 2 3)" -eq 1 ]
 }
+
+@test "a literal parking-lot append may name the rules file" {
+  p="$(new_project)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run cursor_sid_shell "$p" cursor-tab "echo 'needs a change to .nightshift/rules.json' >> .nightshift/parking-lot.md"
+  is_allow
+}
+
+@test "a real write to the rules file is still refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  run cursor_sid_shell "$p" cursor-tab "echo '{}' > .nightshift/rules.json"
+  is_cursor_deny
+}
+
+@test "a parking-lot append through a symlink to the rules file is refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  ln -s rules.json "$p/.nightshift/parking-lot.md"
+  run cursor_sid_shell "$p" cursor-tab "echo 'inert looking note' >> .nightshift/parking-lot.md"
+  is_cursor_deny
+}
+
+@test "an executable substitution in a parking-lot append is refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run cursor_sid_shell "$p" cursor-tab 'echo $(cat .nightshift/rules.json) >> .nightshift/parking-lot.md'
+  is_cursor_deny
+}
+
+@test "a parking-lot append plus a protected write is refused" {
+  p="$(new_project)"
+  punch_open "$p"
+  : >"$p/.nightshift/parking-lot.md"
+  run cursor_sid_shell "$p" cursor-tab "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json"
+  is_cursor_deny
+}
