@@ -30,7 +30,7 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 - [Evidence and receipts](evidence-capabilities.md#evidence-and-receipts) — review reports, commits, artifact outputs,
   comparisons, and cross-host handoffs.
 - [Example receipts](../examples/receipts.md#receipts) — the format for completed and unfinished items.
-- [Public shift evidence](../examples/README.md#nightshift-receipts) — real runs, reviewed changes, and a bad-night template.
+- [Real runs](../examples/README.md#real-runs) — documented shifts, reviewed changes, and a bad-night template.
 
 ## Hosts and platforms
 

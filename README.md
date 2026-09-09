@@ -26,7 +26,7 @@ then archive the shift with its evidence intact.
 | **Start without writing a backlog** | Ready-made shifts through Hunt and Quality. Choose the work yourself or let the agent compose it; review first or run directly. |
 | **Keep a long run moving** | Progress across compaction, parked decisions, deduplicated findings, and recovery under the host's supported signals. |
 | **See what the work consumed** | Runtime-measured token usage and duration per item, with host-specific gaps clearly marked. |
-| **Review today and continue tomorrow** | A live shift report, a morning receipt, and archived history that keeps unfinished work available for the next shift. |
+| **Review today and continue tomorrow** | Live receipts, a morning receipt, and archived history that keeps unfinished work available for the next shift. |
 
 [Choose a shift](#two-kinds-of-shift) · [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) ·
 [Archive and continue](docs/archive.md#archive-and-continue)
@@ -159,7 +159,7 @@ makes prior shifts easier to revisit. Enable automatic filing at clock-out if yo
 handled too. Pruning old history is a separate, explicit retention choice.
 [Archive and continue](docs/archive.md#archive-and-continue) explains what is filed and what the next shift inherits.
 
-The [public evidence library](examples/README.md#nightshift-receipts) follows real shifts through their review,
+The [real runs](examples/README.md#real-runs) library follows real shifts through their review,
 including a 45-hour contract that survived a host handoff and became a human-reviewed 67-commit
 pull request. It also includes a template for reporting a bad night without hiding what happened.
 
