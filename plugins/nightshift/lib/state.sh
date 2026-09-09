@@ -410,6 +410,154 @@ ns_archive_automatic() {
   [ "$(ns_archive "$1" automatic)" = true ]
 }
 
+# ns_review_handled <text> — status 0 when the entry carries a filing disposition.
+ns_review_handled() {
+  printf '%s\n' "$1" | grep -qiE ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)'
+}
+
+# ns_archive_review_label <date> <shift-id> <layout>
+ns_archive_review_label() {
+  if [ "$3" = shift ] && [ -n "$2" ] && [ "$2" != unknown ]; then
+    printf '%s' "$2"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+# ns_archive_review_dest <project> <date> <shift-id> <basename>
+# Date layout names the file with the shift so two nights on one day stay distinct.
+ns_archive_review_dest() {
+  local group layout
+  group="$(ns_archive_dir "$1" "$2" "$3")" || return 2
+  layout="$(ns_archive "$1" layout)"
+  if [ "$layout" != shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
+    printf '%s/%s/%s' "$group" "$3" "$4"
+    return 0
+  fi
+  printf '%s/%s' "$group" "$4"
+}
+
+# ns_archive_pointer_line <label> <relpath>
+ns_archive_pointer_line() {
+  printf 'Filed: [%s](%s)' "$1" "$2"
+}
+
+# ns_archive_rel_from_ns <nightshift-dir> <absolute-dest>
+ns_archive_rel_from_ns() {
+  local ns="$1" dest="$2"
+  printf '%s' "${dest#"$ns"/}"
+}
+
+# ns_archive_file_review_source <project> <basename> <date> <shift-id>
+# Moves handled entries from the live review file into the archive dest and appends one pointer.
+ns_archive_file_review_source() {
+  local project="$1" base="$2" date="$3" shift_id="$4"
+  local ns live dest label rel layout tmp filed ptr title
+  ns="$project/.nightshift"
+  live="$ns/$base"
+  [ -f "$live" ] && [ ! -L "$live" ] || return 0
+  dest="$(ns_archive_review_dest "$project" "$date" "$shift_id" "$base")" || return 2
+  layout="$(ns_archive "$project" layout)"
+  label="$(ns_archive_review_label "$date" "$shift_id" "$layout")"
+  rel="$(ns_archive_rel_from_ns "$ns" "$dest")"
+  case "$rel" in
+    '' | /*) return 2 ;;
+  esac
+  tmp="$(mktemp)" || return 2
+  filed="$(mktemp)" || {
+    rm -f "$tmp"
+    return 2
+  }
+  awk -v filed="$filed" '
+    function handled(s) {
+      t = tolower(s)
+      return t ~ / · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)/
+    }
+    /^Filed:/ { print; next }
+    /^- Filed:/ { print; next }
+    /^- / {
+      if (handled($0)) { print $0 >> filed; next }
+    }
+    { print }
+  ' "$live" >"$tmp" || {
+    rm -f "$tmp" "$filed"
+    return 2
+  }
+  if [ ! -s "$filed" ]; then
+    rm -f "$tmp" "$filed"
+    return 0
+  fi
+  if ! ns_archive_dest "$dest"; then
+    rm -f "$tmp" "$filed"
+    return 2
+  fi
+  mkdir -p "${dest%/*}" || {
+    rm -f "$tmp" "$filed"
+    return 2
+  }
+  if [ -f "$dest" ] && [ ! -L "$dest" ]; then
+    printf '\n' >>"$dest"
+    cat "$filed" >>"$dest"
+  else
+    if [ "$base" = snag-log.md ]; then
+      title='# Snag Log'
+    else
+      title='# Parking Lot'
+    fi
+    printf '%s\n\n' "$title" >"$dest"
+    cat "$filed" >>"$dest"
+  fi
+  ptr="$(ns_archive_pointer_line "$label" "$rel")"
+  if ! grep -qxF "$ptr" "$tmp"; then
+    printf '\n%s\n' "$ptr" >>"$tmp"
+  fi
+  mv "$tmp" "$live" || {
+    rm -f "$tmp" "$filed"
+    return 2
+  }
+  rm -f "$filed"
+  return 0
+}
+
+# ns_archive_check_review_pointers <project> — one snag per missing Filed: target.
+ns_archive_check_review_pointers() {
+  local project="$1" ns live dest rel line snag
+  ns="$project/.nightshift"
+  snag="$ns/snag-log.md"
+  for live in "$ns/snag-log.md" "$ns/parking-lot.md"; do
+    [ -f "$live" ] && [ ! -L "$live" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '%s\n' "$line" | grep -qE '^Filed: \[[^]]+\]\([^)]+\)$' || continue
+      rel="${line#*']('}"
+      rel="${rel%')'}"
+      [ -n "$rel" ] || continue
+      dest=""
+      case "$rel" in
+        /* | *..*) dest="" ;;
+        *) dest="$ns/$rel" ;;
+      esac
+      if [ -n "$dest" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
+        continue
+      fi
+      if [ -f "$snag" ] && grep -qF "$rel" "$snag"; then
+        continue
+      fi
+      if [ ! -f "$snag" ]; then
+        printf '# Snag Log\n\n' >"$snag" || return 2
+      fi
+      printf -- '- broken archive pointer · %s is not a readable file\n' "$rel" >>"$snag"
+    done <"$live"
+  done
+  return 0
+}
+
+# ns_archive_file_review_records <project> <date> <shift-id>
+ns_archive_file_review_records() {
+  ns_archive_file_review_source "$1" snag-log.md "$2" "$3" || return $?
+  ns_archive_file_review_source "$1" parking-lot.md "$2" "$3" || return $?
+  ns_archive_check_review_pointers "$1"
+}
+
 # ns_handoff <project-dir> <field> — one field of the handoff block, or empty when the file says
 # nothing. Presentation only: none of it decides whether a check ran.
 ns_handoff() {
@@ -1227,6 +1375,8 @@ ns_status_open_title() {
 ns_status_entry_titles() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
   awk -v max="${2:-0}" '
+    /^Filed:/ { next }
+    /^- Filed:/ { next }
     /^- / {
       line = $0
       sub(/^- /, "", line)
@@ -1246,7 +1396,7 @@ ns_status_entry_titles() {
 # ns_status_entry_count <file> — how many such entries the file holds.
 ns_status_entry_count() {
   if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf '0'; return 0; fi
-  awk '/^- / { n++ } END { printf "%d", n + 0 }' "$1" 2>/dev/null || printf '0'
+  awk '/^Filed:/ { next } /^- Filed:/ { next } /^- / { n++ } END { printf "%d", n + 0 }' "$1" 2>/dev/null || printf '0'
 }
 
 # ns_status_opportunity_counts <opportunity-map> — `candidate=N building=N shipped=N rejected=N

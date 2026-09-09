@@ -257,6 +257,44 @@ finally {
     Remove-Item -LiteralPath $containment -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$review = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-review-" + [guid]::NewGuid().ToString('N'))
+try {
+    $ns = Join-Path $review '.nightshift'
+    $null = New-Item -ItemType Directory -Path $ns -Force
+    $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $ns 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=aaaa1111bbbb2222`narchiveRoot=archive`narchiveLayout=date`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
+        "# Snag Log`n`n- leak · tests/x.bats · fixed · 2026-09-09`n- still open · looking`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'parking-lot.md'), "# Parking Lot`n`n- wait for the owner`n")
+    $one = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
+    Expect-True ($one.ExitCode -eq 0) "review file exits 0 (got $($one.ExitCode) $($one.Stderr))"
+    $snagDest = Join-Path $ns 'archive/2026-09-09/aaaa1111bbbb2222/snag-log.md'
+    Expect-True (Test-Path -LiteralPath $snagDest -PathType Leaf) 'handled snag is filed'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-09/aaaa1111bbbb2222/parking-lot.md'))) `
+        'unanswered parking is not filed'
+    $liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md'))
+    Expect-True ($liveSnag.Contains('Filed: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)')) `
+        'one pointer names the dest relative to the live file'
+    Expect-True ($liveSnag.Contains('still open · looking')) 'unresolved snag stays live'
+    Expect-True (-not $liveSnag.Contains('leak ·')) 'filed snag leaves the live file'
+    $again = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
+    Expect-True ($again.ExitCode -eq 0) "retry exits 0 (got $($again.ExitCode))"
+    Expect-True (([regex]::Matches($liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')), '(?m)^Filed:').Count) -eq 1) `
+        'retry does not duplicate the pointer'
+
+    [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
+        "# Snag Log`n`nFiled: [2026-09-09](archive/missing/snag-log.md)`n")
+    $broken = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
+    Expect-True ($broken.ExitCode -eq 0) "broken pointer exits 0 (got $($broken.ExitCode))"
+    Expect-True ([IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')).Contains(
+        'broken archive pointer · archive/missing/snag-log.md is not a readable file')) `
+        'a broken pointer is reported in the snag log'
+}
+finally {
+    Remove-Item -LiteralPath $review -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "archive-receipts-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) {

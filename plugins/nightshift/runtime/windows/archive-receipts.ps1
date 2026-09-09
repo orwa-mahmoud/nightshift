@@ -253,6 +253,14 @@ if ($reportBase -cne '' -and -not $reportRelocated -and
     }
 }
 
+try {
+    Save-NSArchiveReviewRecords $workspace $Date $shiftId
+}
+catch {
+    Write-NSArchiveReceiptsError 'archive-receipts: could not file snag or parking records'
+    exit 2
+}
+
 $unmatched = @($Retire | Where-Object { -not $filed.Contains($_) })
 if ($unmatched.Count -gt 0) {
     Write-NSArchiveReceiptsError 'archive-receipts: refused to retire - this run filed no such record:'

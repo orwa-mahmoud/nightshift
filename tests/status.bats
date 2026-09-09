@@ -95,6 +95,19 @@ fact_of() { # <project> <label>
   [ "$(fact_of "$p" 'armed')" = 'yes' ]
 }
 
+@test "Filed pointers are not parked or snag entries" {
+  p="$(new_project status-filed)"
+  printf '# Parking lot\n\n- **First decision.**\n\nFiled: [2026-09-09](archive/2026-09-09/parking-lot.md)\n' \
+    >"$p/.nightshift/parking-lot.md"
+  printf '# Snag log\n\n- **A snag.**\n\nFiled: [2026-09-09](archive/2026-09-09/snag-log.md)\n' \
+    >"$p/.nightshift/snag-log.md"
+  [ "$(fact_of "$p" 'parked')" = '1' ]
+  facts "$p" | grep -qF 'parked entry First decision.'
+  ! facts "$p" | grep -qF 'Filed:'
+  facts "$p" | grep -qF 'snag A snag.'
+  ! facts "$p" | grep -qF 'snag Filed'
+}
+
 @test "parked entries are counted and titled, one line each" {
   p="$(new_project status-parked)"
   printf '# Parking lot\n\n- **First decision.** Body that should not appear.\n\n- **Second one.**\n' \

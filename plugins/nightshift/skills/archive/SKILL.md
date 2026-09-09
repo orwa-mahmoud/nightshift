@@ -81,12 +81,17 @@ own name with an "original" suffix. Do not hand-edit either one.
  the folder and start a fresh one
  with the same one-line header. The journal is mechanical; its lines belong to the dates they
  happened.
-- **Snag log — only what's handled.** Move entries that carry a disposition (fixed, ignored,
- answered) from `$NS/snag-log.md` into the archive's `snag-log.md`.
- Entries still awaiting the owner stay live: an
- open question is not history yet.
-- **Parking lot — only what's answered.** Same rule on
- `$NS/parking-lot.md`: answered entries move, unanswered stay.
+- **Snag log — only what's handled.** `archive-receipts` moves entries that carry a disposition
+ (fixed, ignored, answered, rejected-because, accepted-tradeoff) from `$NS/snag-log.md` into the
+ archive dest that `archive.root` and `archive.layout` resolve, then appends one
+ `Filed: [<YYYY-MM-DD or shift-id>](<relative path>)` pointer to the live file. Filing nothing
+ writes no pointer and creates no empty archive file. Do not hand-copy those entries.
+ Entries still awaiting the owner stay live: an open question is not history yet.
+- **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/parking-lot.md`.
+ Unanswered entries stay. Read live entries first; when checking whether a finding or decision
+ was already handled, follow the pointer and search the linked file by topic or identifier.
+ Historical decisions are evidence, not fresh authorization. A broken pointer is reported in the
+ snag log; never guess or delete history.
 - **Work orders — only what's spent.** Pending orders are open boxes; they stay.
  A `## Work order` heading with no remaining box is leftover shell from a cut — delete it,
  do not file it. File only an order whose box was ticked in place.

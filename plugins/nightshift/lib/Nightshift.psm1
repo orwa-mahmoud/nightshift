@@ -4654,6 +4654,145 @@ function Test-NSArchiveAutomatic {
     return ([string](Get-NSPolicyGroupSetting $Workspace 'archive.automatic')['value'] -ceq 'True')
 }
 
+function Test-NSReviewHandled {
+    param([AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $false }
+    return [bool]($Text -imatch ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)')
+}
+
+function Get-NSArchiveReviewLabel {
+    param([string]$Date, [AllowEmptyString()][string]$ShiftId, [AllowEmptyString()][string]$Layout)
+    if ($Layout -ceq 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
+        return $ShiftId
+    }
+    return $Date
+}
+
+function Get-NSArchiveReviewDest {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId,
+        [Parameter(Mandatory = $true)][string]$BaseName
+    )
+    $group = Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $ShiftId
+    if ($null -eq $group) { return $null }
+    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
+    if ($layout -cne 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
+        return (Join-Path (Join-Path $group $ShiftId) $BaseName)
+    }
+    return (Join-Path $group $BaseName)
+}
+
+function Get-NSArchivePointerLine {
+    param([Parameter(Mandatory = $true)][string]$Label, [Parameter(Mandatory = $true)][string]$RelPath)
+    return ('Filed: [' + $Label + '](' + $RelPath + ')')
+}
+
+function Get-NSArchiveRelFromNs {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Dest)
+    $prefix = $NightshiftDir.TrimEnd('\', '/')
+    if (-not $Dest.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return '' }
+    $rel = $Dest.Substring($prefix.Length).TrimStart('\', '/')
+    return ($rel -replace '\\', '/')
+}
+
+function Save-NSArchiveReviewSource {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$BaseName,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId
+    )
+    $ns = Join-Path $Workspace '.nightshift'
+    $live = Join-Path $ns $BaseName
+    if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return }
+    $dest = Get-NSArchiveReviewDest $Workspace $Date $ShiftId $BaseName
+    if ([string]::IsNullOrEmpty($dest)) { throw 'archive.root must name a directory inside .nightshift/' }
+    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
+    $label = Get-NSArchiveReviewLabel $Date $ShiftId $layout
+    $rel = Get-NSArchiveRelFromNs $ns $dest
+    if ([string]::IsNullOrEmpty($rel) -or $rel.StartsWith('/')) { throw 'archive dest is outside .nightshift/' }
+    $keep = New-Object Collections.Generic.List[string]
+    $filed = New-Object Collections.Generic.List[string]
+    foreach ($line in [IO.File]::ReadAllLines($live)) {
+        if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) {
+            $keep.Add($line)
+            continue
+        }
+        if ($line.StartsWith('- ') -and (Test-NSReviewHandled $line)) {
+            $filed.Add($line)
+            continue
+        }
+        $keep.Add($line)
+    }
+    if ($filed.Count -eq 0) { return }
+    if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
+    $utf8 = $script:NSUtf8NoBom
+    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
+    if ((Test-Path -LiteralPath $dest -PathType Leaf) -and -not (Test-NSReparsePoint $dest)) {
+        [IO.File]::AppendAllText($dest, ([Environment]::NewLine + ($filed -join [Environment]::NewLine) + [Environment]::NewLine), $utf8)
+    }
+    else {
+        $title = $(if ($BaseName -ceq 'snag-log.md') { '# Snag Log' } else { '# Parking Lot' })
+        $body = $title + [Environment]::NewLine + [Environment]::NewLine + ($filed -join [Environment]::NewLine) + [Environment]::NewLine
+        [IO.File]::WriteAllText($dest, $body, $utf8)
+    }
+    $ptr = Get-NSArchivePointerLine $label $rel
+    if (-not ($keep -contains $ptr)) {
+        if ($keep.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($keep[$keep.Count - 1])) {
+            $keep.Add('')
+        }
+        $keep.Add($ptr)
+    }
+    [IO.File]::WriteAllLines($live, $keep.ToArray(), $utf8)
+}
+
+function Add-NSArchiveBrokenPointers {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $ns = Join-Path $Workspace '.nightshift'
+    $snag = Join-Path $ns 'snag-log.md'
+    $utf8 = $script:NSUtf8NoBom
+    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
+    foreach ($name in @('snag-log.md', 'parking-lot.md')) {
+        $live = Join-Path $ns $name
+        if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { continue }
+        foreach ($line in [IO.File]::ReadAllLines($live)) {
+            if ($line -cnotmatch '^Filed: \[[^]]+\]\(([^)]+)\)$') { continue }
+            $rel = $Matches[1]
+            if ([string]::IsNullOrEmpty($rel) -or $rel.StartsWith('/') -or $rel.Contains('..')) {
+                $ok = $false
+            }
+            else {
+                $target = Join-Path $ns ($rel -replace '/', [IO.Path]::DirectorySeparatorChar)
+                $ok = (Test-Path -LiteralPath $target -PathType Leaf) -and -not (Test-NSReparsePoint $target)
+            }
+            if ($ok) { continue }
+            $already = $false
+            if (Test-Path -LiteralPath $snag -PathType Leaf) {
+                $already = [IO.File]::ReadAllText($snag).Contains($rel)
+            }
+            if ($already) { continue }
+            if (-not (Test-Path -LiteralPath $snag -PathType Leaf)) {
+                [IO.File]::WriteAllText($snag, "# Snag Log$([Environment]::NewLine)$([Environment]::NewLine)", $utf8)
+            }
+            [IO.File]::AppendAllText($snag, ('- broken archive pointer · ' + $rel + ' is not a readable file' + [Environment]::NewLine), $utf8)
+        }
+    }
+}
+
+function Save-NSArchiveReviewRecords {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId
+    )
+    Save-NSArchiveReviewSource $Workspace 'snag-log.md' $Date $ShiftId
+    Save-NSArchiveReviewSource $Workspace 'parking-lot.md' $Date $ShiftId
+    Add-NSArchiveBrokenPointers $Workspace
+}
+
 # Convert-NSReportLinks <text> <archived> <back> - the report's own links, repointed for where it
 # now sits. The twin of runtime/archive-links.awk, and it must answer identically: a record that
 # travelled with the report is still a sibling, one that stayed live is reached back through the
@@ -8426,6 +8565,7 @@ function Get-NSStatusEntryTitles {
     )
     $out = New-Object 'System.Collections.Generic.List[string]'
     foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) { continue }
         if (-not $line.StartsWith('- ')) { continue }
         $entry = ($line.Substring(2) -creplace '\*\*', '').TrimEnd()
         if ($entry.Length -gt 100) { $entry = $entry.Substring(0, 97) + '...' }
@@ -8441,6 +8581,7 @@ function Get-NSStatusEntryCount {
     param([Parameter(Mandatory = $true)][string]$Path)
     $n = 0
     foreach ($line in (Get-NSStatusFileLines $Path)) {
+        if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) { continue }
         if ($line.StartsWith('- ')) { $n++ }
     }
     return $n

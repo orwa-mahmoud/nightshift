@@ -5,6 +5,9 @@
 # the shift's own morning-<YYYY-MM-DD>-<shiftId>.md, or morning-<YYYY-MM-DD>.md when the shift
 # wrote no policy to take an id from. The shift report travels with them.
 #
+# Handled snag and answered parking entries are filed into the same group, then the live file
+# gets one Filed: pointer to that dest. Filing nothing writes no pointer and creates no empty file.
+#
 # Filing is a copy. Nothing leaves live storage unless it is named: an ended shift can still hold
 # an item nobody finished, and the baseline that item links to is needed exactly where it is. So
 # the caller says which records are closed and this retires those, having read each archived copy
@@ -349,6 +352,11 @@ if [ -d "$dest" ]; then
 fi
 if [ -n "$report_base" ] && [ "$report_relocated" -eq 0 ]; then
   rewrite_moved "$group/$report_base"
+fi
+
+if ! ns_archive_file_review_records "$WORKSPACE" "$DATE" "$shift_id"; then
+  printf 'archive-receipts: could not file snag or parking records\n' >&2
+  exit 2
 fi
 
 unmatched=""

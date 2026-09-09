@@ -239,9 +239,13 @@ exist.
 ## Snag log discipline
 
 Before reporting findings in a review or walkthrough, read
-`$NS/snag-log.md` and dedupe against ALL seen
+`$NS/snag-log.md` and `$NS/parking-lot.md` first. Dedupe against ALL seen
 — fixed AND rejected — so a later cycle never re-reports an earlier one. Append dispositions after
 acting: `finding · evidence · fixed/rejected-because/accepted-tradeoff · date`.
+A `Filed: [<id>](<path>)` line is navigation, not an entry: follow that pointer and search the
+linked file by topic or identifier; do not open every archive. Historical decisions are evidence,
+not fresh authorization — a current rule always prevails over an archived allowance. A broken
+pointer is reported in the snag log; never guess or delete history.
 
 ## Walkthroughs
 

@@ -798,3 +798,109 @@ composed() {
   [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
   [ "$(cat "$p/.nightshift/receipts/2026-09-05-an-item.md")" = 'the real record' ]
 }
+
+review_ended() { # <project> <shift-id> <layout>
+  printf 'shiftId=%s\narchiveRoot=archive\narchiveLayout=%s\n' "$2" "$3" >"$1/.nightshift/.ended"
+}
+
+@test "archive files handled snag entries only and writes one pointer" {
+  p="$(new_project review-snag-only)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n- still open · looking\n' \
+    >"$p/.nightshift/snag-log.md"
+  printf '# Parking Lot\n\n- wait for the owner\n' >"$p/.nightshift/parking-lot.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  dest="$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  [ -f "$dest" ]
+  grep -qF 'leak · tests/x.bats · fixed · 2026-09-09' "$dest"
+  ! grep -qF 'still open' "$dest"
+  [ ! -e "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/parking-lot.md" ]
+  grep -qF 'Filed: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)' \
+    "$p/.nightshift/snag-log.md"
+  grep -qF 'still open · looking' "$p/.nightshift/snag-log.md"
+  ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md"
+  ! grep -qF 'Filed:' "$p/.nightshift/parking-lot.md"
+}
+
+@test "filing nothing adds no pointer and creates no empty archive file" {
+  p="$(new_project review-noop)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- still open · looking\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md" ]
+  ! grep -qF 'Filed:' "$p/.nightshift/snag-log.md"
+}
+
+@test "a second archive run does not duplicate the pointer or the filed entry" {
+  p="$(new_project review-retry)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  dest="$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  before="$(cksum <"$dest")"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ "$(cksum <"$dest")" = "$before" ]
+  [ "$(grep -c '^Filed:' "$p/.nightshift/snag-log.md")" -eq 1 ]
+}
+
+@test "a custom archive.root is the pointer destination" {
+  p="$(new_project review-root)"
+  jq '.archive.root = "history"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  printf 'shiftId=aaaa1111bbbb2222\narchiveRoot=history\narchiveLayout=date\n' \
+    >"$p/.nightshift/.ended"
+  printf '# Parking Lot\n\n- ship it · answered · 2026-09-09\n' >"$p/.nightshift/parking-lot.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/history/2026-09-09/aaaa1111bbbb2222/parking-lot.md" ]
+  grep -qF 'Filed: [2026-09-09](history/2026-09-09/aaaa1111bbbb2222/parking-lot.md)' \
+    "$p/.nightshift/parking-lot.md"
+}
+
+@test "shift layout names the pointer with the shift id" {
+  p="$(new_project review-shift)"
+  jq '.archive.layout = "shift"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  review_ended "$p" aaaa1111bbbb2222 shift
+  printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/archive/shift-aaaa1111bbbb2222/snag-log.md" ]
+  grep -qF 'Filed: [aaaa1111bbbb2222](archive/shift-aaaa1111bbbb2222/snag-log.md)' \
+    "$p/.nightshift/snag-log.md"
+}
+
+@test "two shifts on one date keep distinct destinations" {
+  p="$(new_project review-two)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\n- first · x · fixed · 2026-09-09\n' >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  review_ended "$p" cccc3333dddd4444 date
+  printf '# Snag Log\n\n- second · y · answered · 2026-09-09\n\nFiled: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)\n' \
+    >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  grep -qF 'first · x · fixed' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  grep -qF 'second · y · answered' "$p/.nightshift/archive/2026-09-09/cccc3333dddd4444/snag-log.md"
+  ! grep -qF 'second' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  [ "$(grep -c '^Filed:' "$p/.nightshift/snag-log.md")" -eq 2 ]
+}
+
+@test "a broken Filed pointer is reported in the snag log" {
+  p="$(new_project review-broken)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '# Snag Log\n\nFiled: [2026-09-09](archive/missing/snag-log.md)\n' \
+    >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  grep -qF 'broken archive pointer · archive/missing/snag-log.md is not a readable file' \
+    "$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'broken archive pointer' "$p/.nightshift/snag-log.md")" -eq 1 ]
+}

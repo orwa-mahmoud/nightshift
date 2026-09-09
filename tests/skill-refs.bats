@@ -540,6 +540,15 @@ documented_pages() {
   grep -qF 'Read `$NS/punch-list.md` in full, then begin item 1' "$SKILLS/start/SKILL.md"
 }
 
+@test "archive pointers are taught as navigation, not entries" {
+  grep -qF 'Filed:' "$SKILLS/nightshift/SKILL.md"
+  grep -qF 'follow that pointer' "$SKILLS/nightshift/SKILL.md"
+  grep -qF 'Historical decisions are evidence' "$SKILLS/nightshift/SKILL.md"
+  grep -qF 'Filed:' "$SKILLS/archive/SKILL.md"
+  grep -qF 'Filed:' "$SKILLS/nightshift/references/templates/snag-log.md"
+  grep -qF 'Filed:' "$SKILLS/nightshift/references/templates/parking-lot.md"
+}
+
 # A file a skill points at has to reach the user, which means it has to be tracked. A repository
 # ignore rule matched case-insensitively on one checkout can leave a page present locally and
 # absent from every clone.
