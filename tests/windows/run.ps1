@@ -517,6 +517,14 @@ try {
     $controlLogicRun = Invoke-TestScript $controlLogic
     Assert-Equal 0 $controlLogicRun.ExitCode `
         "control stop/reset/purge: $($controlLogicRun.Stdout) $($controlLogicRun.Stderr)"
+    $purgeWorkspaceLogic = Join-Path $PSScriptRoot 'purge-workspace-logic.ps1'
+    $purgeWorkspaceLogicRun = Invoke-TestScript $purgeWorkspaceLogic
+    Assert-Equal 0 $purgeWorkspaceLogicRun.ExitCode `
+        "purge-workspace entry point: $($purgeWorkspaceLogicRun.Stdout) $($purgeWorkspaceLogicRun.Stderr)"
+    $resetShiftLogic = Join-Path $PSScriptRoot 'reset-shift-logic.ps1'
+    $resetShiftLogicRun = Invoke-TestScript $resetShiftLogic
+    Assert-Equal 0 $resetShiftLogicRun.ExitCode `
+        "reset-shift entry point: $($resetShiftLogicRun.Stdout) $($resetShiftLogicRun.Stderr)"
     $fenceCheckLogic = Join-Path $PSScriptRoot 'fence-check-logic.ps1'
     $fenceCheckLogicRun = Invoke-TestScript $fenceCheckLogic
     Assert-Equal 0 $fenceCheckLogicRun.ExitCode `
