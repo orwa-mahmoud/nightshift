@@ -16,7 +16,7 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 ## Run and control a shift
 
 - [Command reference](commands.md#command-reference) — every skill, scheduling, and terminal controls that need no model.
-- [Owner knobs](knobs.md#owner-knobs) — guards, verification cadence, tooling, reports, recovery, and retention.
+- [Owner knobs](knobs.md#owner-knobs) — guards, verification cadence, tooling, receipts, recovery, and retention.
 - [How Nightshift works](how-it-works.md#how-nightshift-works) — the contract, arming, session ownership, policy, and recovery.
 - [Troubleshooting](troubleshooting.md#troubleshooting) — diagnose the workspace, then choose the appropriate repair.
 
@@ -27,7 +27,7 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 - [Archive and continue](archive.md#archive-and-continue) — automatic or requested filing, linked evidence, history,
   and what stays live for the next shift.
 - [Morning receipt](morning-receipt.md#the-morning-receipt) — read the summary, its evidence, and its limits.
-- [Evidence and receipts](evidence-capabilities.md#evidence-and-receipts) — review reports, commits, artifact outputs,
+- [Evidence and receipts](evidence-capabilities.md#evidence-and-receipts) — review receipts, commits, artifact outputs,
   comparisons, and cross-host handoffs.
 - [Example receipts](../examples/receipts.md#receipts) — the format for completed and unfinished items.
 - [Real runs](../examples/README.md#real-runs) — documented shifts, reviewed changes, and a bad-night template.

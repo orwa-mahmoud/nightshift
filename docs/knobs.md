@@ -6,7 +6,7 @@ for the owner.
 
 The contract itself is a knob too: the punch-list text above `## Items` and the rules file's
 `clockOutMessage` are the owner's words. The shipped default asks one commit per item in
-repository mode, and in artifact mode completes an item with its section in the shift report — but
+repository mode, and in artifact mode completes an item with its own item receipt — but
 the gate releases on ticks, and the stall guard counts a tick as progress on its own, so a contract
 with the commit rule stripped runs a full night with no commits at all (on Codex, such a night
 needs only the `workspace-write` sandbox).

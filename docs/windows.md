@@ -19,7 +19,7 @@ a second agent runtime.
 
 Installing Git for Windows is optional for Claude Code itself. Repository mode's work-target,
 commit, and local receipts-repository snapshot require native Git. Artifact mode records
-completion in the shift report, with optional per-item receipts and no work-target commit.
+completion in the item receipt, with optional source receipts and no work-target commit.
 If Git Bash is installed, Claude Code may choose
 it as the hook shell. The bundled launcher is written to detect Windows and transfer the hook to
 PowerShell. That Git Bash transfer is not yet a CI-verified claim; prefer a native PowerShell host

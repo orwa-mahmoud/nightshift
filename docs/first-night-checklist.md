@@ -32,8 +32,8 @@ Use this once before leaving Nightshift unattended in a project.
   process lease fences its tool calls. See the
   [recovery handoff and upstream limitation](how-it-works.md#reopening-a-revived-thread).
 - **Leave pushing for morning.** Keep the default local-only commits, review the diff and receipts,
-  then push or open a pull request yourself. In artifact mode, review the output files and the
-  shift report, plus any source, checkpoint, or optional item receipts. Use the
+  then push or open a pull request yourself. In artifact mode, review the output files and each
+  item receipt, plus any source or checkpoint receipt. Use the
   [evidence review guide](evidence-capabilities.md#reviewing-a-shift) for receipt diagnostics and
   [Archive and continue](archive.md#archive-and-continue) after review.
 

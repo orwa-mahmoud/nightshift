@@ -313,7 +313,7 @@ expired preserved deadline is not silently replaced; write a new UNIX epoch or r
 
 ## Receipts
 
-Nightshift leaves reports, timestamps, cycle logs, parked decisions, and snag dispositions under
+Nightshift leaves receipts, timestamps, cycle logs, parked decisions, and snag dispositions under
 `.nightshift/`; work-target commits live in the project's own Git history. The state folder is
 ignored by the project repository. Setup can
 optionally version it in a separate local-only Git repository. That repository is off by default;

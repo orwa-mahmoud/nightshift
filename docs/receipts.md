@@ -57,8 +57,9 @@ settings.
 ## Keep the receipts useful after the shift
 
 Review the actual outputs and checks alongside the receipts. When you [archive the shift](archive.md#archive-and-continue),
-the receipts folder is filed with its records, links are adjusted for the new location, and an
-untouched original is preserved. Open work retains the evidence it needs for continuation.
+the receipt of every ticked item is filed with the shift's records, links are adjusted for the new
+location, and an untouched original is preserved. An item that is still open keeps its receipt
+live, so the next shift extends the same file.
 
 [Review the underlying evidence](evidence-capabilities.md#reviewing-a-shift) ·
 [Choose the next shift](shift-modes.md#shift-modes) · [Documentation index](README.md#documentation)

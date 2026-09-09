@@ -81,15 +81,15 @@ done, the deadline arrives, or the owner stops the shift.
 
 ## What it costs
 
-Nightshift adds work rather than removing it: a contract to read, gates to run, receipts and a
-report to write, and a watchman that wakes up. **It is not a way to spend fewer tokens, and nothing
-here claims it is.** A shift may well use more than the same work done by hand.
+Nightshift adds work rather than removing it: a contract to read, gates to run, receipts to write,
+and a watchman that wakes up. **It is not a way to spend fewer tokens, and nothing here claims it
+is.** A shift may well use more than the same work done by hand.
 
 What it can reduce is rework — a night that stops at the wrong place, a morning spent
 reconstructing what happened, a change nobody can review. Whether that trade is worth it depends
-on the work, and it is yours to judge. Where a report shows what an item cost, those are the
+on the work, and it is yours to judge. Where a receipt shows what an item cost, those are the
 numbers the host reported, kept separate from anything estimated; where the host reports nothing,
-the report says unavailable rather than guessing. A token count is never turned into a price.
+the receipt says unavailable rather than guessing. A token count is never turned into a price.
 
 The [receipts and token usage guide](receipts.md#receipts-and-token-usage) explains how the runtime measures each
 item and preserves gaps in the host's data.

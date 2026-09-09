@@ -10,7 +10,7 @@ Nothing here scans a project or judges a finding on the model's behalf.
 ## Reviewing a shift
 
 Open the [morning receipt](morning-receipt.md#the-morning-receipt) first to see how the shift ended and what needs
-attention. Then use the report to find the actual changes and their verification.
+attention. Then use the receipts to find the actual changes and their verification.
 
 | Record | What to look for |
 | --- | --- |
