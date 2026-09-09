@@ -9523,7 +9523,9 @@ function Get-NSPulseTickedLabels {
         $label = Get-NSPulseItemLabelFromLine $line 'x'
         if (-not [string]::IsNullOrEmpty($label)) { $out.Add($label) }
     }
-    return , $out.ToArray()
+    $arr = $out.ToArray()
+    if ($arr.Length -eq 0) { return [string[]]@() }
+    return , $arr
 }
 
 function Get-NSReceiptsBlock {
@@ -9619,7 +9621,9 @@ function Get-NSReceiptsMissingNns {
         if ([string]::IsNullOrEmpty($nn)) { $nn = $label }
         $parts.Add($nn)
     }
-    return , $parts.ToArray()
+    $arr = $parts.ToArray()
+    if ($arr.Length -eq 0) { return [string[]]@() }
+    return , $arr
 }
 
 function Get-NSGateReceiptsMissingNote {

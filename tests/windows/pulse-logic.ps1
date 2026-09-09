@@ -42,8 +42,7 @@ try {
     $null = Get-NSPulseReceiptsNotice $tickNs $tickWs
     [IO.File]::WriteAllText((Join-Path $tickNs 'punch-list.md'), "## Items`n- [x] **36. First of the replay.**`n- [ ] **37. Second of the replay.**`n", $utf8)
     $ticked = Get-NSPulseReceiptsNotice $tickNs $tickWs
-    $tickExpected = Get-NSPulseReceiptsTickLine ((Get-NSPulseTickedLabels $tickWs)[0])
-    Expect-True ($ticked.Contains($tickExpected)) `
+    Expect-True ($ticked.Contains("receipts: item 36. First of the replay. is ticked $dash write its closing paragraph in .nightshift/receipts/36-first-of-the-replay.md now, before starting the next item.")) `
         'tick injection names the newly ticked item and file'
 
     $off = Join-Path $root 'off'
