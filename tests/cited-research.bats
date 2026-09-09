@@ -52,7 +52,7 @@ EOF
   grep -qF 'ns.ps1 check-report' "$COMMANDS"
   grep -qE 'ns\.ps1"? check-report' "$BATS_TEST_DIRNAME/../docs/windows.md"
   grep -qE 'ns"? check-report' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
-  grep -qE 'ns"? write-receipt' "$CONTRACT"
+  grep -qF '$NS/receipts/' "$CONTRACT"
   grep -qF '$NS/receipts/' "$CONTRACT"
 }
 

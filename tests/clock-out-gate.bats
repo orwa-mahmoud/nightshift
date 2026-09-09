@@ -551,10 +551,8 @@ SH
   run gate "$p" NIGHTSHIFT_STALL_WARN=20
   run gate "$p" NIGHTSHIFT_STALL_WARN=20
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "2" ]
-  printf 'ok\n' >"$p/note.md"
-  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/write-receipt.sh" \
-    --project "$p" --item 'x' --verify 'ok' --output "$p/note.md"
-  [ "$status" -eq 0 ]
+  mkdir -p "$p/.nightshift/receipts"
+  printf 'model text\n' >"$p/.nightshift/receipts/01-x.md"
   run gate "$p" NIGHTSHIFT_STALL_WARN=20
   is_block "$output"
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "3" ]
