@@ -51,7 +51,7 @@ a_new_item() {
   fi
   receipt="$p/.nightshift/receipts/morning-$today.md"
   [ -f "$receipt" ]
-  grep -qF '- Policy record: malformed — the policy file is present but unreadable or fails the schema' \
+  grep -qF -- '- Policy record: malformed — the policy file is present but unreadable or fails the schema' \
     "$receipt"
   grep -qF 'Receipts: [index](./README.md), [1. first.](./1-first.md), [2. done.](./2-done.md)' \
     "$receipt"

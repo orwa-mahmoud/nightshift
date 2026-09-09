@@ -537,6 +537,7 @@ try {
                     'an absent policy keeps the historical verified line'
             }
             default {
+                # the unreadable fixture is named as malformed
                 Expect-True $fixRun.StdoutText.Contains("- Policy record: malformed $dash $malformedReason") `
                     "the $($case.Name) fixture is named as malformed"
                 Expect-True $fixRun.StdoutText.Contains("- Verified: none $dash $malformedReason") `
