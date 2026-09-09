@@ -283,6 +283,8 @@ try {
     if ($linkedLot) {
         Expect-True (-not (Test-NSInertParkingLotWrite 'Bash' $null $lotAppend)) `
             'a parking-lot append through a symlink to the rules file does not qualify'
+        Expect-True (Test-NSWriteTargetReachesRules (Join-Path $script:ns 'parking-lot.md')) `
+            'the parking-lot symlink is a write that reaches the rules file'
         Remove-Item -LiteralPath (Join-Path $script:ns 'parking-lot.md') -Force
         [IO.File]::WriteAllText((Join-Path $script:ns 'parking-lot.md'), "lot`n")
     }

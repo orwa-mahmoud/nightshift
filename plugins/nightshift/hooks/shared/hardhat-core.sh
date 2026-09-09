@@ -640,10 +640,33 @@ ns_hardhat_payload_targets_control() {
   ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_control_targeted
 }
 
+# True when a collected file-tool path, or a sole literal append, reaches the rules file.
+ns_hardhat_payload_write_reaches_rules() {
+  local t
+  case "$1" in
+    Bash | PowerShell | Shell)
+      t="$(ns_hardhat_literal_append_target "$3")" || return 1
+      ns_hardhat_write_target_reaches_rules "$t"
+      ;;
+    *)
+      NS_HARDHAT_COLLECTED=""
+      ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_collect_one
+      while IFS= read -r t; do
+        [ -n "$t" ] || continue
+        ns_hardhat_write_target_reaches_rules "$t" && return 0
+      done <<EOF
+$NS_HARDHAT_COLLECTED
+EOF
+      return 1
+      ;;
+  esac
+}
+
 ns_hardhat_payload_targets_rules() {
   if ns_hardhat_is_inert_parking_lot_write "$1" "$2" "$3"; then
     return 1
   fi
+  ns_hardhat_payload_write_reaches_rules "$1" "$2" "$3" && return 0
   ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_rules_targeted
 }
 

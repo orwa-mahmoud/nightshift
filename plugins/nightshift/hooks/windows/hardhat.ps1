@@ -1169,10 +1169,21 @@ catch {
 }
 
 if (-not (Test-NSInertParkingLotWrite $tool $toolInput $command)) {
-    foreach ($target in $targets) {
-        if (Test-NSRulesTarget ([string]$target)) {
-            Write-Deny 'BLOCKED: the rules file is the owner''s - the night neither reads nor rewrites its own rules. Park the need in .nightshift/parking-lot.md and keep working.'
+    $rulesHit = $false
+    if ($tool -in @('Bash', 'PowerShell', 'Shell')) {
+        if (Test-NSRulesTarget $command) { $rulesHit = $true }
+        $appendTarget = Get-NSLiteralAppendTarget $command
+        if (-not [string]::IsNullOrEmpty($appendTarget) -and (Test-NSWriteTargetReachesRules $appendTarget)) {
+            $rulesHit = $true
         }
+    }
+    foreach ($target in $targets) {
+        if ((Test-NSRulesTarget ([string]$target)) -or (Test-NSWriteTargetReachesRules ([string]$target))) {
+            $rulesHit = $true
+        }
+    }
+    if ($rulesHit) {
+        Write-Deny 'BLOCKED: the rules file is the owner''s - the night neither reads nor rewrites its own rules. Park the need in .nightshift/parking-lot.md and keep working.'
     }
 }
 
