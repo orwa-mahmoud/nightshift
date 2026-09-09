@@ -184,15 +184,116 @@ ns_receipts_shift_date() {
   date -u +%Y-%m-%d
 }
 
-# ns_receipts_write_index <project-dir> — rewrite receipts/README.md from the list, marks, files.
+# ns_receipt_usage_cells <file> — the token sum, the scaled token cell and the duration cell of one
+# receipt, tab separated. A receipt with no runtime block, or none at all, reads as dashes.
+ns_receipt_usage_cells() {
+  local f="$1" tok_in tok_out tok_sum=0 tokens='—' time='—'
+  if [ -f "$f" ]; then
+    tok_in="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]*\) \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*.*/\1/p' "$f" | head -n1)"
+    tok_out="$(sed -n 's/.*exact:[[:space:]]*[0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ \([0-9][0-9]*\).*/\1/p' "$f" | head -n1)"
+    if [ -n "$tok_in" ] && [ -n "$tok_out" ]; then
+      tok_sum=$((tok_in + tok_out))
+      tokens="$(ns_usage_scale "$tok_sum")"
+    fi
+    time="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$f" | head -n1)"
+    [ -n "$time" ] || time='—'
+  fi
+  printf '%s\t%s\t%s\n' "$tok_sum" "$tokens" "$time"
+}
+
+# ns_receipts_index_head <date> — the title and column headers of an index page.
+ns_receipts_index_head() {
+  printf '# Receipts — %s\n\n' "$1"
+  printf '| Item | State | **Tokens** | **Time** | Receipt |\n'
+  printf '| --- | --- | --- | --- | --- |\n'
+}
+# ns_receipts_index_totals <token-total> — the closing totals row of an index page.
+ns_receipts_index_totals() {
+  if [ "$1" -gt 0 ]; then
+    printf '| **Totals** |  | **%s** | **%s** |  |\n' "$(ns_usage_scale "$1")" '—'
+  else
+    printf '| **Totals** |  | **%s** | **%s** |  |\n' '—' '—'
+  fi
+}
+
+# ns_receipts_open_names <project-dir> — the receipt file name of every still-open punch-list item.
+# A receipt travels into the archive when its item is ticked; an item that is still open keeps its
+# receipt live, exactly as it keeps its box, and the next shift writes into the same file.
+ns_receipts_open_names() {
+  local punch="$1/.nightshift/punch-list.md" label
+  [ -f "$punch" ] || return 0
+  ns_items_section "$punch" 2>/dev/null | awk '
+    /^- \[[[:space:]]\]/ {
+      line = $0
+      sub(/^- \[[[:space:]]\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[[[:space:]]\][[:space:]]*/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
+      sub(/\*\*.*$/, "", line)
+      gsub(/[[:space:]]+$/, "", line)
+      if (line != "") print line
+    }
+  ' | while IFS= read -r label || [ -n "$label" ]; do
+    [ -n "$label" ] || continue
+    printf '%s.md\n' "$(ns_receipt_basename "$label")"
+  done
+}
+
+# ns_receipts_write_archive_index <dir> <date> — the index of the item receipts filed in <dir>,
+# written only when at least one landed there. Links stay siblings, because the receipts it lists
+# are in that directory too.
+ns_receipts_write_archive_index() {
+  local dir="$1" date_s="$2" index rows f base label cells tok_sum tokens time tok_total=0
+  { [ -d "$dir" ] && [ ! -L "$dir" ]; } || return 0
+  index="$dir/README.md"
+  [ -L "$index" ] && return 0
+  rows="$(mktemp "${TMPDIR:-/tmp}/ns-archive-index.XXXXXX")" || return 0
+  : >"$rows"
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+    base="${f##*/}"
+    case "$base" in README.md | morning-* | *.original.md) continue ;; esac
+    label="$(sed -n 's/^# //p' "$f" | head -n1)"
+    [ -n "$label" ] || continue
+    cells="$(ns_receipt_usage_cells "$f")"
+    tok_sum="${cells%%$'\t'*}"
+    cells="${cells#*$'\t'}"
+    tokens="${cells%%$'\t'*}"
+    time="${cells#*$'\t'}"
+    [ "$tok_sum" -gt 0 ] && tok_total=$((tok_total + tok_sum))
+    printf '| %s | ticked | **%s** | **%s** | [./%s](./%s) |\n' \
+      "$label" "$tokens" "$time" "$base" "$base" >>"$rows"
+  done <<FIND
+$(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
+FIND
+  if [ ! -s "$rows" ]; then
+    rm -f "$rows"
+    return 0
+  fi
+  {
+    ns_receipts_index_head "$date_s"
+    cat "$rows"
+    ns_receipts_index_totals "$tok_total"
+  } >"$index" 2>/dev/null || :
+  rm -f "$rows"
+}
+
+# ns_receipts_write_index <project-dir> [remaining] — rewrite receipts/README.md from the list,
+# marks, files. `remaining` writes the index a live receipts folder still needs — every open item
+# and every ticked item whose receipt is still there — and removes it when nothing is left.
 ns_receipts_write_index() {
-  local project="$1" punch="$1/.nightshift/punch-list.md"
-  local dir index date_s state base file tokens time
-  local tok_in tok_out tok_sum tok_total=0
+  local project="$1" mode="${2:-}" punch="$1/.nightshift/punch-list.md"
+  local dir index date_s state base file tokens time cells
+  local tok_sum tok_total=0
   local label line items rows
   dir="$(ns_receipts_dir "$project")"
   [ -n "$dir" ] || return 0
-  mkdir -p "$dir" 2>/dev/null || return 0
+  if [ "$mode" = remaining ]; then
+    [ -d "$dir" ] || return 0
+  else
+    mkdir -p "$dir" 2>/dev/null || return 0
+  fi
   [ ! -L "$dir" ] || return 0
   index="$dir/README.md"
   [ -L "$index" ] && return 0
@@ -220,32 +321,27 @@ ns_receipts_write_index() {
     }')"
     [ -n "$label" ] || continue
     base="$(ns_receipt_basename "$label")"
-    file="./${base}.md"
-    tokens='—'; time='—'; tok_sum=0
-    if [ -f "$dir/${base}.md" ]; then
-      tok_in="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]*\) \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*.*/\1/p' "$dir/${base}.md" | head -n1)"
-      tok_out="$(sed -n 's/.*exact:[[:space:]]*[0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ \([0-9][0-9]*\).*/\1/p' "$dir/${base}.md" | head -n1)"
-      if [ -n "$tok_in" ] && [ -n "$tok_out" ]; then
-        tok_sum=$((tok_in + tok_out))
-        tok_total=$((tok_total + tok_sum))
-        tokens="$(ns_usage_scale "$tok_sum")"
-      fi
-      time="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$dir/${base}.md" | head -n1)"
-      [ -n "$time" ] || time='—'
+    if [ "$mode" = remaining ] && [ "$state" = ticked ] && [ ! -f "$dir/${base}.md" ]; then
+      continue
     fi
+    file="./${base}.md"
+    cells="$(ns_receipt_usage_cells "$dir/${base}.md")"
+    tok_sum="${cells%%$'\t'*}"
+    cells="${cells#*$'\t'}"
+    tokens="${cells%%$'\t'*}"
+    time="${cells#*$'\t'}"
+    [ "$tok_sum" -gt 0 ] && tok_total=$((tok_total + tok_sum))
     printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
       "$label" "$state" "$tokens" "$time" "$file" "$file" >>"$rows"
   done <"$items"
+  if [ "$mode" = remaining ] && [ ! -s "$rows" ]; then
+    rm -f "$index" "$items" "$rows"
+    return 0
+  fi
   {
-    printf '# Receipts — %s\n\n' "$date_s"
-    printf '| Item | State | **Tokens** | **Time** | Receipt |\n'
-    printf '| --- | --- | --- | --- | --- |\n'
+    ns_receipts_index_head "$date_s"
     cat "$rows"
-    if [ "$tok_total" -gt 0 ]; then
-      printf '| **Totals** |  | **%s** | **%s** |  |\n' "$(ns_usage_scale "$tok_total")" '—'
-    else
-      printf '| **Totals** |  | **%s** | **%s** |  |\n' '—' '—'
-    fi
+    ns_receipts_index_totals "$tok_total"
   } >"$index" 2>/dev/null || :
   rm -f "$items" "$rows"
 }

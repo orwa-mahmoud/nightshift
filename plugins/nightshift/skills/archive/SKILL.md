@@ -77,6 +77,9 @@ under the same name with an "original" suffix. Do not hand-edit either one.
  composing a new campaign; Archive does not reset them. Skip the note when open work remains,
  when the same sentence is already present, or if adding it would require an open checkbox.
  Never write `- [ ]` here and never edit above `## Items`.
+- **Receipts — the ticked ones.** A receipt travels when its item is ticked; the receipt of an item
+ that is still open stays live with its box, and `archive-receipts` rebuilds `receipts/README.md`
+ on both sides of the move so each index lists only the receipts in its own folder.
 - **Shift log → the archive, whole.** Move `$NS/shift-log.md` into
  the folder and start a fresh one
  with the same one-line header. The journal is mechanical; its lines belong to the dates they

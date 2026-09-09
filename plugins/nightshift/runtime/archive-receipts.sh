@@ -154,6 +154,23 @@ if [ "$ROTATE" -eq 0 ] && [ -n "$RETIRE" ]; then
   exit 2
 fi
 
+# The receipts of items nobody finished. A receipt travels when its item is ticked; one whose box
+# is still open stays live, exactly as the box stays in the punch list, so the next shift extends
+# the same file rather than a copy of it.
+OPEN_NAMES="$(ns_receipts_open_names "$WORKSPACE")
+"
+
+# receipt_open <name> — status 0 when that receipt belongs to an item that is still open.
+receipt_open() {
+  case "
+$OPEN_NAMES" in
+    *"
+$1
+"*) return 0 ;;
+  esac
+  return 1
+}
+
 # retire_named <name> — status 0 when the caller named this record as closed.
 retire_named() {
   case "
@@ -249,6 +266,11 @@ if [ -d "$src" ]; then
     [ -n "$f" ] || continue
     [ -f "$f" ] || continue
     [ -L "$f" ] && continue
+    base="${f##*/}"
+    # The index is a view of a set of receipts, so each side of the move gets its own, written
+    # below from what is actually there. The live one is never filed as a record of its own.
+    [ "$base" = README.md ] && continue
+    receipt_open "$base" && continue
     file_one "$f"
   done <<FIND
 $(find "$src" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
@@ -309,8 +331,9 @@ fi
 # Every moved receipt has to keep working from where it now sits. A record that travelled
 # with it is still a sibling; one that stayed live is further away. Rewriting changes bytes,
 # so the untouched original is kept beside the relocated view as <name>.original.md.
+# rewrite_moved <archived page> <its directory before the move, relative to the state directory>
 rewrite_moved() {
-  local page="$1" base original back rel saved_ifs awk_bin
+  local page="$1" from="$2" base original back rel saved_ifs awk_bin
   [ -f "$page" ] && [ ! -L "$page" ] || return 0
   case "$page" in *.original.md) return 0 ;; esac
   base="${page##*/}"
@@ -324,7 +347,7 @@ rewrite_moved() {
   IFS="$saved_ifs"
   for _ in "$@"; do back="../$back"; done
   awk_bin="$(ns_rules_awk_bin)" || awk_bin="awk"
-  if NS_ARCHIVED_PATHS="$ARCHIVED_PATHS" "$awk_bin" -v back="$back" \
+  if NS_ARCHIVED_PATHS="$ARCHIVED_PATHS" "$awk_bin" -v back="$back" -v dir="$from" \
     -f "$_here/archive-links.awk" <"$page" >"${page%/*}/.$base.relocated" 2>/dev/null; then
     if cmp -s "$page" "${page%/*}/.$base.relocated"; then
       rm -f "${page%/*}/.$base.relocated"
@@ -344,15 +367,30 @@ rewrite_moved() {
 "
   fi
 }
+# The archive gets the index of what landed in it. Written before the relocation pass, so a receipt
+# that links to its index has an index to link to: the archived folder holds one of its own, and
+# that is the sibling the link still names.
+receipts_rel="${src#"$NS"/}"
+ns_receipts_write_archive_index "$dest" "$(ns_receipts_shift_date "$WORKSPACE")"
+if [ -f "$dest/README.md" ]; then
+  ARCHIVED_PATHS="$ARCHIVED_PATHS$receipts_rel/README.md
+"
+fi
 if [ -d "$dest" ]; then
   for page in "$dest"/*.md; do
     [ -e "$page" ] || continue
-    rewrite_moved "$page"
+    # The index is written into the folder it describes, so its links are already siblings there.
+    [ "${page##*/}" = README.md ] && continue
+    rewrite_moved "$page" "$receipts_rel"
   done
 fi
 if [ -n "$report_base" ] && [ "$report_relocated" -eq 0 ]; then
-  rewrite_moved "$group/$report_base"
+  rewrite_moved "$group/$report_base" ""
 fi
+
+# The live folder lists the work still in hand, and loses its index when there is nothing left
+# to list.
+ns_receipts_write_index "$WORKSPACE" remaining
 
 if ! ns_archive_file_review_records "$WORKSPACE" "$DATE" "$shift_id"; then
   printf 'archive-receipts: could not file snag or parking records\n' >&2

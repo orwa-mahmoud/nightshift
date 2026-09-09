@@ -1,32 +1,56 @@
-# Repoint one report's own links when it is filed into the archive.
+# Repoint one record's own links when it is filed into the archive.
 #
-# The report sits beside the live records it links to. Filed into archive/<date>/ it no longer
+# The record sits beside the live records it links to. Filed into archive/<date>/ it no longer
 # does: a record that travelled with it is still a sibling, but one that stayed live — a parking
-# decision nobody has answered, a snag log the next shift will add to — is now two directories
-# away. Copying the bytes unchanged leaves those links pointing at files that do not exist.
+# decision nobody has answered, the receipt of an item nobody finished — is now several
+# directories away. Copying the bytes unchanged leaves those links pointing at files that do not
+# exist.
 #
 #   NS_ARCHIVED_PATHS  newline-separated record paths, relative to the state directory, that moved
-#                      into the archive alongside this report; their relative links already
+#                      into the archive alongside this record; their relative links already
 #                      resolve. Passed in the environment because awk's -v rejects a newline.
+#   dir                the record's own directory before the move, relative to the state
+#                      directory. Empty for a record that sat at the top of it. Every relative
+#                      link was written against this directory, so this is what they resolve
+#                      against — a bare `name` or `./name` names a file that sat right beside it.
 #   back               the relative path from the archive directory back to the state directory.
 #
 # Only inline links and reference definitions whose target is a relative path are touched. A
 # scheme, a leading slash and a bare fragment are left exactly as written, as is everything inside
 # a fenced code block: raw evidence is evidence.
 #
-# A link that already climbs with ../ is rebased like any other. It was written relative to the
-# report's own directory, and the report has moved deeper — so a project deliverable two levels
-# out of the state directory is that much further away now, and leaving it alone breaks it.
+# A link that climbs with ../ is rebased like any other. It was written relative to the record's
+# own directory, and the record has moved deeper — so a project deliverable two levels out of the
+# state directory is that much further away now, and leaving it alone breaks it.
 BEGIN {
   n = split(ENVIRON["NS_ARCHIVED_PATHS"], list, "\n")
   for (i = 1; i <= n; i++) {
     if (list[i] != "") moved[list[i]] = 1
   }
   if (back != "" && substr(back, length(back)) != "/") back = back "/"
+  if (dir != "" && substr(dir, length(dir)) == "/") dir = substr(dir, 1, length(dir) - 1)
   fence = 0
 }
 
-function repoint(target,   path, frag, hash) {
+# Where a relative link points, as a path relative to the state directory. It was written against
+# the record's own directory, so that is what it resolves against; ../ that climbs out of the state
+# area is kept, because back/ lands at the top of it before the climb starts.
+function resolve(path,   parts, n, i, m, seg, out, joined) {
+  joined = (dir == "" ? path : dir "/" path)
+  n = split(joined, parts, "/")
+  m = 0
+  for (i = 1; i <= n; i++) {
+    seg = parts[i]
+    if (seg == "" || seg == ".") continue
+    if (seg == ".." && m > 0 && out[m] != "..") { m--; continue }
+    out[++m] = seg
+  }
+  joined = ""
+  for (i = 1; i <= m; i++) joined = (joined == "" ? out[i] : joined "/" out[i])
+  return joined
+}
+
+function repoint(target,   path, frag, hash, rel) {
   hash = index(target, "#")
   if (hash > 0) {
     path = substr(target, 1, hash - 1)
@@ -39,7 +63,11 @@ function repoint(target,   path, frag, hash) {
   if (path ~ /^[A-Za-z][A-Za-z0-9+.-]*:/) return target
   if (path ~ /^\//) return target
   if (path in moved) return target
-  return back path frag
+  rel = resolve(path)
+  if (rel == "") return target
+  # The file it names travelled here too: still a sibling, still reached exactly as written.
+  if (rel in moved) return target
+  return back rel frag
 }
 
 # One line of Markdown with every eligible inline link repointed. Scanned character by character

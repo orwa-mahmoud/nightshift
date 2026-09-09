@@ -4794,17 +4794,19 @@ function Save-NSArchiveReviewRecords {
     Add-NSArchiveBrokenPointers $Workspace
 }
 
-# Convert-NSReportLinks <text> <archived> <back> - the report's own links, repointed for where it
-# now sits. The twin of runtime/archive-links.awk, and it must answer identically: a record that
-# travelled with the report is still a sibling, one that stayed live is reached back through the
+# Convert-NSReportLinks <text> <archived> <back> [dir] - one archived record's own links, repointed
+# for where it now sits. The twin of runtime/archive-links.awk, and it must answer identically: a
+# record that travelled with it is still a sibling, one that stayed live is reached back through the
 # archive. A scheme, a leading slash, a bare fragment and everything inside a fenced code block
-# are left exactly as written. A link that already climbs with ../ is rebased like any other: it
-# was written relative to the report's own directory, and the report has moved deeper.
+# are left exactly as written. Dir is the record's own directory before the move, relative to the
+# state directory, and every relative link resolves against it: a bare `name` or `./name` names a
+# file that sat right beside the record, and a link that climbs with ../ climbed from there.
 function Convert-NSReportLinks {
     param(
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Archived,
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Back
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Back,
+        [AllowEmptyString()][string]$Dir = ''
     )
     $moved = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($entry in $Archived) {
@@ -4813,6 +4815,27 @@ function Convert-NSReportLinks {
     $prefix = $Back
     if (-not [string]::IsNullOrEmpty($prefix) -and -not $prefix.EndsWith('/', [StringComparison]::Ordinal)) {
         $prefix = $prefix + '/'
+    }
+    $from = $Dir
+    if (-not [string]::IsNullOrEmpty($from) -and $from.EndsWith('/', [StringComparison]::Ordinal)) {
+        $from = $from.Substring(0, $from.Length - 1)
+    }
+
+    # Where a relative link points, as a path relative to the state directory. ../ that climbs out
+    # of the state area is kept: back/ lands at the top of it before the climb starts.
+    $resolve = {
+        param([string]$path)
+        $joined = if ([string]::IsNullOrEmpty($from)) { $path } else { $from + '/' + $path }
+        $out = New-Object Collections.Generic.List[string]
+        foreach ($segment in ($joined -split '/')) {
+            if ($segment -ceq '' -or $segment -ceq '.') { continue }
+            if ($segment -ceq '..' -and $out.Count -gt 0 -and $out[$out.Count - 1] -cne '..') {
+                $out.RemoveAt($out.Count - 1)
+                continue
+            }
+            $out.Add($segment)
+        }
+        return ($out -join '/')
     }
 
     $repoint = {
@@ -4828,7 +4851,11 @@ function Convert-NSReportLinks {
         if ($path -cmatch '^[A-Za-z][A-Za-z0-9+.-]*:') { return $target }
         if ($path.StartsWith('/', [StringComparison]::Ordinal)) { return $target }
         if ($moved.Contains($path)) { return $target }
-        return ($prefix + $path + $fragment)
+        $rel = & $resolve $path
+        if ([string]::IsNullOrEmpty($rel)) { return $target }
+        # The file it names travelled here too: still a sibling, still reached exactly as written.
+        if ($moved.Contains($rel)) { return $target }
+        return ($prefix + $rel + $fragment)
     }
 
     # No max-substrings argument: a negative one means "the last N", which would hand back the
@@ -4939,18 +4966,117 @@ function Get-NSReceiptsShiftDate {
     return [DateTime]::UtcNow.ToString('yyyy-MM-dd')
 }
 
-function Write-NSReceiptsIndex {
+function Get-NSReceiptUsageCells {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $dash = [string][char]0x2014
+    $cells = @{ Sum = [long]0; Tokens = $dash; Time = $dash }
+    if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-NSReparsePoint $Path)) {
+        $text = [IO.File]::ReadAllText($Path)
+        if ($text -cmatch 'exact:\s*([0-9]+)\s*/\s*[0-9]+\s*/\s*[0-9]+\s*/\s*([0-9]+)') {
+            $cells['Sum'] = [long]$Matches[1] + [long]$Matches[2]
+            $cells['Tokens'] = Get-NSUsageScale $cells['Sum']
+        }
+        if ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') { $cells['Time'] = $Matches[1].Trim() }
+    }
+    return $cells
+}
+
+function Get-NSReceiptsIndexPage {
+    param(
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyCollection()][string[]]$Rows = @(),
+        [long]$TokenTotal = 0
+    )
+    $dash = [string][char]0x2014
+    $tokCell = $(if ($TokenTotal -gt 0) { Get-NSUsageScale $TokenTotal } else { $dash })
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.AppendLine('# Receipts — ' + $Date)
+    [void]$sb.AppendLine()
+    [void]$sb.AppendLine('| Item | State | **Tokens** | **Time** | Receipt |')
+    [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
+    foreach ($row in $Rows) { [void]$sb.AppendLine($row) }
+    [void]$sb.AppendLine(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $dash))
+    return $sb.ToString()
+}
+
+# The receipts of items nobody finished. A receipt travels into the archive when its item is
+# ticked; one whose box is still open stays live, exactly as the box stays in the punch list, so
+# the next shift extends the same file rather than a copy of it.
+function Get-NSOpenReceiptNames {
     param([Parameter(Mandatory = $true)][string]$Workspace)
+    $names = New-Object Collections.Generic.List[string]
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
+        foreach ($line in (Get-NSPunchItemsSection $punch)) {
+            if ($line -cnotmatch '^- \[[ ]\]') { continue }
+            $label = Get-NSPulseItemLabelFromLine $line 'open'
+            if ([string]::IsNullOrEmpty($label)) { continue }
+            $names.Add((Get-NSReceiptBasename $label) + '.md')
+        }
+    }
+    return $names.ToArray()
+}
+
+# Write-NSArchiveReceiptsIndex <directory> <date> - the index of the item receipts filed in that
+# directory, written only when at least one landed there. Links stay siblings, because the
+# receipts it lists are in that directory too.
+function Write-NSArchiveReceiptsIndex {
+    param(
+        [Parameter(Mandatory = $true)][string]$Directory,
+        [Parameter(Mandatory = $true)][string]$Date
+    )
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return }
+    if (Test-NSReparsePoint $Directory) { return }
+    $index = Join-Path $Directory 'README.md'
+    if (Test-NSReparsePoint $index) { return }
+    $names = @(Get-ChildItem -LiteralPath $Directory -File -Force -ErrorAction SilentlyContinue |
+        Where-Object {
+            -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+            $_.Name.EndsWith('.md', [StringComparison]::Ordinal)
+        } | ForEach-Object { $_.Name })
+    if ($names.Count -gt 1) { [Array]::Sort($names, [StringComparer]::Ordinal) }
+    $rows = New-Object Collections.Generic.List[string]
+    $tokTotal = [long]0
+    foreach ($name in $names) {
+        if ($name -ceq 'README.md' -or
+            $name.StartsWith('morning-', [StringComparison]::Ordinal) -or
+            $name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
+        $path = Join-Path $Directory $name
+        $label = ''
+        foreach ($line in [IO.File]::ReadAllLines($path)) {
+            if ($line -cmatch '^# (.+)$') { $label = $Matches[1]; break }
+        }
+        if ([string]::IsNullOrEmpty($label)) { continue }
+        $cells = Get-NSReceiptUsageCells $path
+        if ($cells['Sum'] -gt 0) { $tokTotal += [long]$cells['Sum'] }
+        $rows.Add(('| {0} | ticked | **{1}** | **{2}** | [./{3}](./{3}) |' -f
+            $label, $cells['Tokens'], $cells['Time'], $name))
+    }
+    if ($rows.Count -eq 0) { return }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($index,
+        (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() -TokenTotal $tokTotal), $utf8)
+}
+
+# Write-NSReceiptsIndex <workspace> [-Remaining] - rewrite receipts/README.md from the list, marks
+# and files. -Remaining writes the index a live receipts folder still needs, every open item and
+# every ticked item whose receipt is still there, and removes it when nothing is left.
+function Write-NSReceiptsIndex {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [switch]$Remaining)
     $dir = Get-NSReceiptsDir $Workspace
     if ([string]::IsNullOrEmpty($dir)) { return }
-    try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch { return }
+    if ($Remaining) {
+        if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return }
+    }
+    else {
+        try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch { return }
+    }
     if (Test-NSReparsePoint $dir) { return }
     $index = Join-Path $dir 'README.md'
     if (Test-NSReparsePoint $index) { return }
     $punch = Join-Path $Workspace '.nightshift/punch-list.md'
     $rows = New-Object Collections.Generic.List[string]
     $tokTotal = [long]0
-    $dash = [string][char]0x2014
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($line in (Get-NSPunchItemsSection $punch)) {
             if ($line -cnotmatch '^- \[[ xX]\]') { continue }
@@ -4961,32 +5087,23 @@ function Write-NSReceiptsIndex {
             $base = Get-NSReceiptBasename $label
             $file = './' + $base + '.md'
             $path = Join-Path $dir ($base + '.md')
-            $tokens = $dash
-            $time = $dash
-            if ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-NSReparsePoint $path)) {
-                $text = [IO.File]::ReadAllText($path)
-                if ($text -cmatch 'exact:\s*([0-9]+)\s*/\s*[0-9]+\s*/\s*[0-9]+\s*/\s*([0-9]+)') {
-                    $sum = [long]$Matches[1] + [long]$Matches[2]
-                    $tokTotal += $sum
-                    $tokens = Get-NSUsageScale $sum
-                }
-                if ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') { $time = $Matches[1].Trim() }
-            }
-            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f $label, $state, $tokens, $time, $file))
+            if ($Remaining -and $state -ceq 'ticked' -and
+                -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            $cells = Get-NSReceiptUsageCells $path
+            if ($cells['Sum'] -gt 0) { $tokTotal += [long]$cells['Sum'] }
+            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f
+                $label, $state, $cells['Tokens'], $cells['Time'], $file))
         }
     }
-    $tokCell = $(if ($tokTotal -gt 0) { Get-NSUsageScale $tokTotal } else { $dash })
-    $sb = New-Object Text.StringBuilder
-    [void]$sb.AppendLine('# Receipts — ' + (Get-NSReceiptsShiftDate $Workspace))
-    [void]$sb.AppendLine()
-    [void]$sb.AppendLine('| Item | State | **Tokens** | **Time** | Receipt |')
-    [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
-    foreach ($row in $rows) { [void]$sb.AppendLine($row) }
-    [void]$sb.AppendLine(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $dash))
+    if ($Remaining -and $rows.Count -eq 0) {
+        Remove-Item -LiteralPath $index -Force -ErrorAction SilentlyContinue
+        return
+    }
     $utf8 = New-Object Text.UTF8Encoding($false)
-    [IO.File]::WriteAllText($index, $sb.ToString(), $utf8)
+    [IO.File]::WriteAllText($index,
+        (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
+            -TokenTotal $tokTotal), $utf8)
 }
-
 function Get-NSUsageScale {
     param($Value)
     $n = 0

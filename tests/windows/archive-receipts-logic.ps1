@@ -296,6 +296,117 @@ finally {
     Remove-Item -LiteralPath $review -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# A shift that ended with work still open. The receipt of a ticked item is filed and retired; the
+# receipt of an item nobody finished stays live, and each index lists only what its folder holds.
+$openWork = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-open-" + [guid]::NewGuid().ToString('N'))
+try {
+    $ns = Join-Path $openWork '.nightshift'
+    $recv = Join-Path $ns 'receipts'
+    $null = New-Item -ItemType Directory -Path $recv -Force
+    [IO.File]::WriteAllText((Join-Path $ns 'work-mode'), "artifact`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), ("Date: 2026-09-05`n`n## Items`n" +
+        "- [x] **1. Fix the resolver.**`n- [x] **2. Cover the parser.**`n- [ ] **3. Trim the bundle.**`n"))
+    [IO.File]::WriteAllText((Join-Path $recv '1-fix-the-resolver.md'), ("# 1. Fix the resolver.`n`nDone.`n`n" +
+        "**Usage:** input 100 · output 20`n" +
+        "  Source: claude claude-opus-5, cumulative counters, segments 1; exact: 100 / 0 / 0 / 20 / 0`n" +
+        "**Duration:** 10m 00s`n"))
+    [IO.File]::WriteAllText((Join-Path $recv '2-cover-the-parser.md'),
+        "# 2. Cover the parser.`n`nDone.`n`n**Duration:** 5m 00s`n")
+    [IO.File]::WriteAllText((Join-Path $recv '3-trim-the-bundle.md'),
+        "# 3. Trim the bundle.`n`nIn progress: the loader is measured, the chunks are not.`n")
+    [IO.File]::WriteAllText((Join-Path $recv 'morning-2026-09-05-abc.md'), "morning`n")
+    Write-NSReceiptsIndex -Workspace $openWork
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), '')
+    $liveOpen = Join-Path $recv '3-trim-the-bundle.md'
+    $openBefore = [Convert]::ToBase64String([IO.File]::ReadAllBytes($liveOpen))
+
+    $filed = Invoke-ArchiveReceipts $openWork @('-Date', '2026-09-05',
+        '-Retire', '1-fix-the-resolver.md,2-cover-the-parser.md,morning-2026-09-05-abc.md')
+    Expect-True ($filed.ExitCode -eq 0) "open-work filing exits 0 (got $($filed.ExitCode) $($filed.Stderr))"
+    $dest = Join-Path $ns 'archive/2026-09-05/receipts'
+    foreach ($name in @('1-fix-the-resolver.md', '2-cover-the-parser.md', 'morning-2026-09-05-abc.md')) {
+        Expect-True (Test-Path -LiteralPath (Join-Path $dest $name) -PathType Leaf) "files the closed record $name"
+        Expect-True (-not (Test-Path -LiteralPath (Join-Path $recv $name))) "retires the closed record $name"
+    }
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $dest '3-trim-the-bundle.md'))) `
+        'does not file the receipt of an open item'
+    Expect-True (Test-Path -LiteralPath $liveOpen -PathType Leaf) 'leaves the open item receipt live'
+    Expect-True ($openBefore -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes($liveOpen))) `
+        'the open item receipt is byte-identical'
+    $liveIndex = [IO.File]::ReadAllText((Join-Path $recv 'README.md'))
+    Expect-True ($liveIndex.Contains('| 3. Trim the bundle. | open |')) 'the live index lists the open item'
+    Expect-True (-not $liveIndex.Contains('Fix the resolver')) 'the live index drops a filed receipt'
+    $archivedIndex = [IO.File]::ReadAllText((Join-Path $dest 'README.md'))
+    Expect-True ($archivedIndex.Contains('# Receipts — 2026-09-05')) 'the archived index is dated'
+    Expect-True ($archivedIndex.Contains(
+        '| 1. Fix the resolver. | ticked | **120** | **10m 00s** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
+        'the archived index carries the first receipt with its measurements'
+    Expect-True ($archivedIndex.Contains('| 2. Cover the parser. | ticked |')) `
+        'the archived index carries the second receipt'
+    Expect-True (-not $archivedIndex.Contains('Trim the bundle')) 'the archived index omits the open item'
+    Expect-True (-not $archivedIndex.Contains('morning-2026-09-05-abc.md')) `
+        'the archived index omits the morning receipt'
+}
+finally {
+    Remove-Item -LiteralPath $openWork -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Receipts link to each other by bare name, because they were written side by side. Filed, the ones
+# that travelled together are still side by side; the receipt of an item nobody finished stayed
+# behind and has to be reached back through the archive.
+$siblings = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-siblings-" + [guid]::NewGuid().ToString('N'))
+try {
+    $ns = Join-Path $siblings '.nightshift'
+    $recv = Join-Path $ns 'receipts'
+    $null = New-Item -ItemType Directory -Path $recv -Force
+    [IO.File]::WriteAllText((Join-Path $ns 'work-mode'), "artifact`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), ("Date: 2026-09-05`n`n## Items`n" +
+        "- [x] **1. Fix the resolver.**`n- [x] **2. Cover the parser.**`n- [ ] **3. Trim the bundle.**`n"))
+    [IO.File]::WriteAllText((Join-Path $recv '1-fix-the-resolver.md'), ("# 1. Fix the resolver.`n`n" +
+        "Next: [2. Cover the parser.](./2-cover-the-parser.md), and`n" +
+        "[3. Trim the bundle.](./3-trim-the-bundle.md) is still open. Index: [receipts](./README.md).`n" +
+        "Decision: [the parking lot](../parking-lot.md).`n"))
+    [IO.File]::WriteAllText((Join-Path $recv '2-cover-the-parser.md'),
+        "# 2. Cover the parser.`n`nBack to [the resolver](1-fix-the-resolver.md).`n")
+    [IO.File]::WriteAllText((Join-Path $recv '3-trim-the-bundle.md'), "# 3. Trim the bundle.`n`nIn progress.`n")
+    [IO.File]::WriteAllText((Join-Path $recv 'morning-2026-09-05-abc.md'),
+        "# Morning`n`nThe index of this shift: [receipts](./README.md).`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'parking-lot.md'), "# Parking`n")
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), '')
+
+    $siblingRun = Invoke-ArchiveReceipts $siblings @('-Date', '2026-09-05',
+        '-Retire', '1-fix-the-resolver.md,2-cover-the-parser.md,morning-2026-09-05-abc.md')
+    Expect-True ($siblingRun.ExitCode -eq 0) "sibling filing exits 0 (got $($siblingRun.ExitCode) $($siblingRun.Stderr))"
+    $dest = Join-Path $ns 'archive/2026-09-05/receipts'
+    $morning = [IO.File]::ReadAllText((Join-Path $dest 'morning-2026-09-05-abc.md'))
+    $first = [IO.File]::ReadAllText((Join-Path $dest '1-fix-the-resolver.md'))
+    $second = [IO.File]::ReadAllText((Join-Path $dest '2-cover-the-parser.md'))
+
+    # The index of the folder it landed in, not the one it was written beside.
+    Expect-True ($morning.Contains('(./README.md)')) 'the archived morning receipt still names ./README.md'
+    Expect-True (Test-Path -LiteralPath (Join-Path $dest 'README.md') -PathType Leaf) `
+        'the archived index the morning receipt names is there'
+
+    # A neighbour that travelled with it is still a neighbour, written with or without ./.
+    Expect-True ($first.Contains('(./2-cover-the-parser.md)')) 'a filed neighbour is still a sibling'
+    Expect-True (Test-Path -LiteralPath (Join-Path $dest '2-cover-the-parser.md') -PathType Leaf) `
+        'the filed neighbour is where the link says'
+    Expect-True ($second.Contains('(1-fix-the-resolver.md)')) 'a bare sibling name is left as written'
+
+    # The open item's receipt stayed live, so the link reaches back out of the archive to it.
+    Expect-True ($first.Contains('(../../../receipts/3-trim-the-bundle.md)')) `
+        'the open item receipt is reached back through the archive'
+    Expect-True (Test-Path -LiteralPath (Join-Path $dest '../../../receipts/3-trim-the-bundle.md') -PathType Leaf) `
+        'the live open item receipt resolves from the archived receipt'
+    # And a link that already climbed out of receipts/ climbed from there, not from the archive.
+    Expect-True ($first.Contains('(../../../parking-lot.md)')) 'a climbing link climbed from receipts/'
+    Expect-True (Test-Path -LiteralPath (Join-Path $dest '../../../parking-lot.md') -PathType Leaf) `
+        'the live parking lot resolves from the archived receipt'
+}
+finally {
+    Remove-Item -LiteralPath $siblings -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "archive-receipts-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) {
