@@ -521,6 +521,10 @@ try {
     $fenceCheckLogicRun = Invoke-TestScript $fenceCheckLogic
     Assert-Equal 0 $fenceCheckLogicRun.ExitCode `
         "fence-check on-disk lease: $($fenceCheckLogicRun.Stdout) $($fenceCheckLogicRun.Stderr)"
+    $linkWorkspaceLogic = Join-Path $PSScriptRoot 'link-workspace-logic.ps1'
+    $linkWorkspaceLogicRun = Invoke-TestScript $linkWorkspaceLogic
+    Assert-Equal 0 $linkWorkspaceLogicRun.ExitCode `
+        "link-workspace usage: $($linkWorkspaceLogicRun.Stdout) $($linkWorkspaceLogicRun.Stderr)"
     $evidenceLogic = Join-Path $PSScriptRoot 'evidence-logic.ps1'
     $evidenceLogicRun = Invoke-TestScript $evidenceLogic
     Assert-Equal 0 $evidenceLogicRun.ExitCode `

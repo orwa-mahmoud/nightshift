@@ -36,6 +36,7 @@ $null = New-Item -ItemType File -Path (Join-Path $ns '.shift-armed') -Force
 try {
     $lines = @(Stop-NSShift -Project $root)
     $joined = $lines -join "`n"
+    Expect-True ($joined -match 'watchman absent') "stop names an absent watchman: $joined"
     Expect-True ($joined -match 'deadline preserved') "stop preserves deadline: $joined"
     Expect-True (Test-Path -LiteralPath (Join-Path $ns 'STOP') -PathType Leaf) 'STOP written'
     Expect-True (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) 'armed marker kept'
@@ -89,6 +90,23 @@ try {
     # A fresh policy snapshot, written after Reset already cleared the first one, so Purge's own
     # removal is exercised rather than inherited from the Reset call above.
     [IO.File]::WriteAllText((Join-Path $ns 'shift-policy.json'), "{ }`n")
+    $purgeHelper = Join-Path $plugin 'runtime/windows/purge-workspace.ps1'
+    $ctx = Resolve-NSControlWorkspace $root
+    $expectedConfirm = Join-Path $ctx.Workspace '.nightshift'
+    $purgeOut = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.purge-out')
+    try {
+        & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $purgeHelper -Project $root `
+            > $purgeOut 2>&1
+        $purgeCode = $LASTEXITCODE
+        $purgeText = if (Test-Path -LiteralPath $purgeOut) { [IO.File]::ReadAllText($purgeOut) } else { '' }
+        Expect-True ($purgeCode -eq 1) "missing confirm-path exits 1: $purgeText"
+        Expect-True ($purgeText -like "*purge-workspace: refusing without --confirm-path $expectedConfirm*") `
+            "missing confirm-path names the exact path: $purgeText"
+        Expect-True (Test-Path -LiteralPath $ns -PathType Container) 'missing confirm-path removes nothing'
+    }
+    finally {
+        Remove-Item -LiteralPath $purgeOut -Force -ErrorAction SilentlyContinue
+    }
     $confirm = Join-Path $root '.nightshift'
     try { $confirm = Resolve-NSCanonicalPath $ns } catch { }
     $null = Remove-NSNightshiftWorkspace -Project $root -ConfirmPath $confirm
