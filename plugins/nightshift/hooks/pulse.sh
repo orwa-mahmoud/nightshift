@@ -164,7 +164,8 @@ ns_pulse_active_item() {
     /^- \[ \]/ {
       line = $0
       sub(/^- \[ \][[:space:]]*\*\*/, "", line)
-      sub(/[[:space:]]*[—-].*$/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)
       gsub(/[[:space:]]+$/, "", line)
       print line

@@ -237,7 +237,8 @@ ns_gate_item_label() {
       if (n != want) next
       line = $0
       sub(/^- \[x\][[:space:]]*\*\*/, "", line)
-      sub(/[[:space:]]*[—-].*$/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)
       gsub(/[[:space:]]+$/, "", line)
       print line
@@ -368,7 +369,8 @@ ns_gate_open_item() {
     /^- \[ \]/ {
       line = $0
       sub(/^- \[ \][[:space:]]*\*\*/, "", line)
-      sub(/[[:space:]]*[—-].*$/, "", line)
+      sub(/[[:space:]]+—.*$/, "", line)
+      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)
       gsub(/[[:space:]]+$/, "", line)
       print line

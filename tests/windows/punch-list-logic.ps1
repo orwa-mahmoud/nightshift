@@ -134,6 +134,30 @@ Trailing prose that belongs to no item.
     [IO.File]::WriteAllText($armedPunch, ($text -creplace 'P03 - the one after', 'P03 - something else'))
     $moved = Get-NSGateContractMismatch $root $armedPunch
     Expect-True ($moved -clike '*reworded, removed or inserted*') 'a changed item is named'
+
+    # A hyphen inside a word is part of the title. A spaced dash introduces a suffix.
+    $hyphen = @'
+# Punch list
+
+## Items
+
+- [x] **2. Make the packed Node-only build reproducible.**
+
+- [ ] **3. Ship it — already reviewed**
+
+- [ ] **4. Re-index — later**
+'@
+    [IO.File]::WriteAllText($punch, $hyphen)
+    Expect-True ((Get-NSGateItemLabel $punch 1) -ceq '2. Make the packed Node-only build reproducible.') `
+        'a hyphenated ticked title stays whole'
+    $namedHyphen = @(Get-NSPunchItem -PunchList $punch -Id '2. Make the packed Node-only build reproducible.')
+    Expect-True ($namedHyphen[0] -ceq '- [x] **2. Make the packed Node-only build reproducible.**') `
+        'lookup by the whole hyphenated title finds the item'
+    $reindex = @(Get-NSPunchItem -PunchList $punch -Id '4. Re-index')
+    Expect-True ($reindex[0] -ceq '- [ ] **4. Re-index — later**') `
+        'an em-dash suffix is stripped and a hyphen inside the word stays'
+    Expect-True ((@(Get-NSPunchItem -PunchList $punch -Id '2. Make the packed Node')).Count -eq 0) `
+        'a truncated hyphenated id finds nothing'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

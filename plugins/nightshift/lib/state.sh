@@ -846,7 +846,8 @@ ns_punch_item() {
         }
         id = $0
         sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", id)
-        sub(/[[:space:]]*[—-].*$/, "", id)
+        sub(/[[:space:]]+—.*$/, "", id)
+        sub(/[[:space:]]+-[[:space:]].*$/, "", id)
         sub(/\*\*.*$/, "", id)
         gsub(/[[:space:]]+$/, "", id)
         if (id != want) next

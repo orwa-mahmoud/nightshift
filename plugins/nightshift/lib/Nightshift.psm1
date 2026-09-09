@@ -8125,7 +8125,7 @@ function Get-NSPunchItem {
             else {
                 $found = $line
                 $found = $found -creplace '^- \[[ xX]\][ \t]*\*\*', ''
-                $found = $found -creplace '[ \t]*[—-].*$', ''
+                $found = $found -creplace '[ \t]+(—|-[ \t]).*$', ''
                 $found = $found -creplace '\*\*.*$', ''
                 if ($found.TrimEnd() -cne $Id) { continue }
             }
@@ -8976,7 +8976,7 @@ function Get-NSGateItemLabel {
             $n++
             if ($n -ne $Which) { continue }
             $t = $line -creplace '^- \[x\][ \t]*\*\*', ''
-            $t = $t -creplace '[ \t]*[—-].*$', ''
+            $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
             $t = $t -creplace '\*\*.*$', ''
             return $t.TrimEnd()
         }

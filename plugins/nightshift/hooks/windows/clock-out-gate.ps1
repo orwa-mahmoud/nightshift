@@ -45,7 +45,11 @@ function Get-NSGateOpenItem {
     foreach ($line in [IO.File]::ReadLines($Path)) {
         if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $inItems = $true; continue }
         if (-not $inItems) { continue }
-        if ($line -cmatch '^- \[ \][ \t]*\*\*(.+?)[ \t]*[\u2014-]') { return $Matches[1].Trim() }
+        if ($line -cnotmatch '^- \[ \]') { continue }
+        $t = $line -creplace '^- \[ \][ \t]*\*\*', ''
+        $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
+        $t = $t -creplace '\*\*.*$', ''
+        return $t.TrimEnd()
     }
     return ''
 }
