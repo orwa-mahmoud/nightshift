@@ -675,7 +675,12 @@ parity_site() {
 # Everything the two sides cannot agree on because it is not accounting: where the workspace sits,
 # and what the clock said.
 parity_normalise() {
-  sed -e "s|$1|<workspace>|g" -e 's/^[0-9][0-9]*	/<epoch>	/' -e 's/^Duration: .*/Duration: <span>/'
+  sed -e "s|$1|<workspace>|g" \
+      -e 's/^[0-9][0-9]*	/<epoch>	/' \
+      -e 's/^Duration: .*/Duration: <span>/' \
+      -e 's/\*\*[0-9][0-9]*s\*\*/**<span>**/g' \
+      -e 's/\*\*[0-9][0-9]*m [0-9][0-9]*s\*\*/**<span>**/g' \
+      -e 's/\*\*[0-9][0-9]*h [0-9][0-9]*m\*\*/**<span>**/g'
 }
 
 @test "the PowerShell books match the POSIX books, file for file" {
