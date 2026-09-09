@@ -20,7 +20,7 @@ TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
   grep -qF '# Morning receipt' "$TEMPLATES"
   grep -qF 'The clock-out gate renders this page' "$TEMPLATES"
   grep -qF 'Receipts: [index](./README.md)' "$TEMPLATES"
-  grep -qF '- Policy record:' "$TEMPLATES"
+  grep -qF -- '- Policy record:' "$TEMPLATES"
   for field in '- Shift:' '- Ending:' '- Gates:' '- Verified:' '- Disabled by owner:' \
     '- Unavailable:'; do
     grep -qF -- "$field" "$TEMPLATES" || { echo "missing field: $field"; return 1; }

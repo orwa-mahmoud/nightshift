@@ -402,7 +402,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
   grep -qF 'so receipts can land' "$COMMANDS"
-  grep -qF 'per-item receipt files under .nightshift/receipts/' "$COMMANDS"
+  grep -qF 'per-item receipt files under `.nightshift/receipts/`' "$COMMANDS"
   grep -qF 'artifact receipts path is not a usable directory' "$COMMANDS"
   grep -qF 'replace it so receipts can land' "$COMMANDS"
   grep -qF 'cannot land receipts' "$COMMANDS"

@@ -26,7 +26,7 @@ the rest of the night's receipts.
 
 ## What each section means
 
-The page opens with a `Receipts:` line linking `./README.md` as the index, then one relative
+The page opens with a `Receipts:` line — `Receipts: [index](./README.md)` — then one relative
 link per ticked item, named from the item number and slug, in punch-list order. Directly under that, a
 `Policy record:` line names `accepted`, `absent — the shift wrote no policy`, or
 `malformed — the policy file is present but unreadable or fails the schema`.

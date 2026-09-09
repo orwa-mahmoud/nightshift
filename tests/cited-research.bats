@@ -1,7 +1,8 @@
 load helpers
 
 CHECK="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-report.sh"
-CHECK_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-report.ps1"
+CHECK_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-receipts.ps1"
+CHECK_REPORT_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-report.ps1"
 CHECK_LOGIC="$BATS_TEST_DIRNAME/windows/check-report-logic.ps1"
 CONTRACT="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/shift/cited-research.md"
 RECIPE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md"
@@ -165,6 +166,7 @@ EOF
 
 @test "Windows check-report pairs POSIX and runs when pwsh is present" {
   grep -qE 'ns"? check-report' "$NIGHTSHIFT"
+  grep -qF 'ns check-receipts' "$CHECK_REPORT_PS1"
   grep -qF 'missing heading' "$CHECK_PS1"
   grep -qF 'fabricated citation' "$CHECK_PS1"
   grep -qF 'Test-NSSecretLine' "$CHECK_PS1"
