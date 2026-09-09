@@ -280,7 +280,8 @@ try {
     Expect-True (-not $liveSnag.Contains('leak ·')) 'filed snag leaves the live file'
     $again = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
     Expect-True ($again.ExitCode -eq 0) "retry exits 0 (got $($again.ExitCode))"
-    Expect-True (([regex]::Matches($liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')), '(?m)^Filed:').Count) -eq 1) `
+    $liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md'))
+    Expect-True (([regex]::Matches($liveSnag, '(?m)^Filed:').Count) -eq 1) `
         'retry does not duplicate the pointer'
 
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),

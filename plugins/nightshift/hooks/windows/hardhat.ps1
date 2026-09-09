@@ -189,7 +189,11 @@ function Resolve-NSFollowSymlink {
         return $null
     }
     if (-not [IO.Path]::IsPathRooted($dest)) {
-        $dest = Join-Path (Split-Path -Parent $Path) $dest
+        $parent = Split-Path -Parent $Path
+        if ([string]::IsNullOrEmpty($parent)) {
+            return Resolve-NSWriteTarget $dest
+        }
+        $dest = Join-Path $parent $dest
     }
     return Resolve-NSWriteTarget $dest
 }

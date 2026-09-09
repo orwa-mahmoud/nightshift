@@ -42,7 +42,8 @@ try {
     $null = Get-NSPulseReceiptsNotice $tickNs $tickWs
     [IO.File]::WriteAllText((Join-Path $tickNs 'punch-list.md'), "## Items`n- [x] **36. First of the replay.**`n- [ ] **37. Second of the replay.**`n", $utf8)
     $ticked = Get-NSPulseReceiptsNotice $tickNs $tickWs
-    Expect-True ($ticked.Contains("receipts: item 36. First of the replay. is ticked $dash write its closing paragraph in .nightshift/receipts/36-first-of-the-replay.md now, before starting the next item.")) `
+    $tickExpected = Get-NSPulseReceiptsTickLine ((Get-NSPulseTickedLabels $tickWs)[0])
+    Expect-True ($ticked.Contains($tickExpected)) `
         'tick injection names the newly ticked item and file'
 
     $off = Join-Path $root 'off'
@@ -57,6 +58,8 @@ try {
     $miss = Join-Path $root 'missing'
     $missNs = Join-Path $miss '.nightshift'
     $null = New-Item -ItemType Directory -Path (Join-Path $missNs 'receipts') -Force
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json') `
+        -Destination (Join-Path $missNs 'rules.json')
     [IO.File]::WriteAllText((Join-Path $missNs 'punch-list.md'), "## Items`n- [x] **36. First of the replay.**`n- [x] **37. Second of the replay.**`n", $utf8)
     [IO.File]::WriteAllText((Join-Path $missNs 'receipts/36-first-of-the-replay.md'), "# 36.`n`n**Usage:** input 1`n**Duration:** 1m`n", $utf8)
     [IO.File]::WriteAllText((Join-Path $missNs 'receipts/37-second-of-the-replay.md'), "# 37.`n`nWrote the closing paragraph.`n", $utf8)

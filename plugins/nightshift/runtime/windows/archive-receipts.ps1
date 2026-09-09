@@ -201,7 +201,7 @@ if (Test-Path -LiteralPath $src -PathType Container) {
 }
 
 # The shift report travels with the receipts it describes, and keeps working from where it lands.
-$report = Get-NSReportPath $workspace
+$report = Join-Path $ns 'shift-report.md'
 $reportBase = ''
 $reportRelocated = $false
 if ((Test-Path -LiteralPath $report -PathType Leaf) -and -not (Test-NSReparsePoint $report)) {

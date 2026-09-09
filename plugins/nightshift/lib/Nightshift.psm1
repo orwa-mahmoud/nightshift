@@ -4771,7 +4771,8 @@ function Add-NSArchiveBrokenPointers {
             if ($ok) { continue }
             $already = $false
             if (Test-Path -LiteralPath $snag -PathType Leaf) {
-                $already = [IO.File]::ReadAllText($snag).Contains($rel)
+                $already = [IO.File]::ReadAllText($snag).Contains(
+                    'broken archive pointer · ' + $rel + ' ')
             }
             if ($already) { continue }
             if (-not (Test-Path -LiteralPath $snag -PathType Leaf)) {

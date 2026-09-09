@@ -539,7 +539,7 @@ ns_archive_check_review_pointers() {
       if [ -n "$dest" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
         continue
       fi
-      if [ -f "$snag" ] && grep -qF "$rel" "$snag"; then
+      if [ -f "$snag" ] && grep -qF "broken archive pointer · $rel " "$snag"; then
         continue
       fi
       if [ ! -f "$snag" ]; then

@@ -168,7 +168,8 @@ try {
     Expect-True ($missingReceipt.Stdout -match 'write the missing receipts under .nightshift/receipts/') `
         'Doctor offers to write missing receipts'
     $null = New-Item -ItemType Directory -Path (Join-Path $receiptsNs 'receipts') -Force
-    [IO.File]::WriteAllText((Join-Path (Join-Path $receiptsNs 'receipts') '2-done.md'),
+    $doneLabel = @(Get-NSPulseTickedLabels $receiptsSite)[0]
+    [IO.File]::WriteAllText((Join-Path (Join-Path $receiptsNs 'receipts') ((Get-NSReceiptBasename $doneLabel) + '.md')),
         "# 2. done.`n`nThe work is done.`n")
     $haveReceipt = Invoke-Doctor $receiptsSite
     Expect-True ($haveReceipt.Stdout -notmatch 'ticked items have no receipt text') `

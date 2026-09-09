@@ -368,7 +368,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'completion record' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'receipts missing model text' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'the artifact receipts path is not a usable directory' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
-  grep -qF 'the empty-ticks warning is not also raised' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'count missing receipt text for that path' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
   # Archive states the same guarantee at its source: what it writes is a copy, so the live files
   # Status reports are still there.
