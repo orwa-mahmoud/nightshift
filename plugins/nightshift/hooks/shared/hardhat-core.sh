@@ -396,7 +396,7 @@ ns_hardhat_literal_append_target() {
     c="${s:$i:1}"
     next="${s:$((i + 1)):1}"
     if [ -n "$q" ]; then
-      if [ "$c" = '\' ] && [ "$q" = '"' ]; then
+      if [ "$c" = $'\\' ] && [ "$q" = '"' ]; then
         i=$((i + 2))
         continue
       fi
