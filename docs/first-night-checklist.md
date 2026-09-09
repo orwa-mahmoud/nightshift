@@ -3,8 +3,8 @@
 Use this once before leaving Nightshift unattended in a project.
 
 - **Start attended.** Run one small shift while watching it. Confirm the proposed gates pass, one
-  item becomes one reviewable commit in repository mode, or its own section in
-  `.nightshift/shift-report.md` in artifact mode, and the shift ends only after its box is
+  item becomes one reviewable commit in repository mode, or its own receipt under
+  `.nightshift/receipts/` in artifact mode, and the shift ends only after its box is
   ticked.
   Hunt or Quality that start immediately write the same binding probe and arm the same watchman —
   watch that first run too, even if you never invoked Start.

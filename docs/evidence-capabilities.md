@@ -14,27 +14,25 @@ attention. Then use the report to find the actual changes and their verification
 
 | Record | What to look for |
 | --- | --- |
-| `.nightshift/shift-report.md` | Each item's result or current progress, checks run, limitations, and output locations. |
-| Local commits or output files | The change itself, including anything the report did not mention. |
+| `.nightshift/receipts/` | Each item's result or current progress, the index, the morning receipt, checks run, limitations, and output locations. |
+| Local commits or output files | The change itself, including anything a receipt did not mention. |
 | `.nightshift/parking-lot.md` | Decisions to accept or reverse, with the default and rollback. |
 | `.nightshift/snag-log.md` | Unresolved findings and the reasons others were fixed or rejected. |
-| `.nightshift/receipts/` | Source and checkpoint evidence, the morning receipt, and optional per-item artifact receipts. |
 
-The [example shift report](../examples/shift-report.md#shift-report) includes a completed item, an unfinished
+The [example receipts](../examples/receipts.md#receipts) includes a completed item, an unfinished
 item, and a correction to an earlier result. Read the verification and limitations together:
 passing a focused test does not mean an unrun integration suite passed. Usage comes from host
 records when available; an unavailable dimension is never zero or an estimated price.
-The [shift report guide](shift-report.md#shift-report-and-token-usage) explains token accounting, duration, and progress cadence.
+The [receipts guide](receipts.md#receipts-and-token-usage) explains token accounting, duration, and progress cadence.
 
-A report can be disabled by owner policy. That does not remove the work contract or other records,
-and it does not make an unchecked output verified. The report and handoff settings are in
+Receipts can be disabled by owner policy. That does not remove the work contract or other records,
+and it does not make an unchecked output verified. The receipts and handoff settings are in
 [Owner knobs](knobs.md#shift-handoff-and-archive).
 
 ### Artifact receipts and archive
 
-In a persistent folder without Git, the item's report section records completion. Set
-`report.legacyItemReceipts` to also write a per-item artifact receipt through `ns write-receipt`.
-Source and checkpoint receipts remain separate from that setting.
+In a persistent folder without Git, the item's receipt file records completion.
+Source and checkpoint receipts remain separate records under the same folder.
 
 Doctor names the most recently written file when artifact receipts exist. It warns
 `artifact receipts path is not a usable directory` when the path cannot hold receipt files.
@@ -56,7 +54,7 @@ See [Archive and continue](archive.md#archive-and-continue), the [Archive contra
 | `ns evidence-compare` | Classifies each finding against its baseline — new, cleared, unchanged, regressed, unavailable |
 | `ns evidence-archive` | Files the ledger with the shift; the clock-out gate calls it |
 | `ns morning-receipt` | Renders the morning receipt from the ledger, the resolved policy, and the working files |
-| `ns write-receipt` | Artifact-mode completion receipts under `.nightshift/receipts/` |
+| item receipt | Artifact-mode completion receipts under `.nightshift/receipts/` |
 | `ns check-report` | Checks a cited report against its source manifest |
 | `ns continuity-handoff` | Cross-host handoff packages and the on-disk takeover fence |
 
@@ -143,11 +141,10 @@ first-class answer: a tool that did not report is never recorded as a tool that 
 
 **Repository mode** leaves local conventional commits as the punch-list contract specifies:
 usually one per item, or a coherent batch when requested. A contract can also request uncommitted
-changes. The report must state what was actually recorded.
+changes. The receipt must state what was actually recorded.
 
-**Artifact mode** records an item's completion in its section of `.nightshift/shift-report.md`.
-Optional per-item receipts from `ns write-receipt` carry the item, verification, and hashed output
-locations. Review the output files themselves in either case. No work-target Git repository is
+**Artifact mode** records an item's completion in its file under `.nightshift/receipts/`.
+Review the output files themselves in either case. No work-target Git repository is
 required, and no Git terminology appears in artifact-mode receipts.
 
 ## Cross-host continuity

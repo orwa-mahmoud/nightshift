@@ -49,5 +49,5 @@ before deleting them. Live work and owner-authored files are outside that prunin
 See [retention and archive settings](knobs.md#shift-handoff-and-archive) and the
 [Archive contract](../plugins/nightshift/skills/archive/SKILL.md) for the precise boundaries.
 
-[Read the shift report and token usage](shift-report.md#shift-report-and-token-usage) ·
+[Read the receipts and token usage](receipts.md#receipts-and-token-usage) ·
 [Review the morning receipt](morning-receipt.md#the-morning-receipt) · [Documentation index](README.md#documentation)

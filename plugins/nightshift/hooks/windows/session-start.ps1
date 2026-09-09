@@ -97,7 +97,7 @@ catch {
 }
 
 $line = 'nightshift: context was compacted — reload the nightshift skill, the contract in ' +
-    'punch-list.md, and the active section of shift-report.md before continuing.'
+    'punch-list.md, and the active receipt under receipts/ before continuing.'
 $active = ''
 $punch = Join-Path $ns 'punch-list.md'
 if (Test-Path -LiteralPath $punch -PathType Leaf) {

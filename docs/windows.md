@@ -135,7 +135,6 @@ profiles, a local support bundle, and artifact-mode completion receipts:
 & "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" import-issues --project C:\path\to\workspace --list-proposed
 & "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" apply-profile --project C:\path\to\workspace --list
 & "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" export-support --project C:\path\to\workspace
-& "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" write-receipt --project C:\path\to\workspace --item 'title' --verify 'checks' --output C:\path\to\file.md
 & "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" archive-receipts --project C:\path\to\workspace
 & "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" check-report --project C:\path\to\workspace --report C:\path\to\report.md --manifest C:\path\to\sources.tsv --output C:\path\to\report.md
 ```
@@ -154,10 +153,9 @@ write nothing, and both print one `unavailable` line and exit 3 rather than an e
 Missing or empty receipts create no dated receipts folder.
 
 In artifact mode Doctor reports `artifact receipts N` and, when any exist, `latest artifact receipt`
-with the filename only of the most recently written receipt. Review the shift report and output
-files; use `ns.ps1 write-receipt` when the contract calls for an additional receipt through
-`report.legacyItemReceipts`.
-It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
+with the filename only of the most recently written receipt. Review the per-item receipts and
+output files.
+It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
 Automatic Hunt and Quality skip quality-debt entries the folder cannot support.
 The GitHub issue hunt is skipped in artifact mode.
 The defect hunt is skipped in artifact mode.
@@ -215,7 +213,7 @@ PowerShell 7. It uses local host fixtures—no account or model subscription—t
 - setup and paths containing spaces;
 - workspace links and persisted work targets;
 - Doctor, migrate-state, retain-history, import-issues, apply-profile, and export-support helpers;
-- artifact-mode write-receipt and archive-receipts helpers;
+- artifact-mode archive-receipts helpers;
 - PID/start-time evidence;
 - atomic session and lease ownership;
 - command, rules-file, and lease-file denials;

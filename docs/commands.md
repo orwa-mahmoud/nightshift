@@ -1,6 +1,6 @@
 # Command reference
 
-Choose work with [Shift modes](shift-modes.md#shift-modes), inspect [receipts and token usage](shift-report.md#shift-report-and-token-usage),
+Choose work with [Shift modes](shift-modes.md#shift-modes), inspect [receipts and token usage](receipts.md#receipts-and-token-usage),
 or [archive finished shifts](archive.md#archive-and-continue). The commands below operate those workflows.
 
 ```text
@@ -117,7 +117,7 @@ When a shift is not where you think it is — wrong folder, broken `.nightshift-
 In artifact mode it also reports `artifact receipts N`, `latest artifact receipt` with the
 filename of the most recently written receipt when any exist. Status and Doctor judge
 completion by the per-item receipt files under `.nightshift/receipts/`.
-It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
+It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
 
 A local support bundle from a terminal (never uploaded). Known sensitive fields
 are omitted:
@@ -130,18 +130,6 @@ Native Windows:
 
 ```powershell
 ns.ps1 export-support --project .
-```
-
-An artifact-mode completion receipt (refuses repository mode; rejects missing or empty outputs):
-
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" write-receipt --item 'title' --verify 'checks' --output ./out.md
-```
-
-Native Windows:
-
-```powershell
-ns.ps1 write-receipt --project . --item 'title' --verify 'checks' --output .\out.md
 ```
 
 Copy live artifact receipts into today's dated archive folder (leaves the live copies in place).

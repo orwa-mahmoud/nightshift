@@ -24,7 +24,7 @@ parallel `tests/run-shard.sh` jobs.
 | Findings ledger | `plugins/nightshift/runtime/evidence.sh`, `plugins/nightshift/runtime/windows/evidence.ps1` | `tests/evidence.bats`, `tests/windows-evidence.bats` |
 | Comparison | `plugins/nightshift/runtime/evidence-compare.sh`, `plugins/nightshift/runtime/evidence-compare.jq` | `tests/evidence-compare.bats`, `tests/windows-evidence-compare.bats` |
 | Morning receipt | `plugins/nightshift/runtime/morning-receipt.sh`, `plugins/nightshift/runtime/windows/morning-receipt.ps1` | `tests/morning-receipt.bats`, `tests/morning-receipt-docs.bats`, `tests/windows-morning-receipt.bats` |
-| Artifact receipts and archive | `plugins/nightshift/runtime/write-receipt.sh`, `plugins/nightshift/runtime/archive-receipts.sh`, `plugins/nightshift/runtime/evidence-archive.sh` | `tests/artifact-receipts.bats`, `tests/archive-receipts.bats`, `tests/work-mode.bats` |
+| Artifact receipts and archive | `plugins/nightshift/runtime/archive-receipts.sh`, `plugins/nightshift/runtime/evidence-archive.sh` | `tests/artifact-receipts.bats`, `tests/archive-receipts.bats`, `tests/work-mode.bats` |
 | Cited reports | `plugins/nightshift/runtime/check-report.sh` | `tests/cited-research.bats`, `tests/redaction-malicious.bats` |
 | Cross-host handoff | `plugins/nightshift/runtime/continuity-handoff.sh` | `tests/continuity-handoff.bats` |
 | Receipt templates the model writes from | `plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md` | `tests/quality-workflow.bats`, `tests/coverage-risk.bats`, `tests/defect-cycle.bats`, `tests/history-context.bats`, `tests/shift-planner.bats`, `tests/source-policy-evidence.bats`, `tests/specialist-evidence.bats` |
@@ -62,7 +62,7 @@ Shared hook cores: `plugins/nightshift/hooks/shared/gate-core.sh`,
 | Clock-out with open boxes | `plugins/nightshift/hooks/clock-out-gate.sh` | `tests/clock-out-gate.bats`, `tests/windows-clock-out.bats` |
 | Five elevation categories | `plugins/nightshift/lib/policy.sh` patterns, matched by hardhat and the preflight | `tests/hardhat.bats`, `tests/precedence.bats`, `tests/preflight-needs.bats` |
 | One process owns the shift | `plugins/nightshift/lib/process.sh` | `tests/process-lease.bats`, `tests/process-evidence.bats` |
-| Repository vs artifact mode | `plugins/nightshift/runtime/write-receipt.sh` | `tests/work-mode.bats`, `tests/artifact-receipts.bats` |
+| Repository vs artifact mode | `plugins/nightshift/runtime/archive-receipts.sh` | `tests/work-mode.bats`, `tests/artifact-receipts.bats` |
 | An armed shift with neither `jq` nor `python3` | rules reader, hooks | `tests/armed-no-python-jq.bats` |
 | No Python ships in the plugin | `git ls-files 'plugins/nightshift/**/*.py'` | `tests/armed-no-python-jq.bats` |
 

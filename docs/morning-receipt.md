@@ -1,7 +1,7 @@
 # The morning receipt
 
 Use this page for the compact clock-out summary. For live item progress and measured token usage,
-read [Shift report and token usage](shift-report.md#shift-report-and-token-usage). After reviewing, [archive the shift](archive.md#archive-and-continue)
+read [Receipts and token usage](receipts.md#receipts-and-token-usage). After reviewing, [archive the shift](archive.md#archive-and-continue)
 to preserve its report and evidence for later work.
 
 Everything else in `.nightshift/` is a working file: the punch list changes as items tick, the

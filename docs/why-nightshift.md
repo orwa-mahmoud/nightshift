@@ -91,7 +91,7 @@ on the work, and it is yours to judge. Where a report shows what an item cost, t
 numbers the host reported, kept separate from anything estimated; where the host reports nothing,
 the report says unavailable rather than guessing. A token count is never turned into a price.
 
-The [shift report and token usage guide](shift-report.md#shift-report-and-token-usage) explains how the runtime measures each
+The [receipts and token usage guide](receipts.md#receipts-and-token-usage) explains how the runtime measures each
 item and preserves gaps in the host's data.
 
 ## Follow the story

@@ -413,7 +413,6 @@ PY
     "archive:retain-history" "archive:archive-receipts" "setup:migrate-state" \
     "doctor:migrate-state" "setup:apply-profile" "doctor:apply-profile" \
     "doctor:export-support" "stop:stop-shift" "reset:reset-shift" "purge:purge-workspace" \
-    "setup:write-receipt" "nightshift:write-receipt" \
     "nightshift:check-report"; do
     skill="${pair%%:*}"
     verb="${pair##*:}"
@@ -444,7 +443,6 @@ PY
   grep -qF "Join-Path \$here 'migrate-state.ps1'" "$DOCTOR_PS1"
   grep -qF "Join-Path \$here 'export-support.ps1'" "$DOCTOR_PS1"
   grep -qF "Join-Path \$here 'link-workspace.ps1'" "$DOCTOR_PS1"
-  grep -qF "Join-Path \$here 'write-receipt.ps1'" "$DOCTOR_PS1"
   grep -qF "Join-Path \$here 'stop-shift.ps1'" "$DOCTOR_PS1"
   grep -qF 'leftover Shift contract and Gates' "$DOCTOR_PS1"
   grep -qF 'pending Hunt work orders=' "$DOCTOR_PS1"

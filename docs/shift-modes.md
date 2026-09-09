@@ -143,7 +143,7 @@ Review local commits in repository mode and output files plus the shift report i
 
 ## Continue
 
-- [Read the shift report and token usage](shift-report.md#shift-report-and-token-usage) while the work runs or after clock-out.
+- [Read the receipts and token usage](receipts.md#receipts-and-token-usage) while the work runs or after clock-out.
 - [Archive finished work](archive.md#archive-and-continue) and keep the next shift's open items and decisions live.
 - [Run the first-night safety checklist](first-night-checklist.md#first-night-safety-checklist) before leaving work unattended.
 - [Choose owner settings](knobs.md#owner-knobs) for verification, permissions, and the report.

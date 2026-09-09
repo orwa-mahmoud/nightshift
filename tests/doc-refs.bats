@@ -151,3 +151,10 @@ refresh-inventory.sh recipe-audit.sh"
   done < <(find "$ROOT/docs" -name '*.md' | LC_ALL=C sort)
   [ -z "$missing" ] || { echo "not linked from docs/README.md:$missing"; return 1; }
 }
+
+@test "committed docs and skills do not name the retired report words" {
+  local hit
+  hit="$(grep -R --include='*.md' -nE 'shift-report\.md|report\.templatePath|report\.legacyItemReceipts|write-receipt' \
+    "$ROOT/docs" "$ROOT/README.md" "$PLUGIN/README.md" "$PLUGIN/skills" || true)"
+  [ -z "$hit" ] || { echo "retired wording still present:$hit"; return 1; }
+}

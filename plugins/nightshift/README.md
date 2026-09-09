@@ -61,7 +61,7 @@ Disposable ChatGPT scratch workspaces are not supported.
 
 - [Why Nightshift exists](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/why-nightshift.md) — the screen and the failures behind the design.
 - [Choose the work](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/shift-modes.md) — an approved list, a catalog entry, or a goal with a clock.
-- [Shift report and token usage](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/shift-report.md) — progress, measurements, and host limits.
+- [Receipts and token usage](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/receipts.md) — progress, measurements, and host limits.
 - [Archive and continue](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/archive.md) — keep finished history and the next shift's work.
 - [Real shifts and reviewed results](https://github.com/orwa-mahmoud/nightshift/blob/main/examples/README.md).
 - [Documentation](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/README.md) and [website](https://nightshift.orwamahmoud.com/).

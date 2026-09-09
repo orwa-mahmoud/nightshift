@@ -268,18 +268,17 @@ cannot turn an unavailable check into a passed one.
 | `sections` | `[]` | Any of `shift`, `baseline`, `changed`, `parked`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
 
-`report` is the shift report — one page the night writes as it goes, a section per punch-list
-item, saying what was delivered and why. It never reaches a public commit message.
+`receipts` is the shift's record — one file per punch-list item under `.nightshift/receipts/`,
+plus a runtime-written index. It never reaches a public commit message.
 
 | Key | Default | Values |
 |---|---|---|
-| `enabled` | `true` | `false` writes no report. Punch status, real outputs, continuity and your selected verification are all still kept, and no per-item receipt comes back in its place |
-| `progressMode` | `time` | `completion-only` writes a section once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first |
+| `enabled` | `true` | `false` writes no receipt files. Punch status, real outputs, continuity and your selected verification are all still kept |
+| `progressMode` | `time` | `completion-only` writes the receipt once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first |
 | `progressMinutes` | `20` | Minutes of work on the current item before an update is due. Checked when a tool returns, so it never interrupts a running command |
 | `progressTokens` | `100000` | Tokens of work before an update is due. A starting value to tune, not a host limit |
 | `usage` | `when-available` | Record what each item cost, from the numbers your host already exposes. `off` records none. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out |
-| `legacyItemReceipts` | `false` | Artifact items are completed by their report section. `true` also writes the older per-item receipt file. Baseline, checkpoint and source receipts are unaffected |
-| `templatePath` | `""` | A Markdown template for the report, on the same terms as the handoff template: wording only |
+| `templatePath` | `""` | A Markdown template for each item receipt, on the same terms as the handoff template: wording only |
 
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
@@ -294,7 +293,7 @@ Where each host's figures come from, and what each one leaves out:
   id; summing lines instead would overstate a real session by more than half. Cache creation and
   cache read are reported separately from input and are additive.
 - **Codex** — the rollout's running `token_count`, read with one tail. Codex counts cached input
-  inside its input figure and reasoning inside its output figure, and the report says so rather
+  inside its input figure and reasoning inside its output figure, and the receipt says so rather
   than rearranging the numbers.
 - **Cursor** — the stop payload, which is the only place the figures appear; the local agent
   transcripts carry none. Input overlaps the cache figures, and Cursor reports no reasoning and no
@@ -305,8 +304,7 @@ A dimension a host does not report reads `unavailable` — never zero, because z
 measurement and silence is not. Totals are never summed across hosts, and no token count is ever
 turned into a price.
 
-[`examples/shift-report.md`](../examples/shift-report.md#shift-report) shows the shape, including an item still
-in progress and usage that is only partly available.
+[`examples/receipts.md`](../examples/receipts.md#receipts) shows the index and one item receipt.
 
 ### When the gate repeats itself
 

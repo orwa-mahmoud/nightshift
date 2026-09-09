@@ -520,7 +520,7 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'persistent folder' "$WINDOC"
   grep -qF 'latest artifact receipt' "$WINDOC"
   grep -qF 'most recently written' "$WINDOC"
-  grep -qF 'report.legacyItemReceipts' "$WINDOC"
+  grep -qF 'per-item receipts' "$WINDOC"
   grep -qF 'artifact receipts path is not a usable directory' "$WINDOC"
   grep -qF 'replace it rather than write-receipt' "$WINDOC"
   grep -qF 'cannot land receipts' "$WINDOC"

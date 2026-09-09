@@ -57,7 +57,7 @@ REC="$(ns_session_line "$NS" 1)"
 [ -L "$NS/.context-reset" ] && rm -f "$NS/.context-reset"
 : >"$NS/.context-reset" 2>/dev/null || :
 
-LINE='nightshift: context was compacted — reload the nightshift skill, the contract in punch-list.md, and the active section of shift-report.md before continuing.'
+LINE='nightshift: context was compacted — reload the nightshift skill, the contract in punch-list.md, and the active receipt under receipts/ before continuing.'
 ACTIVE="$(ns_items_section "$NS/punch-list.md" 2>/dev/null | awk '
   /^- \[ \]/ {
     line = $0

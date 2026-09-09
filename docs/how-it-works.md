@@ -26,7 +26,7 @@ Setup creates a local `.nightshift/` workspace. The important files are plain Ma
   evolution;
 - `snag-log.md` — problems found and their disposition;
 - `shift-log.md` — progress, stalls, recovery, and clock-out.
-- `shift-report.md` — live item progress, results, verification, and measured token usage and duration.
+- `receipts/` — live item progress, results, verification, and measured token usage and duration.
 
 Completion lives in checkboxes, not in a conversational claim. Normal clock-out is reached only
 when every open `- [ ]` under `## Items` is ticked; checkboxes elsewhere in the file do not belong
@@ -326,7 +326,7 @@ The gate blocks every turn that ends with work still open, and the reason it ret
 Archiving moves finished work under the archive root — `.nightshift/archive/<YYYY-MM-DD>/` by default, or wherever `archive.root` and `archive.layout` say — while keeping the current working
 files small.
 
-For the review workflow, see [Shift report and token usage](shift-report.md#shift-report-and-token-usage) and
+For the review workflow, see [Receipts and token usage](receipts.md#receipts-and-token-usage) and
 [Archive and continue](archive.md#archive-and-continue).
 
 ## Different strengths on each host
@@ -476,14 +476,10 @@ refuses `/workspace/scratch/` and any path under it — that ChatGPT workspace i
 Start, Status, Doctor, Archive, Schedule, and workspace links read the same mode record. Existing
 repository workspaces stay repository mode when `work-mode` is absent.
 
-Artifact mode records item completion in the shift report by default. When
-`report.legacyItemReceipts=true`, it also writes a file under `$NS/receipts/` with
-`ns write-receipt` (native Windows: `ns.ps1 write-receipt`). That optional receipt
-records the item, output paths, verification, optional decisions and sources, timestamps, and
-file identity (bytes, SHA-256, mtime). Missing or empty outputs are refused. The stall guard
-treats a new receipt like a commit; Doctor reports `artifact receipts N` and, when any exist,
+Artifact mode records item completion in the per-item receipt files under `$NS/receipts/`.
+The stall guard treats a new receipt like a commit; Doctor reports `artifact receipts N` and, when any exist,
 `latest artifact receipt` with the filename only of the most recently written receipt;
-it warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it rather than write-receipt; Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts;
+it warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land; Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts;
 Archive copies receipts with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
 into the dated folder and leaves the live files in place. Missing or empty receipts create no dated receipts folder.
 Repository mode follows the contract's commit policy: per-item commits, a coherent batch, or

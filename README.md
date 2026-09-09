@@ -28,7 +28,7 @@ then archive the shift with its evidence intact.
 | **See what the work consumed** | Runtime-measured token usage and duration per item, with host-specific gaps clearly marked. |
 | **Review today and continue tomorrow** | A live shift report, a morning receipt, and archived history that keeps unfinished work available for the next shift. |
 
-[Choose a shift](#two-kinds-of-shift) · [Reports and token usage](docs/shift-report.md#shift-report-and-token-usage) ·
+[Choose a shift](#two-kinds-of-shift) · [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) ·
 [Archive and continue](docs/archive.md#archive-and-continue)
 
 The [four-hour first night](examples/adapttable-overnight.md#example--an-overnight-run-on-a-production-library) left nine focused items as reviewable
@@ -128,9 +128,9 @@ The **punch list** holds the work. **Gates** are the project checks, run on the 
 cadence you choose. The **parking lot** records decisions and defaults; the **shift log** records
 progress and problems. A tick is the agent's completion claim, not independent proof of quality.
 
-A persistent folder without Git works too: artifact mode completes an item through its section in
-`.nightshift/shift-report.md`. Source, checkpoint, and optional per-item artifact receipts stay
-local. See [Evidence and receipts](docs/evidence-capabilities.md#reviewing-a-shift) for what to review.
+A persistent folder without Git works too: artifact mode completes an item through its receipt
+under `.nightshift/receipts/`. Source and checkpoint receipts stay local. See
+[Evidence and receipts](docs/evidence-capabilities.md#reviewing-a-shift) for what to review.
 
 ## The morning
 
@@ -147,8 +147,8 @@ ran, what was unavailable or disabled, and what needs your attention. Then revie
 The runtime adds token usage and duration from host records to each completed item's report.
 Input, output, cache, and reasoning figures retain the host's counting rules; missing readings
 stay explicit. Choose progress updates by time, tokens, either, or completion only. These control
-reporting, not a spending limit. [Reports and token usage](docs/shift-report.md#shift-report-and-token-usage) explains the
-measurements and limits; the [example report](examples/shift-report.md#shift-report) shows them in context.
+reporting, not a spending limit. [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) explains the
+measurements and limits; the [example report](examples/receipts.md#receipts) shows them in context.
 
 ### Archive the shift, keep the next step
 
@@ -235,7 +235,7 @@ Use the [documentation index](docs/README.md#documentation) for the full referen
 - [Shift modes](docs/shift-modes.md#shift-modes) — choose and compose the work.
 - [Command reference](docs/commands.md#command-reference) — skills, scheduling, and offline controls.
 - [Owner knobs](docs/knobs.md#owner-knobs) — permissions, verification, reports, and retention.
-- [Shift report and token usage](docs/shift-report.md#shift-report-and-token-usage) — live progress, per-item measurements, and host limits.
+- [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) — live progress, per-item measurements, and host limits.
 - [Archive and continue](docs/archive.md#archive-and-continue) — preserve finished shifts and carry open work forward.
 - [Troubleshooting](docs/troubleshooting.md#troubleshooting) — diagnose before repairing.
 

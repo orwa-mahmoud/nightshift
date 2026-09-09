@@ -22,14 +22,14 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 
 ## Review and keep the results
 
-- [Shift report and token usage](shift-report.md#shift-report-and-token-usage) — live progress, per-item tokens and duration,
+- [Receipts and token usage](receipts.md#receipts-and-token-usage) — live progress, per-item tokens and duration,
   update cadence, and host-specific measurement limits.
 - [Archive and continue](archive.md#archive-and-continue) — automatic or requested filing, linked evidence, history,
   and what stays live for the next shift.
 - [Morning receipt](morning-receipt.md#the-morning-receipt) — read the summary, its evidence, and its limits.
 - [Evidence and receipts](evidence-capabilities.md#evidence-and-receipts) — review reports, commits, artifact outputs,
   comparisons, and cross-host handoffs.
-- [Example shift report](../examples/shift-report.md#shift-report) — the format for completed and unfinished items.
+- [Example receipts](../examples/receipts.md#receipts) — the format for completed and unfinished items.
 - [Public shift evidence](../examples/README.md#nightshift-receipts) — real runs, reviewed changes, and a bad-night template.
 
 ## Hosts and platforms
