@@ -4,7 +4,7 @@
   "plugins": [
     {
       "name": "nightshift",
-      "description": "Keep long Codex runs on task across compaction, resume, interruptions, and unattended engineering shifts.",
+      "description": "Keep long Codex runs on task across compaction, resume, interruptions, and unattended coding shifts.",
       "source": { "source": "local", "path": "./plugins/nightshift" },
       "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
       "category": "Productivity"
