@@ -1183,8 +1183,11 @@ exit 1
         command = "`$null = 'nightshift-binding-probe'"
     }
     Assert-Equal 0 $codexRecoveryProbe.ExitCode 'Codex shim recovery fixture binds'
+    # Keep the bound conversation id, not this runner. A live recorded pid is
+    # standby: the watchman never launches, the shim never runs, and the
+    # receipt this case reads is never written.
     Write-NSSession (Join-Path $codexRecoveryWorkspace '.nightshift') $codexRecoverySession '' `
-        ([string]$PID) (Get-NSProcessStart $PID) 'codex' | Out-Null
+        '' '' 'codex' | Out-Null
     $codexSession = Read-NSSession (Join-Path $codexRecoveryWorkspace '.nightshift')
     Assert-True ($null -ne $codexSession -and $codexSession.SessionId -eq $codexRecoverySession) `
         'Codex shim fixture recorded the resumable conversation id'
@@ -1215,7 +1218,7 @@ exit /b 0
     }
     Assert-Equal 7 $shimWatch.ExitCode "default Codex recovery reaches its test cap: $($shimWatch.Stderr)"
     Assert-True (Test-Path -LiteralPath $codexShimReceipt) `
-        'default recovery resolves a standard codex.cmd launcher'
+        "default recovery resolves a standard codex.cmd launcher (stdout=$($shimWatch.Stdout); stderr=$($shimWatch.Stderr))"
     $shimArguments = [IO.File]::ReadAllText($codexShimReceipt)
     Assert-True ($shimArguments -match 'exec\s+resume') `
         "Codex shim receives the resume subcommand (got: $shimArguments)"
