@@ -1031,6 +1031,11 @@ $record = @(
     $Prompt
 )
 [IO.File]::WriteAllLines($env:NIGHTSHIFT_TEST_AGENT_RECEIPT, $record)
+$nsDir = Join-Path $env:CODEX_PROJECT_DIR '.nightshift'
+if (-not [string]::IsNullOrEmpty($env:CODEX_PROJECT_DIR) -and (Test-Path -LiteralPath $nsDir -PathType Container)) {
+    $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    [IO.File]::WriteAllText((Join-Path $nsDir '.shift-pulse'), "$epoch revived`n")
+}
 exit 0
 '@ | Set-Content -LiteralPath $agentStub -Encoding UTF8
 
@@ -1178,15 +1183,28 @@ exit 1
         command = "`$null = 'nightshift-binding-probe'"
     }
     Assert-Equal 0 $codexRecoveryProbe.ExitCode 'Codex shim recovery fixture binds'
+    # Keep the bound conversation id, not this runner. A live recorded pid is
+    # standby: the watchman never launches, the shim never runs, and the
+    # receipt this case reads is never written.
+    Write-NSSession (Join-Path $codexRecoveryWorkspace '.nightshift') $codexRecoverySession '' `
+        '' '' 'codex' | Out-Null
+    $codexSession = Read-NSSession (Join-Path $codexRecoveryWorkspace '.nightshift')
+    Assert-True ($null -ne $codexSession -and $codexSession.SessionId -eq $codexRecoverySession) `
+        'Codex shim fixture recorded the resumable conversation id'
     $shimDirectory = Join-Path $root 'npm shim bin'
     $null = New-Item -ItemType Directory -Path $shimDirectory
     $codexShim = Join-Path $shimDirectory 'codex.cmd'
     $codexShimReceipt = Join-Path $root 'codex shim receipt.txt'
-    [IO.File]::WriteAllText(
-        $codexShim,
-        "@echo off`r`n> `"%NIGHTSHIFT_TEST_CODEX_SHIM_RECEIPT%`" echo %*`r`nexit /b 0`r`n",
-        [Text.Encoding]::ASCII
-    )
+    # A child that exits 0 without moving the shift is not revival. The default ladder then
+    # retries, and the last rung is a fresh exec that overwrites this receipt. The shim writes
+    # a pulse so attempt 1 is the one we read, and retry spacing is 0 so a miss does not sleep.
+    @'
+@echo off
+> "%NIGHTSHIFT_TEST_CODEX_SHIM_RECEIPT%" echo %*
+if not defined CODEX_PROJECT_DIR exit /b 0
+powershell.exe -NoProfile -NonInteractive -Command "Set-Content -LiteralPath ($env:CODEX_PROJECT_DIR + '\.nightshift\.shift-pulse') -Value (([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()).ToString() + ' revived')"
+exit /b 0
+'@ | Set-Content -LiteralPath $codexShim -Encoding ASCII
     $shimWatch = Invoke-TestScript $watchman @(
         '-Project', $codexRecoveryWorkspace,
         '-HostName', 'codex',
@@ -1194,15 +1212,18 @@ exit 1
         '-MaxWakes', '1'
     ) '' @{
         NIGHTSHIFT_WATCH_SLEEP = '0'
+        NIGHTSHIFT_WATCH_RETRY = '0'
         NIGHTSHIFT_TEST_CODEX_SHIM_RECEIPT = $codexShimReceipt
         PATH = "$shimDirectory;$env:PATH"
     }
     Assert-Equal 7 $shimWatch.ExitCode "default Codex recovery reaches its test cap: $($shimWatch.Stderr)"
     Assert-True (Test-Path -LiteralPath $codexShimReceipt) `
-        'default recovery resolves a standard codex.cmd launcher'
+        "default recovery resolves a standard codex.cmd launcher (stdout=$($shimWatch.Stdout); stderr=$($shimWatch.Stderr))"
     $shimArguments = [IO.File]::ReadAllText($codexShimReceipt)
-    Assert-True ($shimArguments -match 'exec\s+resume') 'Codex shim receives the resume subcommand'
-    Assert-True ($shimArguments.Contains($codexRecoverySession)) 'Codex shim receives the recorded conversation id'
+    Assert-True ($shimArguments -match 'exec\s+resume') `
+        "Codex shim receives the resume subcommand (got: $shimArguments)"
+    Assert-True ($shimArguments.Contains($codexRecoverySession)) `
+        "Codex shim receives the recorded conversation id (got: $shimArguments)"
 
     $liveReceipt = Join-Path $root 'must not spawn.txt'
     $liveSession = Read-NSSession (Join-Path $recoveryWorkspace '.nightshift')

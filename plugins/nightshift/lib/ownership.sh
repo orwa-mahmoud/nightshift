@@ -605,6 +605,30 @@ ns_watchman_run_child() { # <ns> <host> <sid> <work_target> <project_env> <proje
   return "$rc"
 }
 
+# Exit 0 from a revival child is not proof it worked — a denied claude -p still quits clean.
+# 0 = a box moved, the pulse is fresh, or the lease holder is still alive.
+ns_watchman_revival_proved() { # <ns> <sentinel> <interval_min> <open_before>
+  local ns="$1" interval="${3:-0}" before="${4:-}"
+  local now_open
+  if [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ]; then
+    return 0
+  fi
+  now_open="$(ns_open_boxes "$ns/punch-list.md" 2>/dev/null)" || now_open=""
+  case "$before" in
+    '' | *[!0-9]*) ;;
+    *)
+      case "$now_open" in
+        '' | *[!0-9]*) ;;
+        *) [ "$now_open" -lt "$before" ] && return 0 ;;
+      esac
+      ;;
+  esac
+  if ns_pulse_fresh "$ns" "$interval"; then
+    return 0
+  fi
+  ns_lease_pid_live "$ns"
+}
+
 # After a clock-out spawn: 0 = the shift ended, 1 = still armed (sentinel refreshed,
 # recovery nonce restored to interactive when the child is proven dead). Callers stand
 # down on 1 — production must not retry terminal clock-out. Extra args are ignored.

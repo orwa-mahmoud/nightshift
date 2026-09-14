@@ -217,7 +217,9 @@ ensure_worker() {
 
 # $1 = 1 resume the stored CLI worker · 2 fresh CLI worker (same id, fresh prompt)
 spawn() {
-  local worker prompt rc freshly scope
+  local worker prompt rc freshly scope open_before
+  ns_ensure_work_target_link "$PROJECT" || true
+  open_before="$(ns_open_boxes "$PUNCH")"
   freshly=0
   if ! ns_cursor_worker_present "$NS"; then
     freshly=1
@@ -261,7 +263,11 @@ spawn() {
     log_line "watchman: process lease transfer failed — not spawning beside an unfenced session"
     return 1
   fi
-  return "$rc"
+  if ns_watchman_revival_proved "$NS" "" "$INTERVAL_MIN" "$open_before"; then
+    return 0
+  fi
+  log_line "watchman: revival child returned without moving the shift — not counting it as a resume"
+  return 1
 }
 
 notice_revival() {

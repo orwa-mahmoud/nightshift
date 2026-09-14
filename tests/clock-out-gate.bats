@@ -296,7 +296,7 @@ SH
   is_release
   out="$p/.nightshift/receipts/morning-$today-9f2c40ab77e51d63.md"
   [ -f "$out" ]
-  grep -qF 'Receipts: [index](./README.md), [1. first.](./1-first.md), [2. done.](./2-done.md)' "$out"
+  grep -qF $'Receipts:\n- [index](./README.md)\n- [1. first.](./1-first.md)\n- [2. done.](./2-done.md)' "$out"
   grep -qF -- '- Policy record: accepted' "$out"
 }
 

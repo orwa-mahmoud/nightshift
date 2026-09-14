@@ -93,6 +93,24 @@ CODEX_HOOKS="$HOOKS/codex"
   [ "$status" -eq 2 ]
 }
 
+@test "Start records a work-target link so a revival started there finds the shift" {
+  workspace="$(new_project workspace)"
+  child="$workspace/child-repo"
+  mkdir -p "$child"
+  git -C "$child" init -q
+  git -C "$child" rev-parse --show-toplevel >/dev/null
+  target="$(cd -P "$child" && pwd)"
+  expected="$(cd -P "$workspace" && pwd)"
+  printf '%s\n' "$target" >"$workspace/.nightshift/work-target"
+  printf 'repository\n' >"$workspace/.nightshift/work-mode"
+  run bash -c '. "$1"; ns_ensure_work_target_link "$2"' _ "$LIB" "$workspace"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$child/.nightshift-link")" = "$expected" ]
+  run bash -c '. "$1"; ns_workspace_root "$2"' _ "$LIB" "$child"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$expected" ]
+}
+
 @test "Claude clean-session markers land in the linked workspace" {
   host="$(new_project host)"
   rm -rf "$host/.nightshift"

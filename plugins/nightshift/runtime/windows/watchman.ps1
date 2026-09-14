@@ -122,7 +122,23 @@ function Test-NSErroredTail {
     if ($HostName -ne 'claude') {
         return $false
     }
-    return (Get-NSLastConversationLine) -match '[^\\]"isApiErrorMessage"\s*:\s*true'
+    $transcript = Get-NSTranscript
+    if ([string]::IsNullOrEmpty($transcript)) {
+        return $false
+    }
+    try {
+        $lines = @(Get-Content -LiteralPath $transcript -Tail 400 -ErrorAction Stop)
+    }
+    catch {
+        return $false
+    }
+    $last = ''
+    foreach ($line in $lines) {
+        if ($line -match '[^\\]"type"\s*:\s*"(user|assistant)"') {
+            $last = $line
+        }
+    }
+    return $last -match '[^\\]"isApiErrorMessage"\s*:\s*true'
 }
 
 # Host-general evidence for the watchman's own backoff, distinct from Test-NSErroredTail
@@ -453,6 +469,8 @@ function Start-NSAgent {
         }
         $sessionId = $workerId
     }
+    $null = Confirm-NSWorkTargetLink $workspace
+    $openBefore = [int](Get-NSBoxCounts $punch).Open
     $fresh = $Attempt -ge $TotalAttempts -and $TotalAttempts -gt 1
     # The permission scope a revived session starts under is the owner's, and it never widens
     # between rungs: a failed revival is retried at the same scope, never a broader one.
@@ -517,6 +535,9 @@ function Start-NSAgent {
         else {
             $commandArguments.Add('--continue')
             $commandArguments.Add('-p')
+        }
+        if ($launchScope -ceq 'host-grant' -or $launchScope -ceq 'recorded:dangerously-skip-permissions' -or $launchScope -ceq 'recorded:bypass-permissions') {
+            $commandArguments.Insert(0, '--dangerously-skip-permissions')
         }
         $commandArguments.Add($prompt)
     }
@@ -593,7 +614,7 @@ function Start-NSAgent {
         $start = Get-NSProcessStart $process.Id
         $null = Attach-NSLeaseProcess $ns $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start
         $process.WaitForExit()
-        return $process.ExitCode -eq 0
+        return (Test-NSWatchmanRevivalProved -NightshiftDir $ns -Sentinel '' -IntervalMinutes $IntervalMinutes -OpenBefore $openBefore)
     }
     finally {
         if ($HostName -eq 'claude') {
@@ -631,7 +652,7 @@ function Get-NSHoldReason {
     $verdict = Get-NSSiteVerdict
     if ($verdict -eq 'alive') { return 'session activity' }
     if ($verdict -eq 'esc') { return 'owner Esc' }
-    if ($verdict -eq 'silent') { return 'live shift session' }
+    if ($verdict -eq 'silent') { return '' }
     if ($verdict -eq 'tabs') { return "a live $HostName process" }
     if ($verdict -eq 'unavailable') { return 'process evidence unavailable' }
     return ''
@@ -742,6 +763,7 @@ try {
 
     $wake = 0
     $previousStandby = ''
+    $silentWakes = 0
     $armedMarker = Join-Path $ns '.shift-armed'
     # Doubles on an exhausted ladder with API evidence, capped at 60m; resets to
     # IntervalMinutes on any live pulse or successful revival.
@@ -808,6 +830,17 @@ try {
         }
 
         $verdict = Get-NSSiteVerdict
+        if ($verdict -eq 'silent') {
+            $silentWakes++
+            if ($silentWakes -ge 2 -and (Test-NSPulseStale $ns $IntervalMinutes)) {
+                Write-NSLogLine 'watchman: silent too long with a stale pulse - treating as dead'
+                $verdict = 'dead'
+                $silentWakes = 0
+            }
+        }
+        else {
+            $silentWakes = 0
+        }
         if ($verdict -eq 'alive') {
             $previousStandby = ''
             $currentIntervalMinutes = $IntervalMinutes
@@ -815,6 +848,7 @@ try {
         elseif ($verdict -eq 'esc') {
             Write-NSReason $ns 'esc-standby'
             if ($previousStandby -ne 'esc') {
+                $null = Write-NSUsagePause $ns 'owner pressed Esc'
                 Write-NSLogLine 'watchman: owner pressed Esc - standing by, not resuming'
             }
             $previousStandby = 'esc'
@@ -922,6 +956,7 @@ try {
                 Write-NSReason $ns 'exhausted-retry'
                 if (Test-NSApiFailureEvidence) {
                     $currentIntervalMinutes = [Math]::Min($currentIntervalMinutes * 2, 60)
+                    $null = Write-NSUsagePause $ns 'usage limit'
                     Write-NSLogLine "watchman: all $totalAttempts attempts failed (api down?) $([char]0x2014) backing off, knocking again in ${currentIntervalMinutes}m"
                 }
                 else {

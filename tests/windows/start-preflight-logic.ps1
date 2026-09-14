@@ -96,6 +96,24 @@ try {
     Expect-True ($spentRun.Stdout.Contains('never clear STOP and never invent a time budget')) 'the repair keeps STOP'
     Expect-True (Test-Path -LiteralPath (Join-Path $spent '.nightshift/STOP') -PathType Leaf) 'STOP survives the refusal'
 
+    # Stop-work keeps the live usage folder; a finished shift retires it.
+    $keepUsage = New-Site (Join-Path $root 'keep-usage')
+    [IO.File]::WriteAllText((Join-Path $keepUsage '.nightshift/STOP'), '')
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $keepUsage '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $keepUsage '.nightshift/usage/marks.tsv'), "arm`n")
+    $keepRun = Invoke-Preflight $keepUsage
+    Expect-True ($keepRun.ExitCode -eq 0) "stop-work resume keeps going: $($keepRun.Stdout)"
+    Expect-True (Test-Path -LiteralPath (Join-Path $keepUsage '.nightshift/usage/marks.tsv') -PathType Leaf) `
+        'stop-work resume keeps the live usage folder'
+    $retireUsage = New-Site (Join-Path $root 'retire-usage')
+    [IO.File]::WriteAllText((Join-Path $retireUsage '.nightshift/.ended'), '')
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $retireUsage '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $retireUsage '.nightshift/usage/marks.tsv'), "arm`n")
+    $retireRun = Invoke-Preflight $retireUsage
+    Expect-True ($retireRun.ExitCode -eq 0) "a finished shift still starts: $($retireRun.Stdout)"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $retireUsage '.nightshift/usage'))) `
+        'a finished shift retires usage'
+
     # An open-ended item with no clock refuses instead of inventing hours.
     $walk = New-Site (Join-Path $root 'walkthrough') "## Items`n- [ ] **1. walkthrough.** Ending: open-ended`n"
     $walkRun = Invoke-Preflight $walk

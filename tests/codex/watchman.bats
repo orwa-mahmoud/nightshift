@@ -104,15 +104,15 @@ calls() { grep -c called "$P/.nightshift/agent-calls" 2>/dev/null || echo 0; }
   cat >"$BIN/tick.sh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n%s\n' "$NIGHTSHIFT_LEASE_GENERATION" "$NIGHTSHIFT_LEASE_NONCE" >.nightshift/lease-env
+sed -n '3,4p' .nightshift/.shift-lease >.nightshift/lease-at-spawn
 STUB
   chmod +x "$BIN/tick.sh"
 
   run watch --max-wakes 1
   [ "$status" -eq 0 ]
   [ -n "$(sed -n 1p "$P/.nightshift/lease-env")" ]
-  [ "$(sed -n 1p "$P/.nightshift/lease-env")" = "$(sed -n 3p "$P/.nightshift/.shift-lease")" ]
-  [ "$(sed -n 2p "$P/.nightshift/lease-env")" = "$(sed -n 4p "$P/.nightshift/.shift-lease")" ]
-  sed -n 5p "$P/.nightshift/.shift-lease" | grep -qE '^[0-9]+$'
+  [ "$(sed -n 1p "$P/.nightshift/lease-env")" = "$(sed -n 1p "$P/.nightshift/lease-at-spawn")" ]
+  [ "$(sed -n 2p "$P/.nightshift/lease-env")" = "$(sed -n 2p "$P/.nightshift/lease-at-spawn")" ]
 }
 
 @test "the recorded pid alive with a matching start time stands it by" {

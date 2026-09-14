@@ -72,18 +72,27 @@ ns_sanitize_line() {
 #
 # A hook whose stdin is a descriptor that never reaches EOF used to sit in `cat` until something
 # killed it: one such hook held a session for five and a half hours with its payload sitting in
-# argv the whole time. The read is bounded instead, so the descriptor being open says nothing
-# about whether the payload has arrived and the caller reaches its own fallbacks either way.
+# argv the whole time. Cursor (and Claude Code) can also keep the descriptor open and trickle a
+# line often enough that `read -t` resets every time — the timeout is per read, not the loop —
+# so the bound is the wall clock from the first attempt, and the caller reaches its fallbacks
+# either way.
 #
 # A terminal is a manual run and carries no payload. A final line without its newline is kept:
 # `read` returns non-zero having filled the variable, and dropping it would corrupt the JSON.
 ns_read_stdin_bounded() {
-  local seconds="${1:-2}" line buf=""
+  local seconds="${1:-2}" line buf="" begun left
   [ ! -t 0 ] || return 0
-  while IFS= read -r -t "$seconds" line; do
+  case "$seconds" in '' | *[!0-9]*) seconds=2 ;; esac
+  begun=$SECONDS
+  while :; do
+    left=$((seconds - (SECONDS - begun)))
+    [ "$left" -gt 0 ] || break
+    IFS= read -r -t "$left" line || {
+      [ -z "$line" ] || buf="$buf$line"
+      break
+    }
     buf="$buf$line
 "
   done
-  [ -z "$line" ] || buf="$buf$line"
   printf '%s' "$buf"
 }

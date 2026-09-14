@@ -320,6 +320,17 @@ try {
     $liveOpen = Join-Path $recv '3-trim-the-bundle.md'
     $openBefore = [Convert]::ToBase64String([IO.File]::ReadAllBytes($liveOpen))
 
+    $bare = Invoke-ArchiveReceipts $openWork @('-Date', '2026-09-05')
+    Expect-True ($bare.ExitCode -eq 0) "bare ended filing exits 0 (got $($bare.ExitCode) $($bare.Stderr))"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $recv '1-fix-the-resolver.md'))) `
+        'bare archive retires a ticked item receipt'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $recv '2-cover-the-parser.md'))) `
+        'bare archive retires every ticked item receipt'
+    Expect-True (Test-Path -LiteralPath (Join-Path $recv '3-trim-the-bundle.md') -PathType Leaf) `
+        'bare archive keeps an open item receipt'
+    Expect-True (Test-Path -LiteralPath (Join-Path $recv 'morning-2026-09-05-abc.md') -PathType Leaf) `
+        'bare archive leaves morning until it is named'
+
     $filed = Invoke-ArchiveReceipts $openWork @('-Date', '2026-09-05',
         '-Retire', '1-fix-the-resolver.md,2-cover-the-parser.md,morning-2026-09-05-abc.md')
     Expect-True ($filed.ExitCode -eq 0) "open-work filing exits 0 (got $($filed.ExitCode) $($filed.Stderr))"
@@ -339,7 +350,7 @@ try {
     $archivedIndex = [IO.File]::ReadAllText((Join-Path $dest 'README.md'))
     Expect-True ($archivedIndex.Contains('# Receipts — 2026-09-05')) 'the archived index is dated'
     Expect-True ($archivedIndex.Contains(
-        '| 1. Fix the resolver. | ticked | **120** | **10m 00s** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
+        '| 1. Fix the resolver. | ticked | **input 100 · cache_write 0 · cache_read 0 · output 20 · reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
         'the archived index carries the first receipt with its measurements'
     Expect-True ($archivedIndex.Contains('| 2. Cover the parser. | ticked |')) `
         'the archived index carries the second receipt'

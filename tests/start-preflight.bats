@@ -121,6 +121,17 @@ setup_site() { # <name> [punch-body]
   done
 }
 
+@test "a clean site reports policy none when no snapshot exists" {
+  p="$(setup_site preflight-policy-none)"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'ok policy none - arming from rules.json'
+  if printf '%s\n' "$output" | grep -qF 'warn policy absent'; then
+    echo "absent snapshot is not a warning"
+    return 1
+  fi
+}
+
 @test "a live recorded session refuses a second shift beside it" {
   p="$(setup_site preflight-live)"
   flag="$BATS_TEST_TMPDIR/live-flag"
@@ -134,7 +145,48 @@ setup_site() { # <name> [punch-body]
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF 'refuse session an agent is already working this punch list on claude'
   printf '%s\n' "$output" | grep -qF 'repair ask Nightshift for status'
+  printf '%s\n' "$output" | grep -qF 'ns reset-shift'
   [ -f "$p/.nightshift/.shift-session" ]
+}
+
+@test "Start after stop-work keeps the live usage folder" {
+  p="$(setup_site preflight-keep-usage)"
+  : >"$p/.nightshift/STOP"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/usage/marks.tsv" ]
+}
+
+@test "Start after a finished shift retires usage" {
+  p="$(setup_site preflight-retire-usage)"
+  : >"$p/.nightshift/.ended"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/usage" ]
+}
+
+@test "a stopped shift with a live leftover pid is not a second agent" {
+  p="$(setup_site preflight-stopped-live)"
+  flag="$BATS_TEST_TMPDIR/stopped-live-flag"
+  ( : >"$flag"; sleep 5 ) &
+  worker=$!
+  wait_writer "$flag"
+  start="$(bash -c ". \"$PLUGIN/lib/lib.sh\"; ns_process_start $worker")"
+  printf 'sid-1\n/tmp/t.jsonl\n%s\n%s\nclaude\n' "$worker" "$start" >"$p/.nightshift/.shift-session"
+  : >"$p/.nightshift/.shift-armed"
+  : >"$p/.nightshift/STOP"
+  run bash "$PREFLIGHT" --project "$p"
+  kill "$worker" 2>/dev/null || true
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -qF 'refuse session an agent is already working'; then
+    echo "paused leftover pid was treated as a second agent"
+    return 1
+  fi
+  [ ! -e "$p/.nightshift/.shift-session" ]
 }
 
 @test "a missing rules file refuses and points at Setup" {
@@ -297,7 +349,8 @@ setup_site() { # <name> [punch-body]
     'deadline an open-ended item has no clock' \
     'provision an interrupted install cannot be proven recovered' \
     'watch-minutes 0 (watchman disarmed)' \
-    'codex-identity resumable'; do
+    'codex-identity resumable' \
+    'policy none - arming from rules.json'; do
     grep -qF "$phrase" "$PREFLIGHT" || { echo "POSIX helper lost: $phrase"; return 1; }
     grep -qF "$phrase" "$PS1_TWIN" || { echo "Windows twin lost: $phrase"; return 1; }
   done

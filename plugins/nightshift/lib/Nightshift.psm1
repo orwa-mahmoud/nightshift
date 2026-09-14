@@ -12,7 +12,10 @@ function Test-NSWindows {
 # Windows PowerShell 5.1's [Console]::In is the console host, not redirected
 # stdin. With -File the host often parks the pipe on $input instead. Read both.
 function Get-NSStdinText {
-    param([AllowEmptyString()][string]$Piped = '')
+    param(
+        [AllowEmptyString()][string]$Piped = '',
+        [int]$TimeoutSeconds = 2
+    )
     $text = $Piped
     if ([string]::IsNullOrWhiteSpace($text)) {
         $utf8 = New-Object Text.UTF8Encoding $false
@@ -24,13 +27,22 @@ function Get-NSStdinText {
         try {
             $stream = [Console]::OpenStandardInput()
             if ($null -ne $stream) {
-                $reader = New-Object IO.StreamReader($stream, $utf8, $true)
-                try {
-                    $text = $reader.ReadToEnd()
+                # ReadToEnd waits for EOF. A host that keeps the pipe open and trickles
+                # bytes never reaches it, so the wait is a wall-clock deadline instead.
+                if ($TimeoutSeconds -lt 0) { $TimeoutSeconds = 0 }
+                $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+                $chunks = New-Object Text.StringBuilder
+                $buf = New-Object byte[] 8192
+                while ([DateTime]::UtcNow -lt $deadline) {
+                    $left = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+                    if ($left -le 0) { break }
+                    $ar = $stream.BeginRead($buf, 0, $buf.Length, $null, $null)
+                    if (-not $ar.AsyncWaitHandle.WaitOne($left)) { break }
+                    $n = $stream.EndRead($ar)
+                    if ($n -le 0) { break }
+                    [void]$chunks.Append($utf8.GetString($buf, 0, $n))
                 }
-                finally {
-                    $reader.Dispose()
-                }
+                $text = $chunks.ToString()
             }
         }
         catch {
@@ -173,6 +185,46 @@ function Resolve-NSWorkspaceRoot {
         throw 'invalid .nightshift-link'
     }
     return $workspace
+}
+
+function Confirm-NSWorkTargetLink {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    try {
+        $ws = Resolve-NSCanonicalPath $Workspace
+        $target = Resolve-NSWorkTarget $ws
+        if ([string]::IsNullOrEmpty($target) -or $target -eq $ws) { return $true }
+        if (-not (Test-Path -LiteralPath $target -PathType Container)) { return $false }
+        try {
+            if ((Resolve-NSWorkspaceRoot $target) -eq $ws) { return $true }
+        }
+        catch {
+        }
+        $link = Join-Path $target '.nightshift-link'
+        if (Test-NSReparsePoint $link) { return $false }
+        $null = Write-NSAtomicLines -Path $link -Lines @($ws)
+        $gitDirectory = Invoke-NSGit $target @('rev-parse', '--git-dir')
+        if (-not [string]::IsNullOrWhiteSpace($gitDirectory)) {
+            if (-not [IO.Path]::IsPathRooted($gitDirectory)) {
+                $gitDirectory = Join-Path $target $gitDirectory
+            }
+            $info = Join-Path $gitDirectory 'info'
+            $null = New-Item -ItemType Directory -Path $info -Force
+            $exclude = Join-Path $info 'exclude'
+            $lines = if (Test-Path -LiteralPath $exclude -PathType Leaf) {
+                @([IO.File]::ReadAllLines($exclude))
+            }
+            else {
+                @()
+            }
+            if ($lines -notcontains '.nightshift-link') {
+                $null = Write-NSAtomicLines -Path $exclude -Lines @($lines + '.nightshift-link')
+            }
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
 }
 
 # Windows PowerShell 5.1 turns redirected native stderr into ErrorRecords. With
@@ -353,6 +405,9 @@ function Write-NSWorkTarget {
     $null = New-Item -ItemType Directory -Path $ns -Force
     Write-NSWorkMode $Workspace $Mode
     $null = Write-NSAtomicLines -Path (Join-Path $ns 'work-target') -Lines @($top)
+    if (-not (Confirm-NSWorkTargetLink $Workspace)) {
+        throw 'could not record the work-target link'
+    }
 }
 
 function Get-NSReceiptsDir {
@@ -1788,6 +1843,15 @@ function Get-NSControlStartRefuseReason {
     return "paused shift deadline has expired - write a new UNIX epoch to $NightshiftDir/deadline, or run Reset then Start; refusing to invent a time budget"
 }
 
+function Test-NSSitePaused {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $stop = Join-Path $NightshiftDir 'STOP'
+    $ended = Join-Path $NightshiftDir '.ended'
+    if ((Test-Path -LiteralPath $stop -PathType Leaf) -and -not (Test-NSReparsePoint $stop)) { return $true }
+    if ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)) { return $true }
+    return $false
+}
+
 function Stop-NSWatchman {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $pidFile = Join-Path $NightshiftDir '.watchman'
@@ -1866,6 +1930,8 @@ function Stop-NSShift {
     $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     Remove-NSPath (Join-Path $ns 'STOP')
     [IO.File]::WriteAllText((Join-Path $ns 'STOP'), "$Reason · $ts`n")
+    Remove-NSPath (Join-Path $ns '.shift-session')
+    $null = Write-NSUsagePause $ns 'owner stop-work'
     $watch = Stop-NSWatchman $ns
     $null = Write-NSReason $ns 'owner-stop'
     Write-NSControlLog $ns 'stopped by owner'
@@ -2335,6 +2401,27 @@ function Test-NSLeasePidLive {
         return $false
     }
     return (Test-NSRecordedProcess $lease.ProcessId $lease.Start) -eq 'Alive'
+}
+
+function Test-NSWatchmanRevivalProved {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [string]$Sentinel = '',
+        [int]$IntervalMinutes = 0,
+        [AllowEmptyString()]$OpenBefore = ''
+    )
+    $ended = Join-Path $NightshiftDir '.ended'
+    if ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)) {
+        return $true
+    }
+    $punch = Join-Path $NightshiftDir 'punch-list.md'
+    $nowOpen = $null
+    try { $nowOpen = [int](Get-NSBoxCounts $punch).Open } catch { $nowOpen = $null }
+    if ($OpenBefore -match '^[0-9]+$' -and $null -ne $nowOpen -and $nowOpen -lt [int]$OpenBefore) {
+        return $true
+    }
+    if (Test-NSPulseFresh $NightshiftDir $IntervalMinutes) { return $true }
+    return (Test-NSLeasePidLive $NightshiftDir)
 }
 
 function Test-NSHardhatActive {
@@ -4933,6 +5020,9 @@ function Get-NSReceiptTitle {
 
 function Get-NSReceiptBasename {
     param([AllowEmptyString()][string]$Label)
+    $Label = $Label -creplace '^- \[[xX ]\][ \t]*', ''
+    $Label = $Label -creplace '^\*\*', ''
+    $Label = $Label -creplace '\*\*$', ''
     $nn = Get-NSReceiptNn $Label
     $title = Get-NSReceiptTitle $Label
     if ([string]::IsNullOrEmpty($title)) { $title = $Label }
@@ -4969,52 +5059,116 @@ function Get-NSReceiptsShiftDate {
 function Get-NSReceiptUsageCells {
     param([Parameter(Mandatory = $true)][string]$Path)
     $dash = [string][char]0x2014
-    $cells = @{ Sum = [long]0; Tokens = $dash; Time = $dash }
-    if ((Test-Path -LiteralPath $Path -PathType Leaf) -and -not (Test-NSReparsePoint $Path)) {
-        $text = [IO.File]::ReadAllText($Path)
-        if ($text -cmatch 'exact:\s*([0-9]+)\s*/\s*[0-9]+\s*/\s*[0-9]+\s*/\s*([0-9]+)') {
-            $cells['Sum'] = [long]$Matches[1] + [long]$Matches[2]
-            $cells['Tokens'] = Get-NSUsageScale $cells['Sum']
+    $cells = @{
+        In = [long]0; CacheWrite = [long]0; CacheRead = [long]0; Out = [long]0; Reasoning = [long]0
+        Work = [long]0; Pause = [long]0; Sum = [long]0; Tokens = $dash; Time = $dash
+    }
+    $file = $Path
+    if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
+        $probe = [IO.File]::ReadAllText($file)
+        if ($probe -notmatch 'exact:') {
+            $sidecar = Join-Path (Split-Path -Parent $file) ('x-' + (Split-Path -Leaf $file))
+            if ((Test-Path -LiteralPath $sidecar -PathType Leaf) -and -not (Test-NSReparsePoint $sidecar)) {
+                $file = $sidecar
+            }
         }
-        if ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') { $cells['Time'] = $Matches[1].Trim() }
+    }
+    if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
+        $text = [IO.File]::ReadAllText($file)
+        if ($text -cmatch 'exact:\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)') {
+            $cells['In'] = [long]$Matches[1]
+            $cells['CacheWrite'] = [long]$Matches[2]
+            $cells['CacheRead'] = [long]$Matches[3]
+            $cells['Out'] = [long]$Matches[4]
+            $cells['Reasoning'] = [long]$Matches[5]
+            $cells['Sum'] = [long]$Matches[1] + [long]$Matches[4]
+            $cells['Tokens'] = ('input {0} · cache_write {1} · cache_read {2} · output {3} · reasoning {4}' -f
+                (Get-NSUsageScale $Matches[1]), (Get-NSUsageScale $Matches[2]),
+                (Get-NSUsageScale $Matches[3]), (Get-NSUsageScale $Matches[4]),
+                (Get-NSUsageScale $Matches[5]))
+        }
+        if ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') {
+            $raw = $Matches[1].Trim()
+            $workText = $raw
+            if ($raw -match '^(.*) working') { $workText = $Matches[1].Trim() }
+            elseif ($raw -match '^(.*) \(') { $workText = $Matches[1].Trim() }
+            $cells['Work'] = Get-NSUsageParseSeconds $workText
+            if ($raw -match 'paused ([^,)]+)') {
+                $cells['Pause'] = Get-NSUsageParseSeconds $Matches[1].Trim()
+            }
+            $cells['Time'] = Get-NSReceiptsTimeCell ([long]$cells['Work']) ([long]$cells['Pause'])
+        }
     }
     return $cells
+}
+
+function Get-NSUsageParseSeconds {
+    param([AllowEmptyString()][string]$Text)
+    $h = 0; $m = 0; $s = 0
+    if ($Text -cmatch '([0-9]+)h') { $h = [int]$Matches[1] }
+    if ($Text -cmatch '([0-9]+)m') { $m = [int]$Matches[1] }
+    if ($Text -cmatch '([0-9]+)s') { $s = [int]$Matches[1] }
+    return [long]($h * 3600 + $m * 60 + $s)
 }
 
 function Get-NSReceiptsIndexPage {
     param(
         [Parameter(Mandatory = $true)][string]$Date,
         [AllowEmptyCollection()][string[]]$Rows = @(),
+        [string]$UsageTotal = '',
+        [string]$TimeTotal = '',
         [long]$TokenTotal = 0
     )
     $dash = [string][char]0x2014
-    $tokCell = $(if ($TokenTotal -gt 0) { Get-NSUsageScale $TokenTotal } else { $dash })
+    $tokCell = $(if (-not [string]::IsNullOrEmpty($UsageTotal)) { $UsageTotal }
+        elseif ($TokenTotal -gt 0) { Get-NSUsageScale $TokenTotal } else { $dash })
+    $timeCell = $(if (-not [string]::IsNullOrEmpty($TimeTotal)) { $TimeTotal } else { $dash })
     $sb = New-Object Text.StringBuilder
     [void]$sb.AppendLine('# Receipts — ' + $Date)
     [void]$sb.AppendLine()
-    [void]$sb.AppendLine('| Item | State | **Tokens** | **Time** | Receipt |')
+    [void]$sb.AppendLine('| Item | State | **Usage** | **Time** | Receipt |')
     [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
     foreach ($row in $Rows) { [void]$sb.AppendLine($row) }
-    [void]$sb.AppendLine(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $dash))
+    [void]$sb.AppendLine(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $timeCell))
     return $sb.ToString()
 }
 
 # The receipts of items nobody finished. A receipt travels into the archive when its item is
 # ticked; one whose box is still open stays live, exactly as the box stays in the punch list, so
 # the next shift extends the same file rather than a copy of it.
-function Get-NSOpenReceiptNames {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+function Get-NSReceiptNamesByState {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [ValidateSet('open', 'ticked')][string]$State = 'open'
+    )
     $names = New-Object Collections.Generic.List[string]
     $punch = Join-Path $Workspace '.nightshift/punch-list.md'
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($line in (Get-NSPunchItemsSection $punch)) {
-            if ($line -cnotmatch '^- \[[ ]\]') { continue }
-            $label = Get-NSPulseItemLabelFromLine $line 'open'
+            if ($State -ceq 'ticked') {
+                if ($line -cnotmatch '^- \[[xX]\]') { continue }
+                $kind = 'x'
+            }
+            else {
+                if ($line -cnotmatch '^- \[[ ]\]') { continue }
+                $kind = 'open'
+            }
+            $label = Get-NSPulseItemLabelFromLine $line $kind
             if ([string]::IsNullOrEmpty($label)) { continue }
             $names.Add((Get-NSReceiptBasename $label) + '.md')
         }
     }
     return $names.ToArray()
+}
+
+function Get-NSOpenReceiptNames {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return Get-NSReceiptNamesByState $Workspace 'open'
+}
+
+function Get-NSTickedReceiptNames {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return Get-NSReceiptNamesByState $Workspace 'ticked'
 }
 
 # Write-NSArchiveReceiptsIndex <directory> <date> - the index of the item receipts filed in that
@@ -5036,10 +5190,12 @@ function Write-NSArchiveReceiptsIndex {
         } | ForEach-Object { $_.Name })
     if ($names.Count -gt 1) { [Array]::Sort($names, [StringComparer]::Ordinal) }
     $rows = New-Object Collections.Generic.List[string]
-    $tokTotal = [long]0
+    $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
+    $twork = [long]0; $tpause = [long]0
     foreach ($name in $names) {
         if ($name -ceq 'README.md' -or
             $name.StartsWith('morning-', [StringComparison]::Ordinal) -or
+            $name.StartsWith('x-', [StringComparison]::Ordinal) -or
             $name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
         $path = Join-Path $Directory $name
         $label = ''
@@ -5048,14 +5204,18 @@ function Write-NSArchiveReceiptsIndex {
         }
         if ([string]::IsNullOrEmpty($label)) { continue }
         $cells = Get-NSReceiptUsageCells $path
-        if ($cells['Sum'] -gt 0) { $tokTotal += [long]$cells['Sum'] }
+        $tin += [long]$cells['In']; $tcw += [long]$cells['CacheWrite']; $tcr += [long]$cells['CacheRead']
+        $tout += [long]$cells['Out']; $trea += [long]$cells['Reasoning']
+        $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
         $rows.Add(('| {0} | ticked | **{1}** | **{2}** | [./{3}](./{3}) |' -f
             $label, $cells['Tokens'], $cells['Time'], $name))
     }
     if ($rows.Count -eq 0) { return }
     $utf8 = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($index,
-        (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() -TokenTotal $tokTotal), $utf8)
+        (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() `
+            -UsageTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) `
+            -TimeTotal (Get-NSReceiptsTimeTotalCell $twork $tpause)), $utf8)
 }
 
 # Write-NSReceiptsIndex <workspace> [-Remaining] - rewrite receipts/README.md from the list, marks
@@ -5076,7 +5236,8 @@ function Write-NSReceiptsIndex {
     if (Test-NSReparsePoint $index) { return }
     $punch = Join-Path $Workspace '.nightshift/punch-list.md'
     $rows = New-Object Collections.Generic.List[string]
-    $tokTotal = [long]0
+    $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
+    $twork = [long]0; $tpause = [long]0
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($line in (Get-NSPunchItemsSection $punch)) {
             if ($line -cnotmatch '^- \[[ xX]\]') { continue }
@@ -5090,7 +5251,9 @@ function Write-NSReceiptsIndex {
             if ($Remaining -and $state -ceq 'ticked' -and
                 -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
             $cells = Get-NSReceiptUsageCells $path
-            if ($cells['Sum'] -gt 0) { $tokTotal += [long]$cells['Sum'] }
+            $tin += [long]$cells['In']; $tcw += [long]$cells['CacheWrite']; $tcr += [long]$cells['CacheRead']
+            $tout += [long]$cells['Out']; $trea += [long]$cells['Reasoning']
+            $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
             $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f
                 $label, $state, $cells['Tokens'], $cells['Time'], $file))
         }
@@ -5102,7 +5265,34 @@ function Write-NSReceiptsIndex {
     $utf8 = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($index,
         (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
-            -TokenTotal $tokTotal), $utf8)
+            -UsageTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) `
+            -TimeTotal (Get-NSReceiptsTimeTotalCell $twork $tpause)), $utf8)
+}
+
+function Get-NSReceiptsUsageTotalCell {
+    param([long]$In, [long]$CacheWrite, [long]$CacheRead, [long]$Out, [long]$Reasoning)
+    if (($In + $CacheWrite + $CacheRead + $Out + $Reasoning) -eq 0) {
+        return [string][char]0x2014
+    }
+    return ('input {0} · cache_write {1} · cache_read {2} · output {3} · reasoning {4}' -f
+        (Get-NSUsageScale $In), (Get-NSUsageScale $CacheWrite),
+        (Get-NSUsageScale $CacheRead), (Get-NSUsageScale $Out),
+        (Get-NSUsageScale $Reasoning))
+}
+
+function Get-NSReceiptsTimeCell {
+    param([long]$Work, [long]$Pause = 0)
+    if ($Work -le 0 -and $Pause -le 0) { return [string][char]0x2014 }
+    if ($Pause -gt 0) {
+        return ((Get-NSUsageDuration ([string]$Work)) + ' working · ' +
+            (Get-NSUsageDuration ([string]$Pause)) + ' paused')
+    }
+    return ((Get-NSUsageDuration ([string]$Work)) + ' working')
+}
+
+function Get-NSReceiptsTimeTotalCell {
+    param([long]$Work, [long]$Pause = 0)
+    return (Get-NSReceiptsTimeCell $Work $Pause)
 }
 function Get-NSUsageScale {
     param($Value)
@@ -5110,7 +5300,8 @@ function Get-NSUsageScale {
     if (-not [long]::TryParse([string]$Value, [ref]$n)) { return [string]$Value }
     if ($n -lt 1000) { return [string]$n }
     if ($n -lt 1000000) { return ('{0:0.0}k' -f ($n / 1000.0)) }
-    return ('{0:0.0}M' -f ($n / 1000000.0))
+    if ($n -lt 1000000000) { return ('{0:0.0}M' -f ($n / 1000000.0)) }
+    return ('{0:0.0}B' -f ($n / 1000000000.0))
 }
 
 # Get-NSReportPath kept as the receipts folder path only for callers not yet moved.
@@ -5137,8 +5328,24 @@ function Test-NSLaunchScopeSupported {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope
     )
-    if ($HostName -cne 'codex') { return $false }
-    return @('read-only', 'workspace-write', 'danger-full-access') -ccontains $Scope
+    if ($HostName -ceq 'codex') {
+        return @('read-only', 'workspace-write', 'danger-full-access') -ccontains $Scope
+    }
+    if ($HostName -ceq 'claude') {
+        return @('dangerously-skip-permissions', 'bypass-permissions') -ccontains $Scope
+    }
+    return $false
+}
+
+function Test-NSLaunchScopeElevated {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope)
+    return @(
+        'danger-full-access',
+        'workspace-write',
+        'dangerously-skip-permissions',
+        'bypass-permissions',
+        'bypassPermissions'
+    ) -ccontains $Scope
 }
 
 # Get-NSLaunchObserved <host> - the scope this session runs under in the host's own words, and
@@ -5153,6 +5360,31 @@ function Get-NSLaunchObserved {
         }
         if (-not [string]::IsNullOrEmpty($env:CODEX_SANDBOX)) {
             return ($env:CODEX_SANDBOX + "`tobserved")
+        }
+    }
+    if (($HostName -ceq 'claude' -or $HostName -ceq 'cursor') -and
+        -not [string]::IsNullOrEmpty([string]$env:CLAUDE_PROJECT_DIR + [string]$env:CLAUDE_PLUGIN_ROOT + [string]$env:CURSOR_PLUGIN_ROOT)) {
+        $pid = $PID
+        for ($hops = 0; $hops -lt 16 -and $null -ne $pid -and $pid -gt 1; $hops++) {
+            try {
+                $proc = Get-Process -Id $pid -ErrorAction Stop
+                $cmd = [string]$proc.CommandLine
+                if ([string]::IsNullOrEmpty($cmd)) {
+                    try {
+                        $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction Stop).CommandLine
+                    }
+                    catch {
+                        $cmd = ''
+                    }
+                }
+                if ($cmd -match 'dangerously-skip-permissions|bypass-permissions') {
+                    return "dangerously-skip-permissions`tobserved"
+                }
+                $pid = $proc.Parent.Id
+            }
+            catch {
+                break
+            }
         }
     }
     return "unknown`tunavailable"
@@ -5178,7 +5410,18 @@ function Get-NSRecoveryEffectiveScope {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
     )
     $configured = Get-NSRecoveryLaunchScope $Workspace
-    if ($configured -ceq 'host-default' -or $configured -ceq 'host-grant') { return $configured }
+    if ($configured -ceq 'host-grant') { return 'host-grant' }
+    if ($configured -ceq 'host-default') {
+        $policyState = (Get-NSShiftPolicyState $Workspace)['state']
+        if ($policyState -ceq 'valid') {
+            $recorded = Get-NSPolicyLaunch -Workspace $Workspace -Field 'scope'
+            $provenance = Get-NSPolicyLaunch -Workspace $Workspace -Field 'provenance'
+            if ($provenance -ceq 'observed' -and (Test-NSLaunchScopeElevated $recorded)) {
+                return ('unavailable:narrower:' + $recorded)
+            }
+        }
+        return 'host-default'
+    }
     $policyState = (Get-NSShiftPolicyState $Workspace)['state']
     if ($policyState -ceq 'absent') { return 'unavailable:unrecorded' }
     if ($policyState -cne 'valid') { return 'unavailable:unreadable' }
@@ -5203,6 +5446,9 @@ function Get-NSRecoveryRefusal {
     }
     if ($Scope -clike 'unavailable:unsupported:*') {
         return ("the shift was started under '" + $Scope.Substring('unavailable:unsupported:'.Length) + "', which this host has no way to be asked for again")
+    }
+    if ($Scope -clike 'unavailable:narrower:*') {
+        return ("the shift was started under '" + $Scope.Substring('unavailable:narrower:'.Length) + "', so a host-default revival would be too narrow")
     }
     return ''
 }
@@ -8382,7 +8628,10 @@ function Get-NSMorningReceiptsLine {
             $parts.Add(('[{0}](./{1}.md)' -f $label, (Get-NSReceiptBasename $label)))
         }
     }
-    return ('Receipts: ' + ($parts -join ', '))
+    $lines = New-Object Collections.Generic.List[string]
+    $lines.Add('Receipts:')
+    foreach ($part in $parts) { $lines.Add('- ' + $part) }
+    return ($lines -join "`n")
 }
 
 function Get-NSMorningReceipt {
@@ -9337,6 +9586,43 @@ function Get-NSUsageDuration {
     return ("{0}h {1}m" -f [math]::Floor($s / 3600), [math]::Floor(($s % 3600) / 60))
 }
 
+function Get-NSUsageIso {
+    param([AllowEmptyString()][string]$Epoch)
+    $e = 0L
+    if ([string]::IsNullOrEmpty($Epoch) -or -not [long]::TryParse($Epoch, [ref]$e)) { return '' }
+    $utc = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+    return $utc.AddSeconds($e).ToString('yyyy-MM-ddTHH:mmZ',
+        [Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Get-NSUsageDurationLine {
+    param(
+        [AllowEmptyString()][string]$WallSeconds,
+        [AllowEmptyString()][string]$PausedSeconds = '0',
+        [AllowEmptyString()][string]$Reason = '',
+        [AllowEmptyString()][string]$FromEpoch = '',
+        [AllowEmptyString()][string]$ToEpoch = ''
+    )
+    $wall = 0L
+    $paused = 0L
+    if (-not [long]::TryParse($WallSeconds, [ref]$wall)) { $wall = 0 }
+    if (-not [long]::TryParse($PausedSeconds, [ref]$paused)) { $paused = 0 }
+    $work = $wall - $paused
+    if ($work -lt 0) { $work = 0 }
+    $out = (Get-NSUsageDuration ([string]$work)) + ' working'
+    if ($paused -gt 0) {
+        $out += ' (wall ' + (Get-NSUsageDuration ([string]$wall)) + '; paused ' + (Get-NSUsageDuration ([string]$paused))
+        if (-not [string]::IsNullOrEmpty($Reason)) { $out += ', ' + $Reason }
+        $out += ')'
+    }
+    $from = Get-NSUsageIso $FromEpoch
+    $to = Get-NSUsageIso $ToEpoch
+    if (-not [string]::IsNullOrEmpty($from) -and -not [string]::IsNullOrEmpty($to)) {
+        $out += '; ' + $from + ' ' + [char]0x2192 + ' ' + $to
+    }
+    return $out
+}
+
 function Get-NSUsageSegmentCount {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     return @(Get-NSUsageSegmentLines (Get-NSUsageStatePath $NightshiftDir)).Count
@@ -9399,11 +9685,21 @@ function Add-NSGateUsageAppend {
     if (-not [string]::IsNullOrEmpty($dir)) {
         $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
     }
+    $block = $Usage + "`n**Duration:** " + $Duration + "`n"
     if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf)) {
-        [IO.File]::WriteAllText($Receipt, ('# ' + $Label + "`n"), $utf8)
+        [IO.File]::WriteAllText($Receipt, ('# ' + $Label + "`n`n" + $block), $utf8)
+        return
     }
-    $tail = "`n" + $Usage + "`n**Duration:** " + $Duration + "`n"
-    [IO.File]::AppendAllText($Receipt, $tail, $utf8)
+    $content = [IO.File]::ReadAllText($Receipt)
+    $nl = "`n"
+    if ($content.Contains("`r`n")) { $nl = "`r`n" }
+    if ($content -cmatch '(?s)^(# [^\r\n]+)(\r?\n)') {
+        $head = $Matches[1]
+        $rest = $content.Substring($Matches[0].Length).TrimStart([char]13, [char]10)
+        [IO.File]::WriteAllText($Receipt, ($head + $nl + $nl + $block + $nl + $rest), $utf8)
+        return
+    }
+    [IO.File]::WriteAllText($Receipt, ($block + $nl + $content), $utf8)
 }
 
 # Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it.
@@ -9416,6 +9712,7 @@ function Get-NSGateItemLabel {
             $n++
             if ($n -ne $Which) { continue }
             $t = $line -creplace '^- \[x\][ \t]*\*\*', ''
+            $t = $t -creplace '^- \[x\][ \t]*', ''
             $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
             $t = $t -creplace '\*\*.*$', ''
             return $t.TrimEnd()
@@ -9426,8 +9723,8 @@ function Get-NSGateItemLabel {
 
 # Write-NSUsagePause <nightshift-dir> <reason> - a gap the runtime knows was not work.
 #
-# A session that ended and was revived, or a shift held at STOP, is wall-clock time nobody spent.
-# It is recorded so the duration line can list it, and never subtracted silently.
+# A session that ended and was revived, Esc, a usage-limit wait, or a shift held at STOP is
+# wall-clock time nobody spent. The duration line lists it and subtracts it from working time.
 function Write-NSUsagePause {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Reason = '')
     $dir = Get-NSUsageDir $NightshiftDir
@@ -9512,16 +9809,18 @@ function Invoke-NSGateUsageTick {
     if ([string]::IsNullOrEmpty($hosts)) { $hosts = 'unknown' }
     $first = $hosts.Split(' ')[0]
     $line = Get-NSUsageLine $fields $hosts (Get-NSUsageSegmentCount $NightshiftDir) $first
-    # Wall clock, and beside it any gap the runtime knows was not work. Listed, never subtracted.
-    $duration = Get-NSUsageDuration $seconds
     $start = Get-NSUsageItemStart $NightshiftDir
+    $pausedSec = '0'
+    $pausedWhy = ''
     if ($start -match '^[0-9]+$') {
         $paused = Get-NSUsagePausedSince $NightshiftDir ([long]$start)
         if (-not [string]::IsNullOrEmpty($paused)) {
             $pp = $paused.Split("`t")
-            $duration = $duration + ' (paused ' + (Get-NSUsageDuration $pp[0]) + ', ' + $pp[1] + ')'
+            $pausedSec = $pp[0]
+            if ($pp.Length -ge 2) { $pausedWhy = $pp[1] }
         }
     }
+    $duration = Get-NSUsageDurationLine $seconds $pausedSec $pausedWhy $start ([string](Get-NSUnixTime))
     Add-NSGateUsageAppend (Get-NSReceiptPath $Project $Label) $Label $line $duration
     $due = Join-Path $NightshiftDir '.receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
@@ -9786,6 +10085,9 @@ function Test-NSReceiptHasModelText {
         if ($line.StartsWith('**Duration:**')) { continue }
         if ($line.StartsWith('  Source:')) { continue }
         if ($line.StartsWith('  Cache reads')) { continue }
+        if ($line.StartsWith('  The input figure')) { continue }
+        if ($line.StartsWith('  Cached input')) { continue }
+        if ($line.StartsWith('  Overlap between')) { continue }
         return $true
     }
     return $false

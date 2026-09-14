@@ -143,6 +143,12 @@ new_artifact() {
   grep -qF 'A receipts path that is not a usable directory is a refuse, not an empty skip' "$ARCHIVE_SKILL"
   grep -qF 'Filing is a copy' "$ARCHIVE_SKILL"
   grep -qF -e '--retire' "$ARCHIVE_SKILL"
+  grep -qF 'For each ticked item, pass `--retire <receipt-name>`' "$ARCHIVE_SKILL"
+  grep -qF 'agent running Archive takes it from' "$ARCHIVE_SKILL"
+  if grep -qF 'the right answer whenever you are unsure' "$ARCHIVE_SKILL"; then
+    echo 'the skill still endorses a bare copy'
+    return 1
+  fi
   grep -qF 'Never call `ns archive-receipts`' "$ARCHIVE_SKILL"
   grep -qE 'ns"? archive-receipts' "$COMMANDS"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$COMMANDS"
@@ -461,6 +467,25 @@ closed() { # <project> — the shift ended
   [ "$(cat "$p/.nightshift/receipts/baseline.md")" = 'the P02 baseline' ]
 }
 
+@test "an ended shift retires ticked receipts even when Archive names none" {
+  p="$(new_project rot-ticked-bare)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf 'Date: 2026-09-05\n\n## Items\n- [x] **1. Fix the resolver.**\n- [ ] **2. Trim the bundle.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '# 1. Fix the resolver.\n\nDone.\n' >"$r/1-fix-the-resolver.md"
+  printf '# 2. Trim the bundle.\n\nStill open.\n' >"$r/2-trim-the-bundle.md"
+  printf 'morning\n' >"$r/morning-2026-09-05-abc.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ ! -f "$r/1-fix-the-resolver.md" ]
+  [ -f "$p/.nightshift/archive/2026-09-05/receipts/1-fix-the-resolver.md" ]
+  [ -f "$r/2-trim-the-bundle.md" ]
+  [ ! -e "$p/.nightshift/archive/2026-09-05/receipts/2-trim-the-bundle.md" ]
+  [ -f "$r/morning-2026-09-05-abc.md" ]
+}
+
 @test "a ticked item's receipt is filed and an open item's stays live, and each index says so" {
   # A shift that ended with work still open: items 1 and 2 are done, item 3 is not. The receipt of
   # an open item belongs to the work, not to the history, so it stays exactly where the next shift
@@ -500,7 +525,7 @@ closed() { # <project> — the shift ended
   ! grep -qF 'Fix the resolver' "$r/README.md"
   ! grep -qF 'Cover the parser' "$r/README.md"
   grep -qF '# Receipts — 2026-09-05' "$d/README.md"
-  grep -qF '| 1. Fix the resolver. | ticked | **120** | **10m 00s** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |' \
+  grep -qF '| 1. Fix the resolver. | ticked | **input 100 · cache_write 0 · cache_read 0 · output 20 · reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |' \
     "$d/README.md"
   grep -qF '| 2. Cover the parser. | ticked |' "$d/README.md"
   ! grep -qF 'Trim the bundle' "$d/README.md"

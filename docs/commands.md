@@ -132,7 +132,8 @@ Native Windows:
 ns.ps1 export-support --project .
 ```
 
-Copy live artifact receipts into today's dated archive folder (leaves the live copies in place).
+Copy live artifact receipts into today's dated archive folder. Name each ticked item's receipt
+with `--retire` so it leaves live storage; an open item's receipt stays.
 Missing or empty receipts create no dated receipts folder.
 
 ```bash

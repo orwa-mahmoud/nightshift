@@ -39,8 +39,9 @@ Doctor names the most recently written file when artifact receipts exist. It war
 Start, Hunt, Quality, and Schedule refuse an unusable path rather than begin
 work that cannot land receipts. Use [Troubleshooting](troubleshooting.md#troubleshooting) to diagnose the workspace before changing it.
 
-Archive copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
-and leaves the live copies in place. Missing or empty receipts create no dated receipts folder.
+Archive copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`).
+A ticked item's receipt leaves live storage once the shift has ended; an open item's receipt stays.
+Missing or empty receipts create no dated receipts folder.
 Other finished records can be moved out of the live working files during Archive; open work and
 unanswered decisions stay live. Removing old archived history is a separate retention choice.
 See [Archive and continue](archive.md#archive-and-continue), the [Archive contract](../plugins/nightshift/skills/archive/SKILL.md), and

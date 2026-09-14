@@ -32,6 +32,7 @@ $deadline = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 3600
 [IO.File]::WriteAllText((Join-Path $ns 'deadline'), "$deadline`n")
 $null = New-Item -ItemType File -Path (Join-Path $ns '.shift-armed') -Force
 [IO.File]::WriteAllText((Join-Path $ns '.shift-lease'), "sid`nclaude`n1`n`n1`n`n")
+[IO.File]::WriteAllText((Join-Path $ns '.shift-session'), "sid`ntranscript`n1`nstart`nclaude`n")
 
 try {
     $lines = @(Stop-NSShift -Project $root)
@@ -40,6 +41,7 @@ try {
     Expect-True ($joined -match 'deadline preserved') "stop preserves deadline: $joined"
     Expect-True (Test-Path -LiteralPath (Join-Path $ns 'STOP') -PathType Leaf) 'STOP written'
     Expect-True (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) 'armed marker kept'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns '.shift-session'))) 'leftover session claim dropped'
     Expect-True (Test-NSHardhatActive $ns) 'hardhat stays after STOP'
     Expect-True (Test-Path -LiteralPath (Join-Path $ns '.shift-lease') -PathType Leaf) 'lease kept until ENDED'
     Expect-True (Test-Path -LiteralPath (Join-Path $ns 'deadline') -PathType Leaf) 'deadline file kept'

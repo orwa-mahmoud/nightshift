@@ -80,7 +80,7 @@ try {
     Expect-True (@([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns))).Count -eq 3) `
         'a second sync with nothing newly ticked writes no mark'
 
-    # A pause is listed beside the duration, never subtracted from it.
+    # A pause is listed beside the duration and subtracted from working time.
     $w = Join-Path $root 'paused'
     $ns = New-Workspace $w $punchText
     $t = Join-Path $w 't.jsonl'
@@ -97,7 +97,8 @@ try {
     $null = Write-NSUsageRecord $ns 'claude' $r[2] 'transcript-incremental' $t $r[1] $r[0] $r[4]
     $null = Invoke-NSGateUsageSync $ns $w (Join-Path $ns 'punch-list.md') 1
     $report = [IO.File]::ReadAllText((Get-NSReceiptPath $w 'A1'))
-    Expect-True ($report.Contains('(paused ')) 'the duration line lists the gap the runtime knows about'
+    Expect-True ($report.Contains('working (wall ')) 'working time is the wall clock minus the recorded gap'
+    Expect-True ($report.Contains('; paused ')) 'the duration line lists the gap the runtime knows about'
     Expect-True ($report.Contains('the session ended and the shift was revived')) 'the pause names its reason'
 
     # A finished shift's accounting is set aside, so the next shift starts clean.

@@ -86,6 +86,10 @@ try {
     Expect-Equal 'host-grant' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'host-grant is the owner writing it'
     Set-Rules $workspace 'host-default'
     Expect-Equal 'host-default' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'host-default is available by name'
+    Set-Snapshot $workspace 'danger-full-access' 'observed'
+    Expect-Equal 'unavailable:narrower:danger-full-access' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'host-default is refused when the night was broader'
+    Expect-True ((Get-NSRecoveryRefusal 'unavailable:narrower:danger-full-access') -match 'too narrow') 'the narrower refusal names the recorded scope'
+    Set-Snapshot $workspace 'unknown' 'unavailable'
 
     # An observed scope the host can be asked for again passes through; one it cannot is refused.
     Copy-Item $template (Join-Path $workspace '.nightshift/rules.json') -Force
