@@ -717,6 +717,21 @@ ns_launch_scope_supported() {
         read-only | workspace-write | danger-full-access) return 0 ;;
       esac
       ;;
+    claude)
+      case "$2" in
+        dangerously-skip-permissions | bypass-permissions) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
+# A recorded observed scope that host-default cannot reproduce.
+ns_launch_scope_elevated() {
+  case "$1" in
+    danger-full-access | workspace-write | dangerously-skip-permissions | bypass-permissions | bypassPermissions)
+      return 0
+      ;;
   esac
   return 1
 }
@@ -729,6 +744,22 @@ ns_launch_scope_supported() {
 # hand a session its permissions at launch and expose no name for them anywhere a hook can read,
 # so there is nothing to observe and this says so. Calling that 'inherited' would have been a
 # label for a measurement never taken.
+_ns_scan_process_scope() {
+  local pid="$1" hops=0 args
+  while [ -n "$pid" ] && [ "$pid" != 0 ] && [ "$pid" != 1 ] && [ "$hops" -lt 16 ]; do
+    args="$(ps -o args= -p "$pid" 2>/dev/null)" || break
+    case "$args" in
+      *dangerously-skip-permissions* | *bypass-permissions*)
+        printf '%s\tobserved' 'dangerously-skip-permissions'
+        return 0
+        ;;
+    esac
+    pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+    hops=$((hops + 1))
+  done
+  return 1
+}
+
 ns_launch_observed() {
   case "$1" in
     codex)
@@ -738,6 +769,12 @@ ns_launch_observed() {
       fi
       if [ -n "${CODEX_SANDBOX:-}" ]; then
         printf '%s\tobserved' "$CODEX_SANDBOX"
+        return 0
+      fi
+      ;;
+    claude | cursor)
+      if [ -n "${CLAUDE_PROJECT_DIR:-}${CLAUDE_PLUGIN_ROOT:-}${CURSOR_PLUGIN_ROOT:-}" ] \
+        && _ns_scan_process_scope "$$"; then
         return 0
       fi
       ;;
@@ -766,8 +803,23 @@ ns_recovery_effective_scope() {
   local configured recorded provenance
   configured="$(ns_recovery_launch_scope "$1")"
   case "$configured" in
-    host-default | host-grant)
-      printf '%s' "$configured"
+    host-grant)
+      printf 'host-grant'
+      return 0
+      ;;
+    host-default)
+      _ns_policy_load_shift "$1"
+      case "$NS_POLICY_SHIFT_STATE" in
+        ok)
+          recorded="$(ns_policy_launch "$1" scope 2>/dev/null)" || recorded=""
+          provenance="$(ns_policy_launch "$1" provenance 2>/dev/null)" || provenance=""
+          if [ "$provenance" = observed ] && [ -n "$recorded" ] && ns_launch_scope_elevated "$recorded"; then
+            printf 'unavailable:narrower:%s' "$recorded"
+            return 0
+          fi
+          ;;
+      esac
+      printf 'host-default'
       return 0
       ;;
   esac
@@ -808,6 +860,9 @@ ns_recovery_refusal() {
       ;;
     unavailable:unsupported:*)
       printf "the shift was started under '%s', which this host has no way to be asked for again" "${1#unavailable:unsupported:}"
+      ;;
+    unavailable:narrower:*)
+      printf "the shift was started under '%s', so a host-default revival would be too narrow" "${1#unavailable:narrower:}"
       ;;
     *) return 1 ;;
   esac

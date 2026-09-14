@@ -282,7 +282,8 @@ rung_prompt() { # $1 attempt, $2 total attempts this wake
 RECOVERY_REFUSED=0
 
 spawn() { # $1 optionally overrides the agent for this one attempt; $2 the order for its rung
-  local a="${1:-$AGENT}" p="${2:-$PROMPT_RESUME}" rc scope
+  local a="${1:-$AGENT}" p="${2:-$PROMPT_RESUME}" rc scope open_before perm=""
+  ns_ensure_work_target_link "$PROJECT" || true
   # Claude Code names no scope for a session's permissions, so a shift started under the shipped
   # inherit setting has nothing to inherit and a revival cannot be shown to be no broader than the
   # original. That is a refusal, not a reason to launch at whatever the host defaults to.
@@ -296,7 +297,18 @@ spawn() { # $1 optionally overrides the agent for this one attempt; $2 the order
       return 1
       ;;
   esac
+  case "$scope" in
+    host-grant | recorded:dangerously-skip-permissions | recorded:bypass-permissions)
+      perm="--dangerously-skip-permissions"
+      ;;
+  esac
+  if [ -n "$perm" ] && [ "$AGENT_IS_DEFAULT" -eq 1 ]; then
+    case "$a" in
+      claude\ *) a="claude $perm ${a#claude }" ;;
+    esac
+  fi
   log_line "watchman: reviving under launch scope $scope"
+  open_before="$(open_boxes)"
   # NIGHTSHIFT_REVIVAL marks the child for the hooks: a revival session ending is never the
   # owner's hand on the door — without the mark, the worker's own exit would write .session-end
   # under the recorded id and stand the watchman down mid-outage.
@@ -309,7 +321,11 @@ spawn() { # $1 optionally overrides the agent for this one attempt; $2 the order
     log_line "watchman: process lease transfer failed — not spawning beside an unfenced session"
     return 1
   fi
-  return "$rc"
+  if ns_watchman_revival_proved "$NS" "$SENTINEL" "$INTERVAL_MIN" "$open_before"; then
+    return 0
+  fi
+  log_line "watchman: revival child returned without moving the shift — not counting it as a resume"
+  return 1
 }
 
 # Ownership goes back where it came from. Every attempt of a wake took the lease for its own
@@ -404,7 +420,9 @@ errored_tail() {
   local t
   t="$(resolve_transcript)"
   [ -n "$t" ] || return 1
-  tail -n 25 "$t" 2>/dev/null | awk '
+  # Last conversation event in a long enough tail: a chatty failed revival must not
+  # push the host's error out of a 25-line window. A later non-error assistant is recovery.
+  tail -n 400 "$t" 2>/dev/null | awk '
     /[^\\]"type"[[:space:]]*:[[:space:]]*"(user|assistant)"/ {
       wedge = /[^\\]"isApiErrorMessage"[[:space:]]*:[[:space:]]*true/
     }
@@ -424,7 +442,7 @@ api_limited_tail() {
   local t
   t="$(resolve_transcript)"
   [ -n "$t" ] || return 1
-  tail -n 25 "$t" 2>/dev/null | awk '
+  tail -n 400 "$t" 2>/dev/null | awk '
     /[^\\]"isApiErrorMessage"[[:space:]]*:[[:space:]]*true/ { last = tolower($0) }
     END {
       exit (last ~ /(rate|usage)[ _-]?limit/ ||
@@ -532,7 +550,7 @@ hold_reason() {
   case "$(site_verdict)" in
     alive) printf 'session activity' ;;
     esc) printf 'owner Esc' ;;
-    silent) printf 'live shift session' ;;
+    silent) ;; # a quiet live pid is what this wake is replacing, not a reason to hold
     tabs) printf 'a live claude session in the project' ;;
     unavailable) printf 'process evidence unavailable' ;;
   esac
@@ -543,6 +561,7 @@ log_line "watchman armed · every ${INTERVAL_MIN}m"
 wake=0
 standby_prev=""
 down_notified=0
+silent_wakes=0
 
 # NIGHTSHIFT_WATCH_SLEEP overrides the base sleep in seconds — the test suite's speed lever.
 BASE_SLEEP="${NIGHTSHIFT_WATCH_SLEEP:-$((INTERVAL_MIN * 60))}"
@@ -619,6 +638,17 @@ while :; do
   # uncertain reading stands by. Esc is read before everything else: if the owner resumes and a
   # 500 kills it later, the next wake finds an errored tail, not an interrupt, and revives.
   verdict="$(site_verdict)"
+  case "$verdict" in
+    silent)
+      silent_wakes=$((silent_wakes + 1))
+      if [ "$silent_wakes" -ge 2 ] && ns_pulse_stale "$NS" "$INTERVAL_MIN"; then
+        log_line "watchman: silent too long with a stale pulse — treating as dead"
+        verdict=dead
+        silent_wakes=0
+      fi
+      ;;
+    *) silent_wakes=0 ;;
+  esac
   case "$verdict" in
       alive)
         standby_prev=""

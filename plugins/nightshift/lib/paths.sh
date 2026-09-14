@@ -122,6 +122,21 @@ ns_record_workspace_link() {
   fi
 }
 
+# Point the work-target at this workspace so a revival started there finds .nightshift/.
+# No-op when the target is the workspace itself or already linked here.
+ns_ensure_work_target_link() { # <workspace>
+  local ws target existing
+  ws="$(cd -P "$1" 2>/dev/null && pwd)" || return 1
+  target="$(ns_work_target "$ws" 2>/dev/null)" || return 0
+  [ -n "$target" ] || return 0
+  [ "$target" = "$ws" ] && return 0
+  [ -d "$target" ] || return 1
+  if existing="$(ns_workspace_root "$target" 2>/dev/null)" && [ "$existing" = "$ws" ]; then
+    return 0
+  fi
+  ns_record_workspace_link "$target" "$ws"
+}
+
 # ns_path_under_protected <path> <protectedDirs>
 ns_path_under_protected() {
   local path="${1#./}" d

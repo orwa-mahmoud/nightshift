@@ -256,7 +256,9 @@ spawn_fresh() {
 RECOVERY_REFUSED=0
 
 spawn() { # $1 = rung (1|2)
-  local prompt kind rc scope
+  local prompt kind rc scope open_before
+  ns_ensure_work_target_link "$PROJECT" || true
+  open_before="$(ns_open_boxes "$PUNCH")"
   scope="$(ns_recovery_effective_scope "$PROJECT" codex)"
   case "$scope" in
     unavailable:*)
@@ -304,7 +306,11 @@ spawn() { # $1 = rung (1|2)
     log_line "watchman: process lease transfer failed — not spawning beside an unfenced session"
     return 1
   fi
-  return "$rc"
+  if ns_watchman_revival_proved "$NS" "" "$INTERVAL_MIN" "$open_before"; then
+    return 0
+  fi
+  log_line "watchman: revival child returned without moving the shift — not counting it as a resume"
+  return 1
 }
 
 rung_name() { if [ "$1" -eq 1 ] && [ -n "$(sid)" ]; then printf 'resuming the recorded conversation'; else printf 'fresh session'; fi; }

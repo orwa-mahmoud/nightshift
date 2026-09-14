@@ -188,6 +188,9 @@ fi
 
 if WORK_TARGET="$(ns_work_target "$WORKSPACE" 2>/dev/null)"; then
   ok "work-target $WORK_TARGET"
+  if [ "$DRY_RUN" -eq 0 ]; then
+    ns_ensure_work_target_link "$WORKSPACE" || true
+  fi
 else
   rc=$?
   WORK_TARGET="$WORKSPACE"
@@ -216,6 +219,8 @@ fi
 
 SESSION_LIVE=0
 SESSION_UNKNOWN=0
+SITE_PAUSED=0
+ns_site_paused "$NS" && SITE_PAUSED=1
 if ns_session_present "$NS"; then
   s_pid="$(ns_session_line "$NS" 3 | tr -d '[:space:]')"
   s_start="$(ns_session_line "$NS" 4)"
@@ -231,18 +236,21 @@ if ns_session_present "$NS"; then
       esac
       ;;
   esac
-  if [ "$SESSION_LIVE" -eq 1 ]; then
+  if [ "$SITE_PAUSED" -eq 0 ] && [ "$SESSION_LIVE" -eq 1 ]; then
     refuse "session an agent is already working this punch list on $s_host"
     repair "ask Nightshift for status, or pause it with ns stop-shift before starting a second shift"
-  elif [ "$SESSION_UNKNOWN" -eq 1 ]; then
+    repair "if that shift is already stopped, clear the leftover session with ns reset-shift"
+  elif [ "$SITE_PAUSED" -eq 0 ] && [ "$SESSION_UNKNOWN" -eq 1 ]; then
     refuse "session process-evidence-unavailable - a pid that kill -0 cannot classify is not a dead session"
     repair "run Start from a shell that can see the recorded process, or pause the shift with ns stop-shift"
+    repair "if that shift is already stopped, clear the leftover session with ns reset-shift"
   fi
 fi
 
-if [ "$LEASE_STATE" = valid ] && ns_lease_pid_live "$NS"; then
+if [ "$SITE_PAUSED" -eq 0 ] && [ "$LEASE_STATE" = valid ] && ns_lease_pid_live "$NS"; then
   refuse "lease a live process holds generation $NS_LEASE_GENERATION of this shift"
   repair "wait for that worker to exit, or pause the shift with ns stop-shift"
+  repair "if that shift is already stopped, clear the leftover session with ns reset-shift"
 fi
 
 if [ "$(ns_reason_code "$NS")" = clock-out-failed ] && [ "$LEASE_STATE" = valid ] && [ -z "$NS_LEASE_NONCE" ]; then
@@ -422,7 +430,7 @@ if ns_policy_json_tool >/dev/null 2>&1 || ns_rules_awk_bin >/dev/null 2>&1; then
       if [ -f "$NS/shift-policy.json" ]; then
         ok "policy resolved"
       else
-        warn "policy absent; write one from the remembered project default before arming"
+        ok "policy none - arming from rules.json"
       fi
       ;;
   esac

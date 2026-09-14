@@ -129,15 +129,17 @@ recorded_read() {
   cat >"$BIN/lease-env.sh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n%s\n' "$NIGHTSHIFT_LEASE_GENERATION" "$NIGHTSHIFT_LEASE_NONCE" >.nightshift/lease-env
+# Generation and nonce are on the lease before the child starts. A noop exit is not a
+# revival, so the live lease is restored (or dropped) after wait.
+sed -n '3,4p' .nightshift/.shift-lease >.nightshift/lease-at-spawn
 STUB
   chmod +x "$BIN/lease-env.sh"
 
   run watch --agent "bash $BIN/lease-env.sh" --max-wakes 1
   [ "$status" -eq 7 ]
   [ -n "$(sed -n 1p "$P/.nightshift/lease-env")" ]
-  [ "$(sed -n 1p "$P/.nightshift/lease-env")" = "$(sed -n 3p "$P/.nightshift/.shift-lease")" ]
-  [ "$(sed -n 2p "$P/.nightshift/lease-env")" = "$(sed -n 4p "$P/.nightshift/.shift-lease")" ]
-  sed -n 5p "$P/.nightshift/.shift-lease" | grep -qE '^[0-9]+$'
+  [ "$(sed -n 1p "$P/.nightshift/lease-env")" = "$(sed -n 1p "$P/.nightshift/lease-at-spawn")" ]
+  [ "$(sed -n 2p "$P/.nightshift/lease-env")" = "$(sed -n 2p "$P/.nightshift/lease-at-spawn")" ]
 }
 
 @test "project-file churn alone is not life — a dead site is revived through it" {
@@ -1120,6 +1122,19 @@ STUB
   [ "$(reason)" = "revived" ]
 }
 
+@test "a child that exits 0 without moving the shift is not a revival" {
+  cat >"$BIN/noop.sh" <<'STUB'
+#!/usr/bin/env bash
+echo called >>.nightshift/agent-calls
+exit 0
+STUB
+  chmod +x "$BIN/noop.sh"
+  run watch --agent "bash $BIN/noop.sh" --max-wakes 1
+  [ "$(reason)" != "revived" ]
+  [ "$(reason)" = "exhausted-retry" ]
+  grep -qE '^- \[ \]' "$P/.nightshift/punch-list.md"
+}
+
 @test "the fresh-session fallback records fresh-fallback, not revived" {
   printf 'abc-123\n\n\n\n' >"$P/.nightshift/.shift-session"
   cat >"$BIN/claude" <<'STUB'
@@ -1456,6 +1471,16 @@ STUB
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
   [ "$output" = host-default ]
+
+  # host-default is too narrow when the night recorded a broader observed scope.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools",
+          launchScope: "danger-full-access", launchProvenance: "observed"}' \
+    >"$p/.nightshift/shift-policy.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = "unavailable:narrower:danger-full-access" ]
+  run bash -c '. "$1"; ns_recovery_refusal unavailable:narrower:danger-full-access' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  printf '%s' "$output" | grep -qF 'too narrow'
 }
 
 @test "a workspace that predates the setting is not read as having chosen the broad grant" {

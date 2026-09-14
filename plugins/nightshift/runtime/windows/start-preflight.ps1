@@ -175,6 +175,9 @@ catch {
 try {
     $workTarget = Resolve-NSWorkTarget $workspace
     Write-Ok "work-target $workTarget"
+    if (-not $DryRun) {
+        $null = Confirm-NSWorkTargetLink $workspace
+    }
 }
 catch {
     if ([string]$_.Exception.Message -match 'scratch') {
@@ -203,22 +206,26 @@ if (Test-NSPathEntry (Join-Path $ns '.shift-lease')) {
     }
 }
 
+$sitePaused = Test-NSSitePaused $ns
 $session = Read-NSSession $ns
 if ($null -ne $session) {
     $sessionState = Test-NSRecordedProcess ([string]$session.ProcessId) ([string]$session.Start)
-    if ($sessionState -eq 'Alive') {
+    if (-not $sitePaused -and $sessionState -eq 'Alive') {
         Write-Refuse ('session an agent is already working this punch list on ' + [string]$session.HostName)
         Write-Repair "ask Nightshift for status, or pause it with ns stop-shift before starting a second shift"
+        Write-Repair 'if that shift is already stopped, clear the leftover session with ns reset-shift'
     }
-    elseif ($sessionState -eq 'Unavailable') {
+    elseif (-not $sitePaused -and $sessionState -eq 'Unavailable') {
         Write-Refuse 'session process-evidence-unavailable - a pid this host cannot classify is not a dead session'
         Write-Repair "run Start from a shell that can see the recorded process, or pause the shift with ns stop-shift"
+        Write-Repair 'if that shift is already stopped, clear the leftover session with ns reset-shift'
     }
 }
 
-if ($leaseState -eq 'valid' -and (Test-NSLeasePidLive $ns)) {
+if (-not $sitePaused -and $leaseState -eq 'valid' -and (Test-NSLeasePidLive $ns)) {
     Write-Refuse ('lease a live process holds generation ' + [string]$lease.Generation + ' of this shift')
     Write-Repair "wait for that worker to exit, or pause the shift with ns stop-shift"
+    Write-Repair 'if that shift is already stopped, clear the leftover session with ns reset-shift'
 }
 
 if ((Get-NSReasonCode $ns) -eq 'clock-out-failed' -and $leaseState -eq 'valid' -and
@@ -415,7 +422,7 @@ if ([string]$policyState['state'] -eq 'malformed') {
     Write-Repair "repair the named field in $ns/shift-policy.json, or delete the file so the next Start writes safe defaults"
 }
 elseif ([string]$policyState['state'] -eq 'absent') {
-    Write-Warn 'policy absent; write one from the remembered project default before arming'
+    Write-Ok 'policy none - arming from rules.json'
 }
 else {
     Write-Ok 'policy resolved'

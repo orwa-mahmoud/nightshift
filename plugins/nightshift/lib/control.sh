@@ -105,6 +105,13 @@ ns_control_deadline_passed() { # <ns>
   [ "$now" -ge "$dl" ]
 }
 
+# A stop-work order or a written ending: the recorded pid is leftover, not a second agent.
+ns_site_paused() { # <ns>
+  [ -f "$1/STOP" ] && [ ! -L "$1/STOP" ] && return 0
+  [ -f "$1/.ended" ] && [ ! -L "$1/.ended" ] && return 0
+  return 1
+}
+
 # Print a refuse line when Start must not arm a paused shift. Empty = Start may proceed.
 ns_control_start_refuse_reason() { # <ns>
   local ns="$1"

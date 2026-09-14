@@ -175,6 +175,46 @@ function Resolve-NSWorkspaceRoot {
     return $workspace
 }
 
+function Confirm-NSWorkTargetLink {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    try {
+        $ws = Resolve-NSCanonicalPath $Workspace
+        $target = Resolve-NSWorkTarget $ws
+        if ([string]::IsNullOrEmpty($target) -or $target -eq $ws) { return $true }
+        if (-not (Test-Path -LiteralPath $target -PathType Container)) { return $false }
+        try {
+            if ((Resolve-NSWorkspaceRoot $target) -eq $ws) { return $true }
+        }
+        catch {
+        }
+        $link = Join-Path $target '.nightshift-link'
+        if (Test-NSReparsePoint $link) { return $false }
+        $null = Write-NSAtomicLines -Path $link -Lines @($ws)
+        $gitDirectory = Invoke-NSGit $target @('rev-parse', '--git-dir')
+        if (-not [string]::IsNullOrWhiteSpace($gitDirectory)) {
+            if (-not [IO.Path]::IsPathRooted($gitDirectory)) {
+                $gitDirectory = Join-Path $target $gitDirectory
+            }
+            $info = Join-Path $gitDirectory 'info'
+            $null = New-Item -ItemType Directory -Path $info -Force
+            $exclude = Join-Path $info 'exclude'
+            $lines = if (Test-Path -LiteralPath $exclude -PathType Leaf) {
+                @([IO.File]::ReadAllLines($exclude))
+            }
+            else {
+                @()
+            }
+            if ($lines -notcontains '.nightshift-link') {
+                $null = Write-NSAtomicLines -Path $exclude -Lines @($lines + '.nightshift-link')
+            }
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
 # Windows PowerShell 5.1 turns redirected native stderr into ErrorRecords. With
 # $ErrorActionPreference=Stop, `git ... 2>$null` then aborts - including CRLF
 # warnings and "unknown revision 'HEAD'" on an unborn branch.
@@ -1788,6 +1828,15 @@ function Get-NSControlStartRefuseReason {
     return "paused shift deadline has expired - write a new UNIX epoch to $NightshiftDir/deadline, or run Reset then Start; refusing to invent a time budget"
 }
 
+function Test-NSSitePaused {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $stop = Join-Path $NightshiftDir 'STOP'
+    $ended = Join-Path $NightshiftDir '.ended'
+    if ((Test-Path -LiteralPath $stop -PathType Leaf) -and -not (Test-NSReparsePoint $stop)) { return $true }
+    if ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)) { return $true }
+    return $false
+}
+
 function Stop-NSWatchman {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $pidFile = Join-Path $NightshiftDir '.watchman'
@@ -2335,6 +2384,27 @@ function Test-NSLeasePidLive {
         return $false
     }
     return (Test-NSRecordedProcess $lease.ProcessId $lease.Start) -eq 'Alive'
+}
+
+function Test-NSWatchmanRevivalProved {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [string]$Sentinel = '',
+        [int]$IntervalMinutes = 0,
+        [AllowEmptyString()]$OpenBefore = ''
+    )
+    $ended = Join-Path $NightshiftDir '.ended'
+    if ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)) {
+        return $true
+    }
+    $punch = Join-Path $NightshiftDir 'punch-list.md'
+    $nowOpen = $null
+    try { $nowOpen = [int](Get-NSBoxCounts $punch).Open } catch { $nowOpen = $null }
+    if ($OpenBefore -match '^[0-9]+$' -and $null -ne $nowOpen -and $nowOpen -lt [int]$OpenBefore) {
+        return $true
+    }
+    if (Test-NSPulseFresh $NightshiftDir $IntervalMinutes) { return $true }
+    return (Test-NSLeasePidLive $NightshiftDir)
 }
 
 function Test-NSHardhatActive {
@@ -5137,8 +5207,24 @@ function Test-NSLaunchScopeSupported {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope
     )
-    if ($HostName -cne 'codex') { return $false }
-    return @('read-only', 'workspace-write', 'danger-full-access') -ccontains $Scope
+    if ($HostName -ceq 'codex') {
+        return @('read-only', 'workspace-write', 'danger-full-access') -ccontains $Scope
+    }
+    if ($HostName -ceq 'claude') {
+        return @('dangerously-skip-permissions', 'bypass-permissions') -ccontains $Scope
+    }
+    return $false
+}
+
+function Test-NSLaunchScopeElevated {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope)
+    return @(
+        'danger-full-access',
+        'workspace-write',
+        'dangerously-skip-permissions',
+        'bypass-permissions',
+        'bypassPermissions'
+    ) -ccontains $Scope
 }
 
 # Get-NSLaunchObserved <host> - the scope this session runs under in the host's own words, and
@@ -5153,6 +5239,31 @@ function Get-NSLaunchObserved {
         }
         if (-not [string]::IsNullOrEmpty($env:CODEX_SANDBOX)) {
             return ($env:CODEX_SANDBOX + "`tobserved")
+        }
+    }
+    if (($HostName -ceq 'claude' -or $HostName -ceq 'cursor') -and
+        -not [string]::IsNullOrEmpty([string]$env:CLAUDE_PROJECT_DIR + [string]$env:CLAUDE_PLUGIN_ROOT + [string]$env:CURSOR_PLUGIN_ROOT)) {
+        $pid = $PID
+        for ($hops = 0; $hops -lt 16 -and $null -ne $pid -and $pid -gt 1; $hops++) {
+            try {
+                $proc = Get-Process -Id $pid -ErrorAction Stop
+                $cmd = [string]$proc.CommandLine
+                if ([string]::IsNullOrEmpty($cmd)) {
+                    try {
+                        $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$pid" -ErrorAction Stop).CommandLine
+                    }
+                    catch {
+                        $cmd = ''
+                    }
+                }
+                if ($cmd -match 'dangerously-skip-permissions|bypass-permissions') {
+                    return "dangerously-skip-permissions`tobserved"
+                }
+                $pid = $proc.Parent.Id
+            }
+            catch {
+                break
+            }
         }
     }
     return "unknown`tunavailable"
@@ -5178,7 +5289,18 @@ function Get-NSRecoveryEffectiveScope {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
     )
     $configured = Get-NSRecoveryLaunchScope $Workspace
-    if ($configured -ceq 'host-default' -or $configured -ceq 'host-grant') { return $configured }
+    if ($configured -ceq 'host-grant') { return 'host-grant' }
+    if ($configured -ceq 'host-default') {
+        $policyState = (Get-NSShiftPolicyState $Workspace)['state']
+        if ($policyState -ceq 'valid') {
+            $recorded = Get-NSPolicyLaunch -Workspace $Workspace -Field 'scope'
+            $provenance = Get-NSPolicyLaunch -Workspace $Workspace -Field 'provenance'
+            if ($provenance -ceq 'observed' -and (Test-NSLaunchScopeElevated $recorded)) {
+                return ('unavailable:narrower:' + $recorded)
+            }
+        }
+        return 'host-default'
+    }
     $policyState = (Get-NSShiftPolicyState $Workspace)['state']
     if ($policyState -ceq 'absent') { return 'unavailable:unrecorded' }
     if ($policyState -cne 'valid') { return 'unavailable:unreadable' }
@@ -5203,6 +5325,9 @@ function Get-NSRecoveryRefusal {
     }
     if ($Scope -clike 'unavailable:unsupported:*') {
         return ("the shift was started under '" + $Scope.Substring('unavailable:unsupported:'.Length) + "', which this host has no way to be asked for again")
+    }
+    if ($Scope -clike 'unavailable:narrower:*') {
+        return ("the shift was started under '" + $Scope.Substring('unavailable:narrower:'.Length) + "', so a host-default revival would be too narrow")
     }
     return ''
 }
