@@ -114,7 +114,9 @@ write_shift_policy() {
 }
 
 FIX="$BATS_TEST_DIRNAME/fixtures/morning-receipt"
-RECEIPTS_LINE='Receipts: [index](./README.md), [2. Make the packed Node-only build reproducible.](./2-make-the-packed-node-only-build-reproducible.md)'
+RECEIPTS_LINE='Receipts:
+- [index](./README.md)
+- [2. Make the packed Node-only build reproducible.](./2-make-the-packed-node-only-build-reproducible.md)'
 
 policy_fixture_project() { # <name> <policy-file-or-absent>
   local p

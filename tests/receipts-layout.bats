@@ -44,6 +44,55 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   grep -qF 'exact: 122 / 55458 / 47457543 / 42091 / 7332' "$f"
   grep -qF '**Duration:**' "$f"
   grep -q $'\t2. Make the packed Node-only build reproducible.\t' "$p/.nightshift/usage/marks.tsv"
+  # Usage and duration sit under the heading, before any later narrative.
+  awk '
+    $0 == "# 2. Make the packed Node-only build reproducible." { head = NR }
+    /^\*\*Usage:\*\*/ { usage = NR }
+    /^\*\*Duration:\*\*/ { dur = NR }
+    END { if (!(head && usage && dur && head < usage && usage < dur)) exit 1 }
+  ' "$f"
+}
+
+@test "an unbolded ticked line writes usage into the item file, not an x- sidecar" {
+  p="$(new_project receipts-unbold)"
+  printf '## Items\n- [x] 1. Title without bold.\n' >"$p/.nightshift/punch-list.md"
+  lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 \
+    'input=10,cache_write=0,cache_read=0,output=4,reasoning=1'
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
+  [ -f "$p/.nightshift/receipts/1-title-without-bold.md" ]
+  [ ! -e "$p/.nightshift/receipts/x-1-title-without-bold.md" ]
+  grep -qF 'exact: 10 / 0 / 0 / 4 / 1' "$p/.nightshift/receipts/1-title-without-bold.md"
+}
+
+@test "the index reads an old x- sidecar when the item file has no exact line" {
+  p="$(new_project receipts-sidecar)"
+  printf 'Date: 2026-09-14\n\n## Items\n- [x] **1. Title without bold.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# 1. Title without bold.\n\ndone.\n' >"$p/.nightshift/receipts/1-title-without-bold.md"
+  printf '# leftover\n\n**Usage:** input 10 · cache_write 0 · cache_read 0 · output 4 · reasoning 1\n  Source: claude claude-opus-5, cumulative counters, segments 1; exact: 10 / 0 / 0 / 4 / 1\n**Duration:** 5m 00s\n' \
+    >"$p/.nightshift/receipts/x-1-title-without-bold.md"
+  lib ns_receipts_write_index "$p"
+  grep -qF '| 1. Title without bold. | ticked | **input 10 · cache_write 0 · cache_read 0 · output 4 · reasoning 1** | **5m 0s working** |' \
+    "$p/.nightshift/receipts/README.md"
+}
+
+@test "the index Time column lists working and paused, and totals add both" {
+  p="$(new_project receipts-time)"
+  printf 'Date: 2026-09-14\n\n## Items\n- [x] **1. First.**\n- [x] **2. Second.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# 1. First.\n\n**Usage:** input 1 · cache_write 0 · cache_read 0 · output 1 · reasoning 0\n  Source: claude claude-opus-5, cumulative counters, segments 1; exact: 1 / 0 / 0 / 1 / 0\n**Duration:** 30m 0s working (wall 1h 0m; paused 30m 0s, owner stop-work); 2026-09-14T10:00Z → 2026-09-14T11:00Z\n' \
+    >"$p/.nightshift/receipts/1-first.md"
+  printf '# 2. Second.\n\n**Usage:** input 2 · cache_write 0 · cache_read 0 · output 2 · reasoning 0\n  Source: claude claude-opus-5, cumulative counters, segments 1; exact: 2 / 0 / 0 / 2 / 0\n**Duration:** 10m 0s working; 2026-09-14T11:00Z → 2026-09-14T11:10Z\n' \
+    >"$p/.nightshift/receipts/2-second.md"
+  lib ns_receipts_write_index "$p"
+  grep -qF '| 1. First. | ticked | **input 1 · cache_write 0 · cache_read 0 · output 1 · reasoning 0** | **30m 0s working · 30m 0s paused** |' \
+    "$p/.nightshift/receipts/README.md"
+  grep -qF '| 2. Second. | ticked | **input 2 · cache_write 0 · cache_read 0 · output 2 · reasoning 0** | **10m 0s working** |' \
+    "$p/.nightshift/receipts/README.md"
+  grep -qF '| **Totals** |  | **input 3 · cache_write 0 · cache_read 0 · output 3 · reasoning 0** | **40m 0s working · 30m 0s paused** |' \
+    "$p/.nightshift/receipts/README.md"
 }
 
 @test "the index lists every item and is rewritten at tick" {
@@ -54,7 +103,7 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   idx="$p/.nightshift/receipts/README.md"
   [ -f "$idx" ]
   grep -qF '# Receipts — 2026-09-09' "$idx"
-  grep -qF '| Item | State | **Tokens** | **Time** | Receipt |' "$idx"
+  grep -qF '| Item | State | **Usage** | **Time** | Receipt |' "$idx"
   grep -qF '| 2. Make the packed Node-only build reproducible. | ticked |' "$idx"
   grep -qF '| 3. Ship it | open |' "$idx"
   grep -qF './2-make-the-packed-node-only-build-reproducible.md' "$idx"

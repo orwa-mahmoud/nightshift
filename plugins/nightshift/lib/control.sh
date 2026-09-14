@@ -233,6 +233,7 @@ ns_control_stop() { # <host-path> [reason]
   fi
   ns_control_write_stop "$NS_CONTROL_NS" "$reason"
   ns_control_drop "$NS_CONTROL_NS/.shift-session"
+  ns_usage_pause "$NS_CONTROL_NS" "owner stop-work" || true
   if ns_control_stop_watchman "$NS_CONTROL_NS"; then
     watch="${NS_CONTROL_WATCHMAN:-absent}"
   else

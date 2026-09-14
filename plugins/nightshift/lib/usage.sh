@@ -534,6 +534,35 @@ ns_usage_duration() {
   printf '%sh %sm' "$((s / 3600))" "$(((s % 3600) / 60))"
 }
 
+# ns_usage_iso <epoch> — minute-precision UTC for a duration line.
+ns_usage_iso() {
+  case "${1:-}" in '' | *[!0-9]*) return 1 ;; esac
+  date -u -r "$1" +%Y-%m-%dT%H:%MZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%MZ 2>/dev/null
+}
+
+# ns_usage_duration_line <wall-sec> <paused-sec> <reason> <from-epoch> <to-epoch>
+# Working time first, then the checkable wall and pause, then the span. Nothing is subtracted
+# silently: working is wall minus the pauses the runtime recorded.
+ns_usage_duration_line() {
+  local wall="${1:-0}" paused="${2:-0}" reason="${3:-}" from="$4" to="$5" work out span=""
+  case "$wall" in '' | *[!0-9]*) wall=0 ;; esac
+  case "$paused" in '' | *[!0-9]*) paused=0 ;; esac
+  work=$((wall - paused))
+  [ "$work" -ge 0 ] || work=0
+  out="$(ns_usage_duration "$work") working"
+  if [ "$paused" -gt 0 ]; then
+    out="$out (wall $(ns_usage_duration "$wall"); paused $(ns_usage_duration "$paused")"
+    [ -z "$reason" ] || out="$out, $reason"
+    out="$out)"
+  fi
+  if span="$(ns_usage_iso "$from")" && [ -n "$span" ]; then
+    if to_s="$(ns_usage_iso "$to")" && [ -n "$to_s" ]; then
+      out="$out; $span → $to_s"
+    fi
+  fi
+  printf '%s' "$out"
+}
+
 # ---------------------------------------------------------------------------------------------
 # The progress cadence, evaluated by the runtime
 #

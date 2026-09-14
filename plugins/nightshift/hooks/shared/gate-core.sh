@@ -145,13 +145,16 @@ ns_gate_usage_tick() {
   receipt="$(ns_receipt_path "$project" "$label")"
   [ -n "$fields" ] || return 0
   line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
-  # Wall clock, and beside it any gap the runtime knows was not work — a revival after a session
-  # died, a shift held at STOP. Listed, never subtracted: a duration that quietly excluded time
-  # would be a figure nobody could check.
-  duration="$(ns_usage_duration "$seconds")"
-  paused="$(ns_usage_paused_since "$ns" "$(_ns_usage_item_start "$ns")")" && {
-    duration="$duration (paused $(ns_usage_duration "$(printf '%s' "$paused" | cut -f1)"), $(printf '%s' "$paused" | cut -f2))"
-  }
+  # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
+  from="$(_ns_usage_item_start "$ns")"
+  to="$(date +%s)"
+  paused_sec=0
+  paused_why=""
+  if paused="$(ns_usage_paused_since "$ns" "$from")"; then
+    paused_sec="$(printf '%s' "$paused" | cut -f1)"
+    paused_why="$(printf '%s' "$paused" | cut -f2)"
+  fi
+  duration="$(ns_usage_duration_line "$seconds" "$paused_sec" "$paused_why" "$from" "$to")"
   ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
   rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
   ns_receipts_write_index "$project"
@@ -166,21 +169,45 @@ _ns_usage_item_start() {
   tail -n2 "$file" | head -n1 | cut -f1
 }
 
-# ns_gate_usage_append <receipt> <item-label> <usage-line> <duration> — append the runtime
-# block to the item's receipt. If the model has not written the file yet, it is created with
-# a `# <NN. title>` heading. The measurement does not wait on the narrative.
+# ns_gate_usage_append <receipt> <item-label> <usage-line> <duration> — write the runtime
+# block at the top of the item's receipt, under the heading. If the model has not written
+# the file yet, it is created with a `# <NN. title>` heading. The measurement does not wait
+# on the narrative.
 ns_gate_usage_append() {
-  local receipt="$1" label="$2" usage="$3" duration="$4" dir
+  local receipt="$1" label="$2" usage="$3" duration="$4" dir tmp block
   [ -n "$receipt" ] || return 0
   [ ! -L "$receipt" ] || return 0
   dir="${receipt%/*}"
   mkdir -p "$dir" 2>/dev/null || return 0
+  block="$(printf '%s\n**Duration:** %s\n' "$usage" "$duration")"
   if [ ! -f "$receipt" ]; then
-    printf '# %s\n' "$label" >"$receipt" 2>/dev/null || return 0
+    printf '# %s\n\n%s' "$label" "$block" >"$receipt" 2>/dev/null || return 0
+    return 0
   fi
-  {
-    printf '\n%s\n**Duration:** %s\n' "$usage" "$duration"
-  } >>"$receipt" 2>/dev/null || :
+  tmp="$(mktemp "${TMPDIR:-/tmp}/ns-receipt-usage.XXXXXX")" || return 0
+  printf '%s' "$block" >"$tmp.block" || { rm -f "$tmp"; return 0; }
+  awk -v blockfile="$tmp.block" '
+    BEGIN {
+      while ((getline l < blockfile) > 0) block = block l "\n"
+      close(blockfile)
+    }
+    /^# / && !done {
+      print
+      print ""
+      printf "%s", block
+      print ""
+      done = 1
+      next
+    }
+    { print }
+    END {
+      if (!done) {
+        print ""
+        printf "%s", block
+      }
+    }
+  ' "$receipt" >"$tmp" 2>/dev/null && mv "$tmp" "$receipt"
+  rm -f "$tmp" "$tmp.block"
 }
 
 # ns_gate_usage_sync <nightshift-dir> <project-dir> <punch-list> <ticked> — catch the marks up to
@@ -227,6 +254,7 @@ ns_gate_item_label() {
       if (n != want) next
       line = $0
       sub(/^- \[x\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[x\][[:space:]]*/, "", line)
       sub(/[[:space:]]+—.*$/, "", line)
       sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)

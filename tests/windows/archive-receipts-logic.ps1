@@ -339,7 +339,7 @@ try {
     $archivedIndex = [IO.File]::ReadAllText((Join-Path $dest 'README.md'))
     Expect-True ($archivedIndex.Contains('# Receipts — 2026-09-05')) 'the archived index is dated'
     Expect-True ($archivedIndex.Contains(
-        '| 1. Fix the resolver. | ticked | **120** | **10m 00s** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
+        '| 1. Fix the resolver. | ticked | **input 100 · cache_write 0 · cache_read 0 · output 20 · reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
         'the archived index carries the first receipt with its measurements'
     Expect-True ($archivedIndex.Contains('| 2. Cover the parser. | ticked |')) `
         'the archived index carries the second receipt'

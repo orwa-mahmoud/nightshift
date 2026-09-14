@@ -333,7 +333,7 @@ mark_at() {
   [ -z "$output" ]
 }
 
-@test "a gap the runtime knows was not work is listed beside the wall clock, never subtracted" {
+@test "a gap the runtime knows was not work is listed and subtracted from working time" {
   p="$(new_project paused-gap)"
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
   now="$(date +%s)"
@@ -347,8 +347,8 @@ mark_at() {
 
   grep -qF 'paused' "$p/.nightshift/receipts/P01.md"
   grep -qF 'the session ended and the shift was revived' "$p/.nightshift/receipts/P01.md"
-  # The wall clock still reads the full hour: the gap is listed next to it, not taken out of it.
-  grep -qE '\*\*Duration:\*\* 1h 0m \(paused' "$p/.nightshift/receipts/P01.md"
+  # Working time is the wall clock minus the recorded gap; both figures stay on the line.
+  grep -qE '\*\*Duration:\*\* 30m 0s working \(wall 1h 0m; paused' "$p/.nightshift/receipts/P01.md"
 }
 
 @test "Windows reads the same fixtures to the same bytes" {

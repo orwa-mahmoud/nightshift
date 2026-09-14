@@ -321,11 +321,17 @@ if [ "$DRY_RUN" -eq 0 ]; then
       CLEARED="${CLEARED}${CLEARED:+ }$m"
     fi
   done
-  # The finished shift's accounting goes with its markers. Left in place, the next shift would open
-  # transcripts at the last shift's offsets and add to its totals, and two nights would be one
-  # number nobody could separate. Renamed, not dropped: Archive files it with the rest.
-  RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
-  [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
+  # A finished shift's accounting is set aside so the next night starts clean. A stop-work
+  # resume keeps the same marks: retiring them is what made stop-then-start lose the item's cost.
+  if [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; then
+    RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
+    [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
+  elif [ -f "$NS/STOP" ] && [ ! -L "$NS/STOP" ]; then
+    :
+  else
+    RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
+    [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
+  fi
   ns_control_drop "$NS/STOP"
   ns_control_drop_runtime_markers "$NS"
   if ns_control_deadline_passed "$NS"; then

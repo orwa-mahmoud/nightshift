@@ -549,7 +549,7 @@ _classify_policy() {
 
 _receipts_line() {
   local punch="$NS/punch-list.md" line label base
-  printf 'Receipts: [index](./README.md)'
+  printf 'Receipts:\n- [index](./README.md)\n'
   [ -f "$punch" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
@@ -569,7 +569,7 @@ _receipts_line() {
     [ -n "$label" ] || continue
     base="$(ns_receipt_basename "$label")"
     [ -n "$base" ] || continue
-    printf ', [%s](./%s.md)' "$label" "$base"
+    printf -- '- [%s](./%s.md)\n' "$label" "$base"
   done <<NSITEMS
 $(ns_items_section "$punch" 2>/dev/null || :)
 NSITEMS

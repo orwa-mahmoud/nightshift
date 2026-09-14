@@ -848,6 +848,7 @@ try {
         elseif ($verdict -eq 'esc') {
             Write-NSReason $ns 'esc-standby'
             if ($previousStandby -ne 'esc') {
+                $null = Write-NSUsagePause $ns 'owner pressed Esc'
                 Write-NSLogLine 'watchman: owner pressed Esc - standing by, not resuming'
             }
             $previousStandby = 'esc'
@@ -955,6 +956,7 @@ try {
                 Write-NSReason $ns 'exhausted-retry'
                 if (Test-NSApiFailureEvidence) {
                     $currentIntervalMinutes = [Math]::Min($currentIntervalMinutes * 2, 60)
+                    $null = Write-NSUsagePause $ns 'usage limit'
                     Write-NSLogLine "watchman: all $totalAttempts attempts failed (api down?) $([char]0x2014) backing off, knocking again in ${currentIntervalMinutes}m"
                 }
                 else {

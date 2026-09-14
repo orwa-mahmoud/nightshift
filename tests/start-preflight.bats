@@ -149,6 +149,26 @@ setup_site() { # <name> [punch-body]
   [ -f "$p/.nightshift/.shift-session" ]
 }
 
+@test "Start after stop-work keeps the live usage folder" {
+  p="$(setup_site preflight-keep-usage)"
+  : >"$p/.nightshift/STOP"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/usage/marks.tsv" ]
+}
+
+@test "Start after a finished shift retires usage" {
+  p="$(setup_site preflight-retire-usage)"
+  : >"$p/.nightshift/.ended"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/usage" ]
+}
+
 @test "a stopped shift with a live leftover pid is not a second agent" {
   p="$(setup_site preflight-stopped-live)"
   flag="$BATS_TEST_TMPDIR/stopped-live-flag"

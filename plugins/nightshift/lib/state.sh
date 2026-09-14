@@ -85,6 +85,8 @@ ns_receipt_title() {
 # ns_receipt_basename <label> — NN-slug, no suffix.
 ns_receipt_basename() {
   local label="$1" nn title slug
+  # A leftover `- [x]` from a ticked line must not become an `x-` sidecar file.
+  label="$(printf '%s' "$label" | sed 's/^- \[[xX ]\][[:space:]]*//; s/^\*\*//; s/\*\*$//')"
   nn="$(ns_receipt_nn "$label")"
   title="$(ns_receipt_title "$label")"
   [ -n "$title" ] || title="$label"
@@ -119,6 +121,9 @@ ns_receipt_has_model_text() {
     /^\*\*Duration:\*\*/ { next }
     /^  Source:/ { next }
     /^  Cache reads/ { next }
+    /^  The input figure/ { next }
+    /^  Cached input/ { next }
+    /^  Overlap between/ { next }
     { found = 1; exit }
     END { exit found ? 0 : 1 }
   ' "$f"
@@ -165,7 +170,8 @@ ns_usage_scale() {
   awk -v n="$n" 'BEGIN {
     if (n < 1000) { printf "%d", n; exit }
     if (n < 1000000) { printf "%.1fk", n / 1000; exit }
-    printf "%.1fM", n / 1000000
+    if (n < 1000000000) { printf "%.1fM", n / 1000000; exit }
+    printf "%.1fB", n / 1000000000
   }'
 }
 
@@ -184,36 +190,107 @@ ns_receipts_shift_date() {
   date -u +%Y-%m-%d
 }
 
-# ns_receipt_usage_cells <file> — the token sum, the scaled token cell and the duration cell of one
-# receipt, tab separated. A receipt with no runtime block, or none at all, reads as dashes.
+# ns_receipt_usage_cells <file> — input, cache_write, cache_read, output, reasoning, work
+# seconds, pause seconds, the named usage cell, and the time cell, tab separated. A receipt
+# with no runtime block reads as zeros and dashes. An `x-<name>` sidecar is read when the
+# item file itself has no exact line (the old tick-label bug).
 ns_receipt_usage_cells() {
-  local f="$1" tok_in tok_out tok_sum=0 tokens='—' time='—'
-  if [ -f "$f" ]; then
-    tok_in="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]*\) \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*.*/\1/p' "$f" | head -n1)"
-    tok_out="$(sed -n 's/.*exact:[[:space:]]*[0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ \([0-9][0-9]*\).*/\1/p' "$f" | head -n1)"
-    if [ -n "$tok_in" ] && [ -n "$tok_out" ]; then
-      tok_sum=$((tok_in + tok_out))
-      tokens="$(ns_usage_scale "$tok_sum")"
-    fi
-    time="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$f" | head -n1)"
-    [ -n "$time" ] || time='—'
+  local f="$1" dir base sidecar exact in=0 cw=0 cr=0 out=0 rea=0 tok_sum=0
+  local usage='—' time='—' work=0 pause=0 raw work_s pause_s
+  dir="${f%/*}"
+  base="${f##*/}"
+  if [ -f "$f" ] && grep -q 'exact:' "$f" 2>/dev/null; then
+    :
+  else
+    sidecar="$dir/x-${base}"
+    [ -f "$sidecar" ] && f="$sidecar"
   fi
-  printf '%s\t%s\t%s\n' "$tok_sum" "$tokens" "$time"
+  if [ -f "$f" ]; then
+    exact="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*\).*/\1/p' "$f" | head -n1)"
+    if [ -n "$exact" ]; then
+      in="${exact%% /*}"; exact="${exact#* / }"
+      cw="${exact%% /*}"; exact="${exact#* / }"
+      cr="${exact%% /*}"; exact="${exact#* / }"
+      out="${exact%% /*}"; rea="${exact#* / }"
+      tok_sum=$((in + out))
+      usage="input $(ns_usage_scale "$in") · cache_write $(ns_usage_scale "$cw") · cache_read $(ns_usage_scale "$cr") · output $(ns_usage_scale "$out") · reasoning $(ns_usage_scale "$rea")"
+    fi
+    raw="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$f" | head -n1)"
+    if [ -n "$raw" ]; then
+      case "$raw" in
+        *' working'*) work_s="${raw%% working*}" ;;
+        *' ('*) work_s="${raw%% (*}" ;;
+        *) work_s="$raw" ;;
+      esac
+      work_s="${work_s%"${work_s##*[![:space:]]}"}"
+      work="$(ns_usage_parse_seconds "$work_s")"
+      case "$raw" in
+        *' paused '*)
+          pause_s="${raw#* paused }"
+          pause_s="${pause_s%%,*}"
+          pause_s="${pause_s%%)*}"
+          pause_s="${pause_s%"${pause_s##*[![:space:]]}"}"
+          pause="$(ns_usage_parse_seconds "$pause_s")"
+          ;;
+      esac
+      time="$(ns_receipts_time_cell "$work" "$pause")"
+    fi
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$tok_sum"
+}
+
+# ns_usage_parse_seconds <1h 25m|11m 35s|45s> — integer seconds, or 0.
+ns_usage_parse_seconds() {
+  local t="$1" h=0 m=0 s=0
+  h="$(printf '%s' "$t" | grep -Eo '[0-9]+h' | head -n1 | tr -d h)"
+  m="$(printf '%s' "$t" | grep -Eo '[0-9]+m' | head -n1 | tr -d m)"
+  s="$(printf '%s' "$t" | grep -Eo '[0-9]+s' | head -n1 | tr -d s)"
+  case "$h" in '' | *[!0-9]*) h=0 ;; esac
+  case "$m" in '' | *[!0-9]*) m=0 ;; esac
+  case "$s" in '' | *[!0-9]*) s=0 ;; esac
+  printf '%s' "$((h * 3600 + m * 60 + s))"
 }
 
 # ns_receipts_index_head <date> — the title and column headers of an index page.
 ns_receipts_index_head() {
   printf '# Receipts — %s\n\n' "$1"
-  printf '| Item | State | **Tokens** | **Time** | Receipt |\n'
+  printf '| Item | State | **Usage** | **Time** | Receipt |\n'
   printf '| --- | --- | --- | --- | --- |\n'
 }
-# ns_receipts_index_totals <token-total> — the closing totals row of an index page.
+# ns_receipts_index_totals <usage-cell> <time-cell> — the closing totals row of an index page.
 ns_receipts_index_totals() {
-  if [ "$1" -gt 0 ]; then
-    printf '| **Totals** |  | **%s** | **%s** |  |\n' "$(ns_usage_scale "$1")" '—'
-  else
-    printf '| **Totals** |  | **%s** | **%s** |  |\n' '—' '—'
+  printf '| **Totals** |  | **%s** | **%s** |  |\n' "${1:-—}" "${2:-—}"
+}
+
+ns_receipts_usage_total_cell() {
+  local in="$1" cw="$2" cr="$3" out="$4" rea="$5"
+  if [ "$((in + cw + cr + out + rea))" -eq 0 ]; then
+    printf '%s' '—'
+    return 0
   fi
+  printf 'input %s · cache_write %s · cache_read %s · output %s · reasoning %s' \
+    "$(ns_usage_scale "$in")" "$(ns_usage_scale "$cw")" "$(ns_usage_scale "$cr")" \
+    "$(ns_usage_scale "$out")" "$(ns_usage_scale "$rea")"
+}
+
+ns_receipts_time_cell() {
+  local work="${1:-0}" pause="${2:-0}"
+  case "$work" in '' | *[!0-9]*) work=0 ;; esac
+  case "$pause" in '' | *[!0-9]*) pause=0 ;; esac
+  if [ "$work" -eq 0 ] && [ "$pause" -eq 0 ]; then
+    printf '%s' '—'
+    return 0
+  fi
+  if [ "$pause" -gt 0 ]; then
+    printf '%s working · %s paused' "$(ns_usage_duration "$work")" "$(ns_usage_duration "$pause")"
+    return 0
+  fi
+  printf '%s working' "$(ns_usage_duration "$work")"
+}
+
+ns_receipts_time_total_cell() {
+  ns_receipts_time_cell "${1:-0}" "${2:-0}"
 }
 
 # ns_receipts_open_names <project-dir> — the receipt file name of every still-open punch-list item.
@@ -243,7 +320,9 @@ ns_receipts_open_names() {
 # written only when at least one landed there. Links stay siblings, because the receipts it lists
 # are in that directory too.
 ns_receipts_write_archive_index() {
-  local dir="$1" date_s="$2" index rows f base label cells tok_sum tokens time tok_total=0
+  local dir="$1" date_s="$2" index rows f base label cells
+  local in cw cr out rea work pause usage time _sum
+  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0
   { [ -d "$dir" ] && [ ! -L "$dir" ]; } || return 0
   index="$dir/README.md"
   [ -L "$index" ] && return 0
@@ -253,17 +332,17 @@ ns_receipts_write_archive_index() {
     [ -n "$f" ] || continue
     { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
     base="${f##*/}"
-    case "$base" in README.md | morning-* | *.original.md) continue ;; esac
+    case "$base" in README.md | morning-* | x-* | *.original.md) continue ;; esac
     label="$(sed -n 's/^# //p' "$f" | head -n1)"
     [ -n "$label" ] || continue
     cells="$(ns_receipt_usage_cells "$f")"
-    tok_sum="${cells%%$'\t'*}"
-    cells="${cells#*$'\t'}"
-    tokens="${cells%%$'\t'*}"
-    time="${cells#*$'\t'}"
-    [ "$tok_sum" -gt 0 ] && tok_total=$((tok_total + tok_sum))
+    IFS=$'\t' read -r in cw cr out rea work pause usage time _sum <<EOF
+$cells
+EOF
+    tin=$((tin + in)); tcw=$((tcw + cw)); tcr=$((tcr + cr))
+    tout=$((tout + out)); trea=$((trea + rea)); twork=$((twork + work)); tpause=$((tpause + pause))
     printf '| %s | ticked | **%s** | **%s** | [./%s](./%s) |\n' \
-      "$label" "$tokens" "$time" "$base" "$base" >>"$rows"
+      "$label" "$usage" "$time" "$base" "$base" >>"$rows"
   done <<FIND
 $(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
 FIND
@@ -274,7 +353,8 @@ FIND
   {
     ns_receipts_index_head "$date_s"
     cat "$rows"
-    ns_receipts_index_totals "$tok_total"
+    ns_receipts_index_totals "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" \
+      "$(ns_receipts_time_total_cell "$twork" "$tpause")"
   } >"$index" 2>/dev/null || :
   rm -f "$rows"
 }
@@ -284,8 +364,9 @@ FIND
 # and every ticked item whose receipt is still there — and removes it when nothing is left.
 ns_receipts_write_index() {
   local project="$1" mode="${2:-}" punch="$1/.nightshift/punch-list.md"
-  local dir index date_s state base file tokens time cells
-  local tok_sum tok_total=0
+  local dir index date_s state base file cells
+  local in cw cr out rea work pause usage time _sum
+  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0
   local label line items rows
   dir="$(ns_receipts_dir "$project")"
   [ -n "$dir" ] || return 0
@@ -328,13 +409,13 @@ ns_receipts_write_index() {
     fi
     file="./${base}.md"
     cells="$(ns_receipt_usage_cells "$dir/${base}.md")"
-    tok_sum="${cells%%$'\t'*}"
-    cells="${cells#*$'\t'}"
-    tokens="${cells%%$'\t'*}"
-    time="${cells#*$'\t'}"
-    [ "$tok_sum" -gt 0 ] && tok_total=$((tok_total + tok_sum))
+    IFS=$'\t' read -r in cw cr out rea work pause usage time _sum <<EOF
+$cells
+EOF
+    tin=$((tin + in)); tcw=$((tcw + cw)); tcr=$((tcr + cr))
+    tout=$((tout + out)); trea=$((trea + rea)); twork=$((twork + work)); tpause=$((tpause + pause))
     printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
-      "$label" "$state" "$tokens" "$time" "$file" "$file" >>"$rows"
+      "$label" "$state" "$usage" "$time" "$file" "$file" >>"$rows"
   done <"$items"
   if [ "$mode" = remaining ] && [ ! -s "$rows" ]; then
     rm -f "$index" "$items" "$rows"
@@ -343,7 +424,8 @@ ns_receipts_write_index() {
   {
     ns_receipts_index_head "$date_s"
     cat "$rows"
-    ns_receipts_index_totals "$tok_total"
+    ns_receipts_index_totals "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" \
+      "$(ns_receipts_time_total_cell "$twork" "$tpause")"
   } >"$index" 2>/dev/null || :
   rm -f "$items" "$rows"
 }

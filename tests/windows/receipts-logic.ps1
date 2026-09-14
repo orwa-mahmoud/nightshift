@@ -40,6 +40,9 @@ try {
     Expect-True ((Get-NSUsageScale 122) -ceq '122') 'below 1000 stays an integer'
     Expect-True ((Get-NSUsageScale 55458) -ceq '55.5k') 'thousands take one decimal k'
     Expect-True ((Get-NSUsageScale 47457543) -ceq '47.5M') 'millions take one decimal M'
+    Expect-True ((Get-NSUsageScale 2049584461) -ceq '2.0B') 'billions take one decimal B'
+    Expect-True ((Get-NSReceiptBasename '- [x] 1. Title without bold.') -ceq '1-title-without-bold') `
+        'a leftover checkbox does not become an x- sidecar name'
 
     $line = Get-NSUsageLine 'input=122,cache_write=55458,cache_read=47457543,output=42091,reasoning=7332' `
         'claude claude-opus-5' '1' 'claude'
@@ -54,6 +57,11 @@ try {
     Expect-True ($text.StartsWith('# 2. Make the packed Node-only build reproducible.')) `
         'a missing file is created with the item heading'
     Expect-True ($text.Contains('**Duration:** 44m 23s')) 'duration is bold'
+    $usageAt = $text.IndexOf('**Usage:**')
+    $durAt = $text.IndexOf('**Duration:**')
+    $bodyAt = $text.IndexOf('## ')
+    Expect-True ($usageAt -gt 0 -and $durAt -gt $usageAt) 'usage sits under the heading'
+    Expect-True ($bodyAt -lt 0 -or $usageAt -lt $bodyAt) 'usage comes before later narrative'
     $missing = @(Get-NSReceiptsMissingNns $w)
     Expect-True ($missing.Count -eq 1) 'a usage-only receipt still needs model text'
 }

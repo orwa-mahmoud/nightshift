@@ -657,7 +657,10 @@ while :; do
         ;;
       esc)
         note esc-standby
-        [ "$standby_prev" = "esc" ] || log_line "watchman: owner pressed Esc — standing by, not resuming (STOP ends the shift; resuming re-arms)"
+        if [ "$standby_prev" != "esc" ]; then
+          ns_usage_pause "$NS" "owner pressed Esc" || true
+          log_line "watchman: owner pressed Esc — standing by, not resuming (STOP ends the shift; resuming re-arms)"
+        fi
         standby_prev="esc"
         down_notified=0
         ;;
@@ -750,6 +753,7 @@ while :; do
           note exhausted-retry
           if api_limited_tail; then
             back_off
+            ns_usage_pause "$NS" "usage limit" || true
             log_line "watchman: all $attempt attempts failed (api down?) — backing off, knocking again in ${WAIT_MIN}m"
           else
             log_line "watchman: all $attempt attempts failed (api down?) — knocking again in ${WAIT_MIN}m"

@@ -364,7 +364,7 @@ try {
     Expect-Equal 'Shift|Baseline|What changed|Parked|Unsupported / unmeasured|Next' (Get-SectionOrder $owner) `
         'the owner view renders the six sections in interface order'
 
-    Expect-True $owner.Contains('Receipts: [index](./README.md), [Quiet the lint rule](./quiet-the-lint-rule.md)') `
+    Expect-True $owner.Contains("Receipts:`n- [index](./README.md)`n- [Quiet the lint rule](./quiet-the-lint-rule.md)") `
         'the page links the index and each ticked item'
     Expect-True $owner.Contains('- Policy record: accepted') 'an accepted policy is named at the top'
     Expect-True $owner.Contains("- Shift: $shiftId") 'section 1 names the shift'
@@ -463,7 +463,7 @@ try {
     $plainRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $plainProject)
     Expect-Equal 0 $plainRun.ExitCode "a shift with no policy renders ($($plainRun.StderrText))"
     $plain = $plainRun.StdoutText
-    Expect-True $plain.Contains('Receipts: [index](./README.md), [Tidy the changelog](./tidy-the-changelog.md)') `
+    Expect-True $plain.Contains("Receipts:`n- [index](./README.md)`n- [Tidy the changelog](./tidy-the-changelog.md)") `
         'a shift with no policy still links ticked receipts'
     Expect-True $plain.Contains("- Policy record: absent $dash the shift wrote no policy") `
         'a missing file is named as absent, not as malformed'
@@ -503,7 +503,7 @@ try {
 
     # === 3c. Valid, absent, and malformed policy fixtures — same facts on both hosts ===
     $fixtureDir = Join-Path $repository 'tests/fixtures/morning-receipt'
-    $receiptsLine = 'Receipts: [index](./README.md), [2. Make the packed Node-only build reproducible.](./2-make-the-packed-node-only-build-reproducible.md)'
+    $receiptsLine = "Receipts:`n- [index](./README.md)`n- [2. Make the packed Node-only build reproducible.](./2-make-the-packed-node-only-build-reproducible.md)"
     $malformedReason = "the policy file is present but unreadable or fails the schema"
     foreach ($case in @(
             @{ Name = 'accepted'; File = 'shift-policy-valid.json' },
