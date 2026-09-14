@@ -393,6 +393,9 @@ function Write-NSWorkTarget {
     $null = New-Item -ItemType Directory -Path $ns -Force
     Write-NSWorkMode $Workspace $Mode
     $null = Write-NSAtomicLines -Path (Join-Path $ns 'work-target') -Lines @($top)
+    if (-not (Confirm-NSWorkTargetLink $Workspace)) {
+        throw 'could not record the work-target link'
+    }
 }
 
 function Get-NSReceiptsDir {
@@ -1915,6 +1918,7 @@ function Stop-NSShift {
     $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     Remove-NSPath (Join-Path $ns 'STOP')
     [IO.File]::WriteAllText((Join-Path $ns 'STOP'), "$Reason · $ts`n")
+    Remove-NSPath (Join-Path $ns '.shift-session')
     $watch = Stop-NSWatchman $ns
     $null = Write-NSReason $ns 'owner-stop'
     Write-NSControlLog $ns 'stopped by owner'

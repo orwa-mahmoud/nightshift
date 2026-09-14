@@ -127,6 +127,7 @@ ns_record_work_target() {
   tmp="$project/.nightshift/.work-target.$$"
   printf '%s\n' "$top" >"$tmp" || return 1
   mv "$tmp" "$project/.nightshift/work-target"
+  ns_ensure_work_target_link "$project" || return 1
 }
 
 # target_repo <command> <base-dir>

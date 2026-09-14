@@ -216,7 +216,8 @@ ns_control_log() { # <ns> <line>
 }
 
 # Stop-work order: write STOP and stand the watchman down. Keep .shift-armed so
-# hardhat stays until clock-out writes ENDED. Reset is the manual escape.
+# hardhat stays until clock-out writes ENDED. Drop the leftover session claim so
+# the same conversation is not read as a second agent. Reset is the manual escape.
 # Prints a short status. Return 0 · 1 usage/resolve · 2 unverified watchman (STOP still written)
 ns_control_stop() { # <host-path> [reason]
   local host="$1" reason="${2:-stopped by owner}" rc=0 watch="absent" open=0
@@ -231,6 +232,7 @@ ns_control_stop() { # <host-path> [reason]
     return 1
   fi
   ns_control_write_stop "$NS_CONTROL_NS" "$reason"
+  ns_control_drop "$NS_CONTROL_NS/.shift-session"
   if ns_control_stop_watchman "$NS_CONTROL_NS"; then
     watch="${NS_CONTROL_WATCHMAN:-absent}"
   else

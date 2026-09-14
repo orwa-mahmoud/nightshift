@@ -34,6 +34,7 @@ stop_cmd() { # <project>
 @test "Stop writes STOP and keeps hardhat armed until ENDED" {
   p="$(new_project)"
   punch_open "$p"
+  printf 'sid\n/tmp/t.jsonl\n%s\nstart\nclaude\n' "$$" >"$p/.nightshift/.shift-session"
   future=$(( $(date +%s) + 3600 ))
   printf '%s\n' "$future" >"$p/.nightshift/deadline"
   printf 'keep-me\n' >"$p/.nightshift/parking-lot.md"
@@ -43,6 +44,7 @@ stop_cmd() { # <project>
   printf '%s' "$output" | grep -qF 'deadline preserved'
   [ -f "$p/.nightshift/STOP" ]
   [ -f "$p/.nightshift/.shift-armed" ]
+  [ ! -e "$p/.nightshift/.shift-session" ]
   [ ! -f "$p/.nightshift/.ended" ]
   [ -f "$p/.nightshift/deadline" ]
   [ "$(cat "$p/.nightshift/deadline")" = "$future" ]
@@ -60,6 +62,19 @@ stop_cmd() { # <project>
   is_allow
   run "$STOP" --project "$p"
   [ "$status" -eq 0 ]
+}
+
+@test "Stop from a recorded work-target child finds the workspace" {
+  w="$(new_workspace stop-child)"
+  punch_open "$w"
+  bash -c '. "$1"; ns_record_work_target "$2" "$3"' _ "$LIB" "$w" "$w/repo"
+  child="$(cd -P "$w/repo" && pwd)"
+  [ -f "$child/.nightshift-link" ]
+  run "$STOP" --project "$child"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'stopped '
+  printf '%s' "$output" | grep -qF "workspace $(cd -P "$w" && pwd)"
+  [ -f "$w/.nightshift/STOP" ]
 }
 
 @test "Stop kills a verified watchman and refuses a reused or unverified PID" {
@@ -143,7 +158,7 @@ stop_cmd() { # <project>
   [ "$status" -eq 0 ]
   [ -e "$q/.nightshift/.shift-lease" ]
   [ -f "$q/.nightshift/.shift-armed" ]
-  [ -f "$q/.nightshift/.shift-session" ]
+  [ ! -e "$q/.nightshift/.shift-session" ]
 }
 
 @test "hardhat allows only the trusted Stop helper and still protects the lease" {

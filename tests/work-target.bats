@@ -24,6 +24,7 @@ resolve_target() {
 
   bash -c '. "$1"; ns_record_work_target "$2" "$3"' _ "$LIB" "$w" "$w/repo"
   [ "$(cat "$w/.nightshift/work-target")" = "$expected" ]
+  [ "$(cat "$w/repo/.nightshift-link")" = "$(cd -P "$w" && pwd)" ]
 }
 
 @test "several child repositories require an explicit persisted target" {

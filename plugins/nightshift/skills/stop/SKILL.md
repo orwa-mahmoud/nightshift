@@ -24,7 +24,8 @@ not kill `$NS/.watchman` yourself — the helper performs the safe teardown:
 
 The helper writes `$NS/STOP` with a reason and UTC timestamp, appends `stopped by owner` to
 `$NS/shift-log.md`, and kills only a verified live Nightshift watchman. It does not remove
-`$NS/.shift-armed`. Open boxes stay open as the record. Hardhat stays until clock-out writes
+`$NS/.shift-armed`. It drops `$NS/.shift-session` so the same conversation is not a second
+agent on the next Start. Open boxes stay open as the record. Hardhat stays until clock-out writes
 `$NS/.ended`. Reset is the manual escape. The deadline, punch list, rules, parking lot, work
 orders, receipts, archives, research, opportunities, and shift history stay on disk. Do not wait
 for a later Stop event to write the marker — the helper writes it now.
