@@ -43,8 +43,8 @@ the policy that carried them.
 agent running Archive takes it from `$NS/punch-list.md` — not later, not the owner, and not by
 guessing. `--retire` with one record name, repeated once per ticked item on POSIX; on native
 Windows, `-Retire` takes those names as a single comma-separated list. Receipts of open items are
-never named. Morning and the shift report are named only when that shift has ended and no open
-item still needs them. Once the shift has ended, the helper also retires every ticked item's
+never named. The morning receipt is named only when that shift has ended and no open
+item still needs it. Once the shift has ended, the helper also retires every ticked item's
 receipt it filed, even if a name was missed. It will not retire an open item's receipt.
 
 Before naming anything, read `$NS/punch-list.md` and the records themselves. A shift can end with
