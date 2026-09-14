@@ -3,6 +3,16 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.22.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.0...v0.22.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* bound hook stdin and retire ticked receipts on archive ([01ed97a](https://github.com/orwa-mahmoud/nightshift/commit/01ed97ab422a4a260996d4ca87adaa3471126703))
+* drop the leftover session on stop and link the work target at setup ([9ef17c5](https://github.com/orwa-mahmoud/nightshift/commit/9ef17c5006875dd6c88cc21da546fb4aef7cab97))
+* keep usage across stop and show every dimension on receipts ([a4c2a42](https://github.com/orwa-mahmoud/nightshift/commit/a4c2a4210d5aa77f77f43db6ae55bbf4694884bc))
+* recover start and watchman after stop, silence, and denied spawn ([735d407](https://github.com/orwa-mahmoud/nightshift/commit/735d4079c6623f87bb92bbca52b2743df1d7b60b))
+
 ## [0.22.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.21.0...v0.22.0) (2026-09-09)
 
 
