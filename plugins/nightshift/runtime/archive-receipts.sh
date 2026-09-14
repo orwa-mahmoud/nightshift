@@ -8,11 +8,12 @@
 # Handled snag and answered parking entries are filed into the same group, then the live file
 # gets one Filed: pointer to that dest. Filing nothing writes no pointer and creates no empty file.
 #
-# Filing is a copy. Nothing leaves live storage unless it is named: an ended shift can still hold
-# an item nobody finished, and the baseline that item links to is needed exactly where it is. So
-# the caller says which records are closed and this retires those, having read each archived copy
-# back and found it identical. A name it did not file, or one whose copy does not match, is
-# refused by name and its source stays. While a shift is armed nothing is retired at all.
+# Filing is a copy. A ticked item's receipt leaves live storage once the shift has ended. An
+# open item's receipt never files and never leaves: the next shift writes the same file. Other
+# records (morning, the shift report, usage-*) leave only when named. The caller still names
+# ticked receipts with --retire; an ended shift retires those it filed even if a name was
+# missed. A name it did not file, or one whose copy does not match, is refused by name and its
+# source stays. While a shift is armed nothing is retired at all.
 #
 # Two different records under one name never overwrite each other: the filed one stands and the
 # live one is kept. Skips hidden files and does not follow symlinks. Missing or empty receipts is
@@ -21,8 +22,9 @@
 #
 #   archive-receipts.sh [--project DIR] [--date YYYY-MM-DD] [--retire NAME]...
 #
-#   --retire NAME   a record established as closed, by file name. Repeatable. Without any, this
-#                   copies and retires nothing.
+#   --retire NAME   a record established as closed, by file name. Repeatable. Ticked item
+#                   receipts are retired on an ended shift even without a name; open ones never
+#                   are. Other records leave only when named.
 #
 # Exit: 0 copied or nothing to copy · 1 usage · 2 refused
 set -u
@@ -159,6 +161,8 @@ fi
 # the same file rather than a copy of it.
 OPEN_NAMES="$(ns_receipts_open_names "$WORKSPACE")
 "
+TICKED_NAMES="$(ns_receipts_ticked_names "$WORKSPACE")
+"
 
 # receipt_open <name> — status 0 when that receipt belongs to an item that is still open.
 receipt_open() {
@@ -175,6 +179,17 @@ $1
 retire_named() {
   case "
 $RETIRE" in
+    *"
+$1
+"*) return 0 ;;
+  esac
+  return 1
+}
+
+# receipt_ticked <name> — status 0 when that receipt belongs to a ticked item.
+receipt_ticked() {
+  case "
+$TICKED_NAMES" in
     *"
 $1
 "*) return 0 ;;
@@ -248,10 +263,10 @@ file_one() {
 "
   ARCHIVED_PATHS="$ARCHIVED_PATHS${f#"$NS"/}
 "
-  # A verified copy makes retiring safe; it does not make it right. Only a record the caller
-  # established as closed leaves, so an ended shift still holding open work keeps what that work
-  # needs — and an old .ended marker beside a freshly drafted report retires neither.
-  if [ "$ROTATE" -eq 1 ] && retire_named "$base"; then
+  # A verified copy makes retiring safe. A ticked item's receipt leaves once the shift has
+  # ended; anything else leaves only when the caller named it. An open item never reaches
+  # here — it was skipped — so an ended shift still holding open work keeps that baseline.
+  if [ "$ROTATE" -eq 1 ] && { retire_named "$base" || receipt_ticked "$base"; }; then
     rm -f "$f" || {
       kept="$kept$base (could not be removed from live storage)
 "

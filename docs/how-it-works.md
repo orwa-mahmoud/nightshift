@@ -481,7 +481,8 @@ The stall guard treats a new receipt like a commit; Doctor reports `artifact rec
 `latest artifact receipt` with the filename only of the most recently written receipt;
 it warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land; Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts;
 Archive copies receipts with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
-into the dated folder and leaves the live files in place. Missing or empty receipts create no dated receipts folder.
+into the dated folder. A ticked item's receipt leaves live storage once the shift has ended; an
+open item's receipt stays. Missing or empty receipts create no dated receipts folder.
 Repository mode follows the contract's commit policy: per-item commits, a coherent batch, or
 uncommitted work when requested.
 

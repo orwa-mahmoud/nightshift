@@ -141,6 +141,25 @@ held_open() {
   [ -f "$ws/.nightshift/.shift-pulse" ]
 }
 
+@test "a stdin that keeps delivering lines still finishes within the bound" {
+  # read -t resets on every successful line. A host that never closes stdin and
+  # writes often enough used to keep the hook alive forever.
+  LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  start="$(date +%s)"
+  run bash -c '. "$1"; ns_read_stdin_bounded 2' _ "$LIB" < <(
+    i=0
+    while [ "$i" -lt 40 ]; do
+      printf 'x\n'
+      sleep 0.3
+      i=$((i+1))
+    done
+  )
+  elapsed=$(($(date +%s) - start))
+  [ "$status" -eq 0 ]
+  [ "$elapsed" -lt 6 ]
+  [ -n "$output" ]
+}
+
 @test "no hook reads stdin unbounded" {
   # The bound belongs to every hook, not to the one where the hang was found.
   for h in "$HOOKS"/*.sh "$HOOKS"/codex/*.sh "$HOOKS"/cursor/*.sh; do

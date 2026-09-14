@@ -116,9 +116,9 @@ function Test-NSSameBytes {
     return $true
 }
 
-# Nothing leaves live storage unless the caller named it and the shift has ended. While a shift is
-# armed nothing is removed at all: its receipts are what its own progress checks read. Which file
-# it is never decides this - a name is not evidence that a record is finished with.
+# A ticked item's receipt leaves live storage once the shift has ended. An open item's never
+# files. Other records leave only when the caller named them. While a shift is armed nothing
+# is removed at all: its receipts are what its own progress checks read.
 $armed = Test-Path -LiteralPath (Join-Path $ns '.shift-armed')
 $endedMarker = Join-Path $ns '.ended'
 $ended = (Test-Path -LiteralPath $endedMarker -PathType Leaf) -and
@@ -140,6 +140,7 @@ $removed = 0
 $kept = New-Object Collections.Generic.List[string]
 $filed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
 $archivedPaths = New-Object Collections.Generic.List[string]
+$script:tickedNames = @(Get-NSTickedReceiptNames $workspace)
 
 # Copy-NSArchiveRecord <source> <directory> - file one record, verify it, and retire the source
 # when the caller established it as closed.
@@ -171,7 +172,7 @@ function Copy-NSArchiveRecord {
     }
     $null = $filed.Add($base)
     $archivedPaths.Add($Source.Substring($ns.Length).TrimStart([char]'/', [char]'\').Replace('\', '/'))
-    if ($rotate -and ($Retire -ccontains $base)) {
+    if ($rotate -and (($Retire -ccontains $base) -or ($script:tickedNames -ccontains $base))) {
         Remove-Item -LiteralPath $Source -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $Source) {
             $kept.Add($base + ' (could not be removed from live storage)')

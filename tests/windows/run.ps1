@@ -1031,6 +1031,11 @@ $record = @(
     $Prompt
 )
 [IO.File]::WriteAllLines($env:NIGHTSHIFT_TEST_AGENT_RECEIPT, $record)
+$nsDir = Join-Path $env:CODEX_PROJECT_DIR '.nightshift'
+if (-not [string]::IsNullOrEmpty($env:CODEX_PROJECT_DIR) -and (Test-Path -LiteralPath $nsDir -PathType Container)) {
+    $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    [IO.File]::WriteAllText((Join-Path $nsDir '.shift-pulse'), "$epoch revived`n")
+}
 exit 0
 '@ | Set-Content -LiteralPath $agentStub -Encoding UTF8
 
@@ -1178,6 +1183,8 @@ exit 1
         command = "`$null = 'nightshift-binding-probe'"
     }
     Assert-Equal 0 $codexRecoveryProbe.ExitCode 'Codex shim recovery fixture binds'
+    Write-NSSession (Join-Path $codexRecoveryWorkspace '.nightshift') $codexRecoverySession '' `
+        '' '' 'codex' | Out-Null
     $shimDirectory = Join-Path $root 'npm shim bin'
     $null = New-Item -ItemType Directory -Path $shimDirectory
     $codexShim = Join-Path $shimDirectory 'codex.cmd'

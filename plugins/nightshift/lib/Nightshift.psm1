@@ -12,7 +12,10 @@ function Test-NSWindows {
 # Windows PowerShell 5.1's [Console]::In is the console host, not redirected
 # stdin. With -File the host often parks the pipe on $input instead. Read both.
 function Get-NSStdinText {
-    param([AllowEmptyString()][string]$Piped = '')
+    param(
+        [AllowEmptyString()][string]$Piped = '',
+        [int]$TimeoutSeconds = 2
+    )
     $text = $Piped
     if ([string]::IsNullOrWhiteSpace($text)) {
         $utf8 = New-Object Text.UTF8Encoding $false
@@ -24,13 +27,22 @@ function Get-NSStdinText {
         try {
             $stream = [Console]::OpenStandardInput()
             if ($null -ne $stream) {
-                $reader = New-Object IO.StreamReader($stream, $utf8, $true)
-                try {
-                    $text = $reader.ReadToEnd()
+                # ReadToEnd waits for EOF. A host that keeps the pipe open and trickles
+                # bytes never reaches it, so the wait is a wall-clock deadline instead.
+                if ($TimeoutSeconds -lt 0) { $TimeoutSeconds = 0 }
+                $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+                $chunks = New-Object Text.StringBuilder
+                $buf = New-Object byte[] 8192
+                while ([DateTime]::UtcNow -lt $deadline) {
+                    $left = [int][Math]::Ceiling(($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+                    if ($left -le 0) { break }
+                    $ar = $stream.BeginRead($buf, 0, $buf.Length, $null, $null)
+                    if (-not $ar.AsyncWaitHandle.WaitOne($left)) { break }
+                    $n = $stream.EndRead($ar)
+                    if ($n -le 0) { break }
+                    [void]$chunks.Append($utf8.GetString($buf, 0, $n))
                 }
-                finally {
-                    $reader.Dispose()
-                }
+                $text = $chunks.ToString()
             }
         }
         catch {
@@ -5124,19 +5136,39 @@ function Get-NSReceiptsIndexPage {
 # The receipts of items nobody finished. A receipt travels into the archive when its item is
 # ticked; one whose box is still open stays live, exactly as the box stays in the punch list, so
 # the next shift extends the same file rather than a copy of it.
-function Get-NSOpenReceiptNames {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+function Get-NSReceiptNamesByState {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [ValidateSet('open', 'ticked')][string]$State = 'open'
+    )
     $names = New-Object Collections.Generic.List[string]
     $punch = Join-Path $Workspace '.nightshift/punch-list.md'
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($line in (Get-NSPunchItemsSection $punch)) {
-            if ($line -cnotmatch '^- \[[ ]\]') { continue }
-            $label = Get-NSPulseItemLabelFromLine $line 'open'
+            if ($State -ceq 'ticked') {
+                if ($line -cnotmatch '^- \[[xX]\]') { continue }
+                $kind = 'x'
+            }
+            else {
+                if ($line -cnotmatch '^- \[[ ]\]') { continue }
+                $kind = 'open'
+            }
+            $label = Get-NSPulseItemLabelFromLine $line $kind
             if ([string]::IsNullOrEmpty($label)) { continue }
             $names.Add((Get-NSReceiptBasename $label) + '.md')
         }
     }
     return $names.ToArray()
+}
+
+function Get-NSOpenReceiptNames {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return Get-NSReceiptNamesByState $Workspace 'open'
+}
+
+function Get-NSTickedReceiptNames {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return Get-NSReceiptNamesByState $Workspace 'ticked'
 }
 
 # Write-NSArchiveReceiptsIndex <directory> <date> - the index of the item receipts filed in that

@@ -25,7 +25,8 @@ A newer or malformed marker fails closed — file nothing, rewrite nothing, and 
 
 In artifact mode the work target is a persistent folder, not a Git repository. File the same
 Nightshift records; do not require a work-target commit that cannot exist. Copy live receipts with
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" archive-receipts`.
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" archive-receipts`, and pass `--retire <receipt-name>` once
+per ticked item (native Windows: `-Retire` with those names as one comma-separated list).
 Missing or empty receipts create no dated receipts folder.
 A receipts path that is not a usable directory is a refuse, not an empty skip.
 
@@ -38,18 +39,20 @@ is special: file the same way you would on any explicit Archive.
 `archiveLayout=` lines. Those are what a later Archive follows: clock-out has already archived
 the policy that carried them.
 
-**Filing is a copy. Removing a live record is a separate decision, and it is yours to make.**
-The helper retires only what you name, and only once the shift has ended: `--retire` with one
-record name, repeated once per record on POSIX; on native Windows, `-Retire` takes the names as a
-single comma-separated list. Without a name it copies
-and removes nothing, which is the right answer whenever you are unsure.
+**Filing is a copy.** A ticked item's receipt leaving live storage is a separate step, and the
+agent running Archive takes it from `$NS/punch-list.md` — not later, not the owner, and not by
+guessing. `--retire` with one record name, repeated once per ticked item on POSIX; on native
+Windows, `-Retire` takes those names as a single comma-separated list. Receipts of open items are
+never named. Morning and the shift report are named only when that shift has ended and no open
+item still needs them. Once the shift has ended, the helper also retires every ticked item's
+receipt it filed, even if a name was missed. It will not retire an open item's receipt.
 
-Before naming anything, read `$NS/punch-list.md` and the records themselves and decide which
-belong to work that is finished with. A shift can end with items still open — `STOP` and the
-deadline both do that — so a terminal marker says nothing about any particular record. Keep a
-record live when an open item, an unanswered parking decision or work carried into the next shift
-still needs it, and when you cannot tell who owns it. Rejected work is filed with its rejection,
-never erased. A name the helper did not file is refused and told back to you.
+Before naming anything, read `$NS/punch-list.md` and the records themselves. A shift can end with
+items still open — `STOP` and the deadline both do that — so `.ended` is not a reason to leave a
+ticked receipt live, and it is not a reason to pull an open one. Keep a record live when an open
+item, an unanswered parking decision or work carried into the next shift still needs it, and when
+you cannot tell who owns it. Rejected work is filed with its rejection, never erased. A name the
+helper did not file is refused and told back to you.
 
 ## Where it goes
 
@@ -77,9 +80,9 @@ under the same name with an "original" suffix. Do not hand-edit either one.
  composing a new campaign; Archive does not reset them. Skip the note when open work remains,
  when the same sentence is already present, or if adding it would require an open checkbox.
  Never write `- [ ]` here and never edit above `## Items`.
-- **Receipts — the ticked ones.** A receipt travels when its item is ticked; the receipt of an item
- that is still open stays live with its box, and `archive-receipts` rebuilds `receipts/README.md`
- on both sides of the move so each index lists only the receipts in its own folder.
+- **Receipts — the ticked ones.** For each ticked item, pass `--retire <receipt-name>`; receipts
+ of open items are never named. `archive-receipts` rebuilds `receipts/README.md` on both sides of
+ the move so each index lists only the receipts in its own folder.
 - **Shift log → the archive, whole.** Move `$NS/shift-log.md` into
  the folder and start a fresh one
  with the same one-line header. The journal is mechanical; its lines belong to the dates they

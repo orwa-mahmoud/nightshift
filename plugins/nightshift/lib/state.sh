@@ -293,17 +293,18 @@ ns_receipts_time_total_cell() {
   ns_receipts_time_cell "${1:-0}" "${2:-0}"
 }
 
-# ns_receipts_open_names <project-dir> — the receipt file name of every still-open punch-list item.
-# A receipt travels into the archive when its item is ticked; an item that is still open keeps its
-# receipt live, exactly as it keeps its box, and the next shift writes into the same file.
-ns_receipts_open_names() {
-  local punch="$1/.nightshift/punch-list.md" label
+# ns_receipts_item_names <project-dir> <open|ticked> — receipt file names for boxes in that state.
+# A ticked item's receipt leaves live storage once the shift has ended; an open item's stays, so
+# the next shift writes into the same file.
+ns_receipts_item_names() {
+  local punch="$1/.nightshift/punch-list.md" state="${2:-open}" label ticked=0
   [ -f "$punch" ] || return 0
-  ns_items_section "$punch" 2>/dev/null | awk '
-    /^- \[[[:space:]]\]/ {
+  [ "$state" = ticked ] && ticked=1
+  ns_items_section "$punch" 2>/dev/null | awk -v ticked="$ticked" '
+    (ticked && /^- \[[xX]\]/) || (!ticked && /^- \[[[:space:]]\]/) {
       line = $0
-      sub(/^- \[[[:space:]]\][[:space:]]*\*\*/, "", line)
-      sub(/^- \[[[:space:]]\][[:space:]]*/, "", line)
+      sub(/^- \[[xX[:space:]]\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[[xX[:space:]]\][[:space:]]*/, "", line)
       sub(/[[:space:]]+—.*$/, "", line)
       sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)
@@ -315,6 +316,9 @@ ns_receipts_open_names() {
     printf '%s.md\n' "$(ns_receipt_basename "$label")"
   done
 }
+
+ns_receipts_open_names() { ns_receipts_item_names "$1" open; }
+ns_receipts_ticked_names() { ns_receipts_item_names "$1" ticked; }
 
 # ns_receipts_write_archive_index <dir> <date> — the index of the item receipts filed in <dir>,
 # written only when at least one landed there. Links stay siblings, because the receipts it lists

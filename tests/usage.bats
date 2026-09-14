@@ -678,9 +678,13 @@ parity_normalise() {
   sed -e "s|$1|<workspace>|g" \
       -e 's/^[0-9][0-9]*	/<epoch>	/' \
       -e 's/^Duration: .*/Duration: <span>/' \
+      -e 's/\*\*[0-9][0-9]*s working\( · [0-9][0-9]*s paused\)\{0,1\}\*\*/**<span>**/g' \
+      -e 's/\*\*[0-9][0-9]*m [0-9][0-9]*s working\( · [0-9][0-9]*s paused\)\{0,1\}\*\*/**<span>**/g' \
+      -e 's/\*\*[0-9][0-9]*h [0-9][0-9]*m working\( · [0-9][0-9]*s paused\)\{0,1\}\*\*/**<span>**/g' \
       -e 's/\*\*[0-9][0-9]*s\*\*/**<span>**/g' \
       -e 's/\*\*[0-9][0-9]*m [0-9][0-9]*s\*\*/**<span>**/g' \
-      -e 's/\*\*[0-9][0-9]*h [0-9][0-9]*m\*\*/**<span>**/g'
+      -e 's/\*\*[0-9][0-9]*h [0-9][0-9]*m\*\*/**<span>**/g' \
+      -e 's/| \*\*—\*\* | \(\[\[./\|  |\)$/| **<span>** | \1/'
 }
 
 @test "the PowerShell books match the POSIX books, file for file" {

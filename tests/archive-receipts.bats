@@ -143,6 +143,12 @@ new_artifact() {
   grep -qF 'A receipts path that is not a usable directory is a refuse, not an empty skip' "$ARCHIVE_SKILL"
   grep -qF 'Filing is a copy' "$ARCHIVE_SKILL"
   grep -qF -e '--retire' "$ARCHIVE_SKILL"
+  grep -qF 'For each ticked item, pass `--retire <receipt-name>`' "$ARCHIVE_SKILL"
+  grep -qF 'agent running Archive takes it from' "$ARCHIVE_SKILL"
+  if grep -qF 'the right answer whenever you are unsure' "$ARCHIVE_SKILL"; then
+    echo 'the skill still endorses a bare copy'
+    return 1
+  fi
   grep -qF 'Never call `ns archive-receipts`' "$ARCHIVE_SKILL"
   grep -qE 'ns"? archive-receipts' "$COMMANDS"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$COMMANDS"
@@ -459,6 +465,25 @@ closed() { # <project> — the shift ended
   [ ! -f "$p/.nightshift/receipts/morning-2026-09-05-abc.md" ]
   [ -f "$p/.nightshift/receipts/baseline.md" ]
   [ "$(cat "$p/.nightshift/receipts/baseline.md")" = 'the P02 baseline' ]
+}
+
+@test "an ended shift retires ticked receipts even when Archive names none" {
+  p="$(new_project rot-ticked-bare)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf 'Date: 2026-09-05\n\n## Items\n- [x] **1. Fix the resolver.**\n- [ ] **2. Trim the bundle.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '# 1. Fix the resolver.\n\nDone.\n' >"$r/1-fix-the-resolver.md"
+  printf '# 2. Trim the bundle.\n\nStill open.\n' >"$r/2-trim-the-bundle.md"
+  printf 'morning\n' >"$r/morning-2026-09-05-abc.md"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ ! -f "$r/1-fix-the-resolver.md" ]
+  [ -f "$p/.nightshift/archive/2026-09-05/receipts/1-fix-the-resolver.md" ]
+  [ -f "$r/2-trim-the-bundle.md" ]
+  [ ! -e "$p/.nightshift/archive/2026-09-05/receipts/2-trim-the-bundle.md" ]
+  [ -f "$r/morning-2026-09-05-abc.md" ]
 }
 
 @test "a ticked item's receipt is filed and an open item's stays live, and each index says so" {
