@@ -172,10 +172,20 @@ held_open() {
   local h rel
   for h in "$HOOKS"/*.sh "$HOOKS"/codex/*.sh "$HOOKS"/cursor/*.sh; do
     [ -f "$h" ] || continue
-    case "$h" in */lib-io.sh) continue ;; esac
+    case "$h" in
+      */lib-io.sh) continue ;;
+      */clock-out-gate.sh)
+        rel="${h#"$HOOKS"/}"
+        grep -qF 'hooks/shared/cold-stop.sh' "$h" \
+          || { echo "stop hook does not source cold-stop.sh: $rel"; return 1; }
+        continue
+        ;;
+    esac
     rel="${h#"$HOOKS"/}"
     grep -qF 'hooks/shared/idle.sh' "$h" || { echo "does not source idle.sh: $rel"; return 1; }
   done
+  grep -qF 'ns_read_stdin_bounded()' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/common.sh"
+  grep -qF '/bin/sleep' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/common.sh"
 }
 
 @test "an unarmed hook does not wait on stdin" {
@@ -201,6 +211,13 @@ held_open() {
   elapsed=$(($(date +%s) - start))
   [ "$status" -eq 0 ]
   [ "$elapsed" -lt 2 ]
+
+  start="$(date +%s)"
+  run env CODEX_PROJECT_DIR="$p" bash "$HOOKS/codex/clock-out-gate.sh" < <(sleep 30)
+  elapsed=$(($(date +%s) - start))
+  [ "$status" -eq 0 ]
+  [ "$elapsed" -lt 2 ]
+  printf '%s' "$output" | grep -qF '{"continue":true}'
 }
 
 # ---------------------------------------------------------------------------------------------

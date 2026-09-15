@@ -19,7 +19,9 @@ function Test-NSHookIdle {
     $hostDir = $env:CURSOR_PROJECT_DIR
     if ([string]::IsNullOrEmpty($hostDir)) { $hostDir = $env:CLAUDE_PROJECT_DIR }
     if ([string]::IsNullOrEmpty($hostDir)) { $hostDir = $env:CODEX_PROJECT_DIR }
-    if ([string]::IsNullOrEmpty($hostDir)) { $hostDir = [Environment]::CurrentDirectory }
+    if ([string]::IsNullOrEmpty($hostDir)) {
+        return $false
+    }
     $link = Join-Path $hostDir '.nightshift-link'
     if (Test-Path -LiteralPath $link) {
         return $false

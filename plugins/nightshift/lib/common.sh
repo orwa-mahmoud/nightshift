@@ -76,13 +76,15 @@ ns_sanitize_line() {
 # line often enough that `read -t` resets every time — the timeout is per read, not the loop.
 # bash `read -t` has also been observed never to return at all on a unix socket whose peer is
 # gone, so the bound is a process-level alarm around the read, not a flag that `read` is
-# trusted to honor. Perl's SIGALRM is on stock macOS and the Linux runners; bash is the
-# fallback when perl is missing.
+# trusted to honor. Perl's SIGALRM is on stock macOS and the Linux runners. Without perl the
+# bash loop still honors the wall clock on a pipe; /bin/sleep kills this process if `read`
+# itself never returns. The killer is only for the read: it is disarmed before the hook
+# continues, so an armed clock-out is not cut off mid-archive.
 #
 # A terminal is a manual run and carries no payload. Bytes already received when the alarm
 # fires are kept.
 ns_read_stdin_bounded() {
-  local seconds="${1:-2}" tmp cpid dog
+  local seconds="${1:-2}" line buf="" begun left dog=""
   [ ! -t 0 ] || return 0
   case "$seconds" in '' | *[!0-9]*) seconds=2 ;; esac
   if ns_have_cmd perl; then
@@ -106,17 +108,27 @@ ns_read_stdin_bounded() {
     '
     return 0
   fi
-  tmp="$(mktemp "${TMPDIR:-/tmp}/ns-stdin.XXXXXX")" || return 0
-  cat >"$tmp" &
-  cpid=$!
-  (
-    sleep "$seconds"
-    kill "$cpid" 2>/dev/null || true
-  ) &
-  dog=$!
-  wait "$cpid" 2>/dev/null || true
-  kill "$dog" 2>/dev/null || true
-  wait "$dog" 2>/dev/null || true
-  cat "$tmp"
-  rm -f "$tmp"
+  if [ -x /bin/sleep ]; then
+    (
+      /bin/sleep "$seconds"
+      kill -TERM "$$" 2>/dev/null || true
+    ) &
+    dog=$!
+  fi
+  begun=$SECONDS
+  while :; do
+    left=$((seconds - (SECONDS - begun)))
+    [ "$left" -gt 0 ] || break
+    IFS= read -r -t "$left" line || {
+      [ -z "$line" ] || buf="$buf$line"
+      break
+    }
+    buf="$buf$line
+"
+  done
+  if [ -n "$dog" ]; then
+    kill "$dog" 2>/dev/null || true
+    wait "$dog" 2>/dev/null || true
+  fi
+  printf '%s' "$buf"
 }

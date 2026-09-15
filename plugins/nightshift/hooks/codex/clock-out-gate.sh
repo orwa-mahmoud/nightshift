@@ -20,8 +20,9 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
-# shellcheck source=plugins/nightshift/hooks/shared/idle.sh
-. "$_here/../shared/idle.sh"
+NS_COLD_STOP_HOST=codex
+# shellcheck source=plugins/nightshift/hooks/shared/cold-stop.sh
+. "$_here/../shared/cold-stop.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh" # pure-bash path: no dirname, so a hostile PATH cannot unsource the helpers
 # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh

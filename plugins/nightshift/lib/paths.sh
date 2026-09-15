@@ -104,14 +104,13 @@ ns_hook_host_dir() {
 }
 
 # ns_hook_idle_exit — after the library is loaded, leave if the resolved site
-# has no armed shift. Hooks/shared/idle.sh already covers the no-link case
-# before this file is sourced; this catches a .nightshift-link to an unarmed
-# workspace. Revival workers stay in.
+# has no armed shift. A broken .nightshift-link is not idle: the caller fail-
+# closes. Revival workers stay in.
 ns_hook_idle_exit() {
   [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || return 0
   local host project ns
   host="$(ns_hook_host_dir)"
-  project="$(ns_workspace_root "$host" 2>/dev/null)" || exit 0
+  project="$(ns_workspace_root "$host" 2>/dev/null)" || return 0
   ns="$project/.nightshift"
   [ -f "$ns/.shift-armed" ] || exit 0
   if [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ]; then

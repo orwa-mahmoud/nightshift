@@ -30,8 +30,9 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
-# shellcheck source=plugins/nightshift/hooks/shared/idle.sh
-. "$_here/shared/idle.sh"
+NS_COLD_STOP_HOST=claude
+# shellcheck source=plugins/nightshift/hooks/shared/cold-stop.sh
+. "$_here/shared/cold-stop.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh" # pure-bash path: no dirname, so a hostile PATH cannot unsource the helpers
 # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
@@ -39,7 +40,6 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 
 # The Stop payload carries the session's identity, read under a bound so neither a manual run nor
 # a descriptor that never closes hangs the hook.
-ns_hook_idle_exit
 INPUT="$(ns_read_stdin_bounded 2)"
 if command -v jq >/dev/null 2>&1; then
   SID="$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || true)"
