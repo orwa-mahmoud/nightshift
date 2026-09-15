@@ -21,7 +21,7 @@ cursor_gate() {
     fixture="$1"
     shift
   fi
-  jq -nc --argjson base "$(cat "$fixture")" --arg p "$p" '$base + {cwd:$p}' |
+  hook_payload "$(jq -nc --argjson base "$(cat "$fixture")" --arg p "$p" '$base + {cwd:$p}')" \
     env "$@" CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/clock-out-gate.sh"
 }
 

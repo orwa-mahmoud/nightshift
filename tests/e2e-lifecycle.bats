@@ -19,12 +19,13 @@ mv rm ln env cmp date uname test dirname basename readlink stat printf true fals
 
 codex_gate() {
   local p="$1"
-  jq -nc --arg p "$p" '{hook_event_name:"Stop",session_id:"fixture-session",transcript_path:"",cwd:$p}' |
+  hook_payload "$(jq -nc --arg p "$p" \
+    '{hook_event_name:"Stop",session_id:"fixture-session",transcript_path:"",cwd:$p}')" \
     env CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/clock-out-gate.sh"
 }
 codex_ask() {
   local p="$1"
-  jq -nc '{tool_name:"request_user_input",tool_input:{}}' |
+  hook_payload "$(jq -nc '{tool_name:"request_user_input",tool_input:{}}')" \
     env CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
 }
 

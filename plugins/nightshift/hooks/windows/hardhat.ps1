@@ -1028,6 +1028,8 @@ if ($env:NIGHTSHIFT_HARDHAT_LIB -eq '1') {
     return
 }
 
+if (Test-NSHookIdle) { exit 0 }
+
 $raw = Get-NSStdinText -Piped $HookJson
 if ([string]::IsNullOrWhiteSpace($raw)) {
     $raw = Get-NSStdinText -Piped (($input | ForEach-Object { $_ }) -join "`n")

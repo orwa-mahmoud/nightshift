@@ -9,6 +9,44 @@ function Test-NSWindows {
     return [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 }
 
+# Hosts fire every registered hook on every event. An install with no armed
+# shift must not read stdin. Revival workers stay in so they can refuse to
+# continue after clock-out. A .nightshift-link is resolved after this returns.
+function Test-NSHookIdle {
+    if ($env:NIGHTSHIFT_REVIVAL -eq '1') {
+        return $false
+    }
+    $hostDir = $env:CURSOR_PROJECT_DIR
+    if ([string]::IsNullOrEmpty($hostDir)) { $hostDir = $env:CLAUDE_PROJECT_DIR }
+    if ([string]::IsNullOrEmpty($hostDir)) { $hostDir = $env:CODEX_PROJECT_DIR }
+    if ([string]::IsNullOrEmpty($hostDir)) {
+        return $false
+    }
+    $link = Join-Path $hostDir '.nightshift-link'
+    if (Test-Path -LiteralPath $link) {
+        return $false
+    }
+    $ns = Join-Path $hostDir '.nightshift'
+    $armed = Join-Path $ns '.shift-armed'
+    $ended = Join-Path $ns '.ended'
+    if (-not (Test-Path -LiteralPath $armed -PathType Leaf)) {
+        return $true
+    }
+    if (-not (Test-Path -LiteralPath $ended -PathType Leaf)) {
+        return $false
+    }
+    try {
+        $item = Get-Item -LiteralPath $ended -Force
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return $false
+        }
+    }
+    catch {
+        return $true
+    }
+    return $true
+}
+
 # Windows PowerShell 5.1's [Console]::In is the console host, not redirected
 # stdin. With -File the host often parks the pipe on $input instead. Read both.
 function Get-NSStdinText {

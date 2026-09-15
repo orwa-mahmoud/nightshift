@@ -2,7 +2,6 @@
 
 [![OpenAI Plugin Directory](https://img.shields.io/badge/OpenAI-Plugin_Directory-111111)](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
 [![Website](https://img.shields.io/badge/Website-nightshift-2563eb)](https://nightshift.orwamahmoud.com/)
-[![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dorwa-mahmoud%252Fnightshift%26metric%3Dtrust)](https://hol.org/go/guard/orwa-mahmoud-uae?dest=%2Fguard%2Fbilling%3Fpromo%3DGUARD20-ORWA-MAHMOUD-UAE%23upgrade&link_id=9a8e4449-def8-4c8d-9ba9-a4eac24754c3&utm_source=insights_share&utm_medium=affiliate_cta&utm_campaign=share20)
 
 **Give the agent a shift. Come back to work you can review.**
 
