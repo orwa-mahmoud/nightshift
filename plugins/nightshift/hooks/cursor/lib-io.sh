@@ -17,6 +17,8 @@ cursor_read_input() {
   # Hooks receive JSON on stdin, read under a bound: Cursor has been observed to deliver an
   # empty stdin on stop while still setting CURSOR_PROJECT_DIR, and to hand over a descriptor
   # that never closes. Either way the fallbacks below are reached — $1, then HOOK_INPUT.
+  # An unarmed site never reaches the read: hosts fire hooks on every event.
+  ns_hook_idle_exit
   CURSOR_RAW="$(ns_read_stdin_bounded 2)"
   if [ -z "$CURSOR_RAW" ] && [ -n "${1:-}" ]; then
     CURSOR_RAW="$1"

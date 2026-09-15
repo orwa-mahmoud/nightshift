@@ -9,6 +9,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# shellcheck source=plugins/nightshift/hooks/shared/idle.sh
+. "$_here/../shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh"
 # shellcheck source=plugins/nightshift/hooks/cursor/lib-io.sh

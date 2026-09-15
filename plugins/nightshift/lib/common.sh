@@ -73,26 +73,50 @@ ns_sanitize_line() {
 # A hook whose stdin is a descriptor that never reaches EOF used to sit in `cat` until something
 # killed it: one such hook held a session for five and a half hours with its payload sitting in
 # argv the whole time. Cursor (and Claude Code) can also keep the descriptor open and trickle a
-# line often enough that `read -t` resets every time — the timeout is per read, not the loop —
-# so the bound is the wall clock from the first attempt, and the caller reaches its fallbacks
-# either way.
+# line often enough that `read -t` resets every time — the timeout is per read, not the loop.
+# bash `read -t` has also been observed never to return at all on a unix socket whose peer is
+# gone, so the bound is a process-level alarm around the read, not a flag that `read` is
+# trusted to honor. Perl's SIGALRM is on stock macOS and the Linux runners; bash is the
+# fallback when perl is missing.
 #
-# A terminal is a manual run and carries no payload. A final line without its newline is kept:
-# `read` returns non-zero having filled the variable, and dropping it would corrupt the JSON.
+# A terminal is a manual run and carries no payload. Bytes already received when the alarm
+# fires are kept.
 ns_read_stdin_bounded() {
-  local seconds="${1:-2}" line buf="" begun left
+  local seconds="${1:-2}" tmp cpid dog
   [ ! -t 0 ] || return 0
   case "$seconds" in '' | *[!0-9]*) seconds=2 ;; esac
-  begun=$SECONDS
-  while :; do
-    left=$((seconds - (SECONDS - begun)))
-    [ "$left" -gt 0 ] || break
-    IFS= read -r -t "$left" line || {
-      [ -z "$line" ] || buf="$buf$line"
-      break
-    }
-    buf="$buf$line
-"
-  done
-  printf '%s' "$buf"
+  if ns_have_cmd perl; then
+    NS_STDIN_BOUND="$seconds" perl -e '
+      my $seconds = $ENV{NS_STDIN_BOUND};
+      $seconds = 2 unless defined $seconds && $seconds =~ /^[0-9]+$/;
+      my $buf = "";
+      eval {
+        local $SIG{ALRM} = sub { die "timeout\n" };
+        alarm $seconds;
+        binmode STDIN;
+        while (1) {
+          my $n = sysread(STDIN, my $chunk, 8192);
+          last if !defined $n || $n == 0;
+          $buf .= $chunk;
+        }
+        alarm 0;
+      };
+      binmode STDOUT;
+      print $buf;
+    '
+    return 0
+  fi
+  tmp="$(mktemp "${TMPDIR:-/tmp}/ns-stdin.XXXXXX")" || return 0
+  cat >"$tmp" &
+  cpid=$!
+  (
+    sleep "$seconds"
+    kill "$cpid" 2>/dev/null || true
+  ) &
+  dog=$!
+  wait "$cpid" 2>/dev/null || true
+  kill "$dog" 2>/dev/null || true
+  wait "$dog" 2>/dev/null || true
+  cat "$tmp"
+  rm -f "$tmp"
 }

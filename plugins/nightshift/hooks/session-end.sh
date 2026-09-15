@@ -12,6 +12,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# shellcheck source=plugins/nightshift/hooks/shared/idle.sh
+. "$_here/shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
@@ -20,6 +22,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # mid-outage after the first revival.
 [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || exit 0
 
+ns_hook_idle_exit
 INPUT="$(ns_read_stdin_bounded 2)"
 HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0

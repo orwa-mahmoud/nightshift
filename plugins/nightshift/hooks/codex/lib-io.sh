@@ -24,6 +24,7 @@
 # no command can be extracted the raw payload stands in as the match target — a broken parse
 # must never disable a string guard.
 codex_read_input() {
+  ns_hook_idle_exit
   CODEX_RAW="$(ns_read_stdin_bounded 2)"
   if command -v jq >/dev/null 2>&1; then
     CODEX_SESSION_ID="$(printf '%s' "$CODEX_RAW" | jq -r '.session_id // empty' 2>/dev/null || true)"

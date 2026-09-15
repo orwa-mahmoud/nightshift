@@ -168,6 +168,41 @@ held_open() {
   grep -qF 'ns_read_stdin_bounded()' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/common.sh"
 }
 
+@test "every hook stands down before loading the library when the site is unarmed" {
+  local h rel
+  for h in "$HOOKS"/*.sh "$HOOKS"/codex/*.sh "$HOOKS"/cursor/*.sh; do
+    [ -f "$h" ] || continue
+    case "$h" in */lib-io.sh) continue ;; esac
+    rel="${h#"$HOOKS"/}"
+    grep -qF 'hooks/shared/idle.sh' "$h" || { echo "does not source idle.sh: $rel"; return 1; }
+  done
+}
+
+@test "an unarmed hook does not wait on stdin" {
+  # Hosts fire hooks on every event. A project with no armed shift must return
+  # immediately, even when the host hands over a descriptor that never closes.
+  p="$(unarmed_site stdin-unarmed)"
+  start="$(date +%s)"
+  run env CLAUDE_PROJECT_DIR="$p" CURSOR_PROJECT_DIR="$p" CODEX_PROJECT_DIR="$p" \
+    bash "$HOOKS/cursor/hardhat.sh" < <(sleep 30)
+  elapsed=$(($(date +%s) - start))
+  [ "$status" -eq 0 ]
+  [ "$elapsed" -lt 2 ]
+
+  start="$(date +%s)"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh" < <(sleep 30)
+  elapsed=$(($(date +%s) - start))
+  [ "$status" -eq 0 ]
+  [ "$elapsed" -lt 2 ]
+
+  empty="$(mktemp -d "$BATS_TEST_TMPDIR/install.XXXXXX")"
+  start="$(date +%s)"
+  run env CURSOR_PROJECT_DIR="$empty" bash "$HOOKS/cursor/hardhat.sh" < <(sleep 30)
+  elapsed=$(($(date +%s) - start))
+  [ "$status" -eq 0 ]
+  [ "$elapsed" -lt 2 ]
+}
+
 # ---------------------------------------------------------------------------------------------
 # Accounting belongs to an armed shift owned by this session. A tool call before Start, or from a
 # second tab on the same project, is not billed — and must not leave an arm mark behind, because a

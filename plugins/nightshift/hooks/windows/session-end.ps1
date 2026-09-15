@@ -20,6 +20,8 @@ if ($env:NIGHTSHIFT_REVIVAL -eq '1') {
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
+if (Test-NSHookIdle) { exit 0 }
+
 # Same stdin shape as hardhat/pulse: piped JSON binds to -HookJson under the Windows
 # test host; nested -File launches still read Console stdin when HookJson is empty.
 $raw = Get-NSStdinText -Piped $HookJson

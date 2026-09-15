@@ -98,6 +98,27 @@ ns_workspace_root() {
   printf '%s' "$canonical"
 }
 
+# ns_hook_host_dir — project dir from the host environment, never from stdin.
+ns_hook_host_dir() {
+  printf '%s' "${CURSOR_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}}"
+}
+
+# ns_hook_idle_exit — after the library is loaded, leave if the resolved site
+# has no armed shift. Hooks/shared/idle.sh already covers the no-link case
+# before this file is sourced; this catches a .nightshift-link to an unarmed
+# workspace. Revival workers stay in.
+ns_hook_idle_exit() {
+  [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || return 0
+  local host project ns
+  host="$(ns_hook_host_dir)"
+  project="$(ns_workspace_root "$host" 2>/dev/null)" || exit 0
+  ns="$project/.nightshift"
+  [ -f "$ns/.shift-armed" ] || exit 0
+  if [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ]; then
+    exit 0
+  fi
+}
+
 # ns_record_workspace_link <host-root> <workspace>
 # Validate and atomically record a cross-workspace link. The pointer is machine-local, so when
 # the host is a Git repository it goes in .git/info/exclude rather than changing tracked files.

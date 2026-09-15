@@ -26,6 +26,8 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
+if (Test-NSHookIdle) { exit 0 }
+
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 
 # Same stdin shape as the other Windows hooks: piped JSON binds to -HookJson under the test host;

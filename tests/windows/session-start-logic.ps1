@@ -19,6 +19,34 @@ function Expect-True {
     }
 }
 
+$idleRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-idle-' + [guid]::NewGuid().ToString('N'))
+$previousClaude = $env:CLAUDE_PROJECT_DIR
+$previousCursor = $env:CURSOR_PROJECT_DIR
+$previousCodex = $env:CODEX_PROJECT_DIR
+try {
+    $null = New-Item -ItemType Directory -Path $idleRoot
+    $env:CLAUDE_PROJECT_DIR = $idleRoot
+    Remove-Item Env:CURSOR_PROJECT_DIR -ErrorAction SilentlyContinue
+    Remove-Item Env:CODEX_PROJECT_DIR -ErrorAction SilentlyContinue
+    Expect-True (Test-NSHookIdle) 'a directory with no .nightshift is idle'
+    $idleNs = Join-Path $idleRoot '.nightshift'
+    $null = New-Item -ItemType Directory -Path $idleNs
+    Expect-True (Test-NSHookIdle) 'a scaffold with no armed marker is idle'
+    $null = New-Item -ItemType File -Path (Join-Path $idleNs '.shift-armed')
+    Expect-True (-not (Test-NSHookIdle)) 'an armed scaffold is not idle'
+    $null = New-Item -ItemType File -Path (Join-Path $idleNs '.ended')
+    Expect-True (Test-NSHookIdle) 'an ended shift is idle'
+}
+finally {
+    if ($null -eq $previousClaude) { Remove-Item Env:CLAUDE_PROJECT_DIR -ErrorAction SilentlyContinue }
+    else { $env:CLAUDE_PROJECT_DIR = $previousClaude }
+    if ($null -eq $previousCursor) { Remove-Item Env:CURSOR_PROJECT_DIR -ErrorAction SilentlyContinue }
+    else { $env:CURSOR_PROJECT_DIR = $previousCursor }
+    if ($null -eq $previousCodex) { Remove-Item Env:CODEX_PROJECT_DIR -ErrorAction SilentlyContinue }
+    else { $env:CODEX_PROJECT_DIR = $previousCodex }
+    Remove-Item -LiteralPath $idleRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Invoke-Hook {
     param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Json)
     $out = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.out')
