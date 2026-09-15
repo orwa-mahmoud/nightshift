@@ -49,6 +49,8 @@ ENVIRONMENTS="$BATS_TEST_DIRNAME/environments"
   grep -qF 'dorny/paths-filter' "$CI"
   grep -qF 'run-docs-contract.sh' "$CI"
   grep -qF '!plugins/nightshift/.claude-plugin/plugin.json' "$CI"
+  grep -qF 'windows-native (powershell)' "$CI"
+  grep -qF 'No suite paths; Windows suite not executed.' "$CI"
 }
 
 @test "devcontainer fixture is native Linux with the required local tools" {

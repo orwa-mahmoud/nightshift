@@ -284,14 +284,16 @@ try {
     Expect-True (([regex]::Matches($liveSnag, '(?m)^Filed:').Count) -eq 1) `
         'retry does not duplicate the pointer'
 
+    $dash = [string][char]0x2014
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
-        "# Snag Log`n`n- leak · tests/x.bats`n  · fixed — join must see the disposition`n  · 2026-09-13`n- still open · looking`n")
+        ("# Snag Log`n`n- leak · tests/x.bats`n  · fixed " + $dash +
+         " join must see the disposition`n  · 2026-09-13`n- still open · looking`n"))
     $wrapped = Invoke-ArchiveReceipts $review @('-Date', '2026-09-13')
     Expect-True ($wrapped.ExitCode -eq 0) "wrapped review file exits 0 (got $($wrapped.ExitCode) $($wrapped.Stderr))"
     $wrapDest = Join-Path $ns 'archive/2026-09-13/aaaa1111bbbb2222/snag-log.md'
     Expect-True (Test-Path -LiteralPath $wrapDest -PathType Leaf) 'wrapped handled snag is filed'
     if (Test-Path -LiteralPath $wrapDest -PathType Leaf) {
-        Expect-True ([IO.File]::ReadAllText($wrapDest).Contains('fixed — join must see the disposition')) `
+        Expect-True ([IO.File]::ReadAllText($wrapDest).Contains('fixed ' + $dash + ' join must see the disposition')) `
             'the wrapped disposition is in the archive'
     }
     $liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md'))
