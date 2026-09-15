@@ -5,8 +5,8 @@ CURSOR_PULSE="$HOOKS/cursor/pulse.sh"
 
 cursor_pulse() {
   local p="$1" sid="$2"
-  jq -nc --arg p "$p" --arg sid "$sid" \
-    '{hook_event_name:"postToolUse",conversation_id:$sid,session_id:$sid,cwd:$p,tool_name:"Read"}' |
+  hook_payload "$(jq -nc --arg p "$p" --arg sid "$sid" \
+    '{hook_event_name:"postToolUse",conversation_id:$sid,session_id:$sid,cwd:$p,tool_name:"Read"}')" \
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_PULSE"
 }
 
