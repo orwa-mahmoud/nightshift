@@ -69,11 +69,20 @@ wait_writer() {
 punch_open() { printf '## Items\n- [ ] **1. first.**\n- [x] **2. done.**\n' >"$1/.nightshift/punch-list.md"; }
 punch_done() { printf '## Items\n- [x] **1. first.**\n- [x] **2. done.**\n' >"$1/.nightshift/punch-list.md"; }
 
-# gate <project> [ENV=VAL ...] — pipes a minimal Stop payload; the gate reads stdin now.
+# hook_payload <json> command... — deliver a fixture after jq has finished.
+# Idle and cold-stop exit before reading stdin. A live `jq | hook` pipe then
+# makes GNU jq write "Broken pipe" on stderr, which bats treats as output.
+hook_payload() {
+  local json="$1"
+  shift
+  "$@" <<<"$json"
+}
+
+# gate <project> [ENV=VAL ...] — a minimal Stop payload; the gate reads stdin now.
 gate() {
   local p="$1"
   shift
-  jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}' |
+  hook_payload "$(jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/clock-out-gate.sh"
 }
 
@@ -81,7 +90,7 @@ gate() {
 hardhat_bash() {
   local p="$1" c="$2"
   shift 2
-  jq -nc --arg c "$c" '{tool_name:"Bash",tool_input:{command:$c}}' |
+  hook_payload "$(jq -nc --arg c "$c" '{tool_name:"Bash",tool_input:{command:$c}}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
 }
 
@@ -89,8 +98,8 @@ hardhat_bash() {
 hardhat_sid_bash() {
   local p="$1" sid="$2" c="$3"
   shift 3
-  jq -nc --arg sid "$sid" --arg c "$c" \
-    '{tool_name:"Bash",session_id:$sid,tool_input:{command:$c}}' |
+  hook_payload "$(jq -nc --arg sid "$sid" --arg c "$c" \
+    '{tool_name:"Bash",session_id:$sid,tool_input:{command:$c}}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
 }
 
@@ -98,7 +107,7 @@ hardhat_sid_bash() {
 hardhat_bash_cwd() {
   local p="$1" w="$2" c="$3"
   shift 3
-  jq -nc --arg c "$c" --arg w "$w" '{tool_name:"Bash",cwd:$w,tool_input:{command:$c}}' |
+  hook_payload "$(jq -nc --arg c "$c" --arg w "$w" '{tool_name:"Bash",cwd:$w,tool_input:{command:$c}}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
 }
 
@@ -106,7 +115,7 @@ hardhat_bash_cwd() {
 hardhat_ask() {
   local p="$1"
   shift
-  jq -nc '{tool_name:"AskUserQuestion",tool_input:{}}' |
+  hook_payload "$(jq -nc '{tool_name:"AskUserQuestion",tool_input:{}}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
 }
 

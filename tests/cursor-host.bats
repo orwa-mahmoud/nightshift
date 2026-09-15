@@ -15,8 +15,8 @@ CURSOR_WATCHMAN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchma
 cursor_tool() {
   local p="$1" c="$2"
   shift 2
-  jq -nc --arg c "$c" --arg w "$p" \
-    '{tool_name:"Bash",conversation_id:"conv-1",cwd:$w,tool_input:{command:$c}}' |
+  hook_payload "$(jq -nc --arg c "$c" --arg w "$p" \
+    '{tool_name:"Bash",conversation_id:"conv-1",cwd:$w,tool_input:{command:$c}}')" \
     env "$@" CURSOR_PROJECT_DIR="$p" bash "$CURSOR/hardhat.sh"
 }
 
@@ -24,7 +24,8 @@ cursor_tool() {
 cursor_stop() {
   local p="$1"
   shift
-  jq -nc --arg w "$p" '{conversation_id:"conv-1",cwd:$w,status:"completed",loop_count:1}' |
+  hook_payload "$(jq -nc --arg w "$p" \
+    '{conversation_id:"conv-1",cwd:$w,status:"completed",loop_count:1}')" \
     env "$@" CURSOR_PROJECT_DIR="$p" bash "$CURSOR/clock-out-gate.sh"
 }
 

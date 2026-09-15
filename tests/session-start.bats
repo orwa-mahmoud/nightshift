@@ -14,7 +14,8 @@ HOOK="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-start.sh"
 
 # start <project> <source> <session-id> — one SessionStart event as Claude Code sends it.
 start() {
-  jq -nc --arg s "$2" --arg id "$3" '{hook_event_name:"SessionStart",source:$s,session_id:$id}' |
+  hook_payload "$(jq -nc --arg s "$2" --arg id "$3" \
+    '{hook_event_name:"SessionStart",source:$s,session_id:$id}')" \
     env CLAUDE_PROJECT_DIR="$1" bash "$HOOK"
 }
 
@@ -68,7 +69,7 @@ bound() {
   rm -f "$p/.nightshift/.shift-armed"
   run start "$p" compact sess-1
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  [ -z "$output" ] || { echo "unarmed said: $output"; return 1; }
   [ ! -e "$p/.nightshift/.context-reset" ]
 }
 
