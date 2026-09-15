@@ -11,12 +11,10 @@ permissions:
   contents: read
 
 # Path buckets decide which expensive steps run. Required job names (shellcheck, validate,
-# bats (1-6), bats-macos (1-6), windows-native (powershell), windows-native (pwsh)) always
-# start so a docs-only or Release Please pull request is not left waiting on a check that
-# never reported. Workflow-level `paths` would skip the whole workflow and revive that
-# pending state. A job that only reports a skip runs on Linux, where a runner is available
-# at once, except windows-native, which stays on windows-latest because its matrix shells
-# are Windows-only — a Linux skip plus `shell: powershell` is an invalid workflow.
+# bats (1-6), bats-macos (1-6)) always start so a docs-only or Release Please pull request is
+# not left waiting on a check that never reported. Workflow-level `paths` would skip the whole
+# workflow and revive that pending state. A job that only reports a skip runs on Linux, where a
+# runner is available at once.
 #
 # The filter matches a file when any one pattern matches it, and a `!` pattern matches every
 # file but the one it names. The plugin tree is therefore filtered in its own step under the
@@ -165,21 +163,19 @@ jobs:
 
   windows-native:
     needs: changes
+    if: needs.changes.outputs.suite == 'true'
     runs-on: windows-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         shell: [powershell, pwsh]
-    steps:
-      - name: Skip Windows suite
-        if: needs.changes.outputs.suite != 'true'
-        run: echo 'No suite paths; Windows suite not executed.'
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.changes.outputs.suite == 'true'
-      - name: Run native Windows lifecycle suite
-        if: needs.changes.outputs.suite == 'true'
+    defaults:
+      run:
         shell: ${{ matrix.shell }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run native Windows lifecycle suite
         run: ./tests/windows/run.ps1
 
   remote-ssh:
