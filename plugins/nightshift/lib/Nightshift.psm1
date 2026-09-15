@@ -4744,7 +4744,20 @@ function Test-NSArchiveAutomatic {
 function Test-NSReviewHandled {
     param([AllowEmptyString()][string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    return [bool]($Text -imatch ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)')
+    return [bool]($Text -imatch ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)')
+}
+
+function Complete-NSReviewEntry {
+    param($Buffer, $Keep, $Filed)
+    if ($null -eq $Buffer -or $Buffer.Count -eq 0) { return }
+    $text = $Buffer -join "`n"
+    if (Test-NSReviewHandled $text) {
+        foreach ($entry in @($Buffer.ToArray())) { $Filed.Add($entry) }
+    }
+    else {
+        foreach ($entry in @($Buffer.ToArray())) { $Keep.Add($entry) }
+    }
+    $Buffer.Clear()
 }
 
 function Get-NSArchiveReviewLabel {
@@ -4802,17 +4815,26 @@ function Save-NSArchiveReviewSource {
     if ([string]::IsNullOrEmpty($rel) -or $rel.StartsWith('/')) { throw 'archive dest is outside .nightshift/' }
     $keep = New-Object Collections.Generic.List[string]
     $filed = New-Object Collections.Generic.List[string]
+    $buf = New-Object Collections.Generic.List[string]
     foreach ($line in [IO.File]::ReadAllLines($live)) {
         if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) {
+            Complete-NSReviewEntry $buf $keep $filed
             $keep.Add($line)
             continue
         }
-        if ($line.StartsWith('- ') -and (Test-NSReviewHandled $line)) {
-            $filed.Add($line)
+        if ($line.StartsWith('# ')) {
+            Complete-NSReviewEntry $buf $keep $filed
+            $keep.Add($line)
             continue
         }
-        $keep.Add($line)
+        if ($line.StartsWith('- ')) {
+            Complete-NSReviewEntry $buf $keep $filed
+            $buf.Add($line)
+            continue
+        }
+        if ($buf.Count -gt 0) { $buf.Add($line) } else { $keep.Add($line) }
     }
+    Complete-NSReviewEntry $buf $keep $filed
     if ($filed.Count -eq 0) { return }
     if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
@@ -5066,7 +5088,7 @@ function Get-NSReceiptUsageCells {
     $file = $Path
     if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
         $probe = [IO.File]::ReadAllText($file)
-        if ($probe -notmatch 'exact:') {
+        if ($probe -notmatch 'exact:' -and $probe -notmatch '<!-- tokens ') {
             $sidecar = Join-Path (Split-Path -Parent $file) ('x-' + (Split-Path -Leaf $file))
             if ((Test-Path -LiteralPath $sidecar -PathType Leaf) -and -not (Test-NSReparsePoint $sidecar)) {
                 $file = $sidecar
@@ -5075,7 +5097,30 @@ function Get-NSReceiptUsageCells {
     }
     if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
         $text = [IO.File]::ReadAllText($file)
-        if ($text -cmatch 'exact:\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)') {
+        $parsed = $false
+        if ($text -cmatch '(?m)^<!--\s*tokens\s+(.+?)-->') {
+            $parts = @($Matches[1].Trim() -split '\s+')
+            if ($parts.Count -ge 5) {
+                $nums = @()
+                foreach ($p in $parts[0..4]) {
+                    $n = 0L
+                    if (-not [long]::TryParse($p, [ref]$n)) { $n = 0 }
+                    $nums += $n
+                }
+                $cells['In'] = $nums[0]
+                $cells['CacheWrite'] = $nums[1]
+                $cells['CacheRead'] = $nums[2]
+                $cells['Out'] = $nums[3]
+                $cells['Reasoning'] = $nums[4]
+                $cells['Sum'] = $nums[0] + $nums[3]
+                $cells['Tokens'] = ('input {0} · cache_write {1} · cache_read {2} · output {3} · reasoning {4}' -f
+                    (Get-NSUsageScale ([string]$nums[0])), (Get-NSUsageScale ([string]$nums[1])),
+                    (Get-NSUsageScale ([string]$nums[2])), (Get-NSUsageScale ([string]$nums[3])),
+                    (Get-NSUsageScale ([string]$nums[4])))
+                $parsed = $true
+            }
+        }
+        if (-not $parsed -and $text -cmatch 'exact:\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)\s*/\s*([0-9]+)') {
             $cells['In'] = [long]$Matches[1]
             $cells['CacheWrite'] = [long]$Matches[2]
             $cells['CacheRead'] = [long]$Matches[3]
@@ -5087,7 +5132,14 @@ function Get-NSReceiptUsageCells {
                 (Get-NSUsageScale $Matches[3]), (Get-NSUsageScale $Matches[4]),
                 (Get-NSUsageScale $Matches[5]))
         }
-        if ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') {
+        if ($text -cmatch '(?m)^\|\s*working\s*\|\s*([^|]+)\|') {
+            $cells['Work'] = Get-NSUsageParseSeconds $Matches[1].Trim()
+            if ($text -cmatch '(?m)^\|\s*paused\s*\|\s*([^|(]+)') {
+                $cells['Pause'] = Get-NSUsageParseSeconds $Matches[1].Trim()
+            }
+            $cells['Time'] = Get-NSReceiptsTimeCell ([long]$cells['Work']) ([long]$cells['Pause'])
+        }
+        elseif ($text -cmatch '(?m)^\*\*Duration:\*\*\s*(.+)$') {
             $raw = $Matches[1].Trim()
             $workText = $raw
             if ($raw -match '^(.*) working') { $workText = $Matches[1].Trim() }
@@ -9609,18 +9661,22 @@ function Get-NSUsageDurationLine {
     if (-not [long]::TryParse($PausedSeconds, [ref]$paused)) { $paused = 0 }
     $work = $wall - $paused
     if ($work -lt 0) { $work = 0 }
-    $out = (Get-NSUsageDuration ([string]$work)) + ' working'
+    $rows = New-Object 'System.Collections.Generic.List[string]'
+    $null = $rows.Add('| Time | |')
+    $null = $rows.Add('| --- | --- |')
+    $null = $rows.Add('| working | ' + (Get-NSUsageDuration ([string]$work)) + ' |')
     if ($paused -gt 0) {
-        $out += ' (wall ' + (Get-NSUsageDuration ([string]$wall)) + '; paused ' + (Get-NSUsageDuration ([string]$paused))
-        if (-not [string]::IsNullOrEmpty($Reason)) { $out += ', ' + $Reason }
-        $out += ')'
+        $pause = (Get-NSUsageDuration ([string]$paused))
+        if (-not [string]::IsNullOrEmpty($Reason)) { $pause += ' (' + $Reason + ')' }
+        $null = $rows.Add('| paused | ' + $pause + ' |')
     }
+    $null = $rows.Add('| wall | ' + (Get-NSUsageDuration ([string]$wall)) + ' |')
     $from = Get-NSUsageIso $FromEpoch
     $to = Get-NSUsageIso $ToEpoch
     if (-not [string]::IsNullOrEmpty($from) -and -not [string]::IsNullOrEmpty($to)) {
-        $out += '; ' + $from + ' ' + [char]0x2192 + ' ' + $to
+        $null = $rows.Add('| span | ' + $from + ' ' + [char]0x2192 + ' ' + $to + ' |')
     }
-    return $out
+    return ($rows -join "`n")
 }
 
 function Get-NSUsageSegmentCount {
@@ -9655,22 +9711,38 @@ function Get-NSUsageOverlapText {
     }
 }
 
+function Get-NSUsageDimLabel {
+    param([AllowEmptyString()][string]$Dimension)
+    switch ($Dimension) {
+        'cache_write' { return 'cache write' }
+        'cache_read' { return 'cache read' }
+        default { return $Dimension }
+    }
+}
+
 function Get-NSUsageLine {
     param([AllowEmptyString()][string]$Fields, [AllowEmptyString()][string]$Sources,
           [AllowEmptyString()][string]$Segments, [AllowEmptyString()][string]$HostName = '')
-    $parts = @()
-    $exact = @()
+    $rows = New-Object 'System.Collections.Generic.List[string]'
+    $null = $rows.Add('| Tokens | Amount |')
+    $null = $rows.Add('| --- | ---: |')
+    $comment = @()
+    $word = 'segment'
+    if ($Segments -cne '1') { $word = 'segments' }
     foreach ($dim in $script:NSUsageDimensions) {
         $v = Get-NSUsageField $Fields $dim
         if ([string]::IsNullOrEmpty($v)) { $v = 'unavailable' }
-        $raw = $v
-        if ($v -cne 'unavailable') { $v = Get-NSUsageScale $v }
-        $parts += ($dim + ' ' + $v)
-        $exact += $raw
+        if ($v -cne 'unavailable') {
+            $comment += $v
+            $v = Get-NSUsageScale $v
+        }
+        else {
+            $comment += '0'
+        }
+        $null = $rows.Add('| ' + (Get-NSUsageDimLabel $dim) + ' | ' + $v + ' |')
     }
-    return ('**Usage:** ' + ($parts -join ' · ') + "`n  Source: " + $Sources +
-            ', cumulative counters, segments ' + $Segments + '; exact: ' + ($exact -join ' / ') +
-            "`n  " + (Get-NSUsageOverlapText $HostName))
+    return (($rows -join "`n") + "`n`n<!-- tokens " + ($comment -join ' ') + " -->`n" +
+            $Sources + ' · ' + $Segments + ' ' + $word + '. ' + (Get-NSUsageOverlapText $HostName))
 }
 
 # The item's own section of the report, written where the model already writes its account of the
@@ -9685,7 +9757,7 @@ function Add-NSGateUsageAppend {
     if (-not [string]::IsNullOrEmpty($dir)) {
         $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
     }
-    $block = $Usage + "`n**Duration:** " + $Duration + "`n"
+    $block = $Usage + "`n`n" + $Duration + "`n"
     if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf)) {
         [IO.File]::WriteAllText($Receipt, ('# ' + $Label + "`n`n" + $block), $utf8)
         return
@@ -10088,6 +10160,19 @@ function Test-NSReceiptHasModelText {
         if ($line.StartsWith('  The input figure')) { continue }
         if ($line.StartsWith('  Cached input')) { continue }
         if ($line.StartsWith('  Overlap between')) { continue }
+        if ($line.StartsWith('| Tokens |')) { continue }
+        if ($line.StartsWith('| Time |')) { continue }
+        if ($line.StartsWith('| ---')) { continue }
+        if ($line.StartsWith('| input |')) { continue }
+        if ($line.StartsWith('| cache ')) { continue }
+        if ($line.StartsWith('| output |')) { continue }
+        if ($line.StartsWith('| reasoning |')) { continue }
+        if ($line.StartsWith('| working |')) { continue }
+        if ($line.StartsWith('| paused |')) { continue }
+        if ($line.StartsWith('| wall |')) { continue }
+        if ($line.StartsWith('| span |')) { continue }
+        if ($line.StartsWith('<!-- tokens ')) { continue }
+        if ($line -match ' · [0-9]+ segments?\.') { continue }
         return $true
     }
     return $false

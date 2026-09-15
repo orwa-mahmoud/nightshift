@@ -17,8 +17,8 @@ one item file.
 
 ## Token usage is measured by the runtime
 
-The hooks read the host's records and write usage and duration at the top of the item's receipt at
-its tick. The agent does not estimate its own consumption. Accounting boundaries follow ticks: work
+The hooks read the host's records and write a Tokens table and a Time table at the top of the
+item's receipt at its tick. The agent does not estimate its own consumption. Accounting boundaries follow ticks: work
 between two ticks belongs to the item closed by the second, including its verification. This is
 useful attribution, not a profiler of individual edits; items ticked together can share a reading.
 Duration is working time first: wall clock minus pauses the runtime recorded (owner stop, Esc, a

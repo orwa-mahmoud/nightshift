@@ -149,9 +149,9 @@ ran, what was unavailable or disabled, and what needs your attention. Then read 
 
 ### Token usage and time, per item
 
-The runtime appends a bold **Usage:** line and a bold **Duration:** line to each item's receipt at
-its tick, and repeats both in the index. Input, output, cache, and reasoning figures retain the
-host's counting rules; missing readings stay explicit. Choose progress updates by time, tokens,
+The runtime appends a Tokens table and a Time table to each item's receipt at its tick, and
+repeats the figures in the index. Input, output, cache, and reasoning retain the host's counting
+rules; missing readings stay explicit. Choose progress updates by time, tokens,
 either, or completion only. These control what is written, not a spending limit.
 [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) explains the measurements and
 limits; the [example receipts](examples/receipts.md#receipts) show them in context.

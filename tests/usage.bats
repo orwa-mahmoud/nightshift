@@ -167,9 +167,9 @@ ns() { printf '%s/.nightshift' "$1"; }
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
 
   rec="$p/.nightshift/receipts/P01.md"
-  grep -qF 'input 10' "$rec"
-  grep -qF '**Duration:**' "$rec"
-  grep -qF 'segments 1' "$rec"
+  grep -qF '| input | 10 |' "$rec"
+  grep -qF '| Time |' "$rec"
+  grep -qF '1 segment.' "$rec"
   # The host's own overlap, so nothing downstream adds the same tokens twice.
   grep -qF 'Cache reads and cache writes are separate from the input figure' "$rec"
   grep -qF '# P01' "$rec"
@@ -182,7 +182,7 @@ ns() { printf '%s/.nightshift' "$1"; }
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
   [ -f "$p/.nightshift/receipts/P01.md" ]
   grep -qF '# P01' "$p/.nightshift/receipts/P01.md"
-  grep -qF 'input 4' "$p/.nightshift/receipts/P01.md"
+  grep -qF '| input | 4 |' "$p/.nightshift/receipts/P01.md"
 }
 
 @test "a second stop with nothing newly ticked writes nothing twice" {
@@ -191,7 +191,7 @@ ns() { printf '%s/.nightshift' "$1"; }
   lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  [ "$(grep -c '^\*\*Usage:\*\*' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
+  [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
 }
 
 @test "a dimension the host does not report reads unavailable, never zero" {
@@ -203,7 +203,7 @@ ns() { printf '%s/.nightshift' "$1"; }
   lib ns_usage_record "$p/.nightshift" cursor cursor-model stop-payload cursor:c1 0 \
     'input=200,cache_write=60,cache_read=1500,output=44'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  grep -qF 'reasoning unavailable' "$p/.nightshift/receipts/P01.md"
+  grep -qF '| reasoning | unavailable |' "$p/.nightshift/receipts/P01.md"
 }
 
 @test "usage off measures nothing and keeps no snapshot" {
@@ -347,8 +347,11 @@ mark_at() {
 
   grep -qF 'paused' "$p/.nightshift/receipts/P01.md"
   grep -qF 'the session ended and the shift was revived' "$p/.nightshift/receipts/P01.md"
-  # Working time is the wall clock minus the recorded gap; both figures stay on the line.
-  grep -qE '\*\*Duration:\*\* 30m 0s working \(wall 1h 0m; paused' "$p/.nightshift/receipts/P01.md"
+  # Working time is the wall clock minus the recorded gap; both figures stay on the table.
+  grep -qF '| working | 30m 0s |' "$p/.nightshift/receipts/P01.md"
+  grep -qF '| wall | 1h 0m |' "$p/.nightshift/receipts/P01.md"
+  grep -qE '\| paused \| 30m 0s \(the session ended and the shift was revived\) \|' \
+    "$p/.nightshift/receipts/P01.md"
 }
 
 @test "Windows reads the same fixtures to the same bytes" {
@@ -684,7 +687,11 @@ parity_normalise() {
       -e 's/\*\*[0-9][0-9]*s\*\*/**<span>**/g' \
       -e 's/\*\*[0-9][0-9]*m [0-9][0-9]*s\*\*/**<span>**/g' \
       -e 's/\*\*[0-9][0-9]*h [0-9][0-9]*m\*\*/**<span>**/g' \
-      -e 's/| \*\*—\*\* | \(\[\[./\|  |\)$/| **<span>** | \1/'
+      -e 's/| \*\*—\*\* | \(\[\[./\|  |\)$/| **<span>** | \1/' \
+      -e 's/| working | [^|]* |/| working | <span> |/' \
+      -e 's/| paused | [^|]* |/| paused | <span> |/' \
+      -e 's/| wall | [^|]* |/| wall | <span> |/' \
+      -e 's/| span | [^|]* |/| span | <span> |/'
 }
 
 @test "the PowerShell books match the POSIX books, file for file" {

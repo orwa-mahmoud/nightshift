@@ -75,7 +75,7 @@ try {
     $a2 = [IO.File]::ReadAllText((Get-NSReceiptPath $w 'A2'))
     Expect-True ($a1.Contains('# A1')) 'the first item has a receipt'
     Expect-True ($a2.Contains('# A2')) 'the second item has a receipt'
-    Expect-True ($a1.Contains('**Duration:**') -and $a2.Contains('**Duration:**')) 'each closed item gets one duration line'
+    Expect-True ($a1.Contains('| Time |') -and $a2.Contains('| Time |')) 'each closed item gets one Time table'
     Expect-True (Invoke-NSGateUsageSync $ns $w $punch 2) 'a second sync is accepted'
     Expect-True (@([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns))).Count -eq 3) `
         'a second sync with nothing newly ticked writes no mark'
@@ -97,8 +97,9 @@ try {
     $null = Write-NSUsageRecord $ns 'claude' $r[2] 'transcript-incremental' $t $r[1] $r[0] $r[4]
     $null = Invoke-NSGateUsageSync $ns $w (Join-Path $ns 'punch-list.md') 1
     $report = [IO.File]::ReadAllText((Get-NSReceiptPath $w 'A1'))
-    Expect-True ($report.Contains('working (wall ')) 'working time is the wall clock minus the recorded gap'
-    Expect-True ($report.Contains('; paused ')) 'the duration line lists the gap the runtime knows about'
+    Expect-True ($report.Contains('| working |')) 'working time is the wall clock minus the recorded gap'
+    Expect-True ($report.Contains('| paused |')) 'the Time table lists the gap the runtime knows about'
+    Expect-True ($report.Contains('| wall |')) 'wall time stays listed'
     Expect-True ($report.Contains('the session ended and the shift was revived')) 'the pause names its reason'
 
     # A finished shift's accounting is set aside, so the next shift starts clean.

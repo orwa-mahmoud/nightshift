@@ -46,19 +46,23 @@ try {
 
     $line = Get-NSUsageLine 'input=122,cache_write=55458,cache_read=47457543,output=42091,reasoning=7332' `
         'claude claude-opus-5' '1' 'claude'
-    Expect-True ($line -clike '**Usage:** input 122 · cache_write 55.5k · cache_read 47.5M · output 42.1k · reasoning 7.3k*') `
-        'the usage line scales each dimension'
-    Expect-True ($line -clike '*exact: 122 / 55458 / 47457543 / 42091 / 7332*') `
-        'exact counts stay on the Source line'
+    Expect-True ($line.Contains('| input | 122 |')) 'the Tokens table scales input'
+    Expect-True ($line.Contains('| cache write | 55.5k |')) 'thousands take one decimal k'
+    Expect-True ($line.Contains('| cache read | 47.5M |')) 'millions take one decimal M'
+    Expect-True ($line.Contains('| output | 42.1k |')) 'output is scaled'
+    Expect-True ($line.Contains('| reasoning | 7.3k |')) 'reasoning is scaled'
+    Expect-True ($line.Contains('<!-- tokens 122 55458 47457543 42091 7332 -->')) `
+        'raw counts stay in the hidden comment'
 
-    Add-NSGateUsageAppend (Get-NSReceiptPath $w $label) $label $line '44m 23s'
+    $duration = Get-NSUsageDurationLine '2663' '0' '' '' ''
+    Add-NSGateUsageAppend (Get-NSReceiptPath $w $label) $label $line $duration
     $file = Get-NSReceiptPath $w $label
     $text = [IO.File]::ReadAllText($file)
     Expect-True ($text.StartsWith('# 2. Make the packed Node-only build reproducible.')) `
         'a missing file is created with the item heading'
-    Expect-True ($text.Contains('**Duration:** 44m 23s')) 'duration is bold'
-    $usageAt = $text.IndexOf('**Usage:**')
-    $durAt = $text.IndexOf('**Duration:**')
+    Expect-True ($text.Contains('| working | 44m 23s |')) 'working time is on the Time table'
+    $usageAt = $text.IndexOf('| Tokens |')
+    $durAt = $text.IndexOf('| Time |')
     $bodyAt = $text.IndexOf('## ')
     Expect-True ($usageAt -gt 0 -and $durAt -gt $usageAt) 'usage sits under the heading'
     Expect-True ($bodyAt -lt 0 -or $usageAt -lt $bodyAt) 'usage comes before later narrative'
