@@ -64,8 +64,8 @@ full shard matrix. A Release Please version bump validates manifests and skips W
 shards. Required job names still report, so merge is not left waiting. Bats runs as six parallel
 shards on both Ubuntu and macOS (same partition as `tests/run-shard.sh`); the macOS job keeps the
 system Bash 3.2 first on `PATH`. A `windows-native` job runs `tests/windows/run.ps1` under Windows
-PowerShell 5.1 and PowerShell 7; both matrix names are required on main, and they report a skip
-when the suite does not run. A `remote-ssh` job crosses an ephemeral OpenSSH connection; a
+PowerShell 5.1 and PowerShell 7. Both matrix names always report so they can be required on
+main; they skip on a Windows runner when the suite does not run. A `remote-ssh` job crosses an ephemeral OpenSSH connection; a
 `devcontainer` job starts the checked-in fixture. Both compare sanitized receipts — they do not
 load an authenticated host session.
 

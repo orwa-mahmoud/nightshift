@@ -15,7 +15,8 @@ permissions:
 # start so a docs-only or Release Please pull request is not left waiting on a check that
 # never reported. Workflow-level `paths` would skip the whole workflow and revive that
 # pending state. A job that only reports a skip runs on Linux, where a runner is available
-# at once.
+# at once, except windows-native, which stays on windows-latest because its matrix shells
+# are Windows-only — a Linux skip plus `shell: powershell` is an invalid workflow.
 #
 # The filter matches a file when any one pattern matches it, and a `!` pattern matches every
 # file but the one it names. The plugin tree is therefore filtered in its own step under the
@@ -164,7 +165,7 @@ jobs:
 
   windows-native:
     needs: changes
-    runs-on: ${{ needs.changes.outputs.suite == 'true' && 'windows-latest' || 'ubuntu-latest' }}
+    runs-on: windows-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
