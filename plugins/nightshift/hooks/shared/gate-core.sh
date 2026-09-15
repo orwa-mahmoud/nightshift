@@ -179,7 +179,7 @@ ns_gate_usage_append() {
   [ ! -L "$receipt" ] || return 0
   dir="${receipt%/*}"
   mkdir -p "$dir" 2>/dev/null || return 0
-  block="$(printf '%s\n**Duration:** %s\n' "$usage" "$duration")"
+  block="$(printf '%s\n\n%s\n' "$usage" "$duration")"
   if [ ! -f "$receipt" ]; then
     printf '# %s\n\n%s' "$label" "$block" >"$receipt" 2>/dev/null || return 0
     return 0

@@ -953,6 +953,28 @@ review_ended() { # <project> <shift-id> <layout>
   ! grep -qF 'Filed:' "$p/.nightshift/parking-lot.md"
 }
 
+@test "archive files a handled snag whose disposition wrapped" {
+  p="$(new_project review-snag-wrap)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '%s\n' \
+    '# Snag Log' \
+    '' \
+    '- leak · tests/x.bats' \
+    '  · fixed — join must see the disposition' \
+    '  · 2026-09-13' \
+    '- still open · looking' \
+    >"$p/.nightshift/snag-log.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-13
+  [ "$status" -eq 0 ]
+  dest="$p/.nightshift/archive/2026-09-13/aaaa1111bbbb2222/snag-log.md"
+  [ -f "$dest" ]
+  grep -qF 'leak · tests/x.bats' "$dest"
+  grep -qF 'fixed — join must see the disposition' "$dest"
+  ! grep -qF 'still open' "$dest"
+  grep -qF 'still open · looking' "$p/.nightshift/snag-log.md"
+  ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md"
+}
+
 @test "filing nothing adds no pointer and creates no empty archive file" {
   p="$(new_project review-noop)"
   review_ended "$p" aaaa1111bbbb2222 date

@@ -19,10 +19,22 @@ Illustrative. A real shift writes `.nightshift/receipts/README.md` and one `NN-s
 ```markdown
 # 1. Fix the resolver's relative-import failures.
 
-**Usage:** input 128.4k · cache_write 12.1k · cache_read 96.0k · output 9.3k · reasoning 2.1k
-  Source: claude claude-opus-5, cumulative counters, segments 1; exact: 128400 / 12100 / 96000 / 9310 / 2140
-  Cache reads and cache writes are separate from the input figure; reasoning is inside output.
-**Duration:** 41m 12s working; 2026-09-09T02:00Z → 2026-09-09T02:41Z
+| Tokens | Amount |
+| --- | ---: |
+| input | 128.4k |
+| cache write | 12.1k |
+| cache read | 96.0k |
+| output | 9.3k |
+| reasoning | 2.1k |
+
+<!-- tokens 128400 12100 96000 9310 2140 -->
+claude claude-opus-5 · 1 segment. Cache reads and cache writes are separate from the input figure; reasoning is inside output.
+
+| Time | |
+| --- | --- |
+| working | 41m 12s |
+| wall | 41m 12s |
+| span | 2026-09-09T02:00Z → 2026-09-09T02:41Z |
 
 ## What was delivered
 

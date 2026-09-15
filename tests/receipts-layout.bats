@@ -40,15 +40,20 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   f="$p/.nightshift/receipts/2-make-the-packed-node-only-build-reproducible.md"
   [ -f "$f" ]
   grep -qF '# 2. Make the packed Node-only build reproducible.' "$f"
-  grep -qF '**Usage:** input 122 · cache_write 55.5k · cache_read 47.5M · output 42.1k · reasoning 7.3k' "$f"
-  grep -qF 'exact: 122 / 55458 / 47457543 / 42091 / 7332' "$f"
-  grep -qF '**Duration:**' "$f"
+  grep -qF '| input | 122 |' "$f"
+  grep -qF '| cache write | 55.5k |' "$f"
+  grep -qF '| cache read | 47.5M |' "$f"
+  grep -qF '| output | 42.1k |' "$f"
+  grep -qF '| reasoning | 7.3k |' "$f"
+  grep -qF '<!-- tokens 122 55458 47457543 42091 7332 -->' "$f"
+  grep -qF '| Time |' "$f"
+  ! grep -qF 'exact:' "$f"
   grep -q $'\t2. Make the packed Node-only build reproducible.\t' "$p/.nightshift/usage/marks.tsv"
-  # Usage and duration sit under the heading, before any later narrative.
+  # Tokens and Time sit under the heading, before any later narrative.
   awk '
     $0 == "# 2. Make the packed Node-only build reproducible." { head = NR }
-    /^\*\*Usage:\*\*/ { usage = NR }
-    /^\*\*Duration:\*\*/ { dur = NR }
+    /^\| Tokens \|/ { usage = NR }
+    /^\| Time \|/ { dur = NR }
     END { if (!(head && usage && dur && head < usage && usage < dur)) exit 1 }
   ' "$f"
 }
@@ -61,7 +66,7 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
   [ -f "$p/.nightshift/receipts/1-title-without-bold.md" ]
   [ ! -e "$p/.nightshift/receipts/x-1-title-without-bold.md" ]
-  grep -qF 'exact: 10 / 0 / 0 / 4 / 1' "$p/.nightshift/receipts/1-title-without-bold.md"
+  grep -qF '<!-- tokens 10 0 0 4 1 -->' "$p/.nightshift/receipts/1-title-without-bold.md"
 }
 
 @test "the index reads an old x- sidecar when the item file has no exact line" {
@@ -92,6 +97,35 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   grep -qF '| 2. Second. | ticked | **input 2 · cache_write 0 · cache_read 0 · output 2 · reasoning 0** | **10m 0s working** |' \
     "$p/.nightshift/receipts/README.md"
   grep -qF '| **Totals** |  | **input 3 · cache_write 0 · cache_read 0 · output 3 · reasoning 0** | **40m 0s working · 30m 0s paused** |' \
+    "$p/.nightshift/receipts/README.md"
+}
+
+@test "the index reads raw token integers from the hidden comment" {
+  p="$(new_project receipts-comment)"
+  printf 'Date: 2026-09-14\n\n## Items\n- [x] **1. First.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '%s\n' \
+    '# 1. First.' \
+    '' \
+    '| Tokens | Amount |' \
+    '| --- | ---: |' \
+    '| input | 1 |' \
+    '| cache write | 0 |' \
+    '| cache read | 0 |' \
+    '| output | 1 |' \
+    '| reasoning | 0 |' \
+    '' \
+    '<!-- tokens 1 0 0 1 0 -->' \
+    'claude claude-opus-5 · 1 segment. Cache reads and cache writes are separate from the input figure; reasoning is inside output.' \
+    '' \
+    '| Time | |' \
+    '| --- | --- |' \
+    '| working | 10m 0s |' \
+    '| wall | 10m 0s |' \
+    >"$p/.nightshift/receipts/1-first.md"
+  lib ns_receipts_write_index "$p"
+  grep -qF '| 1. First. | ticked | **input 1 · cache_write 0 · cache_read 0 · output 1 · reasoning 0** | **10m 0s working** |' \
     "$p/.nightshift/receipts/README.md"
 }
 

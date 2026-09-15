@@ -124,6 +124,19 @@ ns_receipt_has_model_text() {
     /^  The input figure/ { next }
     /^  Cached input/ { next }
     /^  Overlap between/ { next }
+    /^\| Tokens \|/ { next }
+    /^\| Time \|/ { next }
+    /^\| ---/ { next }
+    /^\| input \|/ { next }
+    /^\| cache / { next }
+    /^\| output \|/ { next }
+    /^\| reasoning \|/ { next }
+    /^\| working \|/ { next }
+    /^\| paused \|/ { next }
+    /^\| wall \|/ { next }
+    /^\| span \|/ { next }
+    /^<!-- tokens / { next }
+    / · [0-9]+ segments?\./ { next }
     { found = 1; exit }
     END { exit found ? 0 : 1 }
   ' "$f"
@@ -195,45 +208,76 @@ ns_receipts_shift_date() {
 # with no runtime block reads as zeros and dashes. An `x-<name>` sidecar is read when the
 # item file itself has no exact line (the old tick-label bug).
 ns_receipt_usage_cells() {
-  local f="$1" dir base sidecar exact in=0 cw=0 cr=0 out=0 rea=0 tok_sum=0
+  local f="$1" dir base sidecar exact comment in=0 cw=0 cr=0 out=0 rea=0 tok_sum=0
   local usage='—' time='—' work=0 pause=0 raw work_s pause_s
   dir="${f%/*}"
   base="${f##*/}"
-  if [ -f "$f" ] && grep -q 'exact:' "$f" 2>/dev/null; then
+  if [ -f "$f" ] && { grep -q 'exact:' "$f" 2>/dev/null || grep -q '<!-- tokens ' "$f" 2>/dev/null; }; then
     :
   else
     sidecar="$dir/x-${base}"
     [ -f "$sidecar" ] && f="$sidecar"
   fi
   if [ -f "$f" ]; then
-    exact="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*\).*/\1/p' "$f" | head -n1)"
-    if [ -n "$exact" ]; then
-      in="${exact%% /*}"; exact="${exact#* / }"
-      cw="${exact%% /*}"; exact="${exact#* / }"
-      cr="${exact%% /*}"; exact="${exact#* / }"
-      out="${exact%% /*}"; rea="${exact#* / }"
+    comment="$(sed -n 's/^<!--[[:space:]]*tokens[[:space:]]\{1,\}\(.*\)-->/\1/p' "$f" | head -n1)"
+    comment="${comment%"${comment##*[![:space:]]}"}"
+    if [ -n "$comment" ]; then
+      in="${comment%% *}"; comment="${comment#* }"
+      cw="${comment%% *}"; comment="${comment#* }"
+      cr="${comment%% *}"; comment="${comment#* }"
+      out="${comment%% *}"; rea="${comment#* }"
+      case "$in" in '' | *[!0-9]*) in=0 ;; esac
+      case "$cw" in '' | *[!0-9]*) cw=0 ;; esac
+      case "$cr" in '' | *[!0-9]*) cr=0 ;; esac
+      case "$out" in '' | *[!0-9]*) out=0 ;; esac
+      case "$rea" in '' | *[!0-9]*) rea=0 ;; esac
       tok_sum=$((in + out))
       usage="input $(ns_usage_scale "$in") · cache_write $(ns_usage_scale "$cw") · cache_read $(ns_usage_scale "$cr") · output $(ns_usage_scale "$out") · reasoning $(ns_usage_scale "$rea")"
+    else
+      exact="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*\).*/\1/p' "$f" | head -n1)"
+      if [ -n "$exact" ]; then
+        in="${exact%% /*}"; exact="${exact#* / }"
+        cw="${exact%% /*}"; exact="${exact#* / }"
+        cr="${exact%% /*}"; exact="${exact#* / }"
+        out="${exact%% /*}"; rea="${exact#* / }"
+        tok_sum=$((in + out))
+        usage="input $(ns_usage_scale "$in") · cache_write $(ns_usage_scale "$cw") · cache_read $(ns_usage_scale "$cr") · output $(ns_usage_scale "$out") · reasoning $(ns_usage_scale "$rea")"
+      fi
     fi
-    raw="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$f" | head -n1)"
-    if [ -n "$raw" ]; then
-      case "$raw" in
-        *' working'*) work_s="${raw%% working*}" ;;
-        *' ('*) work_s="${raw%% (*}" ;;
-        *) work_s="$raw" ;;
-      esac
+    work_s="$(sed -n 's/^| working |[[:space:]]*//p' "$f" | head -n1)"
+    if [ -n "$work_s" ]; then
+      work_s="${work_s%% |*}"
       work_s="${work_s%"${work_s##*[![:space:]]}"}"
       work="$(ns_usage_parse_seconds "$work_s")"
-      case "$raw" in
-        *' paused '*)
-          pause_s="${raw#* paused }"
-          pause_s="${pause_s%%,*}"
-          pause_s="${pause_s%%)*}"
-          pause_s="${pause_s%"${pause_s##*[![:space:]]}"}"
-          pause="$(ns_usage_parse_seconds "$pause_s")"
-          ;;
-      esac
+      pause_s="$(sed -n 's/^| paused |[[:space:]]*//p' "$f" | head -n1)"
+      if [ -n "$pause_s" ]; then
+        pause_s="${pause_s%% |*}"
+        pause_s="${pause_s%%(*}"
+        pause_s="${pause_s%"${pause_s##*[![:space:]]}"}"
+        pause="$(ns_usage_parse_seconds "$pause_s")"
+      fi
       time="$(ns_receipts_time_cell "$work" "$pause")"
+    else
+      raw="$(sed -n 's/^\*\*Duration:\*\*[[:space:]]*//p' "$f" | head -n1)"
+      if [ -n "$raw" ]; then
+        case "$raw" in
+          *' working'*) work_s="${raw%% working*}" ;;
+          *' ('*) work_s="${raw%% (*}" ;;
+          *) work_s="$raw" ;;
+        esac
+        work_s="${work_s%"${work_s##*[![:space:]]}"}"
+        work="$(ns_usage_parse_seconds "$work_s")"
+        case "$raw" in
+          *' paused '*)
+            pause_s="${raw#* paused }"
+            pause_s="${pause_s%%,*}"
+            pause_s="${pause_s%%)*}"
+            pause_s="${pause_s%"${pause_s##*[![:space:]]}"}"
+            pause="$(ns_usage_parse_seconds "$pause_s")"
+            ;;
+        esac
+        time="$(ns_receipts_time_cell "$work" "$pause")"
+      fi
     fi
   fi
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
@@ -652,14 +696,23 @@ ns_archive_file_review_source() {
   awk -v filed="$filed" '
     function handled(s) {
       t = tolower(s)
-      return t ~ / · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)/
+      return t ~ / · (fixed|ignored|answered|rejected-because|accepted-tradeoff)/
     }
-    /^Filed:/ { print; next }
-    /^- Filed:/ { print; next }
-    /^- / {
-      if (handled($0)) { print $0 >> filed; next }
+    function flush() {
+      if (buf == "") return
+      if (handled(buf)) printf "%s\n", buf >> filed
+      else printf "%s\n", buf
+      buf = ""
     }
-    { print }
+    /^Filed:/ { flush(); print; next }
+    /^- Filed:/ { flush(); print; next }
+    /^- / { flush(); buf = $0; next }
+    /^# / { flush(); print; next }
+    {
+      if (buf != "") buf = buf "\n" $0
+      else print
+    }
+    END { flush() }
   ' "$live" >"$tmp" || {
     rm -f "$tmp" "$filed"
     return 2

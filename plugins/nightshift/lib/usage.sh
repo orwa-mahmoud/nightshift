@@ -504,25 +504,39 @@ ns_usage_overlap() {
   esac
 }
 
+# ns_usage_dim_label <dimension> — the Tokens table name (spaces, not underscores).
+ns_usage_dim_label() {
+  case "$1" in
+    cache_write) printf 'cache write' ;;
+    cache_read) printf 'cache read' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 # ns_usage_line <fields> <host-and-model> <segments> — the usage block as a receipt carries it.
-# Every dimension by name, scaled on the Usage line, exact integers on Source, `unavailable`
-# for one the host does not report, never a total across hosts, and never a price.
+# Every dimension by name, scaled in the Tokens table, raw integers in the hidden comment,
+# `unavailable` for one the host does not report, never a total across hosts, and never a price.
 ns_usage_line() {
-  local fields="$1" dim v raw out="" exact=""
+  local fields="$1" dim v raw label comment="" segs="${3:-0}" word=segment
+  [ "$segs" = 1 ] || word=segments
+  printf '| Tokens | Amount |\n| --- | ---: |\n'
   for dim in $NS_USAGE_DIMENSIONS; do
     v="$(ns_usage_field "$fields" "$dim")" || v=unavailable
     [ -n "$v" ] || v=unavailable
     raw="$v"
     if [ "$v" != unavailable ]; then
       v="$(ns_usage_scale "$v")"
+      [ -z "$comment" ] || comment="$comment "
+      comment="${comment}$raw"
+    else
+      [ -z "$comment" ] || comment="$comment "
+      comment="${comment}0"
     fi
-    [ -z "$out" ] || out="$out · "
-    out="$out$dim $v"
-    [ -z "$exact" ] || exact="$exact / "
-    exact="${exact}$raw"
+    label="$(ns_usage_dim_label "$dim")"
+    printf '| %s | %s |\n' "$label" "$v"
   done
-  printf '**Usage:** %s\n  Source: %s, cumulative counters, segments %s; exact: %s\n  %s' \
-    "$out" "$2" "$3" "$exact" "$(ns_usage_overlap "${4:-}")"
+  printf '\n<!-- tokens %s -->\n%s · %s %s. %s' \
+    "$comment" "$2" "$segs" "$word" "$(ns_usage_overlap "${4:-}")"
 }
 
 # ns_usage_duration <seconds> — a wall-clock span in the words a person reads.
@@ -541,23 +555,26 @@ ns_usage_iso() {
 }
 
 # ns_usage_duration_line <wall-sec> <paused-sec> <reason> <from-epoch> <to-epoch>
-# Working time first, then the checkable wall and pause, then the span. Nothing is subtracted
-# silently: working is wall minus the pauses the runtime recorded.
+# Working time first, then the recorded pause when there is one, then wall and the span.
+# Nothing is subtracted silently: working is wall minus the pauses the runtime recorded.
 ns_usage_duration_line() {
-  local wall="${1:-0}" paused="${2:-0}" reason="${3:-}" from="$4" to="$5" work out span=""
+  local wall="${1:-0}" paused="${2:-0}" reason="${3:-}" from="$4" to="$5" work out span="" to_s=""
   case "$wall" in '' | *[!0-9]*) wall=0 ;; esac
   case "$paused" in '' | *[!0-9]*) paused=0 ;; esac
   work=$((wall - paused))
   [ "$work" -ge 0 ] || work=0
-  out="$(ns_usage_duration "$work") working"
+  out="$(printf '| Time | |\n| --- | --- |\n| working | %s |' "$(ns_usage_duration "$work")")"
   if [ "$paused" -gt 0 ]; then
-    out="$out (wall $(ns_usage_duration "$wall"); paused $(ns_usage_duration "$paused")"
-    [ -z "$reason" ] || out="$out, $reason"
-    out="$out)"
+    if [ -n "$reason" ]; then
+      out="$(printf '%s\n| paused | %s (%s) |' "$out" "$(ns_usage_duration "$paused")" "$reason")"
+    else
+      out="$(printf '%s\n| paused | %s |' "$out" "$(ns_usage_duration "$paused")")"
+    fi
   fi
+  out="$(printf '%s\n| wall | %s |' "$out" "$(ns_usage_duration "$wall")")"
   if span="$(ns_usage_iso "$from")" && [ -n "$span" ]; then
     if to_s="$(ns_usage_iso "$to")" && [ -n "$to_s" ]; then
-      out="$out; $span → $to_s"
+      out="$(printf '%s\n| span | %s → %s |' "$out" "$span" "$to_s")"
     fi
   fi
   printf '%s' "$out"
