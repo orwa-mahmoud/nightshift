@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.22.3](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.2...v0.22.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* idle only from the host project env, not $PWD ([546f073](https://github.com/orwa-mahmoud/nightshift/commit/546f0730b59a0672c1249a32222ced3aa6db7177))
+* stand hooks down before any work when no shift is armed ([3cf74a4](https://github.com/orwa-mahmoud/nightshift/commit/3cf74a4d8dbceb89374bb384bea736b554067cb5))
+
 ## [0.22.2](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.1...v0.22.2) (2026-09-15)
 
 
