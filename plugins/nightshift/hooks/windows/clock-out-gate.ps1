@@ -349,6 +349,11 @@ function Test-NSDeadlinePassed {
     return (Get-NSUnixTime) -ge $target
 }
 
+if (Test-NSHookIdle) {
+    Write-Release
+    exit 0
+}
+
 $raw = Get-NSStdinText -Piped $HookJson
 if ([string]::IsNullOrWhiteSpace($raw)) {
     $raw = Get-NSStdinText -Piped (($input | ForEach-Object { $_ }) -join "`n")

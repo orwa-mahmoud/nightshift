@@ -20,7 +20,7 @@ is_codex_release() {
 codex_gate() {
   local p="$1"
   shift
-  jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}' |
+  hook_payload "$(jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}')" \
     env "$@" CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/clock-out-gate.sh"
 }
 

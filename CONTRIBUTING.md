@@ -63,8 +63,9 @@ when the matching trees change. A docs-only edit runs `tests/run-docs-contract.s
 full shard matrix. A Release Please version bump validates manifests and skips Windows, remote, and
 shards. Required job names still report, so merge is not left waiting. Bats runs as six parallel
 shards on both Ubuntu and macOS (same partition as `tests/run-shard.sh`); the macOS job keeps the
-system Bash 3.2 first on `PATH`. A `windows-native` job runs `tests/windows/run.ps1` under Windows
-PowerShell 5.1 and PowerShell 7. A `remote-ssh` job crosses an ephemeral OpenSSH connection; a
+system Bash 3.2 first on `PATH`. A `windows-native` job always starts and runs
+`tests/windows/run.ps1` under Windows PowerShell 5.1 and PowerShell 7 when the suite changes;
+otherwise both matrix names report a skip. It stays on `windows-latest` so those shells parse. A `remote-ssh` job crosses an ephemeral OpenSSH connection; a
 `devcontainer` job starts the checked-in fixture. Both compare sanitized receipts — they do not
 load an authenticated host session.
 

@@ -5,8 +5,8 @@ CURSOR_HOOKS="$HOOKS/cursor"
 
 cursor_session_end() {
   local p="$1" sid="$2" reason="${3:-user_close}"
-  jq -nc --arg p "$p" --arg sid "$sid" --arg reason "$reason" \
-    '{hook_event_name:"sessionEnd",conversation_id:$sid,session_id:$sid,cwd:$p,reason:$reason}' |
+  hook_payload "$(jq -nc --arg p "$p" --arg sid "$sid" --arg reason "$reason" \
+    '{hook_event_name:"sessionEnd",conversation_id:$sid,session_id:$sid,cwd:$p,reason:$reason}')" \
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/session-end.sh"
 }
 

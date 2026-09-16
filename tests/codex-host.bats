@@ -11,8 +11,8 @@ CODEX="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/codex"
 codex_hook() {
   local hook="$1" p="$2" sid="$3" extra="${4:-}"
   [ -n "$extra" ] || extra='{}'
-  jq -nc --arg sid "$sid" --arg w "$p" --argjson x "$extra" \
-    '{session_id:$sid,cwd:$w} + $x' |
+  hook_payload "$(jq -nc --arg sid "$sid" --arg w "$p" --argjson x "$extra" \
+    '{session_id:$sid,cwd:$w} + $x')" \
     env CODEX_PROJECT_DIR="$p" bash "$CODEX/$hook.sh"
 }
 
@@ -103,7 +103,7 @@ codex_hook() {
 
 # codex_stop <project> — a Codex stop payload.
 codex_stop() {
-  jq -nc --arg w "$1" '{session_id:"sess-1",cwd:$w,hook_event_name:"Stop"}' |
+  hook_payload "$(jq -nc --arg w "$1" '{session_id:"sess-1",cwd:$w,hook_event_name:"Stop"}')" \
     env CODEX_PROJECT_DIR="$1" bash "$CODEX/clock-out-gate.sh"
 }
 

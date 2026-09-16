@@ -16,6 +16,8 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
+if (Test-NSHookIdle) { exit 0 }
+
 $raw = Get-NSStdinText -Piped (($input | ForEach-Object { $_ }) -join "`n")
 if ([string]::IsNullOrWhiteSpace($raw) -and -not [string]::IsNullOrWhiteSpace($HookJson)) {
     $raw = $HookJson

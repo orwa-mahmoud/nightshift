@@ -9,7 +9,7 @@ CODEX_HOOKS="$HOOKS/codex"
 codex_hardhat_bash() {
   local p="$1" c="$2"
   shift 2
-  jq -nc --arg c "$c" '{tool_name:"Bash",tool_input:{command:$c}}' |
+  hook_payload "$(jq -nc --arg c "$c" '{tool_name:"Bash",tool_input:{command:$c}}')" \
     env "$@" CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
 }
 
@@ -22,7 +22,7 @@ codex_hardhat_ask() {
     tool="$1"
     shift
   fi
-  jq -nc --arg tool "$tool" '{tool_name:$tool,tool_input:{}}' |
+  hook_payload "$(jq -nc --arg tool "$tool" '{tool_name:$tool,tool_input:{}}')" \
     env "$@" CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
 }
 

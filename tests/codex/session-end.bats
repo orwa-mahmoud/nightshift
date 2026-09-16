@@ -5,8 +5,8 @@ CODEX_HOOKS="$HOOKS/codex"
 
 codex_session_end() {
   local p="$1" sid="$2" reason="${3:-other}"
-  jq -nc --arg p "$p" --arg sid "$sid" --arg reason "$reason" \
-    '{session_id:$sid,cwd:$p,reason:$reason}' |
+  hook_payload "$(jq -nc --arg p "$p" --arg sid "$sid" --arg reason "$reason" \
+    '{session_id:$sid,cwd:$p,reason:$reason}')" \
     env CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/session-end.sh"
 }
 

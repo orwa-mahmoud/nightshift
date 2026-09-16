@@ -6,39 +6,39 @@ START_SKILL="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 
 claude_bind() {
   local p="$1" sid="$2"
-  jq -nc --arg sid "$sid" \
-    '{tool_name:"Bash",session_id:$sid,transcript_path:"",tool_input:{command:": nightshift-binding-probe"}}' |
-    CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
+  hook_payload "$(jq -nc --arg sid "$sid" \
+    '{tool_name:"Bash",session_id:$sid,transcript_path:"",tool_input:{command:": nightshift-binding-probe"}}')" \
+    env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
 }
 
 claude_read() {
   local p="$1" sid="$2"
   shift 2
-  jq -nc --arg sid "$sid" \
-    '{tool_name:"Read",session_id:$sid,transcript_path:"",tool_input:{file_path:"README.md"}}' |
+  hook_payload "$(jq -nc --arg sid "$sid" \
+    '{tool_name:"Read",session_id:$sid,transcript_path:"",tool_input:{file_path:"README.md"}}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
 }
 
 claude_bash() {
   local p="$1" sid="$2" command="$3"
   shift 3
-  jq -nc --arg sid "$sid" --arg command "$command" \
-    '{tool_name:"Bash",session_id:$sid,tool_input:{command:$command}}' |
+  hook_payload "$(jq -nc --arg sid "$sid" --arg command "$command" \
+    '{tool_name:"Bash",session_id:$sid,tool_input:{command:$command}}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
 }
 
 codex_bind() {
   local p="$1" sid="$2"
-  jq -nc --arg sid "$sid" \
-    '{tool_name:"Bash",session_id:$sid,transcript_path:"",tool_input:{command:": nightshift-binding-probe"}}' |
-    CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
+  hook_payload "$(jq -nc --arg sid "$sid" \
+    '{tool_name:"Bash",session_id:$sid,transcript_path:"",tool_input:{command:": nightshift-binding-probe"}}')" \
+    env CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
 }
 
 codex_read() {
   local p="$1" sid="$2"
   shift 2
-  jq -nc --arg sid "$sid" \
-    '{tool_name:"mcp__filesystem__read_file",session_id:$sid,transcript_path:"",tool_input:{path:"README.md"}}' |
+  hook_payload "$(jq -nc --arg sid "$sid" \
+    '{tool_name:"mcp__filesystem__read_file",session_id:$sid,transcript_path:"",tool_input:{path:"README.md"}}')" \
     env "$@" CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
 }
 
