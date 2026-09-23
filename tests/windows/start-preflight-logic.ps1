@@ -259,15 +259,23 @@ try {
             'watch-minutes 0 (watchman disarmed)',
             'codex-identity resumable',
             'snapshot start-defaults recorded for shift',
-            'snapshot none recorded - the gate cannot hold this shift to the list it armed with')) {
+            'snapshot none recorded - the gate cannot hold this shift to the list it armed with',
+            'snapshot composed - this shift keeps the policy it was composed with',
+            'snapshot none recorded - the punch list has no open item to hold a shift to',
+            'snapshot dry-run - nothing recorded')) {
         Expect-True ($posixText.Contains($phrase)) "the POSIX helper keeps: $phrase"
         Expect-True ($helperText.Contains($phrase)) "the Windows twin keeps: $phrase"
     }
 
-    # A plain Start records tonight's snapshot itself, with the digests of the list it arms with.
+    # A plain Start records tonight's snapshot itself, in its own phase right before arming, with the
+    # digests of the list it arms with. The preflight phase records none.
     Import-Module (Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1') -Force -DisableNameChecking
     $snap = New-Site (Join-Path $root 'snapshot')
-    $snapRun = Invoke-Preflight $snap @('-HostName', 'claude')
+    $preRun = Invoke-Preflight $snap @('-HostName', 'claude')
+    Expect-True ($preRun.ExitCode -eq 0 -and -not $preRun.Stdout.Contains('ok snapshot')) 'the preflight itself records no snapshot'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path (Join-Path $snap '.nightshift') 'shift-policy.json'))) `
+        'the preflight leaves no policy behind'
+    $snapRun = Invoke-Preflight $snap @('-Phase', 'snapshot')
     Expect-True ($snapRun.ExitCode -eq 0) "snapshot site arms: $($snapRun.Stdout) $($snapRun.Stderr)"
     Expect-True ($snapRun.Stdout -match 'ok snapshot start-defaults recorded for shift [0-9a-f]{16}') `
         "a plain Start records a snapshot: $($snapRun.Stdout)"
@@ -288,14 +296,30 @@ try {
     $snapDeadline = New-Site (Join-Path $root 'snapshot-deadline')
     $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 7200
     [IO.File]::WriteAllText((Join-Path (Join-Path $snapDeadline '.nightshift') 'deadline'), "$epoch`n")
-    $null = Invoke-Preflight $snapDeadline @('-HostName', 'claude')
+    $null = Invoke-Preflight $snapDeadline @('-Phase', 'snapshot')
     $deadlineDoc = [IO.File]::ReadAllText((Join-Path (Join-Path $snapDeadline '.nightshift') 'shift-policy.json')) | ConvertFrom-Json
     Expect-True ([long]$deadlineDoc.deadlineEpoch -eq $epoch) 'the snapshot adopts a deadline the owner already wrote'
 
     $snapDry = New-Site (Join-Path $root 'snapshot-dry')
-    $null = Invoke-Preflight $snapDry @('-HostName', 'claude', '-DryRun')
+    $dryRunSnap = Invoke-Preflight $snapDry @('-Phase', 'snapshot', '-DryRun')
+    Expect-True ($dryRunSnap.Stdout.Contains('ok snapshot dry-run - nothing recorded')) 'a dry run says it recorded nothing'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path (Join-Path $snapDry '.nightshift') 'shift-policy.json'))) `
         'a dry run records no snapshot'
+
+    # An empty list gets no snapshot; an item cut into it after the preflight is what the snapshot holds.
+    $snapCut = New-Site (Join-Path $root 'snapshot-cut') "## Items`n"
+    $emptyRun = Invoke-Preflight $snapCut @('-Phase', 'snapshot')
+    Expect-True ($emptyRun.Stdout.Contains('warn snapshot none recorded - the punch list has no open item to hold a shift to')) `
+        "an empty list gets no snapshot: $($emptyRun.Stdout)"
+    $cutPunch = Join-Path (Join-Path $snapCut '.nightshift') 'punch-list.md'
+    [IO.File]::WriteAllText($cutPunch, "## Items`n- [ ] **1. cut from the drafts.**`n")
+    $null = Invoke-Preflight $snapCut @('-Phase', 'snapshot')
+    $cutDoc = [IO.File]::ReadAllText((Join-Path (Join-Path $snapCut '.nightshift') 'shift-policy.json')) | ConvertFrom-Json
+    Expect-True ($cutDoc.itemsDigest -ceq (Get-NSPunchItemsDigest $cutPunch)) 'the snapshot holds the item cut after the preflight'
+
+    $composedRun = Invoke-Preflight $snapCut @('-Phase', 'snapshot')
+    Expect-True ($composedRun.Stdout.Contains('ok snapshot composed - this shift keeps the policy it was composed with')) `
+        'a recorded policy is kept'
 
     if ($failures.Count -gt 0) {
         Write-Host "start-preflight logic failed ($($failures.Count)):"

@@ -12,8 +12,9 @@
 
   The verdict sentence is byte-identical to the POSIX helper; only interpolated
   paths and a parser's own diagnostic tail differ. Phase preflight covers
-  everything before .shift-armed; phase bind is the Codex identity checkpoint
-  that runs after the binding probe and before the watchman.
+  everything before .shift-armed; phase snapshot records the plain Start's shift
+  policy right before arming; phase bind is the Codex identity checkpoint that
+  runs after the binding probe and before the watchman.
 
   Exit: 0 may arm - 1 refused - 2 usage
 #>
@@ -21,7 +22,7 @@ param(
     [string]$Project = [Environment]::CurrentDirectory,
     [ValidateSet('claude', 'codex', 'cursor', 'unknown', '')]
     [string]$HostName = '',
-    [ValidateSet('preflight', 'bind')]
+    [ValidateSet('preflight', 'snapshot', 'bind')]
     [string]$Phase = 'preflight',
     [switch]$DryRun
 )
@@ -130,6 +131,33 @@ if ($Phase -eq 'bind') {
         Write-Repair 'remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, append one failed-preflight line to shift-log.md, and stop before the watchman or item work'
     }
     if ($script:Refused) { exit 1 }
+    exit 0
+}
+
+# --------------------------------------------------------- phase snapshot
+# Start runs this right before it arms, after any draft or order was cut into the list, so the gate
+# holds the shift to the contract and items it actually starts with. A composed shift already has
+# its snapshot and keeps it.
+if ($Phase -eq 'snapshot') {
+    if (Test-Path -LiteralPath (Join-Path $ns 'shift-policy.json')) {
+        Write-Ok 'snapshot composed - this shift keeps the policy it was composed with'
+        exit 0
+    }
+    if ((Get-NSBoxCounts (Join-Path $ns 'punch-list.md')).Open -eq 0) {
+        Write-Warn 'snapshot none recorded - the punch list has no open item to hold a shift to'
+        exit 0
+    }
+    if ($DryRun) {
+        Write-Ok 'snapshot dry-run - nothing recorded'
+        exit 0
+    }
+    $snapshotId = New-NSStartSnapshot $workspace
+    if (-not [string]::IsNullOrEmpty($snapshotId)) {
+        Write-Ok "snapshot start-defaults recorded for shift $snapshotId"
+    }
+    else {
+        Write-Warn 'snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt'
+    }
     exit 0
 }
 
@@ -529,19 +557,6 @@ elseif ($HostName -eq 'cursor') {
 }
 else {
     Write-Ok 'permissions host unknown - no permission-mode note'
-}
-
-# ------------------------------------------------------ tonight's snapshot
-# Every check passed. A composed shift already has its snapshot; a plain Start writes one now, just
-# before the marker is armed, so the gate holds this shift to the contract and items it starts with.
-if (-not $script:Refused -and -not $DryRun -and -not (Test-Path -LiteralPath (Join-Path $ns 'shift-policy.json'))) {
-    $snapshotId = New-NSStartSnapshot $workspace
-    if (-not [string]::IsNullOrEmpty($snapshotId)) {
-        Write-Ok "snapshot start-defaults recorded for shift $snapshotId"
-    }
-    else {
-        Write-Warn 'snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt'
-    }
 }
 
 if ($script:Refused) { exit 1 }
