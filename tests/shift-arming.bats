@@ -193,6 +193,8 @@ sp() {
   policy="$policy\"toolingPolicy\":\"existing-tools\",\"allowances\":["
   policy="$policy{\"category\":\"containers\",\"scope\":\"category\",\"provenance\":\"one-shift\"}]}"
   printf '%s\n' "$policy" >"$p/candidate.json"
+  # The list exists before the policy is recorded, as it does at arming, so the digests are its own.
+  punch_done "$p"
   sp "$p" set --from-json "$p/candidate.json" >/dev/null
 
   run sp "$p" resolve --json
@@ -202,7 +204,6 @@ sp() {
   ' >/dev/null
 
   : >"$p/.nightshift/.shift-armed"
-  punch_done "$p"
   run gate "$p"
   is_release
 
