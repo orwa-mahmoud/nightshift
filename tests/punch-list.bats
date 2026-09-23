@@ -380,7 +380,7 @@ LIST
   hyphen_list "$p"
   list="$p/.nightshift/punch-list.md"
 
-  [ "$(core ns_gate_item_label "$list" 1)" = '2. Make the packed Node-only build reproducible.' ]
+  [ "$(core ns_gate_ticked_labels "$list")" = '2. Make the packed Node-only build reproducible.' ]
   [ "$(core ns_gate_open_item "$list")" = '3. Ship it' ]
   [ "$(pulse ns_pulse_active_item "$p")" = '3. Ship it' ]
   [ "$(lib ns_punch_item "$list" '2. Make the packed Node-only build reproducible.' | head -n1)" \

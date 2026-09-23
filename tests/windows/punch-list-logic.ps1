@@ -170,7 +170,7 @@ Trailing prose that belongs to no item.
 - [ ] **4. Re-index — later**
 '@
     [IO.File]::WriteAllText($punch, $hyphen)
-    Expect-True ((Get-NSGateItemLabel $punch 1) -ceq '2. Make the packed Node-only build reproducible.') `
+    Expect-True (((Get-NSGateTickedLabels $punch) -join '|') -ceq '2. Make the packed Node-only build reproducible.') `
         'a hyphenated ticked title stays whole'
     $namedHyphen = @(Get-NSPunchItem -PunchList $punch -Id '2. Make the packed Node-only build reproducible.')
     Expect-True ($namedHyphen[0] -ceq '- [x] **2. Make the packed Node-only build reproducible.**') `

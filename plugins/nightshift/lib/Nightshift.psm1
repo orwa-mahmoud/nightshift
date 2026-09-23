@@ -9918,25 +9918,50 @@ function Add-NSGateUsageAppend {
     [IO.File]::WriteAllText($Receipt, ($block + $nl + $content), $utf8)
 }
 
-# Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it. A
-# capital [X] is a tick here as it is in the counts, so the nth label and the nth counted tick are
-# the same item.
-function Get-NSGateItemLabel {
-    param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Which)
-    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
-    $n = 0
+# Get-NSGateTickedLabels <punch-list> - every ticked item's id, list order, as the report heads its
+# section. A capital [X] is a tick here as it is in the counts. An item whose id cannot be read is
+# 'item <n>', n its place among the ticked.
+function Get-NSGateTickedLabels {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $labels = New-Object 'System.Collections.Generic.List[string]'
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return , $labels.ToArray() }
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
         if ($line -cmatch '^- \[[xX]\]') {
-            $n++
-            if ($n -ne $Which) { continue }
             $t = $line -creplace '^- \[[xX]\][ \t]*\*\*', ''
             $t = $t -creplace '^- \[[xX]\][ \t]*', ''
             $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
             $t = $t -creplace '\*\*.*$', ''
-            return $t.TrimEnd()
+            $t = $t.TrimEnd()
+            if ([string]::IsNullOrEmpty($t)) { $t = 'item ' + ($labels.Count + 1) }
+            $labels.Add($t)
         }
     }
-    return ''
+    return , $labels.ToArray()
+}
+
+# Get-NSGateUnchargedLabels <nightshift-dir> <punch-list> - the ticked items no mark names yet, in
+# list order. A label ticked twice under the same name is charged twice, once per mark.
+function Get-NSGateUnchargedLabels {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$PunchList)
+    $charged = New-Object 'System.Collections.Generic.Dictionary[string,int]' ([StringComparer]::Ordinal)
+    $marks = Get-NSUsageMarksPath $NightshiftDir
+    if ((Test-Path -LiteralPath $marks -PathType Leaf) -and -not (Test-NSReparsePoint $marks)) {
+        $rows = 0
+        foreach ($row in [IO.File]::ReadAllLines($marks)) {
+            if ([string]::IsNullOrEmpty($row)) { continue }
+            $rows++
+            $name = ($row.Split("`t") + @('', ''))[1]
+            # The first mark is the shift arming, not an item.
+            if ($rows -eq 1 -and $name -ceq 'arm') { continue }
+            if ($charged.ContainsKey($name)) { $charged[$name]++ } else { $charged[$name] = 1 }
+        }
+    }
+    $open = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($label in (Get-NSGateTickedLabels $PunchList)) {
+        if ($charged.ContainsKey($label) -and $charged[$label] -gt 0) { $charged[$label]--; continue }
+        $open.Add($label)
+    }
+    return , $open.ToArray()
 }
 
 # Write-NSUsagePause <nightshift-dir> <reason> - a gap the runtime knows was not work.
@@ -10046,8 +10071,9 @@ function Invoke-NSGateUsageTick {
     return $true
 }
 
-# The catch-up. Every item ticked since the last mark gets one, in order, so a pulse that never
-# fired does not cost the shift its accounting. The arm mark is the shift's start, not an item.
+# The catch-up. Every ticked item no mark names yet gets one, in list order, so a pulse that never
+# fired does not cost the shift its accounting and an item ticked out of list order is charged to
+# itself. The arm mark is the shift's start, not an item.
 function Invoke-NSGateUsageSync {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
           [Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Ticked,
@@ -10060,13 +10086,9 @@ function Invoke-NSGateUsageSync {
     if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
     if ($Ticked -lt 0) { return $false }
     if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
-    $marked = Get-NSUsageMarkCount $NightshiftDir
-    if ($marked -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts; $marked = 1 }
-    while (($marked - 1) -lt $Ticked) {
-        $label = Get-NSGateItemLabel $PunchList $marked
-        if ([string]::IsNullOrEmpty($label)) { $label = 'item ' + $marked }
+    if ((Get-NSUsageMarkCount $NightshiftDir) -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts }
+    foreach ($label in (Get-NSGateUnchargedLabels $NightshiftDir $PunchList)) {
         if (-not (Invoke-NSGateUsageTick $NightshiftDir $Project $label)) { return $false }
-        $marked++
     }
     return $true
 }

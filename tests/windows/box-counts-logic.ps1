@@ -83,7 +83,7 @@ try {
 - [ ] **3. Ship it — already reviewed**
 - [ ] **4. Re-index — later**
 '@)
-    Expect-True ((Get-NSGateItemLabel $hyphen 1) -ceq '2. Make the packed Node-only build reproducible.') `
+    Expect-True (((Get-NSGateTickedLabels $hyphen) -join '|') -ceq '2. Make the packed Node-only build reproducible.') `
         'box-count lists still expose a hyphenated title whole'
     $openHyphen = @(Get-NSPunchItem -PunchList $hyphen -Id '')
     Expect-True ($openHyphen[0] -ceq '- [ ] **3. Ship it — already reviewed**') `

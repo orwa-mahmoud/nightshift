@@ -80,6 +80,26 @@ try {
     Expect-True (@([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns))).Count -eq 3) `
         'a second sync with nothing newly ticked writes no mark'
 
+    # Marks name the item they charged, so a later item ticked first is charged to itself.
+    $w = Join-Path $root 'out-of-order'
+    $ns = New-Workspace $w "## Items`n- [ ] **A1 - first.**`n- [x] **A2 - second.**`n"
+    $punch = Join-Path $ns 'punch-list.md'
+    $t = Join-Path $w 't.jsonl'
+    Copy-Item -LiteralPath (Join-Path $fixtures 'claude-multiline.jsonl') -Destination $t
+    $null = Write-NSUsageMarkArm $ns
+    $r = (Read-NSUsageClaude $t 0 '').Split("`t")
+    $null = Write-NSUsageRecord $ns 'claude' $r[2] 'transcript-incremental' $t $r[1] $r[0] $r[4]
+    Expect-True (Invoke-NSGateUsageSync $ns $w $punch 1) 'the sync closes the one ticked item'
+    [IO.File]::WriteAllText($punch, "## Items`n- [x] **A1 - first.**`n- [x] **A2 - second.**`n",
+        (New-Object Text.UTF8Encoding($false)))
+    Expect-True (Invoke-NSGateUsageSync $ns $w $punch 2) 'the sync closes the item ticked second'
+    $names = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns)) | ForEach-Object { $_.Split("`t")[1] })
+    Expect-True (($names -join ' ') -ceq 'arm A2 A1') "each mark names the item ticked (got $($names -join ' '))"
+    foreach ($id in @('A1', 'A2')) {
+        $tables = @([IO.File]::ReadAllLines((Get-NSReceiptPath $w $id)) | Where-Object { $_.StartsWith('| Tokens |') })
+        Expect-True ($tables.Count -eq 1) "$id is charged exactly once (got $($tables.Count))"
+    }
+
     # A pause is listed beside the duration and subtracted from working time.
     $w = Join-Path $root 'paused'
     $ns = New-Workspace $w $punchText

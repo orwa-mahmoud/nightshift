@@ -56,9 +56,8 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
     list="$FIX/punch/$file"
     [ "$(lib ns_open_boxes "$list")" = "$open" ] || { echo "$file open"; return 1; }
     [ "$(lib ns_ticked_boxes "$list")" = "$ticked" ] || { echo "$file ticked"; return 1; }
-    [ "$(core ns_gate_item_label "$list" 1)" = "$l1" ] || { echo "$file label 1"; return 1; }
-    [ "$(core ns_gate_item_label "$list" 2)" = "$l2" ] || { echo "$file label 2"; return 1; }
-    [ "$(core ns_gate_item_label "$list" 3)" = "$l3" ] || { echo "$file label 3"; return 1; }
+    [ "$(core ns_gate_ticked_labels "$list" | paste -sd'|' -)" = "$l1|$l2|$l3" ] \
+      || { echo "$file labels"; return 1; }
     [ "$(lib ns_punch_contract_digest "$list")" = "$contract" ] || { echo "$file contract"; return 1; }
     [ "$(lib ns_punch_items_digest "$list")" = "$items" ] || { echo "$file items"; return 1; }
   done < <(rows punch.tsv)

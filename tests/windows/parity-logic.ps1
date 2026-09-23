@@ -60,9 +60,7 @@ foreach ($row in (Get-FixtureRows 'punch.tsv')) {
     $counts = Get-NSBoxCounts $list
     Expect-Equal $row[1] ([string]$counts.Open) "$($row[0]) open"
     Expect-Equal $row[2] ([string]$counts.Ticked) "$($row[0]) ticked"
-    Expect-Equal $row[3] (Get-NSGateItemLabel $list 1) "$($row[0]) label 1"
-    Expect-Equal $row[4] (Get-NSGateItemLabel $list 2) "$($row[0]) label 2"
-    Expect-Equal $row[5] (Get-NSGateItemLabel $list 3) "$($row[0]) label 3"
+    Expect-Equal (@($row[3], $row[4], $row[5]) -join '|') ((Get-NSGateTickedLabels $list) -join '|') "$($row[0]) labels"
     Expect-Equal $row[6] (Get-NSPunchContractDigest $list) "$($row[0]) contract digest"
     Expect-Equal $row[7] (Get-NSPunchItemsDigest $list) "$($row[0]) items digest"
 }

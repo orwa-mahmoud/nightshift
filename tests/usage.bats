@@ -194,6 +194,18 @@ ns() { printf '%s/.nightshift' "$1"; }
   [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
 }
 
+@test "an item ticked out of list order is charged to itself" {
+  p="$(new_project usage-out-of-order)"
+  printf '## Items\n- [ ] **P01 - first.**\n- [x] **P02 - second.**\n' >"$p/.nightshift/punch-list.md"
+  lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
+  printf '## Items\n- [x] **P01 - first.**\n- [x] **P02 - second.**\n' >"$p/.nightshift/punch-list.md"
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 2
+  [ "$(cut -f2 "$p/.nightshift/usage/marks.tsv" | paste -sd' ' -)" = 'arm P02 P01' ]
+  [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P02.md")" -eq 1 ]
+  [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
+}
+
 @test "a dimension the host does not report reads unavailable, never zero" {
   p="$(new_project usage-partial)"
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"

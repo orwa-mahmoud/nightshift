@@ -213,12 +213,12 @@ ns_gate_usage_append() {
 # ns_gate_usage_sync <nightshift-dir> <project-dir> <punch-list> <ticked> — catch the marks up to
 # the boxes.
 #
-# The gate does not see a tick happen; it sees how many boxes are ticked when a stop is attempted.
-# So it compares that count against the marks it has already written and closes whatever is newly
-# done, in order, taking each item's own label from the list. One mark per item, written once: a
-# second stop attempt with nothing newly ticked adds nothing.
+# The gate does not see a tick happen; it sees which boxes are ticked when a stop is attempted.
+# Every mark names the item it charged, so it closes each ticked item no mark names yet, in list
+# order. One mark per item, written once: a second stop attempt with nothing newly ticked adds
+# nothing, and an item ticked out of list order is charged to itself.
 ns_gate_usage_sync() {
-  local ns="$1" project="$2" list="$3" ticked="$4" marked label i=0
+  local ns="$1" project="$2" list="$3" ticked="$4" marked labels label
   [ -d "$ns" ] || return 0
   [ -f "$list" ] || return 0
   # Accounting belongs to an armed shift with the report on. Before Start there is no shift to bill,
@@ -234,25 +234,43 @@ ns_gate_usage_sync() {
   if [ "$marked" -eq 0 ]; then
     shift 4
     ns_usage_mark_arm "$ns" "$@"
-    marked=1
   fi
-  while [ "$((marked - 1))" -lt "$ticked" ]; do
-    i=$((marked))
-    label="$(ns_gate_item_label "$list" "$i")"
-    [ -n "$label" ] || label="item $i"
-    ns_gate_usage_tick "$ns" "$project" "$label" || return 0
-    marked=$((marked + 1))
-  done
+  labels="$(ns_gate_uncharged_labels "$ns" "$list")"
+  [ -n "$labels" ] || return 0
+  while IFS= read -r label; do
+    ns_gate_usage_tick "$ns" "$project" "$label" </dev/null || return 0
+  done <<<"$labels"
 }
 
-# ns_gate_item_label <punch-list> <n> — the id of the nth ticked item, as the report heads its
-# section. `- [x] **P03 — …**` gives `P03`. A capital `[X]` is a tick here as it is in the counts,
-# so the nth label and the nth counted tick are the same item.
-ns_gate_item_label() {
-  ns_items_section "$1" 2>/dev/null | awk -v want="$2" '
+# ns_gate_uncharged_labels <nightshift-dir> <punch-list> — the ticked items no mark names yet, list
+# order, one per line. A label ticked twice under the same name is charged twice, once per mark.
+ns_gate_uncharged_labels() {
+  local marks
+  marks="$(ns_usage_dir "$1")/marks.tsv"
+  [ -f "$marks" ] && [ ! -L "$marks" ] || marks=/dev/null
+  ns_gate_ticked_labels "$2" | awk -v marks="$marks" '
+    BEGIN {
+      while ((getline row < marks) > 0) {
+        rows++
+        split(row, f, "\t")
+        # The first mark is the shift arming, not an item.
+        if (rows == 1 && f[2] == "arm") continue
+        charged[f[2]]++
+      }
+      close(marks)
+    }
+    charged[$0] > 0 { charged[$0]--; next }
+    { print }
+  '
+}
+
+# ns_gate_ticked_labels <punch-list> — every ticked item's id, list order, one per line, as the
+# report heads its section. `- [x] **P03 — …**` gives `P03`. A capital `[X]` is a tick here as it
+# is in the counts. An item whose id cannot be read is `item <n>`, n its place among the ticked.
+ns_gate_ticked_labels() {
+  ns_items_section "$1" 2>/dev/null | awk '
     /^- \[[xX]\]/ {
       n++
-      if (n != want) next
       line = $0
       sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
       sub(/^- \[[xX]\][[:space:]]*/, "", line)
@@ -260,8 +278,8 @@ ns_gate_item_label() {
       sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)
       gsub(/[[:space:]]+$/, "", line)
+      if (line == "") line = "item " n
       print line
-      exit
     }
   '
 }
