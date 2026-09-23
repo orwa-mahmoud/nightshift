@@ -138,6 +138,7 @@ ns_policy_builtin() {
     handoff.sections) printf '[]' ;;
     handoff.view) printf '"owner"' ;;
     recovery.launchScope) printf '"inherit-recorded-scope"' ;;
+    receipts.duration) printf '"on"' ;;
     receipts.progressMinutes) printf '20' ;;
     receipts.progressMode) printf '"time"' ;;
     receipts.progressTokens) printf '100000' ;;
@@ -296,7 +297,7 @@ PREF = [("shift", ["execution", "hours", "toolingPolicy", "verificationProfile"]
         ("recovery", ["launchScope"]),
         ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
         ("archive", ["automatic", "layout", "root", "templatePath"]),
-        ("receipts", ["enabled", "progressMinutes", "progressMode",
+        ("receipts", ["duration", "enabled", "progressMinutes", "progressMode",
                     "progressTokens", "templatePath", "usage"])]
 out = []
 

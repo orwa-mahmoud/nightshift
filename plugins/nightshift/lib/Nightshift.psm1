@@ -3836,6 +3836,7 @@ $script:NSPolicyGroupDefaults['handoff.sections'] = @()
 $script:NSPolicyGroupDefaults['handoff.templatePath'] = ''
 $script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
 $script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
+$script:NSPolicyGroupDefaults['receipts.duration'] = 'on'
 $script:NSPolicyGroupDefaults['receipts.enabled'] = $true
 $script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
 $script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
@@ -3869,6 +3870,7 @@ $script:NSPolicySettingNames = @(
     'neverCommitPatterns',
     'protectedDirs',
     'recovery.launchScope',
+    'receipts.duration',
     'receipts.enabled',
     'receipts.progressMinutes',
     'receipts.progressMode',
@@ -5412,32 +5414,44 @@ function Add-NSReceiptSession {
     $block.Add('| # | Shift | Start | End | Working | Input | Output | Ended |')
     $block.Add('| --- | --- | --- | --- | --- | ---: | ---: | --- |')
     $n = 0
-    $twork = [long]0; $tin = [long]0; $tout = [long]0
-    $haveIn = $false; $haveOut = $false
+    # Per column: the sum of what was measured, whether anything was, and whether any row says the
+    # owner turned the measurement off.
+    $sum = @{ work = [long]0; in = [long]0; out = [long]0 }
+    $have = @{ work = $false; in = $false; out = $false }
+    $off = @{ work = $false; in = $false; out = $false }
+    $cell = {
+        param([string]$Column, [string]$Raw)
+        $v = [long]0
+        if ($Raw -ceq 'off') { $off[$Column] = $true; return 'off' }
+        if (-not [long]::TryParse($Raw, [ref]$v)) { return 'unavailable' }
+        $sum[$Column] += $v
+        $have[$Column] = $true
+        if ($Column -ceq 'work') { return (Get-NSUsageDuration $Raw) }
+        return (Get-NSUsageScale $Raw)
+    }
+    $total = {
+        param([string]$Column)
+        if ($have[$Column]) {
+            if ($Column -ceq 'work') { return (Get-NSUsageDuration ([string]$sum[$Column])) }
+            return (Get-NSUsageScale ([string]$sum[$Column]))
+        }
+        if ($off[$Column]) { return 'off' }
+        return 'unavailable'
+    }
     foreach ($row in $data) {
         $f = $row.Split(' ')
         if ($f.Length -lt 7) { continue }
         $n++
-        $w = [long]0
-        [void][long]::TryParse($f[3], [ref]$w)
-        $twork += $w
-        $cellIn = 'unavailable'
-        $cellOut = 'unavailable'
-        $v = [long]0
-        if ([long]::TryParse($f[4], [ref]$v)) { $tin += $v; $haveIn = $true; $cellIn = Get-NSUsageScale $f[4] }
-        if ([long]::TryParse($f[5], [ref]$v)) { $tout += $v; $haveOut = $true; $cellOut = Get-NSUsageScale $f[5] }
         $sid = $(if ($f[0] -ceq '-') { $dash } else { $f[0].Substring(0, [math]::Min(8, $f[0].Length)) })
         $from = Get-NSUsageIso $f[1]
         $to = Get-NSUsageIso $f[2]
         $block.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} |' -f $n, $sid,
                 $(if ($from) { $from } else { $dash }), $(if ($to) { $to } else { $dash }),
-                (Get-NSUsageDuration ([string]$w)), $cellIn, $cellOut, $f[6].Replace('-', ' ')))
+                (& $cell 'work' $f[3]), (& $cell 'in' $f[4]), (& $cell 'out' $f[5]), $f[6].Replace('-', ' ')))
     }
     $word = $(if ($n -eq 1) { 'session' } else { 'sessions' })
     $block.Add(('| **Total** | {0} {1} |  |  | **{2}** | **{3}** | **{4}** |  |' -f $n, $word,
-            (Get-NSUsageDuration ([string]$twork)),
-            $(if ($haveIn) { Get-NSUsageScale ([string]$tin) } else { 'unavailable' }),
-            $(if ($haveOut) { Get-NSUsageScale ([string]$tout) } else { 'unavailable' })))
+            (& $total 'work'), (& $total 'in'), (& $total 'out')))
     $block.Add('')
     $block.Add('<!-- session-data')
     foreach ($row in $data) { $block.Add($row) }
@@ -5548,6 +5562,9 @@ function Get-NSReceiptUsageCells {
             }
             $cells['Time'] = Get-NSReceiptsTimeCell ([long]$cells['Work']) ([long]$cells['Pause'])
         }
+        # A measurement the owner turned off says so, rather than reading as one nobody reported.
+        if ($text -cmatch '(?m)^\*\*Tokens:\*\* off\r?$') { $cells['Tokens'] = 'off' }
+        if ($text -cmatch '(?m)^\*\*Time:\*\* off\r?$') { $cells['Time'] = 'off' }
     }
     return $cells
 }
@@ -5679,6 +5696,7 @@ function Write-NSArchiveReceiptsIndex {
     $rows = New-Object Collections.Generic.List[string]
     $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
     $twork = [long]0; $tpause = [long]0
+    $offUsage = $false; $offTime = $false
     for ($i = 0; $i -lt $order.Length; $i++) {
         $name = $order[$i]
         $label = $headings[$i]
@@ -5687,6 +5705,8 @@ function Write-NSArchiveReceiptsIndex {
         $tin += [long]$cells['In']; $tcw += [long]$cells['CacheWrite']; $tcr += [long]$cells['CacheRead']
         $tout += [long]$cells['Out']; $trea += [long]$cells['Reasoning']
         $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
+        if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
+        if ($cells['Time'] -ceq 'off') { $offTime = $true }
         $rows.Add(('| {0} | ticked | **{1}** | **{2}** | [./{3}](./{3}) |' -f
             $label, $cells['Tokens'], $cells['Time'], $name))
     }
@@ -5694,8 +5714,8 @@ function Write-NSArchiveReceiptsIndex {
     $utf8 = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($index,
         (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() `
-            -UsageTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) `
-            -TimeTotal (Get-NSReceiptsTimeTotalCell $twork $tpause)), $utf8)
+            -UsageTotal (Get-NSIndexTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) $offUsage) `
+            -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime)), $utf8)
 }
 
 # Write-NSReceiptsIndex <workspace> [-Remaining] - rewrite receipts/README.md from the list, marks
@@ -5718,6 +5738,7 @@ function Write-NSReceiptsIndex {
     $rows = New-Object Collections.Generic.List[string]
     $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
     $twork = [long]0; $tpause = [long]0
+    $offUsage = $false; $offTime = $false
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($line in (Get-NSPunchItemsSection $punch)) {
             if ($line -cnotmatch '^- \[[ xX]\] ') { continue }
@@ -5733,6 +5754,8 @@ function Write-NSReceiptsIndex {
             $tin += [long]$cells['In']; $tcw += [long]$cells['CacheWrite']; $tcr += [long]$cells['CacheRead']
             $tout += [long]$cells['Out']; $trea += [long]$cells['Reasoning']
             $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
+            if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
+            if ($cells['Time'] -ceq 'off') { $offTime = $true }
             $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f
                 $label, $state, $cells['Tokens'], $cells['Time'], $file))
         }
@@ -5744,8 +5767,16 @@ function Write-NSReceiptsIndex {
     $utf8 = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($index,
         (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
-            -UsageTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) `
-            -TimeTotal (Get-NSReceiptsTimeTotalCell $twork $tpause)), $utf8)
+            -UsageTotal (Get-NSIndexTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) $offUsage) `
+            -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime)), $utf8)
+}
+
+# Get-NSIndexTotal <cell> <any-off> - a totals cell: off when nothing was measured because a row's
+# measurement was turned off, the cell as it stands otherwise.
+function Get-NSIndexTotal {
+    param([AllowEmptyString()][string]$Cell, [bool]$AnyOff)
+    if ($AnyOff -and $Cell -ceq [string][char]0x2014) { return 'off' }
+    return $Cell
 }
 
 function Get-NSReceiptsUsageTotalCell {
@@ -10404,23 +10435,31 @@ function Invoke-NSGateUsageTick {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir,
           [Parameter(Mandatory = $true)][string]$Project, [Parameter(Mandatory = $true)][string]$Label)
     if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
-    if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
-    if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
+    if (-not (Test-NSReceiptsEnabled $Project)) { return $false }
     if (-not (Write-NSUsageMark $NightshiftDir $Label 'tick')) { return $false }
     $receipt = Get-NSReceiptPath $Project $Label
     Invoke-NSGateSessionRow $NightshiftDir $Project $Label 'ticked'
     $total = Get-NSUsageItemTotal $NightshiftDir $Label
     if ([string]::IsNullOrEmpty($total)) { return $false }
     $parts = $total.Split("`t")
-    $fields = $parts[0]
-    if (-not [string]::IsNullOrEmpty($fields)) {
+    # Tokens and time are two measurements with a setting each. One the owner turned off says off,
+    # which is not the same as one the host did not report.
+    if ((Get-NSReceiptsField $Project 'usage') -ceq 'off') {
+        $line = '**Tokens:** off'
+    }
+    else {
         $hosts = Get-NSUsageHosts $NightshiftDir
         if ([string]::IsNullOrEmpty($hosts)) { $hosts = 'unknown' }
-        $line = Get-NSUsageLine $fields $hosts (Get-NSUsageSegmentCount $NightshiftDir) ($hosts.Split(' ')[0])
+        $line = Get-NSUsageLine $parts[0] $hosts (Get-NSUsageSegmentCount $NightshiftDir) ($hosts.Split(' ')[0])
+    }
+    if ((Get-NSReceiptsField $Project 'duration') -ceq 'off') {
+        $duration = '**Time:** off'
+    }
+    else {
         # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
         $duration = Get-NSUsageDurationLine $parts[1] $parts[3] $parts[4] $parts[2] ([string](Get-NSUnixTime))
-        Add-NSGateUsageAppend $receipt $Label $line $duration
     }
+    Add-NSGateUsageAppend $receipt $Label $line $duration
     Update-NSReceiptLabel $receipt $Label
     $due = Join-Path $NightshiftDir '.receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
@@ -10443,9 +10482,16 @@ function Invoke-NSGateSessionRow {
     $paused = [long]0
     $gap = Get-NSUsagePausedBetween $NightshiftDir $start $end
     if (-not [string]::IsNullOrEmpty($gap)) { $paused = [long]$gap.Split("`t")[0] }
-    $work = [math]::Max([long]0, $end - $start - $paused)
-    $in = Get-NSUsageField $parts[0] 'input'
-    $out = Get-NSUsageField $parts[0] 'output'
+    $work = [string]([math]::Max([long]0, $end - $start - $paused))
+    if ((Get-NSReceiptsField $Project 'duration') -ceq 'off') { $work = 'off' }
+    if ((Get-NSReceiptsField $Project 'usage') -ceq 'off') {
+        $in = 'off'
+        $out = 'off'
+    }
+    else {
+        $in = Get-NSUsageField $parts[0] 'input'
+        $out = Get-NSUsageField $parts[0] 'output'
+    }
     $sid = ''
     $state = Get-NSShiftPolicyState $Project
     if ($state['state'] -ceq 'valid') { $sid = [string]$state['policy']['shiftId'] }
@@ -10481,7 +10527,6 @@ function Test-NSGateUsageAccounting {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project)
     if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
     if (-not (Test-NSReceiptsEnabled $Project)) { return $false }
-    if ((Get-NSReceiptsField $Project 'usage') -ceq 'off') { return $false }
     return ((Get-NSUsageMarkCount $NightshiftDir) -gt 0)
 }
 
@@ -10530,9 +10575,8 @@ function Invoke-NSGateUsageSync {
     # Accounting belongs to an armed shift with the report on. Before Start there is no shift to
     # bill, and an arm mark written then would stand in the way of the baseline arming records.
     if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
-    if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
+    if (-not (Test-NSReceiptsEnabled $Project)) { return $false }
     if ($Ticked -lt 0) { return $false }
-    if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
     if ((Get-NSUsageMarkCount $NightshiftDir) -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts }
     [string[]]$labels = Get-NSGateUnchargedLabels $NightshiftDir $PunchList
     if ($null -eq $labels -or $labels.Count -eq 0) { return $true }
@@ -10615,7 +10659,8 @@ function Invoke-NSPulseUsage {
     if ([string]::IsNullOrEmpty($Source)) { return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
     $project = [IO.Path]::GetDirectoryName($NightshiftDir)
-    if ((Get-NSRule $project 'receipts.usage' '') -ceq 'off') { return $false }
+    if (-not (Test-NSReceiptsEnabled $project)) { return $false }
+    if ((Get-NSReceiptsField $project 'usage') -ceq 'off') { return $false }
     $agents = @()
     if ($HostName -ceq 'claude') { $agents = Get-NSUsageSubagents $Source }
     if ($HostName -ceq 'claude') {
@@ -10752,36 +10797,21 @@ function Get-NSPulseTickedLabels {
     return , $arr
 }
 
-function Get-NSReceiptsBlock {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $path = Join-Path $Workspace '.nightshift/rules.json'
-    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
-    try {
-        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
-    }
-    catch { return $null }
-    if (-not ($document -is [Collections.IDictionary])) { return $null }
-    if (-not $document.Contains('receipts')) { return $null }
-    $block = $document['receipts']
-    if (-not ($block -is [Collections.IDictionary])) { return $null }
-    return $block
+# Get-NSReceiptsField <workspace> <name> - one receipts setting as this shift uses it, as a string:
+# the value the shift policy froze, else the owner's rules file, else the shipped default. The same
+# order the POSIX ns_receipts reads in.
+function Get-NSReceiptsField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Name)
+    if (-not $script:NSPolicyGroupDefaults.Contains('receipts.' + $Name)) { return '' }
+    $value = (Get-NSPolicyGroupSetting $Workspace ('receipts.' + $Name))['value']
+    if ($null -eq $value) { return '' }
+    if ($value -is [bool]) { return $(if ($value) { 'true' } else { 'false' }) }
+    return [string]$value
 }
 
 function Test-NSReceiptsEnabled {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    $block = Get-NSReceiptsBlock $Workspace
-    if ($null -eq $block) { return $true }
-    if (-not $block.Contains('enabled')) { return $true }
-    $value = $block['enabled']
-    if ($value -is [bool]) { return [bool]$value }
-    return ([string]$value -cne 'false')
-}
-
-function Get-NSReceiptsField {
-    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Name)
-    $block = Get-NSReceiptsBlock $Workspace
-    if ($null -eq $block -or -not $block.Contains($Name)) { return '' }
-    return [string]$block[$Name]
+    return ((Get-NSReceiptsField $Workspace 'enabled') -cne 'false')
 }
 
 function Get-NSPulseReceiptsSections {
@@ -10830,6 +10860,7 @@ function Test-NSReceiptHasModelText {
         if ($line.StartsWith('# ')) { continue }
         if ($line.StartsWith('**Usage:**')) { continue }
         if ($line.StartsWith('**Duration:**')) { continue }
+        if ($line -ceq '**Tokens:** off' -or $line -ceq '**Time:** off') { continue }
         if ($line.StartsWith('  Source:')) { continue }
         if ($line.StartsWith('  Cache reads')) { continue }
         if ($line.StartsWith('  The input figure')) { continue }
@@ -10950,19 +10981,47 @@ function Get-NSUsageWindow {
     return [pscustomobject]@{ Epoch = $epoch; Total = $total }
 }
 
+# Test-NSUsageProgressDue <workspace> <label> - true when the owner's cadence says an update is now
+# due. completion-only never is; time and tokens measure against the window; either is whichever
+# comes first. The cadence is its own setting: a mode that needs a counter the owner turned off, or
+# one no host reported, falls back to the time cadence rather than quietly never firing.
 function Test-NSUsageProgressDue {
     param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Label)
     $mode = Get-NSReceiptsField $Workspace 'progressMode'
     if ([string]::IsNullOrEmpty($mode)) { $mode = 'time' }
     if ($mode -ceq 'completion-only') { return $false }
-    if ((Get-NSReceiptsField $Workspace 'usage') -ceq 'off') { return $false }
     $ns = Join-Path $Workspace '.nightshift'
     $receipt = if ([string]::IsNullOrEmpty($Label)) { '' } else { Get-NSReceiptPath $Workspace $Label }
     $window = Get-NSUsageWindow $ns $receipt
     if ($null -eq $window) { return $false }
     $minutes = Get-NSReceiptsField $Workspace 'progressMinutes'
     if ($minutes -notmatch '^\d+$') { $minutes = '20' }
-    return ((Get-NSUnixTime) - $window.Epoch) -ge ([long]$minutes * 60)
+    $tokens = Get-NSReceiptsField $Workspace 'progressTokens'
+    if ($tokens -notmatch '^\d+$') { $tokens = '100000' }
+    $timeDue = ((Get-NSUnixTime) - $window.Epoch) -ge ([long]$minutes * 60)
+    if ($mode -ceq 'time') { return $timeDue }
+    if ($mode -cne 'tokens' -and $mode -cne 'either') { return $false }
+    $spent = ''
+    if ((Get-NSReceiptsField $Workspace 'usage') -cne 'off') { $spent = Get-NSUsageTotal $ns }
+    if (-not [string]::IsNullOrEmpty($spent)) {
+        if ((Get-NSUsageCountable (Get-NSUsageSubtract $spent $window.Total)) -ge [long]$tokens) { return $true }
+        return ($mode -ceq 'either' -and $timeDue)
+    }
+    # A token cadence with no counter to read is a time cadence, not a silence.
+    return $timeDue
+}
+
+# Get-NSUsageCountable <fields> - input plus output, counted once, as the POSIX ns_usage_countable
+# counts it: the cache and reasoning figures either sit inside those two already or are separate
+# readings of the same work.
+function Get-NSUsageCountable {
+    param([AllowEmptyString()][string]$Fields)
+    $total = [long]0
+    foreach ($dim in @('input', 'output')) {
+        $v = [long]0
+        if ([long]::TryParse((Get-NSUsageField $Fields $dim), [ref]$v)) { $total += $v }
+    }
+    return $total
 }
 
 function Get-NSPulseReportDue {

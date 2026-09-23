@@ -138,7 +138,6 @@ ns_gate_usage_tick() {
   local paused_sec paused_why receipt
   [ -d "$ns" ] || return 0
   ns_report_enabled "$project" || return 0
-  [ "$(ns_report "$project" usage)" != off ] || return 0
   ns_usage_mark "$ns" "$label" tick || return 0
   receipt="$(ns_receipt_path "$project" "$label")"
   ns_gate_session_row "$ns" "$project" "$label" ticked
@@ -148,14 +147,22 @@ ns_gate_usage_tick() {
   from="$(printf '%s' "$total" | cut -f3)"
   paused_sec="$(printf '%s' "$total" | cut -f4)"
   paused_why="$(printf '%s' "$total" | cut -f5)"
-  host="$(ns_usage_hosts "$ns")" || host="unknown"
-  if [ -n "$fields" ]; then
+  # Tokens and time are two measurements with a setting each. One the owner turned off says off,
+  # which is not the same as one the host did not report.
+  if [ "$(ns_report "$project" usage)" = off ]; then
+    line='**Tokens:** off'
+  else
+    host="$(ns_usage_hosts "$ns")" || host="unknown"
     line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
+  fi
+  if [ "$(ns_report "$project" duration)" = off ]; then
+    duration='**Time:** off'
+  else
     # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
     to="$(date +%s)"
     duration="$(ns_usage_duration_line "$seconds" "$paused_sec" "$paused_why" "$from" "$to")"
-    ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
   fi
+  ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
   ns_receipt_track_label "$receipt" "$label"
   rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
   ns_receipts_write_index "$project"
@@ -173,8 +180,14 @@ ns_gate_session_row() {
   paused="$(ns_usage_paused_between "$ns" "$start" "$end")" || paused=0
   work=$((end - start - ${paused%%$'\t'*}))
   [ "$work" -ge 0 ] || work=0
-  in="$(ns_usage_field "$fields" input)" || in=-
-  out="$(ns_usage_field "$fields" output)" || out=-
+  [ "$(ns_report "$project" duration)" != off ] || work=off
+  if [ "$(ns_report "$project" usage)" = off ]; then
+    in=off
+    out=off
+  else
+    in="$(ns_usage_field "$fields" input)" || in=-
+    out="$(ns_usage_field "$fields" output)" || out=-
+  fi
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
   ns_receipt_add_session "$(ns_receipt_path "$project" "$label")" "$label" "${sid:--}" \
     "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended"
@@ -197,11 +210,11 @@ ns_gate_session_end() {
 }
 
 # ns_gate_usage_accounting <nightshift-dir> <project-dir> — status 0 when an armed shift with the
-# receipts and usage on is keeping marks, which is when the item being worked is followed.
+# receipts on is keeping marks, which is when the item being worked is followed. Marks are taken
+# whatever the usage and duration settings say; those decide only what a receipt shows.
 ns_gate_usage_accounting() {
   [ -d "$1" ] && [ -f "$1/.shift-armed" ] || return 1
   ns_report_enabled "$2" || return 1
-  [ "$(ns_report "$2" usage)" != off ] || return 1
   [ -s "$(ns_usage_dir "$1")/marks.tsv" ]
 }
 
@@ -294,7 +307,6 @@ ns_gate_usage_sync() {
   [ -f "$ns/.shift-armed" ] || return 0
   ns_report_enabled "$project" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
-  [ "$(ns_report "$project" usage)" != off ] || return 0
   # The arm mark is the shift's own start, and is not an item. When no pulse has written it yet,
   # arm here with whatever transcripts the caller has, so reading begins where they stand now.
   marked="$(ns_usage_mark_count "$ns")"

@@ -68,6 +68,32 @@ finally {
     Remove-Item -LiteralPath $sessionsReceipt -Force -ErrorAction SilentlyContinue
 }
 
+$dueRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-parity-due-' + [guid]::NewGuid().ToString('N'))
+try {
+    $n = 0
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    foreach ($row in (Get-FixtureRows 'progress-due.tsv')) {
+        $n++
+        $site = Join-Path $dueRoot ('due-' + $n)
+        $siteNs = Join-Path $site '.nightshift'
+        $null = New-Item -ItemType Directory -Path (Join-Path $siteNs 'usage') -Force
+        [IO.File]::WriteAllText((Join-Path $siteNs 'punch-list.md'), "## Items`n- [ ] **P01 - open.**`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'shift-policy.json'),
+            ('{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T00:00:00Z",' +
+                '"source":"composition","verificationLevel":"none","toolingPolicy":"existing-tools",' +
+                '"receipts":{"progressMode":"' + $row[0] + '","usage":"' + $row[1] + '","progressMinutes":20,"progressTokens":1000}}'), $utf8)
+        [IO.File]::WriteAllText((Get-NSUsageMarksPath $siteNs), ([string]((Get-NSUnixTime) - [long]$row[2] * 60) + "`tarm`t`n"), $utf8)
+        if ($row[3] -cne '-') {
+            $null = Write-NSUsageRecord $siteNs 'claude' 'm' 'transcript-incremental' '/t/a' '1' ('input=' + $row[3] + ',output=0')
+        }
+        $got = $(if (Test-NSUsageProgressDue $site 'P01') { 'yes' } else { 'no' })
+        Expect-Equal $row[4] $got "progress due $($row[0]) $($row[1]) $($row[2]) $($row[3])"
+    }
+}
+finally {
+    Remove-Item -LiteralPath $dueRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($row in (Get-FixtureRows 'item-labels.tsv')) {
     $want = if ($row.Count -gt 2) { $row[2] } else { '' }
     Expect-Equal $row[1] (Get-NSItemLabel $row[0]) "item label '$($row[0])'"

@@ -52,10 +52,20 @@ These thresholds control how often the progress paragraph is refreshed; they do 
 or enforce a token budget. Use the shift's deadline and stall settings to bound continued work.
 
 The settings are `receipts.progressMode`, `receipts.progressMinutes`, and `receipts.progressTokens`.
-`receipts.usage` defaults to `when-available`; `off` disables usage measurement and the runtime's
-progress-due notices. `receipts.enabled=false` disables receipt files while retaining the work
-contract and other records. See [Owner knobs](knobs.md#shift-handoff-and-archive) for the exact
-settings.
+
+Three settings each control one thing, and any combination works:
+
+| Setting | Controls |
+| --- | --- |
+| `receipts.usage` | Token counts. `when-available` reads the numbers your host exposes; `off` records none, and the receipt and index say `off`. |
+| `receipts.duration` | Working time. `on` writes the Time table and the Sessions working column; `off` writes neither, and they say `off`. |
+| `receipts.progressMode` | When a progress update is due, whatever the other two say. `tokens` and `either` use the time cadence while token usage is off or the host reports no counter. |
+
+Usage off with duration on keeps the Time table; duration off with usage on keeps the Tokens table;
+with both off the item is still ticked and its sessions still recorded. `off` means you turned a
+measurement off, and `unavailable` means the host did not report it. `receipts.enabled=false`
+disables receipt files while retaining the work contract and other records. See
+[Owner knobs](knobs.md#shift-handoff-and-archive) for the exact settings.
 
 ## Keep the receipts useful after the shift
 

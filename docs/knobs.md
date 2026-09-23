@@ -274,10 +274,11 @@ plus a runtime-written index. It never reaches a public commit message.
 | Key | Default | Values |
 |---|---|---|
 | `enabled` | `true` | `false` writes no receipt files. Punch status, real outputs, continuity and your selected verification are all still kept |
-| `progressMode` | `time` | `completion-only` writes the receipt once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first |
+| `progressMode` | `time` | `completion-only` writes the receipt once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first. Works whatever `usage` and `duration` say: `tokens` and `either` use the time cadence while token usage is off or the host reports no counter |
 | `progressMinutes` | `20` | Minutes of work on the current item before an update is due. Checked when a tool returns, so it never interrupts a running command |
 | `progressTokens` | `100000` | Tokens of work before an update is due. A starting value to tune, not a host limit |
-| `usage` | `when-available` | Record what each item cost, from the numbers your host already exposes. `off` records none. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out |
+| `usage` | `when-available` | Record the tokens each item cost, from the numbers your host already exposes. `off` records none, and the receipt and index say `off`. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out. Controls tokens only: the Time table and the progress cadence have settings of their own |
+| `duration` | `on` | Record how long each item took: the Time table and the Working column of the Sessions table. `off` writes neither, and they say `off`. Controls time only |
 | `templatePath` | `""` | A Markdown template for each item receipt, on the same terms as the handoff template: wording only |
 
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from

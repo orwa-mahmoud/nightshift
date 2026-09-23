@@ -342,15 +342,28 @@ ns_receipt_track_label() {
   return "$rc"
 }
 
+# _ns_session_total <measured> <off> <sum> — a Sessions total: the sum of what was measured, off
+# when the owner turned the measurement off and nothing was measured, unavailable otherwise.
+_ns_session_total() {
+  if [ "$1" -eq 1 ]; then
+    printf '%s' "$3"
+  elif [ "$2" -eq 1 ]; then
+    printf 'off'
+  else
+    printf 'unavailable'
+  fi
+}
+
 # ns_receipt_add_session <receipt> <label> <shift-id> <start> <end> <working-sec> <input> <output>
 # <ended> — add one session to the receipt's Sessions table and redraw it. The table is drawn from
 # the data lines kept under it, so its totals stay exact across every shift the item was worked
-# in. `-` is an unknown shift or an unreported token count; <ended> is ticked, switched-away,
-# blocked or paused. A receipt that does not exist yet is created with its heading; one that does
-# keeps its modification time.
+# in. `-` is an unknown shift or an unreported token count, and `off` a measurement the owner
+# turned off; <ended> is ticked, switched-away, blocked or paused. A receipt that does not exist
+# yet is created with its heading; one that does keeps its modification time.
 ns_receipt_add_session() {
   local f="$1" label="$2" data line block ref tmp fresh=0 rc=0
-  local sid start end work in out ended n=0 twork=0 tin=0 tout=0 havein=0 haveout=0 cell_in cell_out word
+  local sid start end work in out ended n=0 twork=0 tin=0 tout=0 word cell_work cell_in cell_out
+  local havework=0 havein=0 haveout=0 offwork=0 offin=0 offout=0
   [ ! -L "$f" ] || return 0
   mkdir -p "${f%/*}" 2>/dev/null || return 1
   if [ ! -f "$f" ]; then
@@ -367,27 +380,34 @@ ns_receipt_add_session() {
     while read -r sid start end work in out ended; do
       [ -n "$sid" ] || continue
       n=$((n + 1))
-      case "$work" in '' | *[!0-9]*) work=0 ;; esac
-      twork=$((twork + work))
-      cell_in=unavailable
-      cell_out=unavailable
-      case "$in" in '' | *[!0-9]*) ;; *) tin=$((tin + in)); havein=1; cell_in="$(ns_usage_scale "$in")" ;; esac
-      case "$out" in '' | *[!0-9]*) ;; *) tout=$((tout + out)); haveout=1; cell_out="$(ns_usage_scale "$out")" ;; esac
+      case "$work" in
+        off) offwork=1; cell_work=off ;;
+        '' | *[!0-9]*) cell_work=unavailable ;;
+        *) twork=$((twork + work)); havework=1; cell_work="$(ns_usage_duration "$work")" ;;
+      esac
+      case "$in" in
+        off) offin=1; cell_in=off ;;
+        '' | *[!0-9]*) cell_in=unavailable ;;
+        *) tin=$((tin + in)); havein=1; cell_in="$(ns_usage_scale "$in")" ;;
+      esac
+      case "$out" in
+        off) offout=1; cell_out=off ;;
+        '' | *[!0-9]*) cell_out=unavailable ;;
+        *) tout=$((tout + out)); haveout=1; cell_out="$(ns_usage_scale "$out")" ;;
+      esac
       [ "$sid" != - ] || sid='—'
       printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
         "$(ns_usage_iso "$start" || printf '—')" "$(ns_usage_iso "$end" || printf '—')" \
-        "$(ns_usage_duration "$work")" "$cell_in" "$cell_out" "$(printf '%s' "$ended" | tr '-' ' ')"
+        "$cell_work" "$cell_in" "$cell_out" "$(printf '%s' "$ended" | tr '-' ' ')"
     done <<EOF
 $data
 EOF
     word=sessions
     [ "$n" -ne 1 ] || word=session
-    cell_in=unavailable
-    cell_out=unavailable
-    [ "$havein" -eq 0 ] || cell_in="$(ns_usage_scale "$tin")"
-    [ "$haveout" -eq 0 ] || cell_out="$(ns_usage_scale "$tout")"
-    printf '| **Total** | %s %s |  |  | **%s** | **%s** | **%s** |  |\n' \
-      "$n" "$word" "$(ns_usage_duration "$twork")" "$cell_in" "$cell_out"
+    printf '| **Total** | %s %s |  |  | **%s** | **%s** | **%s** |  |\n' "$n" "$word" \
+      "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
+      "$(_ns_session_total "$havein" "$offin" "$(ns_usage_scale "$tin")")" \
+      "$(_ns_session_total "$haveout" "$offout" "$(ns_usage_scale "$tout")")"
     printf '\n<!-- session-data\n%s\n-->\n<!-- /sessions -->\n' "$data"
   } >"$block"
   ref="$f.mtime.$$"
@@ -424,6 +444,8 @@ ns_receipt_has_model_text() {
     /^# / { next }
     /^\*\*Usage:\*\*/ { next }
     /^\*\*Duration:\*\*/ { next }
+    /^\*\*Tokens:\*\* off$/ { next }
+    /^\*\*Time:\*\* off$/ { next }
     /^  Source:/ { next }
     /^  Cache reads/ { next }
     /^  The input figure/ { next }
@@ -584,6 +606,9 @@ ns_receipt_usage_cells() {
         time="$(ns_receipts_time_cell "$work" "$pause")"
       fi
     fi
+    # A measurement the owner turned off says so, rather than reading as one nobody reported.
+    grep -qx '\*\*Tokens:\*\* off' "$f" 2>/dev/null && usage=off
+    grep -qx '\*\*Time:\*\* off' "$f" 2>/dev/null && time=off
   fi
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$tok_sum"
@@ -607,6 +632,12 @@ ns_receipts_index_head() {
   printf '| Item | State | **Usage** | **Time** | Receipt |\n'
   printf '| --- | --- | --- | --- | --- |\n'
 }
+# _ns_index_total <cell> <any-off> — a totals cell: off when nothing was measured because a row's
+# measurement was turned off, the cell as it stands otherwise.
+_ns_index_total() {
+  if [ "$1" = '—' ] && [ "$2" -eq 1 ]; then printf 'off'; else printf '%s' "$1"; fi
+}
+
 # ns_receipts_index_totals <usage-cell> <time-cell> — the closing totals row of an index page.
 ns_receipts_index_totals() {
   printf '| **Totals** |  | **%s** | **%s** |  |\n' "${1:-—}" "${2:-—}"
@@ -712,7 +743,7 @@ _ns_archive_receipt_headings() {
 ns_receipts_write_archive_index() {
   local dir="$1" date_s="$2" index rows f base label cells
   local in cw cr out rea work pause usage time _sum
-  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0
+  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
   { [ -d "$dir" ] && [ ! -L "$dir" ]; } || return 0
   index="$dir/README.md"
   [ -L "$index" ] && return 0
@@ -727,6 +758,8 @@ $cells
 EOF
     tin=$((tin + in)); tcw=$((tcw + cw)); tcr=$((tcr + cr))
     tout=$((tout + out)); trea=$((trea + rea)); twork=$((twork + work)); tpause=$((tpause + pause))
+    [ "$usage" != off ] || offu=1
+    [ "$time" != off ] || offt=1
     printf '| %s | ticked | **%s** | **%s** | [./%s](./%s) |\n' \
       "$label" "$usage" "$time" "$base" "$base" >>"$rows"
   done <<FIND
@@ -739,8 +772,9 @@ FIND
   {
     ns_receipts_index_head "$date_s"
     cat "$rows"
-    ns_receipts_index_totals "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" \
-      "$(ns_receipts_time_total_cell "$twork" "$tpause")"
+    ns_receipts_index_totals \
+      "$(_ns_index_total "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" "$offu")" \
+      "$(_ns_index_total "$(ns_receipts_time_total_cell "$twork" "$tpause")" "$offt")"
   } >"$index" 2>/dev/null || :
   rm -f "$rows"
 }
@@ -752,7 +786,7 @@ ns_receipts_write_index() {
   local project="$1" mode="${2:-}" punch="$1/.nightshift/punch-list.md"
   local dir index date_s state base file cells
   local in cw cr out rea work pause usage time _sum
-  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0
+  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
   local label id items rows
   dir="$(ns_receipts_dir "$project")"
   [ -n "$dir" ] || return 0
@@ -790,6 +824,8 @@ $cells
 EOF
     tin=$((tin + in)); tcw=$((tcw + cw)); tcr=$((tcr + cr))
     tout=$((tout + out)); trea=$((trea + rea)); twork=$((twork + work)); tpause=$((tpause + pause))
+    [ "$usage" != off ] || offu=1
+    [ "$time" != off ] || offt=1
     printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
       "$label" "$state" "$usage" "$time" "$file" "$file" >>"$rows"
   done <"$items"
@@ -800,8 +836,9 @@ EOF
   {
     ns_receipts_index_head "$date_s"
     cat "$rows"
-    ns_receipts_index_totals "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" \
-      "$(ns_receipts_time_total_cell "$twork" "$tpause")"
+    ns_receipts_index_totals \
+      "$(_ns_index_total "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" "$offu")" \
+      "$(_ns_index_total "$(ns_receipts_time_total_cell "$twork" "$tpause")" "$offt")"
   } >"$index" 2>/dev/null || :
   rm -f "$items" "$rows"
 }

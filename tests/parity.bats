@@ -67,6 +67,26 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
   diff "$FIX/sessions-expected.md" "$f"
 }
 
+@test "progress updates fall due as the fixture says on Bash" {
+  local mode usage minutes spent want p got n=0
+  while IFS=$'\t' read -r mode usage minutes spent want; do
+    n=$((n + 1))
+    p="$BATS_TEST_TMPDIR/due-$n"
+    mkdir -p "$p/.nightshift/usage"
+    printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+    jq -n --arg m "$mode" --arg u "$usage" '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",
+      createdAt:"2026-09-02T00:00:00Z",source:"composition",verificationLevel:"none",
+      toolingPolicy:"existing-tools",
+      receipts:{progressMode:$m,usage:$u,progressMinutes:20,progressTokens:1000}}' \
+      >"$p/.nightshift/shift-policy.json"
+    printf '%s\tarm\t\n' "$(($(date +%s) - minutes * 60))" >"$p/.nightshift/usage/marks.tsv"
+    [ "$spent" = - ] ||
+      lib ns_usage_record "$p/.nightshift" claude m transcript-incremental /t/a 1 "input=$spent,output=0"
+    if lib ns_usage_progress_due "$p" P01; then got=yes; else got=no; fi
+    [ "$got" = "$want" ] || { echo "$mode $usage $minutes $spent: got $got, want $want"; return 1; }
+  done < <(rows progress-due.tsv)
+}
+
 @test "punch-list counts, tick labels, and digests match the fixture on Bash" {
   local file open ticked l1 l2 l3 contract items list
   while IFS=$'\t' read -r file open ticked l1 l2 l3 contract items; do

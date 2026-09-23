@@ -149,8 +149,8 @@ Outputs · Parked decisions and snags. Read that shape once when the first item 
 (`<!-- id: k7q2 -->`); the pulse names the file, and it stays put when the item is renumbered or
 retitled. It carries what was delivered, why, what
 was tried and rejected, the verification that actually ran, where the outputs or commits are, and
-any snag or parked decision it touched. With `receipts.usage` at `when-available`, the runtime
-adds what the item cost and how long it took.
+any snag or parked decision it touched. The runtime adds what the item cost when `receipts.usage`
+is `when-available`, and how long it took when `receipts.duration` is `on`.
 
 The runtime measures what each item cost, from the records the host already keeps, and writes the
 usage and duration lines into the section at the tick, and a Sessions table with one row per stretch

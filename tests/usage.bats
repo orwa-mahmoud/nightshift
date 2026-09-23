@@ -218,16 +218,53 @@ ns() { printf '%s/.nightshift' "$1"; }
   grep -qF '| reasoning | unavailable |' "$p/.nightshift/receipts/P01.md"
 }
 
-@test "usage off measures nothing and keeps no snapshot" {
-  p="$(new_project usage-off)"
+# receipts_policy <project> <receipts-json> — set through the policy the shift was composed with,
+# which is where the receipts settings are fixed.
+receipts_policy() {
+  jq -n --argjson r "$2" '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",receipts:$r}' \
+    >"$1/.nightshift/shift-policy.json"
+}
+
+# ticked_under <name> <receipts-json> — P01 ticked after one reading, under that policy.
+ticked_under() {
+  local p
+  p="$(new_project "$1")"
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
-  # Set through the policy the shift was composed with, which is where the setting is fixed.
-  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
-    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    receipts:{usage:"off"}}' >"$p/.nightshift/shift-policy.json"
+  receipts_policy "$p" "$2"
+  lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  [ ! -e "$p/.nightshift/usage/marks.tsv" ]
-  [ ! -e "$p/.nightshift/receipts/P01.md" ]
+  printf '%s' "$p"
+}
+
+@test "usage off with duration on writes the Time table and says the tokens are off" {
+  p="$(ticked_under usage-off '{"usage":"off"}')"
+  rec="$p/.nightshift/receipts/P01.md"
+  grep -qxF '**Tokens:** off' "$rec"
+  ! grep -qF '| Tokens |' "$rec"
+  grep -qF '| Time |' "$rec"
+  grep -F '| P01 | ticked |' "$p/.nightshift/receipts/README.md" | grep -qF '| **off** | **'
+}
+
+@test "duration off with usage on writes the Tokens table and says the time is off" {
+  p="$(ticked_under duration-off '{"duration":"off"}')"
+  rec="$p/.nightshift/receipts/P01.md"
+  grep -qF '| input | 4 |' "$rec"
+  grep -qxF '**Time:** off' "$rec"
+  ! grep -qF '| Time |' "$rec"
+  grep -F '| P01 | ticked |' "$p/.nightshift/receipts/README.md" | grep -qF '| **off** | ['
+}
+
+@test "with usage and duration both off the tick still lands and neither table is written" {
+  p="$(ticked_under both-off '{"usage":"off","duration":"off"}')"
+  rec="$p/.nightshift/receipts/P01.md"
+  [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = 'arm|P01:tick' ]
+  grep -qxF '**Tokens:** off' "$rec"
+  grep -qxF '**Time:** off' "$rec"
+  ! grep -qF '| Tokens |' "$rec"
+  ! grep -qF '| Time |' "$rec"
+  grep -qF '| off | off | off | ticked |' "$rec"
+  grep -qxF '| **Totals** |  | **off** | **off** |  |' "$p/.nightshift/receipts/README.md"
 }
 
 # The cadence is the runtime's arithmetic against the same marks and the same counter. None of it
@@ -280,6 +317,36 @@ mark_at() {
   mark_at "$p/.nightshift" "$(( $(date +%s) - 90 * 60 ))" arm ''
   run lib ns_usage_progress_due "$p" P01
   [ "$status" -ne 0 ]
+}
+
+@test "usage off leaves the time cadence firing after progressMinutes" {
+  p="$(new_project cadence-usage-off-time)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  receipts_policy "$p" '{"usage":"off","progressMode":"time","progressMinutes":20}'
+  now="$(date +%s)"
+  mark_at "$p/.nightshift" "$((now - 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+  rm -f "$p/.nightshift/usage/marks.tsv"
+  mark_at "$p/.nightshift" "$((now - 25 * 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
+}
+
+@test "usage off turns a token cadence into the time cadence" {
+  p="$(new_project cadence-usage-off-tokens)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  receipts_policy "$p" '{"usage":"off","progressMode":"tokens","progressTokens":1000,"progressMinutes":20}'
+  now="$(date +%s)"
+  mark_at "$p/.nightshift" "$((now - 60))" arm ''
+  # A reading past the token threshold does not count once the owner turned token usage off.
+  lib ns_usage_record "$p/.nightshift" claude m transcript-incremental /t/a 1 'input=5000,output=500'
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+  rm -f "$p/.nightshift/usage/marks.tsv"
+  mark_at "$p/.nightshift" "$((now - 25 * 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
 }
 
 @test "a token cadence with no counter to read falls back to the clock" {

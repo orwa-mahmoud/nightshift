@@ -371,6 +371,14 @@
           ],
           "description": "Whether a section records what the item cost. when-available reads only the numbers the host already exposes to the session; where it exposes none, the section says unavailable. Unavailable is never written as zero, and nothing here polls an account, counts tokens itself, or turns a count into a price."
         },
+        "duration": {
+          "type": "string",
+          "enum": [
+            "off",
+            "on"
+          ],
+          "description": "Whether a section records how long the item took: the Time table and the Working column of the Sessions table. on writes them from the runtime's own clock; off writes neither and the receipt says off. Independent of usage and of the progress cadence."
+        },
         "templatePath": {
           "type": "string",
           "description": "A Markdown template for the item receipt, relative to the workspace and inside it. Wording and layout only, on the same terms as the handoff template: never executed, never a source of policy, and never able to describe an unavailable check as a passed one."

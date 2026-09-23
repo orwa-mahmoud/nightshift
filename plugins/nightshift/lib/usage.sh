@@ -697,14 +697,14 @@ ns_usage_window() {
 
 # ns_usage_progress_due <project-dir> <item-label> — status 0 when the owner's cadence says an
 # update is now due. `completion-only` never is; `time` and `tokens` measure against the window;
-# `either` is whichever comes first. A mode that needs a counter no host reported falls back to
-# the time cadence rather than quietly never firing.
+# `either` is whichever comes first. The cadence is its own setting: a mode that needs a counter
+# the owner turned off, or one no host reported, falls back to the time cadence rather than
+# quietly never firing.
 ns_usage_progress_due() {
   local project="$1" label="$2" ns="$1/.nightshift" mode minutes tokens window epoch base now spent moved
   mode="$(ns_receipts "$project" progressMode)"
   [ -n "$mode" ] || mode="time"
   [ "$mode" != completion-only ] || return 1
-  [ "$(ns_receipts "$project" usage)" != off ] || return 1
   window="$(ns_usage_window "$ns" "$label" "$(ns_receipt_path "$project" "$label")")" || return 1
   epoch="$(printf '%s' "$window" | cut -f1)"
   base="$(printf '%s' "$window" | cut -f2)"
@@ -716,7 +716,8 @@ ns_usage_progress_due() {
   case "$mode" in
     time) [ "$((now - epoch))" -ge "$((minutes * 60))" ] && return 0 ;;
     tokens | either)
-      spent="$(ns_usage_total "$ns")" || spent=""
+      spent=""
+      [ "$(ns_receipts "$project" usage)" = off ] || spent="$(ns_usage_total "$ns")" || spent=""
       if [ -n "$spent" ]; then
         moved="$(ns_usage_countable "$(ns_usage_sub "$spent" "$base")")"
         [ "$moved" -ge "$tokens" ] && return 0
