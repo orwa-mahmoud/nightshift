@@ -504,6 +504,10 @@ try {
     $punchListLogicRun = Invoke-TestScript $punchListLogic
     Assert-Equal 0 $punchListLogicRun.ExitCode `
         "punch-list reader and contract digests: $($punchListLogicRun.Stdout) $($punchListLogicRun.Stderr)"
+    $parityLogic = Join-Path $PSScriptRoot 'parity-logic.ps1'
+    $parityLogicRun = Invoke-TestScript $parityLogic
+    Assert-Equal 0 $parityLogicRun.ExitCode `
+        "shared Bash and PowerShell fixtures: $($parityLogicRun.Stdout) $($parityLogicRun.Stderr)"
     $boxCountsLogic = Join-Path $PSScriptRoot 'box-counts-logic.ps1'
     $boxCountsLogicRun = Invoke-TestScript $boxCountsLogic
     Assert-Equal 0 $boxCountsLogicRun.ExitCode `

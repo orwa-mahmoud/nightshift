@@ -1,0 +1,3 @@
+# punch list<TAB>open<TAB>ticked<TAB>1st ticked label<TAB>2nd<TAB>3rd<TAB>contract digest<TAB>items digest
+mixed.md	4	3	1. Fix the resolver.	P03	4. Make the packed Node-only build reproducible.	1739bfc5d68d4e3794c18b7cbcdd42b16b6abf50717cd6ba6694f9de729a19ec	117c7a635ce6f8038c46dcd87951bc77cb306e70521989077c7b95e541f38469
+mixed-crlf.md	4	3	1. Fix the resolver.	P03	4. Make the packed Node-only build reproducible.	1739bfc5d68d4e3794c18b7cbcdd42b16b6abf50717cd6ba6694f9de729a19ec	117c7a635ce6f8038c46dcd87951bc77cb306e70521989077c7b95e541f38469

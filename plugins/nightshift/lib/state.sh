@@ -176,15 +176,21 @@ ns_receipts_missing_count() {
   printf '%s' "${n:-0}"
 }
 
-# ns_usage_scale <n> — integer below 1000, one decimal k, one decimal M.
+# ns_usage_scale <n> — integer below 1000, then one decimal k, M, or B. Tenths are rounded half up
+# on the exact integer, never through a binary fraction, so 1950 is 2.0k on every runtime; a value
+# that rounds to 1000.0 of a unit reads as 1.0 of the next.
 ns_usage_scale() {
   local n="$1"
   case "$n" in '' | *[!0-9]*) printf '%s' "$n"; return 0 ;; esac
   awk -v n="$n" 'BEGIN {
     if (n < 1000) { printf "%d", n; exit }
-    if (n < 1000000) { printf "%.1fk", n / 1000; exit }
-    if (n < 1000000000) { printf "%.1fM", n / 1000000; exit }
-    printf "%.1fB", n / 1000000000
+    split("1000 1000000 1000000000", unit, " ")
+    split("k M B", suffix, " ")
+    i = 1
+    while (i < 3 && n >= unit[i + 1]) i++
+    tenths = int((n * 10 + unit[i] / 2) / unit[i])
+    if (tenths >= 10000 && i < 3) { i++; tenths = int((n * 10 + unit[i] / 2) / unit[i]) }
+    printf "%d.%d%s", int(tenths / 10), tenths % 10, suffix[i]
   }'
 }
 

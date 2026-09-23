@@ -246,15 +246,16 @@ ns_gate_usage_sync() {
 }
 
 # ns_gate_item_label <punch-list> <n> — the id of the nth ticked item, as the report heads its
-# section. `- [x] **P03 — …**` gives `P03`.
+# section. `- [x] **P03 — …**` gives `P03`. A capital `[X]` is a tick here as it is in the counts,
+# so the nth label and the nth counted tick are the same item.
 ns_gate_item_label() {
   ns_items_section "$1" 2>/dev/null | awk -v want="$2" '
-    /^- \[x\]/ {
+    /^- \[[xX]\]/ {
       n++
       if (n != want) next
       line = $0
-      sub(/^- \[x\][[:space:]]*\*\*/, "", line)
-      sub(/^- \[x\][[:space:]]*/, "", line)
+      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
+      sub(/^- \[[xX]\][[:space:]]*/, "", line)
       sub(/[[:space:]]+—.*$/, "", line)
       sub(/[[:space:]]+-[[:space:]].*$/, "", line)
       sub(/\*\*.*$/, "", line)

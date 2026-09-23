@@ -5410,14 +5410,24 @@ function Get-NSReceiptsTimeTotalCell {
     param([long]$Work, [long]$Pause = 0)
     return (Get-NSReceiptsTimeCell $Work $Pause)
 }
+# Get-NSUsageScale <n> - integer below 1000, then one decimal k, M, or B. Tenths are rounded half
+# up on the exact integer, never through a binary fraction, so 1950 is 2.0k on every runtime; a
+# value that rounds to 1000.0 of a unit reads as 1.0 of the next.
 function Get-NSUsageScale {
     param($Value)
-    $n = 0
-    if (-not [long]::TryParse([string]$Value, [ref]$n)) { return [string]$Value }
+    $n = [long]0
+    if (-not [long]::TryParse([string]$Value, [ref]$n) -or $n -lt 0) { return [string]$Value }
     if ($n -lt 1000) { return [string]$n }
-    if ($n -lt 1000000) { return ('{0:0.0}k' -f ($n / 1000.0)) }
-    if ($n -lt 1000000000) { return ('{0:0.0}M' -f ($n / 1000000.0)) }
-    return ('{0:0.0}B' -f ($n / 1000000000.0))
+    $units = [long[]]@(1000, 1000000, 1000000000)
+    $suffixes = @('k', 'M', 'B')
+    $i = 0
+    while ($i -lt 2 -and $n -ge $units[$i + 1]) { $i++ }
+    $tenths = [long][math]::Floor(([decimal]$n * 10 + $units[$i] / 2) / $units[$i])
+    if ($tenths -ge 10000 -and $i -lt 2) {
+        $i++
+        $tenths = [long][math]::Floor(([decimal]$n * 10 + $units[$i] / 2) / $units[$i])
+    }
+    return ('{0}.{1}{2}' -f [long][math]::Floor([decimal]$tenths / 10), ($tenths % 10), $suffixes[$i])
 }
 
 # Get-NSReportPath kept as the receipts folder path only for callers not yet moved.
@@ -9864,17 +9874,19 @@ function Add-NSGateUsageAppend {
     [IO.File]::WriteAllText($Receipt, ($block + $nl + $content), $utf8)
 }
 
-# Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it.
+# Get-NSGateItemLabel <punch-list> <n> - the nth ticked item's title, as the owner wrote it. A
+# capital [X] is a tick here as it is in the counts, so the nth label and the nth counted tick are
+# the same item.
 function Get-NSGateItemLabel {
     param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][int]$Which)
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
     $n = 0
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
-        if ($line -cmatch '^- \[x\]') {
+        if ($line -cmatch '^- \[[xX]\]') {
             $n++
             if ($n -ne $Which) { continue }
-            $t = $line -creplace '^- \[x\][ \t]*\*\*', ''
-            $t = $t -creplace '^- \[x\][ \t]*', ''
+            $t = $line -creplace '^- \[[xX]\][ \t]*\*\*', ''
+            $t = $t -creplace '^- \[[xX]\][ \t]*', ''
             $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
             $t = $t -creplace '\*\*.*$', ''
             return $t.TrimEnd()
