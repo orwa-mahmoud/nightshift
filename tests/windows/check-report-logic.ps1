@@ -1,4 +1,4 @@
-# check-report.ps1 is a thin alias that names check-receipts and forwards to it.
+# check-receipts.ps1 is a thin alias that names check-report, forwards to it, and exits as it does.
 # Run on macOS or Windows: pwsh -File tests/windows/check-report-logic.ps1
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -7,7 +7,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 }
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$helper = Join-Path $repository 'plugins/nightshift/runtime/windows/check-report.ps1'
+$helper = Join-Path $repository 'plugins/nightshift/runtime/windows/check-receipts.ps1'
 $hostExecutable = (Get-Process -Id $PID).Path
 $failures = New-Object 'System.Collections.Generic.List[string]'
 
@@ -34,8 +34,10 @@ try {
         }
         $code = $LASTEXITCODE
         $text = if (Test-Path -LiteralPath $out) { [IO.File]::ReadAllText($out) } else { '' }
-        Expect-True ($code -eq 0) "alias exits 0 (got $code $text)"
-        Expect-True ($text -like '*ns check-receipts*') "alias names check-receipts: $text"
+        # No -Report: check-report refuses with status 1, and the alias must say the same.
+        Expect-True ($code -eq 1) "alias exits as check-report does (got $code $text)"
+        Expect-True ($text -like '*ns check-report*') "alias names check-report: $text"
+        Expect-True ($text -like '*-Report is required*') "alias forwards the refusal: $text"
     }
     finally {
         Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
