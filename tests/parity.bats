@@ -50,6 +50,15 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
   done < <(rows receipt-hash.tsv)
 }
 
+@test "item labels and ids match the fixture on Bash" {
+  local line label id got
+  while IFS=$'\t' read -r line label id; do
+    printf '## Items\n%s\n' "$line" >"$BATS_TEST_TMPDIR/list.md"
+    got="$(lib ns_item_rows "$BATS_TEST_TMPDIR/list.md")"
+    [ "$got" = "$label	$id" ] || { echo "$line: got '$got', want '$label	$id'"; return 1; }
+  done < <(rows item-labels.tsv)
+}
+
 @test "punch-list counts, tick labels, and digests match the fixture on Bash" {
   local file open ticked l1 l2 l3 contract items list
   while IFS=$'\t' read -r file open ticked l1 l2 l3 contract items; do

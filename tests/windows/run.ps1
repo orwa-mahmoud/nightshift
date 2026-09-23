@@ -508,6 +508,10 @@ try {
     $parityLogicRun = Invoke-TestScript $parityLogic
     Assert-Equal 0 $parityLogicRun.ExitCode `
         "shared Bash and PowerShell fixtures: $($parityLogicRun.Stdout) $($parityLogicRun.Stderr)"
+    $itemIdsLogic = Join-Path $PSScriptRoot 'item-ids-logic.ps1'
+    $itemIdsLogicRun = Invoke-TestScript $itemIdsLogic
+    Assert-Equal 0 $itemIdsLogicRun.ExitCode `
+        "permanent item ids: $($itemIdsLogicRun.Stdout) $($itemIdsLogicRun.Stderr)"
     $boxCountsLogic = Join-Path $PSScriptRoot 'box-counts-logic.ps1'
     $boxCountsLogicRun = Invoke-TestScript $boxCountsLogic
     Assert-Equal 0 $boxCountsLogicRun.ExitCode `

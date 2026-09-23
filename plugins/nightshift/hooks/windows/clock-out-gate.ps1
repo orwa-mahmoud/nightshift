@@ -46,10 +46,7 @@ function Get-NSGateOpenItem {
         if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $inItems = $true; continue }
         if (-not $inItems) { continue }
         if ($line -cnotmatch '^- \[ \]') { continue }
-        $t = $line -creplace '^- \[ \][ \t]*\*\*', ''
-        $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
-        $t = $t -creplace '\*\*.*$', ''
-        return $t.TrimEnd()
+        return (Get-NSItemLabel $line)
     }
     return ''
 }

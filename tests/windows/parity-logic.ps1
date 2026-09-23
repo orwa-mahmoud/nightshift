@@ -55,6 +55,12 @@ finally {
     Remove-Item -LiteralPath $scratch -Force -ErrorAction SilentlyContinue
 }
 
+foreach ($row in (Get-FixtureRows 'item-labels.tsv')) {
+    $want = if ($row.Count -gt 2) { $row[2] } else { '' }
+    Expect-Equal $row[1] (Get-NSItemLabel $row[0]) "item label '$($row[0])'"
+    Expect-Equal $want (Get-NSItemId $row[0]) "item id '$($row[0])'"
+}
+
 foreach ($row in (Get-FixtureRows 'punch.tsv')) {
     $list = Join-Path (Join-Path $fixtures 'punch') $row[0]
     $counts = Get-NSBoxCounts $list

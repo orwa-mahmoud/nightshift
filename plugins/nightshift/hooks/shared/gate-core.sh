@@ -156,6 +156,7 @@ ns_gate_usage_tick() {
   fi
   duration="$(ns_usage_duration_line "$seconds" "$paused_sec" "$paused_why" "$from" "$to")"
   ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
+  ns_receipt_track_label "$receipt" "$label"
   rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
   ns_receipts_write_index "$project"
 }
@@ -268,16 +269,10 @@ ns_gate_uncharged_labels() {
 # report heads its section. `- [x] **P03 — …**` gives `P03`. A capital `[X]` is a tick here as it
 # is in the counts. An item whose id cannot be read is `item <n>`, n its place among the ticked.
 ns_gate_ticked_labels() {
-  ns_items_section "$1" 2>/dev/null | awk '
+  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
     /^- \[[xX]\]/ {
       n++
-      line = $0
-      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
-      sub(/^- \[[xX]\][[:space:]]*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
+      line = ns_item_label($0)
       if (line == "") line = "item " n
       print line
     }
@@ -427,17 +422,8 @@ ns_gate_reminder_fill() {
 
 # ns_gate_open_item <punch-list> — the id of the first still-open item, for the short line.
 ns_gate_open_item() {
-  ns_items_section "$1" 2>/dev/null | awk '
-    /^- \[ \]/ {
-      line = $0
-      sub(/^- \[ \][[:space:]]*\*\*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
-      print line
-      exit
-    }
+  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
+    /^- \[ \]/ { print ns_item_label($0); exit }
   '
 }
 

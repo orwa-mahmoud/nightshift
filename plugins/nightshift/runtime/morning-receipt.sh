@@ -548,30 +548,16 @@ _classify_policy() {
 }
 
 _receipts_line() {
-  local punch="$NS/punch-list.md" line label base
+  local punch="$NS/punch-list.md" label id base
   printf 'Receipts:\n- [index](./README.md)\n'
   [ -f "$punch" ] || return 0
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%$'\r'}"
-    case "$line" in
-      '- [x] '*) label="${line#'- [x] '}" ;;
-      '- [X] '*) label="${line#'- [X] '}" ;;
-      *) continue ;;
-    esac
-    label="${label#\*\*}"
-    label="$(printf '%s' "$label" | awk '{
-      sub(/[[:space:]]+—.*$/, "")
-      sub(/[[:space:]]+-[[:space:]].*$/, "")
-      sub(/\*\*.*$/, "")
-      gsub(/[[:space:]]+$/, "")
-      print
-    }')"
+  while IFS=$'\t' read -r label id || [ -n "$label" ]; do
     [ -n "$label" ] || continue
-    base="$(ns_receipt_basename "$label")"
+    base="$(ns_receipt_base "$WORKSPACE" "$label" "$id")"
     [ -n "$base" ] || continue
     printf -- '- [%s](./%s.md)\n' "$label" "$base"
   done <<NSITEMS
-$(ns_items_section "$punch" 2>/dev/null || :)
+$(ns_item_rows "$punch" ticked)
 NSITEMS
 }
 

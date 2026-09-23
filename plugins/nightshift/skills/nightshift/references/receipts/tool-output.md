@@ -1,6 +1,6 @@
 # Tool output
 
-The model writes this receipt into the item's receipt at `$NS/receipts/<NN-slug>.md`, in either
+The model writes this receipt into the item's receipt at `$NS/receipts/<id>-<slug>.md`, in either
 work mode. It never goes into a commit message: a commit says what the change does, not how the
 night went.
 

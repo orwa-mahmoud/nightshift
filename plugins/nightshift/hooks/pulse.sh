@@ -139,9 +139,9 @@ ns_pulse_receipts_enabled() {
   [ "$(ns_receipts "$1" enabled)" != false ]
 }
 
-# ns_pulse_receipts_basename <label> — the file stem the notice names.
+# ns_pulse_receipts_basename <project> <label> — the file stem the notice names.
 ns_pulse_receipts_basename() {
-  ns_receipt_basename "$1"
+  ns_receipt_base "$1" "$2"
 }
 
 # ns_pulse_receipts_sections <project> — the approach clause on an item-start notice.
@@ -158,37 +158,26 @@ ns_pulse_receipts_sections() {
 # ns_pulse_receipts_start_line <project> <label>
 ns_pulse_receipts_start_line() {
   printf 'receipts: item %s started — open .nightshift/receipts/%s.md with one paragraph on the approach; %s' \
-    "$2" "$(ns_pulse_receipts_basename "$2")" "$(ns_pulse_receipts_sections "$1")"
+    "$2" "$(ns_pulse_receipts_basename "$1" "$2")" "$(ns_pulse_receipts_sections "$1")"
 }
 
-# ns_pulse_receipts_tick_line <label>
+# ns_pulse_receipts_tick_line <project> <label>
 ns_pulse_receipts_tick_line() {
   printf 'receipts: item %s is ticked — write its closing paragraph in .nightshift/receipts/%s.md now, before starting the next item.' \
-    "$1" "$(ns_pulse_receipts_basename "$1")"
+    "$2" "$(ns_pulse_receipts_basename "$1" "$2")"
 }
 
-# ns_pulse_receipts_cadence_line <label>
+# ns_pulse_receipts_cadence_line <project> <label>
 ns_pulse_receipts_cadence_line() {
   printf 'receipts: progress update due for %s — refresh the progress paragraph in .nightshift/receipts/%s.md: where it stands, what is left.' \
-    "$1" "$(ns_pulse_receipts_basename "$1")"
+    "$2" "$(ns_pulse_receipts_basename "$1" "$2")"
 }
 
 # ns_pulse_ticked_labels <project> — every ticked item label, punch-list order, one per line.
 ns_pulse_ticked_labels() {
   local punch="$1/.nightshift/punch-list.md"
   [ -f "$punch" ] || return 0
-  ns_items_section "$punch" 2>/dev/null | awk '
-    /^- \[[xX]\]/ {
-      line = $0
-      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
-      sub(/^- \[[xX]\][[:space:]]*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
-      if (line != "") print line
-    }
-  '
+  ns_item_rows "$punch" ticked | cut -f1
 }
 
 # Previous-pulse facts live under usage/, never in the punch list.
@@ -232,7 +221,7 @@ ns_pulse_report_due() {
   ns_pulse_receipts_enabled "$project" || return 1
   label="$(ns_pulse_active_item "$project")" || return 1
   [ -n "$label" ] || return 1
-  want="$(ns_pulse_receipts_cadence_line "$label")"
+  want="$(ns_pulse_receipts_cadence_line "$project" "$label")"
   if [ -f "$ns/.receipt-due" ] && [ ! -L "$ns/.receipt-due" ]; then
     due="$(cat "$ns/.receipt-due" 2>/dev/null)" || due=""
     case "$due" in
@@ -282,14 +271,17 @@ ns_pulse_receipts_notice() {
         grep -Fqx -- "$line" "$labels_file" 2>/dev/null && continue
       fi
       if [ "$first" -eq 1 ]; then
-        printf '%s' "$(ns_pulse_receipts_tick_line "$line")"
+        printf '%s' "$(ns_pulse_receipts_tick_line "$project" "$line")"
         first=0
       else
-        printf '\n%s' "$(ns_pulse_receipts_tick_line "$line")"
+        printf '\n%s' "$(ns_pulse_receipts_tick_line "$project" "$line")"
       fi
     done <"$ns/usage/.ticked-now"
   fi
   if [ -n "$active" ] && [ "$active" != "$prev_active" ]; then
+    # An item carried from an earlier shift may have been renumbered or retitled since; its receipt
+    # says so before the model opens it.
+    ns_receipt_track_label "$(ns_receipt_path "$project" "$active")" "$active" || :
     if [ "$first" -eq 1 ]; then
       printf '%s' "$(ns_pulse_receipts_start_line "$project" "$active")"
       first=0
@@ -320,17 +312,8 @@ ns_pulse_receipts_notice() {
 ns_pulse_active_item() {
   local punch="$1/.nightshift/punch-list.md"
   [ -f "$punch" ] || return 1
-  ns_items_section "$punch" 2>/dev/null | awk '
-    /^- \[ \]/ {
-      line = $0
-      sub(/^- \[ \][[:space:]]*\*\*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
-      print line
-      exit
-    }
+  ns_items_section "$punch" 2>/dev/null | awk "$NS_AWK_ITEM"'
+    /^- \[ \]/ { print ns_item_label($0); exit }
   '
 }
 

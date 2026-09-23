@@ -104,9 +104,191 @@ ns_receipt_basename() {
   fi
 }
 
-# ns_receipt_path <project-dir> <label> — the item's file under receipts/.
+# ---------------------------------------------------------------------------------------------
+# Item identity
+#
+# An item's number keeps its place in the list and its id keeps its identity. The first time the
+# shift policy is recorded, every item without an id gets one as a trailing comment on its own
+# line: `- [ ] **3. Fix the resolver.** <!-- id: k7q2 -->`. The owner may renumber, reorder or
+# retitle items between shifts; the receipt and its history follow the id. Every reader of an
+# item's label goes through NS_AWK_ITEM, so the comment is never part of a label.
+
+# The awk functions every item reader shares, prepended to the program text.
+NS_AWK_ITEM='
+function ns_item_id(line,    s) {
+  sub(/\r$/, "", line)
+  if (!match(line, /<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/)) return ""
+  s = substr(line, RSTART, RLENGTH)
+  sub(/^<!--[[:space:]]*id:[[:space:]]*/, "", s)
+  sub(/[[:space:]]*-->[[:space:]]*$/, "", s)
+  return s
+}
+function ns_item_label(line) {
+  sub(/\r$/, "", line)
+  sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "", line)
+  sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", line)
+  sub(/^- \[[ xX]\][[:space:]]*/, "", line)
+  sub(/[[:space:]]+—.*$/, "", line)
+  sub(/[[:space:]]+-[[:space:]].*$/, "", line)
+  sub(/\*\*.*$/, "", line)
+  gsub(/[[:space:]]+$/, "", line)
+  return line
+}
+'
+
+# ns_item_rows <punch-list> [open|ticked|all] — `<label>\t<id>` for each top-level item under
+# `## Items` that has a label, list order. The id is empty for an item that has none.
+ns_item_rows() {
+  ns_items_section "$1" 2>/dev/null | awk -v want="${2:-all}" "$NS_AWK_ITEM"'
+    /^- \[[ xX]\]/ {
+      open = ($0 ~ /^- \[ \]/)
+      if (want == "open" && !open) next
+      if (want == "ticked" && open) next
+      label = ns_item_label($0)
+      if (label != "") print label "\t" ns_item_id($0)
+    }
+  '
+}
+
+# ns_item_ids <punch-list> — every id the list's items carry, one per line.
+ns_item_ids() {
+  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
+    /^- \[[ xX]\]/ { id = ns_item_id($0); if (id != "") print id }
+  '
+}
+
+# ns_item_id_for <punch-list> <label> — the id of the first item with that label, or nothing.
+ns_item_id_for() {
+  ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
+    /^- \[[ xX]\]/ && ns_item_label($0) == want { print ns_item_id($0); exit }
+  '
+}
+
+# ns_item_id_used <nightshift-dir> <id> [taken] — status 0 when the id is in `taken`, is carried by
+# an archived list or receipt, or already names a receipt file, so an id means one item for as
+# long as the history is kept.
+ns_item_id_used() {
+  local ns="$1" id="$2"
+  case " ${3:-} " in *" $id "*) return 0 ;; esac
+  grep -rqsF -- "id: $id " "$ns/archive" "$ns/receipts" && return 0
+  [ -n "$(find "$ns/receipts" "$ns/archive" \( -name "$id.md" -o -name "$id-*.md" \) -print 2>/dev/null | head -n1)" ]
+}
+
+# ns_item_new_id <nightshift-dir> [taken] — a fresh id: a letter, then three letters or digits, that
+# ns_item_id_used does not know.
+ns_item_new_id() {
+  local ns="$1" taken="${2:-}" id tries=0
+  while [ "$tries" -lt 64 ]; do
+    tries=$((tries + 1))
+    id="$(od -An -N4 -tu1 /dev/urandom 2>/dev/null | awk '
+      NF >= 4 {
+        a = "abcdefghijklmnopqrstuvwxyz"; b = a "0123456789"
+        printf "%s%s%s%s", substr(a, $1 % 26 + 1, 1), substr(b, $2 % 36 + 1, 1),
+          substr(b, $3 % 36 + 1, 1), substr(b, $4 % 36 + 1, 1)
+      }')" || return 1
+    [ "${#id}" -eq 4 ] || return 1
+    ns_item_id_used "$ns" "$id" "$taken" && continue
+    printf '%s' "$id"
+    return 0
+  done
+  return 1
+}
+
+# ns_punch_assign_ids <punch-list> <nightshift-dir> — give every item under `## Items` that has no
+# id a new one. Items that carry one keep it, so running this again changes nothing.
+ns_punch_assign_ids() {
+  local list="$1" ns="$2" need taken ids="" id tmp
+  [ -f "$list" ] && [ ! -L "$list" ] || return 0
+  need="$(awk "$NS_AWK_ITEM"'
+    { line = $0; sub(/\r$/, "", line) }
+    !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; next }
+    line ~ /^## / { exit }
+    line ~ /^- \[[ xX]\]/ && ns_item_id(line) == "" { n++ }
+    END { print n + 0 }
+  ' "$list")" || return 1
+  [ "$need" -gt 0 ] || return 0
+  taken="$(ns_item_ids "$list" | paste -sd' ' -)"
+  while [ "$need" -gt 0 ]; do
+    id="$(ns_item_new_id "$ns" "$taken $ids")" || return 1
+    ids="$ids $id"
+    need=$((need - 1))
+  done
+  tmp="$list.ids.$$"
+  awk -v ids="$ids" "$NS_AWK_ITEM"'
+    BEGIN { split(ids, pool, " "); k = 0 }
+    { line = $0; cr = ""; if (sub(/\r$/, "", line)) cr = "\r" }
+    !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; print; next }
+    line ~ /^## / { on = 0; done = 1 }
+    !done && line ~ /^- \[[ xX]\]/ && ns_item_id(line) == "" {
+      k++
+      print line " <!-- id: " pool[k] " -->" cr
+      next
+    }
+    { print }
+  ' "$list" >"$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$list" || { rm -f "$tmp"; return 1; }
+}
+
+# ns_receipt_base <project-dir> <label> [id] — the item's receipt file stem under receipts/. An item
+# with an id keeps the file that id already names, else an earlier shift's receipt found by its
+# label, else a new `<id>-<slug>`; an item without one is its label's `NN-slug`. With no id
+# argument the id is looked up in the punch list by label.
+ns_receipt_base() {
+  local project="$1" label="$2" id="${3-}" dir legacy f slug
+  [ $# -ge 3 ] || id="$(ns_item_id_for "$project/.nightshift/punch-list.md" "$label")"
+  legacy="$(ns_receipt_basename "$label")"
+  [ -n "$id" ] || { printf '%s' "$legacy"; return 0; }
+  dir="$(ns_receipts_dir "$project")"
+  for f in "$dir/$id.md" "$dir/$id"-*.md; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    f="${f##*/}"
+    printf '%s' "${f%.md}"
+    return 0
+  done
+  if [ -n "$legacy" ] && [ -f "$dir/$legacy.md" ] && [ ! -L "$dir/$legacy.md" ]; then
+    printf '%s' "$legacy"
+    return 0
+  fi
+  slug="$(ns_receipt_slug "$(ns_receipt_title "$label")")"
+  if [ -n "$slug" ]; then printf '%s-%s' "$id" "$slug"; else printf '%s' "$id"; fi
+}
+
+# ns_receipt_path <project-dir> <label> [id] — the item's file under receipts/.
 ns_receipt_path() {
-  printf '%s/%s.md' "$(ns_receipts_dir "$1")" "$(ns_receipt_basename "$2")"
+  printf '%s/%s.md' "$(ns_receipts_dir "$1")" "$(ns_receipt_base "$@")"
+}
+
+# ns_receipt_track_label <receipt> <label> — note in the receipt which label it belongs to, and
+# record a renumber or retitle once the item's label has moved since. The heading follows when it
+# was the old label, and one dated line under it names what the item was called before.
+ns_receipt_track_label() {
+  local f="$1" was tmp
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  was="$(sed -n 's/^<!-- item: \(.*\) -->[[:space:]]*$/\1/p' "$f" | tail -n1)"
+  if [ -z "$was" ]; then
+    printf '\n<!-- item: %s -->\n' "$2" >>"$f"
+    return 0
+  fi
+  [ "$was" != "$2" ] || return 0
+  tmp="$f.track.$$"
+  if NS_WAS="$was" NS_NOW="$2" NS_DAY="$(date +%Y-%m-%d)" awk '
+    BEGIN { was = ENVIRON["NS_WAS"]; now = ENVIRON["NS_NOW"]; day = ENVIRON["NS_DAY"] }
+    { line = $0; sub(/\r$/, "", line) }
+    !headed && line ~ /^# / {
+      headed = 1
+      print (line == "# " was) ? "# " now : $0
+      print ""
+      print "Renamed from " was " on " day "."
+      next
+    }
+    line ~ /^<!-- item: .* -->[[:space:]]*$/ { print "<!-- item: " now " -->"; next }
+    { print }
+  ' "$f" >"$tmp"; then
+    mv "$tmp" "$f"
+  else
+    rm -f "$tmp"
+    return 1
+  fi
 }
 
 # ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime block
@@ -136,6 +318,8 @@ ns_receipt_has_model_text() {
     /^\| wall \|/ { next }
     /^\| span \|/ { next }
     /^<!-- tokens / { next }
+    /^<!-- item: / { next }
+    /^Renamed from .* on [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.$/ { next }
     / · [0-9]+ segments?\./ { next }
     { found = 1; exit }
     END { exit found ? 0 : 1 }
@@ -144,25 +328,14 @@ ns_receipt_has_model_text() {
 
 # ns_receipts_missing_nns <project> — one item number per ticked item with no model text.
 ns_receipts_missing_nns() {
-  local project="$1" punch ns label base nn
+  local project="$1" punch ns label id base nn
   ns="$project/.nightshift"
   punch="$ns/punch-list.md"
   [ -f "$punch" ] || return 0
   ns_receipts_enabled "$project" || return 0
-  ns_items_section "$punch" 2>/dev/null | awk '
-    /^- \[[xX]\]/ {
-      line = $0
-      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
-      sub(/^- \[[xX]\][[:space:]]*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
-      if (line != "") print line
-    }
-  ' | while IFS= read -r label || [ -n "$label" ]; do
+  ns_item_rows "$punch" ticked | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
     [ -n "$label" ] || continue
-    base="$(ns_receipt_basename "$label")"
+    base="$(ns_receipt_base "$project" "$label" "$id")"
     ns_receipt_has_model_text "$ns/receipts/${base}.md" && continue
     nn="$(ns_receipt_nn "$label")"
     [ -n "$nn" ] || nn="$label"
@@ -347,23 +520,12 @@ ns_receipts_time_total_cell() {
 # A ticked item's receipt leaves live storage once the shift has ended; an open item's stays, so
 # the next shift writes into the same file.
 ns_receipts_item_names() {
-  local punch="$1/.nightshift/punch-list.md" state="${2:-open}" label ticked=0
+  local punch="$1/.nightshift/punch-list.md" state="${2:-open}" label id
   [ -f "$punch" ] || return 0
-  [ "$state" = ticked ] && ticked=1
-  ns_items_section "$punch" 2>/dev/null | awk -v ticked="$ticked" '
-    (ticked && /^- \[[xX]\]/) || (!ticked && /^- \[[[:space:]]\]/) {
-      line = $0
-      sub(/^- \[[xX[:space:]]\][[:space:]]*\*\*/, "", line)
-      sub(/^- \[[xX[:space:]]\][[:space:]]*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
-      if (line != "") print line
-    }
-  ' | while IFS= read -r label || [ -n "$label" ]; do
+  [ "$state" = ticked ] || state=open
+  ns_item_rows "$punch" "$state" | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
     [ -n "$label" ] || continue
-    printf '%s.md\n' "$(ns_receipt_basename "$label")"
+    printf '%s.md\n' "$(ns_receipt_base "$1" "$label" "$id")"
   done
 }
 
@@ -374,23 +536,48 @@ ns_receipts_ticked_names() { ns_receipts_item_names "$1" ticked; }
 # (1, 2, 10), then letter-and-number ids by letters and value (A1, A2, A10, B1), then the rest by
 # name. Keys are tab-separated and compared bytewise, so tab ends a shorter field first.
 ns_receipts_item_order() {
-  LC_ALL=C awk '
-    {
-      n = $0
-      sub(/.*\//, "", n)
-      cls = 2; pre = ""; num = ""
-      if (match(n, /^[0-9]+/)) {
-        cls = 0; num = substr(n, 1, RLENGTH)
-      } else if (match(n, /^[A-Za-z]+[0-9]+/)) {
-        id = substr(n, 1, RLENGTH)
-        match(id, /[0-9]+$/)
-        cls = 1; pre = tolower(substr(id, 1, RSTART - 1)); num = substr(id, RSTART)
-      }
-      sub(/^0+/, "", num)
-      if (cls < 2 && num == "") num = "0"
-      printf "%d\t%s\t%04d%s\t%s\t%s\n", cls, pre, length(num), num, n, $0
-    }
+  LC_ALL=C awk "$NS_AWK_ORDER_KEY"'
+    { n = $0; sub(/.*\//, "", n); print ns_order_key(n) "\t" $0 }
   ' | LC_ALL=C sort | cut -f5-
+}
+
+# ns_receipts_heading_order — `<heading>\t<path>` lines on stdin, printed in the item order of the
+# headings. A receipt named for its item's id sorts by the number and title its heading shows.
+ns_receipts_heading_order() {
+  LC_ALL=C awk -F'\t' "$NS_AWK_ORDER_KEY"'
+    { print ns_order_key($1) "\t" $0 }
+  ' | LC_ALL=C sort | cut -f5-
+}
+
+# The item-order key of one name, as four tab-separated fields, for the two orderings above.
+NS_AWK_ORDER_KEY='
+function ns_order_key(n,    cls, pre, num, id) {
+  cls = 2; pre = ""; num = ""
+  if (match(n, /^[0-9]+/)) {
+    cls = 0; num = substr(n, 1, RLENGTH)
+  } else if (match(n, /^[A-Za-z]+[0-9]+/)) {
+    id = substr(n, 1, RLENGTH)
+    match(id, /[0-9]+$/)
+    cls = 1; pre = tolower(substr(id, 1, RSTART - 1)); num = substr(id, RSTART)
+  }
+  sub(/^0+/, "", num)
+  if (cls < 2 && num == "") num = "0"
+  return sprintf("%d\t%s\t%04d%s\t%s", cls, pre, length(num), num, n)
+}
+'
+
+# _ns_archive_receipt_headings <dir> — `<heading>\t<path>` for each item receipt filed in <dir>.
+_ns_archive_receipt_headings() {
+  local f label
+  find "$1" -maxdepth 1 -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+    case "${f##*/}" in
+      README.md | morning-* | x-* | *.original.md) continue ;;
+    esac
+    label="$(sed -n 's/^# //p' "$f" | head -n1)"
+    label="${label%$'\r'}"
+    [ -z "$label" ] || printf '%s\t%s\n' "$label" "$f"
+  done
 }
 
 # ns_receipts_write_archive_index <dir> <date> — the index of the item receipts filed in <dir>,
@@ -405,13 +592,9 @@ ns_receipts_write_archive_index() {
   [ -L "$index" ] && return 0
   rows="$(mktemp "${TMPDIR:-/tmp}/ns-archive-index.XXXXXX")" || return 0
   : >"$rows"
-  while IFS= read -r f; do
+  while IFS=$'\t' read -r label f; do
     [ -n "$f" ] || continue
-    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
     base="${f##*/}"
-    case "$base" in README.md | morning-* | x-* | *.original.md) continue ;; esac
-    label="$(sed -n 's/^# //p' "$f" | head -n1)"
-    [ -n "$label" ] || continue
     cells="$(ns_receipt_usage_cells "$f")"
     IFS=$'\t' read -r in cw cr out rea work pause usage time _sum <<EOF
 $cells
@@ -421,7 +604,7 @@ EOF
     printf '| %s | ticked | **%s** | **%s** | [./%s](./%s) |\n' \
       "$label" "$usage" "$time" "$base" "$base" >>"$rows"
   done <<FIND
-$(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | ns_receipts_item_order)
+$(_ns_archive_receipt_headings "$dir" | ns_receipts_heading_order)
 FIND
   if [ ! -s "$rows" ]; then
     rm -f "$rows"
@@ -444,7 +627,7 @@ ns_receipts_write_index() {
   local dir index date_s state base file cells
   local in cw cr out rea work pause usage time _sum
   local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0
-  local label line items rows
+  local label id items rows
   dir="$(ns_receipts_dir "$project")"
   [ -n "$dir" ] || return 0
   if [ "$mode" = remaining ]; then
@@ -460,27 +643,17 @@ ns_receipts_write_index() {
   rows="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-rows.XXXXXX")" || { rm -f "$items"; return 0; }
   : >"$items"
   if [ -f "$punch" ]; then
-    ns_items_section "$punch" >"$items" 2>/dev/null || :
+    ns_items_section "$punch" 2>/dev/null | awk "$NS_AWK_ITEM"'
+      /^- \[[ xX]\] / {
+        label = ns_item_label($0)
+        if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : "ticked") "\t" label "\t" ns_item_id($0)
+      }
+    ' >"$items" || :
   fi
   : >"$rows"
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      '- [ ] '*|'- [x] '*|'- [X] '*) ;;
-      *) continue ;;
-    esac
-    state=open
-    case "$line" in '- [x] '*|'- [X] '*) state=ticked ;; esac
-    label="$(printf '%s' "$line" | awk '{
-      sub(/^- \[[xX ]\][[:space:]]*\*\*/, "")
-      sub(/^- \[[xX ]\][[:space:]]*/, "")
-      sub(/[[:space:]]+—.*$/, "")
-      sub(/[[:space:]]+-[[:space:]].*$/, "")
-      sub(/\*\*.*$/, "")
-      gsub(/[[:space:]]+$/, "")
-      print
-    }')"
+  while IFS=$'\t' read -r state label id || [ -n "$state" ]; do
     [ -n "$label" ] || continue
-    base="$(ns_receipt_basename "$label")"
+    base="$(ns_receipt_base "$project" "$label" "$id")"
     if [ "$mode" = remaining ] && [ "$state" = ticked ] && [ ! -f "$dir/${base}.md" ]; then
       continue
     fi
@@ -1543,14 +1716,20 @@ ns_punch_items() {
   ' "$1" 2>/dev/null
 }
 
-# ns_punch_item <punch-list> <id> — one item with its sub-bullets, exactly as written. An empty id
-# means the first still-open one. Prints nothing when there is no such item.
+# ns_punch_item <punch-list> <item> — one item with its sub-bullets, exactly as written. The item is
+# named by its whole label, its number (`5`, `P03`), or its id; empty means the first still-open
+# one. The first item that matches wins. Prints nothing when there is no such item.
 ns_punch_item() {
-  ns_punch_items "$1" | awk -v want="$2" '
+  ns_punch_items "$1" | awk -v want="$2" "$NS_AWK_ITEM"'
     function starts_item(line) { return line ~ /^- \[[ xX]\]/ }
     # A top-level line is anything not indented: the next item, a heading, a note. Either way this
     # item has ended.
     function top_level(line) { return line !~ /^[[:space:]]/ && line != "" }
+    function number(label) {
+      if (match(label, /^[0-9]+/)) return substr(label, RSTART, RLENGTH)
+      if (match(label, /^[A-Za-z]+[0-9]+/)) return substr(label, RSTART, RLENGTH)
+      return ""
+    }
     {
       if (!on && starts_item($0)) {
         if (want == "") {
@@ -1559,13 +1738,8 @@ ns_punch_item() {
           print
           next
         }
-        id = $0
-        sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", id)
-        sub(/[[:space:]]+—.*$/, "", id)
-        sub(/[[:space:]]+-[[:space:]].*$/, "", id)
-        sub(/\*\*.*$/, "", id)
-        gsub(/[[:space:]]+$/, "", id)
-        if (id != want) next
+        label = ns_item_label($0)
+        if (label != want && ns_item_id($0) != want && number(label) != want) next
         on = 1
         print
         next
@@ -1679,6 +1853,7 @@ ns_explain_topic() {
 ns_status_open_title() {
   ns_punch_item "$1" "" 2>/dev/null | awk '
     NR == 1 {
+      sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "")
       sub(/^- \[[ xX]\][[:space:]]*/, "")
       gsub(/\*\*/, "")
       sub(/[[:space:]]+$/, "")
