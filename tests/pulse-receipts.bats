@@ -59,6 +59,21 @@ armed() {
   [[ "$output" != *'37. Second of the replay.'* ]]
 }
 
+@test "a stale marker for another item is dropped when nothing is due" {
+  p="$(new_project pulse-stale-quiet)"
+  printf '## Items\n- [x] **37. Second of the replay.**\n- [ ] **38. Third of the replay.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  armed "$p"
+  mkdir -p "$p/.nightshift/usage"
+  printf '%s\ttick\t\n' "$(( $(date +%s) - 60 ))" >"$p/.nightshift/usage/marks.tsv"
+  printf 'receipts: progress update due for 37. Second of the replay. — refresh the progress paragraph in .nightshift/receipts/37-second-of-the-replay.md: where it stands, what is left.\n' \
+    >"$p/.nightshift/.receipt-due"
+  run due "$p"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+  [ ! -f "$p/.nightshift/.receipt-due" ]
+}
+
 @test "tick injection names each newly ticked item once" {
   p="$(new_project pulse-tick)"
   printf '## Items\n- [ ] **36. First of the replay.**\n- [ ] **37. Second of the replay.**\n' \

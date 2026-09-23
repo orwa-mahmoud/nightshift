@@ -318,6 +318,27 @@ mark_at() {
   [ "$output" = 'receipts: progress update due for P01 — refresh the progress paragraph in .nightshift/receipts/P01.md: where it stands, what is left.' ]
 }
 
+@test "refreshing the receipt answers the standing notice" {
+  p="$(new_project cadence-answered)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  : >"$p/.nightshift/.shift-armed"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# P01\n\nWhere it has got to.\n' >"$p/.nightshift/receipts/P01.md"
+  mark_at "$p/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
+
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/.receipt-due" ]
+
+  printf '# P01\n\nWhere it has got to, updated.\n' >"$p/.nightshift/receipts/P01.md"
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+  [ ! -f "$p/.nightshift/.receipt-due" ]
+}
+
 @test "the notice reaches the model in each host's own context field" {
   run bash -c '. "$1"; . "$2"; ns_pulse_context claude "report: progress update due for P01"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"

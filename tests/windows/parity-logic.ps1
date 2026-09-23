@@ -43,6 +43,18 @@ foreach ($row in (Get-FixtureRows 'receipt-order.tsv')) {
     Expect-Equal $row[1] ($names -join ' ') 'receipt order'
 }
 
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ('ns-parity-' + [guid]::NewGuid().ToString('N') + '.md')
+try {
+    foreach ($row in (Get-FixtureRows 'receipt-hash.tsv')) {
+        $text = $row[0].Replace('\r', "`r").Replace('\n', "`n")
+        [IO.File]::WriteAllText($scratch, $text, (New-Object Text.UTF8Encoding($false)))
+        Expect-Equal $row[1] (Get-NSUsageReceiptHash $scratch) "receipt digest '$($row[0])'"
+    }
+}
+finally {
+    Remove-Item -LiteralPath $scratch -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($row in (Get-FixtureRows 'punch.tsv')) {
     $list = Join-Path (Join-Path $fixtures 'punch') $row[0]
     $counts = Get-NSBoxCounts $list

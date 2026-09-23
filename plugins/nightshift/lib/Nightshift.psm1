@@ -10358,6 +10358,69 @@ function Add-NSGateReceiptsMissingNote {
     return ($Text + ' ' + $note)
 }
 
+# Get-NSUsageReceiptHash <file> - the receipt's short digest (the first 16 hex characters of its
+# SHA-256, as the POSIX runtime writes it), or '' when there is no plain file.
+function Get-NSUsageReceiptHash {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Path)
+    if ([string]::IsNullOrEmpty($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf) -or
+        (Test-NSReparsePoint $Path)) { return '' }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha.ComputeHash([IO.File]::ReadAllBytes($Path))
+    }
+    finally {
+        $sha.Dispose()
+    }
+    return (-join ($digest | ForEach-Object { $_.ToString('x2') })).Substring(0, 16)
+}
+
+# Get-NSUsageWindow <nightshift-dir> <receipt-file> - where the current cadence window started, as
+# an object with Epoch and Total (the usage reading at that point), or $null before the first mark.
+# The later of the item's own start mark and the last time its receipt changed, so a progress
+# update restarts the window and nothing else does. The stamp is the usage/window file the POSIX
+# runtime keeps, in the same format.
+function Get-NSUsageWindow {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [AllowEmptyString()][string]$Receipt = ''
+    )
+    $marks = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $marks -PathType Leaf)) { return $null }
+    $last = @([IO.File]::ReadAllLines($marks)) | Select-Object -Last 1
+    if ([string]::IsNullOrEmpty($last)) { return $null }
+    $fields = $last.Split("`t")
+    $epoch = [long]0
+    [void][long]::TryParse($fields[0], [ref]$epoch)
+    $total = if ($fields.Count -gt 2) { $fields[2] } else { '' }
+    $stamp = Join-Path (Get-NSUsageDir $NightshiftDir) 'window'
+    $hash = Get-NSUsageReceiptHash $Receipt
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    if (-not [string]::IsNullOrEmpty($hash) -and -not (Test-NSReparsePoint $stamp)) {
+        if (-not (Test-Path -LiteralPath $stamp -PathType Leaf)) {
+            # First sight of this file. Recording what it looks like is not the same as the model
+            # having just refreshed it, so the window stays where the item started.
+            $null = New-Item -ItemType Directory -Force -Path (Get-NSUsageDir $NightshiftDir)
+            [IO.File]::WriteAllText($stamp, "$epoch`t$hash`t$total`n", $utf8)
+        }
+        elseif (([IO.File]::ReadAllText($stamp).TrimEnd("`r", "`n").Split("`t"))[1] -cne $hash) {
+            # It changed, so the model refreshed it: the window starts again from here.
+            [IO.File]::WriteAllText($stamp, "$(Get-NSUnixTime)`t$hash`t$(Get-NSUsageTotal $NightshiftDir)`n", $utf8)
+            foreach ($marker in @('.receipt-due', '.report-due')) {
+                Remove-Item -LiteralPath (Join-Path $NightshiftDir $marker) -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    if ((Test-Path -LiteralPath $stamp -PathType Leaf) -and -not (Test-NSReparsePoint $stamp)) {
+        $row = [IO.File]::ReadAllText($stamp).TrimEnd("`r", "`n").Split("`t")
+        $stamped = [long]0
+        if ([long]::TryParse($row[0], [ref]$stamped) -and $stamped -gt $epoch) {
+            $epoch = $stamped
+            $total = if ($row.Count -gt 2) { $row[2] } else { '' }
+        }
+    }
+    return [pscustomobject]@{ Epoch = $epoch; Total = $total }
+}
+
 function Test-NSUsageProgressDue {
     param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Label)
     $mode = Get-NSReceiptsField $Workspace 'progressMode'
@@ -10365,15 +10428,12 @@ function Test-NSUsageProgressDue {
     if ($mode -ceq 'completion-only') { return $false }
     if ((Get-NSReceiptsField $Workspace 'usage') -ceq 'off') { return $false }
     $ns = Join-Path $Workspace '.nightshift'
-    $marks = Get-NSUsageMarksPath $ns
-    if (-not (Test-Path -LiteralPath $marks -PathType Leaf)) { return $false }
-    $last = @([IO.File]::ReadAllLines($marks)) | Select-Object -Last 1
-    if ([string]::IsNullOrEmpty($last)) { return $false }
-    $epoch = [long]0
-    [void][long]::TryParse($last.Split("`t")[0], [ref]$epoch)
+    $receipt = if ([string]::IsNullOrEmpty($Label)) { '' } else { Get-NSReceiptPath $Workspace $Label }
+    $window = Get-NSUsageWindow $ns $receipt
+    if ($null -eq $window) { return $false }
     $minutes = Get-NSReceiptsField $Workspace 'progressMinutes'
     if ($minutes -notmatch '^\d+$') { $minutes = '20' }
-    return ((Get-NSUnixTime) - $epoch) -ge ([long]$minutes * 60)
+    return ((Get-NSUnixTime) - $window.Epoch) -ge ([long]$minutes * 60)
 }
 
 function Get-NSPulseReportDue {
@@ -10386,15 +10446,18 @@ function Get-NSPulseReportDue {
     $duePath = Join-Path $NightshiftDir '.receipt-due'
     if ((Test-Path -LiteralPath $duePath -PathType Leaf) -and -not (Test-NSReparsePoint $duePath)) {
         $due = [IO.File]::ReadAllText($duePath).TrimEnd("`r", "`n")
-        if ($due.Contains('for ' + $label + ' ') -or $due.EndsWith('for ' + $label)) { return $due }
-    }
-    if (-not (Test-NSUsageProgressDue $Workspace $label)) {
-        if ((Test-Path -LiteralPath $duePath -PathType Leaf) -and -not (Test-NSReparsePoint $duePath)) {
-            [IO.File]::WriteAllText($duePath, $want, (New-Object Text.UTF8Encoding($false)))
-            return $want
+        if ($due.Contains('for ' + $label + ' ') -or $due.EndsWith('for ' + $label)) {
+            # Refreshing the receipt is what answers the notice. The window notices the change and
+            # drops the marker, so a refreshed receipt is not reminded again on the next call.
+            $null = Get-NSUsageWindow $NightshiftDir (Get-NSReceiptPath $Workspace $label)
+            if (Test-Path -LiteralPath $duePath -PathType Leaf) { return $due }
         }
-        return ''
+        else {
+            # The marker names an item that is no longer the open one; it answers nothing now.
+            Remove-Item -LiteralPath $duePath -Force -ErrorAction SilentlyContinue
+        }
     }
+    if (-not (Test-NSUsageProgressDue $Workspace $label)) { return '' }
     [IO.File]::WriteAllText($duePath, $want, (New-Object Text.UTF8Encoding($false)))
     return $want
 }

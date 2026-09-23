@@ -237,21 +237,21 @@ ns_pulse_report_due() {
     due="$(cat "$ns/.receipt-due" 2>/dev/null)" || due=""
     case "$due" in
       *"for ${label} —"*|*"for ${label}")
-        printf '%s' "$due"
-        return 0
+        # Refreshing the receipt is what answers the notice. The window notices the change and
+        # drops the marker, so a refreshed receipt is not reminded again on the next call.
+        ns_usage_window "$ns" "$label" "$(ns_receipt_path "$project" "$label")" >/dev/null || :
+        if [ -f "$ns/.receipt-due" ]; then
+          printf '%s' "$due"
+          return 0
+        fi
+        ;;
+      *)
+        # The marker names an item that is no longer the open one; it answers nothing now.
+        rm -f "$ns/.receipt-due" 2>/dev/null || :
         ;;
     esac
-    # The marker names a different item than the one now open — regenerate.
   fi
-  ns_usage_progress_due "$project" "$label" || {
-    # Stale marker for another item: still rewrite so the next pulse names this one.
-    if [ -n "${due:-}" ]; then
-      printf '%s' "$want" >"$ns/.receipt-due" 2>/dev/null || return 1
-      printf '%s' "$want"
-      return 0
-    fi
-    return 1
-  }
+  ns_usage_progress_due "$project" "$label" || return 1
   printf '%s' "$want" >"$ns/.receipt-due" 2>/dev/null || return 1
   printf '%s' "$want"
 }
