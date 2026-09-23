@@ -5264,6 +5264,28 @@ function Get-NSTickedReceiptNames {
 # Write-NSArchiveReceiptsIndex <directory> <date> - the index of the item receipts filed in that
 # directory, written only when at least one landed there. Links stay siblings, because the
 # receipts it lists are in that directory too.
+# Get-NSReceiptItemOrderKey <name> - the ordinal sort key that puts receipts in item order: numbered
+# items by value (1, 2, 10), then letter-and-number ids by letters and value (A1, A2, A10, B1), then
+# the rest by name. Keys are tab-separated, so tab ends a shorter field first.
+function Get-NSReceiptItemOrderKey {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    $class = 2
+    $prefix = ''
+    $number = ''
+    if ($Name -cmatch '^([0-9]+)') {
+        $class = 0
+        $number = $Matches[1]
+    }
+    elseif ($Name -cmatch '^([A-Za-z]+)([0-9]+)') {
+        $class = 1
+        $prefix = $Matches[1].ToLowerInvariant()
+        $number = $Matches[2]
+    }
+    $number = $number.TrimStart([char]'0')
+    if ($class -lt 2 -and $number.Length -eq 0) { $number = '0' }
+    return ("{0}`t{1}`t{2:D4}{3}`t{4}" -f $class, $prefix, $number.Length, $number, $Name)
+}
+
 function Write-NSArchiveReceiptsIndex {
     param(
         [Parameter(Mandatory = $true)][string]$Directory,
@@ -5278,7 +5300,11 @@ function Write-NSArchiveReceiptsIndex {
             -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
             $_.Name.EndsWith('.md', [StringComparison]::Ordinal)
         } | ForEach-Object { $_.Name })
-    if ($names.Count -gt 1) { [Array]::Sort($names, [StringComparer]::Ordinal) }
+    if ($names.Count -gt 1) {
+        $names = [string[]]$names
+        $keys = [string[]]@($names | ForEach-Object { Get-NSReceiptItemOrderKey $_ })
+        [Array]::Sort($keys, $names, [StringComparer]::Ordinal)
+    }
     $rows = New-Object Collections.Generic.List[string]
     $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
     $twork = [long]0; $tpause = [long]0
