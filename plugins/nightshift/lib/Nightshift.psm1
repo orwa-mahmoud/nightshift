@@ -5340,6 +5340,9 @@ function Get-NSReceiptPath {
 # Update-NSReceiptLabel <receipt> <label> - note in the receipt which label it belongs to, and
 # record a renumber or retitle once the item's label has moved since. The heading follows when it
 # was the old label, and one dated line under it names what the item was called before.
+#
+# The runtime's writes to a receipt keep its modification time: the time says when the model last
+# wrote it, which is how the pulse tells which item is being worked.
 function Update-NSReceiptLabel {
     param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label)
     if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return }
@@ -5349,11 +5352,13 @@ function Update-NSReceiptLabel {
     foreach ($line in $lines) {
         if ($line -cmatch '^<!-- item: (.*) -->[ \t]*$') { $was = $Matches[1] }
     }
+    if ($was -ceq $Label) { return }
+    $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
     if ([string]::IsNullOrEmpty($was)) {
         [IO.File]::AppendAllText($Receipt, "`n<!-- item: $Label -->`n", $utf8)
+        [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp)
         return
     }
-    if ($was -ceq $Label) { return }
     $out = New-Object Collections.Generic.List[string]
     $headed = $false
     foreach ($line in $lines) {
@@ -5368,6 +5373,91 @@ function Update-NSReceiptLabel {
         $out.Add($line)
     }
     [IO.File]::WriteAllText($Receipt, (($out -join "`n") + "`n"), $utf8)
+    [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp)
+}
+
+# Add-NSReceiptSession <receipt> <label> <shift-id> <start> <end> <working-sec> <input> <output>
+# <ended> - add one session to the receipt's Sessions table and redraw it. The table is drawn from
+# the data lines kept under it, so its totals stay exact across every shift the item was worked in.
+# `-` is an unknown shift or an unreported token count; <ended> is ticked, switched-away, blocked or
+# paused. A receipt that does not exist yet is created with its heading; one that does keeps its
+# modification time.
+function Add-NSReceiptSession {
+    param(
+        [Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label,
+        [string]$Shift = '-', [string]$Start = '', [string]$End = '', [string]$Work = '0',
+        [string]$In = '-', [string]$Out = '-', [string]$Ended = 'ticked'
+    )
+    if (Test-NSReparsePoint $Receipt) { return }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $dir = Split-Path -Parent $Receipt
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $fresh = -not (Test-Path -LiteralPath $Receipt -PathType Leaf)
+    if ($fresh) { [IO.File]::WriteAllText($Receipt, "# $Label`n", $utf8) }
+    $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
+    $lines = @([IO.File]::ReadAllLines($Receipt))
+    $data = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in $lines) {
+        if ($line -ceq '<!-- session-data') { $on = $true; continue }
+        if ($on -and $line -ceq '-->') { $on = $false; continue }
+        if ($on -and $line.Length -gt 0) { $data.Add($line) }
+    }
+    $data.Add(('{0} {1} {2} {3} {4} {5} {6}' -f $Shift, $Start, $End, $Work, $In, $Out, $Ended))
+    $dash = [string][char]0x2014
+    $block = New-Object Collections.Generic.List[string]
+    $block.Add('<!-- sessions -->')
+    $block.Add('**Sessions**')
+    $block.Add('')
+    $block.Add('| # | Shift | Start | End | Working | Input | Output | Ended |')
+    $block.Add('| --- | --- | --- | --- | --- | ---: | ---: | --- |')
+    $n = 0
+    $twork = [long]0; $tin = [long]0; $tout = [long]0
+    $haveIn = $false; $haveOut = $false
+    foreach ($row in $data) {
+        $f = $row.Split(' ')
+        if ($f.Length -lt 7) { continue }
+        $n++
+        $w = [long]0
+        [void][long]::TryParse($f[3], [ref]$w)
+        $twork += $w
+        $cellIn = 'unavailable'
+        $cellOut = 'unavailable'
+        $v = [long]0
+        if ([long]::TryParse($f[4], [ref]$v)) { $tin += $v; $haveIn = $true; $cellIn = Get-NSUsageScale $f[4] }
+        if ([long]::TryParse($f[5], [ref]$v)) { $tout += $v; $haveOut = $true; $cellOut = Get-NSUsageScale $f[5] }
+        $sid = $(if ($f[0] -ceq '-') { $dash } else { $f[0].Substring(0, [math]::Min(8, $f[0].Length)) })
+        $from = Get-NSUsageIso $f[1]
+        $to = Get-NSUsageIso $f[2]
+        $block.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} |' -f $n, $sid,
+                $(if ($from) { $from } else { $dash }), $(if ($to) { $to } else { $dash }),
+                (Get-NSUsageDuration ([string]$w)), $cellIn, $cellOut, $f[6].Replace('-', ' ')))
+    }
+    $word = $(if ($n -eq 1) { 'session' } else { 'sessions' })
+    $block.Add(('| **Total** | {0} {1} |  |  | **{2}** | **{3}** | **{4}** |  |' -f $n, $word,
+            (Get-NSUsageDuration ([string]$twork)),
+            $(if ($haveIn) { Get-NSUsageScale ([string]$tin) } else { 'unavailable' }),
+            $(if ($haveOut) { Get-NSUsageScale ([string]$tout) } else { 'unavailable' })))
+    $block.Add('')
+    $block.Add('<!-- session-data')
+    foreach ($row in $data) { $block.Add($row) }
+    $block.Add('-->')
+    $block.Add('<!-- /sessions -->')
+    $result = New-Object Collections.Generic.List[string]
+    $skip = $false
+    $done = $false
+    foreach ($line in $lines) {
+        if ($line.StartsWith('<!-- sessions -->')) { $skip = $true; foreach ($b in $block) { $result.Add($b) }; $done = $true; continue }
+        if ($skip -and $line.StartsWith('<!-- /sessions -->')) { $skip = $false; continue }
+        if ($skip) { continue }
+        $result.Add($line)
+    }
+    if (-not $done) {
+        $result.Add('')
+        foreach ($b in $block) { $result.Add($b) }
+    }
+    [IO.File]::WriteAllText($Receipt, (($result -join "`n") + "`n"), $utf8)
+    if (-not $fresh) { [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp) }
 }
 
 function Get-NSReceiptsShiftDate {
@@ -9930,15 +10020,77 @@ function Get-NSUsageMarkCount {
     return @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) }).Count
 }
 
+# Write-NSUsageMark <nightshift-dir> <label> [tick|switch|pause] - the running total and the clock at
+# one moment, closing the span since the mark before it and charging it to <label>. Only a tick mark
+# says the item is done; a mark written before kinds existed is a tick.
 function Write-NSUsageMark {
-    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label,
+          [ValidateSet('tick', 'switch', 'pause')][string]$Kind = 'tick')
     $dir = Get-NSUsageDir $NightshiftDir
     $null = New-Item -ItemType Directory -Path $dir -Force
     $file = Get-NSUsageMarksPath $NightshiftDir
     $total = Get-NSUsageTotal $NightshiftDir
-    $line = @((Get-NSUnixTime), $Label, $total) -join "`t"
+    $line = @((Get-NSUnixTime), $Label, $total, $Kind) -join "`t"
     [IO.File]::AppendAllText($file, $line + "`n", (New-Object Text.UTF8Encoding($false)))
     return $true
+}
+
+# Get-NSUsageActive <nightshift-dir> - the item the running span is being charged to, or ''.
+function Get-NSUsageActive {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'active'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return '' }
+    $lines = @([IO.File]::ReadAllLines($file))
+    if ($lines.Count -eq 0) { return '' }
+    return $lines[0]
+}
+
+# Set-NSUsageActive <nightshift-dir> [label] - charge the running span to <label> from here on; no
+# label clears it.
+function Set-NSUsageActive {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Label = '')
+    $dir = Get-NSUsageDir $NightshiftDir
+    $file = Join-Path $dir 'active'
+    if (Test-NSReparsePoint $file) { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
+    if ([string]::IsNullOrEmpty($Label)) {
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        return
+    }
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    [IO.File]::WriteAllText($file, $Label + "`n", (New-Object Text.UTF8Encoding($false)))
+}
+
+# Get-NSUsageItemTotal <nightshift-dir> <label> - what this shift has charged to one item across every
+# span that closed on it: `<fields>`t<wall-sec>`t<first-start>`t<paused-sec>`t<reason>`, or ''.
+function Get-NSUsageItemTotal {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $fields = ''
+    $wall = [long]0
+    $first = ''
+    $paused = [long]0
+    $reason = ''
+    $prev = $null
+    foreach ($line in @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
+        $cur = $line.Split("`t")
+        if ($null -ne $prev -and $cur.Length -ge 2 -and $cur[1] -ceq $Label) {
+            $pt = $(if ($prev.Length -ge 3) { $prev[2] } else { '' })
+            $ct = $(if ($cur.Length -ge 3) { $cur[2] } else { '' })
+            $fields = Add-NSUsageFields $fields (Get-NSUsageSubtract $ct $pt)
+            $wall += ([long]$cur[0] - [long]$prev[0])
+            if ([string]::IsNullOrEmpty($first)) { $first = $prev[0] }
+            $gap = Get-NSUsagePausedBetween $NightshiftDir ([long]$prev[0]) ([long]$cur[0])
+            if (-not [string]::IsNullOrEmpty($gap)) {
+                $gp = $gap.Split("`t")
+                $paused += [long]$gp[0]
+                $reason = $(if ($gp.Length -ge 2) { $gp[1] } else { '' })
+            }
+        }
+        $prev = $cur
+    }
+    if ([string]::IsNullOrEmpty($first)) { return '' }
+    return ($fields + "`t" + $wall + "`t" + $first + "`t" + $paused + "`t" + $reason)
 }
 
 # The shift's own start, written before the first reading so it stands at zero, and the transcripts
@@ -10167,9 +10319,12 @@ function Get-NSGateUnchargedLabels {
         foreach ($row in [IO.File]::ReadAllLines($marks)) {
             if ([string]::IsNullOrEmpty($row)) { continue }
             $rows++
-            $name = ($row.Split("`t") + @('', ''))[1]
-            # The first mark is the shift arming, not an item.
+            $fields = $row.Split("`t") + @('', '', '', '')
+            $name = $fields[1]
+            # The first mark is the shift arming, not an item, and only a tick closes an item: a
+            # switch or a pause charges a span to an item that is still open.
             if ($rows -eq 1 -and $name -ceq 'arm') { continue }
+            if ($fields[3] -cne '' -and $fields[3] -cne 'tick') { continue }
             if ($charged.ContainsKey($name)) { $charged[$name]++ } else { $charged[$name] = 1 }
         }
     }
@@ -10214,13 +10369,14 @@ function Get-NSUsageResumedAt {
     return ''
 }
 
-# Get-NSUsagePausedSince <nightshift-dir> <epoch> - how long was recorded as not-work since that
-# moment, and why: `<seconds>`t<reason>`, empty when the runtime knows of no gap.
+# Get-NSUsagePausedBetween <nightshift-dir> <from> <to> - how long was recorded as not-work inside one
+# span, and why: `<seconds>`t<reason>`, empty when the runtime knows of no gap.
 #
-# A pause is closed by the next thing that happens. Where nothing followed, the gap is open and is
-# reported as such rather than guessed at.
-function Get-NSUsagePausedSince {
-    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From)
+# A pause is closed by the next thing that happens, never past <to>. Where nothing followed, the gap
+# is open and is reported as such rather than guessed at.
+function Get-NSUsagePausedBetween {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From,
+          [Parameter(Mandatory = $true)][long]$To)
     $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'pauses.tsv'
     if (Test-NSReparsePoint $file) { return '' }
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
@@ -10230,64 +10386,136 @@ function Get-NSUsagePausedSince {
         $parts = $line.Split("`t")
         $at = $parts[0]
         if ($at -notmatch '^[0-9]+$') { continue }
-        if ([long]$at -lt $From) { continue }
+        if ([long]$at -lt $From -or [long]$at -ge $To) { continue }
         $next = Get-NSUsageResumedAt $NightshiftDir ([long]$at)
         if ([string]::IsNullOrEmpty($next)) { continue }
-        $total += ([long]$next - [long]$at)
+        $end = [math]::Min([long]$next, $To)
+        $total += ($end - [long]$at)
         $lastReason = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
     }
     if ($total -le 0) { return '' }
     return ([string]$total + "`t" + $lastReason)
 }
 
-# Get-NSUsageItemStart <nightshift-dir> - when the item that just closed began: the mark before the
-# one just written.
-function Get-NSUsageItemStart {
-    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
-    $file = Get-NSUsageMarksPath $NightshiftDir
-    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '0' }
-    $lines = @([IO.File]::ReadAllLines($file))
-    if ($lines.Count -lt 2) { return '0' }
-    return $lines[$lines.Count - 2].Split("`t")[0]
-}
-
-# One item's slice, marked and written into its report section.
+# What the shift cost, written where the item's section is, at the moment the item is ticked. Marks
+# are the boundaries: a tick, a change of the item being worked, a shift ending with an item open.
+# Everything spent between two marks belongs to the item the second one names.
 function Invoke-NSGateUsageTick {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir,
           [Parameter(Mandatory = $true)][string]$Project, [Parameter(Mandatory = $true)][string]$Label)
     if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return $false }
     if ((Get-NSRule $Project 'receipts.enabled' '') -ceq 'false') { return $false }
     if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
-    if (-not (Write-NSUsageMark $NightshiftDir $Label)) { return $false }
-    $span = Get-NSUsageLastItem $NightshiftDir
-    if ([string]::IsNullOrEmpty($span)) { return $false }
-    $parts = $span.Split("`t")
-    $fields = $parts[0]
-    if ([string]::IsNullOrEmpty($fields)) { return $false }
-    $seconds = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
-    $hosts = Get-NSUsageHosts $NightshiftDir
-    if ([string]::IsNullOrEmpty($hosts)) { $hosts = 'unknown' }
-    $first = $hosts.Split(' ')[0]
-    $line = Get-NSUsageLine $fields $hosts (Get-NSUsageSegmentCount $NightshiftDir) $first
-    $start = Get-NSUsageItemStart $NightshiftDir
-    $pausedSec = '0'
-    $pausedWhy = ''
-    if ($start -match '^[0-9]+$') {
-        $paused = Get-NSUsagePausedSince $NightshiftDir ([long]$start)
-        if (-not [string]::IsNullOrEmpty($paused)) {
-            $pp = $paused.Split("`t")
-            $pausedSec = $pp[0]
-            if ($pp.Length -ge 2) { $pausedWhy = $pp[1] }
-        }
-    }
-    $duration = Get-NSUsageDurationLine $seconds $pausedSec $pausedWhy $start ([string](Get-NSUnixTime))
+    if (-not (Write-NSUsageMark $NightshiftDir $Label 'tick')) { return $false }
     $receipt = Get-NSReceiptPath $Project $Label
-    Add-NSGateUsageAppend $receipt $Label $line $duration
+    Invoke-NSGateSessionRow $NightshiftDir $Project $Label 'ticked'
+    $total = Get-NSUsageItemTotal $NightshiftDir $Label
+    if ([string]::IsNullOrEmpty($total)) { return $false }
+    $parts = $total.Split("`t")
+    $fields = $parts[0]
+    if (-not [string]::IsNullOrEmpty($fields)) {
+        $hosts = Get-NSUsageHosts $NightshiftDir
+        if ([string]::IsNullOrEmpty($hosts)) { $hosts = 'unknown' }
+        $line = Get-NSUsageLine $fields $hosts (Get-NSUsageSegmentCount $NightshiftDir) ($hosts.Split(' ')[0])
+        # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
+        $duration = Get-NSUsageDurationLine $parts[1] $parts[3] $parts[4] $parts[2] ([string](Get-NSUnixTime))
+        Add-NSGateUsageAppend $receipt $Label $line $duration
+    }
     Update-NSReceiptLabel $receipt $Label
     $due = Join-Path $NightshiftDir '.receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
     Write-NSReceiptsIndex $Project
     return $true
+}
+
+# Invoke-NSGateSessionRow <nightshift-dir> <project> <label> <ended> - the span the last mark just
+# closed, recorded as one session in the item's receipt.
+function Invoke-NSGateSessionRow {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [Parameter(Mandatory = $true)][string]$Label, [Parameter(Mandatory = $true)][string]$Ended)
+    $span = Get-NSUsageLastItem $NightshiftDir
+    if ([string]::IsNullOrEmpty($span)) { return }
+    $parts = $span.Split("`t")
+    $lines = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $NightshiftDir)) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    $end = [long]0
+    if (-not [long]::TryParse($lines[$lines.Length - 1].Split("`t")[0], [ref]$end)) { return }
+    $start = $end - [long]$parts[1]
+    $paused = [long]0
+    $gap = Get-NSUsagePausedBetween $NightshiftDir $start $end
+    if (-not [string]::IsNullOrEmpty($gap)) { $paused = [long]$gap.Split("`t")[0] }
+    $work = [math]::Max([long]0, $end - $start - $paused)
+    $in = Get-NSUsageField $parts[0] 'input'
+    $out = Get-NSUsageField $parts[0] 'output'
+    $sid = ''
+    $state = Get-NSShiftPolicyState $Project
+    if ($state['state'] -ceq 'valid') { $sid = [string]$state['policy']['shiftId'] }
+    Add-NSReceiptSession (Get-NSReceiptPath $Project $Label) $Label $(if ($sid) { $sid } else { '-' }) `
+        $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended
+}
+
+# Test-NSGateItemOpen <punch-list> <label> - true when that item is still an open box.
+function Test-NSGateItemOpen {
+    param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][string]$Label)
+    foreach ($row in (Get-NSItemRows $PunchList 'open')) {
+        if ($row.Label -ceq $Label) { return $true }
+    }
+    return $false
+}
+
+# Get-NSGateSessionEnd <nightshift-dir> <label> - how a session that is not a tick ended: blocked when
+# the parking lot records the item as stalled, switched away otherwise.
+function Get-NSGateSessionEnd {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
+    $lot = Join-Path $NightshiftDir 'parking-lot.md'
+    if ((Test-Path -LiteralPath $lot -PathType Leaf) -and -not (Test-NSReparsePoint $lot)) {
+        foreach ($line in [IO.File]::ReadAllLines($lot)) {
+            if ($line.Contains($Label) -and $line -match 'stalled') { return 'blocked' }
+        }
+    }
+    return 'switched-away'
+}
+
+# Test-NSGateUsageAccounting <nightshift-dir> <project> - true when an armed shift with the receipts
+# and usage on is keeping marks, which is when the item being worked is followed.
+function Test-NSGateUsageAccounting {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project)
+    if (-not (Test-Path -LiteralPath (Join-Path $NightshiftDir '.shift-armed') -PathType Leaf)) { return $false }
+    if (-not (Test-NSReceiptsEnabled $Project)) { return $false }
+    if ((Get-NSReceiptsField $Project 'usage') -ceq 'off') { return $false }
+    return ((Get-NSUsageMarkCount $NightshiftDir) -gt 0)
+}
+
+# Invoke-NSGateUsageSwitch <nightshift-dir> <project> <active> - follow the item being worked. When it
+# changes, the span so far closes on the item that was being worked, which gets a session, and the
+# running span is charged to the new one from here.
+function Invoke-NSGateUsageSwitch {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [AllowEmptyString()][string]$Active)
+    if ([string]::IsNullOrEmpty($Active)) { return }
+    # The pulse runs this on every tool call, so the common case, the same item still being worked,
+    # is decided before anything reads the rules.
+    $owner = Get-NSUsageActive $NightshiftDir
+    if ($owner -ceq $Active) { return }
+    if (-not (Test-NSGateUsageAccounting $NightshiftDir $Project)) { return }
+    if (-not [string]::IsNullOrEmpty($owner) -and (Test-NSGateItemOpen (Join-Path $NightshiftDir 'punch-list.md') $owner)) {
+        $null = Write-NSUsageMark $NightshiftDir $owner 'switch'
+        Invoke-NSGateSessionRow $NightshiftDir $Project $owner (Get-NSGateSessionEnd $NightshiftDir $owner)
+    }
+    Set-NSUsageActive $NightshiftDir $Active
+}
+
+# Invoke-NSGateUsageFlush <nightshift-dir> <project> - a shift ending with an item open closes that
+# item's session as paused. The next shift continues the same receipt.
+function Invoke-NSGateUsageFlush {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project)
+    if (-not (Test-NSGateUsageAccounting $NightshiftDir $Project)) { return }
+    $owner = Get-NSUsageActive $NightshiftDir
+    if ([string]::IsNullOrEmpty($owner)) { return }
+    if (Test-NSGateItemOpen (Join-Path $NightshiftDir 'punch-list.md') $owner) {
+        $null = Write-NSUsageMark $NightshiftDir $owner 'pause'
+        Invoke-NSGateSessionRow $NightshiftDir $Project $owner 'paused'
+    }
+    Set-NSUsageActive $NightshiftDir
 }
 
 # The catch-up. Every ticked item no mark names yet gets one, in list order, so a pulse that never
@@ -10306,9 +10534,28 @@ function Invoke-NSGateUsageSync {
     if ($Ticked -lt 0) { return $false }
     if ((Get-NSRule $Project 'receipts.usage' '') -ceq 'off') { return $false }
     if ((Get-NSUsageMarkCount $NightshiftDir) -le 0) { $null = Write-NSUsageMarkArm $NightshiftDir $Transcripts }
-    foreach ($label in (Get-NSGateUnchargedLabels $NightshiftDir $PunchList)) {
+    [string[]]$labels = Get-NSGateUnchargedLabels $NightshiftDir $PunchList
+    if ($null -eq $labels -or $labels.Count -eq 0) { return $true }
+    # The span running now belongs to the item being worked. When that item is among the newly
+    # ticked it closes first; when it is still open it closes as a switch, so a box ticked for work
+    # done earlier is not charged for the work in hand.
+    $owner = Get-NSUsageActive $NightshiftDir
+    if (-not [string]::IsNullOrEmpty($owner)) {
+        $at = [Array]::IndexOf([string[]]$labels, $owner)
+        if ($at -ge 0) {
+            $rest = New-Object Collections.Generic.List[string]
+            for ($i = 0; $i -lt $labels.Count; $i++) { if ($i -ne $at) { $rest.Add($labels[$i]) } }
+            $labels = @($owner) + $rest.ToArray()
+        }
+        elseif (Test-NSGateItemOpen $PunchList $owner) {
+            $null = Write-NSUsageMark $NightshiftDir $owner 'switch'
+            Invoke-NSGateSessionRow $NightshiftDir $Project $owner (Get-NSGateSessionEnd $NightshiftDir $owner)
+        }
+    }
+    foreach ($label in $labels) {
         if (-not (Invoke-NSGateUsageTick $NightshiftDir $Project $label)) { return $false }
     }
+    Set-NSUsageActive $NightshiftDir
     return $true
 }
 
@@ -10422,18 +10669,72 @@ function Invoke-NSPulseMarks {
     if (-not $counts.Readable) { return $false }
     $transcripts = @()
     if (-not [string]::IsNullOrEmpty($Source) -and (Test-Path -LiteralPath $Source -PathType Leaf)) { $transcripts = @($Source) }
-    return (Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts)
+    $synced = Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts
+    # Then follow the item being worked, so a stretch spent on one item is not charged to another.
+    Invoke-NSGateUsageSwitch $NightshiftDir $Project (Get-NSActiveItem $Project)
+    return $synced
+}
+
+# Get-NSActiveItem <workspace> - the item being worked: the open item whose receipt the model wrote
+# last, or the first open item while no open item has one. A receipt starts when substantive work on
+# its item starts, and the runtime's own writes keep a receipt's time, so only the model's writing
+# moves this. Two receipts written in the same instant go to the earlier item.
+function Get-NSActiveItem {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return '' }
+    # The receipts folder is listed once: the pulse runs this on every tool call.
+    $files = New-Object 'System.Collections.Generic.Dictionary[string,datetime]' ([StringComparer]::Ordinal)
+    $dir = Get-NSReceiptsDir $Workspace
+    if (Test-Path -LiteralPath $dir -PathType Container) {
+        foreach ($file in @(Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue)) {
+            if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+            if ($file.Name.EndsWith('.md', [StringComparison]::Ordinal)) { $files[$file.Name] = $file.LastWriteTimeUtc }
+        }
+    }
+    $names = [string[]]@($files.Keys)
+    [Array]::Sort($names, [StringComparer]::Ordinal)
+    $first = ''
+    $best = ''
+    $bestTime = [DateTime]::MinValue
+    foreach ($row in (Get-NSItemRows $punch 'open')) {
+        if ([string]::IsNullOrEmpty($first)) { $first = $row.Label }
+        $name = ''
+        if ($row.Id) {
+            foreach ($candidate in $names) {
+                if ($candidate -ceq ($row.Id + '.md') -or $candidate.StartsWith($row.Id + '-', [StringComparison]::Ordinal)) {
+                    $name = $candidate
+                    break
+                }
+            }
+        }
+        # A receipt named by label starts with the item's number; only when one might exist is the
+        # exact name worked out.
+        if (-not $name) {
+            $nn = Get-NSReceiptNn $row.Label
+            $maybe = [string]::IsNullOrEmpty($nn)
+            foreach ($candidate in $names) {
+                if ($candidate -ceq ($nn + '.md') -or $candidate.StartsWith($nn + '-', [StringComparison]::Ordinal)) { $maybe = $true; break }
+            }
+            if ($maybe) {
+                $legacy = (Get-NSReceiptBasename $row.Label) + '.md'
+                if ($files.ContainsKey($legacy)) { $name = $legacy }
+            }
+        }
+        if (-not $name) { continue }
+        $time = $files[$name]
+        if ([string]::IsNullOrEmpty($best) -or $time -gt $bestTime) {
+            $best = $row.Label
+            $bestTime = $time
+        }
+    }
+    if (-not [string]::IsNullOrEmpty($best)) { return $best }
+    return $first
 }
 
 function Get-NSPulseActiveItem {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    $punch = Join-Path $Workspace '.nightshift/punch-list.md'
-    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return '' }
-    foreach ($line in (Get-NSPunchItemsSection $punch)) {
-        if ($line -cnotmatch '^- \[ \]') { continue }
-        return (Get-NSItemLabel $line)
-    }
-    return ''
+    return (Get-NSActiveItem $Workspace)
 }
 
 function Get-NSPulseTickedLabels {
@@ -10520,7 +10821,11 @@ function Test-NSReceiptHasModelText {
     param([AllowEmptyString()][string]$Path)
     if ([string]::IsNullOrEmpty($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
     if (Test-NSReparsePoint $Path) { return $false }
+    $sessions = $false
     foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ($line.StartsWith('<!-- sessions -->')) { $sessions = $true; continue }
+        if ($line.StartsWith('<!-- /sessions -->')) { $sessions = $false; continue }
+        if ($sessions) { continue }
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
         if ($line.StartsWith('# ')) { continue }
         if ($line.StartsWith('**Usage:**')) { continue }

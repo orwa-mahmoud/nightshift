@@ -266,6 +266,8 @@ function Complete-NSShift {
         }
         [IO.File]::WriteAllText($ended, '', $utf8)
     }
+    # An item still being worked closes its session as paused, while the shift is still armed.
+    Invoke-NSGateUsageFlush $ns $workspace
     Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
     Release-NSLeaseWithRetry
     Save-NSMorningReceipt

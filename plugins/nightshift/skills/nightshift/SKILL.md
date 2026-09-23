@@ -153,9 +153,14 @@ any snag or parked decision it touched. With `receipts.usage` at `when-available
 adds what the item cost and how long it took.
 
 The runtime measures what each item cost, from the records the host already keeps, and writes the
-usage and duration lines into the section at the tick. **Do not write, estimate or edit a usage or
-duration figure**: you cannot see your own token counts from inside the conversation, and a number
-you infer would be a guess wearing a measurement's clothes.
+usage and duration lines into the section at the tick, and a Sessions table with one row per stretch
+the item was worked. **Do not write, estimate or edit a usage or duration figure, and keep the
+Sessions block as the runtime wrote it**: you cannot see your own token counts from inside the
+conversation, and a number you infer would be a guess wearing a measurement's clothes.
+
+The item being charged is the open item whose receipt you wrote last. Setting an item aside for
+another is therefore just writing the other item's receipt when you start on it, and writing this
+one's again when you come back; nothing else to announce.
 
 **Start the receipt when substantive work on the item starts.** While it is running, keep one
 short paragraph on where it has got to and what is left. Update that paragraph rather than

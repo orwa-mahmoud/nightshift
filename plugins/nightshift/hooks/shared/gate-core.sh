@@ -126,48 +126,115 @@ ns_gate_filing_message() {
 
 # What the shift cost, written where the item's section is, at the moment the item is ticked.
 #
-# The tick is the boundary. Everything spent between two ticks belongs to the item ticked second —
-# its gates and its own report section included — so the gate snapshots the counter as it releases
-# and the next item starts from the same reading. The model writes none of this and is told not
-# to: on no host can it see its own usage from inside the conversation.
+# Marks are the boundaries: a tick, a change of the item being worked, a shift ending with an item
+# open. Everything spent between two marks belongs to the item the second one names, so an item
+# set aside and picked up again is charged for each stretch it was worked, and nothing it did not
+# do. The model writes none of this and is told not to: on no host can it see its own usage from
+# inside the conversation.
 #
 # ns_gate_usage_tick <nightshift-dir> <project-dir> <item-label>
 ns_gate_usage_tick() {
-  local ns="$1" project="$2" label="$3" span fields seconds host line report duration paused
+  local ns="$1" project="$2" label="$3" total fields seconds host line duration from to
+  local paused_sec paused_why receipt
   [ -d "$ns" ] || return 0
   ns_report_enabled "$project" || return 0
   [ "$(ns_report "$project" usage)" != off ] || return 0
-  ns_usage_mark "$ns" "$label" || return 0
-  span="$(ns_usage_last_item "$ns")" || return 0
-  fields="$(printf '%s' "$span" | cut -f1)"
-  seconds="$(printf '%s' "$span" | cut -f2)"
-  host="$(ns_usage_hosts "$ns")" || host="unknown"
+  ns_usage_mark "$ns" "$label" tick || return 0
   receipt="$(ns_receipt_path "$project" "$label")"
-  [ -n "$fields" ] || return 0
-  line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
-  # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
-  from="$(_ns_usage_item_start "$ns")"
-  to="$(date +%s)"
-  paused_sec=0
-  paused_why=""
-  if paused="$(ns_usage_paused_since "$ns" "$from")"; then
-    paused_sec="$(printf '%s' "$paused" | cut -f1)"
-    paused_why="$(printf '%s' "$paused" | cut -f2)"
+  ns_gate_session_row "$ns" "$project" "$label" ticked
+  total="$(ns_usage_item_total "$ns" "$label")" || return 0
+  fields="$(printf '%s' "$total" | cut -f1)"
+  seconds="$(printf '%s' "$total" | cut -f2)"
+  from="$(printf '%s' "$total" | cut -f3)"
+  paused_sec="$(printf '%s' "$total" | cut -f4)"
+  paused_why="$(printf '%s' "$total" | cut -f5)"
+  host="$(ns_usage_hosts "$ns")" || host="unknown"
+  if [ -n "$fields" ]; then
+    line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
+    # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
+    to="$(date +%s)"
+    duration="$(ns_usage_duration_line "$seconds" "$paused_sec" "$paused_why" "$from" "$to")"
+    ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
   fi
-  duration="$(ns_usage_duration_line "$seconds" "$paused_sec" "$paused_why" "$from" "$to")"
-  ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
   ns_receipt_track_label "$receipt" "$label"
   rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
   ns_receipts_write_index "$project"
 }
 
-# _ns_usage_item_start <nightshift-dir> — when the item that just closed began: the mark before
-# the one just written.
-_ns_usage_item_start() {
-  local file
-  file="$(ns_usage_dir "$1")/marks.tsv"
-  [ -f "$file" ] || { printf '0'; return 0; }
-  tail -n2 "$file" | head -n1 | cut -f1
+# ns_gate_session_row <nightshift-dir> <project-dir> <item-label> <ended> — the span the last mark
+# just closed, recorded as one session in the item's receipt.
+ns_gate_session_row() {
+  local ns="$1" project="$2" label="$3" ended="$4" span start end fields paused work in out sid
+  span="$(ns_usage_last_item "$ns")" || return 0
+  fields="$(printf '%s' "$span" | cut -f1)"
+  end="$(tail -n1 "$(ns_usage_dir "$ns")/marks.tsv" | cut -f1)"
+  case "$end" in '' | *[!0-9]*) return 0 ;; esac
+  start=$((end - $(printf '%s' "$span" | cut -f2)))
+  paused="$(ns_usage_paused_between "$ns" "$start" "$end")" || paused=0
+  work=$((end - start - ${paused%%$'\t'*}))
+  [ "$work" -ge 0 ] || work=0
+  in="$(ns_usage_field "$fields" input)" || in=-
+  out="$(ns_usage_field "$fields" output)" || out=-
+  sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
+  ns_receipt_add_session "$(ns_receipt_path "$project" "$label")" "$label" "${sid:--}" \
+    "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended"
+}
+
+# ns_gate_item_is_open <punch-list> <item-label> — status 0 when that item is still an open box.
+ns_gate_item_is_open() {
+  ns_item_rows "$1" open | cut -f1 | grep -qxF -- "$2"
+}
+
+# ns_gate_session_end <nightshift-dir> <item-label> — how a session that is not a tick ended: blocked
+# when the parking lot records the item as stalled, switched away otherwise.
+ns_gate_session_end() {
+  local lot="$1/parking-lot.md"
+  if [ -f "$lot" ] && grep -F -- "$2" "$lot" 2>/dev/null | grep -qi 'stalled'; then
+    printf 'blocked'
+  else
+    printf 'switched-away'
+  fi
+}
+
+# ns_gate_usage_accounting <nightshift-dir> <project-dir> — status 0 when an armed shift with the
+# receipts and usage on is keeping marks, which is when the item being worked is followed.
+ns_gate_usage_accounting() {
+  [ -d "$1" ] && [ -f "$1/.shift-armed" ] || return 1
+  ns_report_enabled "$2" || return 1
+  [ "$(ns_report "$2" usage)" != off ] || return 1
+  [ -s "$(ns_usage_dir "$1")/marks.tsv" ]
+}
+
+# ns_gate_usage_switch <nightshift-dir> <project-dir> <active-label> — follow the item being worked.
+# When it changes, the span so far closes on the item that was being worked, which gets a session,
+# and the running span is charged to the new one from here.
+ns_gate_usage_switch() {
+  local ns="$1" project="$2" active="$3" owner
+  [ -n "$active" ] || return 0
+  # The pulse runs this on every tool call, so the common case, the same item still being worked,
+  # is decided before anything reads the policy.
+  owner="$(ns_usage_active "$ns")"
+  [ "$owner" != "$active" ] || return 0
+  ns_gate_usage_accounting "$ns" "$project" || return 0
+  if [ -n "$owner" ] && ns_gate_item_is_open "$ns/punch-list.md" "$owner"; then
+    ns_usage_mark "$ns" "$owner" switch || return 0
+    ns_gate_session_row "$ns" "$project" "$owner" "$(ns_gate_session_end "$ns" "$owner")"
+  fi
+  ns_usage_set_active "$ns" "$active"
+}
+
+# ns_gate_usage_flush <nightshift-dir> <project-dir> — a shift ending with an item open closes that
+# item's session as paused. The next shift continues the same receipt.
+ns_gate_usage_flush() {
+  local ns="$1" project="$2" owner
+  ns_gate_usage_accounting "$ns" "$project" || return 0
+  owner="$(ns_usage_active "$ns")"
+  [ -n "$owner" ] || return 0
+  if ns_gate_item_is_open "$ns/punch-list.md" "$owner"; then
+    ns_usage_mark "$ns" "$owner" pause || return 0
+    ns_gate_session_row "$ns" "$project" "$owner" paused
+  fi
+  ns_usage_set_active "$ns"
 }
 
 # ns_gate_usage_append <receipt> <item-label> <usage-line> <duration> — write the runtime
@@ -219,7 +286,7 @@ ns_gate_usage_append() {
 # order. One mark per item, written once: a second stop attempt with nothing newly ticked adds
 # nothing, and an item ticked out of list order is charged to itself.
 ns_gate_usage_sync() {
-  local ns="$1" project="$2" list="$3" ticked="$4" marked labels label
+  local ns="$1" project="$2" list="$3" ticked="$4" marked labels label owner
   [ -d "$ns" ] || return 0
   [ -f "$list" ] || return 0
   # Accounting belongs to an armed shift with the report on. Before Start there is no shift to bill,
@@ -238,9 +305,22 @@ ns_gate_usage_sync() {
   fi
   labels="$(ns_gate_uncharged_labels "$ns" "$list")"
   [ -n "$labels" ] || return 0
+  # The span running now belongs to the item being worked. When that item is among the newly
+  # ticked it closes first; when it is still open it closes as a switch, so a box ticked for work
+  # done earlier is not charged for the work in hand.
+  owner="$(ns_usage_active "$ns")"
+  if [ -n "$owner" ]; then
+    if printf '%s\n' "$labels" | grep -qxF -- "$owner"; then
+      labels="$(printf '%s\n' "$owner"; printf '%s\n' "$labels" | awk -v o="$owner" '$0 != o || seen++')"
+    elif ns_gate_item_is_open "$list" "$owner"; then
+      ns_usage_mark "$ns" "$owner" switch &&
+        ns_gate_session_row "$ns" "$project" "$owner" "$(ns_gate_session_end "$ns" "$owner")"
+    fi
+  fi
   while IFS= read -r label; do
     ns_gate_usage_tick "$ns" "$project" "$label" </dev/null || return 0
   done <<<"$labels"
+  ns_usage_set_active "$ns"
 }
 
 # ns_gate_uncharged_labels <nightshift-dir> <punch-list> — the ticked items no mark names yet, list
@@ -253,9 +333,11 @@ ns_gate_uncharged_labels() {
     BEGIN {
       while ((getline row < marks) > 0) {
         rows++
-        split(row, f, "\t")
-        # The first mark is the shift arming, not an item.
+        n = split(row, f, "\t")
+        # The first mark is the shift arming, not an item, and only a tick closes an item: a switch
+        # or a pause charges a span to an item that is still open.
         if (rows == 1 && f[2] == "arm") continue
+        if (n >= 4 && f[4] != "" && f[4] != "tick") continue
         charged[f[2]]++
       }
       close(marks)

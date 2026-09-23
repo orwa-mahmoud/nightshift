@@ -55,6 +55,19 @@ finally {
     Remove-Item -LiteralPath $scratch -Force -ErrorAction SilentlyContinue
 }
 
+$sessionsReceipt = Join-Path ([IO.Path]::GetTempPath()) ('ns-parity-sessions-' + [guid]::NewGuid().ToString('N') + '.md')
+try {
+    foreach ($row in (Get-FixtureRows 'sessions.tsv')) {
+        Add-NSReceiptSession $sessionsReceipt '6. Runtime only.' $row[0] $row[1] $row[2] $row[3] $row[4] $row[5] $row[6]
+    }
+    # A Windows checkout may end the fixture's lines with CRLF; the runtime writes LF.
+    $want = [IO.File]::ReadAllText((Join-Path $fixtures 'sessions-expected.md')).Replace("`r`n", "`n")
+    Expect-Equal $want ([IO.File]::ReadAllText($sessionsReceipt)) 'sessions table'
+}
+finally {
+    Remove-Item -LiteralPath $sessionsReceipt -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($row in (Get-FixtureRows 'item-labels.tsv')) {
     $want = if ($row.Count -gt 2) { $row[2] } else { '' }
     Expect-Equal $row[1] (Get-NSItemLabel $row[0]) "item label '$($row[0])'"

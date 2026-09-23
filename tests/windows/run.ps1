@@ -512,6 +512,10 @@ try {
     $itemIdsLogicRun = Invoke-TestScript $itemIdsLogic
     Assert-Equal 0 $itemIdsLogicRun.ExitCode `
         "permanent item ids: $($itemIdsLogicRun.Stdout) $($itemIdsLogicRun.Stderr)"
+    $itemSessionsLogic = Join-Path $PSScriptRoot 'item-sessions-logic.ps1'
+    $itemSessionsLogicRun = Invoke-TestScript $itemSessionsLogic
+    Assert-Equal 0 $itemSessionsLogicRun.ExitCode `
+        "item sessions: $($itemSessionsLogicRun.Stdout) $($itemSessionsLogicRun.Stderr)"
     $boxCountsLogic = Join-Path $PSScriptRoot 'box-counts-logic.ps1'
     $boxCountsLogicRun = Invoke-TestScript $boxCountsLogic
     Assert-Equal 0 $boxCountsLogicRun.ExitCode `

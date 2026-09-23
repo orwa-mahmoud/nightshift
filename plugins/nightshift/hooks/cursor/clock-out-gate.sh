@@ -159,6 +159,8 @@ end_shift() {
     [ -L "$ENDED" ] && rm -f "$ENDED"
     : >"$ENDED"
   fi
+  # An item still being worked closes its session as paused, while the shift is still armed.
+  ns_gate_usage_flush "$NS" "$PROJECT_DIR"
   # The shift is over, so the site stops being on shift: without this the guards would still apply
   # to whatever ordinary session opens this project next.
   rm -f "$NS/.shift-armed"

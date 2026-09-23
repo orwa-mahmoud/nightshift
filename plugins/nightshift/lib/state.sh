@@ -258,37 +258,160 @@ ns_receipt_path() {
   printf '%s/%s.md' "$(ns_receipts_dir "$1")" "$(ns_receipt_base "$@")"
 }
 
+# ns_active_item <project-dir> — the item being worked: the open item whose receipt the model
+# wrote last, or the first open item while no open item has one. A receipt starts when substantive
+# work on its item starts, and the runtime's own writes keep a receipt's time, so only the model's
+# writing moves this. Two receipts written in the same instant go to the earlier item.
+ns_active_item() {
+  local punch="$1/.nightshift/punch-list.md" dir label id f cand best="" best_f="" first=""
+  [ -f "$punch" ] || return 1
+  dir="$(ns_receipts_dir "$1")"
+  while IFS=$'\t' read -r label id; do
+    [ -n "$label" ] || continue
+    [ -n "$first" ] || first="$label"
+    f=""
+    if [ -n "$id" ]; then
+      for cand in "$dir/$id.md" "$dir/$id"-*.md; do
+        if [ -f "$cand" ] && [ ! -L "$cand" ]; then
+          f="$cand"
+          break
+        fi
+      done
+    fi
+    # A receipt named by label starts with the item's number; only when one might exist is the
+    # exact name worked out, so the pulse that runs this on every tool call stays cheap.
+    if [ -z "$f" ] && [[ "$label" =~ ^([0-9]+|[A-Za-z]+[0-9]+) ]]; then
+      for cand in "$dir/${BASH_REMATCH[1]}.md" "$dir/${BASH_REMATCH[1]}"-*.md; do
+        if [ -f "$cand" ]; then
+          f="$dir/$(ns_receipt_basename "$label").md"
+          break
+        fi
+      done
+    elif [ -z "$f" ]; then
+      f="$dir/$(ns_receipt_basename "$label").md"
+    fi
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    if [ -z "$best_f" ] || [ "$f" -nt "$best_f" ]; then
+      best="$label"
+      best_f="$f"
+    fi
+  done <<EOF
+$(ns_item_rows "$punch" open)
+EOF
+  printf '%s' "${best:-$first}"
+}
+
 # ns_receipt_track_label <receipt> <label> — note in the receipt which label it belongs to, and
 # record a renumber or retitle once the item's label has moved since. The heading follows when it
 # was the old label, and one dated line under it names what the item was called before.
+#
+# The runtime's writes to a receipt keep its modification time: the time says when the model last
+# wrote it, which is how the pulse tells which item is being worked.
 ns_receipt_track_label() {
-  local f="$1" was tmp
+  local f="$1" was tmp ref rc=0
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
   was="$(sed -n 's/^<!-- item: \(.*\) -->[[:space:]]*$/\1/p' "$f" | tail -n1)"
-  if [ -z "$was" ]; then
-    printf '\n<!-- item: %s -->\n' "$2" >>"$f"
-    return 0
-  fi
   [ "$was" != "$2" ] || return 0
-  tmp="$f.track.$$"
-  if NS_WAS="$was" NS_NOW="$2" NS_DAY="$(date +%Y-%m-%d)" awk '
-    BEGIN { was = ENVIRON["NS_WAS"]; now = ENVIRON["NS_NOW"]; day = ENVIRON["NS_DAY"] }
-    { line = $0; sub(/\r$/, "", line) }
-    !headed && line ~ /^# / {
-      headed = 1
-      print (line == "# " was) ? "# " now : $0
-      print ""
-      print "Renamed from " was " on " day "."
-      next
-    }
-    line ~ /^<!-- item: .* -->[[:space:]]*$/ { print "<!-- item: " now " -->"; next }
+  ref="$f.mtime.$$"
+  touch -r "$f" "$ref" 2>/dev/null || return 1
+  if [ -z "$was" ]; then
+    printf '\n<!-- item: %s -->\n' "$2" >>"$f" || rc=1
+  else
+    tmp="$f.track.$$"
+    if NS_WAS="$was" NS_NOW="$2" NS_DAY="$(date +%Y-%m-%d)" awk '
+      BEGIN { was = ENVIRON["NS_WAS"]; now = ENVIRON["NS_NOW"]; day = ENVIRON["NS_DAY"] }
+      { line = $0; sub(/\r$/, "", line) }
+      !headed && line ~ /^# / {
+        headed = 1
+        print (line == "# " was) ? "# " now : $0
+        print ""
+        print "Renamed from " was " on " day "."
+        next
+      }
+      line ~ /^<!-- item: .* -->[[:space:]]*$/ { print "<!-- item: " now " -->"; next }
+      { print }
+    ' "$f" >"$tmp"; then
+      mv "$tmp" "$f" || rc=1
+    else
+      rm -f "$tmp"
+      rc=1
+    fi
+  fi
+  touch -r "$ref" "$f" 2>/dev/null || rc=1
+  rm -f "$ref"
+  return "$rc"
+}
+
+# ns_receipt_add_session <receipt> <label> <shift-id> <start> <end> <working-sec> <input> <output>
+# <ended> — add one session to the receipt's Sessions table and redraw it. The table is drawn from
+# the data lines kept under it, so its totals stay exact across every shift the item was worked
+# in. `-` is an unknown shift or an unreported token count; <ended> is ticked, switched-away,
+# blocked or paused. A receipt that does not exist yet is created with its heading; one that does
+# keeps its modification time.
+ns_receipt_add_session() {
+  local f="$1" label="$2" data line block ref tmp fresh=0 rc=0
+  local sid start end work in out ended n=0 twork=0 tin=0 tout=0 havein=0 haveout=0 cell_in cell_out word
+  [ ! -L "$f" ] || return 0
+  mkdir -p "${f%/*}" 2>/dev/null || return 1
+  if [ ! -f "$f" ]; then
+    printf '# %s\n' "$label" >"$f" || return 1
+    fresh=1
+  fi
+  data="$(awk '/^<!-- session-data$/ { on = 1; next } on && /^-->$/ { on = 0 } on { print }' "$f")"
+  data="$(printf '%s\n%s %s %s %s %s %s %s' "$data" "$3" "$4" "$5" "$6" "$7" "$8" "$9" | sed '/^$/d')"
+  block="$(mktemp "${TMPDIR:-/tmp}/ns-sessions.XXXXXX")" || return 1
+  {
+    printf '<!-- sessions -->\n**Sessions**\n\n'
+    printf '| # | Shift | Start | End | Working | Input | Output | Ended |\n'
+    printf '| --- | --- | --- | --- | --- | ---: | ---: | --- |\n'
+    while read -r sid start end work in out ended; do
+      [ -n "$sid" ] || continue
+      n=$((n + 1))
+      case "$work" in '' | *[!0-9]*) work=0 ;; esac
+      twork=$((twork + work))
+      cell_in=unavailable
+      cell_out=unavailable
+      case "$in" in '' | *[!0-9]*) ;; *) tin=$((tin + in)); havein=1; cell_in="$(ns_usage_scale "$in")" ;; esac
+      case "$out" in '' | *[!0-9]*) ;; *) tout=$((tout + out)); haveout=1; cell_out="$(ns_usage_scale "$out")" ;; esac
+      [ "$sid" != - ] || sid='—'
+      printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
+        "$(ns_usage_iso "$start" || printf '—')" "$(ns_usage_iso "$end" || printf '—')" \
+        "$(ns_usage_duration "$work")" "$cell_in" "$cell_out" "$(printf '%s' "$ended" | tr '-' ' ')"
+    done <<EOF
+$data
+EOF
+    word=sessions
+    [ "$n" -ne 1 ] || word=session
+    cell_in=unavailable
+    cell_out=unavailable
+    [ "$havein" -eq 0 ] || cell_in="$(ns_usage_scale "$tin")"
+    [ "$haveout" -eq 0 ] || cell_out="$(ns_usage_scale "$tout")"
+    printf '| **Total** | %s %s |  |  | **%s** | **%s** | **%s** |  |\n' \
+      "$n" "$word" "$(ns_usage_duration "$twork")" "$cell_in" "$cell_out"
+    printf '\n<!-- session-data\n%s\n-->\n<!-- /sessions -->\n' "$data"
+  } >"$block"
+  ref="$f.mtime.$$"
+  [ "$fresh" -eq 1 ] || touch -r "$f" "$ref" 2>/dev/null || { rm -f "$block"; return 1; }
+  tmp="$f.sessions.$$"
+  if awk -v blockfile="$block" '
+    function emit(   l) { while ((getline l < blockfile) > 0) print l; close(blockfile); done = 1 }
+    /^<!-- sessions -->/ { skip = 1; emit(); next }
+    skip && /^<!-- \/sessions -->/ { skip = 0; next }
+    skip { next }
     { print }
+    END { if (!done) { print ""; emit() } }
   ' "$f" >"$tmp"; then
-    mv "$tmp" "$f"
+    mv "$tmp" "$f" || rc=1
   else
     rm -f "$tmp"
-    return 1
+    rc=1
   fi
+  rm -f "$block"
+  if [ "$fresh" -eq 0 ]; then
+    touch -r "$ref" "$f" 2>/dev/null || rc=1
+    rm -f "$ref"
+  fi
+  return "$rc"
 }
 
 # ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime block
@@ -317,6 +440,9 @@ ns_receipt_has_model_text() {
     /^\| paused \|/ { next }
     /^\| wall \|/ { next }
     /^\| span \|/ { next }
+    /^<!-- sessions -->/ { sessions = 1; next }
+    /^<!-- \/sessions -->/ { sessions = 0; next }
+    sessions { next }
     /^<!-- tokens / { next }
     /^<!-- item: / { next }
     /^Renamed from .* on [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.$/ { next }

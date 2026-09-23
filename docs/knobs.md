@@ -282,9 +282,12 @@ plus a runtime-written index. It never reaches a public commit message.
 
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
-Nightshift already registers do see the numbers, and they take the readings. The tick is the
-boundary: everything spent between two ticks belongs to the item ticked second, and the gate writes
-that item's usage and duration lines into its section as it releases.
+Nightshift already registers do see the numbers, and they take the readings. A reading is taken at
+every tick, whenever the item being worked changes (the open item whose receipt was written last),
+and when a shift ends with an item open. Everything spent between two readings belongs to the item
+being worked, so an item set aside and picked up later is charged for each stretch and nothing
+else. At the tick the gate writes the item's usage and duration lines into its receipt, and every
+stretch is a row in the receipt's Sessions table, with totals that carry across shifts.
 
 Where each host's figures come from, and what each one leaves out:
 

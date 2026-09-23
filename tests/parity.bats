@@ -59,6 +59,14 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
   done < <(rows item-labels.tsv)
 }
 
+@test "a receipt's Sessions table renders the fixture on Bash" {
+  local sid start end work in out ended f="$BATS_TEST_TMPDIR/receipt.md"
+  while IFS=$'\t' read -r sid start end work in out ended; do
+    lib ns_receipt_add_session "$f" '6. Runtime only.' "$sid" "$start" "$end" "$work" "$in" "$out" "$ended"
+  done < <(rows sessions.tsv)
+  diff "$FIX/sessions-expected.md" "$f"
+}
+
 @test "punch-list counts, tick labels, and digests match the fixture on Bash" {
   local file open ticked l1 l2 l3 contract items list
   while IFS=$'\t' read -r file open ticked l1 l2 l3 contract items; do

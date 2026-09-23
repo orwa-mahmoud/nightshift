@@ -1,0 +1,5 @@
+# shift id<TAB>start<TAB>end<TAB>working seconds<TAB>input<TAB>output<TAB>ended — added in order to one new receipt
+1111222233334444	1790210000	1790211800	1740	12345	1234	switched-away
+-	1790290000	1790290045	45	-	-	blocked
+aaaabbbbccccdddd	1790300000	1790307200	5400	999950	7	paused
+aaaabbbbccccdddd	1790310000	1790310600	600	50	3	ticked

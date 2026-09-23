@@ -308,14 +308,8 @@ ns_pulse_receipts_notice() {
   [ "$first" -eq 0 ]
 }
 
-# ns_pulse_active_item <project> — the first still-open item, which is the one being worked.
-ns_pulse_active_item() {
-  local punch="$1/.nightshift/punch-list.md"
-  [ -f "$punch" ] || return 1
-  ns_items_section "$punch" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[ \]/ { print ns_item_label($0); exit }
-  '
-}
+# ns_pulse_active_item <project> — the item being worked; see ns_active_item.
+ns_pulse_active_item() { ns_active_item "$1"; }
 
 # ns_pulse_context <host> <line> — the notice in the field each host documents for model-visible
 # context. Claude Code and Codex read hookSpecificOutput.additionalContext; Cursor reads
@@ -369,7 +363,9 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   fi
   ticked="$(ns_ticked_boxes "$punch" 2>/dev/null)" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
-  ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || return 0
+  ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || :
+  # Then follow the item being worked, so a stretch spent on one item is not charged to another.
+  ns_gate_usage_switch "$ns" "$project" "$(ns_pulse_active_item "$project")"
 }
 
 # Executed as the Claude wrapper: parse stdin, emit, stay silent.
