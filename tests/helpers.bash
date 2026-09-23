@@ -69,6 +69,16 @@ wait_writer() {
 punch_open() { printf '## Items\n- [ ] **1. first.**\n- [x] **2. done.**\n' >"$1/.nightshift/punch-list.md"; }
 punch_done() { printf '## Items\n- [x] **1. first.**\n- [x] **2. done.**\n' >"$1/.nightshift/punch-list.md"; }
 
+# arm_snapshot <project> — record the contract and items digests of the current punch list, as
+# arming records them in the shift policy.
+arm_snapshot() {
+  local lib="$_TEST_ROOT/../plugins/nightshift/lib/lib.sh" list="$1/.nightshift/punch-list.md"
+  jq -nc --arg c "$(bash -c '. "$1"; ns_punch_contract_digest "$2"' _ "$lib" "$list")" \
+    --arg i "$(bash -c '. "$1"; ns_punch_items_digest "$2"' _ "$lib" "$list")" \
+    '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T02:30:00Z",source:"composition",verificationLevel:"final",toolingPolicy:"existing-tools",contractDigest:$c,itemsDigest:$i}' \
+    >"$1/.nightshift/shift-policy.json"
+}
+
 # hook_payload <json> command... — deliver a fixture after jq has finished.
 # Idle and cold-stop exit before reading stdin. A live `jq | hook` pipe then
 # makes GNU jq write "Broken pipe" on stderr, which bats treats as output.

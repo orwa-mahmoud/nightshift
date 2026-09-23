@@ -135,6 +135,28 @@ Trailing prose that belongs to no item.
     $moved = Get-NSGateContractMismatch $root $armedPunch
     Expect-True ($moved -clike '*reworded, removed or inserted*') 'a changed item is named'
 
+    # Zero open boxes is done only while the list is still the one that armed.
+    $allTicked = $text -creplace '- \[ \] \*\*P0', '- [x] **P0'
+    [IO.File]::WriteAllText($armedPunch, $allTicked)
+    Expect-True ([string]::IsNullOrEmpty((Get-NSGateDoneMismatch $root $armedPunch))) `
+        'a list finished by ticks alone is done'
+    [IO.File]::WriteAllText($armedPunch, (($text -creplace '- \[ \] \*\*P02', '- [x] **P02') -creplace '- \[ \] \*\*P03 - the one after\.\*\*', ''))
+    Expect-True ((Get-NSGateDoneMismatch $root $armedPunch) -clike '*reworded, removed or inserted*') `
+        'deleting the last open item is not done'
+    [IO.File]::WriteAllText($armedPunch, ($allTicked -creplace 'Nobody edits this while a shift runs\.', 'Anyone may.'))
+    Expect-True ((Get-NSGateDoneMismatch $root $armedPunch) -clike '*shift contract above the Items heading*') `
+        'an edited contract is not done even with every box ticked'
+    Remove-Item -LiteralPath $armedPunch -Force
+    Expect-True ((Get-NSGateDoneMismatch $root $armedPunch) -clike '*Deleting the list does not finish its items*') `
+        'a deleted punch list is not done when the shift recorded one'
+    [IO.File]::WriteAllText((Join-Path $ns 'shift-policy.json'), (@'
+{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T02:30:00Z",
+ "source":"composition","verificationLevel":"final","toolingPolicy":"existing-tools"}
+'@))
+    Expect-True ([string]::IsNullOrEmpty((Get-NSGateDoneMismatch $root $armedPunch))) `
+        'a missing punch list with no recorded snapshot still ends the shift'
+    [IO.File]::WriteAllText($armedPunch, $text)
+
     # A hyphen inside a word is part of the title. A spaced dash introduces a suffix.
     $hyphen = @'
 # Punch list

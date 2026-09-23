@@ -9045,6 +9045,32 @@ function Get-NSGateContractMismatch {
         ' else about the shift has changed: your ticks stand.')
 }
 
+# Get-NSGateDoneMismatch <workspace> <punch-list> - the sentence to block a done clock-out with,
+# or ''.
+#
+# Zero open boxes is done only when the list is still the one that armed. Deleting the unfinished
+# items, or editing the contract once every box is ticked, reaches zero open boxes too, so the done
+# path asks the same question the working path asks. A list that has disappeared entirely, from a
+# shift that recorded one at arming, is that case at its limit. A snapshot that predates these
+# fields records nothing, and a shift without one ends as it always has.
+function Get-NSGateDoneMismatch {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$PunchList
+    )
+    if (Test-Path -LiteralPath $PunchList -PathType Leaf) {
+        return (Get-NSGateContractMismatch $Workspace $PunchList)
+    }
+    $policy = Get-NSShiftPolicy $Workspace
+    if ($null -eq $policy) { return '' }
+    $recorded = Get-NSMapValue $policy 'itemsDigest'
+    if ([string]::IsNullOrEmpty($recorded)) { $recorded = Get-NSMapValue $policy 'contractDigest' }
+    if ([string]::IsNullOrEmpty($recorded)) { return '' }
+    return ('DO NOT STOP - ' + $PunchList + ' is gone, but this shift armed with a punch list.' +
+        ' Deleting the list does not finish its items. Restore it from the work-target history or' +
+        ' the receipts, or issue a stop-work order to end the shift with its work unfinished.')
+}
+
 # Invoke-NSPunchListCommand - runtime/windows/punch-list.ps1's whole body.
 function Invoke-NSPunchListCommand {
     param(

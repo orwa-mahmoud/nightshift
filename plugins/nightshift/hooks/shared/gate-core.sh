@@ -463,3 +463,25 @@ ns_gate_contract_mismatch() {
     printf 'DO NOT STOP — an item in %s has been reworded, removed or inserted since this shift armed. Ticking a box is invisible to this check, so something other than a tick changed. Restore the punch list from the work-target history or the receipts, or end the shift and let the owner edit the list with nothing armed. Nothing else about the shift has changed: your ticks stand.' "$list"
   fi
 }
+
+# Zero open boxes is done only when the list is still the one that armed. Deleting the unfinished
+# items, or editing the contract once every box is ticked, reaches zero open boxes too, so the done
+# path asks the same question the working path asks. A list that has disappeared entirely, from a
+# shift that recorded one at arming, is that case at its limit. A snapshot that predates these
+# fields records nothing, and a shift without one ends as it always has.
+#
+# ns_gate_done_mismatch <project-dir> <punch-list> — the sentence to block a done clock-out with, or
+# nothing.
+ns_gate_done_mismatch() {
+  local project="$1" list="$2" recorded
+  if [ -f "$list" ]; then
+    ns_gate_contract_mismatch "$project" "$list"
+    return
+  fi
+  recorded="$(ns_policy_shift_field "$project" itemsDigest)" || recorded=""
+  if [ -z "$recorded" ]; then
+    recorded="$(ns_policy_shift_field "$project" contractDigest)" || recorded=""
+  fi
+  [ -n "$recorded" ] || return 1
+  printf 'DO NOT STOP — %s is gone, but this shift armed with a punch list. Deleting the list does not finish its items. Restore it from the work-target history or the receipts, or issue a stop-work order to end the shift with its work unfinished.' "$list"
+}

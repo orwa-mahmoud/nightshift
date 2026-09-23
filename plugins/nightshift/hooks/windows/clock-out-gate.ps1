@@ -498,10 +498,12 @@ try {
     }
 
     if ($counts.Readable) {
-        if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) {
-            Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
-        }
-        if ($counts.Open -eq 0) {
+        if (-not (Test-Path -LiteralPath $punch -PathType Leaf) -or $counts.Open -eq 0) {
+            $doneMoved = Get-NSGateDoneMismatch $workspace $punch
+            if (-not [string]::IsNullOrEmpty($doneMoved)) {
+                Write-NSLogLine 'punch list changed since arming - the done clock-out is blocked until it is restored'
+                Write-Block $doneMoved
+            }
             Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
         }
     }

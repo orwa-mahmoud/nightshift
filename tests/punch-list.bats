@@ -271,6 +271,63 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   reason "$output" | grep -qF 'Ticking a box is invisible to this check'
 }
 
+# Reaching zero open boxes is not the same as finishing the list. A removed item or an edited
+# contract must be caught on the "done" path too, or deleting the unfinished work would clock out.
+
+@test "removing the last open item blocks instead of clocking out as done" {
+  p="$(new_project pl-gate-drop-last)"
+  armed "$p"
+  edit "$p" 's/- \[ \] \*\*P02/- [x] **P02/'
+  edit "$p" '/P03 - the one after/,/Nothing special/d'
+  [ "$(lib ns_open_boxes "$p/.nightshift/punch-list.md")" -eq 0 ]
+  run block "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
+  reason "$output" | grep -qF 'reworded, removed or inserted'
+  [ ! -e "$p/.nightshift/.ended" ]
+}
+
+@test "an edited contract blocks even when every box is ticked" {
+  p="$(new_project pl-gate-contract-done)"
+  armed "$p"
+  edit "$p" 's/- \[ \] \*\*P0/- [x] **P0/'
+  edit "$p" 's/Nobody edits this while a shift runs./Anyone may edit this./'
+  [ "$(lib ns_open_boxes "$p/.nightshift/punch-list.md")" -eq 0 ]
+  run block "$p"
+  printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
+  reason "$output" | grep -qF 'shift contract above the Items heading'
+  [ ! -e "$p/.nightshift/.ended" ]
+}
+
+@test "a punch list deleted from an armed shift blocks instead of clocking out" {
+  p="$(new_project pl-gate-list-gone)"
+  armed "$p"
+  rm "$p/.nightshift/punch-list.md"
+  run block "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
+  reason "$output" | grep -qF 'Deleting the list does not finish its items'
+  [ ! -e "$p/.nightshift/.ended" ]
+}
+
+@test "a missing punch list with no recorded snapshot still ends the shift" {
+  p="$(new_project pl-gate-list-gone-legacy)"
+  run block "$p"
+  [ "$status" -eq 0 ]
+  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1
+  [ -e "$p/.nightshift/.ended" ]
+}
+
+@test "a list finished by ticks alone still clocks out" {
+  p="$(new_project pl-gate-honest-done)"
+  armed "$p"
+  edit "$p" 's/- \[ \] \*\*P0/- [x] **P0/'
+  run block "$p"
+  [ "$status" -eq 0 ]
+  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1
+  [ -e "$p/.nightshift/.ended" ]
+}
+
 @test "the owner may still change the gates block mid-shift" {
   p="$(new_project pl-gate-gates)"
   armed "$p"

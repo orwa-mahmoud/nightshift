@@ -275,10 +275,13 @@ fi
 # 2. Done — no punch list at all, or every box ticked. An unreadable punch
 # list is not zero open: do not release.
 if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
-  if [ ! -f "$PUNCH" ]; then
-    end_and_stop "shift done: $TICKED/$TOTAL"
-  fi
-  if [ "$OPEN" -eq 0 ]; then
+  if [ ! -f "$PUNCH" ] || [ "$OPEN" -eq 0 ]; then
+    NS_DONE_MOVED="$(ns_gate_done_mismatch "$PROJECT_DIR" "$PUNCH")" || NS_DONE_MOVED=""
+    if [ -n "$NS_DONE_MOVED" ]; then
+      log_line "punch list changed since arming — the done clock-out is blocked until it is restored"
+      codex_emit_block "$NS_DONE_MOVED"
+      exit 0
+    fi
     end_and_stop "shift done: $TICKED/$TOTAL"
   fi
 fi
