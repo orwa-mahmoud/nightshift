@@ -531,5 +531,18 @@ else {
     Write-Ok 'permissions host unknown - no permission-mode note'
 }
 
+# ------------------------------------------------------ tonight's snapshot
+# Every check passed. A composed shift already has its snapshot; a plain Start writes one now, just
+# before the marker is armed, so the gate holds this shift to the contract and items it starts with.
+if (-not $script:Refused -and -not $DryRun -and -not (Test-Path -LiteralPath (Join-Path $ns 'shift-policy.json'))) {
+    $snapshotId = New-NSStartSnapshot $workspace
+    if (-not [string]::IsNullOrEmpty($snapshotId)) {
+        Write-Ok "snapshot start-defaults recorded for shift $snapshotId"
+    }
+    else {
+        Write-Warn 'snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt'
+    }
+}
+
 if ($script:Refused) { exit 1 }
 exit 0

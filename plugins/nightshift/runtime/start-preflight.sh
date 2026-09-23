@@ -536,5 +536,16 @@ case "$HOST_NAME" in
     ok "permissions host unknown - no permission-mode note" ;;
 esac
 
+# ----------------------------------------------------- tonight's snapshot
+# Every check passed. A composed shift already has its snapshot; a plain Start writes one now, just
+# before the marker is armed, so the gate holds this shift to the contract and items it starts with.
+if [ "$REFUSED" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ ! -e "$NS/shift-policy.json" ]; then
+  if SNAPSHOT_ID="$(ns_start_snapshot "$WORKSPACE" "$_here/shift-policy.sh")"; then
+    ok "snapshot start-defaults recorded for shift $SNAPSHOT_ID"
+  else
+    warn "snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt"
+  fi
+fi
+
 [ "$REFUSED" -eq 0 ] || exit 1
 exit 0

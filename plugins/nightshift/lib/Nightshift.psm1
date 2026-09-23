@@ -4243,6 +4243,50 @@ function Get-NSShiftPolicy {
     return $state['policy']
 }
 
+# New-NSShiftId <nightshift-dir> - a lowercase 16-hex shift id that appears nowhere under the
+# archive yet, so a fresh snapshot can never be mistaken for a night already filed.
+function New-NSShiftId {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $archive = Join-Path $NightshiftDir 'archive'
+    for ($try = 0; $try -lt 8; $try++) {
+        $bytes = New-Object byte[] 8
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        $id = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+        if ((Test-Path -LiteralPath $archive -PathType Container) -and
+            (Get-ChildItem -LiteralPath $archive -Recurse -File -Force -ErrorAction SilentlyContinue |
+                Select-String -SimpleMatch -Pattern $id -Quiet)) { continue }
+        return $id
+    }
+    return ''
+}
+
+# New-NSStartSnapshot <workspace> - tonight's snapshot for a Start with no composition behind it.
+# A composed shift has its policy written before arming; a plain Start had none, so nothing
+# recorded the contract and items it armed with and the gate could not tell a deleted item from a
+# finished one. This writes one with source start-defaults and the values the resolved view already
+# shows without a policy (no gate cadence, existing tools, and the deadline file's epoch or none)
+# through the same writer composition uses, which records the digests and freezes the owner's
+# preference blocks. Returns the new shift id, or '' when nothing was written.
+function New-NSStartSnapshot {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $ns = Join-Path $Workspace '.nightshift'
+    if (Test-Path -LiteralPath (Join-Path $ns 'shift-policy.json')) { return '' }
+    $id = New-NSShiftId $ns
+    if ([string]::IsNullOrEmpty($id)) { return '' }
+    $deadline = 'null'
+    $deadlinePath = Join-Path $ns 'deadline'
+    if ((Test-Path -LiteralPath $deadlinePath -PathType Leaf) -and -not (Test-NSReparsePoint $deadlinePath)) {
+        $value = ([IO.File]::ReadAllText($deadlinePath)).Trim()
+        if ($value -match '^[0-9]+$') { $deadline = $value }
+    }
+    $created = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+    $json = '{"schemaVersion":1,"shiftId":"' + $id + '","createdAt":"' + $created +
+        '","source":"start-defaults","deadlineEpoch":' + $deadline +
+        ',"verificationLevel":"none","toolingPolicy":"existing-tools"}'
+    if ((Set-NSShiftPolicy -Workspace $Workspace -Json $json) -ne 0) { return '' }
+    return $id
+}
+
 function Set-NSShiftPolicy {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,

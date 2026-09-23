@@ -257,10 +257,45 @@ try {
             'deadline an open-ended item has no clock',
             'provision an interrupted install cannot be proven recovered',
             'watch-minutes 0 (watchman disarmed)',
-            'codex-identity resumable')) {
+            'codex-identity resumable',
+            'snapshot start-defaults recorded for shift',
+            'snapshot none recorded - the gate cannot hold this shift to the list it armed with')) {
         Expect-True ($posixText.Contains($phrase)) "the POSIX helper keeps: $phrase"
         Expect-True ($helperText.Contains($phrase)) "the Windows twin keeps: $phrase"
     }
+
+    # A plain Start records tonight's snapshot itself, with the digests of the list it arms with.
+    Import-Module (Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1') -Force -DisableNameChecking
+    $snap = New-Site (Join-Path $root 'snapshot')
+    $snapRun = Invoke-Preflight $snap @('-HostName', 'claude')
+    Expect-True ($snapRun.ExitCode -eq 0) "snapshot site arms: $($snapRun.Stdout) $($snapRun.Stderr)"
+    Expect-True ($snapRun.Stdout -match 'ok snapshot start-defaults recorded for shift [0-9a-f]{16}') `
+        "a plain Start records a snapshot: $($snapRun.Stdout)"
+    $snapNs = Join-Path $snap '.nightshift'
+    $snapPolicy = Join-Path $snapNs 'shift-policy.json'
+    Expect-True (Test-Path -LiteralPath $snapPolicy -PathType Leaf) 'the snapshot file exists'
+    if (Test-Path -LiteralPath $snapPolicy -PathType Leaf) {
+        $doc = [IO.File]::ReadAllText($snapPolicy) | ConvertFrom-Json
+        Expect-True ($doc.source -ceq 'start-defaults') 'the snapshot says who wrote it'
+        Expect-True ($doc.verificationLevel -ceq 'none' -and $doc.toolingPolicy -ceq 'existing-tools') `
+            'the snapshot keeps the values the resolved view showed'
+        Expect-True ($null -eq $doc.deadlineEpoch) 'a finite list records no deadline'
+        $snapPunch = Join-Path $snapNs 'punch-list.md'
+        Expect-True ($doc.contractDigest -ceq (Get-NSPunchContractDigest $snapPunch)) 'the contract digest is the list armed with'
+        Expect-True ($doc.itemsDigest -ceq (Get-NSPunchItemsDigest $snapPunch)) 'the items digest is the list armed with'
+    }
+
+    $snapDeadline = New-Site (Join-Path $root 'snapshot-deadline')
+    $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 7200
+    [IO.File]::WriteAllText((Join-Path (Join-Path $snapDeadline '.nightshift') 'deadline'), "$epoch`n")
+    $null = Invoke-Preflight $snapDeadline @('-HostName', 'claude')
+    $deadlineDoc = [IO.File]::ReadAllText((Join-Path (Join-Path $snapDeadline '.nightshift') 'shift-policy.json')) | ConvertFrom-Json
+    Expect-True ([long]$deadlineDoc.deadlineEpoch -eq $epoch) 'the snapshot adopts a deadline the owner already wrote'
+
+    $snapDry = New-Site (Join-Path $root 'snapshot-dry')
+    $null = Invoke-Preflight $snapDry @('-HostName', 'claude', '-DryRun')
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path (Join-Path $snapDry '.nightshift') 'shift-policy.json'))) `
+        'a dry run records no snapshot'
 
     if ($failures.Count -gt 0) {
         Write-Host "start-preflight logic failed ($($failures.Count)):"

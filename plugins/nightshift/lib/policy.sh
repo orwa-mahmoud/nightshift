@@ -1487,6 +1487,44 @@ $(ns_policy_settings)
 EOF
 }
 
+# ns_new_shift_id <nightshift-dir> — a lowercase 16-hex shift id that appears nowhere under the
+# archive yet, so a fresh snapshot can never be mistaken for a night already filed.
+ns_new_shift_id() {
+  local ns="$1" id try=0
+  while [ "$try" -lt 8 ]; do
+    try=$((try + 1))
+    id="$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
+    case "$id" in *[!0-9a-f]* | '') continue ;; esac
+    [ "${#id}" -eq 16 ] || continue
+    if [ -d "$ns/archive" ] && grep -rqsF "$id" "$ns/archive" 2>/dev/null; then continue; fi
+    printf '%s' "$id"
+    return 0
+  done
+  return 1
+}
+
+# ns_start_snapshot <workspace> <shift-policy-helper> — tonight's snapshot for a Start with no
+# composition behind it. A composed shift has its policy written before arming; a plain Start had
+# none, so nothing recorded the contract and items it armed with and the gate could not tell a
+# deleted item from a finished one. This writes one with source `start-defaults` and the values the
+# resolved view already shows without a policy (no gate cadence, existing tools, and the deadline
+# file's epoch or none) through the same writer composition uses, which records the digests and
+# freezes the owner's preference blocks. Prints the new shift id.
+ns_start_snapshot() {
+  local ws="$1" helper="$2" ns="$1/.nightshift" id deadline
+  [ ! -e "$ns/shift-policy.json" ] || return 1
+  id="$(ns_new_shift_id "$ns")" || return 1
+  deadline="null"
+  if [ -f "$ns/deadline" ] && [ ! -L "$ns/deadline" ]; then
+    deadline="$(tr -d '[:space:]' <"$ns/deadline" 2>/dev/null)"
+    case "$deadline" in '' | *[!0-9]*) deadline="null" ;; esac
+  fi
+  printf '{"schemaVersion":1,"shiftId":"%s","createdAt":"%s","source":"start-defaults","deadlineEpoch":%s,"verificationLevel":"none","toolingPolicy":"existing-tools"}\n' \
+    "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$deadline" |
+    bash "$helper" --project "$ws" set --from-json - >/dev/null 2>&1 || return 1
+  printf '%s' "$id"
+}
+
 # _ns_policy_plan_lookup <list> <i> <n> — the value recorded for command n of allowance i.
 _ns_policy_plan_lookup() {
   local rest="$1" line
