@@ -106,6 +106,18 @@ provision-preflight.sh provision-preflight.ps1"
   done < <(owned_skills)
 }
 
+# Receipts stay out of commit messages, the morning page is rendered, and fetched text is data. A
+# reference that says otherwise contradicts the skill it serves.
+@test "no shipped skill or reference misstates where receipts go or how fetched text is treated" {
+  local phrase
+  while read -r f; do
+    for phrase in 'in the commit body' 'writes this receipt by hand' 'is instructional' \
+      'instructional text' 'model is the boundary'; do
+      ! grep -qiF "$phrase" "$f" || { echo "$f says: $phrase"; return 1; }
+    done
+  done < <(owned_skills)
+}
+
 # A name the references forbid must stay unshipped, and must never reappear as an instruction.
 @test "a name the references call out as no command ships as nothing" {
   for helper in $NOT_COMMANDS; do
