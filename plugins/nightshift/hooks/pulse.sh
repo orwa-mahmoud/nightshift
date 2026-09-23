@@ -224,8 +224,8 @@ ns_pulse_previous_write() { # <ns> <active> <ticked>
 #
 # The notice is written to a marker before it is emitted, and cleared when the item's receipt
 # file changes or the item is ticked. A marker that names a different item than the one now
-# open is rewritten. A revived session still finds the notice; nothing repeats until the window
-# resets, so a long pause is one overdue notice rather than one per minute that passed.
+# open is dropped. A revived session still finds the notice; it stands until the receipt changes,
+# so a long pause is one overdue notice rather than one per minute that passed.
 ns_pulse_report_due() {
   local ns="$1" project="$2" label due want
   [ -f "$ns/.shift-armed" ] || return 1
