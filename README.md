@@ -2,6 +2,7 @@
 
 [![OpenAI Plugin Directory](https://img.shields.io/badge/OpenAI-Plugin_Directory-111111)](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
 [![Website](https://img.shields.io/badge/Website-nightshift-2563eb)](https://nightshift.orwamahmoud.com/)
+[![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dorwa-mahmoud%252Fnightshift%26metric%3Dtrust)](https://hol.org/registry/plugins/orwa-mahmoud%2Fnightshift)
 
 **Give the agent a shift. Come back to work you can review.**
 
