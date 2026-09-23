@@ -350,7 +350,11 @@ mark_at() {
   # Working time is the wall clock minus the recorded gap; both figures stay on the table.
   grep -qF '| working | 30m 0s |' "$p/.nightshift/receipts/P01.md"
   grep -qF '| wall | 1h 0m |' "$p/.nightshift/receipts/P01.md"
-  grep -qE '\| paused \| 30m 0s \(the session ended and the shift was revived\) \|' \
+  # The gap closes at the reading the tick took, which the runtime stamps itself; a busy machine can
+  # take that reading a second or two after `now`. The expected pause comes from that stamp.
+  read_at="$(awk -F '\t' '$2 == "P01" { print $1 }' "$p/.nightshift/usage/marks.tsv")"
+  gap=$((read_at - (now - 1800)))
+  grep -qF "| paused | $((gap / 60))m $((gap % 60))s (the session ended and the shift was revived) |" \
     "$p/.nightshift/receipts/P01.md"
 }
 
