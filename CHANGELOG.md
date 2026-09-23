@@ -3,6 +3,13 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.22.4](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.3...v0.22.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* list archived receipts in item order ([3001bf6](https://github.com/orwa-mahmoud/nightshift/commit/3001bf67218de8a6c264a1eeb3f27f108f9f4171))
+
 ## [0.22.3](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.2...v0.22.3) (2026-09-16)
 
 
