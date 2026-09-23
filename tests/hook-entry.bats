@@ -188,6 +188,19 @@ held_open() {
   grep -qF '/bin/sleep' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/common.sh"
 }
 
+@test "every Windows hook stands down before it reads stdin when the site is unarmed" {
+  local h rel idle read
+  for h in "$HOOKS"/windows/*.ps1; do
+    [ -f "$h" ] || continue
+    rel="${h#"$HOOKS"/}"
+    idle="$(grep -n 'Test-NSHookIdle' "$h" | head -1 | cut -d: -f1)"
+    read="$(grep -nE 'Get-NSStdinText|\$input([^[:alnum:]_]|$)' "$h" | head -1 | cut -d: -f1)"
+    [ -n "$idle" ] || { echo "does not call Test-NSHookIdle: $rel"; return 1; }
+    [ -n "$read" ] || continue
+    [ "$idle" -lt "$read" ] || { echo "reads stdin before the idle check: $rel"; return 1; }
+  done
+}
+
 @test "an unarmed hook does not wait on stdin" {
   # Hosts fire hooks on every event. A project with no armed shift must return
   # immediately, even when the host hands over a descriptor that never closes.

@@ -364,6 +364,29 @@ ns_receipts_item_names() {
 ns_receipts_open_names() { ns_receipts_item_names "$1" open; }
 ns_receipts_ticked_names() { ns_receipts_item_names "$1" ticked; }
 
+# ns_receipts_item_order — receipt paths on stdin, printed in item order: numbered items by value
+# (1, 2, 10), then letter-and-number ids by letters and value (A1, A2, A10, B1), then the rest by
+# name. Keys are tab-separated and compared bytewise, so tab ends a shorter field first.
+ns_receipts_item_order() {
+  LC_ALL=C awk '
+    {
+      n = $0
+      sub(/.*\//, "", n)
+      cls = 2; pre = ""; num = ""
+      if (match(n, /^[0-9]+/)) {
+        cls = 0; num = substr(n, 1, RLENGTH)
+      } else if (match(n, /^[A-Za-z]+[0-9]+/)) {
+        id = substr(n, 1, RLENGTH)
+        match(id, /[0-9]+$/)
+        cls = 1; pre = tolower(substr(id, 1, RSTART - 1)); num = substr(id, RSTART)
+      }
+      sub(/^0+/, "", num)
+      if (cls < 2 && num == "") num = "0"
+      printf "%d\t%s\t%04d%s\t%s\t%s\n", cls, pre, length(num), num, n, $0
+    }
+  ' | LC_ALL=C sort | cut -f5-
+}
+
 # ns_receipts_write_archive_index <dir> <date> — the index of the item receipts filed in <dir>,
 # written only when at least one landed there. Links stay siblings, because the receipts it lists
 # are in that directory too.
@@ -392,7 +415,7 @@ EOF
     printf '| %s | ticked | **%s** | **%s** | [./%s](./%s) |\n' \
       "$label" "$usage" "$time" "$base" "$base" >>"$rows"
   done <<FIND
-$(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | LC_ALL=C sort)
+$(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | ns_receipts_item_order)
 FIND
   if [ ! -s "$rows" ]; then
     rm -f "$rows"

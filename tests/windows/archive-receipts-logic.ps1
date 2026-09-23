@@ -434,6 +434,31 @@ finally {
     Remove-Item -LiteralPath $siblings -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# The archived index follows item order: 1, 2, 10 by value, letter ids by letters then value, and
+# unnumbered receipts last.
+$ordered = Join-Path ([IO.Path]::GetTempPath()) ('ns-archive-order-' + [guid]::NewGuid().ToString('N'))
+try {
+    $null = New-Item -ItemType Directory -Path $ordered
+    $expected = @('1. One.', '2. Two.', '10. Ten.', 'A1 Alpha one.', 'A2 Alpha two.', 'A10 Alpha ten.',
+        'B1 Beta one.')
+    $files = @('1-one.md', '2-two.md', '10-ten.md', 'A1-alpha-one.md', 'A2-alpha-two.md',
+        'A10-alpha-ten.md', 'B1-beta-one.md')
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    for ($i = 0; $i -lt $files.Count; $i++) {
+        [IO.File]::WriteAllText((Join-Path $ordered $files[$i]), "# $($expected[$i])`n`nDone.`n", $utf8)
+    }
+    [IO.File]::WriteAllText((Join-Path $ordered 'unnumbered.md'), "# Unnumbered.`n`nDone.`n", $utf8)
+    Write-NSArchiveReceiptsIndex -Directory $ordered -Date '2026-09-05'
+    $labels = @([IO.File]::ReadAllLines((Join-Path $ordered 'README.md')) |
+        Where-Object { $_ -cmatch '^\| ([^|]+) \| ticked \|' } |
+        ForEach-Object { ($_ -creplace '^\| ([^|]+) \| ticked \|.*$', '$1') })
+    Expect-True (($labels -join '|') -ceq (($expected + 'Unnumbered.') -join '|')) `
+        "the archived index lists receipts in item order (got: $($labels -join ', '))"
+}
+finally {
+    Remove-Item -LiteralPath $ordered -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "archive-receipts-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) {

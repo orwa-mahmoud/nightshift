@@ -1056,3 +1056,18 @@ review_ended() { # <project> <shift-id> <layout>
   [ "$status" -eq 0 ]
   [ "$(grep -c 'broken archive pointer' "$p/.nightshift/snag-log.md")" -eq 1 ]
 }
+
+@test "the archived index lists receipts in item order, not text order" {
+  d="$BATS_TEST_TMPDIR/archive-order/receipts"
+  mkdir -p "$d"
+  for label in "1. One." "2. Two." "10. Ten." "A1 Alpha one." "A2 Alpha two." "A10 Alpha ten." "B1 Beta one."; do
+    f="$(bash -c '. "$1"; ns_receipt_basename "$2"' _ "$LIB" "$label").md"
+    printf '# %s\n\nDone.\n' "$label" >"$d/$f"
+  done
+  printf '# Unnumbered.\n\nDone.\n' >"$d/unnumbered.md"
+  bash -c '. "$1"; ns_receipts_write_archive_index "$2" 2026-09-05' _ "$LIB" "$d"
+  run sed -n 's/^| \([^|]*\) | ticked |.*/\1/p' "$d/README.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '%s\n' '1. One.' '2. Two.' '10. Ten.' 'A1 Alpha one.' 'A2 Alpha two.' \
+    'A10 Alpha ten.' 'B1 Beta one.' 'Unnumbered.')" ]
+}
