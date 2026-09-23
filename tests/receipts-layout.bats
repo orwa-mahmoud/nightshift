@@ -192,8 +192,8 @@ print("ok")
 PY
 }
 
-@test "check-report is an alias that names check-receipts" {
+@test "check-receipts is an alias that names check-report" {
   p="$(new_project receipts-alias)"
-  run "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-report.sh" --project "$p" -h
-  printf '%s' "$output$stderr" | grep -qF 'ns check-receipts'
+  run "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-receipts.sh" --project "$p" -h
+  printf '%s' "$output$stderr" | grep -qF 'ns check-report'
 }

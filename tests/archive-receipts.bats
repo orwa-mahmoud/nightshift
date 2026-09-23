@@ -800,15 +800,16 @@ clock_out() {
     env CLAUDE_PROJECT_DIR="$1" bash "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/clock-out-gate.sh"
 }
 
-# composed <project> <shift-id> — a workspace whose shift was composed and is ready to end.
+# composed <project> <shift-id> — a workspace whose shift was composed and is ready to end. The
+# list exists before the policy is set, as it does at arming, so the recorded digests are its own.
 composed() {
   local sh="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/shift-policy.sh"
   mkdir -p "$1/.nightshift/receipts"
   rm -f "$1/.nightshift/.shift-armed"
+  printf '## Items\n- [x] **1. done.**\n' >"$1/.nightshift/punch-list.md"
   jq -nc --arg id "$2" '{schemaVersion:1,shiftId:$id,createdAt:"2026-09-02T00:00:00Z",
     source:"composition",deadlineEpoch:null,verificationLevel:"none",toolingPolicy:"existing-tools"}' |
     "$sh" --project "$1" set --from-json - >/dev/null
-  printf '## Items\n- [x] **1. done.**\n' >"$1/.nightshift/punch-list.md"
   : >"$1/.nightshift/.shift-armed"
 }
 
