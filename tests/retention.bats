@@ -67,6 +67,22 @@ age_file() {
   [ -d "$a/2026-08-01-shift-2" ]
 }
 
+@test "an old folder holding an archived punch list is pruned; its contract's boxes are not open work" {
+  p="$(new_project)"
+  rm -f "$p/.nightshift/.shift-armed"
+  set_retention "$p" 0 30
+  a="$p/.nightshift/archive/2020-01-01"
+  mkdir -p "$a"
+  printf '> Archived record of shift 1111222233334444, filed 2020-01-01.\n\n# Punch list\n\n- [ ] a box in the contract prose\n\n## Items\n\n- [x] **1. done.**\n' \
+    >"$a/punch-list.md"
+  age_file "$a"
+  run bash "$RETAIN" --project "$p"
+  printf '%s' "$output" | grep -q 'archive/2020-01-01'
+  run bash "$RETAIN" --project "$p" --apply
+  [ "$status" -eq 0 ]
+  [ ! -e "$a" ]
+}
+
 @test "preview lists eligible paths and apply deletes only those" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"

@@ -1030,6 +1030,65 @@ ns_archive_dir() {
   done
 }
 
+# ns_archive_punch_list <project-dir> <folder> <shift-id> <date> — file the ended shift's punch list
+# into its folder as punch-list.md, then take the ticked items out of the live list.
+#
+# The record is the file the owner knows, minus the open items: a first line naming it the archived
+# record of that shift, then everything above `## Items` (the contract and the gates) and every
+# ticked item with its sub-bullets, exactly as written and with the spacing between them. Open
+# items never leave the live list, and neither does anything else in it. Prints the filed path, or
+# nothing when no item was ticked. Status 3 when a different record is already filed at that path;
+# the live list is then left as it is.
+ns_archive_punch_list() {
+  local live="$1/.nightshift/punch-list.md" dir="$2" sid="$3" day="$4" dest tmp who cr=""
+  [ -f "$live" ] && [ ! -L "$live" ] || return 0
+  [ "$(ns_punch_items "$live" | grep -c '^- \[[xX]\]')" -gt 0 ] || return 0
+  dest="$dir/punch-list.md"
+  ns_archive_dest "$dest" || return 2
+  mkdir -p "$dir" 2>/dev/null || return 2
+  [ "$(head -n1 "$live" | tr -d -c '\r')" = "" ] || cr=$'\r'
+  who="shift $sid"
+  case "$sid" in '' | unknown) who="a shift" ;; esac
+  tmp="$dest.tmp.$$"
+  {
+    printf '> Archived record of %s, filed %s. The items still open stayed in the live %s.%s\n%s\n' \
+      "$who" "$day" "\`.nightshift/punch-list.md\`" "$cr" "$cr"
+    awk '
+      { line = $0; sub(/\r$/, "", line) }
+      !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
+      done { next }
+      line ~ /^## / { done = 1; next }
+      line == "" { blanks = blanks $0 "\n"; next }
+      line ~ /^- \[[xX]\]/ { keep = 1; printf "%s", blanks; blanks = ""; print; next }
+      line ~ /^[[:space:]]/ { if (keep) { printf "%s", blanks; print } blanks = ""; next }
+      { keep = 0; blanks = "" }
+    ' "$live"
+  } >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
+  if [ -e "$dest" ]; then
+    if ! cmp -s "$tmp" "$dest"; then
+      rm -f "$tmp"
+      return 3
+    fi
+    rm -f "$tmp"
+  else
+    mv "$tmp" "$dest" || { rm -f "$tmp"; return 2; }
+  fi
+  tmp="$live.tmp.$$"
+  awk '
+    { line = $0; sub(/\r$/, "", line) }
+    !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
+    done { print; next }
+    line ~ /^## / { printf "%s", blanks; blanks = ""; done = 1; print; next }
+    line == "" { blanks = blanks $0 "\n"; next }
+    line ~ /^- \[[xX]\]/ { drop = 1; blanks = ""; next }
+    line ~ /^[[:space:]]/ { if (!drop) { printf "%s", blanks; print } blanks = ""; next }
+    { drop = 0; printf "%s", blanks; blanks = ""; print }
+    END { if (!drop) printf "%s", blanks }
+  ' "$live" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
+  mv "$tmp" "$live" || { rm -f "$tmp"; return 2; }
+  printf '%s' "$dest"
+}
+
 # ns_archive_automatic <project-dir> — status 0 when the owner asked for filing at clock-out.
 # Filing is a copy; it never implies deleting anything.
 ns_archive_automatic() {

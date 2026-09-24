@@ -100,6 +100,15 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
   done < <(rows archive-folders.tsv)
 }
 
+@test "an ended shift's punch list is filed and trimmed as the fixture says on Bash" {
+  local p="$BATS_TEST_TMPDIR/punch-archive"
+  mkdir -p "$p/.nightshift"
+  cp "$FIX/punch-archive/list.md" "$p/.nightshift/punch-list.md"
+  lib ns_archive_punch_list "$p" "$p/.nightshift/archive/2026-09-05" 1111222233334444 2026-09-05 >/dev/null
+  cmp "$FIX/punch-archive/archived.md" "$p/.nightshift/archive/2026-09-05/punch-list.md"
+  cmp "$FIX/punch-archive/live.md" "$p/.nightshift/punch-list.md"
+}
+
 @test "punch-list counts, tick labels, and digests match the fixture on Bash" {
   local file open ticked l1 l2 l3 contract items list
   while IFS=$'\t' read -r file open ticked l1 l2 l3 contract items; do

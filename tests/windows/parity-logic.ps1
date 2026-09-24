@@ -110,6 +110,23 @@ finally {
     Remove-Item -LiteralPath $foldersRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$punchArchive = Join-Path ([IO.Path]::GetTempPath()) ('ns-parity-punch-' + [guid]::NewGuid().ToString('N'))
+try {
+    $punchNs = Join-Path $punchArchive '.nightshift'
+    $null = New-Item -ItemType Directory -Path $punchNs -Force
+    Copy-Item -LiteralPath (Join-Path $fixtures 'punch-archive/list.md') -Destination (Join-Path $punchNs 'punch-list.md')
+    $filedPunch = Save-NSArchivePunchList -Workspace $punchArchive -Folder (Join-Path $punchNs 'archive/2026-09-05') `
+        -ShiftId '1111222233334444' -Date '2026-09-05'
+    Expect-Equal '0' ([string]$filedPunch.Status) 'punch list filed'
+    Expect-Equal ([IO.File]::ReadAllText((Join-Path $fixtures 'punch-archive/archived.md'))) `
+        ([IO.File]::ReadAllText((Join-Path $punchNs 'archive/2026-09-05/punch-list.md'))) 'archived punch list'
+    Expect-Equal ([IO.File]::ReadAllText((Join-Path $fixtures 'punch-archive/live.md'))) `
+        ([IO.File]::ReadAllText((Join-Path $punchNs 'punch-list.md'))) 'live punch list after filing'
+}
+finally {
+    Remove-Item -LiteralPath $punchArchive -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($row in (Get-FixtureRows 'item-labels.tsv')) {
     $want = if ($row.Count -gt 2) { $row[2] } else { '' }
     Expect-Equal $row[1] (Get-NSItemLabel $row[0]) "item label '$($row[0])'"

@@ -14,7 +14,7 @@ retiring a live record is a separate choice based on whether unfinished work sti
 
 | Record | What Archive does |
 | --- | --- |
-| Completed punch-list items | Moves them into the archive's shipped-work record. Open items, the contract, and gates stay live. |
+| Completed punch-list items | Files the shift's punch list as `punch-list.md` in its own folder: the contract, the gates, and every ticked item as written. The ticked items then leave the live list; open items, the contract, and gates stay live. |
 | Shift log | Files the journal and starts a fresh log. |
 | Snags and parked decisions | Files handled entries; unresolved findings and unanswered decisions stay live. |
 | Work orders | Keeps pending work available for a later shift. |

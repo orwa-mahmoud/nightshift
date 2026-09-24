@@ -149,6 +149,17 @@ prep_draft() {
     return 1
   fi
 
+  # A shift's archived punch list is a record of work done, the same as the older shipped.md.
+  t="$(new_project archived-punch-list)"
+  prep_draft "$t"
+  mkdir -p "$t/.nightshift/archive/2026-08-01-shift-2"
+  printf '%s\n' '## Items' '- [x] **1. Add a dry-run flag.**' '  - Source: https://github.com/acme/widgets/issues/12' \
+    >"$t/.nightshift/archive/2026-08-01-shift-2/punch-list.md"
+  run isolated_import "$t" --stage https://github.com/acme/widgets/issues/12
+  if grep -q 'Add a dry-run flag' "$t/.nightshift/drafting-table.md"; then
+    return 1
+  fi
+
   s="$(new_project symlink-archive-known)"
   prep_draft "$s"
   mkdir -p "$s/outside" "$s/.nightshift/archive"

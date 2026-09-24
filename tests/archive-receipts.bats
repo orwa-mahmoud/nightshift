@@ -923,6 +923,98 @@ arch_dir() { bash -c '. "$1"; shift; ns_archive_dir "$@"' _ "$LIB" "$@"; }
   [ ! -e "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
 }
 
+PUNCH_BODY='# Punch list
+
+## Shift
+
+The contract.
+
+## Gates
+
+- run checks
+
+## Items
+
+- [x] **1. done.**
+  - its bullet
+
+- [ ] **2. open.**
+'
+
+# ended_with <project> <shift-id> <items-list> — a shift stopped with that punch list.
+ended_with() {
+  composed "$1" "$2"
+  printf '%s' "$3" >"$1/.nightshift/punch-list.md"
+  printf 'owner said stop\n' >"$1/.nightshift/STOP"
+  run clock_out "$1"
+  rm -f "$1/.nightshift/STOP"
+  [ -f "$1/.nightshift/.ended" ]
+}
+
+@test "an ended shift's contract, gates and ticked items are filed as its punch list, and open items stay live" {
+  p="$(new_project punch-filed)"
+  ended_with "$p" 9f2c40ab77e51d63 "$PUNCH_BODY"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  f="$p/.nightshift/archive/2026-09-05/punch-list.md"
+  [[ "$output" == *"filed the punch list as "*"/archive/2026-09-05/punch-list.md"* ]]
+  [ "$(head -n1 "$f")" = '> Archived record of shift 9f2c40ab77e51d63, filed 2026-09-05. The items still open stayed in the live `.nightshift/punch-list.md`.' ]
+  [ "$(sed -n 2p "$f")" = '' ]
+  [ "$(tail -n +3 "$f")" = "$(printf '# Punch list\n\n## Shift\n\nThe contract.\n\n## Gates\n\n- run checks\n\n## Items\n\n- [x] **1. done.**\n  - its bullet')" ]
+  ! grep -qF '2. open.' "$f"
+  [ "$(cat "$p/.nightshift/punch-list.md")" = "$(printf '# Punch list\n\n## Shift\n\nThe contract.\n\n## Gates\n\n- run checks\n\n## Items\n\n- [ ] **2. open.**')" ]
+}
+
+@test "a second shift the same day files its own punch list in its own folder" {
+  p="$(new_project punch-two)"
+  ended_with "$p" 1111111111111111 '## Items
+- [x] **1. first night.**
+'
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  rm -f "$p/.nightshift/.ended"
+  ended_with "$p" 2222222222222222 '## Items
+- [x] **1. second night.**
+'
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  grep -qF 'first night' "$p/.nightshift/archive/2026-09-05/punch-list.md"
+  ! grep -qF 'second night' "$p/.nightshift/archive/2026-09-05/punch-list.md"
+  grep -qF 'second night' "$p/.nightshift/archive/2026-09-05-shift-2/punch-list.md"
+  grep -qF 'shift 2222222222222222' "$p/.nightshift/archive/2026-09-05-shift-2/punch-list.md"
+}
+
+@test "nothing ticked files no punch list, and an armed shift's list is never touched" {
+  p="$(new_project punch-none)"
+  ended_with "$p" 9f2c40ab77e51d63 '## Items
+- [ ] **1. open.**
+'
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/archive/2026-09-05/punch-list.md" ]
+  grep -qF '1. open.' "$p/.nightshift/punch-list.md"
+
+  q="$(new_project punch-armed)"
+  composed "$q" 9f2c40ab77e51d63
+  : >"$q/.nightshift/.shift-armed"
+  before="$(cksum <"$q/.nightshift/punch-list.md")"
+  run bash "$ARCHIVE_SH" --project "$q" --date 2026-09-05
+  [ ! -e "$q/.nightshift/archive/2026-09-05/punch-list.md" ]
+  [ "$(cksum <"$q/.nightshift/punch-list.md")" = "$before" ]
+}
+
+@test "a different punch list already filed for the shift is refused and the live list is kept" {
+  p="$(new_project punch-clash)"
+  ended_with "$p" 9f2c40ab77e51d63 "$PUNCH_BODY"
+  mkdir -p "$p/.nightshift/archive/2026-09-05"
+  printf '9f2c40ab77e51d63\n' >"$p/.nightshift/archive/2026-09-05/.shift-id"
+  printf 'an earlier record\n' >"$p/.nightshift/archive/2026-09-05/punch-list.md"
+  before="$(cksum <"$p/.nightshift/punch-list.md")"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [[ "$output" == *'a different punch list is already filed at'* ]]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/punch-list.md")" = 'an earlier record' ]
+  [ "$(cksum <"$p/.nightshift/punch-list.md")" = "$before" ]
+}
+
 @test "an unfinished item keeps its evidence through the whole sequence" {
   p="$(new_project ident-open-work)"
   arch_rules "$p" '.archive.layout = "shift" | .archive.root = "history"'

@@ -4856,6 +4856,100 @@ function Get-NSArchiveDir {
     }
 }
 
+# Save-NSArchivePunchList <workspace> <folder> <shift-id> <date> - file the ended shift's punch list
+# into its folder as punch-list.md, then take the ticked items out of the live list. The same
+# record the POSIX ns_archive_punch_list writes, byte for byte: a first line naming it the archived
+# record of that shift, then everything above `## Items` and every ticked item with its sub-bullets,
+# exactly as written and with the spacing between them. Open items never leave the live list.
+# Returns Status 0 (Path '' when no item was ticked), 2 when it could not write, or 3 when a
+# different record is already filed at that path and the live list was left as it is.
+function Save-NSArchivePunchList {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Folder,
+        [AllowEmptyString()][string]$ShiftId = '', [Parameter(Mandatory = $true)][string]$Date
+    )
+    $live = Join-Path $Workspace '.nightshift/punch-list.md'
+    $none = [pscustomobject]@{ Status = 0; Path = '' }
+    if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return $none }
+    if (@(Get-NSPunchItemsSection $live | Where-Object { $_ -cmatch '^- \[[xX]\]' }).Count -eq 0) { return $none }
+    $dest = Join-Path $Folder 'punch-list.md'
+    if (-not (Test-NSArchiveDest $dest)) { return [pscustomobject]@{ Status = 2; Path = '' } }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $text = [IO.File]::ReadAllText($live)
+    # Each line as awk reads it: its text, with a CR it carries, and always written back with LF.
+    $lines = New-Object Collections.Generic.List[string]
+    foreach ($piece in [regex]::Split($text, '(?<=\n)')) {
+        if ($piece.Length -eq 0) { continue }
+        $lines.Add($piece.TrimEnd([char]"`n"))
+    }
+    $cr = $(if ($lines.Count -gt 0 -and $lines[0].EndsWith("`r")) { "`r" } else { '' })
+    $who = $(if ([string]::IsNullOrEmpty($ShiftId) -or $ShiftId -ceq 'unknown') { 'a shift' } else { 'shift ' + $ShiftId })
+    $record = New-Object Text.StringBuilder
+    $null = $record.Append(('> Archived record of {0}, filed {1}. The items still open stayed in the live `.nightshift/punch-list.md`.{2}' -f $who, $Date, $cr) + "`n" + $cr + "`n")
+    $rest = New-Object Text.StringBuilder
+    $items = $false; $done = $false; $keep = $false; $drop = $false
+    $blanks = New-Object Text.StringBuilder
+    $restBlanks = New-Object Text.StringBuilder
+    foreach ($raw in $lines) {
+        $line = $raw.TrimEnd([char]"`r")
+        $out = $raw + "`n"
+        if (-not $items) {
+            $null = $record.Append($out)
+            $null = $rest.Append($out)
+            if ($line -cmatch '^## Items[ \t]*$') { $items = $true }
+            continue
+        }
+        if ($done) { $null = $rest.Append($out); continue }
+        if ($line -cmatch '^## ') {
+            $done = $true
+            $null = $rest.Append($restBlanks.ToString()).Append($out)
+            $null = $restBlanks.Clear()
+            continue
+        }
+        if ($line.Length -eq 0) {
+            $null = $blanks.Append($out)
+            $null = $restBlanks.Append($out)
+            continue
+        }
+        if ($line -cmatch '^- \[[xX]\]') {
+            $keep = $true
+            $null = $record.Append($blanks.ToString()).Append($out)
+            $drop = $true
+            $null = $blanks.Clear(); $null = $restBlanks.Clear()
+            continue
+        }
+        if ($line -cmatch '^[ \t]') {
+            if ($keep) { $null = $record.Append($blanks.ToString()).Append($out) }
+            if (-not $drop) { $null = $rest.Append($restBlanks.ToString()).Append($out) }
+            $null = $blanks.Clear(); $null = $restBlanks.Clear()
+            continue
+        }
+        $keep = $false
+        $drop = $false
+        $null = $rest.Append($restBlanks.ToString()).Append($out)
+        $null = $blanks.Clear(); $null = $restBlanks.Clear()
+    }
+    if (-not $drop) { $null = $rest.Append($restBlanks.ToString()) }
+    try {
+        $null = New-Item -ItemType Directory -Path $Folder -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $dest -PathType Leaf) {
+            if ([IO.File]::ReadAllText($dest) -cne $record.ToString()) { return [pscustomobject]@{ Status = 3; Path = '' } }
+        }
+        else {
+            $tmp = $dest + '.tmp.' + [guid]::NewGuid().ToString('N')
+            [IO.File]::WriteAllText($tmp, $record.ToString(), $utf8)
+            Move-Item -LiteralPath $tmp -Destination $dest -Force
+        }
+        $tmpLive = $live + '.tmp.' + [guid]::NewGuid().ToString('N')
+        [IO.File]::WriteAllText($tmpLive, $rest.ToString(), $utf8)
+        Move-Item -LiteralPath $tmpLive -Destination $live -Force
+    }
+    catch {
+        return [pscustomobject]@{ Status = 2; Path = '' }
+    }
+    return [pscustomobject]@{ Status = 0; Path = $dest }
+}
+
 # Test-NSArchiveDest <path> - true when one file may be written at that exact path. A directory
 # containment check says nothing about the leaf: a reparse point left where a receipt is about to
 # land would still carry its bytes somewhere else.

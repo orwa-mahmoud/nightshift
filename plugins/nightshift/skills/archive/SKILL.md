@@ -72,16 +72,17 @@ under the same name with an "original" suffix. Do not hand-edit either one.
 
 ## What moves, what stays
 
-- **Punch list → `shipped.md`.** Move every ticked `- [x]` line under `## Items` in
- `$NS/punch-list.md` into the
- archive's `shipped.md` under a `## Shipped <date>` heading — that file reads as the plain
- record of what actually landed. Open `- [ ]` items and everything above `## Items` (the
- contract, the gates) stay exactly where they are. When that move leaves zero open boxes,
- append one reminder under `## Notes` (create the heading below `## Items` if it is missing):
- leftover Shift contract and Gates still bind the next Hunt or Start cut; review them before
- composing a new campaign; Archive does not reset them. Skip the note when open work remains,
- when the same sentence is already present, or if adding it would require an open checkbox.
- Never write `- [ ]` here and never edit above `## Items`.
+- **Punch list → filed by the runtime.** Once the shift has ended, `archive-receipts` writes
+ `punch-list.md` into the shift's folder: a note naming it the archived record of that shift, then
+ the contract, the gates and every ticked item exactly as written. It then takes the ticked items
+ out of `$NS/punch-list.md`. Open items, the contract and the gates stay live, and nothing ticked
+ files nothing. Do not move items by hand. When the owner is present and no open box is left, ask
+ whether to keep the contract for the next shift or change it. In unattended filing (a
+ `.pending-filing` from clock-out) do not ask: append one reminder under `## Notes` (create the
+ heading below `## Items` if it is missing): leftover Shift contract and Gates still bind the next
+ Hunt or Start cut; review them before composing a new campaign; Archive does not reset them. Skip
+ the note when open work remains, when the same sentence is already present, or if adding it would
+ require an open checkbox. Never write `- [ ]` here and never edit above `## Items`.
 - **Receipts — the ticked ones.** For each ticked item, pass `--retire <receipt-name>`; receipts
  of open items are never named. `archive-receipts` rebuilds `receipts/README.md` on both sides of
  the move so each index lists only the receipts in its own folder.
