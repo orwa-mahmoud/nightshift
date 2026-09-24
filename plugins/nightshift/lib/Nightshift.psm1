@@ -11811,6 +11811,9 @@ function Write-NSUsageRecord {
     $null = New-Item -ItemType Directory -Path $dir -Force
     $file = Get-NSUsageStatePath $NightshiftDir
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-NSUsageSegments $file @() }
+    # A reading can carry usage and no model: the model already recorded for the segment stands, and
+    # a segment split off below keeps the model of the session it continues.
+    if ([string]::IsNullOrEmpty($Model)) { $Model = Get-NSUsageSegField $file $Id 3 }
     $newId = $Id
     if ($Source -ceq 'transcript-incremental') {
         $seg = Get-NSUsageSegField $file $Id 7

@@ -251,6 +251,11 @@ ns_usage_record() {
   file="$(_ns_usage_state "$ns")"
   now="$(date +%s)"
   [ -f "$file" ] || : >"$file"
+  # A reading can carry usage and no model: the model already recorded for the segment stands, and
+  # a segment split off below keeps the model of the session it continues.
+  if [ -z "$model" ]; then
+    model="$(_ns_usage_seg_field "$file" "$id" 3)" || model=""
+  fi
   # Claude's reader hands back only what was appended since the last offset, so its segment total
   # accumulates; the other hosts hand back a counter that is already cumulative for the session.
   if [ "$src" = transcript-incremental ]; then

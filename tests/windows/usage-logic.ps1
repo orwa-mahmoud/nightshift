@@ -45,6 +45,23 @@ try {
     Expect-True ((Get-NSUsageCarry $ns $transcript) -ceq $f[4]) 'the last response identity is carried'
     Expect-True ((Get-NSUsageOffset $ns $transcript) -eq [long]$f[1]) 'the offset is where the read stopped'
 
+    # A reading that names no model keeps the model the segment recorded, a counter that starts
+    # again keeps its session's model, and a reading that names one sets it from then on.
+    $w = Join-Path $root 'no-model'
+    $ns = New-Workspace $w $punchText
+    $segments = Get-NSUsageStatePath $ns
+    $null = Write-NSUsageRecord $ns 'claude' 'claude-opus-5' 'transcript-incremental' '/t/a' '10' 'input=10,output=5'
+    $null = Write-NSUsageRecord $ns 'claude' '' 'transcript-incremental' '/t/a' '20' 'input=3,output=1'
+    Expect-True ((Get-NSUsageSegField $segments '/t/a' 3) -ceq 'claude-opus-5') 'a model-less reading keeps the recorded model'
+    Expect-True ((Get-NSUsageHosts $ns) -ceq 'claude claude-opus-5') "the source line still names the model ($(Get-NSUsageHosts $ns))"
+    Expect-True ((Get-NSUsageTotal $ns) -ceq 'input=13,output=6') 'a model-less reading still counts'
+    $null = Write-NSUsageRecord $ns 'codex' 'gpt-x' 'rollout' '/r/a' '0' 'input=1000,output=50'
+    $null = Write-NSUsageRecord $ns 'codex' '' 'rollout' '/r/a' '0' 'input=40,output=2'
+    $split = @(Get-NSUsageSegmentLines $segments | Where-Object { $_.StartsWith('/r/a#') })
+    Expect-True ($split.Count -eq 1 -and $split[0].Split("`t")[2] -ceq 'gpt-x') 'a restarted counter keeps its session model'
+    $null = Write-NSUsageRecord $ns 'claude' 'claude-sonnet-5' 'transcript-incremental' '/t/a' '30' 'input=1,output=1'
+    Expect-True ((Get-NSUsageSegField $segments '/t/a' 3) -ceq 'claude-sonnet-5') 'a reading that names a model sets it'
+
     # The arm mark stamps a baseline, so pre-shift content is never billed to item one.
     $w = Join-Path $root 'baseline'
     $ns = New-Workspace $w $punchText

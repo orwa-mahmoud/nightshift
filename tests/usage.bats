@@ -135,6 +135,29 @@ ns() { printf '%s/.nightshift' "$1"; }
   [ "$output" = 2 ]
 }
 
+@test "a reading that names no model keeps the model the segment recorded" {
+  p="$BATS_TEST_TMPDIR/no-model"; mkdir -p "$(ns "$p")"
+  lib ns_usage_mark "$(ns "$p")" arm
+  lib ns_usage_record "$(ns "$p")" claude claude-opus-5 transcript-incremental /t/a 10 'input=10,output=5'
+  # Right after a compaction the transcript can carry usage with no model on it.
+  lib ns_usage_record "$(ns "$p")" claude '' transcript-incremental /t/a 20 'input=3,output=1'
+  seg="$(lib _ns_usage_state "$(ns "$p")")"
+  [ "$(awk -F '\t' '$1 == "/t/a" { print $3 }' "$seg")" = claude-opus-5 ]
+  run lib ns_usage_hosts "$(ns "$p")"
+  [ "$output" = 'claude claude-opus-5' ]
+  run lib ns_usage_total "$(ns "$p")"
+  [ "$output" = 'input=13,output=6' ]
+
+  # A counter that starts again opens a segment in the same session, which keeps its model too.
+  lib ns_usage_record "$(ns "$p")" codex gpt-x rollout /r/a 0 'input=1000,output=50'
+  lib ns_usage_record "$(ns "$p")" codex '' rollout /r/a 0 'input=40,output=2'
+  [ "$(awk -F '\t' 'index($1, "/r/a#") == 1 { print $3 }' "$seg")" = gpt-x ]
+
+  # A reading that names a model is the segment's model from then on.
+  lib ns_usage_record "$(ns "$p")" claude claude-sonnet-5 transcript-incremental /t/a 30 'input=1,output=1'
+  [ "$(awk -F '\t' '$1 == "/t/a" { print $3 }' "$seg")" = claude-sonnet-5 ]
+}
+
 @test "the tick is the boundary: three short items and one long one come out distinct" {
   p="$BATS_TEST_TMPDIR/four"; mkdir -p "$(ns "$p")"
   lib ns_usage_mark "$(ns "$p")" arm
@@ -810,6 +833,9 @@ parity_normalise() {
     ns_usage_record "$p/.nightshift" claude "$(printf "%s" "$r" | cut -f3)" transcript-incremental \
       "$p/transcript.jsonl" "$(printf "%s" "$r" | cut -f2)" "$(printf "%s" "$r" | cut -f1)" \
       "$(printf "%s" "$r" | cut -f5)"
+    # A later reading with usage and no model, as a transcript can carry after a compaction.
+    ns_usage_record "$p/.nightshift" claude "" transcript-incremental "$p/transcript.jsonl" 1400 \
+      "input=2,cache_write=0,cache_read=0,output=1,reasoning=0" ""
     ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 2
   ' _ "$LIB" "$CORE" "$a"
 
@@ -822,6 +848,7 @@ parity_normalise() {
     $null = Write-NSUsageMarkArm $ns
     $r = (Read-NSUsageClaude $t 0 "").Split([char]9)
     $null = Write-NSUsageRecord $ns "claude" $r[2] "transcript-incremental" $t $r[1] $r[0] $r[4]
+    $null = Write-NSUsageRecord $ns "claude" "" "transcript-incremental" $t "1400" "input=2,cache_write=0,cache_read=0,output=1,reasoning=0" ""
     $null = Invoke-NSGateUsageSync $ns $p (Join-Path $ns "punch-list.md") 2
   '
   [ "$status" -eq 0 ]
@@ -831,6 +858,9 @@ parity_normalise() {
     [ -f "$b/.nightshift/$f" ]
     diff <(parity_normalise "$a" <"$a/.nightshift/$f") <(parity_normalise "$b" <"$b/.nightshift/$f")
   done
+  # The model-less reading left the segment's model where both sides recorded it.
+  [ "$(cut -f3 "$a/.nightshift/usage/segments.tsv")" = claude-opus-5 ]
+  [ "$(cut -f3 "$b/.nightshift/usage/segments.tsv")" = claude-opus-5 ]
 }
 
 @test "the Windows hooks call the accounting, and its logic suite is registered" {
