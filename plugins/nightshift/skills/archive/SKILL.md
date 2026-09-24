@@ -59,8 +59,9 @@ helper did not file is refused and told back to you.
 Everything lands under the archive root, which is `archive.root` in the resolved policy, in the
 shift's own folder: `<YYYY-MM-DD>/` or `shift-<id>/` according to `archive.layout`. Left alone those
 give the default `$NS/archive/<YYYY-MM-DD>/`, and a later shift the same day gets
-`<YYYY-MM-DD>-shift-2/`, `-shift-3/` and so on. `archive-receipts` prints the folder it filed into
-(its `receipts/` is inside it), and anything else you file this run goes into that same folder.
+`<YYYY-MM-DD>-shift-2/`, `-shift-3/` and so on. Receipts land in the folder's `receipts/`, which is
+`archive/<YYYY-MM-DD>/receipts/` by default; `archive-receipts` prints it, and anything else you
+file this run goes into that same folder.
 Today's date is `date +%Y-%m-%d` on POSIX, or `Get-Date -Format yyyy-MM-dd` on native Windows.
 Filing the same shift again returns to its folder; another shift never writes into it.
 
