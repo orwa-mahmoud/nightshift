@@ -5467,11 +5467,17 @@ function Get-NSPolicyNormalizedCommand {
 function Get-NSShiftPolicyState {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $paths = Get-NSPolicyPaths $Workspace
+    return (Read-NSShiftPolicyFile ([string]$paths['policy']))
+}
+
+# Read-NSShiftPolicyFile <path> - one policy document, classified: absent, malformed or valid.
+function Read-NSShiftPolicyFile {
+    param([Parameter(Mandatory = $true)][string]$Path)
     $state = New-NSOrdinalMap
     $state['state'] = 'absent'
     $state['error'] = ''
     $state['policy'] = $null
-    $path = $paths['policy']
+    $path = $Path
     if (Test-NSReparsePoint $path) {
         $state['state'] = 'malformed'
         $state['error'] = 'document: shift-policy.json is not a usable file'
@@ -5496,6 +5502,40 @@ function Get-NSShiftPolicyState {
     $state['state'] = 'valid'
     $state['policy'] = $document
     return $state
+}
+
+# Get-NSReceiptPolicyState <workspace> - the policy the morning receipt reports. It is the live
+# snapshot while one exists, and after clock-out only the copy filed under the id the ending
+# marker names. Any other archived snapshot is a different night's, and then this one has no
+# policy record. Mirrors _find_policy and _match_policy in runtime/morning-receipt.sh.
+function Get-NSReceiptPolicyState {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $paths = Get-NSPolicyPaths $Workspace
+    $live = [string]$paths['policy']
+    if (Test-NSPathEntry $live) { return (Read-NSShiftPolicyFile $live) }
+    $state = New-NSOrdinalMap
+    $state['state'] = 'absent'
+    $state['error'] = ''
+    $state['policy'] = $null
+    $id = [string](Get-NSEndedField $Workspace 'shiftId')
+    if ($id -cnotmatch '^[0-9a-f]+$') { return $state }
+    $root = $null
+    try { $root = Get-NSArchiveRoot $Workspace } catch { return $state }
+    if ([string]::IsNullOrEmpty($root) -or -not (Test-NSMigrationDirectory $root)) { return $state }
+    $name = 'shift-policy-' + $id + '.json'
+    $candidates = New-Object Collections.Generic.List[string]
+    $top = Join-NSPath $root $name
+    if (Test-NSMigrationFile $top) { $candidates.Add($top) }
+    foreach ($dir in @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue)) {
+        $inside = Join-NSPath $dir.FullName $name
+        if (Test-NSMigrationFile $inside) { $candidates.Add($inside) }
+    }
+    if ($candidates.Count -eq 0) { return $state }
+    $sorted = Sort-NSOrdinal $candidates.ToArray()
+    $found = Read-NSShiftPolicyFile $sorted[$sorted.Count - 1]
+    # A file filed under this shift's id that names another shift inside is not this night's either.
+    if ([string]$found['state'] -ceq 'valid' -and (Get-NSRecordText $found['policy'] 'shiftId') -cne $id) { return $state }
+    return $found
 }
 
 function Get-NSShiftPolicy {
@@ -10386,7 +10426,7 @@ function Get-NSReceiptContext {
     $policy = $null
     $policyKind = 'absent'
     try {
-        $policyState = Get-NSShiftPolicyState $workspacePath
+        $policyState = Get-NSReceiptPolicyState $workspacePath
         switch ([string]$policyState['state']) {
             'valid' { $policyKind = 'accepted'; $policy = $policyState['policy'] }
             'malformed' { $policyKind = 'malformed' }

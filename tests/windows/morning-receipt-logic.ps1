@@ -568,6 +568,50 @@ try {
         }
     }
 
+    # === 3d. After clock-out only the ended shift's own archived policy is read ===
+    $archivedProject = Join-Path $root 'policy-archived'
+    $archivedNs = New-ReceiptProject -Path $archivedProject -Items '' -WithPolicy $false
+    [IO.File]::WriteAllText((Join-Path $archivedNs 'punch-list.md'),
+        ([IO.File]::ReadAllText((Join-Path $fixtureDir 'punch-list.md'))), $utf8)
+    $validText = [IO.File]::ReadAllText((Join-Path $fixtureDir 'shift-policy-valid.json'))
+    $otherText = $validText.Replace('"9f2c40ab77e51d63"', '"1111111111111111"')
+    Expect-True ($otherText -cne $validText) 'the fixture names its shift id as expected'
+    $null = New-Item -ItemType Directory -Path (Join-Path $archivedNs 'archive/2026-09-01'), (Join-Path $archivedNs 'archive/2026-09-02') -Force
+    [IO.File]::WriteAllText((Join-Path $archivedNs 'archive/2026-09-01/shift-policy-1111111111111111.json'), $otherText, $utf8)
+    $ownPolicy = Join-Path $archivedNs 'archive/2026-09-02/shift-policy-9f2c40ab77e51d63.json'
+    $archivedCases = @(
+        @{ Name = 'an ending that names no id'; Ended = ''; Own = $null; Want = 'absent' },
+        @{ Name = 'an ending that names another id'; Ended = "shiftId=2222222222222222`narchiveRoot=archive`narchiveLayout=date`n"; Own = $null; Want = 'absent' },
+        @{ Name = "the ended shift's own snapshot"; Ended = "shiftId=9f2c40ab77e51d63`narchiveRoot=archive`narchiveLayout=date`n"; Own = $validText; Want = 'accepted' },
+        @{ Name = 'a file under that name holding another shift'; Ended = "shiftId=9f2c40ab77e51d63`narchiveRoot=archive`narchiveLayout=date`n"; Own = $otherText; Want = 'absent' }
+    )
+    foreach ($case in $archivedCases) {
+        [IO.File]::WriteAllText((Join-Path $archivedNs '.ended'), $case.Ended, $utf8)
+        if ($null -ne $case.Own) { [IO.File]::WriteAllText($ownPolicy, $case.Own, $utf8) }
+        $archivedRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $archivedProject, '-View', 'owner')
+        Expect-Equal 0 $archivedRun.ExitCode "$($case.Name) renders ($($archivedRun.StderrText))"
+        if ($case.Want -ceq 'accepted') {
+            Expect-True $archivedRun.StdoutText.Contains('- Policy record: accepted') "$($case.Name) is the record"
+            Expect-True $archivedRun.StdoutText.Contains('- Shift: 9f2c40ab77e51d63') "$($case.Name) supplies the shift id"
+        }
+        else {
+            Expect-True $archivedRun.StdoutText.Contains("- Policy record: absent $dash the shift wrote no policy") "$($case.Name) reads as absent"
+            Expect-True (-not $archivedRun.StdoutText.Contains('1111111111111111')) "$($case.Name) reports no other night's shift"
+        }
+        if ((Test-Path -LiteralPath $bashReceipt -PathType Leaf) -and $null -ne $bashCommand) {
+            $archivedBash = Invoke-ProcessBytes -FileName $bashCommand.Source `
+                -Arguments @($bashReceipt, '--project', $archivedProject, '--view', 'owner') `
+                -EnvOverrides @{
+                    NIGHTSHIFT_EVIDENCE_NOW = $fixedNow
+                    LANG                    = 'C.UTF-8'
+                    LC_ALL                  = 'C.UTF-8'
+                    MSYS_NO_PATHCONV        = '1'
+                    MSYS2_ARG_CONV_EXCL     = '*'
+                }
+            Expect-NSRendererParity $archivedRun $archivedBash "both renderers read $($case.Name) the same way"
+        }
+    }
+
     # === 4. The endings ===
     [IO.File]::WriteAllText((Join-Path $ns 'STOP'), "deadline`n", $utf8)
     $deadlineRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $project)

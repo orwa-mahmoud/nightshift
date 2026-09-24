@@ -130,7 +130,7 @@ NS="$WORKSPACE/.nightshift"
 [ -d "$NS" ] || die "no .nightshift/ at $WORKSPACE — run setup first" 2
 
 JSONL="$(ns_layout_path "$NS" evidence)/findings.jsonl"
-declare PUNCH LOT SNAGS LOG MAP STOP SESSION_REC LIVE_POLICY ARCHIVE USAGE ENDED_MARKER
+declare PUNCH LOT SNAGS LOG MAP STOP SESSION_REC LIVE_POLICY USAGE ENDED_MARKER
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set LOT "$NS" parking-lot
 ns_layout_set SNAGS "$NS" snag-log
@@ -139,7 +139,6 @@ ns_layout_set MAP "$NS" opportunity-map
 ns_layout_set STOP "$NS" stop
 ns_layout_set SESSION_REC "$NS" session
 ns_layout_set LIVE_POLICY "$NS" shift-policy
-ns_layout_set ARCHIVE "$NS" archive
 ns_layout_set USAGE "$NS" usage
 ns_layout_set ENDED_MARKER "$NS" ended
 RECEIPTS_DIR="$(ns_receipts_dir "$WORKSPACE")"
@@ -553,6 +552,7 @@ _detail() {
 # ---------------------------------------------------------------- the policy that ran
 
 POLICY_FILE=""
+POLICY_WANT_ID=""
 P_SHIFTID=""
 P_CREATEDAT=""
 NALLOW=0
@@ -561,18 +561,24 @@ A_SCOPE=()
 A_PROVENANCE=()
 
 # The snapshot the shift ran under is the live file until the clock-out gate files it, and the
-# dated archive copy afterwards. A receipt rendered either side of that move says the same thing.
+# copy filed under the shift's own id afterwards. A receipt rendered either side of that move says
+# the same thing. An archived snapshot counts only when it is the one the ending marker names: any
+# other is a different night's, and this one then has no policy record.
 _find_policy() {
-  local cand
+  local id root cand
   if [ -f "$LIVE_POLICY" ] && [ ! -L "$LIVE_POLICY" ]; then
     POLICY_FILE="$LIVE_POLICY"
     return 0
   fi
-  [ -d "$ARCHIVE" ] && [ ! -L "$ARCHIVE" ] || return 0
-  cand="$(find "$ARCHIVE" -maxdepth 2 -type f -name 'shift-policy-*.json' -print 2>/dev/null |
+  id="$(ns_ended_field "$WORKSPACE" shiftId)"
+  case "$id" in '' | *[!0-9a-f]*) return 0 ;; esac
+  root="$(ns_archive_root "$WORKSPACE")" || return 0
+  [ -d "$root" ] && [ ! -L "$root" ] || return 0
+  cand="$(find "$root" -maxdepth 2 -type f -name "shift-policy-$id.json" -print 2>/dev/null |
     LC_ALL=C sort | tail -n 1)"
   [ -n "$cand" ] || return 0
   POLICY_FILE="$cand"
+  POLICY_WANT_ID="$id"
 }
 
 _classify_policy() {
@@ -584,6 +590,21 @@ _classify_policy() {
     absent) POLICY_KIND=absent ;;
     *) POLICY_KIND=malformed ;;
   esac
+}
+
+# _match_policy — an archived snapshot filed under this shift's id that names another shift inside
+# is not this night's record either.
+_match_policy() {
+  [ -n "$POLICY_WANT_ID" ] && [ "$POLICY_KIND" = accepted ] || return 0
+  [ "$P_SHIFTID" != "$POLICY_WANT_ID" ] || return 0
+  POLICY_FILE=""
+  POLICY_KIND=absent
+  P_SHIFTID=""
+  P_CREATEDAT=""
+  NALLOW=0
+  A_CATEGORY=()
+  A_SCOPE=()
+  A_PROVENANCE=()
 }
 
 _load_policy() {
@@ -1379,6 +1400,7 @@ _load_ledger
 _find_policy
 _classify_policy
 _load_policy
+_match_policy
 ns_policy_resolve_table "$WORKSPACE" >"$TMPD/resolved" 2>/dev/null ||
   : >"$TMPD/resolved"
 _load_marks

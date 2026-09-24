@@ -170,6 +170,41 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
   done
 }
 
+@test "after clock-out only the ended shift's own archived policy is read" {
+  p="$(policy_fixture_project receipt-policy-archived absent)"
+  rm -f "$p/.nightshift/.shift-armed"
+  a="$p/.nightshift/archive"
+  mkdir -p "$a/2026-09-01" "$a/2026-09-02"
+  # An earlier night, filed under its own id.
+  jq '.shiftId = "1111111111111111"' "$FIX/shift-policy-valid.json" >"$a/2026-09-01/shift-policy-1111111111111111.json"
+
+  # This shift wrote no policy, so its ending names no id: the earlier night's is not its record.
+  : >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" != *'1111111111111111'* ]] || false
+
+  # An ending that names another id finds nothing of its own either.
+  printf 'shiftId=2222222222222222\narchiveRoot=archive\narchiveLayout=date\n' >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" != *'1111111111111111'* ]] || false
+
+  # The ended shift's own filed snapshot is the record.
+  cp "$FIX/shift-policy-valid.json" "$a/2026-09-02/shift-policy-9f2c40ab77e51d63.json"
+  printf 'shiftId=9f2c40ab77e51d63\narchiveRoot=archive\narchiveLayout=date\n' >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: accepted'* ]] || false
+  [[ "$output" == *'- Shift: 9f2c40ab77e51d63'* ]] || false
+
+  # A file under that name that holds another shift's snapshot is not this shift's.
+  jq '.shiftId = "1111111111111111"' "$FIX/shift-policy-valid.json" >"$a/2026-09-02/shift-policy-9f2c40ab77e51d63.json"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" != *'1111111111111111'* ]] || false
+}
+
 # verdict_project <name> — a shift with usage marks and pauses, a history of commits, a wrapped
 # parking-lot entry, snags, and a shift log that records interruptions and a handover.
 VERDICT_NOW=1790000000
