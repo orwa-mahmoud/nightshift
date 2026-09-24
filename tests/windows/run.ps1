@@ -1088,6 +1088,7 @@ $record = @(
 [IO.File]::WriteAllLines($env:NIGHTSHIFT_TEST_AGENT_RECEIPT, $record)
 $nsDir = Join-Path $env:CODEX_PROJECT_DIR '.nightshift'
 if (-not [string]::IsNullOrEmpty($env:CODEX_PROJECT_DIR) -and (Test-Path -LiteralPath $nsDir -PathType Container)) {
+    Import-Module $env:NIGHTSHIFT_TEST_MODULE -Force -DisableNameChecking
     $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     [IO.File]::WriteAllText((Get-NSLayoutPath $nsDir 'pulse'), "$epoch revived`n")
 }
@@ -1096,7 +1097,7 @@ exit 0
 
         $watch = Invoke-TestScript $watchman `
             @('-Project', $recoveryWorkspace, '-HostName', 'codex', '-IntervalMinutes', '1', '-Agent', $agentStub, '-MaxWakes', '1') `
-            '' @{ NIGHTSHIFT_WATCH_SLEEP = '0'; NIGHTSHIFT_TEST_AGENT_RECEIPT = $agentReceipt }
+            '' @{ NIGHTSHIFT_WATCH_SLEEP = '0'; NIGHTSHIFT_TEST_AGENT_RECEIPT = $agentReceipt; NIGHTSHIFT_TEST_MODULE = $module }
         Assert-Equal 7 $watch.ExitCode "one-wake recovery fixture reaches its test cap: $($watch.Stderr)"
         Assert-True (Test-Path -LiteralPath $agentReceipt) 'a dead session launches the recovery child'
         $receiptLines = [IO.File]::ReadAllLines($agentReceipt)

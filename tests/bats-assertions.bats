@@ -63,8 +63,10 @@ bash_of() {
 
 @test "the scanner flags each bare form and accepts each enforcing one" {
   f="$BATS_TEST_TMPDIR/forms.bats"
-  cat >"$f" <<'FORMS'
-@test "forms" {
+  # Bats 1.10 reads an `@test` line inside a heredoc as a test of this file, so the fixture's first
+  # line is written on its own.
+  printf '@test "forms" {\n' >"$f"
+  cat >>"$f" <<'FORMS'
   [[ "$output" == *bare* ]]
   [[ "$output" == *enforced* ]] || false
   (( count == 2 ))

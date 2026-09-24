@@ -326,8 +326,9 @@ try {
     $bounds = Invoke-ArchiveReceipts $review @('-Date', '2026-09-24')
     Expect-True ($bounds.ExitCode -eq 0) "entry-bounds review file exits 0 (got $($bounds.ExitCode) $($bounds.Stderr))"
     $boundsDest = Join-Path $ns 'archive/2026-09-24/aaaa1111bbbb2222/parking-lot.md'
-    $boundsFiled = $(if (Test-Path -LiteralPath $boundsDest -PathType Leaf) { [IO.File]::ReadAllText($boundsDest) } else { '' })
-    $boundsLive = [IO.File]::ReadAllText((Join-Path $ns 'parking-lot.md'))
+    # Archive writes the host's line ending; the assertions read LF.
+    $boundsFiled = $(if (Test-Path -LiteralPath $boundsDest -PathType Leaf) { [IO.File]::ReadAllText($boundsDest) } else { '' }).Replace("`r`n", "`n")
+    $boundsLive = [IO.File]::ReadAllText((Join-Path $ns 'parking-lot.md')).Replace("`r`n", "`n")
     Expect-True ($boundsFiled.Contains('Ship the flag on?') -and $boundsFiled.Contains("`n- **Default:** kept off`n") -and
         $boundsFiled.Contains("`n  - Rollback: turn it off again`n") -and $boundsFiled.Contains('Rename the flag?')) `
         'an answered entry is filed with its Default and Rollback lines'
