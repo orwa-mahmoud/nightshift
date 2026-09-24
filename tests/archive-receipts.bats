@@ -566,6 +566,39 @@ closed() { # <project> — the shift ended
   [ -f "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
 }
 
+@test "a usage folder is filed whole, retired only when named, and refused only when it was not filed" {
+  p="$(new_project rot-usage)"
+  mkdir -p "$p/.nightshift/usage-aaaa" "$p/.nightshift/usage-bbbb"
+  printf 'seg a\n' >"$p/.nightshift/usage-aaaa/segments.tsv"
+  printf 'marks a\n' >"$p/.nightshift/usage-aaaa/marks.tsv"
+  printf 'seg b\n' >"$p/.nightshift/usage-bbbb/segments.tsv"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire usage-aaaa
+  [ "$status" -eq 0 ]
+  d="$p/.nightshift/archive/2026-09-05"
+  # Every record in each folder is filed and verified.
+  [ "$(cat "$d/usage-aaaa/segments.tsv")" = 'seg a' ]
+  [ "$(cat "$d/usage-aaaa/marks.tsv")" = 'marks a' ]
+  [ "$(cat "$d/usage-bbbb/segments.tsv")" = 'seg b' ]
+  # The named folder leaves live storage and reads as retired; the unnamed one stays.
+  [ ! -e "$p/.nightshift/usage-aaaa" ]
+  [ -f "$p/.nightshift/usage-bbbb/segments.tsv" ]
+  if printf '%s\n' "$output" | grep -qF 'this run filed no such record'; then echo "$output"; return 1; fi
+
+  # A folder holding a record that cannot be filed stays live, whole, and naming it is refused.
+  mkdir -p "$p/.nightshift/usage-cccc" "$d/usage-cccc"
+  printf 'seg c\n' >"$p/.nightshift/usage-cccc/segments.tsv"
+  printf 'marks c\n' >"$p/.nightshift/usage-cccc/marks.tsv"
+  printf 'a different record\n' >"$d/usage-cccc/segments.tsv"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire usage-cccc
+  [ "$status" -eq 0 ]
+  [ "$(cat "$p/.nightshift/usage-cccc/segments.tsv")" = 'seg c' ]
+  [ "$(cat "$p/.nightshift/usage-cccc/marks.tsv")" = 'marks c' ]
+  printf '%s\n' "$output" | grep -qF 'usage-cccc (not every record in it could be filed)'
+  printf '%s\n' "$output" | grep -qF 'this run filed no such record'
+  printf '%s\n' "$output" | grep -qxF '  usage-cccc'
+}
+
 @test "retiring is refused outright while the shift is armed or has not ended" {
   p="$(new_project rot-not-ended)"
   mkdir -p "$p/.nightshift/receipts"

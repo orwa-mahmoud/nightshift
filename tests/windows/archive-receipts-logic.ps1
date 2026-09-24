@@ -325,6 +325,49 @@ finally {
     Remove-Item -LiteralPath $review -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# A retired shift's usage folder is one record: filed whole, retired only when named, and refused
+# by name only when it was not filed.
+function Get-TextOrEmpty {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (Test-Path -LiteralPath $Path -PathType Leaf) { return [IO.File]::ReadAllText($Path) }
+    return ''
+}
+$usageWork = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-usage-" + [guid]::NewGuid().ToString('N'))
+try {
+    $ns = Join-Path $usageWork '.nightshift'
+    foreach ($name in @('usage-aaaa', 'usage-bbbb')) { $null = New-Item -ItemType Directory -Path (Join-Path $ns $name) -Force }
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json') `
+        -Destination (Join-Path $ns 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $ns 'usage-aaaa/segments.tsv'), "seg a`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'usage-aaaa/marks.tsv'), "marks a`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'usage-bbbb/segments.tsv'), "seg b`n")
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), '')
+    $usageRun = Invoke-ArchiveReceipts $usageWork @('-Date', '2026-09-05', '-Retire', 'usage-aaaa')
+    Expect-True ($usageRun.ExitCode -eq 0) "usage filing exits 0 (got $($usageRun.ExitCode) $($usageRun.Stderr))"
+    $usageDest = Join-Path $ns 'archive/2026-09-05'
+    Expect-True ((Get-TextOrEmpty (Join-Path $usageDest 'usage-aaaa/segments.tsv')) -ceq "seg a`n") 'a named usage folder is filed'
+    Expect-True ((Get-TextOrEmpty (Join-Path $usageDest 'usage-aaaa/marks.tsv')) -ceq "marks a`n") 'every record in it is filed'
+    Expect-True ((Get-TextOrEmpty (Join-Path $usageDest 'usage-bbbb/segments.tsv')) -ceq "seg b`n") 'an unnamed usage folder is filed too'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns 'usage-aaaa'))) 'the named folder leaves live storage'
+    Expect-True (Test-Path -LiteralPath (Join-Path $ns 'usage-bbbb/segments.tsv') -PathType Leaf) 'the unnamed folder stays live'
+    Expect-True (-not $usageRun.Stderr.Contains('this run filed no such record')) "a filed folder is not refused ($($usageRun.Stderr))"
+
+    # A folder holding a record that cannot be filed stays live, whole, and naming it is refused.
+    $null = New-Item -ItemType Directory -Path (Join-Path $ns 'usage-cccc'), (Join-Path $usageDest 'usage-cccc') -Force
+    [IO.File]::WriteAllText((Join-Path $ns 'usage-cccc/segments.tsv'), "seg c`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'usage-cccc/marks.tsv'), "marks c`n")
+    [IO.File]::WriteAllText((Join-Path $usageDest 'usage-cccc/segments.tsv'), "a different record`n")
+    $clashRun = Invoke-ArchiveReceipts $usageWork @('-Date', '2026-09-05', '-Retire', 'usage-cccc')
+    Expect-True ($clashRun.ExitCode -eq 0) "a clashing usage folder exits 0 (got $($clashRun.ExitCode))"
+    Expect-True ((Get-TextOrEmpty (Join-Path $ns 'usage-cccc/segments.tsv')) -ceq "seg c`n") 'the clashing record stays live'
+    Expect-True ((Get-TextOrEmpty (Join-Path $ns 'usage-cccc/marks.tsv')) -ceq "marks c`n") 'the rest of its folder stays live'
+    Expect-True ($clashRun.Stderr.Contains('usage-cccc (not every record in it could be filed)')) "the folder is reported kept ($($clashRun.Stderr))"
+    Expect-True ($clashRun.Stderr -match '(?m)^\s*usage-cccc\s*$') 'naming it is refused'
+}
+finally {
+    Remove-Item -LiteralPath $usageWork -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # A shift that ended with work still open. The receipt of a ticked item is filed and retired; the
 # receipt of an item nobody finished stays live, and each index lists only what its folder holds.
 $openWork = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-open-" + [guid]::NewGuid().ToString('N'))

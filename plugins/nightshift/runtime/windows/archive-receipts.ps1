@@ -143,7 +143,7 @@ $archivedPaths = New-Object Collections.Generic.List[string]
 $script:tickedNames = @(Get-NSTickedReceiptNames $workspace)
 
 # Copy-NSArchiveRecord <source> <directory> - file one record, verify it, and retire the source
-# when the caller established it as closed.
+# when the caller established it as closed. True when the record now has a verified archived copy.
 function Copy-NSArchiveRecord {
     param([string]$Source, [string]$Directory)
     $base = [IO.Path]::GetFileName($Source)
@@ -152,14 +152,14 @@ function Copy-NSArchiveRecord {
     # its bytes somewhere else and then read back as a faithful copy, so the source stays put.
     if (-not (Test-NSArchiveDest $target)) {
         $kept.Add($base + ' (a link or a directory is in the way of its archived copy)')
-        return
+        return $false
     }
     if (Test-Path -LiteralPath $target) {
         if (-not (Test-NSSameBytes $Source $target)) {
             # Two different records under one name. Neither is worth losing, so the one already
             # filed stands and the live one stays where it is.
             $kept.Add($base + ' (a different record is already filed under that name)')
-            return
+            return $false
         }
     }
     else {
@@ -168,7 +168,7 @@ function Copy-NSArchiveRecord {
     }
     if (-not (Test-NSSameBytes $Source $target)) {
         $kept.Add($base + ' (the archived copy does not match the source)')
-        return
+        return $false
     }
     $null = $filed.Add($base)
     $archivedPaths.Add($Source.Substring($ns.Length).TrimStart([char]'/', [char]'\').Replace('\', '/'))
@@ -176,10 +176,11 @@ function Copy-NSArchiveRecord {
         Remove-Item -LiteralPath $Source -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $Source) {
             $kept.Add($base + ' (could not be removed from live storage)')
-            return
+            return $true
         }
         $script:removed++
     }
+    return $true
 }
 
 if (Test-Path -LiteralPath $src -PathType Container) {
@@ -203,6 +204,50 @@ if (Test-Path -LiteralPath $src -PathType Container) {
         }
         foreach ($file in $files) {
             $null = Copy-NSArchiveRecord $file.FullName $dest
+        }
+    }
+}
+
+# A retired shift's accounting travels too. `usage-<id>/` is what the Start preflight renamed when
+# it cleared the last shift's leftovers, so it is the closed shift's own readings - its offsets, its
+# marks, its totals. Filed under the group with everything else and retired from live storage on the
+# same rule, so the state directory does not accumulate one directory per night. The folder is one
+# record: filed, under its own name, only when every record in it was, and removed only then.
+$usagePrefix = Get-NSLayoutPath $ns 'usage-shift' ''
+$usageParent = Split-Path -Parent $usagePrefix
+$usageLead = Split-Path -Leaf $usagePrefix
+if ((Test-Path -LiteralPath $usageParent -PathType Container) -and -not (Test-NSReparsePoint $usageParent)) {
+    $usageFolders = @(Get-ChildItem -LiteralPath $usageParent -Directory -Force -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name.StartsWith($usageLead, [StringComparison]::Ordinal) -and $_.Name.Length -gt $usageLead.Length -and
+            -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)
+        })
+    foreach ($name in (Sort-NSOrdinal @($usageFolders | ForEach-Object { $_.Name }))) {
+        $folder = Join-Path $usageParent $name
+        $usageDest = Join-Path $group $name
+        $whole = $true
+        foreach ($entry in @(Get-ChildItem -LiteralPath $folder -Force -ErrorAction SilentlyContinue |
+                Where-Object { -not $_.Name.StartsWith('.') })) {
+            if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                $whole = $false
+                continue
+            }
+            $null = New-Item -ItemType Directory -Path $usageDest -Force
+            if ((Get-Item -LiteralPath $usageDest -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                Write-NSArchiveReceiptsError 'archive-receipts: refuse to write through a symlink archive path'
+                exit 2
+            }
+            if (-not (Copy-NSArchiveRecord $entry.FullName $usageDest)) { $whole = $false }
+        }
+        if (-not $whole) {
+            $kept.Add($name + ' (not every record in it could be filed)')
+            continue
+        }
+        $null = $filed.Add($name)
+        if ($rotate -and ($Retire -ccontains $name)) {
+            Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $folder) { $kept.Add($name + ' (could not be removed from live storage)') }
+            else { $removed++ }
         }
     }
 }
