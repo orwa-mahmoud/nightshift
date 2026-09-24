@@ -41,6 +41,8 @@ EMIT_JQ="$_here/morning-receipt-emit.jq"
 # Native Windows jq.exe cannot open a /d/... program path. The display form is
 # the Windows path here and the same POSIX path everywhere else.
 EMIT_JQ="$(ns_native_display_path "$EMIT_JQ")"
+# The text half: it reads the Markdown records, the shift log and the history into rows.
+READ_AWK="$_here/morning-receipt-read.awk"
 COMPARE="${NIGHTSHIFT_COMPARE_HELPER:-$_here/evidence-compare.sh}"
 
 NL='
@@ -240,24 +242,7 @@ _item_link() {
 # every interruption the runtime recorded, or the last handover line.
 _shift_log_lines() {
   [ -f "$LOG" ] && [ ! -L "$LOG" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$LOG" | awk -v want="$1" '
-    { line[NR] = $0; if (tolower($0) ~ /shift started/) start = NR }
-    END {
-      for (i = start + 1; i <= NR; i++) {
-        t = line[i]
-        sub(/^ +/, "", t)
-        sub(/ +$/, "", t)
-        if (t == "") continue
-        l = tolower(t)
-        if (want == "handover") {
-          if (l ~ /handover/) last = t
-        } else if (l ~ /resume attempt|reviv|resumed session|wedge|api down|(^|[^a-z])stall|stop-work|stopped by|pressed esc|quitting time|past the deadline|silent too long|usage limit/) {
-          print t
-        }
-      }
-      if (want == "handover" && last != "") print last
-    }
-  '
+  sed 's/[[:cntrl:]]/ /g' "$LOG" | awk -v op="$1" -f "$READ_AWK"
 }
 
 # _gate_commands -> $TMPD/gates: backtick commands under ## Gates, byte-ordered.
@@ -659,49 +644,8 @@ _parked() {
   local title def rb kind
   P_COUNT=0
   [ -f "$LOT" ] && [ ! -L "$LOT" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$LOT" | awk -v fs="$FS" -v dot="$MIDDOT" '
-    function trim(s) { sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
-    function add(s) {
-      s = trim(s)
-      if (s == "") return
-      if (field == "d") def = (def == "" ? s : def " " s)
-      else if (field == "r") rb = (rb == "" ? s : rb " " s)
-      else text = (text == "" ? s : text " " s)
-    }
-    function flush(    all) {
-      all = tolower(text " " def " " rb)
-      if (open && text != "" && text !~ /^\[notice\]/ &&
-          all !~ (" " dot " (fixed|ignored|answered|rejected-because|accepted-tradeoff)"))
-        print "E" fs text fs def fs rb
-      open = 0; mode = ""; field = "t"; text = ""; def = ""; rb = ""
-    }
-    function begin(m, s) { flush(); open = 1; mode = m; add(s) }
-    !started { if ($0 ~ /^--- *$/) started = 1; next }
-    {
-      t = $0
-      sub(/ +$/, "", t)
-      if (t == "") { blank = 1; if (mode == "p") flush(); next }
-      if (t ~ /^### +/) { s = t; sub(/^### +/, "", s); begin("h", s); blank = 0; next }
-      if (t ~ /^#/ || t ~ /^(- )?Filed:/ || t ~ /^\(empty/) { flush(); blank = 0; next }
-      if (open && match(t, /^ *(- )?(\*\*)?(Default|Rollback):(\*\*)?/)) {
-        s = substr(t, RSTART, RLENGTH)
-        if (s ~ /Default/) { field = "d"; def = "" } else { field = "r"; rb = "" }
-        add(substr(t, RSTART + RLENGTH))
-        blank = 0
-        next
-      }
-      if (t ~ /^- /) {
-        if (open && mode == "h") add(substr(t, 3))
-        else begin("b", substr(t, 3))
-      } else if (!open || (mode == "b" && blank && t !~ /^ /)) {
-        begin("p", t)
-      } else {
-        add(t)
-      }
-      blank = 0
-    }
-    END { flush() }
-  ' >"$TMPD/parked-parse"
+  sed 's/[[:cntrl:]]/ /g' "$LOT" | awk -v op=parked -v fs="$FS" -v dot="$MIDDOT" -f "$READ_AWK" \
+    >"$TMPD/parked-parse"
   while IFS="$FS" read -r kind title def rb; do
     [ "$kind" = E ] || continue
     [ -n "$title" ] || continue
@@ -718,33 +662,8 @@ _parked() {
 _snags() {
   : >"$TMPD/snags"
   [ -f "$SNAGS" ] && [ ! -L "$SNAGS" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$SNAGS" | awk -v fs="$FS" -v dot="$MIDDOT" -v day="$SHIFT_DAY" '
-    function trim(s) { sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
-    function flush(    n, p, disp, d, rest) {
-      if (entry == "") return
-      n = split(entry, p, " " dot " ")
-      disp = "open"
-      if (n >= 3 && p[3] !~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/) disp = trim(p[3])
-      d = ""
-      rest = entry
-      while (match(rest, /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/)) {
-        d = substr(rest, RSTART, RLENGTH)
-        rest = substr(rest, RSTART + RLENGTH)
-      }
-      if (tolower(disp) !~ /^fixed/ && (day == "" || (d != "" && d >= day)))
-        print trim(p[1]) fs disp
-      entry = ""
-    }
-    !started { if ($0 ~ /^--- *$/) started = 1; next }
-    {
-      t = $0
-      sub(/ +$/, "", t)
-      if (t == "" || t ~ /^#/ || t ~ /^(- )?Filed:/ || t ~ /^\(empty/) { flush(); next }
-      if (t ~ /^- /) { flush(); entry = trim(substr(t, 3)); next }
-      if (entry != "") entry = entry " " trim(t)
-    }
-    END { flush() }
-  ' >"$TMPD/snags"
+  sed 's/[[:cntrl:]]/ /g' "$SNAGS" |
+    awk -v op=snags -v fs="$FS" -v dot="$MIDDOT" -v day="$SHIFT_DAY" -f "$READ_AWK" >"$TMPD/snags"
 }
 
 # _building -> BUILD_TITLE, BUILD_PHASE, BUILD_NEXT: the one opportunity the map
@@ -1130,39 +1049,8 @@ _lines_review() {
     printf '%s%s%s\n' "${M_EPOCH[$n]}" "$FS" "${M_LABEL[$n]}" >>"$TMPD/review-marks"
     n=$((n + 1))
   done
-  awk -v fs="$FS" '
-    FILENAME == ARGV[1] { split($0, m, fs); stamp[++nm] = m[1] + 0; owner[nm] = m[2]; next }
-    /^@@\t/ {
-      n = split($0, f, "\t")
-      subject = f[4]
-      for (i = 5; i <= n; i++) subject = subject "\t" f[i]
-      if (first == "") first = f[2]
-      last = f[2]
-      key = ""
-      for (i = 1; i <= nm; i++) if (stamp[i] >= f[3] + 0) { if (owner[i] != "arm" && owner[i] != "") key = "i" fs owner[i]; break }
-      if (key == "") key = "c" fs f[2] fs subject
-      if (!(key in commits)) order[++no] = key
-      commits[key]++
-      cur = key
-      next
-    }
-    /^[0-9-]+\t[0-9-]+\t/ {
-      if (cur == "") next
-      split($0, f, "\t")
-      path = substr($0, length(f[1]) + length(f[2]) + 3)
-      if (!((cur SUBSEP path) in seen)) { seen[cur SUBSEP path] = 1; files[cur]++ }
-      if (f[1] ~ /^[0-9]+$/) added[cur] += f[1]
-      if (f[2] ~ /^[0-9]+$/) removed[cur] += f[2]
-    }
-    END {
-      print first fs last
-      for (i = 1; i <= no; i++) {
-        k = order[i]
-        printf "%d%s%d%s%d%s%d%s%d%s%s\n", added[k] + removed[k], fs, files[k], fs, added[k], fs, \
-          removed[k], fs, commits[k], fs, k
-      }
-    }
-  ' "$TMPD/review-marks" "$TMPD/review-log" >"$TMPD/review-rows" || return 1
+  awk -v op=review -v fs="$FS" -f "$READ_AWK" "$TMPD/review-marks" "$TMPD/review-log" \
+    >"$TMPD/review-rows" || return 1
   IFS="$FS" read -r first last <"$TMPD/review-rows" || return 1
   [ -n "$first" ] || return 1
   n=0
