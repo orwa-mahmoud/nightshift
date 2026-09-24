@@ -29,9 +29,9 @@ resolve_work_target() {
     }
   done
 
-  grep -qF '.nightshift/work-target' "$DOC"
+  grep -qF '.nightshift/run/work-target' "$DOC"
   grep -qF 'plugins/<name>/' "$DOC"
-  grep -qF '.nightshift/deadline' "$DOC"
+  grep -qF '.nightshift/run/deadline' "$DOC"
   grep -qF 'UNIX epoch' "$DOC"
   grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$DOC"
   grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$COMMANDS"
@@ -40,7 +40,7 @@ resolve_work_target() {
   grep -qF 'Filing is a copy' "$VOCAB"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
   grep -qF 'UNIX epoch seconds' "$VOCAB"
-  grep -qF '.nightshift/work-target' "$VOCAB"
+  grep -qF '.nightshift/run/work-target' "$VOCAB"
   grep -qF '**state workspace**' "$VOCAB"
   grep -qF '**doctor**' "$VOCAB"
   grep -qF 'never repairs' "$VOCAB"

@@ -68,14 +68,15 @@ ls -l .nightshift/state-version
 cat .nightshift/state-version
 ```
 
-A current workspace has a regular file containing the integer `1` and a newline. A missing
-file is legacy version `0` — hooks still run. A newer integer, a symlink, extra text, or
-anything that is not a single unsigned integer fails closed: start, hooks, status, archive,
-and recovery will not guess and will not rewrite the marker.
+A current workspace has a regular file containing the integer `2` and a newline. Version `1`,
+and a missing file (legacy version `0`), keep every state file at the top of `.nightshift/`;
+hooks still run and guard it there. A newer integer, a symlink, extra text, or anything that is
+not a single unsigned integer fails closed: start, hooks, status, archive, and recovery will not
+guess and will not rewrite the marker.
 
 **Repair.** Upgrade Nightshift when the marker is newer than this plugin supports. Never
-downgrade or overwrite a future version. For a missing marker, migrate only while unarmed
-and only after an explicit yes:
+downgrade or overwrite a future version. To move an older workspace into the current layout,
+preview the move while unarmed:
 
 ```sh
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state
@@ -87,8 +88,12 @@ On native Windows:
 & "$env:CLAUDE_PLUGIN_ROOT\runtime\windows\ns.ps1" migrate-state --project C:\path\to\workspace
 ```
 
-That command writes only `.nightshift/state-version`. Doctor offers it as a confirmation
-repair; invoking Doctor does not run it.
+The preview lists every move with its old and new path, every link it rewrites, every conflict
+and every file it leaves in place, and changes nothing. Run it again with `--apply` to make exactly
+those changes. It refuses while a shift is armed, a watchman is alive or a lock is held, refuses by
+name a file present at both paths with different content, never deletes or overwrites anything,
+and writes `state-version` last, so running it again finishes an interrupted move. Doctor offers it
+as a confirmation repair; invoking Doctor does not run it.
 
 ## 2. Invalid `.nightshift-link`
 
@@ -113,19 +118,19 @@ that already owns `.nightshift/`. Do not hand-write a relative path.
 
 ```sh
 # after resolving the workspace (pwd, or the link target)
-sed -n '1p' .nightshift/work-mode 2>/dev/null
-sed -n '1p' .nightshift/work-target 2>/dev/null
+sed -n '1p' .nightshift/run/work-mode 2>/dev/null
+sed -n '1p' .nightshift/run/work-target 2>/dev/null
 ```
 
-Native Windows: `Get-Content -TotalCount 1 .nightshift\work-mode` and
-`Get-Content -TotalCount 1 .nightshift\work-target`.
+Native Windows: `Get-Content -TotalCount 1 .nightshift\run\work-mode` and
+`Get-Content -TotalCount 1 .nightshift\run\work-target`.
 
 Missing `work-mode` means repository for legacy repositories; Start refuses a non-Git folder until
 Setup records artifact mode. In repository mode the code repository may be that same
-folder, or the single git child named in `.nightshift/work-target`:
+folder, or the single git child named in `.nightshift/run/work-target`:
 
 ```sh
-git -C "$(sed -n '1p' .nightshift/work-target 2>/dev/null || pwd)" rev-parse --show-toplevel
+git -C "$(sed -n '1p' .nightshift/run/work-target 2>/dev/null || pwd)" rev-parse --show-toplevel
 ```
 
 Two git repositories as siblings of `.nightshift/` with no `work-target` is undecidable: commit
@@ -196,9 +201,9 @@ editing this file — change it yourself between sessions.
 **Check.**
 
 ```sh
-ls -l .nightshift/STOP .nightshift/.shift-armed .nightshift/.ended \
-  .nightshift/.session-end .nightshift/.shift-pulse .nightshift/.shift-lease .nightshift/.stall \
-  .nightshift/.watchman 2>/dev/null
+ls -l .nightshift/STOP .nightshift/run/.shift-armed .nightshift/run/.ended \
+  .nightshift/run/.session-end .nightshift/run/.shift-pulse .nightshift/run/.shift-lease .nightshift/run/.stall \
+  .nightshift/run/.watchman 2>/dev/null
 sed -n '1,5p' .nightshift/STOP 2>/dev/null
 ```
 
@@ -247,7 +252,7 @@ Start; on native Windows, import `lib\Nightshift.psm1` and call
 **Check.** Immediately after arming, Start — and Hunt or Quality when they start immediately —
 make a harmless Bash binding probe on POSIX or a
 PowerShell binding probe on native Windows. It writes
-`.nightshift/.shift-session` before item work. Typical layout: session id, transcript or rollout
+`.nightshift/run/.shift-session` before item work. Typical layout: session id, transcript or rollout
 path, pid, process start time, host (`claude` or `codex`). Claude fills the process fields when it
 can verify them. Codex leaves lines 3–4 empty on POSIX because its hook cannot vouch for a process
 identity; native Windows records them when process ancestry is available.
@@ -259,10 +264,10 @@ generation, mode, and holder liveness without printing it. A missing lease on an
 workspace is bootstrapped by the bound session's next tool call.
 
 ```sh
-sed -n '1,5p' .nightshift/.shift-session 2>/dev/null
+sed -n '1,5p' .nightshift/run/.shift-session 2>/dev/null
 ```
 
-Native Windows: `Get-Content -TotalCount 5 .nightshift\.shift-session`
+Native Windows: `Get-Content -TotalCount 5 .nightshift\run\.shift-session`
 
 A 500 can land **before** the binding probe, so the file may be missing while the punch list is
 open. On Claude Code the watchman then treats the newest conversation ending in the host's API-error
@@ -278,11 +283,11 @@ project will append to the wrong conversation.
 **Check (read-only).** Tail the journal; do not truncate it:
 
 ```sh
-tail -n 40 .nightshift/shift-log.md
-ls -l .nightshift/.watchman .nightshift/.watchman-tick 2>/dev/null
+tail -n 40 .nightshift/run/shift-log.md
+ls -l .nightshift/run/.watchman .nightshift/run/.watchman-tick 2>/dev/null
 ```
 
-Native Windows: `Get-Content -Tail 40 .nightshift\shift-log.md`
+Native Windows: `Get-Content -Tail 40 .nightshift\run\shift-log.md`
 
 Stand-down is success when the night already reached a declared ending. Matching log lines:
 
@@ -299,7 +304,7 @@ Stand-down is success when the night already reached a declared ending. Matching
 | `all N attempts failed` | Claude Code | Revival failed; the next knock comes at the interval. |
 | `backing off, knocking again in Mm` | Claude Code | The last error named a limit. The wait doubles, up to an hour; a pulse or a revival puts it back to the interval. |
 | `the armed marker is gone` | both | `.shift-armed` is no longer there. Nothing is armed, so nothing is watched. Start re-arms. |
-| `the watchman pidfile is gone` / `another watchman owns this site` | Claude Code | `.nightshift/.watchman` was removed or claimed by another loop. |
+| `the watchman pidfile is gone` / `another watchman owns this site` | Claude Code | `.nightshift/run/.watchman` was removed or claimed by another loop. |
 | `resumed session returned` / `revival returned` | both | Revival succeeded. |
 
 **Repair.** None, if the line is a declared ending. If rules cannot arm, fix `rules.json` and

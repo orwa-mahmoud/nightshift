@@ -111,7 +111,7 @@ $reportedMode = ''
 try {
     $reportedMode = Get-NSWorkMode $workspace
     Add-NSFact "work mode $reportedMode"
-    $modeRecord = Join-Path $ns 'work-mode'
+    $modeRecord = Get-NSLayoutPath $ns 'work-mode'
     if (-not (Test-Path -LiteralPath $modeRecord -PathType Leaf)) {
         try {
             if ((Get-NSProposedWorkMode $workspace) -eq 'artifact') {
@@ -181,7 +181,7 @@ if ($null -ne $resolution) {
 # An interrupted provisioning transaction is the one piece of state that can
 # leave a half-installed tool behind. Doctor reads the same diagnosis the
 # recovery helper prints, and restores nothing.
-$provisionRepair = 'inspect .nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.ps1 rollback after fixing the target, then Start again'
+$provisionRepair = "inspect $(Get-NSLayoutName $ns 'provision-transaction') and $(Get-NSLayoutName $ns 'provision-baseline')/, restore by hand or run provision.ps1 rollback after fixing the target, then Start again"
 $provision = $null
 try {
     $provision = Get-NSProvisionDiagnosis $workspace
@@ -202,7 +202,7 @@ if (($null -ne $provision) -and $provision['present']) {
     }
 }
 
-$punch = Join-Path $ns 'punch-list.md'
+$punch = Get-NSLayoutPath $ns 'punch-list'
 $open = 0
 $ticked = 0
 if (Test-Path -LiteralPath $punch -PathType Leaf) {
@@ -223,7 +223,7 @@ try {
             if ($missing.Count -gt 0) {
                 Add-NSFact ('receipts missing model text ' + $missing.Count)
                 Add-NSWarn ($missing.Count.ToString() + ' ticked items have no receipt text; each item completes through its receipt file')
-                Add-NSAct confirm 'write the missing receipts under .nightshift/receipts/; Doctor does not rewrite the punch list'
+                Add-NSAct confirm "write the missing receipts under $(Get-NSLayoutName $ns 'receipts')/; Doctor does not rewrite the punch list"
             }
         }
     }
@@ -234,17 +234,17 @@ try {
 catch {
 }
 
-$orders = Get-NSOpenBoxesInFile (Join-Path $ns 'work-orders.md')
+$orders = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')
 if ($orders -gt 0) {
     Add-NSFact "pending Hunt work orders=$orders"
 }
-$drafts = Get-NSOpenDrafts (Join-Path $ns 'drafting-table.md')
+$drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
 if ($drafts -gt 0) {
     Add-NSFact "staged drafting-table items=$drafts"
 }
 
-$armed = [int](Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf)
-$endedPath = Join-Path $ns '.ended'
+$armed = [int](Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf)
+$endedPath = Get-NSLayoutPath $ns 'ended'
 $ended = 0
 if (Test-NSReparsePoint $endedPath) {
     Add-NSWarn 'ended path is not a usable file'
@@ -252,8 +252,8 @@ if (Test-NSReparsePoint $endedPath) {
 elseif (Test-Path -LiteralPath $endedPath -PathType Leaf) {
     $ended = 1
 }
-$stop = [int](Test-Path -LiteralPath (Join-Path $ns 'STOP') -PathType Leaf)
-$sessionEndPath = Join-Path $ns '.session-end'
+$stop = [int](Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf)
+$sessionEndPath = Get-NSLayoutPath $ns 'session-end'
 $sessionEnd = 0
 if (Test-NSReparsePoint $sessionEndPath) {
     Add-NSWarn 'session-end path is not a usable file'
@@ -261,7 +261,7 @@ if (Test-NSReparsePoint $sessionEndPath) {
 elseif (Test-Path -LiteralPath $sessionEndPath -PathType Leaf) {
     $sessionEnd = 1
 }
-$pulsePath = Join-Path $ns '.shift-pulse'
+$pulsePath = Get-NSLayoutPath $ns 'pulse'
 $pulse = 0
 if (Test-NSReparsePoint $pulsePath) {
     Add-NSWarn 'shift-pulse path is not a usable file'
@@ -270,7 +270,7 @@ elseif (Test-Path -LiteralPath $pulsePath -PathType Leaf) {
     $pulse = 1
 }
 $stall = ''
-$stallPath = Join-Path $ns '.stall'
+$stallPath = Get-NSLayoutPath $ns 'stall'
 if (Test-NSReparsePoint $stallPath) {
     Add-NSWarn 'stall path is not a usable file'
 }
@@ -285,29 +285,51 @@ elseif (Test-Path -LiteralPath $stallPath -PathType Leaf) {
 
 if ($armed -eq 1) { Add-NSFact 'shift is armed' } else { Add-NSFact 'shift is not armed' }
 switch ($stateKind) {
-    'current' {
-        $ver = if ([string]::IsNullOrEmpty($stateVer)) { '1' } else { $stateVer }
-        Add-NSFact "state version $ver (current)"
-    }
-    'legacy' {
-        Add-NSFact 'state version 0 (legacy - no state-version marker)'
-        $migrator = Join-Path $here 'migrate-state.ps1'
-        if ($armed -eq 1) {
-            Add-NSWarn 'legacy workspace cannot be migrated while a shift is armed'
-            Add-NSAct blocked "wait until the shift is unarmed, then write version 1 with $migrator"
+    { $_ -eq 'current' -or $_ -eq 'legacy' } {
+        $current = [string](Get-NSCurrentStateVersion)
+        if ($stateKind -eq 'current') {
+            $ver = if ([string]::IsNullOrEmpty($stateVer)) { $current } else { $stateVer }
+            Add-NSFact "state version $ver (current)"
+        }
+        elseif ([string]::IsNullOrEmpty($stateVer) -or $stateVer -eq '0') {
+            Add-NSFact 'state version 0 (legacy - no state-version marker; every state file sits at the top of .nightshift/)'
         }
         else {
-            Add-NSAct confirm "write $(Join-Path $ns 'state-version') as 1 with $migrator - only the marker is added"
+            Add-NSFact "state version $stateVer (every state file sits at the top of .nightshift/)"
+        }
+        # The move into the current layout, described from the plan migrate-state would carry out.
+        $migrator = Join-Path $here 'migrate-state.ps1'
+        $plan = Get-NSMigrationPlan $workspace
+        $offer = ''
+        if ($plan.Code -eq 0) { $offer = Get-NSMigrationOffer -Records $plan.Records -Command $migrator }
+        if ($offer.Length -gt 0) {
+            $refusals = @($plan.Records | Where-Object { $_.StartsWith("refuse`t", [StringComparison]::Ordinal) })
+            $conflicts = @($plan.Records | Where-Object { $_.StartsWith("conflict`t", [StringComparison]::Ordinal) })
+            if ($refusals.Count -gt 0) {
+                Add-NSWarn ("the move into layout $current waits: " + $refusals[0].Substring(7))
+                Add-NSAct blocked $offer
+            }
+            elseif ($conflicts.Count -gt 0) {
+                $named = foreach ($record in $conflicts) {
+                    $f = $record.Split("`t")
+                    if ($f.Count -gt 3 -and $f[3].Length -gt 0) { $f[1] + ' ' + $f[3] } else { $f[1] + ' and ' + $f[2] + ' differ' }
+                }
+                Add-NSWarn ("the move into layout $current is blocked: " + (@($named) -join '; '))
+                Add-NSAct confirm "keep one copy of each conflicting file by hand, then preview the move with $migrator"
+            }
+            else {
+                Add-NSAct confirm $offer
+            }
         }
     }
     'future' {
         $ver = if ([string]::IsNullOrEmpty($stateVer)) { 'unknown' } else { $stateVer }
-        Add-NSWarn "state version $ver is newer than this plugin supports (1)"
+        Add-NSWarn "state version $ver is newer than this plugin supports ($(Get-NSCurrentStateVersion))"
         Add-NSAct blocked 'upgrade Nightshift; never rewrite or downgrade a newer state-version'
     }
     'malformed' {
         Add-NSWarn 'state-version is malformed'
-        Add-NSAct confirm "inspect $(Join-Path $ns 'state-version') and replace it with a single integer while unarmed - never guess"
+        Add-NSAct confirm "inspect $(Get-NSLayoutPath $ns 'state-version') and replace it with a single integer while unarmed - never guess"
     }
 }
 if ($ended -eq 1) { Add-NSFact 'gate has clocked the shift out (.ended)' }
@@ -316,7 +338,7 @@ if ($sessionEnd -eq 1) { Add-NSFact 'clean session-end marker is present' }
 if ($pulse -eq 1) { Add-NSFact 'shift-pulse marker is present' }
 if (-not [string]::IsNullOrEmpty($stall)) { Add-NSFact "stall count $stall" }
 
-$deadlinePath = Join-Path $ns 'deadline'
+$deadlinePath = Get-NSLayoutPath $ns 'deadline'
 if (Test-NSReparsePoint $deadlinePath) {
     Add-NSWarn 'deadline path is not a usable file'
 }
@@ -379,7 +401,7 @@ if ($open -gt 0 -and ($orders -gt 0 -or $drafts -gt 0)) {
     Add-NSFact "staged work is informational while $open punch-list items are open - start works the current list, and drafts and Hunt orders stay staged for a later shift"
 }
 
-$rulesPath = Join-Path $ns 'rules.json'
+$rulesPath = Get-NSLayoutPath $ns 'rules'
 if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
     Add-NSWarn 'rules.json is missing - watchman will refuse to arm'
     Add-NSAct confirm 're-run setup and accept the shipped rules template'
@@ -453,7 +475,7 @@ $sid = ''
 $tpath = ''
 $spid = ''
 $sstart = ''
-$sessionPath = Join-Path $ns '.shift-session'
+$sessionPath = Get-NSLayoutPath $ns 'session'
 if (Test-NSReparsePoint $sessionPath) {
     Add-NSWarn 'shift-session path is not a usable file'
 }
@@ -509,7 +531,7 @@ else {
 
 $leaseState = 'absent'
 $leaseGeneration = ''
-$leasePath = Join-Path $ns '.shift-lease'
+$leasePath = Get-NSLayoutPath $ns 'lease'
 if (Test-NSPathEntry $leasePath) {
     $lease = Read-NSLease $ns
     if ($null -ne $lease) {
@@ -578,7 +600,7 @@ elseif ($armed -eq 1 -and -not [string]::IsNullOrEmpty($sid)) {
 $wpid = ''
 $wstart = ''
 $watchmanUnusable = $false
-$watchmanPath = Join-Path $ns '.watchman'
+$watchmanPath = Get-NSLayoutPath $ns 'watchman'
 if (Test-NSReparsePoint $watchmanPath) {
     Add-NSWarn 'watchman pidfile path is not a usable file'
     $watchmanUnusable = $true
@@ -629,7 +651,7 @@ if (-not [string]::IsNullOrEmpty($tpath) -and -not (Test-Path -LiteralPath $tpat
     Add-NSWarn 'recorded transcript/rollout path is not a readable file'
 }
 
-Add-NSAct confirm "export a local support bundle with $(Join-Path $here 'export-support.ps1') - written under $(Join-Path $ns 'support'), never uploaded"
+Add-NSAct confirm "export a local support bundle with $(Join-Path $here 'export-support.ps1') - written under $(Get-NSLayoutPath $ns 'support'), never uploaded"
 Add-NSAct blocked 'Doctor never repairs, arms, stops, revives, or deletes'
 
 Write-NSDoctorReport -NightshiftLabel 'present' -Target $target -HostRec $hostRec `

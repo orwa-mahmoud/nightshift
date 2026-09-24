@@ -195,7 +195,10 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   printf 'the old page\n' >"$p/.nightshift/shift-report.md"
   mkdir -p "$p/.nightshift/receipts"
   printf 'keep\n' >"$p/.nightshift/receipts/20260902T190000Z-attended-evidence-program.md"
-  lib ns_migrate_receipts_layout "$p"
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/migrate-state.sh" --project "$p" --apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'move      shift-report.md -> receipts/previous-report.md'
+  printf '%s\n' "$output" | grep -qF 'rename    rules.json: report -> receipts'
   ! jq -e '.report' "$p/.nightshift/rules.json" >/dev/null || false
   jq -e '.receipts.enabled == true' "$p/.nightshift/rules.json"
   ! jq -e '.receipts | has("legacyItemReceipts")' "$p/.nightshift/rules.json" >/dev/null || false

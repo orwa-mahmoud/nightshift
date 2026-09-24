@@ -416,8 +416,11 @@ fingerprint() {
   PRE="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
   EXPLAIN="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qF 'refuse "provision an interrupted install cannot be proven recovered"' "$PRE"
-  grep -qF '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run' "$PRE"
-  grep -qF 'ns provision rollback after fixing the target, then Start again' "$PRE"
+  punch_open "$p"
+  rm -f "$p/.nightshift/.shift-armed"
+  run bash "$PRE" --project "$p" --host claude
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -qF 'repair .nightshift/provision-transaction.json and .nightshift/provision-baseline/, restore by hand or run ns provision rollback after fixing the target, then Start again'
   # Why it refuses, said once, where the verdict is explained.
   grep -qF 'product work on top of it would build on a half-applied change' "$EXPLAIN"
 }

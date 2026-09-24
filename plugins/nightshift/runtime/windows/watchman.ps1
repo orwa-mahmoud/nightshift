@@ -33,7 +33,7 @@ function Get-NSSessionValue {
 }
 
 function Test-NSDeadlinePassed {
-    $path = Join-Path $ns 'deadline'
+    $path = Get-NSLayoutPath $ns 'deadline'
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         return $false
     }
@@ -50,12 +50,12 @@ function Test-NSDeadlinePassed {
 }
 
 function Test-NSRealEnded {
-    $path = Join-Path $ns '.ended'
+    $path = Get-NSLayoutPath $ns 'ended'
     return ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-NSReparsePoint $path))
 }
 
 function Test-NSRealSessionEnd {
-    $path = Join-Path $ns '.session-end'
+    $path = Get-NSLayoutPath $ns 'session-end'
     return ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-NSReparsePoint $path))
 }
 
@@ -215,7 +215,7 @@ function Get-NSRegistryState {
 }
 
 function Get-NSCursorWorkerId {
-    $path = Join-Path $ns '.shift-worker'
+    $path = Get-NSLayoutPath $ns 'worker'
     if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Test-NSReparsePoint $path)) {
         return ''
     }
@@ -234,7 +234,7 @@ function Write-NSCursorWorkerId {
     if ($WorkerId -match '[\r\n/\\]') {
         return $false
     }
-    $path = Join-Path $ns '.shift-worker'
+    $path = Get-NSLayoutPath $ns 'worker'
     try {
         return Write-NSAtomicLines -Path $path -Lines @($WorkerId) -Private
     }
@@ -298,12 +298,12 @@ function Get-NSHostProcessState {
 }
 
 function Test-NSMintFailed {
-    $path = Join-Path $ns '.mint-failed'
+    $path = Get-NSLayoutPath $ns 'mint-failed'
     return ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-NSReparsePoint $path))
 }
 
 function Write-NSMintFailed {
-    $path = Join-Path $ns '.mint-failed'
+    $path = Get-NSLayoutPath $ns 'mint-failed'
     if (Test-NSReparsePoint $path) {
         Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
     }
@@ -477,7 +477,7 @@ function Start-NSAgent {
     $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
     if ($launchScope -clike 'unavailable:*') {
         Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Not reviving at permissions it cannot show are no broader than the original.')
-        Write-NSLogLine 'watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json.'
+        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in $(Get-NSLayoutName $ns 'rules')."
         Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
         return $false
     }
@@ -633,7 +633,7 @@ function Start-NSAgent {
 }
 
 function Get-NSHoldReason {
-    if (Test-Path -LiteralPath (Join-Path $ns 'STOP') -PathType Leaf) {
+    if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) {
         return 'stop-work order'
     }
     if ((Test-NSRealEnded) `
@@ -680,7 +680,7 @@ if ($IntervalMinutes -lt 0) {
     $rawInterval = Get-NSRule $workspace 'watchMinutes' $override
     if ($rawInterval -notmatch '^[0-9]+$') {
         Write-NSReason $ns 'unreadable-rules' 'watchMinutes'
-        throw 'watchman: watchMinutes missing or not whole minutes - .nightshift/rules.json absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)'
+        throw "watchman: watchMinutes missing or not whole minutes - $(Get-NSLayoutName $ns 'rules') absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)"
     }
     $IntervalMinutes = [int]$rawInterval
 }
@@ -704,7 +704,7 @@ if ([string]::IsNullOrEmpty($retrySpacing) -or [string]::IsNullOrEmpty($revivalP
         elseif ([string]::IsNullOrEmpty($revivalPrompt)) { 'revivalPrompt' }
         else { 'freshRevivalPrompt' }
     Write-NSReason $ns 'unreadable-rules' $missing
-    throw "watchman: $missing missing - .nightshift/rules.json absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)"
+    throw "watchman: $missing missing - $(Get-NSLayoutName $ns 'rules') absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)"
 }
 $retryValues = New-Object Collections.Generic.List[int]
 foreach ($value in ($retrySpacing -split '\s+')) {
@@ -717,10 +717,10 @@ foreach ($value in ($retrySpacing -split '\s+')) {
     $retryValues.Add([int]$value)
 }
 
-$punch = Join-Path $ns 'punch-list.md'
-$log = Join-Path $ns 'shift-log.md'
-$pidFile = Join-Path $ns '.watchman'
-$tick = Join-Path $ns '.watchman-tick'
+$punch = Get-NSLayoutPath $ns 'punch-list'
+$log = Get-NSLayoutPath $ns 'shift-log'
+$pidFile = Get-NSLayoutPath $ns 'watchman'
+$tick = Get-NSLayoutPath $ns 'watchman-tick'
 
 $watchmanMutex = Enter-NSMutex $ns '.watchman'
 if ($null -eq $watchmanMutex) {
@@ -764,7 +764,7 @@ try {
     $wake = 0
     $previousStandby = ''
     $silentWakes = 0
-    $armedMarker = Join-Path $ns '.shift-armed'
+    $armedMarker = Get-NSLayoutPath $ns 'armed'
     # Doubles on an exhausted ladder with API evidence, capped at 60m; resets to
     # IntervalMinutes on any live pulse or successful revival.
     $currentIntervalMinutes = $IntervalMinutes
@@ -785,7 +785,7 @@ try {
             exit 0
         }
 
-        if (Test-Path -LiteralPath (Join-Path $ns 'STOP') -PathType Leaf) {
+        if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) {
             Write-NSReason $ns 'owner-stop'
             Write-NSLogLine 'watchman: stop-work order - standing down'
             exit 0
@@ -944,7 +944,7 @@ try {
                 else {
                     "- [notice] $stamp - the shift session died and the watchman revived it (details in shift-log.md)."
                 }
-                [IO.File]::AppendAllText((Join-Path $ns 'parking-lot.md'), $notice + [Environment]::NewLine, $utf8)
+                [IO.File]::AppendAllText((Get-NSLayoutPath $ns 'parking-lot'), $notice + [Environment]::NewLine, $utf8)
                 if (-not [string]::IsNullOrEmpty($sessionId) -and $HostName -eq 'claude') {
                     Write-NSLogLine "watchman: revival returned - the night is one thread: claude --resume $sessionId"
                 }

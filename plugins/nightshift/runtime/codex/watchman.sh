@@ -9,7 +9,7 @@
 #
 #   codex exec resume -c 'sandbox_mode="danger-full-access"' <session-id> "<revival order>"
 #
-# A persisted .nightshift/work-target keeps the resumed session aimed at the same child repository
+# A persisted .nightshift/run/work-target keeps the resumed session aimed at the same child repository
 # when run state lives in a parent workspace. The command appends to the same rollout the session
 # was writing when it died (verified live: a
 # SIGKILLed session's rollout ends mid-event with no terminal marker, and the resume continues
@@ -58,8 +58,8 @@
 # Stand-down order, checked at every wake — never override a declared ending:
 #   0. the armed marker is gone (.shift-armed)        -> down (a disarmed site has no shift)
 #   1. stop-work order (.nightshift/STOP)             -> down
-#   2. shift ended (.nightshift/.ended, or no punch)  -> down
-#   3. clean session end (.nightshift/.session-end)   -> down (owner closed it; Start re-arms)
+#   2. shift ended (.nightshift/run/.ended, or no punch)  -> down
+#   3. clean session end (.nightshift/run/.session-end)   -> down (owner closed it; Start re-arms)
 #   4. another host's shift (.shift-session line 5)   -> down (its own watchman minds it)
 #   5. every box ticked                                -> one clock-out spawn if .ended missing,
 #                                                        then down (a crash at the finish line
@@ -95,9 +95,15 @@ PROJECT="$PWD"
 NS="$PROJECT/.nightshift"
 WORK_TARGET="$(ns_work_target "$PROJECT" 2>/dev/null || true)"
 [ -n "$WORK_TARGET" ] || WORK_TARGET="$PROJECT"
-PUNCH="$NS/punch-list.md"
-LOG="$NS/shift-log.md"
-TICK="$NS/.watchman-tick"
+declare PUNCH LOG TICK SESSION_FILE SESSION_END ENDED DEADLINE STOP
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set LOG "$NS" shift-log
+ns_layout_set TICK "$NS" watchman-tick
+ns_layout_set SESSION_FILE "$NS" session
+ns_layout_set SESSION_END "$NS" session-end
+ns_layout_set ENDED "$NS" ended
+ns_layout_set DEADLINE "$NS" deadline
+ns_layout_set STOP "$NS" stop
 note() { ns_record_reason "$NS" "$1" "${2:-}"; }
 STATE_KIND="$(ns_state_kind "$PROJECT")"
 case "$STATE_KIND" in
@@ -112,7 +118,7 @@ esac
 case "$INTERVAL_MIN" in
   '' | *[!0-9]*)
     note unreadable-rules watchMinutes
-    printf 'watchman: watchMinutes missing or not whole minutes — .nightshift/rules.json absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)\n' >&2
+    printf 'watchman: watchMinutes missing or not whole minutes — %s absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)\n' "$(ns_layout_name "$NS" rules)" >&2
     exit 1
     ;;
 esac
@@ -127,7 +133,7 @@ PROMPT_FRESH="$(ns_expand_injected_paths "$PROJECT" "$(rule "$PROJECT" freshRevi
 for _req in "watchRetrySeconds:$RETRY_SPACING" "revivalPrompt:$PROMPT_RESUME" "freshRevivalPrompt:$PROMPT_FRESH"; do
   if [ -z "${_req#*:}" ]; then
     note unreadable-rules "${_req%%:*}"
-    printf 'watchman: %s unreadable — .nightshift/rules.json absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)\n' "${_req%%:*}" >&2
+    printf 'watchman: %s unreadable — %s absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)\n' "${_req%%:*}" "$(ns_layout_name "$NS" rules)" >&2
     exit 1
   fi
 done
@@ -137,7 +143,8 @@ log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 
 # The marker is the shift. Without it there is nothing to revive and no reading to take, and
 # the watchman never writes the marker back.
-ARMED="$NS/.shift-armed"
+declare ARMED
+ns_layout_set ARMED "$NS" armed
 armed() { [ -f "$ARMED" ]; }
 stand_down_disarmed() {
   note owner-disarm
@@ -146,7 +153,8 @@ stand_down_disarmed() {
 }
 
 # One watchman per site — either host's. A stale pidfile from a dead holder is taken over.
-PIDFILE="$NS/.watchman"
+declare PIDFILE
+ns_layout_set PIDFILE "$NS" watchman
 if [ -L "$PIDFILE" ]; then
   rm -f "$PIDFILE"
 elif [ -f "$PIDFILE" ]; then
@@ -169,10 +177,10 @@ holds_pidfile() {
 trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
 WATCH_CLOCK="$(date +%s)"
 
-sid()        { [ -L "$NS/.shift-session" ] && return; sed -n 1p "$NS/.shift-session" 2>/dev/null; }
-rollout()    { [ -L "$NS/.shift-session" ] && return; sed -n 2p "$NS/.shift-session" 2>/dev/null; }
-rec_pid()    { [ -L "$NS/.shift-session" ] && return; sed -n 3p "$NS/.shift-session" 2>/dev/null | tr -d '[:space:]'; }
-rec_start()  { [ -L "$NS/.shift-session" ] && return; sed -n 4p "$NS/.shift-session" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
+sid()        { [ -L "$SESSION_FILE" ] && return; sed -n 1p "$SESSION_FILE" 2>/dev/null; }
+rollout()    { [ -L "$SESSION_FILE" ] && return; sed -n 2p "$SESSION_FILE" 2>/dev/null; }
+rec_pid()    { [ -L "$SESSION_FILE" ] && return; sed -n 3p "$SESSION_FILE" 2>/dev/null | tr -d '[:space:]'; }
+rec_start()  { [ -L "$SESSION_FILE" ] && return; sed -n 4p "$SESSION_FILE" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
 open_boxes() { ns_open_boxes "$PUNCH"; }
 
 # The recorded pid counts only as the exact recorded process: pid + start time, a pair that pid
@@ -264,7 +272,7 @@ spawn() { # $1 = rung (1|2)
     unavailable:*)
       RECOVERY_REFUSED=1
       log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
-      log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in .nightshift/rules.json."
+      log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in $(ns_layout_name "$NS" rules)."
       note recovery-scope-unavailable
       return 1
       ;;
@@ -326,10 +334,10 @@ while :; do
   wake=$((wake + 1))
 
   armed || stand_down_disarmed
-  if [ -f "$NS/STOP" ]; then note owner-stop; log_line "watchman: stop-work order — standing down"; exit 0; fi
-  if [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; then note completed; exit 0; fi
+  if [ -f "$STOP" ]; then note owner-stop; log_line "watchman: stop-work order — standing down"; exit 0; fi
+  if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then note completed; exit 0; fi
   if [ ! -f "$PUNCH" ]; then note stand-down "punch list missing"; exit 0; fi
-  if [ -f "$NS/.session-end" ] && [ ! -L "$NS/.session-end" ]; then
+  if [ -f "$SESSION_END" ] && [ ! -L "$SESSION_END" ]; then
     note clean-session-end
     log_line "watchman: clean session end — the owner closed it; standing down (start re-arms)"
     exit 0
@@ -357,8 +365,8 @@ while :; do
     log_line "watchman: clock-out attempt 1/1 returned without releasing the shift — standing down"
     exit 0
   fi
-  if [ -f "$NS/deadline" ] && [ ! -L "$NS/deadline" ]; then
-    dl="$(tr -d '[:space:]' <"$NS/deadline" 2>/dev/null)"
+  if [ -f "$DEADLINE" ] && [ ! -L "$DEADLINE" ]; then
+    dl="$(tr -d '[:space:]' <"$DEADLINE" 2>/dev/null)"
     if printf '%s' "$dl" | grep -qE '^[0-9]+$' && [ "$(date +%s)" -ge "$dl" ]; then
       log_line "watchman: past the deadline with the session gone — spawning the clock-out (attempt 1/1)"
       spawn 1 || true

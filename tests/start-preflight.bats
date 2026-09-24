@@ -232,7 +232,7 @@ setup_site() { # <name> [punch-body]
   run bash "$PREFLIGHT" --project "$p"
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF 'refuse provision an interrupted install cannot be proven recovered'
-  printf '%s\n' "$output" | grep -qF '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run'
+  printf '%s\n' "$output" | grep -qF '.nightshift/provision-transaction.json and .nightshift/provision-baseline/, restore by hand or run'
   printf '%s\n' "$output" | grep -qF 'ns provision rollback after fixing the target, then Start again'
 }
 
@@ -661,7 +661,7 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
 @test "Start records the snapshot right before it arms" {
   s="$PLUGIN/skills/start/SKILL.md"
   snap="$(grep -n 'start-preflight --phase snapshot' "$s" | head -n1 | cut -d: -f1)"
-  arm="$(grep -nF 'touch "$NS/.shift-armed"' "$s" | head -n1 | cut -d: -f1)"
+  arm="$(grep -nF 'touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"' "$s" | head -n1 | cut -d: -f1)"
   [ -n "$snap" ] && [ -n "$arm" ]
   [ "$snap" -lt "$arm" ]
 }

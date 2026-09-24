@@ -89,7 +89,12 @@ hash="$(printf '%s' "$PROJECT" | cksum | cut -d' ' -f1)"
 ID="${slug}-${hash}"
 LABEL="com.nightshift.${ID}"
 MARKER="# nightshift:${ID}"
-LOG="$PROJECT/.nightshift/scheduled.log"
+declare LOG PUNCH WORK_ORDERS DRAFTING_TABLE WORK_MODE_FILE
+ns_layout_set LOG "$PROJECT/.nightshift" scheduled-log
+ns_layout_set PUNCH "$PROJECT/.nightshift" punch-list
+ns_layout_set WORK_ORDERS "$PROJECT/.nightshift" work-orders
+ns_layout_set DRAFTING_TABLE "$PROJECT/.nightshift" drafting-table
+ns_layout_set WORK_MODE_FILE "$PROJECT/.nightshift" work-mode
 QPROJECT="$(shell_quote "$PROJECT")"
 QSTART="$(shell_quote '/nightshift:start')"
 QLOG="$(shell_quote "$LOG")"
@@ -145,7 +150,7 @@ show_registered() {
 check_artifact_receipts() {
   local mode recv proposed
   if mode="$(ns_work_mode "$PROJECT" 2>/dev/null)"; then
-    if [ ! -s "$PROJECT/.nightshift/work-mode" ]; then
+    if [ ! -s "$WORK_MODE_FILE" ]; then
       proposed="$(ns_propose_work_mode "$PROJECT" 2>/dev/null)" || proposed=""
       if [ "$proposed" = artifact ]; then
         return 3
@@ -223,7 +228,7 @@ if [ "$MODE" = "preflight" ]; then
     fail=1
   fi
 
-  RULES="$PROJECT/.nightshift/rules.json"
+  ns_layout_set RULES "$PROJECT/.nightshift" rules
   if [ ! -f "$RULES" ]; then
     pf "FAIL rules.json is missing"
     fail=1
@@ -257,15 +262,15 @@ if [ "$MODE" = "preflight" ]; then
     fail=1
   fi
 
-  open="$(ns_open_boxes "$PROJECT/.nightshift/punch-list.md")"
+  open="$(ns_open_boxes "$PUNCH")"
   if [ "$open" -eq 0 ]; then
     pf "FAIL punch list has no open items — a scheduled start promotes nothing"
     fail=1
-    orders="$(ns_open_boxes_file "$PROJECT/.nightshift/work-orders.md")"
+    orders="$(ns_open_boxes_file "$WORK_ORDERS")"
     if [ "$orders" -gt 0 ]; then
       pf "NOTE $orders parked Hunt work order(s) — start will not promote them"
     fi
-    drafts="$(ns_open_drafts "$PROJECT/.nightshift/drafting-table.md")"
+    drafts="$(ns_open_drafts "$DRAFTING_TABLE")"
     if [ "$drafts" -gt 0 ]; then
       pf "NOTE $drafts drafting-table item(s) — start will not promote them"
     fi
@@ -412,14 +417,14 @@ fi
 
 # The punch list is the shift: a scheduled start works what it finds and promotes nothing, so an
 # empty list at %s means the run does nothing at all.
-if [ "$(ns_open_boxes "$PROJECT/.nightshift/punch-list.md")" -eq 0 ]; then
+if [ "$(ns_open_boxes "$PUNCH")" -eq 0 ]; then
   printf 'Note: the punch list has no open items. A scheduled start works the list it finds and\n'
   printf 'promotes nothing, so queue the work before %s or the run will find nothing to do.\n' "$AT"
-  orders="$(ns_open_boxes_file "$PROJECT/.nightshift/work-orders.md")"
+  orders="$(ns_open_boxes_file "$WORK_ORDERS")"
   if [ "$orders" -gt 0 ]; then
     printf 'Parked Hunt work orders: %s (start will not promote them).\n' "$orders"
   fi
-  drafts="$(ns_open_drafts "$PROJECT/.nightshift/drafting-table.md")"
+  drafts="$(ns_open_drafts "$DRAFTING_TABLE")"
   if [ "$drafts" -gt 0 ]; then
     printf 'Drafting-table items: %s (start will not promote them).\n' "$drafts"
   fi

@@ -17,15 +17,18 @@ attached from (`skills/setup/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 Once the workspace and work target are resolved, the bundled mechanical scaffold is
 `ns setup --work-target "$WORK_TARGET" --mode "$WORK_MODE"`, which exists on native Windows only;
 on every other host this skill writes the same templates itself, as below.
-It copies only absent files, writes state version 1 for a new site, persists the work target and
+It copies only absent files, writes state version 2 for a new site, persists the work target and
 work mode (`-Mode repository` or `-Mode artifact`), and keeps `$NS/` private. It refuses a notes
 folder under default repository mode: `pass -Mode artifact for a notes folder that is not a Git repository`.
-Read its output back rather than restating it. The skill still owns every owner choice below; the
+On an existing site at an older state-version its `migration` field describes the move into the
+current layout, exactly as the preview below would. Read its output back rather than restating it.
+The skill still owns every owner choice below; the
 script asks nothing and never invents gates, permissions, profiles, migration approval, a receipts
 choice, or a tooling policy.
 
@@ -67,8 +70,8 @@ Detect the work mode, explain it, and ask before persisting it. Use
 - scratch (`ns_propose_work_mode` status 2, or `Get-NSProposedWorkMode` throwing) — stop; create
   nothing.
 
-Never persist a mode until the owner confirms. Never `git init` a notes folder to change an artifact proposal into repository mode. Then write `$NS/work-mode` as `repository` or
-`artifact` (one word, one newline) and `$NS/work-target` as the absolute canonical path of the
+Never persist a mode until the owner confirms. Never `git init` a notes folder to change an artifact proposal into repository mode. Then write `$NS/run/work-mode` as `repository` or
+`artifact` (one word, one newline) and `$NS/run/work-target` as the absolute canonical path of the
 chosen folder. On POSIX: `ns_record_work_target "$NIGHTSHIFT_WORKSPACE" "$WORK_TARGET" "$WORK_MODE"`.
 On later setup runs, validate and retain that mode and target unless the owner explicitly changes
 them. Repository mode: stack detection, Git checks, gates, commits, and verification operate in
@@ -81,25 +84,31 @@ pretending it is a repository.
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" scaffold
 ```
 
-It writes each state file that is not already there and reports `wrote <name>` or `kept <name>`,
-so a name the owner already has is left exactly as it is and a second run is a safe repair. Read
-its output back. The copies carry resolved absolute paths — a person pasting a command out of
+It writes the files every shift uses that are not already there (the punch list, the parking lot,
+the snag log, the drafting table and the shift log) and reports `wrote <path>` or `kept <path>`, so
+a name the owner already has is left exactly as it is and a second run is a safe repair. Read its
+output back. The work orders and the product notebook wait until something needs them: Hunt runs
+`ns scaffold work-orders` when it stages an order, and cutting a product-evolution item runs
+`ns scaffold product`. The copies carry resolved absolute paths — a person pasting a command out of
 their own punch list has no `$NS` — and the shipped templates are unchanged. Never write those
 tokens into `rules.json`: revival and clock-out text stay owner-editable, and the gate qualifies
 bare `.nightshift/` mentions at injection time.
 
-Create `$NS/shift-log.md` with a one-line header if absent.
+**State version.** `$NS/state-version` is the schema marker, and it names the layout: this plugin
+writes version `2`, which groups `$NS/` by purpose. The scaffold writes it into a `$NS/` it creates.
+A site at version `1`, or with no marker (legacy `0`), keeps every state file at the top of `$NS/`
+and goes on working there; offer the move with
 
-**State version.** `$NS/state-version` is the schema marker. This plugin supports
-integer `1`. If this run created `$NS/` (the directory did not exist when setup
-started), write exactly `1` followed by a newline to
-`$NS/state-version` after the templates. If `$NS/`
-already existed and the marker is missing, that workspace is legacy version `0` — offer
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state`
-and run it only after an explicit yes; the script writes only the marker and refuses while
-armed. On native Windows the scaffold's `--migrate-legacy` switch is the same idempotent marker
-write. A marker newer than `1`, or a malformed file, fails closed: print the diagnostic, do
-not rewrite or downgrade it, and do not continue scaffolding as if the site were current.
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state
+```
+
+which only previews: each file with its old and new path, every link it rewrites, every conflict,
+and what it leaves in place. Show that preview, and run it again with `--apply`
+only after an explicit yes. It refuses while a shift is armed, a watchman is alive or a lock is
+held, and it never deletes or overwrites. Never move a state file by hand. A marker newer than `2`, or a malformed
+file, fails closed: print the diagnostic, do not rewrite or downgrade it, and do not continue
+scaffolding as if the site were current.
 
 ## 2. Private by default
 
@@ -109,17 +118,18 @@ not rewrite or downgrade it, and do not continue scaffolding as if the site were
  level below — `.nightshift/` is already outside every repo, so write no `.gitignore` there.
  Run history is the owner's; it never enters the project repo.
 - **Receipts repo — ask, default no.** The run state can be versioned in its own local-only git
- repo inside `$NS/`, so every punch-list change and log line has history. Most people
+ repo inside `$NS/`, so every punch-list change and owner file has history. Most people
  don't want a git repo living inside their project, so ask — *"version the run state in a local
  receipts repo? (never pushed, never touches your project's history)"* — and on anything but a
  clear yes, skip it: the receipts still exist as plain files. Present the question neutrally —
  never describe the repo as recommended; the default is no. On yes: if `$NS/.git` does
  not exist, run `git -C "$NS" init` rather than `cd`-ing there.
- Ensure `$NS/.gitignore` contains the
- transient markers `STOP`, `.stall`, `.notified`, `deadline`, `.session-end`, `.shift-pulse`, `.mint-failed`, `.shift-session`,
- `.shift-session.tmp.*`, `.shift-worker`, `.shift-lease`, `.shift-lease.tmp.*`, `.mutex-scope`,
- `.mutex-scope.tmp.*`, `.watchman`, `.watchman-tick`, `.lock.d/`, and `.lease-lock.d/`; preserve
- existing lines. Make one initial commit only when setup created the receipts repository.
+ Ensure `$NS/.gitignore` contains `STOP` and `run/`, the runtime's own folder; preserve existing
+ lines. A site still at version `1` keeps the runtime's files at the top of `$NS/`, so there it
+ names the transient markers instead: `STOP`, `.stall`, `.notified`, `deadline`, `.session-end`,
+ `.shift-pulse`, `.mint-failed`, `.shift-session`, `.shift-session.tmp.*`, `.shift-worker`,
+ `.shift-lease`, `.shift-lease.tmp.*`, `.mutex-scope`, `.mutex-scope.tmp.*`, `.watchman`,
+ `.watchman-tick`, `.lock.d/`, and `.lease-lock.d/`; migrate-state adds `run/` with the move. Make one initial commit only when setup created the receipts repository.
  Creating the repo does **not** turn on headless auto-commit — that is `receiptsAutoCommit`
  in `rules.json`, shipped `false`; the owner commits the receipts tree when they want.
  **Never add a remote to it, never push it.**
@@ -264,8 +274,9 @@ to restore the template contract, or keep theirs. Never rewrite without an expli
 
 Print the workspace-state path and resolved work target, what was scaffolded, whether a receipts
 repo was created, the gates that were written (or that none were), and the project defaults stored
-in the `shift` block of `$NS/rules.json`. Tell the user to draft items in `$NS/drafting-table.md`, promote them into
+in the `shift` block of `$NS/rules.json`. Tell the user to draft items in `$NS/staging/drafting-table.md`, promote them into
 the punch list, then start the shift (`/nightshift:start` on Claude Code, or ask Nightshift to start
 on Codex). Mention that the open-ended product-evolution shift keeps its evidence and ranked work in
-`$NS/product-research.md` and `$NS/opportunity-map.md`, while the quality skill can
+`$NS/product/product-research.md` and `$NS/product/opportunity-map.md`, written the first time such
+an item is cut, while the quality skill can
 turn existing lint/type debt into proposed items whenever they want it.

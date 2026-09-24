@@ -15,6 +15,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# shellcheck source=plugins/nightshift/lib/paths.sh
+. "$_here/../lib/paths.sh"
 SCHEMA_PATH="$_here/../skills/nightshift/references/schemas/v1/finding.json"
 EMIT_JQ="$_here/evidence-emit.jq"
 
@@ -108,7 +110,7 @@ _valid_evidence_id() {
 _contained_raw() {
   local id="$1" parent ns_real dest_parent
   _valid_evidence_id "$id" || return 1
-  _join evidence raw
+  _join "$EVREL" raw
   _join "$JOINED" "$id.txt"
   RAWPATH="$JOINED"
   case "$RAWPATH" in
@@ -1119,8 +1121,9 @@ _abspath "$PROJECT_ARG"
 PROJECT="$ABSPATH"
 _join "$PROJECT" .nightshift
 NS="$JOINED"
-_join "$NS" evidence
-EVDIR="$JOINED"
+declare EVDIR EVREL
+ns_layout_set EVDIR "$NS" evidence
+ns_layout_rel_set EVREL "$NS" evidence
 _join "$EVDIR" findings.jsonl
 JSONL="$JOINED"
 _join "$EVDIR" findings.md

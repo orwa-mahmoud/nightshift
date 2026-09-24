@@ -16,10 +16,13 @@ SID="${CURSOR_SESSION_ID:-}"
 HOST_DIR="$(cursor_project_dir)"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
 NS="$PROJECT_DIR/.nightshift"
-PUNCH="$NS/punch-list.md"
+declare PUNCH ARMED ENDED
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set ARMED "$NS" armed
+ns_layout_set ENDED "$NS" ended
 
-[ -f "$NS/.shift-armed" ] && [ -f "$PUNCH" ] || exit 0
-{ [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; } && exit 0
+[ -f "$ARMED" ] && [ -f "$PUNCH" ] || exit 0
+{ [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; } && exit 0
 # A count that fails is not a verdict. An unreadable punch list is not proof the work is
 # done, so the pointer still stands — the same reading the clock-out gate takes.
 OPEN="$(ns_open_boxes "$PUNCH")" || OPEN=1

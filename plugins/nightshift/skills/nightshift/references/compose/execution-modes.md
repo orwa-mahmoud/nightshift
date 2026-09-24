@@ -91,7 +91,7 @@ sentence.
   allows; a missing seatbelt is a skip reason and the shift continues under existing tools.
 
 Artifact mode refuses repository-tool policies (`auto-add`, `review-missing`) and explains why;
-only existing-tools is valid there. Inventory in `$NS/capabilities.json` is a cache: re-probe each
+only existing-tools is valid there. Inventory in `$NS/run/capabilities.json` is a cache: re-probe each
 new shift or branch. Recovery runs before Start, so a shift never opens on an unproven baseline.
 Unsupported permission modes must be reported before arming.
 
@@ -127,8 +127,8 @@ that does not commit arms under `-s workspace-write`; one that commits needs the
 `references/hosts/codex.md`, because under Codex's `workspace-write` sandbox `.git` is protected.
 Warn and proceed.
 
-Only then: cut the whole work order out of `work-orders.md`, put the item under `## Items`, write
-the deadline, arm the gate, log the start, run the binding probe, classify the Codex session
+Only then: cut the whole work order out of `work-orders.md`, put the item under `## Items`, run
+`ns scaffold product` when the item is a product-evolution shift, write the deadline, arm the gate, log the start, run the binding probe, classify the Codex session
 identity, and arm the host's watchman. The marker is what starts the shift — without it the list
 is written and nothing holds it. Unsupported or malformed identities refuse as Start requires;
 never resume them. Hunt and Quality carry the exact commands.

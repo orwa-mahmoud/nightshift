@@ -18,7 +18,8 @@ attached from (`skills/doctor/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 ## 1. Run the inspector
 
@@ -45,7 +46,7 @@ is armed — the same precedence Start applies. With open work, say what is stag
 that Start works the current list; do not read a count as an invitation to widen the approved
 scope, and never promote anything from this read-only skill.
 
-The `work mode` fact is `repository` or `artifact`. When `$NS/work-mode` is missing and Setup
+The `work mode` fact is `repository` or `artifact`. When `$NS/run/work-mode` is missing and Setup
 would propose artifact, Doctor warns `work mode is unset; Setup would propose artifact` and offers
 `persist the proposed artifact mode with Setup; Doctor does not write work-mode`. When work-mode is
 unreadable it warns `work mode is malformed; treating the site as unusable until Setup rewrites it`,
@@ -81,7 +82,7 @@ The report tags every suggestion:
 - `[safe]` — mechanical leftover with no live session (for example a stale watchman pid file whose
   process is already gone). Still do **not** apply it because Doctor was invoked; offer it.
 - `[confirm]` — owner decision (broken link, missing setup, leftover STOP while they still want
-  the night). During an **unattended active shift** (`$NS/.shift-armed` and open boxes), report that
+  the night). During an **unattended active shift** (`$NS/run/.shift-armed` and open boxes), report that
   the recommendation should be parked with the default "leave in place until morning", but do not
   write the parking lot or ask — the Doctor invocation remains byte-identical.
 - `[blocked]` — Nightshift cannot fix this here (non-resumable Codex id, malformed process lease,
@@ -97,7 +98,7 @@ the owner to reopen a conversation that would stay blocked.
 Invoking Doctor alone must leave the tree byte-identical. Never perform a repair merely because
 Doctor was invoked.
 
-When cross-host continuity is relevant, summarize stand-down and revival from `$NS/shift-log.md`
+When cross-host continuity is relevant, summarize stand-down and revival from `$NS/run/shift-log.md`
 (no secrets), and run `continuity-handoff.sh fence-check` only when a duplicate worker or unfenced
 prior owner is suspected.
 
@@ -110,8 +111,12 @@ informational only: continue the active work without asking or writing state.
 
 Two repairs the report names are separate owner actions, never Doctor's own:
 
-- Legacy schema migration, offered as `[confirm]` for unarmed legacy workspaces only —
-  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state`. A future version is `[blocked]`: never downgrade a marker.
+- The move into the current layout. On a workspace at an older state-version, or one holding a
+  state file at an earlier path, the `[confirm]` action names each file with its old and new path
+  and says that nothing is deleted; it is `[blocked]` while a shift is armed, a watchman is alive
+  or a lock is held. Relay it as printed. The owner previews it with
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" migrate-state` and makes it by running that again with
+  `--apply`. A future version is `[blocked]`: never downgrade a marker.
 - A local rule profile. Doctor may list the shipped examples with
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" apply-profile --list`
   and preview one with `--profile <name> --mode fill` (or `--mode replace`). Preview is the

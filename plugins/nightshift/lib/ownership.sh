@@ -8,7 +8,9 @@
 # timeout the caller proceeds without the lock, and the race window is merely what it was
 # before locks existed.
 ns_lock() { # $1 = the .nightshift dir; bounded ~2s wait
-  local dir="$1/.lock.d" holder _
+  local dir holder _
+  ns_layout_set dir "$1" lock
+  mkdir -p "${dir%/*}" 2>/dev/null || :
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     if mkdir "$dir" 2>/dev/null; then
       printf '%s' "$$" >"$dir/pid" 2>/dev/null || true
@@ -23,7 +25,7 @@ ns_lock() { # $1 = the .nightshift dir; bounded ~2s wait
   done
   return 1
 }
-ns_unlock() { rm -rf "$1/.lock.d" 2>/dev/null; }
+ns_unlock() { rm -rf "$(ns_layout_path "$1" lock)" 2>/dev/null; }
 
 # One active shift may keep one conversation identity across several host processes. The
 # conversation record preserves continuity; this lease fences the process that currently owns
@@ -32,7 +34,9 @@ ns_unlock() { rm -rf "$1/.lock.d" 2>/dev/null; }
 # The nonce is empty for the original interactive process. A watchman writes a new nonce and
 # generation before every spawn, so an older process carrying the same session id is fenced.
 ns_lease_lock() { # $1 = the .nightshift dir; bounded ~2s wait
-  local dir="$1/.lease-lock.d" holder _
+  local dir holder _
+  ns_layout_set dir "$1" lease-lock
+  mkdir -p "${dir%/*}" 2>/dev/null || :
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     if mkdir "$dir" 2>/dev/null; then
       printf '%s' "$$" >"$dir/pid" 2>/dev/null || true
@@ -47,7 +51,7 @@ ns_lease_lock() { # $1 = the .nightshift dir; bounded ~2s wait
   done
   return 1
 }
-ns_lease_unlock() { rm -rf "$1/.lease-lock.d" 2>/dev/null; }
+ns_lease_unlock() { rm -rf "$(ns_layout_path "$1" lease-lock)" 2>/dev/null; }
 
 ns_lease_safe_line() {
   case "$1" in
@@ -71,11 +75,13 @@ ns_session_write() { # <ns> <sid> <transcript> <pid> <start> <host> <tmp>; valid
 }
 
 ns_session_claim() { # <ns> <sid> <transcript> <pid> <start> <host>; complete file appears atomically
-  local ns="$1" tmp rc
-  tmp="$ns/.shift-session.tmp.$$.$RANDOM"
+  local ns="$1" rec tmp rc
+  ns_layout_set rec "$ns" session
+  mkdir -p "${rec%/*}" 2>/dev/null || :
+  tmp="$rec.tmp.$$.$RANDOM"
   ns_session_write "$ns" "$2" "$3" "$4" "$5" "$6" "$tmp" || return 1
-  [ -L "$ns/.shift-session" ] && rm -f "$ns/.shift-session"
-  ln "$tmp" "$ns/.shift-session" 2>/dev/null
+  [ -L "$rec" ] && rm -f "$rec"
+  ln "$tmp" "$rec" 2>/dev/null
   rc=$?
   rm -f "$tmp"
   return "$rc"
@@ -84,10 +90,11 @@ ns_session_claim() { # <ns> <sid> <transcript> <pid> <start> <host>; complete fi
 # Replace an existing conversation record. Claim creates; this updates the bound session
 # after a revival or interactive reclaim without losing the race to a second first-writer.
 ns_session_replace() { # <ns> <sid> <transcript> <pid> <start> <host>
-  local ns="$1" tmp
-  tmp="$ns/.shift-session.tmp.$$.$RANDOM"
+  local ns="$1" rec tmp
+  ns_layout_set rec "$ns" session
+  tmp="$rec.tmp.$$.$RANDOM"
   ns_session_write "$ns" "$2" "$3" "$4" "$5" "$6" "$tmp" || return 1
-  mv -f "$tmp" "$ns/.shift-session"
+  mv -f "$tmp" "$rec"
 }
 
 # Prefer the recorded host pid when it is still the same process; otherwise walk ancestry.
@@ -117,7 +124,8 @@ ns_host_process() { # <host> <ns> <fallback-pid>
 }
 
 ns_lease_load() { # $1 = the .nightshift dir; one descriptor gives one coherent snapshot
-  local f="$1/.shift-lease" _
+  local f _
+  ns_layout_set f "$1" lease
   NS_LEASE_SID=""
   NS_LEASE_HOST=""
   NS_LEASE_GENERATION=""
@@ -156,7 +164,8 @@ ns_lease_load() { # $1 = the .nightshift dir; one descriptor gives one coherent 
 ns_lease_valid() { ns_lease_load "$1"; }
 
 ns_lease_write_unlocked() { # <ns> <sid> <host> <generation> <nonce> <pid> <start>
-  local ns="$1" sid="$2" host="$3" generation="$4" nonce="$5" pid="$6" start="$7" tmp
+  local ns="$1" sid="$2" host="$3" generation="$4" nonce="$5" pid="$6" start="$7" lease tmp
+  ns_layout_set lease "$ns" lease
   ns_lease_safe_line "$sid" && ns_lease_safe_line "$start" || return 1
   case "$host" in claude | codex | cursor) ;; *) return 1 ;; esac
   case "$generation" in '' | *[!0-9]*) return 1 ;; esac
@@ -165,23 +174,24 @@ ns_lease_write_unlocked() { # <ns> <sid> <host> <generation> <nonce> <pid> <star
   case "$pid" in *[!0-9]*) return 1 ;; esac
   [ -n "$sid" ] || [ -n "$nonce" ] || return 1
   [ -n "$pid" ] || [ -z "$start" ] || return 1
-  tmp="$ns/.shift-lease.tmp.$$.$RANDOM"
+  tmp="$lease.tmp.$$.$RANDOM"
   (umask 077; printf '%s\n%s\n%s\n%s\n%s\n%s\n' \
     "$sid" "$host" "$generation" "$nonce" "$pid" "$start" >"$tmp") || {
     rm -f "$tmp"
     return 1
   }
-  mv -f "$tmp" "$ns/.shift-lease" || {
+  mv -f "$tmp" "$lease" || {
     rm -f "$tmp"
     return 1
   }
 }
 
 ns_lease_claim_initial() { # <ns> <sid> <host> <pid> <start>
-  local ns="$1" sid="$2" host="$3" pid="$4" start="$5" rc
+  local ns="$1" sid="$2" host="$3" pid="$4" start="$5" rc lease
   [ -n "$sid" ] || return 1
+  ns_layout_set lease "$ns" lease
   ns_lease_lock "$ns" || return 2
-  if [ -e "$ns/.shift-lease" ] || [ -L "$ns/.shift-lease" ]; then
+  if [ -e "$lease" ] || [ -L "$lease" ]; then
     ns_lease_valid "$ns"
     rc=$?
     ns_lease_unlock "$ns"
@@ -194,9 +204,10 @@ ns_lease_claim_initial() { # <ns> <sid> <host> <pid> <start>
 }
 
 ns_lease_takeover() { # <ns> <possibly-empty-sid> <host>; prints: generation nonce
-  local ns="$1" sid="$2" host="$3" generation=0 nonce rc existing_sid
+  local ns="$1" sid="$2" host="$3" generation=0 nonce rc existing_sid lease
+  ns_layout_set lease "$ns" lease
   ns_lease_lock "$ns" || return 2
-  if [ -e "$ns/.shift-lease" ] || [ -L "$ns/.shift-lease" ]; then
+  if [ -e "$lease" ] || [ -L "$lease" ]; then
     if ! ns_lease_valid "$ns"; then
       ns_lease_unlock "$ns"
       return 1
@@ -355,7 +366,7 @@ ns_lease_allows() { # <ns> <sid> <host> <pid> <start> <nonce> <generation>
 ns_lease_release() { # $1 = the .nightshift dir
   local ns="$1" rc
   ns_lease_lock "$ns" || return 1
-  rm -f "$ns/.shift-lease"
+  rm -f "$(ns_layout_path "$ns" lease)"
   rc=$?
   ns_lease_unlock "$ns"
   return "$rc"
@@ -459,7 +470,7 @@ ns_shift_rebind() { # <host> <pid> <start> <mode:hardhat|gate>
 # shellcheck disable=SC2034
 ns_shift_authorize() { # <host> <pid> <start> <mode:hardhat|gate>
   local host="$1" pid="$2" start="$3" mode="$4"
-  local rec session_pid lease_scope check_sid lease_rc transcript worker
+  local rec session_pid lease_scope check_sid lease_rc transcript worker lease_file
   : "${LEASE_NONCE:=}" "${LEASE_GENERATION:=}"
   NS_SHIFT_FAIL=""
   rec="${NS_SHIFT_REC:-$(ns_session_line "$NS" 1)}"
@@ -481,7 +492,8 @@ ns_shift_authorize() { # <host> <pid> <start> <mode:hardhat|gate>
   fi
 
   check_sid="${SID:-$rec}"
-  if [ ! -e "$NS/.shift-lease" ] && [ ! -L "$NS/.shift-lease" ]; then
+  ns_layout_set lease_file "$NS" lease
+  if [ ! -e "$lease_file" ] && [ ! -L "$lease_file" ]; then
     if ! ns_lease_claim_initial "$NS" "$rec" "$host" "$pid" "$start"; then
       if [ "$mode" = hardhat ]; then
         NS_SHIFT_FAIL="BLOCKED: the shift process lease could not be created. Issue STOP from another session, then run Start again."
@@ -609,11 +621,12 @@ ns_watchman_run_child() { # <ns> <host> <sid> <work_target> <project_env> <proje
 # 0 = a box moved, the pulse is fresh, or the lease holder is still alive.
 ns_watchman_revival_proved() { # <ns> <sentinel> <interval_min> <open_before>
   local ns="$1" interval="${3:-0}" before="${4:-}"
-  local now_open
-  if [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ]; then
+  local now_open ended
+  ns_layout_set ended "$ns" ended
+  if [ -f "$ended" ] && [ ! -L "$ended" ]; then
     return 0
   fi
-  now_open="$(ns_open_boxes "$ns/punch-list.md" 2>/dev/null)" || now_open=""
+  now_open="$(ns_open_boxes "$(ns_layout_path "$ns" punch-list)" 2>/dev/null)" || now_open=""
   case "$before" in
     '' | *[!0-9]*) ;;
     *)
@@ -633,7 +646,9 @@ ns_watchman_revival_proved() { # <ns> <sentinel> <interval_min> <open_before>
 # recovery nonce restored to interactive when the child is proven dead). Callers stand
 # down on 1 — production must not retry terminal clock-out. Extra args are ignored.
 ns_watchman_clockout_pending() { # <ns> <sentinel> [ignored-max-wakes] [ignored-wake]
-  if [ -f "$1/.ended" ] && [ ! -L "$1/.ended" ]; then
+  local ended
+  ns_layout_set ended "$1" ended
+  if [ -f "$ended" ] && [ ! -L "$ended" ]; then
     ns_lease_release "$1" || true
     return 0
   fi
@@ -668,7 +683,7 @@ ns_lease_restore_interactive() { # <ns>
   host="$NS_LEASE_HOST"
   generation=$((NS_LEASE_GENERATION + 1))
   if [ -z "$sid" ]; then
-    rm -f "$ns/.shift-lease"
+    rm -f "$(ns_layout_path "$ns" lease)"
     rc=$?
     ns_lease_unlock "$ns"
     return "$rc"
@@ -682,10 +697,11 @@ ns_lease_restore_interactive() { # <ns>
 }
 
 ns_lease_reset_stale() { # $1 = .nightshift; caller has proved no process or watchman owns it
-  local ns="$1" rc
-  rm -rf "$ns/.lease-lock.d" 2>/dev/null
+  local ns="$1" rc lease
+  ns_layout_set lease "$ns" lease
+  rm -rf "$(ns_layout_path "$ns" lease-lock)" 2>/dev/null
   ns_lease_lock "$ns" || return 1
-  rm -f "$ns/.shift-lease" "$ns"/.shift-lease.tmp.*
+  rm -f "$lease" "$lease".tmp.*
   rc=$?
   ns_lease_unlock "$ns"
   return "$rc"
@@ -715,14 +731,15 @@ ns_claude_foreign_cursor_surface() { # <ns-dir> <transcript-path>
 
 # True when .shift-session is a real file, not a planted symlink.
 ns_session_present() { # <ns-dir>
-  local rec="$1/.shift-session"
+  local rec
+  ns_layout_set rec "$1" session
   [ -f "$rec" ] && [ ! -L "$rec" ]
 }
 
 # Prints one line of a real .shift-session file. Empty when the path is missing or a symlink.
 ns_session_line() { # <ns-dir> <line>
   ns_session_present "$1" || return 0
-  sed -n "$2p" "$1/.shift-session" 2>/dev/null
+  sed -n "$2p" "$(ns_layout_path "$1" session)" 2>/dev/null
 }
 
 # Which host owns this shift. Absent means a record written before hosts were distinguished,
@@ -769,25 +786,29 @@ ns_codex_identity_kind() {
 # Cursor CLI worker — the resumable id in ~/.cursor/chats. The origin IDE conversation
 # stays on .shift-session; this file is the id agent --resume may legally receive.
 ns_cursor_worker_present() { # <ns>
-  [ -f "$1/.shift-worker" ] && [ ! -L "$1/.shift-worker" ]
+  local rec
+  ns_layout_set rec "$1" worker
+  [ -f "$rec" ] && [ ! -L "$rec" ]
 }
 
 ns_cursor_worker_id() { # <ns>
   ns_cursor_worker_present "$1" || return 0
-  sed -n 1p "$1/.shift-worker" 2>/dev/null
+  sed -n 1p "$(ns_layout_path "$1" worker)" 2>/dev/null
 }
 
 ns_cursor_worker_write() { # <ns> <cli_id>
-  local ns="$1" id="$2" tmp
+  local ns="$1" id="$2" rec tmp
   [ -d "$ns" ] && [ -n "$id" ] || return 1
   ns_lease_safe_line "$id" || return 1
   case "$id" in
     *[[:space:]/\\\$\`\;\|\&\<\>\*]*) return 1 ;;
   esac
-  tmp="$ns/.shift-worker.tmp.$$.$RANDOM"
+  ns_layout_set rec "$ns" worker
+  mkdir -p "${rec%/*}" 2>/dev/null || :
+  tmp="$rec.tmp.$$.$RANDOM"
   (umask 077; printf '%s\n' "$id" >"$tmp") || { rm -f "$tmp"; return 1; }
-  [ -L "$ns/.shift-worker" ] && rm -f "$ns/.shift-worker"
-  mv -f "$tmp" "$ns/.shift-worker"
+  [ -L "$rec" ] && rm -f "$rec"
+  mv -f "$tmp" "$rec"
 }
 
 ns_cursor_store_kind() { # <transcript-path>
@@ -832,7 +853,8 @@ ns_cursor_stop_request() { # <prompt>
 # Fresh: epoch within 2 * watchMinutes. Stale: older than that, or never written
 # and at least two wake intervals have passed since arm (or the supplied clock).
 ns_pulse_epoch() { # <ns>
-  local f="$1/.shift-pulse" line epoch
+  local f line epoch
+  ns_layout_set f "$1" pulse
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
   IFS= read -r line <"$f" || true
   epoch="${line%% *}"
@@ -860,7 +882,7 @@ ns_pulse_stale() { # <ns> <interval_min> [clock_epoch]
     [ $((now - epoch)) -ge "$window" ]
     return
   fi
-  armed="$ns/.shift-armed"
+  ns_layout_set armed "$ns" armed
   if [ -f "$armed" ] && [ ! -L "$armed" ]; then
     clock="$(ns_mtime "$armed")"
   fi
@@ -896,7 +918,7 @@ ns_fence_check() { # <ns>
   local ns="$1"
   local prior_fenced=0 prior_active=0 duplicate=0 takeover=0 action=refuse
   local session_exists=0 session_pid="" session_start="" session_host="" session_sid=""
-  local lease_rc sess_rc
+  local lease_rc sess_rc rec
 
   if [ -z "$ns" ] || [ ! -d "$ns" ] || [ -L "$ns" ]; then
     ns_fence_print refuse 0 0 0 0
@@ -908,7 +930,8 @@ ns_fence_check() { # <ns>
     return 2
   fi
 
-  if [ -e "$ns/.shift-session" ] || [ -L "$ns/.shift-session" ]; then
+  ns_layout_set rec "$ns" session
+  if [ -e "$rec" ] || [ -L "$rec" ]; then
     if ! ns_session_present "$ns"; then
       ns_fence_print refuse 0 0 0 0
       return 2

@@ -95,6 +95,10 @@ case "$KIND" in
 esac
 
 NS="$WORKSPACE/.nightshift"
+declare ARMED_FILE ENDED_FILE USAGE_PREFIX
+ns_layout_set ARMED_FILE "$NS" armed
+ns_layout_set ENDED_FILE "$NS" ended
+ns_layout_set USAGE_PREFIX "$NS" usage-shift ""
 if [ -z "$DATE" ]; then
   DATE="$(date +%Y-%m-%d)"
 fi
@@ -146,9 +150,9 @@ fi
 # has been read back and matches. While a shift is armed nothing is removed at all: its receipts
 # are what its own progress checks read, and a half-filed night is worse than an unfiled one.
 ARMED=0
-{ [ -e "$NS/.shift-armed" ] || [ -L "$NS/.shift-armed" ]; } && ARMED=1
+{ [ -e "$ARMED_FILE" ] || [ -L "$ARMED_FILE" ]; } && ARMED=1
 ENDED=0
-{ [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; } && ENDED=1
+{ [ -f "$ENDED_FILE" ] && [ ! -L "$ENDED_FILE" ]; } && ENDED=1
 ROTATE=0
 [ "$ARMED" -eq 0 ] && [ "$ENDED" -eq 1 ] && ROTATE=1
 if [ "$ROTATE" -eq 0 ] && [ -n "$RETIRE" ]; then
@@ -300,7 +304,7 @@ fi
 # it cleared the last shift's leftovers, so it is the closed shift's own readings — its offsets, its
 # marks, its totals. Filed under the group with everything else and retired from live storage on the
 # same rule, so the state directory does not accumulate one directory per night.
-for u in "$NS"/usage-*; do
+for u in "$USAGE_PREFIX"*; do
   if ! { [ -d "$u" ] && [ ! -L "$u" ]; }; then continue; fi
   ubase="${u##*/}"
   usrc="$dest"
@@ -319,7 +323,8 @@ FIND
 done
 
 # A leftover shift-report.md (not yet migrated into receipts/) still travels.
-report="$WORKSPACE/.nightshift/shift-report.md"
+ns_layout_rel_at report 0 previous-report
+report="$NS/$report"
 report_base=""
 report_relocated=0
 if [ -f "$report" ] && [ ! -L "$report" ]; then

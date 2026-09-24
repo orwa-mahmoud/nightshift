@@ -10,10 +10,19 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 # only start clears — and it must still name every marker.
 @test "start clears every stale marker" {
   # The preflight clears them, and Start stopped listing what it clears when the helper took it
-  # over — a list in prose beside a list in code is two lists that can disagree.
-  for m in STOP .stall .notified .ended deadline .session-end .shift-pulse .mint-failed .shift-session .watchman-tick .watchman .lock.d; do
-    grep -qF "$m" "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh" || { echo "the preflight does not clear $m"; return 1; }
+  # over — a list in prose beside a list in code is two lists that can disagree. Each marker is
+  # named by its layout key, so the list holds whichever layout the workspace keeps.
+  pre="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  control="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/control.sh"
+  reported="$(grep -F 'for key in stop stall' "$pre")"
+  dropped="$(awk '/^ns_control_drop_runtime_markers\(\)/,/^}/' "$control" | tr '\n\\' '  ')"
+  for key in stall notified ended session-end pulse mint-failed session watchman-tick lock; do
+    case " ${reported%%;*} " in *" $key "*) ;; *) echo "the preflight does not report $key"; return 1 ;; esac
+    case "$dropped" in *" $key "* | *" $key;"*) ;; *) echo "the preflight does not clear $key"; return 1 ;; esac
   done
+  grep -qF 'ns_control_drop "$STOP"' "$pre"
+  grep -qF 'ns_control_drop "$DEADLINE"' "$pre"
+  grep -qF 'ns_control_stop_watchman "$NS"' "$pre"
 }
 
 # A spent deadline strands tonight's shift; a future one IS tonight's plan, and since start never

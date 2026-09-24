@@ -35,7 +35,7 @@ case "$STATE_KIND" in
 esac
 NS="$PROJECT_DIR/.nightshift"
 
-[ -f "$NS/.shift-armed" ] || exit 0
+[ -f "$(ns_layout_path "$NS" armed)" ] || exit 0
 
 if command -v jq >/dev/null 2>&1; then
   SOURCE="$(printf '%s' "$INPUT" | jq -r '.source // empty' 2>/dev/null || true)"
@@ -57,13 +57,15 @@ REC="$(ns_session_line "$NS" 1)"
 [ -n "$REC" ] || exit 0
 [ -n "$SID" ] && [ "$SID" = "$REC" ] || exit 0
 
-[ -L "$NS/.context-reset" ] && rm -f "$NS/.context-reset"
-: >"$NS/.context-reset" 2>/dev/null || :
+declare RESET
+ns_layout_set RESET "$NS" context-reset
+[ -L "$RESET" ] && rm -f "$RESET"
+: >"$RESET" 2>/dev/null || :
 
 LINE='nightshift: context was compacted — reload the nightshift skill, the contract in punch-list.md, and the active receipt under receipts/ before continuing.'
 ACTIVE="$(ns_active_item "$PROJECT_DIR" 2>/dev/null)" || ACTIVE=""
 if [ -n "$ACTIVE" ]; then
-  LINE="$LINE Receipts: one file per item under .nightshift/receipts/; the current item is ${ACTIVE} → $(ns_receipt_base "$PROJECT_DIR" "$ACTIVE").md."
+  LINE="$LINE Receipts: one file per item under $(ns_layout_name "$NS" receipts)/; the current item is ${ACTIVE} → $(ns_receipt_base "$PROJECT_DIR" "$ACTIVE").md."
 fi
 if command -v jq >/dev/null 2>&1; then
   jq -nc --arg c "$LINE" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$c}}'

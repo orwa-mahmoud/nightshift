@@ -13,7 +13,8 @@ attached from (`skills/start/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 When a verdict names your host — permission modes, resume commands, the sandbox and identity
 rules that belong to it — open
@@ -53,14 +54,14 @@ invent a time budget for a paused shift whose deadline has passed.
 ## 2. The punch list is the shift
 
 **Inspect capabilities in the skill.** Read manifests, lockfiles, and `## Gates` in the work
-target. `$NS/capabilities.json` is a cache the model may update after a successful tooling commit
+target. `$NS/run/capabilities.json` is a cache the model may update after a successful tooling commit
 only; no detector is required.
 
 **Permission gaps are parked, never asked.** Run
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" preflight-needs` against every item now in
 `## Items`. For each item with a gap, run
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" park-needs` to add its entry to
-`$NS/parking-lot.md` naming the missing category, then append one `$NS/shift-log.md` line listing
+`$NS/inbox/parking-lot.md` naming the missing category, then append one `$NS/run/shift-log.md` line listing
 every gapped item. Work everything else. If either helper exits because no JSON parser is
 installed, park the gaps in the skill and continue; neither is on the armed path.
 
@@ -70,23 +71,25 @@ them. An empty `## Items` section still keeps the Shift contract and Gates; they
 or Start cuts next.
 
 **Resume the active product cycle before rediscovery.** When the open item is product evolution,
-inspect `$NS/opportunity-map.md` for its single `Status: building` entry before doing new research
+inspect `$NS/product/opportunity-map.md` for its single `Status: building` entry before doing new research
 or selecting work. Its `Next` action and `Verify remaining` are the continuation point. More than
 one building entry is inconsistent state: keep the earliest one active, mark the others
-`candidate`, record the repair in `$NS/shift-log.md`, and continue.
+`candidate`, record the repair in `$NS/run/shift-log.md`, and continue.
 
 **Only when the punch list is empty, offer what is staged.** The `ok staged` verdict already counts
-`$NS/work-orders.md` and `$NS/drafting-table.md`. Read both, show what they hold in one short list,
+`$NS/staging/work-orders.md` and `$NS/staging/drafting-table.md`. Read both (a file that is not there
+holds nothing), show what they hold in one short list,
 and ask which to work now. On the owner's choice, **cut it — move, never copy**: the item goes
 under `## Items` and is removed from the file it came from, so it never exists in two places. An
 imported draft (`Status: proposed` and a canonical `Source:` GitHub URL) is cut the same way in the
 skill — move the item under `## Items` and remove it from the drafting table. The import-issues
 helper is optional. Do not require Python. A flagged import stays refused unless the owner
 overrides after seeing the flags. From a work order, remove the whole `## Work order` section
-(heading, hours, and item), not just the checkbox, then write `$NS/deadline` as a UNIX epoch from
+(heading, hours, and item), not just the checkbox, then write `$NS/run/deadline` as a UNIX epoch from
 the recorded hours (`now + hours*3600`; compute now with `date +%s` on POSIX, or `Get-NSUnixTime`
 after importing the module on native Windows); an order marked finite with no hours writes no
-deadline.
+deadline. A product-evolution item gets its notebook first: `ns scaffold product` creates
+`$NS/product/opportunity-map.md` and `$NS/product/product-research.md` and keeps any already there.
 
 If the punch list is empty and nothing is staged, stop and say so: Setup if the project is new,
 Hunt to compose a shift, or write an item by hand. Give host-native invocation when needed: slash
@@ -103,9 +106,9 @@ would otherwise clock tonight out at zero items. A deadline still in the future 
 Act on the deadline verdict:
 
 - `ok deadline <epoch> (policy …)` — the shift policy is the authority. Write that epoch to
-  `$NS/deadline`.
+  `$NS/run/deadline`.
 - `ok deadline <epoch> (file …)` — keep the file as it is and record that epoch as the policy's
-  `deadlineEpoch`, logging the adoption in `$NS/shift-log.md`. Never delete the marker.
+  `deadlineEpoch`, logging the adoption in `$NS/run/shift-log.md`. Never delete the marker.
 - `ok deadline none (finite list …)` — correct. Their natural end is the last tick, and a stuck run
   is red-flagged in the shift log and held for review.
 - `refuse deadline` — an `Ending: open-ended` marker with no clock. Refuse to start, say so in one
@@ -126,13 +129,13 @@ Relay a `warn` line once and arm anyway; a composed shift keeps the policy it al
 create the marker:
 
 ```bash
-touch "$NS/.shift-armed"
+touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"
 ```
 
 Native Windows:
 
 ```powershell
-New-Item -ItemType File -Force "$NS\.shift-armed" | Out-Null
+New-Item -ItemType File -Force (& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" path armed) | Out-Null
 ```
 
 **This, and nothing else, is what puts a session on shift.** Until it exists the punch list is an
@@ -143,7 +146,7 @@ a shift it never started.
 
 ### Bind this session — before any other tool
 
-Immediately after writing `$NS/.shift-armed`, make this the next tool call on either host:
+Immediately after writing `$NS/run/.shift-armed`, make this the next tool call on either host:
 
 ```bash
 : nightshift-binding-probe
@@ -155,8 +158,8 @@ On native Windows, the immediate PowerShell probe is:
 $null = 'nightshift-binding-probe'
 ```
 
-This harmless host-shell probe makes the hardhat record this conversation in `$NS/.shift-session`
-and claim generation 1 in `$NS/.shift-lease` before item work or the watchman begins. Its
+This harmless host-shell probe makes the hardhat record this conversation in `$NS/run/.shift-session`
+and claim generation 1 in `$NS/run/.shift-lease` before item work or the watchman begins. Its
 distinctive marker also makes a concurrent second Start fail explicitly if another session won the
 atomic session-file claim. Do not read files, search, call MCP, or yield between the marker and the
 probe: catch-all tool rules observe those calls, but passive tools cannot make the first session
@@ -164,7 +167,7 @@ claim. Never create or edit the lease directly.
 
 The probe must execute cleanly with no hook denial or hook error. On native Windows this is also
 the live check that the filesystem can make an atomic private session claim and lease. If it fails,
-remove `$NS/.shift-armed`, run Stop, and follow the stale-lease reset the preflight prints as a
+remove `$NS/run/.shift-armed`, run Stop, and follow the stale-lease reset the preflight prints as a
 repair; do not begin item work or arm a watchman on an assumed claim.
 
 ### Codex identity checkpoint — before the watchman
@@ -176,7 +179,7 @@ so this runs after the probe and before the watchman:
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" start-preflight --phase bind
 ```
 
-It classifies `$NS/.shift-session` line 1 with `ns_codex_identity_kind` (native Windows:
+It classifies `$NS/run/.shift-session` line 1 with `ns_codex_identity_kind` (native Windows:
 `Get-NSCodexIdentityKind` after
 `Import-Module "$NIGHTSHIFT_PLUGIN_ROOT\lib\Nightshift.psm1" -Force`).
 
@@ -184,11 +187,11 @@ It classifies `$NS/.shift-session` line 1 with `ns_codex_identity_kind` (native 
 - `warn codex-identity missing` — continue with the fresh-session fallback and say plainly that
   same-thread recovery is unavailable until an identity is recorded.
 - `refuse codex-identity` — stop the unattended start.
-  Remove only the markers this start created (`$NS/.shift-armed` and its
-  new `$NS/.shift-session`) and reset the lease with `ns_lease_reset_stale` in the same Bash call,
+  Remove only the markers this start created (`$NS/run/.shift-armed` and its
+  new `$NS/run/.shift-session`) and reset the lease with `ns_lease_reset_stale` in the same Bash call,
   so no hook call in between can bootstrap the aborted lease again. On native Windows,
   `Reset-NSStaleLease "$NS"` with no other command between marker removal and the reset. Append one
-  failed-preflight line to `$NS/shift-log.md` and stop before the watchman or item work. Never
+  failed-preflight line to `$NS/run/shift-log.md` and stop before the watchman or item work. Never
   pass the value to Codex, print it, or guess a replacement.
 
 This capture-and-check is part of Start, not an owner instruction to remember. An attended session
@@ -196,8 +199,8 @@ that does not request an unattended shift remains unaffected.
 
 ## 5. Heads-up
 
-Surface any still-unanswered entries in `$NS/parking-lot.md` (read-only) so the owner sees what the
-last shift parked — printed, never waited on. Append a `shift started` line to `$NS/shift-log.md`.
+Surface any still-unanswered entries in `$NS/inbox/parking-lot.md` (read-only) so the owner sees what the
+last shift parked — printed, never waited on. Append a `shift started` line to `$NS/run/shift-log.md`.
 The preflight rotates that journal itself when it grows past ~500 KB, into
 `$NS/archive/<YYYY-MM-DD>/shift-log.md` (`date +%Y-%m-%d` on POSIX, `Get-Date -Format yyyy-MM-dd`
 on native Windows). Only the mechanical journal auto-rotates — `snag-log.md` and `parking-lot.md`

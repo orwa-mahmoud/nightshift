@@ -5,7 +5,7 @@
 #   provision-recover.sh --project DIR --rollback [--budget-seconds N]
 #   provision-recover.sh --project DIR --diagnose
 #
-# Reads .nightshift/provision-transaction.json and settles it. A failed transaction, or one
+# Reads .nightshift/run/provision-transaction.json and settles it. A failed transaction, or one
 # that stopped at authorize, capture-baseline, apply, smoke, or rollback, returns every
 # recorded path to its captured baseline and the restore is then proven: each file that
 # existed matches its baseline digest, and each path the install created is gone. Only a
@@ -82,9 +82,10 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
     die 'invalid .nightshift-link — Nightshift will not guess a workspace' 1
 fi
 NS="$WORKSPACE/.nightshift"
-TX="$NS/provision-transaction.json"
-STORE="$NS/provision-baseline"
-INV="$NS/capabilities.json"
+declare TX STORE INV
+ns_layout_set TX "$NS" provision-transaction
+ns_layout_set STORE "$NS" provision-baseline
+ns_layout_set INV "$NS" capabilities
 
 # ---------------------------------------------------------------- JSON reading
 

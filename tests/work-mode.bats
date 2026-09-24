@@ -45,9 +45,11 @@ call_lib() {
 
   run bash -c '. "$1"; ns_record_work_target "$2" "$3" artifact' _ "$LIB" "$w" "$w"
   [ "$status" -eq 0 ]
-  [ "$(cat "$w/.nightshift/work-mode")" = artifact ]
+  # A workspace Setup is creating is born in the current layout.
+  [ "$(cat "$w/.nightshift/state-version")" = 2 ]
+  [ "$(cat "$w/.nightshift/run/work-mode")" = artifact ]
   expected="$(cd -P "$w" && pwd)"
-  [ "$(cat "$w/.nightshift/work-target")" = "$expected" ]
+  [ "$(cat "$w/.nightshift/run/work-target")" = "$expected" ]
 
   run bash -c '. "$1"; ns_work_mode "$2"' _ "$LIB" "$w"
   [ "$output" = artifact ]
@@ -159,7 +161,7 @@ call_lib() {
 
 @test "workspace docs describe artifact mode" {
   grep -qF '### Persistent folder (artifact mode)' "$DOC"
-  grep -qF '.nightshift/work-mode' "$DOC"
+  grep -qF '.nightshift/run/work-mode' "$DOC"
   grep -qF 'artifact' "$VOCAB"
 }
 
@@ -242,7 +244,7 @@ planted_repo() {
     /pass -Mode artifact for a notes folder that is not a Git repository/ {
       if (!scaffold) refuse_first = 1
     }
-    /New-Item -ItemType Directory -Path \$ns/ { scaffold = 1 }
+    /Invoke-NSScaffold/ { scaffold = 1 }
     END { exit (refuse_first && scaffold ? 0 : 1) }
   ' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/setup.ps1"
 }

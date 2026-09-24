@@ -95,7 +95,7 @@ ns.ps1 purge-workspace --project C:\absolute\task\root `
 ```
 
 Stop writes `STOP` and stands a verified watchman down. Hardhat stays until clock-out writes
-`.nightshift/.ended`; Reset is the manual escape. The deadline is preserved. Reset also removes runtime
+`.nightshift/run/.ended`; Reset is the manual escape. The deadline is preserved. Reset also removes runtime
 markers, the deadline, and leftover STOP. Purge does Reset, then deletes only that project's
 `.nightshift/` after an exact `--confirm-path` match. None of them uninstall the plugin.
 
@@ -108,7 +108,7 @@ pauses the interactive session and its watchman reads that interrupt before revi
 Start re-arms the shift. A crash that fires no SessionEnd can still be recovered.
 
 When a paused Stop left an expired deadline, Start refuses to invent a new time budget. Write a
-new UNIX epoch to `.nightshift/deadline`, or run Reset then Start.
+new UNIX epoch to `.nightshift/run/deadline`, or run Reset then Start.
 
 When a shift is not where you think it is — wrong folder, broken `.nightshift-link`, leftover
 `STOP`, watchman stood down, or a stale process rejected by the process lease — run

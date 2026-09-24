@@ -44,15 +44,15 @@ ns_usage_retire() {
   [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
   case "$id" in '' | */* | .*) id="" ;; esac
   [ -n "$id" ] || id="$(date +%Y%m%dT%H%M%SZ)"
-  dest="$ns/usage-$id"
+  ns_layout_set dest "$ns" usage-shift "$id"
   # A second shift ending under the same id would otherwise clobber the first one's record.
-  [ ! -e "$dest" ] || dest="$ns/usage-$id-$(date +%s)"
+  [ ! -e "$dest" ] || ns_layout_set dest "$ns" usage-shift "$id-$(date +%s)"
   mv "$dir" "$dest" 2>/dev/null || return 1
   printf '%s' "$dest"
 }
 
 # ns_usage_dir <nightshift-dir> — where snapshots live. Created on demand.
-ns_usage_dir() { printf '%s/usage' "$1"; }
+ns_usage_dir() { ns_layout_path "$1" usage; }
 
 # ns_usage_kv <key> <value> — one field of a snapshot, or nothing when the host did not report it.
 # A dimension the host does not report is absent, never zero: zero is a measurement.
@@ -197,7 +197,7 @@ ns_usage_read_cursor() {
 # second, its gates and its report section included. Spend before the first item and after the
 # last tick is shift overhead, which is the same subtraction against the arm mark and the end.
 #
-# Two append-only files under .nightshift/usage/, and nothing else. No daemon, no timer, no
+# Two append-only files under .nightshift/run/usage/, and nothing else. No daemon, no timer, no
 # polling, no second session.
 NS_USAGE_DIMENSIONS='input cache_write cache_read output reasoning'
 
@@ -356,7 +356,7 @@ ns_usage_mark() {
 # ns_usage_active <nightshift-dir> — the item the running span is being charged to, or nothing.
 ns_usage_active() {
   local file line=""
-  file="$1/usage/active"
+  file="$(ns_usage_dir "$1")/active"
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   IFS= read -r line <"$file" || [ -n "$line" ] || return 0
   printf '%s' "$line"
@@ -696,7 +696,7 @@ ns_usage_window() {
     elif [ "$(cut -f2 "$stamp" 2>/dev/null)" != "$hash" ]; then
       # It changed, so the model refreshed it: the window starts again from here.
       printf '%s\t%s\t%s\n' "$(date +%s)" "$hash" "$(ns_usage_total "$ns")" >"$stamp" 2>/dev/null || :
-      rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
+      rm -f "$(ns_layout_path "$ns" receipt-due)" "$(ns_layout_path "$ns" report-due)" 2>/dev/null || :
     fi
   fi
   if [ -f "$stamp" ] && [ ! -L "$stamp" ]; then

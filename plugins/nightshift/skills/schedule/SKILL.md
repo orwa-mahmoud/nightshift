@@ -14,17 +14,18 @@ attached from (`skills/schedule/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 ## 1. Is there a site at all?
 
 No `$NS/` — stop and point at Setup (`/nightshift:setup` on Claude Code, or ask Nightshift
 to set up on Codex). Nothing below is meaningful without it.
 
-Read `$NS/work-mode`. Artifact mode is a persistent folder, not a Git repository; the scheduled
+Read `$NS/run/work-mode`. Artifact mode is a persistent folder, not a Git repository; the scheduled
 agent still starts in that work target. A malformed mode or a scratch work target is a refuse —
 fix it with Setup before installing a job. In artifact mode, refuse to print or install a job when `$NS/receipts` exists but is not a usable directory.
-If `$NS/work-mode` is missing and Setup would propose artifact, refuse to print or install a job; a scheduled start will refuse to arm.
+If `$NS/run/work-mode` is missing and Setup would propose artifact, refuse to print or install a job; a scheduled start will refuse to arm.
 If the work target cannot be resolved, refuse to print or install a job; a scheduled start will refuse to arm.
 
 ## 2. Is there work queued?
@@ -38,7 +39,7 @@ Count the open `- [ ]` in `$NS/punch-list.md`:
 - **Items present** — say what they are in one line and carry on.
 - **None** — say so plainly and offer the ways to fix it: compose a shift now with
  Hunt (answer **later**, not **now** — a shift started here defeats scheduling it), cut an
- ordinary draft from `$NS/drafting-table.md`, cut a `Status: proposed` import with
+ ordinary draft from `$NS/staging/drafting-table.md`, cut a `Status: proposed` import with
  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --promote …`, or write an
  item by hand. Then re-check. Never schedule an empty list without saying it will do nothing.
 
@@ -62,7 +63,7 @@ Open `- [ ]` Items do not activate the clock-out gate by themselves. `.shift-arm
 scheduling must not create it: the work stays queued until the scheduled Start preflight clears
 stale markers and arms the shift.
 
-If `$NS/.shift-armed` already exists, stop here. This workspace has an active or stale shift,
+If `$NS/run/.shift-armed` already exists, stop here. This workspace has an active or stale shift,
 not merely queued work. Report that state and point the owner to Status (`/nightshift:status` on
 Claude Code, or ask Nightshift for status on Codex); do not tell them to create a STOP marker just
 to schedule the list. Continue only after the existing shift has been ended or its stale state has
@@ -91,7 +92,7 @@ list is two agents on one shift.
 
 ## 6. Close
 
-Say where the run's output will land (`$NS/scheduled.log`), and
+Say where the run's output will land (`$NS/run/scheduled.log`), and
 mention once that the same generator runs from a terminal with no session —
 `ns schedule` is plain shell and spends no model tokens, which is
 what makes it reachable on a day this command is not. On native Windows the equivalent is

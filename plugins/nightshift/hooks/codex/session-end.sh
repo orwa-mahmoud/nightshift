@@ -26,9 +26,14 @@ case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
-PUNCH="$NS/punch-list.md"
+declare PUNCH ARMED ENDED SESSION SESSION_END
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set ARMED "$NS" armed
+ns_layout_set ENDED "$NS" ended
+ns_layout_set SESSION "$NS" session
+ns_layout_set SESSION_END "$NS" session-end
 
-if [ ! -f "$NS/.shift-armed" ] || [ ! -f "$PUNCH" ] || { [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; }; then
+if [ ! -f "$ARMED" ] || [ ! -f "$PUNCH" ] || { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; }; then
   exit 0
 fi
 # A failed count is not zero. An unreadable punch list leaves the shift standing, so the
@@ -37,8 +42,8 @@ OPEN="$(ns_open_boxes "$PUNCH")" || OPEN=1
 [ "$OPEN" -gt 0 ] || exit 0
 
 SID="${CODEX_SESSION_ID:-}"
-if [ -f "$NS/.shift-session" ] && [ ! -L "$NS/.shift-session" ]; then
-  REC="$(sed -n 1p "$NS/.shift-session" 2>/dev/null)"
+if [ -f "$SESSION" ] && [ ! -L "$SESSION" ]; then
+  REC="$(sed -n 1p "$SESSION" 2>/dev/null)"
   [ -n "$REC" ] && [ "$SID" != "$REC" ] && exit 0
 fi
 
@@ -49,8 +54,8 @@ else
   REASON="${REASON:-other}"
 fi
 
-[ -L "$NS/.session-end" ] && rm -f "$NS/.session-end"
-printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$NS/.session-end"
+[ -L "$SESSION_END" ] && rm -f "$SESSION_END"
+printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$SESSION_END"
 # The session is over while the shift is not: whatever passes until something works again is a
 # gap nobody spent. Recorded so the duration line can list it, never subtracted silently.
 ns_usage_pause "$NS" "the session ended and the shift was revived" || :

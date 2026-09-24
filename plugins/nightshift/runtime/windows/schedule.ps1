@@ -24,7 +24,7 @@ function Test-NSScheduleArtifactReceipts {
     catch {
         return 2
     }
-    $modeRecord = Join-Path $Workspace '.nightshift/work-mode'
+    $modeRecord = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'work-mode'
     if (-not (Test-Path -LiteralPath $modeRecord -PathType Leaf)) {
         try {
             if ((Get-NSProposedWorkMode $Workspace) -eq 'artifact') {
@@ -95,7 +95,7 @@ if ([string]::IsNullOrEmpty($baseName)) {
 $id = "$baseName-$(Get-NSProjectHash $workspace)"
 $taskName = "Nightshift-$id"
 $taskPath = '\'
-$log = Join-Path $ns 'scheduled.log'
+$log = Get-NSLayoutPath $ns 'scheduled-log'
 
 if ($List) {
     $task = Get-NSTask $taskName
@@ -264,15 +264,15 @@ if ($Preflight) {
             }
         }
     }
-    $counts = Get-NSBoxCounts (Join-Path $ns 'punch-list.md')
+    $counts = Get-NSBoxCounts (Get-NSLayoutPath $ns 'punch-list')
     if ($counts.Open -eq 0) {
         $failures.Add('punch list has no open items')
         'FAIL punch list has no open items - a scheduled start promotes nothing'
-        $orders = Get-NSOpenBoxesInFile (Join-Path $ns 'work-orders.md')
+        $orders = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')
         if ($orders -gt 0) {
             "NOTE $orders parked Hunt work order(s) - start will not promote them"
         }
-        $drafts = Get-NSOpenDrafts (Join-Path $ns 'drafting-table.md')
+        $drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
         if ($drafts -gt 0) {
             "NOTE $drafts drafting-table item(s) - start will not promote them"
         }
@@ -391,15 +391,15 @@ if ($AsJson) {
     exit 0
 }
 
-$counts = Get-NSBoxCounts (Join-Path $ns 'punch-list.md')
+$counts = Get-NSBoxCounts (Get-NSLayoutPath $ns 'punch-list')
 if ($counts.Open -eq 0) {
     'Note: the punch list has no open items. A scheduled start works the list it finds and'
     "promotes nothing, so queue the work before $timeText or the run will find nothing to do."
-    $orders = Get-NSOpenBoxesInFile (Join-Path $ns 'work-orders.md')
+    $orders = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')
     if ($orders -gt 0) {
         "Parked Hunt work orders: $orders (start will not promote them)."
     }
-    $drafts = Get-NSOpenDrafts (Join-Path $ns 'drafting-table.md')
+    $drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
     if ($drafts -gt 0) {
         "Drafting-table items: $drafts (start will not promote them)."
     }

@@ -108,7 +108,7 @@ function Save-NSPolicyArchive {
     # archive. Invoke-NSShiftPolicyArchive writes its result straight to the console, which this
     # hook's stdout must carry nothing but the release/block JSON, so the console is swapped for
     # a throwaway writer for the length of the call.
-    $policyPath = Join-Path $ns 'shift-policy.json'
+    $policyPath = Get-NSLayoutPath $ns 'shift-policy'
     if (-not (Test-Path -LiteralPath $policyPath -PathType Leaf) -or (Test-NSReparsePoint $policyPath)) {
         return
     }
@@ -175,7 +175,7 @@ function Save-NSMorningReceipt {
 
 function Save-NSReceipt {
     param([Parameter(Mandatory = $true)][string]$Summary)
-    if (-not (Test-Path -LiteralPath (Join-Path $ns '.git') -PathType Container)) {
+    if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'receipts-repo') -PathType Container)) {
         return
     }
     # Owner opt-in. Default off — a receipts git alone does not authorize headless commits.
@@ -246,15 +246,15 @@ function Complete-NSShiftAndStop {
 # The one hold left in a finished shift: the owner asked for filing, so the model is given its
 # turn before the session terminates. Asking is recorded, so the next stop releases either way.
 function Complete-NSShiftHold {
-    $pending = Join-Path $ns '.pending-filing'
-    if ((Test-Path -LiteralPath (Join-Path $ns '.ended') -PathType Leaf) -and
+    $pending = Get-NSLayoutPath $ns 'pending-filing'
+    if ((Test-Path -LiteralPath (Get-NSLayoutPath $ns 'ended') -PathType Leaf) -and
         -not (Test-Path -LiteralPath $armed) -and
         (Test-Path -LiteralPath $pending -PathType Leaf) -and
         -not (Test-NSReparsePoint $pending) -and
         -not (@([IO.File]::ReadAllLines($pending)) -ccontains 'asked=1')) {
         [IO.File]::AppendAllText($pending, "asked=1`n", $utf8)
         Write-NSLogLine 'archive.automatic is on - holding once so this shift can be filed before the session ends'
-        Write-Block 'DO NOT STOP YET - this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete .nightshift/.pending-filing when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive.'
+        Write-Block "DO NOT STOP YET - this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete $(Get-NSLayoutName $ns 'pending-filing') when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive."
     }
 }
 
@@ -281,7 +281,7 @@ function Complete-NSShift {
         -ArchiveRoot ([string](Get-NSPolicyGroupSetting $workspace 'archive.root')['value']) `
         -ArchiveLayout ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
     if (Test-NSArchiveAutomatic $workspace) {
-        $pending = Join-Path $ns '.pending-filing'
+        $pending = Get-NSLayoutPath $ns 'pending-filing'
         if (Test-NSReparsePoint $pending) { Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue }
         [IO.File]::WriteAllText($pending,
             ('date=' + (Get-Date -Format 'yyyy-MM-dd') + "`nshiftId=$endedId`n"), $utf8)
@@ -393,14 +393,14 @@ if ($stateKind -in @('malformed', 'future')) {
 }
 
 $ns = Join-Path $workspace '.nightshift'
-$punch = Join-Path $ns 'punch-list.md'
-$stop = Join-Path $ns 'STOP'
-$deadline = Join-Path $ns 'deadline'
-$stall = Join-Path $ns '.stall'
-$notified = Join-Path $ns '.notified'
-$ended = Join-Path $ns '.ended'
-$armed = Join-Path $ns '.shift-armed'
-$log = Join-Path $ns 'shift-log.md'
+$punch = Get-NSLayoutPath $ns 'punch-list'
+$stop = Get-NSLayoutPath $ns 'stop'
+$deadline = Get-NSLayoutPath $ns 'deadline'
+$stall = Get-NSLayoutPath $ns 'stall'
+$notified = Get-NSLayoutPath $ns 'notified'
+$ended = Get-NSLayoutPath $ns 'ended'
+$armed = Get-NSLayoutPath $ns 'armed'
+$log = Get-NSLayoutPath $ns 'shift-log'
 
 if (-not (Test-Path -LiteralPath $armed -PathType Leaf)) {
     Write-Release
@@ -545,7 +545,7 @@ try {
         $null = Write-NSAtomicLines -Path $stall -Lines @($fingerprint, [string]$attempts)
     }
     else {
-        Write-NSLogLine 'stall guard down - stallMax/stallWarnEvery unreadable (.nightshift/rules.json absent or incomplete); run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)'
+        Write-NSLogLine "stall guard down - stallMax/stallWarnEvery unreadable ($(Get-NSLayoutName $ns 'rules') absent or incomplete); run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)"
     }
 }
 finally {
@@ -557,4 +557,4 @@ finally {
 if (-not [string]::IsNullOrEmpty($gateMessage)) {
     Write-Block (Get-NSGateBlockReason $gateMessage)
 }
-Write-Block (Get-NSGateBlockReason 'DO NOT STOP - the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item''s gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage - unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)')
+Write-Block (Get-NSGateBlockReason "DO NOT STOP - the punch list ($(Get-NSLayoutName $ns 'punch-list')) still has open items. Work them one at a time per its contract, run each item's gate, and tick only after completion; park owner decisions in $(Get-NSLayoutName $ns 'parking-lot') and keep working. (nightshift: the full contract reinjection lives in $(Get-NSLayoutName $ns 'rules') clockOutMessage - unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)")

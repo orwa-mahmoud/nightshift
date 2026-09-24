@@ -84,8 +84,9 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   fi
 }
 
-@test "Windows migrate-state writes the state marker and nothing else" {
-  grep -qF 'refuse to migrate while the shift is armed' "$WIN/migrate-state.ps1"
+@test "Windows migrate-state previews by default and moves only with -Apply" {
+  grep -qF '[switch]$Apply' "$WIN/migrate-state.ps1"
+  grep -qF 'Invoke-NSMigrationApply $workspace $records' "$WIN/migrate-state.ps1"
   if grep -qF 'capability-policy' "$WIN/migrate-state.ps1"; then
     return 1
   fi

@@ -509,8 +509,8 @@ documented_pages() {
 @test "the state map is one file; the skills that stage, promote or file point at it" {
   map="$SKILLS/nightshift/references/shift/state-map.md"
   [ -f "$map" ]
-  for f in punch-list drafting-table parking-lot work-orders; do
-    grep -qF "\`$f.md\` →" "$map" || { echo "state-map.md omits $f.md"; return 1; }
+  for f in punch-list.md staging/drafting-table.md inbox/parking-lot.md staging/work-orders.md; do
+    grep -qF "\`$f\` →" "$map" || { echo "state-map.md omits $f"; return 1; }
   done
   for name in archive doctor import-issues setup; do
     s="$SKILLS/$name/SKILL.md"
@@ -522,14 +522,15 @@ documented_pages() {
 @test "the state map names who writes every file Setup scaffolds and the runtime keeps" {
   map="$SKILLS/nightshift/references/shift/state-map.md"
   grep -qF '## Every file, and who writes it' "$map"
-  for t in "$SKILLS"/nightshift/references/templates/*.md; do
-    name="${t##*/}"
-    [ "$name" = receipt-item.md ] && continue
-    grep -qF "| \`$name\` |" "$map" || { echo "state-map.md has no row for $name"; return 1; }
+  # Each state file the scaffold writes has a row under the path the current layout gives it.
+  for key in punch-list parking-lot snag-log drafting-table work-orders opportunity-map product-research shift-log; do
+    rel="$(bash -c '. "$1"; ns_layout_rel_at r "$NS_LAYOUT_VERSION" "$2"; printf %s "$r"' _ \
+      "$SKILLS/../lib/paths.sh" "$key")"
+    grep -qF "| \`$rel\` |" "$map" || { echo "state-map.md has no row for $rel"; return 1; }
   done
-  for f in rules.json shift-policy.json state-version deadline 'receipts/<id>-<slug>.md' \
-    receipts/README.md 'receipts/morning-<date>-<shiftId>.md' evidence/findings.jsonl archive/ \
-    .shift-armed .ended STOP .pending-filing; do
+  for f in rules.json run/shift-policy.json state-version run/deadline 'receipts/<id>-<slug>.md' \
+    receipts/README.md 'receipts/morning-<date>-<shiftId>.md' run/evidence/findings.jsonl archive/ \
+    run/.shift-armed run/.ended STOP run/.pending-filing; do
     grep -qF "\`$f\`" "$map" || { echo "state-map.md does not name $f"; return 1; }
   done
   grep -qF 'state-map.md#every-file-and-who-writes-it' "$BATS_TEST_DIRNAME/../docs/vocabulary.md"

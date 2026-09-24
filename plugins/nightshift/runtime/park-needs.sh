@@ -55,7 +55,8 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
   }
 fi
 NS="$WORKSPACE/.nightshift"
-LOT="$NS/parking-lot.md"
+declare LOT
+ns_layout_set LOT "$NS" parking-lot
 
 no_parser() {
   printf 'park-needs: JSON parser unavailable; write the parking-lot row in the skill\n' >&2

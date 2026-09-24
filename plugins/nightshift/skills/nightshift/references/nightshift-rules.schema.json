@@ -247,7 +247,7 @@
     "shift": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Remembered composition choices. These decide what a shift is composed with when nothing overrides them for the night; the resolved snapshot for a running shift is .nightshift/shift-policy.json, which is a record rather than a second settings file. Absent keys keep the documented default.",
+      "description": "Remembered composition choices. These decide what a shift is composed with when nothing overrides them for the night; the resolved snapshot for a running shift is .nightshift/run/shift-policy.json, which is a record rather than a second settings file. Absent keys keep the documented default.",
       "properties": {
         "verificationProfile": {
           "type": "string",

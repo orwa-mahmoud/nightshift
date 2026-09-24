@@ -13,7 +13,7 @@ $projectPath = (Resolve-Path -LiteralPath $Project -ErrorAction Stop).ProviderPa
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 $workspace = Resolve-NSWorkspaceRoot $projectPath
-$marker = Join-Path $workspace '.nightshift/.watchman'
+$marker = Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'watchman'
 
 $quotedScript = $watchman.Replace("'", "''")
 $quotedProject = $projectPath.Replace("'", "''")

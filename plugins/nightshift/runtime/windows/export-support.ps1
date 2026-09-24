@@ -77,7 +77,7 @@ if ($stateKind -notin @('current', 'legacy')) {
     $stateVer = ''
 }
 
-$rulesPath = Join-Path $ns 'rules.json'
+$rulesPath = Get-NSLayoutPath $ns 'rules'
 $rulesState = 'missing'
 $rulesKeys = ''
 if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
@@ -128,7 +128,7 @@ $leaseState = 'absent'
 $leaseHost = ''
 $leaseGeneration = ''
 $leaseMode = ''
-$leasePath = Join-Path $ns '.shift-lease'
+$leasePath = Get-NSLayoutPath $ns 'lease'
 if (Test-NSPathEntry $leasePath) {
     $lease = Read-NSLease $ns
     if ($null -ne $lease) {
@@ -143,7 +143,7 @@ if (Test-NSPathEntry $leasePath) {
 }
 
 $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
-$outdir = Join-Path $ns 'support'
+$outdir = Get-NSLayoutPath $ns 'support'
 try {
     $null = New-Item -ItemType Directory -Path $outdir -Force
 }
@@ -195,7 +195,7 @@ else {
 }
 $null = $lines.Add('')
 $null = $lines.Add('== markers ==')
-$armedPath = Join-Path $ns '.shift-armed'
+$armedPath = Get-NSLayoutPath $ns 'armed'
 $armedLabel = if (Test-NSReparsePoint $armedPath) {
     'unusable'
 }
@@ -206,7 +206,7 @@ else {
     'no'
 }
 $null = $lines.Add("armed: $armedLabel")
-$endedPath = Join-Path $ns '.ended'
+$endedPath = Get-NSLayoutPath $ns 'ended'
 $endedLabel = if (Test-NSReparsePoint $endedPath) {
     'unusable'
 }
@@ -217,8 +217,8 @@ else {
     'no'
 }
 $null = $lines.Add("ended: $endedLabel")
-$null = $lines.Add(('stop: {0}' -f $(if (Test-Path -LiteralPath (Join-Path $ns 'STOP') -PathType Leaf) { 'yes' } else { 'no' })))
-$sessionEndPath = Join-Path $ns '.session-end'
+$null = $lines.Add(('stop: {0}' -f $(if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) { 'yes' } else { 'no' })))
+$sessionEndPath = Get-NSLayoutPath $ns 'session-end'
 $sessionEndLabel = if (Test-NSReparsePoint $sessionEndPath) {
     'unusable'
 }
@@ -229,7 +229,7 @@ else {
     'no'
 }
 $null = $lines.Add("session_end: $sessionEndLabel")
-$pulsePath = Join-Path $ns '.shift-pulse'
+$pulsePath = Get-NSLayoutPath $ns 'pulse'
 $pulseLabel = if (Test-NSReparsePoint $pulsePath) {
     'unusable'
 }
@@ -240,7 +240,7 @@ else {
     'no'
 }
 $null = $lines.Add("shift_pulse: $pulseLabel")
-$sessionPath = Join-Path $ns '.shift-session'
+$sessionPath = Get-NSLayoutPath $ns 'session'
 $sessionRecordLabel = if (Test-NSReparsePoint $sessionPath) {
     'unusable'
 }
@@ -255,7 +255,7 @@ $null = $lines.Add("process_lease: $leaseState")
 if (-not [string]::IsNullOrEmpty($leaseHost)) { $lines.Add("lease_host: $leaseHost") }
 if (-not [string]::IsNullOrEmpty($leaseGeneration)) { $lines.Add("lease_generation: $leaseGeneration") }
 if (-not [string]::IsNullOrEmpty($leaseMode)) { $lines.Add("lease_mode: $leaseMode") }
-$watchmanPath = Join-Path $ns '.watchman'
+$watchmanPath = Get-NSLayoutPath $ns 'watchman'
 $watchmanPidfileLabel = if (Test-NSReparsePoint $watchmanPath) {
     'unusable'
 }
@@ -291,7 +291,7 @@ $activity = Get-NSStatusLastActivity $workspace
 $null = $lines.Add(('last activity: {0}' -f $(if ($activity.Length -gt 0) { $activity } else { 'none' })))
 $null = $lines.Add(('last checkpoint: {0}' -f (Get-NSGateCheckpointToken $workspace)))
 $null = $lines.Add(('stall attempts: {0}' -f (Get-NSStatusStallAttempts $workspace)))
-$invPath = Join-Path $ns 'capabilities.json'
+$invPath = Get-NSLayoutPath $ns 'capabilities'
 if ((Test-Path -LiteralPath $invPath -PathType Leaf) -and -not (Test-NSReparsePoint $invPath)) {
     try {
         $invDoc = Get-Content -LiteralPath $invPath -Raw | ConvertFrom-Json -ErrorAction Stop

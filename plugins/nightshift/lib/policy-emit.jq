@@ -6,7 +6,7 @@
 #
 #   rules      .nightshift/rules.json. One line per guarded knob (present flag and value), per
 #              elevation category (present flag and policy), and per owner-set category pattern.
-#   shift      .nightshift/shift-policy.json. ty/k/j/n lines carry the JSON type, the keys, a
+#   shift      .nightshift/run/shift-policy.json. ty/k/j/n lines carry the JSON type, the keys, a
 #              scalar's compact JSON, and an array's length at a dotted path; c, w and s lines
 #              carry one approved command, write-surface entry, or selected-debt id each.
 #   defaults   .nightshift/shift-defaults.json. One line per remembered choice.

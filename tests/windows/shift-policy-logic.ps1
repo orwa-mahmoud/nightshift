@@ -665,6 +665,18 @@ try {
     Expect-True (Test-Path -LiteralPath (Join-Path $movedNs ($legacyName + '.bak'))) 'a lossless backup is kept'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $movedNs $legacyName))) 'the legacy file is retired'
 
+    # A version-2 workspace keeps the backup where its layout keeps the runtime's files.
+    $groupedPath = Join-Path $root 'migrate-grouped'
+    $groupedNs = Join-Path $groupedPath '.nightshift'
+    $null = New-Item -ItemType Directory -Path $groupedNs -Force
+    Copy-Item -LiteralPath (Join-Path $fixtures 'legacy/rules.json') -Destination (Join-Path $groupedNs $ownerName)
+    Copy-Item -LiteralPath (Join-Path $fixtures ('legacy/' + $legacyName)) -Destination (Join-Path $groupedNs $legacyName)
+    [IO.File]::WriteAllText((Join-Path $groupedNs 'state-version'), "2`n", $utf8)
+    $groupedRun = Invoke-Script -Path $helper -Arguments @('-Project', $groupedPath, '-Command', 'migrate')
+    Expect-Equal 0 $groupedRun.ExitCode "a version-2 workspace migrates ($($groupedRun.StderrText))"
+    Expect-True (Test-Path -LiteralPath (Join-Path $groupedNs ('run/' + $legacyName + '.bak'))) 'a version-2 backup lands in run/'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $groupedNs ($legacyName + '.bak')))) 'nothing lands at the top of a version-2 workspace'
+
     # A second run changes nothing, and a dry run writes nothing.
     $againRun = Invoke-Script -Path $helper -Arguments @('-Project', $movedPath, '-Command', 'migrate')
     Expect-Equal 0 $againRun.ExitCode 'a migration that already ran is a no-op'

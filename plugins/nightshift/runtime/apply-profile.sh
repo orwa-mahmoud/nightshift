@@ -56,9 +56,10 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
   }
 fi
 NS="$WORKSPACE/.nightshift"
-RULES="$NS/rules.json"
-DEFAULTS_PATH="$NS/shift-defaults.json"
-PUNCHLIST="$NS/punch-list.md"
+declare RULES DEFAULTS_PATH PUNCHLIST
+ns_layout_set RULES "$NS" rules
+ns_layout_set DEFAULTS_PATH "$NS" shift-defaults
+ns_layout_set PUNCHLIST "$NS" punch-list
 
 if [ "$LIST" -eq 1 ]; then
   printf 'Nightshift rule profiles (local copies, not a subscription)\n'
@@ -205,7 +206,9 @@ fi
   exit 2
 }
 
-if [ -f "$NS/.shift-armed" ] && [ "$APPLY" -eq 1 ]; then
+declare ARMED_FILE
+ns_layout_set ARMED_FILE "$NS" armed
+if [ -f "$ARMED_FILE" ] && [ "$APPLY" -eq 1 ]; then
   printf 'apply-profile: refuse to write rules while the shift is armed\n' >&2
   exit 2
 fi

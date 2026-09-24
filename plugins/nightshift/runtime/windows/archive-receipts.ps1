@@ -119,8 +119,8 @@ function Test-NSSameBytes {
 # A ticked item's receipt leaves live storage once the shift has ended. An open item's never
 # files. Other records leave only when the caller named them. While a shift is armed nothing
 # is removed at all: its receipts are what its own progress checks read.
-$armed = Test-Path -LiteralPath (Join-Path $ns '.shift-armed')
-$endedMarker = Join-Path $ns '.ended'
+$armed = Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed')
+$endedMarker = Get-NSLayoutPath $ns 'ended'
 $ended = (Test-Path -LiteralPath $endedMarker -PathType Leaf) -and
     -not ((Get-Item -LiteralPath $endedMarker -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)
 $rotate = (-not $armed) -and $ended
@@ -208,7 +208,7 @@ if (Test-Path -LiteralPath $src -PathType Container) {
 }
 
 # The shift report travels with the receipts it describes, and keeps working from where it lands.
-$report = Join-Path $ns 'shift-report.md'
+$report = Join-NSPath $ns (Get-NSLayoutRelativePathAt 0 'previous-report')
 $reportBase = ''
 $reportRelocated = $false
 if ((Test-Path -LiteralPath $report -PathType Leaf) -and -not (Test-NSReparsePoint $report)) {

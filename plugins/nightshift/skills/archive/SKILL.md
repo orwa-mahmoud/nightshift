@@ -17,7 +17,8 @@ attached from (`skills/archive/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 Read `$NS/state-version` first. Legacy (missing) and current (`1`) may be archived.
 A newer or malformed marker fails closed — file nothing, rewrite nothing, and never migrate.
@@ -30,12 +31,12 @@ per ticked item (native Windows: `-Retire` with those names as one comma-separat
 Missing or empty receipts create no dated receipts folder.
 A receipts path that is not a usable directory is a refuse, not an empty skip.
 
-If `$NS/.pending-filing` exists, a shift asked for filing at clock-out. It carries `date=` and
+If `$NS/run/.pending-filing` exists, a shift asked for filing at clock-out. It carries `date=` and
 `shiftId=` lines naming that shift — use them — and an `asked=1` line once the gate has held the
 session to ask for it. Delete the marker once filing is done, and only then. Nothing else about it
 is special: file the same way you would on any explicit Archive.
 
-`$NS/.ended` names the shift that finished and where it files, in `shiftId=`, `archiveRoot=` and
+`$NS/run/.ended` names the shift that finished and where it files, in `shiftId=`, `archiveRoot=` and
 `archiveLayout=` lines. Those are what a later Archive follows: clock-out has already archived
 the policy that carried them.
 
@@ -86,18 +87,18 @@ under the same name with an "original" suffix. Do not hand-edit either one.
 - **Receipts — the ticked ones.** For each ticked item, pass `--retire <receipt-name>`; receipts
  of open items are never named. `archive-receipts` rebuilds `receipts/README.md` on both sides of
  the move so each index lists only the receipts in its own folder.
-- **Shift log → the archive, whole.** Move `$NS/shift-log.md` into
+- **Shift log → the archive, whole.** Move `$NS/run/shift-log.md` into
  the folder and start a fresh one
  with the same one-line header. The journal is mechanical; its lines belong to the dates they
  happened.
 - **Snag log — only what's handled.** `archive-receipts` moves entries that carry a disposition
- (fixed, ignored, answered, rejected-because, accepted-tradeoff) from `$NS/snag-log.md` into the
+ (fixed, ignored, answered, rejected-because, accepted-tradeoff) from `$NS/inbox/snag-log.md` into the
  archive dest that `archive.root` and `archive.layout` resolve, then appends one
  `Filed:` pointer (label: date or shift id; target: relative path to the archived file)
  on the live file. Filing nothing
  writes no pointer and creates no empty archive file. Do not hand-copy those entries.
  Entries still awaiting the owner stay live: an open question is not history yet.
-- **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/parking-lot.md`.
+- **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/inbox/parking-lot.md`.
  Parking-lot questions unanswered stay. Read live entries first; when checking whether a finding or decision
  was already handled, follow the pointer and search the linked file by topic or identifier.
  Historical decisions are evidence, not fresh authorization. A broken pointer is reported in the
@@ -106,12 +107,12 @@ under the same name with an "original" suffix. Do not hand-edit either one.
  A `## Work order` heading with no remaining box is leftover shell from a cut — delete it,
  do not file it. File only an order whose box was ticked in place.
 - **Product research → the archive after its shift.** When no shift is active, append the completed
- entries from `$NS/product-research.md` to the archive's `product-research.md`, preserving their dates,
+ entries from `$NS/product/product-research.md` to the archive's `product-research.md`, preserving their dates,
  sources, evidence, and conclusions; then restore the live file from the shipped template. During
  an active shift, leave all research live. Research is evidence, so never summarize it away or
  strip its source URLs while filing it.
 - **Opportunity map — only terminal outcomes.** Move `shipped` and `rejected` entries from
- `$NS/opportunity-map.md` into the archive's `opportunity-map.md`, preserving their evidence links and
+ `$NS/product/opportunity-map.md` into the archive's `opportunity-map.md`, preserving their evidence links and
  reasons. Keep `candidate`, `building`, and `parked` entries live: they can still affect a future
  cycle or need the owner. Restore the shipped headings if moving the last terminal entry leaves an
  empty section. Never renumber or silently change a status during archive.

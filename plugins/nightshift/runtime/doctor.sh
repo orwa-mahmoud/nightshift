@@ -10,6 +10,8 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 _here="$(cd -P "$_here" && pwd)" || exit 1
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
+# shellcheck source=plugins/nightshift/lib/migrate.sh
+. "$_here/../lib/migrate.sh"
 
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
 while [ $# -gt 0 ]; do
@@ -64,6 +66,23 @@ else
 fi
 
 NS="$WORKSPACE/.nightshift"
+declare ARMED_FILE ENDED_FILE STOP_FILE SESSION_END_FILE PULSE_FILE STALL_FILE SESSION_FILE LEASE_FILE WATCHMAN_FILE CAPABILITIES_FILE PROVISION_TXN WORK_MODE_FILE WORK_ORDERS DRAFTING_TABLE STATE_VERSION_FILE SUPPORT_DIR
+ns_layout_set ARMED_FILE "$NS" armed
+ns_layout_set ENDED_FILE "$NS" ended
+ns_layout_set STOP_FILE "$NS" stop
+ns_layout_set SESSION_END_FILE "$NS" session-end
+ns_layout_set PULSE_FILE "$NS" pulse
+ns_layout_set STALL_FILE "$NS" stall
+ns_layout_set SESSION_FILE "$NS" session
+ns_layout_set LEASE_FILE "$NS" lease
+ns_layout_set WATCHMAN_FILE "$NS" watchman
+ns_layout_set CAPABILITIES_FILE "$NS" capabilities
+ns_layout_set PROVISION_TXN "$NS" provision-transaction
+ns_layout_set WORK_MODE_FILE "$NS" work-mode
+ns_layout_set WORK_ORDERS "$NS" work-orders
+ns_layout_set DRAFTING_TABLE "$NS" drafting-table
+ns_layout_set STATE_VERSION_FILE "$NS" state-version
+ns_layout_set SUPPORT_DIR "$NS" support
 STATE_KIND="absent"
 STATE_VER=""
 if [ -d "$NS" ]; then
@@ -97,7 +116,7 @@ TARGET=""
 UNUSABLE_RECV=0
 if MODE="$(ns_work_mode "$WORKSPACE" 2>/dev/null)"; then
   fact "work mode $MODE"
-  if [ ! -s "$NS/work-mode" ]; then
+  if [ ! -s "$WORK_MODE_FILE" ]; then
     proposed="$(ns_propose_work_mode "$WORKSPACE" 2>/dev/null)" || proposed=""
     if [ "$proposed" = artifact ]; then
       warn "work mode is unset; Setup would propose artifact"
@@ -152,7 +171,7 @@ else
 fi
 # A provisioning transaction on disk means an install stopped mid-flight. The recovery helper
 # owns the reading and the proof; Doctor prints its one diagnosis line and never settles it.
-if [ -e "$NS/provision-transaction.json" ] || [ -L "$NS/provision-transaction.json" ]; then
+if [ -e "$PROVISION_TXN" ] || [ -L "$PROVISION_TXN" ]; then
   PROVISION_TAB=$(printf '\t')
   if PROVISION_LINE="$("$_here/provision-recover.sh" --project "$WORKSPACE" --diagnose 2>/dev/null)" &&
     [ -n "$PROVISION_LINE" ]; then
@@ -162,15 +181,16 @@ if [ -e "$NS/provision-transaction.json" ] || [ -L "$NS/provision-transaction.js
       fact "$PROVISION_TEXT"
     else
       warn "$PROVISION_TEXT; Start will refuse to arm"
-      act confirm "inspect .nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again"
+      act confirm "inspect $(ns_layout_name "$NS" provision-transaction) and $(ns_layout_name "$NS" provision-baseline)/, restore by hand or run provision.sh rollback after fixing the target, then Start again"
     fi
   else
     warn "provision-transaction.json cannot be read; Start will refuse to arm"
-    act confirm "inspect .nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again"
+    act confirm "inspect $(ns_layout_name "$NS" provision-transaction) and $(ns_layout_name "$NS" provision-baseline)/, restore by hand or run provision.sh rollback after fixing the target, then Start again"
   fi
 fi
 
-PUNCH="$NS/punch-list.md"
+declare PUNCH
+ns_layout_set PUNCH "$NS" punch-list
 OPEN=0
 TICKED=0
 if [ -f "$PUNCH" ]; then
@@ -200,64 +220,76 @@ if ns_receipts_enabled "$WORKSPACE"; then
     if [ "${MISSING:-0}" -gt 0 ]; then
       fact "receipts missing model text $MISSING"
       warn "$MISSING ticked items have no receipt text; each item completes through its receipt file"
-      act confirm "write the missing receipts under .nightshift/receipts/; Doctor does not rewrite the punch list"
+      act confirm "write the missing receipts under $(ns_layout_name "$NS" receipts)/; Doctor does not rewrite the punch list"
     fi
   fi
 else
   fact "completion record none; the owner disabled receipts"
 fi
 
-ORDERS="$(ns_open_boxes_file "$NS/work-orders.md")"
+ORDERS="$(ns_open_boxes_file "$WORK_ORDERS")"
 if [ "$ORDERS" -gt 0 ]; then
   fact "pending Hunt work orders=$ORDERS"
 fi
-DRAFTS="$(ns_open_drafts "$NS/drafting-table.md")"
+DRAFTS="$(ns_open_drafts "$DRAFTING_TABLE")"
 if [ "$DRAFTS" -gt 0 ]; then
   fact "staged drafting-table items=$DRAFTS"
 fi
 
 ARMED=0
-[ -f "$NS/.shift-armed" ] && ARMED=1
+[ -f "$ARMED_FILE" ] && ARMED=1
 ENDED=0
-if [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; then
+if [ -f "$ENDED_FILE" ] && [ ! -L "$ENDED_FILE" ]; then
   ENDED=1
-elif [ -L "$NS/.ended" ]; then
+elif [ -L "$ENDED_FILE" ]; then
   warn "ended path is not a usable file"
 fi
 STOP=0
-[ -f "$NS/STOP" ] && STOP=1
+[ -f "$STOP_FILE" ] && STOP=1
 SESSION_END=0
-if [ -f "$NS/.session-end" ] && [ ! -L "$NS/.session-end" ]; then
+if [ -f "$SESSION_END_FILE" ] && [ ! -L "$SESSION_END_FILE" ]; then
   SESSION_END=1
-elif [ -L "$NS/.session-end" ]; then
+elif [ -L "$SESSION_END_FILE" ]; then
   warn "session-end path is not a usable file"
 fi
 PULSE=0
-if [ -f "$NS/.shift-pulse" ] && [ ! -L "$NS/.shift-pulse" ]; then
+if [ -f "$PULSE_FILE" ] && [ ! -L "$PULSE_FILE" ]; then
   PULSE=1
-elif [ -L "$NS/.shift-pulse" ]; then
+elif [ -L "$PULSE_FILE" ]; then
   warn "shift-pulse path is not a usable file"
 fi
 STALL=""
-if [ -L "$NS/.stall" ]; then
+if [ -L "$STALL_FILE" ]; then
   warn "stall path is not a usable file"
-elif [ -f "$NS/.stall" ]; then
-  STALL="$(tr -d '[:space:]' <"$NS/.stall" 2>/dev/null)"
+elif [ -f "$STALL_FILE" ]; then
+  STALL="$(tr -d '[:space:]' <"$STALL_FILE" 2>/dev/null)"
 fi
 
 if [ "$ARMED" -eq 1 ]; then fact "shift is armed"; else fact "shift is not armed"; fi
 case "$STATE_KIND" in
-  current)
-    fact "state version ${STATE_VER:-$NS_STATE_VERSION} (current)"
-    ;;
-  legacy)
-    fact "state version 0 (legacy — no state-version marker)"
-    if [ "$ARMED" -eq 1 ]; then
-      warn "legacy workspace cannot be migrated while a shift is armed"
-      act blocked "wait until the shift is unarmed, then write version 1 with $_here/migrate-state.sh"
+  current | legacy)
+    if [ "$STATE_KIND" = current ]; then
+      fact "state version ${STATE_VER:-$NS_STATE_VERSION} (current)"
+    elif [ "${STATE_VER:-0}" = 0 ]; then
+      fact "state version 0 (legacy — no state-version marker; every state file sits at the top of .nightshift/)"
     else
-      act confirm "write $NS/state-version as 1 with $_here/migrate-state.sh — only the marker is added"
+      fact "state version $STATE_VER (every state file sits at the top of .nightshift/)"
     fi
+    # The move into the current layout, described from the plan migrate-state would carry out.
+    MIGRATE_PLAN="$(mktemp "${TMPDIR:-/tmp}/ns-doctor-migrate.XXXXXX")" || MIGRATE_PLAN=""
+    if [ -n "$MIGRATE_PLAN" ] && ns_migrate_plan "$WORKSPACE" >"$MIGRATE_PLAN" 2>/dev/null \
+      && MIGRATE_OFFER="$(ns_migrate_offer "$MIGRATE_PLAN" "$_here/migrate-state.sh")"; then
+      if grep -q '^refuse' "$MIGRATE_PLAN"; then
+        warn "the move into layout $NS_STATE_VERSION waits: $(sed -n 's/^refuse\t//p' "$MIGRATE_PLAN" | head -n1)"
+        act blocked "$MIGRATE_OFFER"
+      elif grep -q '^conflict' "$MIGRATE_PLAN"; then
+        warn "the move into layout $NS_STATE_VERSION is blocked: $(awk -F '\t' '$1 == "conflict" { printf "%s%s", (n++ ? "; " : ""), ($4 != "" ? $2 " " $4 : $2 " and " $3 " differ") }' "$MIGRATE_PLAN")"
+        act confirm "keep one copy of each conflicting file by hand, then preview the move with $_here/migrate-state.sh"
+      else
+        act confirm "$MIGRATE_OFFER"
+      fi
+    fi
+    [ -z "$MIGRATE_PLAN" ] || rm -f "$MIGRATE_PLAN"
     ;;
   future)
     warn "state version ${STATE_VER:-unknown} is newer than this plugin supports ($NS_STATE_VERSION)"
@@ -265,7 +297,7 @@ case "$STATE_KIND" in
     ;;
   malformed)
     warn "state-version is malformed"
-    act confirm "inspect $NS/state-version and replace it with a single integer while unarmed — never guess"
+    act confirm "inspect $STATE_VERSION_FILE and replace it with a single integer while unarmed — never guess"
     ;;
 esac
 [ "$ENDED" -eq 1 ] && fact "gate has clocked the shift out (.ended)"
@@ -274,7 +306,8 @@ esac
 [ "$PULSE" -eq 1 ] && fact "shift-pulse marker is present"
 [ -n "$STALL" ] && fact "stall count $STALL"
 
-DEADLINE="$NS/deadline"
+declare DEADLINE
+ns_layout_set DEADLINE "$NS" deadline
 dl_raw=""
 if [ -L "$DEADLINE" ]; then
   warn "deadline path is not a usable file"
@@ -343,7 +376,8 @@ json_tool_rule_state() { # $1 = rules file, $2 = exact tool name
   ns_rules_tool_state "$1" "$2"
 }
 
-RULES="$NS/rules.json"
+declare RULES
+ns_layout_set RULES "$NS" rules
 if [ ! -f "$RULES" ]; then
   warn "rules.json is missing — watchman will refuse to arm"
   act confirm "re-run setup and accept the shipped rules template"
@@ -386,19 +420,19 @@ else
   else
     warn "rules.json is unreadable or not a JSON object"
   fi
-  act confirm "fix $NS/rules.json or re-run setup — never half-apply a broken file"
+  act confirm "fix $RULES or re-run setup — never half-apply a broken file"
 fi
 
 HOST_REC="none"
 SID=""
 TPATH=""
 SPID=""
-if [ -L "$NS/.shift-session" ]; then
+if [ -L "$SESSION_FILE" ]; then
   warn "shift-session path is not a usable file"
-elif [ -f "$NS/.shift-session" ]; then
-  SID="$(sed -n 1p "$NS/.shift-session" 2>/dev/null || true)"
-  TPATH="$(sed -n 2p "$NS/.shift-session" 2>/dev/null || true)"
-  SPID="$(sed -n 3p "$NS/.shift-session" 2>/dev/null | tr -d '[:space:]')"
+elif [ -f "$SESSION_FILE" ]; then
+  SID="$(sed -n 1p "$SESSION_FILE" 2>/dev/null || true)"
+  TPATH="$(sed -n 2p "$SESSION_FILE" 2>/dev/null || true)"
+  SPID="$(sed -n 3p "$SESSION_FILE" 2>/dev/null | tr -d '[:space:]')"
   HOST_REC="$(ns_session_host "$NS")"
   fact "recorded host $HOST_REC"
   if [ -n "$SID" ]; then
@@ -431,7 +465,7 @@ fi
 
 LEASE_STATE="absent"
 LEASE_GENERATION=""
-if [ -e "$NS/.shift-lease" ] || [ -L "$NS/.shift-lease" ]; then
+if [ -e "$LEASE_FILE" ] || [ -L "$LEASE_FILE" ]; then
   if ns_lease_valid "$NS"; then
     LEASE_STATE="valid"
     LEASE_HOST="$NS_LEASE_HOST"
@@ -489,11 +523,11 @@ fi
 
 WPID=""
 WATCHMAN_UNUSABLE=0
-if [ -L "$NS/.watchman" ]; then
+if [ -L "$WATCHMAN_FILE" ]; then
   warn "watchman pidfile path is not a usable file"
   WATCHMAN_UNUSABLE=1
-elif [ -f "$NS/.watchman" ]; then
-  WPID="$(sed -n 1p "$NS/.watchman" 2>/dev/null | tr -d '[:space:]')"
+elif [ -f "$WATCHMAN_FILE" ]; then
+  WPID="$(sed -n 1p "$WATCHMAN_FILE" 2>/dev/null | tr -d '[:space:]')"
 fi
 if [ -n "$WPID" ] && printf '%s' "$WPID" | grep -qE '^[0-9]+$'; then
   if kill -0 "$WPID" 2>/dev/null; then
@@ -532,14 +566,14 @@ fact "last checkpoint $(ns_status_last_checkpoint "$WORKSPACE")"
 fact "stall attempts $(ns_status_stall_attempts "$NS")"
 
 # capabilities.json is the tooling cache the shift keeps after a tooling commit lands.
-if [ -f "$NS/capabilities.json" ] && [ ! -L "$NS/capabilities.json" ] && command -v jq >/dev/null 2>&1; then
-  inv_n="$(jq '.items | length' "$NS/capabilities.json" 2>/dev/null || printf 0)"
+if [ -f "$CAPABILITIES_FILE" ] && [ ! -L "$CAPABILITIES_FILE" ] && command -v jq >/dev/null 2>&1; then
+  inv_n="$(jq '.items | length' "$CAPABILITIES_FILE" 2>/dev/null || printf 0)"
   fact "tooling cache items=$inv_n"
 fi
 
 [ -n "$TPATH" ] && [ ! -f "$TPATH" ] && warn "recorded transcript/rollout path is not a readable file"
 
-act confirm "export a local support bundle with $_here/export-support.sh — written under $NS/support/, never uploaded"
+act confirm "export a local support bundle with $_here/export-support.sh — written under $SUPPORT_DIR/, never uploaded"
 act blocked "Doctor never repairs, arms, stops, revives, or deletes"
 
 emit "Nightshift Doctor"

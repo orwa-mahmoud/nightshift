@@ -33,9 +33,9 @@ catch {
 }
 
 $ns = Join-Path $workspace '.nightshift'
-$rulesPath = Join-Path $ns 'rules.json'
-$defaultsPath = Join-Path $ns 'shift-defaults.json'
-$punchListPath = Join-Path $ns 'punch-list.md'
+$rulesPath = Get-NSLayoutPath $ns 'rules'
+$defaultsPath = Get-NSLayoutPath $ns 'shift-defaults'
+$punchListPath = Get-NSLayoutPath $ns 'punch-list'
 
 if ($List) {
     Write-Output 'Nightshift rule profiles (local copies, not a subscription)'
@@ -218,7 +218,7 @@ if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
     exit 2
 }
 
-if ($Apply -and (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf)) {
+if ($Apply -and (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf)) {
     [Console]::Error.WriteLine('apply-profile: refuse to write rules while the shift is armed')
     exit 2
 }

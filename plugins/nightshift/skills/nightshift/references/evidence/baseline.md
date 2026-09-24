@@ -1,6 +1,6 @@
 # Baseline evidence
 
-A baseline is a ledger record in `.nightshift/evidence/findings.jsonl` with
+A baseline is a ledger record in `.nightshift/run/evidence/findings.jsonl` with
 `domain` `baseline`. It preserves the originating source or evidence so a later
 compare can see what changed. Write one per source class before the first fix
 that answers that source. Reuse that `id` for every later record from the same

@@ -47,8 +47,8 @@ catch {
 }
 
 $ns = Join-Path $workspace '.nightshift'
-$draft = Join-Path $ns 'drafting-table.md'
-$punch = Join-Path $ns 'punch-list.md'
+$draft = Get-NSLayoutPath $ns 'drafting-table'
+$punch = Get-NSLayoutPath $ns 'punch-list'
 
 function Parse-NSIssueSpec {
     param([string]$Spec)
@@ -139,7 +139,7 @@ function Test-NSIssueKnown {
             return $true
         }
     }
-    $archive = Join-Path $ns 'archive'
+    $archive = Get-NSLayoutPath $ns 'archive'
     if (-not (Test-Path -LiteralPath $archive -PathType Container) -or (Test-NSReparsePoint $archive)) {
         return $false
     }
@@ -330,8 +330,8 @@ if ($mode -eq 'list-proposed' -or $mode -eq 'promote') {
     $newPunch = $punchText + "`n" + $moved
     $draftNext = "$draft.next"
     $punchNext = "$punch.next"
-    $draftBackup = Join-Path $ns ('.drafting-table.md.rollback.{0}' -f $PID)
-    $punchBackup = Join-Path $ns ('.punch-list.md.rollback.{0}' -f $PID)
+    $draftBackup = Join-Path (Split-Path -Parent $draft) ('.drafting-table.md.rollback.{0}' -f $PID)
+    $punchBackup = Join-Path (Split-Path -Parent $punch) ('.punch-list.md.rollback.{0}' -f $PID)
     try {
         [IO.File]::WriteAllText($draftNext, $newDraft, (New-Object Text.UTF8Encoding $false))
         [IO.File]::WriteAllText($punchNext, $newPunch, (New-Object Text.UTF8Encoding $false))
@@ -501,7 +501,7 @@ if ($blocks.Count -eq 0) {
     exit 0
 }
 
-$tmp = Join-Path $ns ('.drafting-table.md.{0}' -f $PID)
+$tmp = Join-Path (Split-Path -Parent $draft) ('.drafting-table.md.{0}' -f $PID)
 try {
     Copy-Item -LiteralPath $draft -Destination $tmp -Force
     $extra = "`n" + ($blocks -join '')

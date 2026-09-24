@@ -96,13 +96,14 @@ ns_gate_deadline_passed() {
 #
 # ns_gate_record_ending <nightshift-dir> <project-dir> <shift-id>
 ns_gate_record_ending() {
-  local ns="$1" project="$2" id="${3:-unknown}"
+  local ns="$1" project="$2" id="${3:-unknown}" pending
   ns_ended_record "$ns" "$id" \
     "$(ns_archive "$project" root)" "$(ns_archive "$project" layout)"
   [ -d "$ns" ] || return 0
   ns_archive_automatic "$project" || return 0
-  [ -L "$ns/.pending-filing" ] && rm -f "$ns/.pending-filing"
-  printf 'date=%s\nshiftId=%s\n' "$(date +%Y-%m-%d)" "$id" >"$ns/.pending-filing" 2>/dev/null || :
+  ns_layout_set pending "$ns" pending-filing
+  [ -L "$pending" ] && rm -f "$pending"
+  printf 'date=%s\nshiftId=%s\n' "$(date +%Y-%m-%d)" "$id" >"$pending" 2>/dev/null || :
 }
 
 # ns_gate_filing_due <nightshift-dir> — status 0 when the model still owes this ended shift its
@@ -110,9 +111,12 @@ ns_gate_record_ending() {
 # session that could not file leaves the marker for the next explicit Archive rather than being
 # held forever by a hook that cannot do the filing itself.
 ns_gate_filing_due() {
-  local ns="$1" pending="$1/.pending-filing"
-  [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ] || return 1
-  [ ! -f "$ns/.shift-armed" ] || return 1
+  local ns="$1" pending ended armed
+  ns_layout_set pending "$ns" pending-filing
+  ns_layout_set ended "$ns" ended
+  ns_layout_set armed "$ns" armed
+  [ -f "$ended" ] && [ ! -L "$ended" ] || return 1
+  [ ! -f "$armed" ] || return 1
   [ -f "$pending" ] && [ ! -L "$pending" ] || return 1
   grep -q '^asked=1$' "$pending" 2>/dev/null && return 1
   printf 'asked=1\n' >>"$pending" 2>/dev/null || return 1
@@ -121,7 +125,9 @@ ns_gate_filing_due() {
 
 # ns_gate_filing_message <nightshift-dir> — what the model is told when filing is due.
 ns_gate_filing_message() {
-  printf '%s' "DO NOT STOP YET — this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete .nightshift/.pending-filing when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive."
+  local rel=.pending-filing
+  [ -z "${1:-}" ] || ns_layout_rel_set rel "$1" pending-filing
+  printf '%s' "DO NOT STOP YET — this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete .nightshift/$rel when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive."
 }
 
 # What the shift cost, written where the item's section is, at the moment the item is ticked.
@@ -164,7 +170,7 @@ ns_gate_usage_tick() {
   fi
   ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
   ns_receipt_track_label "$receipt" "$label"
-  rm -f "$ns/.receipt-due" "$ns/.report-due" 2>/dev/null || :
+  rm -f "$(ns_layout_path "$ns" receipt-due)" "$(ns_layout_path "$ns" report-due)" 2>/dev/null || :
   ns_receipts_write_index "$project"
 }
 
@@ -201,7 +207,8 @@ ns_gate_item_is_open() {
 # ns_gate_session_end <nightshift-dir> <item-label> — how a session that is not a tick ended: blocked
 # when the parking lot records the item as stalled, switched away otherwise.
 ns_gate_session_end() {
-  local lot="$1/parking-lot.md"
+  local lot
+  ns_layout_set lot "$1" parking-lot
   if [ -f "$lot" ] && grep -F -- "$2" "$lot" 2>/dev/null | grep -qi 'stalled'; then
     printf 'blocked'
   else
@@ -213,7 +220,7 @@ ns_gate_session_end() {
 # receipts on is keeping marks, which is when the item being worked is followed. Marks are taken
 # whatever the usage and duration settings say; those decide only what a receipt shows.
 ns_gate_usage_accounting() {
-  [ -d "$1" ] && [ -f "$1/.shift-armed" ] || return 1
+  [ -d "$1" ] && [ -f "$(ns_layout_path "$1" armed)" ] || return 1
   ns_report_enabled "$2" || return 1
   [ -s "$(ns_usage_dir "$1")/marks.tsv" ]
 }
@@ -229,7 +236,7 @@ ns_gate_usage_switch() {
   owner="$(ns_usage_active "$ns")"
   [ "$owner" != "$active" ] || return 0
   ns_gate_usage_accounting "$ns" "$project" || return 0
-  if [ -n "$owner" ] && ns_gate_item_is_open "$ns/punch-list.md" "$owner"; then
+  if [ -n "$owner" ] && ns_gate_item_is_open "$(ns_layout_path "$ns" punch-list)" "$owner"; then
     ns_usage_mark "$ns" "$owner" switch || return 0
     ns_gate_session_row "$ns" "$project" "$owner" "$(ns_gate_session_end "$ns" "$owner")"
   fi
@@ -243,7 +250,7 @@ ns_gate_usage_flush() {
   ns_gate_usage_accounting "$ns" "$project" || return 0
   owner="$(ns_usage_active "$ns")"
   [ -n "$owner" ] || return 0
-  if ns_gate_item_is_open "$ns/punch-list.md" "$owner"; then
+  if ns_gate_item_is_open "$(ns_layout_path "$ns" punch-list)" "$owner"; then
     ns_usage_mark "$ns" "$owner" pause || return 0
     ns_gate_session_row "$ns" "$project" "$owner" paused
   fi
@@ -304,7 +311,7 @@ ns_gate_usage_sync() {
   [ -f "$list" ] || return 0
   # Accounting belongs to an armed shift with the report on. Before Start there is no shift to bill,
   # and an arm mark written then would stand in the way of the baseline the real arming records.
-  [ -f "$ns/.shift-armed" ] || return 0
+  [ -f "$(ns_layout_path "$ns" armed)" ] || return 0
   ns_report_enabled "$project" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
   # The arm mark is the shift's own start, and is not an item. When no pulse has written it yet,
@@ -444,7 +451,7 @@ ns_gate_reminder_text() {
 
 ns_gate_reminder_text_body() {
   local project="$1" full="$2" open="$3" ticked="$4" item="$5" fp="$6"
-  local ns="$1/.nightshift" mode file previous count limit short
+  local ns="$1/.nightshift" mode file reset previous count limit short
   mode="$(rule "$project" clockOutReminderMode "${NIGHTSHIFT_CLOCKOUT_REMINDER_MODE:-}")"
   case "$mode" in
     changed-only) ;;
@@ -456,11 +463,12 @@ ns_gate_reminder_text_body() {
       return 0
       ;;
   esac
-  file="$ns/.clock-out-reminder"
+  ns_layout_set file "$ns" clock-out-reminder
+  ns_layout_set reset "$ns" context-reset
   # A context reset means the conversation no longer holds what it was told. Consume the marker
   # and send everything.
-  if [ -f "$ns/.context-reset" ] || [ -L "$ns/.context-reset" ]; then
-    rm -f "$ns/.context-reset" 2>/dev/null || :
+  if [ -f "$reset" ] || [ -L "$reset" ]; then
+    rm -f "$reset" 2>/dev/null || :
     ns_gate_reminder_remember "$ns" "$fp" 0
     printf '%s' "$full"
     return 0
@@ -497,9 +505,11 @@ ns_gate_reminder_text_body() {
 
 # ns_gate_reminder_remember <nightshift-dir> <fingerprint> <count>
 ns_gate_reminder_remember() {
+  local file
   [ -d "$1" ] || return 0
-  [ -L "$1/.clock-out-reminder" ] && rm -f "$1/.clock-out-reminder"
-  printf '%s\n%s\n' "$2" "$3" >"$1/.clock-out-reminder" 2>/dev/null || :
+  ns_layout_set file "$1" clock-out-reminder
+  [ -L "$file" ] && rm -f "$file"
+  printf '%s\n%s\n' "$2" "$3" >"$file" 2>/dev/null || :
 }
 
 # ns_gate_reminder_fill <short> <item> <open> <ticked> — the owner's own wording with the facts

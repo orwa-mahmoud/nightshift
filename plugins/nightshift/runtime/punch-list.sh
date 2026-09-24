@@ -65,7 +65,8 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
     exit 2
   }
 fi
-PUNCH="$WORKSPACE/.nightshift/punch-list.md"
+declare PUNCH
+ns_layout_set PUNCH "$WORKSPACE/.nightshift" punch-list
 if [ ! -f "$PUNCH" ] || [ -L "$PUNCH" ]; then
   printf 'punch-list: no punch list at %s\n' "$PUNCH" >&2
   exit 2

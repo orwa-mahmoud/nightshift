@@ -54,9 +54,21 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
   rm -f "$p/.nightshift"/*.md
   run bash "$scaffold" --project "$p"
   [ "$status" -eq 0 ]
-  for t in punch-list drafting-table parking-lot snag-log product-research opportunity-map work-orders; do
+  # What every shift uses comes first; the work orders and the product notebook come on request.
+  for t in punch-list drafting-table parking-lot snag-log; do
     [ -f "$REF/templates/$t.md" ] || { echo "missing templates/$t.md"; return 1; }
     [ -f "$p/.nightshift/$t.md" ] || { echo "scaffold did not write $t.md"; return 1; }
+    printf '%s\n' "$output" | grep -qF "wrote $t.md" \
+      || { echo "scaffold did not report $t.md"; return 1; }
+  done
+  for t in product-research opportunity-map work-orders; do
+    [ -f "$REF/templates/$t.md" ] || { echo "missing templates/$t.md"; return 1; }
+    [ ! -e "$p/.nightshift/$t.md" ] || { echo "scaffold wrote $t.md unasked"; return 1; }
+  done
+  run bash "$scaffold" --project "$p" work-orders product
+  [ "$status" -eq 0 ]
+  for t in product-research opportunity-map work-orders; do
+    [ -f "$p/.nightshift/$t.md" ] || { echo "scaffold did not write $t.md on request"; return 1; }
     printf '%s\n' "$output" | grep -qF "wrote $t.md" \
       || { echo "scaffold did not report $t.md"; return 1; }
   done
@@ -155,7 +167,8 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
 
 @test "quality cut goes through work-orders.md the same way Hunt does" {
   q="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/quality/SKILL.md"
-  grep -qF '$NS/work-orders.md' "$q"
+  grep -qF '$NS/staging/work-orders.md' "$q"
+  grep -qF 'ns" scaffold work-orders' "$q"
   grep -qi 'never write the punch list first' "$q"
   grep -qi 'never clobber orders already' "$q"
 }
@@ -191,7 +204,7 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
   printf '%s\n' "$run_direct" | grep -qi 'one-shift check'
   printf '%s\n' "$run_direct" | grep -qi 'stale run-control markers'
   printf '%s\n' "$run_direct" | grep -qi 'unattended permissions'
-  printf '%s\n' "$run_direct" | grep -qF '$NS/.shift-armed'
+  printf '%s\n' "$run_direct" | grep -qF 'ns" path armed)'
 }
 
 # The install copies plugins/nightshift/ alone, and MIT asks for the notice to travel with every copy — so the

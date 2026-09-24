@@ -16,8 +16,8 @@ attention. Then use the receipts to find the actual changes and their verificati
 | --- | --- |
 | `.nightshift/receipts/` | Each item's result or current progress, the index, the morning receipt, checks run, limitations, and output locations. |
 | Local commits or output files | The change itself, including anything a receipt did not mention. |
-| `.nightshift/parking-lot.md` | Decisions to accept or reverse, with the default and rollback. |
-| `.nightshift/snag-log.md` | Unresolved findings and the reasons others were fixed or rejected. |
+| `.nightshift/inbox/parking-lot.md` | Decisions to accept or reverse, with the default and rollback. |
+| `.nightshift/inbox/snag-log.md` | Unresolved findings and the reasons others were fixed or rejected. |
 
 The [example receipts](../examples/receipts.md#receipts) includes a completed item, an unfinished
 item, and a correction to an earlier result. Read the verification and limitations together:
@@ -51,7 +51,7 @@ See [Archive and continue](archive.md#archive-and-continue), the [Archive contra
 
 | Helper | What it does |
 | --- | --- |
-| `ns evidence` | Append-only findings ledger at `.nightshift/evidence/findings.jsonl` |
+| `ns evidence` | Append-only findings ledger at `.nightshift/run/evidence/findings.jsonl` |
 | `ns evidence-compare` | Classifies each finding against its baseline — new, cleared, unchanged, regressed, unavailable |
 | `ns evidence-archive` | Files the ledger with the shift; the clock-out gate calls it |
 | `ns morning-receipt` | Renders the morning receipt from the ledger, the resolved policy, and the working files |

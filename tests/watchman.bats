@@ -254,9 +254,9 @@ STUB
   if grep -qF ' - clean session end' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-end.ps1"; then
     return 1
   fi
-  grep -qF '[ -L "$NS/.session-end" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
+  grep -qF '[ -L "$SESSION_END" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
   grep -qF 'Test-NSReparsePoint $sessionEnd' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-end.ps1"
-  grep -qF '[ ! -L "$NS/.shift-session" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
+  grep -qF '[ ! -L "$SESSION" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
 }
 
 @test "session-end hook writes the marker only during an active shift" {

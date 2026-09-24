@@ -95,10 +95,11 @@ ns_control_resolve() { # <host-path>
 }
 
 ns_control_deadline_passed() { # <ns>
-  local dl now
-  [ -L "$1/deadline" ] && return 1
-  [ -f "$1/deadline" ] || return 1
-  dl="$(tr -d '[:space:]' <"$1/deadline" 2>/dev/null || true)"
+  local dl now f
+  ns_layout_set f "$1" deadline
+  [ -L "$f" ] && return 1
+  [ -f "$f" ] || return 1
+  dl="$(tr -d '[:space:]' <"$f" 2>/dev/null || true)"
   [ -n "$dl" ] || return 1
   case "$dl" in *[!0-9]*) return 1 ;; esac
   now="$(date +%s)"
@@ -107,18 +108,24 @@ ns_control_deadline_passed() { # <ns>
 
 # A stop-work order or a written ending: the recorded pid is leftover, not a second agent.
 ns_site_paused() { # <ns>
-  [ -f "$1/STOP" ] && [ ! -L "$1/STOP" ] && return 0
-  [ -f "$1/.ended" ] && [ ! -L "$1/.ended" ] && return 0
+  local stop ended
+  ns_layout_set stop "$1" stop
+  ns_layout_set ended "$1" ended
+  [ -f "$stop" ] && [ ! -L "$stop" ] && return 0
+  [ -f "$ended" ] && [ ! -L "$ended" ] && return 0
   return 1
 }
 
 # Print a refuse line when Start must not arm a paused shift. Empty = Start may proceed.
 ns_control_start_refuse_reason() { # <ns>
-  local ns="$1"
-  [ -f "$ns/STOP" ] || return 0
-  [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ] && return 0
+  local ns="$1" stop ended deadline
+  ns_layout_set stop "$ns" stop
+  ns_layout_set ended "$ns" ended
+  ns_layout_set deadline "$ns" deadline
+  [ -f "$stop" ] || return 0
+  [ -f "$ended" ] && [ ! -L "$ended" ] && return 0
   ns_control_deadline_passed "$ns" || return 0
-  printf '%s\n' "paused shift deadline has expired — write a new UNIX epoch to $ns/deadline, or run Reset then Start; refusing to invent a time budget"
+  printf '%s\n' "paused shift deadline has expired — write a new UNIX epoch to $deadline, or run Reset then Start; refusing to invent a time budget"
 }
 
 ns_control_watchman_command_ok() { # <pid>
@@ -133,17 +140,18 @@ ns_control_watchman_command_ok() { # <pid>
 # Sets NS_CONTROL_WATCHMAN to absent | stopped | unverified.
 # 0 killed or absent · 1 unverified (left running)
 ns_control_stop_watchman() { # <ns>
-  local ns="$1" pidfile pid start rc
+  local ns="$1" pidfile tick pid start rc
   NS_CONTROL_WATCHMAN=absent
-  pidfile="$ns/.watchman"
+  ns_layout_set pidfile "$ns" watchman
+  ns_layout_set tick "$ns" watchman-tick
   if [ -L "$pidfile" ]; then
     ns_control_drop "$pidfile"
-    ns_control_drop "$ns/.watchman-tick"
+    ns_control_drop "$tick"
     NS_CONTROL_WATCHMAN=stopped
     return 0
   fi
   if [ ! -f "$pidfile" ]; then
-    ns_control_drop "$ns/.watchman-tick"
+    ns_control_drop "$tick"
     return 0
   fi
   pid="$(sed -n 1p "$pidfile" 2>/dev/null | tr -d '[:space:]')"
@@ -151,20 +159,20 @@ ns_control_stop_watchman() { # <ns>
   case "$pid" in
     '' | *[!0-9]*)
       ns_control_drop "$pidfile"
-      ns_control_drop "$ns/.watchman-tick"
+      ns_control_drop "$tick"
       return 0
       ;;
   esac
   [ "$pid" -gt 1 ] 2>/dev/null || {
     ns_control_drop "$pidfile"
-    ns_control_drop "$ns/.watchman-tick"
+    ns_control_drop "$tick"
     return 0
   }
   ns_recorded_process "$pid" "$start"
   rc=$?
   if [ "$rc" -eq 1 ]; then
     ns_control_drop "$pidfile"
-    ns_control_drop "$ns/.watchman-tick"
+    ns_control_drop "$tick"
     return 0
   fi
   if [ "$rc" -ne 0 ]; then
@@ -177,42 +185,36 @@ ns_control_stop_watchman() { # <ns>
   fi
   kill "$pid" 2>/dev/null || true
   ns_control_drop "$pidfile"
-  ns_control_drop "$ns/.watchman-tick"
+  ns_control_drop "$tick"
   NS_CONTROL_WATCHMAN=stopped
   return 0
 }
 
 ns_control_drop_runtime_markers() { # <ns>
-  local ns="$1" f
-  ns_control_drop "$ns/.shift-armed"
-  ns_control_drop "$ns/.ended"
-  ns_control_drop "$ns/.session-end"
-  ns_control_drop "$ns/.shift-pulse"
-  ns_control_drop "$ns/.mint-failed"
-  ns_control_drop "$ns/.shift-session"
-  ns_control_drop "$ns/.shift-worker"
-  ns_control_drop "$ns/.stall"
-  ns_control_drop "$ns/.notified"
-  ns_control_drop "$ns/.watchman-tick"
-  ns_control_drop "$ns/.mutex-scope"
-  ns_control_drop "$ns/.lock.d"
-  for f in "$ns"/.shift-session.tmp.* "$ns"/.mutex-scope.tmp.*; do
+  local ns="$1" key f session scope
+  for key in armed ended session-end pulse mint-failed session worker stall notified \
+    watchman-tick mutex-scope lock; do
+    ns_control_drop "$(ns_layout_path "$ns" "$key")"
+  done
+  ns_layout_set session "$ns" session
+  ns_layout_set scope "$ns" mutex-scope
+  for f in "$session".tmp.* "$scope".tmp.*; do
     ns_control_drop "$f"
   done
   ns_lease_reset_stale "$ns" || true
 }
 
 ns_control_write_stop() { # <ns> <reason>
-  local ns="$1" reason="$2" ts
+  local ns="$1" reason="$2" ts stop
   ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   [ -n "$reason" ] || reason="stopped by owner"
-  ns_control_drop "$ns/STOP"
-  printf '%s · %s\n' "$reason" "$ts" >"$ns/STOP" || return 1
+  ns_layout_set stop "$ns" stop
+  ns_control_drop "$stop"
+  printf '%s · %s\n' "$reason" "$ts" >"$stop" || return 1
 }
 
 ns_control_log() { # <ns> <line>
-  [ -d "$1" ] || return 0
-  printf '%s · %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$2" >>"$1/shift-log.md"
+  ns_shift_log "$1" "$2"
 }
 
 # Stop-work order: write STOP and stand the watchman down. Keep .shift-armed so
@@ -220,7 +222,7 @@ ns_control_log() { # <ns> <line>
 # the same conversation is not read as a second agent. Reset is the manual escape.
 # Prints a short status. Return 0 · 1 usage/resolve · 2 unverified watchman (STOP still written)
 ns_control_stop() { # <host-path> [reason]
-  local host="$1" reason="${2:-stopped by owner}" rc=0 watch="absent" open=0
+  local host="$1" reason="${2:-stopped by owner}" rc=0 watch="absent" open=0 punch
   ns_control_resolve "$host" || return 1
   host="$NS_CONTROL_HOST"
   if [ ! -d "$NS_CONTROL_NS" ]; then
@@ -232,7 +234,7 @@ ns_control_stop() { # <host-path> [reason]
     return 1
   fi
   ns_control_write_stop "$NS_CONTROL_NS" "$reason"
-  ns_control_drop "$NS_CONTROL_NS/.shift-session"
+  ns_control_drop "$(ns_layout_path "$NS_CONTROL_NS" session)"
   ns_usage_pause "$NS_CONTROL_NS" "owner stop-work" || true
   if ns_control_stop_watchman "$NS_CONTROL_NS"; then
     watch="${NS_CONTROL_WATCHMAN:-absent}"
@@ -242,8 +244,9 @@ ns_control_stop() { # <host-path> [reason]
   fi
   ns_record_reason "$NS_CONTROL_NS" owner-stop 2>/dev/null || true
   ns_control_log "$NS_CONTROL_NS" "stopped by owner"
-  if [ -f "$NS_CONTROL_NS/punch-list.md" ]; then
-    open="$(ns_open_boxes "$NS_CONTROL_NS/punch-list.md")"
+  ns_layout_set punch "$NS_CONTROL_NS" punch-list
+  if [ -f "$punch" ]; then
+    open="$(ns_open_boxes "$punch")"
   fi
   printf 'stopped %s\n' "$NS_CONTROL_NS"
   printf 'workspace %s\n' "$NS_CONTROL_WORKSPACE"
@@ -258,9 +261,10 @@ ns_control_stop() { # <host-path> [reason]
 # shift-defaults.json (remembered convenience) and rules.json (permanent boundaries) survive a
 # reset exactly like the punch list and parking lot do.
 ns_control_reset() { # <host-path>
-  local host="$1" rc=0
+  local host="$1" rc=0 txn key
   ns_control_resolve "$host" || return $?
-  if [ -e "$NS_CONTROL_NS/provision-transaction.json" ] || [ -L "$NS_CONTROL_NS/provision-transaction.json" ]; then
+  ns_layout_set txn "$NS_CONTROL_NS" provision-transaction
+  if [ -e "$txn" ] || [ -L "$txn" ]; then
     printf 'reset-shift: refuse while provision-transaction.json is open; run provision recover or rollback first\n' >&2
     return 1
   fi
@@ -269,10 +273,9 @@ ns_control_reset() { # <host-path>
     [ "$rc" -eq 2 ] || return "$rc"
   }
   ns_control_drop_runtime_markers "$NS_CONTROL_NS"
-  ns_control_drop "$NS_CONTROL_NS/STOP"
-  ns_control_drop "$NS_CONTROL_NS/deadline"
-  ns_control_drop "$NS_CONTROL_NS/.watch-reason"
-  ns_control_drop "$NS_CONTROL_NS/shift-policy.json"
+  for key in stop deadline watch-reason shift-policy; do
+    ns_control_drop "$(ns_layout_path "$NS_CONTROL_NS" "$key")"
+  done
   ns_control_log "$NS_CONTROL_NS" "reset by owner — runtime markers, deadline, and shift policy cleared"
   printf 'reset %s\n' "$NS_CONTROL_NS"
   printf 'deadline removed\n'

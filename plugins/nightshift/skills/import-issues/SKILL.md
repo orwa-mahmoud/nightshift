@@ -18,7 +18,8 @@ attached from (`skills/import-issues/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 Claude Code and Codex run the same platform helper. Do not reimplement fetch or staging in prose.
 
@@ -64,7 +65,7 @@ After the preview, ask which issues to stage. Then run `--stage` (POSIX) or `-St
 with those explicit specs. Add `--allow-closed` or `-AllowClosed` only when the owner overrode a
 closed issue after seeing it.
 
-The helper writes atomically to `$NS/drafting-table.md`. Each staged
+The helper writes atomically to `$NS/staging/drafting-table.md`. Each staged
 entry carries Source URL, imported title, quoted acceptance text, labels, import timestamp, and
 `Status: proposed`. Duplicates by canonical URL are skipped.
 

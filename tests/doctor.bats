@@ -30,7 +30,7 @@ doctor() {
   grep -qF 'write the parking lot or ask' "$SKILL"
   grep -qF 'Offer the classified repairs' "$SKILL"
   grep -qF 'Never perform a repair' "$SKILL" || grep -qF 'change nothing' "$SKILL"
-  grep -qF '$NS/.shift-armed' "$SKILL"
+  grep -qF '$NS/run/.shift-armed' "$SKILL"
   jq -e '.skills == "./skills/"' "$CODEX_PLUGIN" >/dev/null
   [ -d "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/doctor" ]
 }
@@ -709,7 +709,7 @@ stalled_provision() { # <project> <stage> — a transaction whose baseline is re
   printf '%s' "$output" |
     grep -qF 'provision transaction stage=smoke capability=fixture-recover baseline=unprovable; Start will refuse to arm'
   printf '%s' "$output" |
-    grep -qF '[confirm] inspect .nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again'
+    grep -qF '[confirm] inspect .nightshift/provision-transaction.json and .nightshift/provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again'
 }
 
 @test "Doctor names the malformed field in a provisioning transaction" {

@@ -524,7 +524,7 @@ _ns_policy_load_rules() {
   NS_POLICY_RULES_VALS=""
   NS_POLICY_RULES_ELEV=""
   NS_POLICY_RULES_PAT=""
-  f="$ws/.nightshift/rules.json"
+  ns_layout_set f "$ws/.nightshift" rules
   if [ ! -f "$f" ]; then
     NS_POLICY_RULES_STATE=absent
     return 0
@@ -993,7 +993,7 @@ EOF
 }
 
 _ns_policy_load_shift() {
-  _ns_policy_load_shift_file "$1/.nightshift/shift-policy.json"
+  _ns_policy_load_shift_file "$(ns_layout_path "$1/.nightshift" shift-policy)"
 }
 
 # ns_policy_launch <workspace> <scope|provenance> — what the snapshot recorded about the scope the
@@ -1021,7 +1021,8 @@ ns_policy_launch() {
 # file states one, the shipped default where it does not, so the frozen block answers on its own
 # and a later edit to the owner's file cannot change what tonight resolved to.
 ns_policy_freeze_pref() {
-  local f="$1/.nightshift/rules.json" facts line name val out="" first=1
+  local f facts line name val out="" first=1
+  ns_layout_set f "$1/.nightshift" rules
   facts=""
   if [ -f "$f" ]; then
     facts="$(ns_rules_facts "$f" 2>/dev/null)" || facts=""
@@ -1095,7 +1096,7 @@ ns_policy_pref() {
       fi
       ;;
   esac
-  f="$1/.nightshift/rules.json"
+  ns_layout_set f "$1/.nightshift" rules
   [ -f "$f" ] || return 0
   ns_rules_get_in "$f" "$2" "$3"
 }
@@ -1130,11 +1131,11 @@ ns_policy_read_shift() {
       return 2
       ;;
   esac
-  ns_policy_canon_json "$1/.nightshift/shift-policy.json" || return 2
+  ns_policy_canon_json "$(ns_layout_path "$1/.nightshift" shift-policy)" || return 2
 }
 
 # ns_policy_deadline_epoch <workspace>
-# The shift policy's quitting time. Status 1 when the policy carries none: the .nightshift/deadline
+# The shift policy's quitting time. Status 1 when the policy carries none: the .nightshift/run/deadline
 # file is a projection of this value, never a second authority.
 ns_policy_deadline_epoch() {
   local val
@@ -1217,7 +1218,7 @@ ns_policy_read_defaults() {
   local ws="$1" f facts line rc bad=0 canon v
   local profile='"fast"' hours=null tooling='"existing-tools"'
   local execution='"review-first"' updated=null
-  f="$ws/.nightshift/shift-defaults.json"
+  ns_layout_set f "$ws/.nightshift" shift-defaults
   if [ -f "$f" ]; then
     facts="$(_ns_policy_facts defaults "$NS_POLICY_DEFAULTS_PY" "$f")"
     rc=$?
@@ -1281,7 +1282,7 @@ EOF
   # The shift block of the owner file is where these live now. A value stated there is the
   # owner's answer and wins over the older file, which stays readable only so a workspace that
   # has not migrated yet still reports the choice it remembers.
-  canon="$ws/.nightshift/rules.json"
+  ns_layout_set canon "$ws/.nightshift" rules
   if [ -f "$canon" ]; then
     v="$(ns_rules_get_in "$canon" shift verificationProfile)"
     case "$v" in
@@ -1316,7 +1317,7 @@ EOF
 # separates a remembered choice from a built-in default during a migration.
 ns_policy_defaults_stated() {
   local f facts line
-  f="$1/.nightshift/shift-defaults.json"
+  ns_layout_set f "$1/.nightshift" shift-defaults
   [ -f "$f" ] || return 1
   facts="$(_ns_policy_facts defaults "$NS_POLICY_DEFAULTS_PY" "$f")" || return 1
   facts="$(printf '%s' "$facts" | tr -d '\r')"
@@ -1491,13 +1492,14 @@ EOF
 # ns_new_shift_id <nightshift-dir> — a lowercase 16-hex shift id that appears nowhere under the
 # archive yet, so a fresh snapshot can never be mistaken for a night already filed.
 ns_new_shift_id() {
-  local ns="$1" id try=0
+  local ns="$1" id try=0 archive
+  ns_layout_set archive "$ns" archive
   while [ "$try" -lt 8 ]; do
     try=$((try + 1))
     id="$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
     case "$id" in *[!0-9a-f]* | '') continue ;; esac
     [ "${#id}" -eq 16 ] || continue
-    if [ -d "$ns/archive" ] && grep -rqsF "$id" "$ns/archive" 2>/dev/null; then continue; fi
+    if [ -d "$archive" ] && grep -rqsF "$id" "$archive" 2>/dev/null; then continue; fi
     printf '%s' "$id"
     return 0
   done
@@ -1512,12 +1514,14 @@ ns_new_shift_id() {
 # file's epoch or none) through the same writer composition uses, which records the digests and
 # freezes the owner's preference blocks. Prints the new shift id.
 ns_start_snapshot() {
-  local ws="$1" helper="$2" ns="$1/.nightshift" id deadline
-  [ ! -e "$ns/shift-policy.json" ] || return 1
+  local ws="$1" helper="$2" ns="$1/.nightshift" id deadline policy file
+  ns_layout_set policy "$ns" shift-policy
+  ns_layout_set file "$ns" deadline
+  [ ! -e "$policy" ] || return 1
   id="$(ns_new_shift_id "$ns")" || return 1
   deadline="null"
-  if [ -f "$ns/deadline" ] && [ ! -L "$ns/deadline" ]; then
-    deadline="$(tr -d '[:space:]' <"$ns/deadline" 2>/dev/null)"
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    deadline="$(tr -d '[:space:]' <"$file" 2>/dev/null)"
     case "$deadline" in '' | *[!0-9]*) deadline="null" ;; esac
   fi
   printf '{"schemaVersion":1,"shiftId":"%s","createdAt":"%s","source":"start-defaults","deadlineEpoch":%s,"verificationLevel":"none","toolingPolicy":"existing-tools"}\n' \

@@ -85,7 +85,7 @@
     "permission-prompt-required",
     "provisioning-runtime-unavailable"
   ],
-  "transactionStateFile": ".nightshift/provision-transaction.json",
+  "transactionStateFile": ".nightshift/run/provision-transaction.json",
   "setupCommitSubjectPrefix": "chore(tooling):",
   "preflightBudgetSecondsDefault": 120,
   "never": [

@@ -16,17 +16,25 @@ separate where the hosts actually differ.
 
 ## The work contract
 
-Setup creates a local `.nightshift/` workspace. The important files are plain Markdown:
+Setup creates a local `.nightshift/` workspace, grouped by purpose. The important files are plain
+Markdown:
 
 - `punch-list.md` — the work and its completion state;
-- `drafting-table.md` — known work that has not been promoted into the active shift;
-- `parking-lot.md` — decisions made without blocking the run;
-- `work-orders.md` — catalog work composed by Hunt or Quality;
-- `product-research.md` and `opportunity-map.md` — evidence and continuation state for product
-  evolution;
-- `snag-log.md` — problems found and their disposition;
-- `shift-log.md` — progress, stalls, recovery, and clock-out.
-- `receipts/` — live item progress, results, verification, and measured token usage and duration.
+- `receipts/` — live item progress, results, verification, and measured token usage and duration;
+- `inbox/parking-lot.md` — decisions made without blocking the run;
+- `inbox/snag-log.md` — problems found and their disposition;
+- `staging/drafting-table.md` — known work that has not been promoted into the active shift;
+- `staging/work-orders.md` — catalog work composed by Hunt or Quality, created the first time Hunt
+  stages an order;
+- `product/product-research.md` and `product/opportunity-map.md` — evidence and continuation state
+  for product evolution, created the first time a product-evolution item is cut;
+- `run/shift-log.md` — progress, stalls, recovery, and clock-out.
+
+Everything else the runtime keeps — markers, locks, the lease and session, the policy snapshot, the
+work target, usage accounting and the evidence ledger — sits in `run/`, so the top of
+`.nightshift/` holds only what the owner opens. The
+[state map](../plugins/nightshift/skills/nightshift/references/shift/state-map.md) names every
+file and who writes it.
 
 Completion lives in checkboxes, not in a conversational claim. Normal clock-out is reached only
 when every open `- [ ]` under `## Items` is ticked; checkboxes elsewhere in the file do not belong
@@ -39,7 +47,7 @@ Only checkboxes under `## Items` in `punch-list.md` belong to the active contrac
 not activate hooks: Start, or a Hunt or Quality path that starts immediately, creates
 `.shift-armed` after preflight. The clock-out gate and owner rules are active while that marker
 exists and the shift has not ended. A `STOP` order keeps hardhat on until clock-out writes
-`.nightshift/.ended`; open boxes stay as the record. Reset is the manual escape.
+`.nightshift/run/.ended`; open boxes stay as the record. Reset is the manual escape.
 
 **A shift that ended stays ended.** Adding an unchecked item afterwards does not put you back on
 shift: the gate releases, your rules stop applying, and the watchman will not revive it — the
@@ -77,9 +85,11 @@ handoff instead. A helper conversation remains outside the gate, but it is not
 permission to start another shift on the same contract. It is outside the shift command guards too:
 the helper can chat and ask freely, but it is not a safe channel for commands the shift rules deny.
 
-`rules.json` contains the owner-controlled hooks configuration. `work-target` records the repository
-that receives code changes when state lives in a parent workspace. `state-version` prevents newer
-or malformed state from being interpreted by older hooks; unsupported versions fail closed.
+`rules.json` contains the owner-controlled hooks configuration. `run/work-target` records the
+repository that receives code changes when state lives in a parent workspace. `state-version` names
+the layout: `2` is the grouped one, and a workspace at `1`, or with no marker, keeps every file at
+the top of `.nightshift/`, where the hooks go on reading and guarding it. `ns migrate-state` moves
+it, preview first; newer or malformed state fails closed rather than being read by older hooks.
 
 ## Three policy layers and one resolved view
 
@@ -163,7 +173,7 @@ Run-direct paths perform the same Start preflight before arming.
 
 A no-progress stop attempt is logged as a stall while the finite contract remains open. Owners who
 prefer a hard retry cap can set `NIGHTSHIFT_STALL_MAX=N`. Open-ended shifts require a deadline
-in `.nightshift/deadline` as UNIX epoch seconds; Start refuses to arm one without it. Finite
+in `.nightshift/run/deadline` as UNIX epoch seconds; Start refuses to arm one without it. Finite
 shifts may also use one as a cap.
 
 The stall guard reads checked items and commits as progress in repository mode, and checked
@@ -293,7 +303,7 @@ ns.ps1 stop-shift --project C:\absolute\task\root
 ```
 
 That writes `STOP` and kills only a verified watchman. `.shift-armed` stays, so hardhat
-remains until clock-out writes `.nightshift/.ended`. Reset is the manual escape. The deadline and punch list
+remains until clock-out writes `.nightshift/run/.ended`. Reset is the manual escape. The deadline and punch list
 stay. Reset (`ns reset-shift` / `ns reset-shift`) drops runtime markers and the deadline. Purge
 deletes that project's `.nightshift/` after an exact `--confirm-path`. None of them uninstall the
 plugin.
@@ -395,8 +405,8 @@ Nightshift resolves two locations and persists both decisions:
 - the **state workspace** owns `.nightshift/`;
 - the **work target** is the folder that receives inspection, edits, and verification. In
   **repository** mode it is a Git repository (stack detection, gates, commits). In **artifact**
-  mode it is a persistent non-Git folder. The path is stored in `.nightshift/work-target` and the
-  mode in `.nightshift/work-mode` (`repository` when that file is absent). A plugin or
+  mode it is a persistent non-Git folder. The path is stored in `.nightshift/run/work-target` and the
+  mode in `.nightshift/run/work-mode` (`repository` when that file is absent). A plugin or
   marketplace manifest may sit at a repository work-target root or under `plugins/<name>/`.
 
 State resolution never searches parent or sibling folders. Work-target resolution accepts the
@@ -457,7 +467,7 @@ workspace/
 ```
 
 Setup shows the repository choices and writes the selected canonical top level to
-`.nightshift/work-target`. Start refuses to arm if that record is absent, invalid, or no longer a
+`.nightshift/run/work-target`. Start refuses to arm if that record is absent, invalid, or no longer a
 repository. Nightshift never selects the first directory silently.
 
 ### Persistent folder (artifact mode)
@@ -471,7 +481,7 @@ notes/                 ← state workspace and artifact work target
 └── .nightshift/       ← run state; work-mode is artifact
 ```
 
-`$NS/work-mode` contains `artifact`. `$NS/work-target` is the folder's canonical path. Setup
+`$NS/run/work-mode` contains `artifact`. `$NS/run/work-target` is the folder's canonical path. Setup
 refuses `/workspace/scratch/` and any path under it — that ChatGPT workspace is disposable.
 Start, Status, Doctor, Archive, Schedule, and workspace links read the same mode record. Existing
 repository workspaces stay repository mode when `work-mode` is absent.
@@ -516,7 +526,7 @@ fail closed.
 
 The linked workspace becomes authoritative for every state read and write; no state is copied.
 The link does not choose the code repository—that remains the linked workspace's persisted
-`.nightshift/work-target`. Project settings stay at the host task root.
+`.nightshift/run/work-target`. Project settings stay at the host task root.
 
 This repository is maintained with a parent state workspace and a nested public work target.
 

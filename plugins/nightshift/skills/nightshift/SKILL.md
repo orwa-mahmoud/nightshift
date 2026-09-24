@@ -17,15 +17,17 @@ model: the list pushes the work forward item by item, and finishing it is the or
 Nothing interrupts the owner while they sleep. A decision that is genuinely theirs gets a sensible
 production default and a written note, so the morning is a review rather than a pile of questions.
 
-**What the owner reads in the morning**, all plain markdown under `.nightshift/`:
+**What the owner reads in the morning**, all plain markdown under `.nightshift/`, each folder named
+for what it holds:
 
 - `punch-list.md` — what was agreed, and which boxes are ticked.
-- `shift-log.md` — the journal: one line per cycle, plus a handover line if the night ended early.
-- `parking-lot.md` — unresolved owner decisions and the default chosen so work continued.
-- `snag-log.md` — findings with dispositions, so a later pass never re-reports an earlier one.
-- `drafting-table.md` — known work staged for a later shift.
-- `work-orders.md` — timed catalog work composed only through Hunt.
 - `receipts/` — what the night delivered, one file per item, written as the work happens.
+- `inbox/parking-lot.md` — unresolved owner decisions and the default chosen so work continued.
+- `inbox/snag-log.md` — findings with dispositions, so a later pass never re-reports an earlier one.
+- `staging/drafting-table.md` — known work staged for a later shift.
+- `staging/work-orders.md` — timed catalog work composed only through Hunt.
+- `run/shift-log.md` — the journal: one line per cycle, plus a handover line if the night ended
+  early. Everything else under `run/` is the runtime's own.
 
 Never route an ordinary plan through Hunt, call later work "parked," or put a known task in the
 parking lot. Repository mode leaves commits as the punch-list contract says — one per item unless the contract
@@ -48,7 +50,8 @@ attached from (`skills/nightshift/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 ## Persistent-workspace boundary
 
@@ -126,7 +129,7 @@ Top to bottom, one item:
   that claim is about the work, not about how it was recorded or how often a gate ran.
 
 Then the next item. Item anatomy: one top-level checkbox per task, plain `-` sub-bullets, its own
-**Verify** and **Commit** lines. Promotion from `$NS/drafting-table.md` into `## Items` happens only
+**Verify** and **Commit** lines. Promotion from `$NS/staging/drafting-table.md` into `## Items` happens only
 when the punch list has no open item, and only through Start; on shift, drafts stay where the owner
 left them, and you never invent scope the owner didn't ask for.
 
@@ -222,8 +225,8 @@ time rather than pretending it was custom.
 A shift usually runs while the owner sleeps, and the shipped setting parks questions rather than
 waiting on one. When the question tool for this host is denied, that is the answer: do NOT ask.
 Choose the most sensible production-grade default, record the decision and your reasoning in
-`$NS/parking-lot.md` in plain language, and keep working. The owner reads it over coffee. Known
-later work is not a decision: stage it in `$NS/drafting-table.md`.
+`$NS/inbox/parking-lot.md` in plain language, and keep working. The owner reads it over coffee. Known
+later work is not a decision: stage it in `$NS/staging/drafting-table.md`.
 
 The owner can lift that deny for a host — an empty value against its question tool allows it — and
 then asking is permitted and this section does not forbid it. Ask only about what genuinely needs
@@ -242,7 +245,7 @@ exist.
 ## Snag log discipline
 
 Before reporting findings in a review or walkthrough, read
-`$NS/snag-log.md` and `$NS/parking-lot.md` first. Dedupe against ALL seen
+`$NS/inbox/snag-log.md` and `$NS/inbox/parking-lot.md` first. Dedupe against ALL seen
 — fixed AND rejected — so a later cycle never re-reports an earlier one. Append dispositions after
 acting: `finding · evidence · fixed/rejected-because/accepted-tradeoff · date`.
 A `Filed:` pointer (label: id; target: relative path) is navigation, not an entry: follow that pointer and search the
@@ -268,7 +271,7 @@ at its declared condition:
  record: read it first on resume and keep its completed work, rejected paths, exact next action,
  and remaining verification current at meaningful boundaries. Only quitting time ends the item.
 
-Log one line per cycle to `$NS/shift-log.md`. A cycle that finds
+Log one line per cycle to `$NS/run/shift-log.md`. A cycle that finds
 nothing new is success, not idleness.
 
 ## Quitting time — a whistle, not an axe
@@ -281,7 +284,7 @@ finite item list ends at its last tick; never start a walkthrough without one.
 ## Red-tag yourself when stuck
 
 If you catch yourself unable to finish an item — looping or blocked on an external constraint — **red-tag it
-yourself**: record the owner decision in `$NS/parking-lot.md` as
+yourself**: record the owner decision in `$NS/inbox/parking-lot.md` as
 `stalled — needs human`, note why, and move to the next
 item. Do not loop. The gate's stall warning is the backstop, not the plan.
 
@@ -290,7 +293,7 @@ item. Do not loop. The gate's stall warning is the backstop, not the plan.
 You may stop only when every box is `- [x]`, or the owner issues a stop-work order
 (`$NS/STOP`). If a shift must end mid-work, clock out orderly: a
 `wip:` commit in repository mode, or the item's receipt under `$NS/receipts/` marked in progress in
-artifact mode, plus one handover line in `$NS/shift-log.md`, then
+artifact mode, plus one handover line in `$NS/run/shift-log.md`, then
 stop. History is append-only on shift — no `reset --hard`,
 `rebase`, `amend`, or force operations; the night's receipts must survive to morning.
 
@@ -301,7 +304,7 @@ and the order is the gate's, not yours to arrange:
    and then holds the session once, telling you filing is due. By that point the shift really has
    ended, which is what makes filing it legitimate.
 2. Run the Archive skill now. Decide from the punch list and the records which belong to work that
-   is finished with, file those, and delete `$NS/.pending-filing` when it is done.
+   is finished with, file those, and delete `$NS/run/.pending-filing` when it is done.
 3. Stop again. That releases.
 
 The gate never files: deciding what is finished with reads the punch list and the work, which a

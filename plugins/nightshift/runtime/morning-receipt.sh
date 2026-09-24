@@ -129,13 +129,19 @@ fi
 NS="$WORKSPACE/.nightshift"
 [ -d "$NS" ] || die "no .nightshift/ at $WORKSPACE — run setup first" 2
 
-JSONL="$NS/evidence/findings.jsonl"
-PUNCH="$NS/punch-list.md"
-LOT="$NS/parking-lot.md"
-SNAGS="$NS/snag-log.md"
-LOG="$NS/shift-log.md"
-MAP="$NS/opportunity-map.md"
-STOP="$NS/STOP"
+JSONL="$(ns_layout_path "$NS" evidence)/findings.jsonl"
+declare PUNCH LOT SNAGS LOG MAP STOP SESSION_REC LIVE_POLICY ARCHIVE USAGE ENDED_MARKER
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set LOT "$NS" parking-lot
+ns_layout_set SNAGS "$NS" snag-log
+ns_layout_set LOG "$NS" shift-log
+ns_layout_set MAP "$NS" opportunity-map
+ns_layout_set STOP "$NS" stop
+ns_layout_set SESSION_REC "$NS" session
+ns_layout_set LIVE_POLICY "$NS" shift-policy
+ns_layout_set ARCHIVE "$NS" archive
+ns_layout_set USAGE "$NS" usage
+ns_layout_set ENDED_MARKER "$NS" ended
 RECEIPTS_DIR="$(ns_receipts_dir "$WORKSPACE")"
 
 JSON_TOOL=""
@@ -290,7 +296,7 @@ _commit_count() {
 _session_host() {
   local i host
   SESSION_HOST=""
-  if [ -f "$NS/.shift-session" ] && [ ! -L "$NS/.shift-session" ]; then
+  if [ -f "$SESSION_REC" ] && [ ! -L "$SESSION_REC" ]; then
     host="$(ns_session_line "$NS" 5 2>/dev/null | tr -d '[:space:]')"
     [ -n "$host" ] && SESSION_HOST="$host" && return 0
   fi
@@ -558,12 +564,12 @@ A_PROVENANCE=()
 # dated archive copy afterwards. A receipt rendered either side of that move says the same thing.
 _find_policy() {
   local cand
-  if [ -f "$NS/shift-policy.json" ] && [ ! -L "$NS/shift-policy.json" ]; then
-    POLICY_FILE="$NS/shift-policy.json"
+  if [ -f "$LIVE_POLICY" ] && [ ! -L "$LIVE_POLICY" ]; then
+    POLICY_FILE="$LIVE_POLICY"
     return 0
   fi
-  [ -d "$NS/archive" ] && [ ! -L "$NS/archive" ] || return 0
-  cand="$(find "$NS/archive" -maxdepth 2 -type f -name 'shift-policy-*.json' -print 2>/dev/null |
+  [ -d "$ARCHIVE" ] && [ ! -L "$ARCHIVE" ] || return 0
+  cand="$(find "$ARCHIVE" -maxdepth 2 -type f -name 'shift-policy-*.json' -print 2>/dev/null |
     LC_ALL=C sort | tail -n 1)"
   [ -n "$cand" ] || return 0
   POLICY_FILE="$cand"
@@ -725,7 +731,7 @@ M_EPOCH=()
 M_LABEL=()
 
 _load_marks() {
-  local file="$NS/usage/marks.tsv" at label
+  local file="$USAGE/marks.tsv" at label
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   while IFS="$FS" read -r at label; do
     case "$at" in '' | *[!0-9]*) continue ;; esac
@@ -758,8 +764,8 @@ _shift_times() {
   case "$STARTED" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) SHIFT_DAY="${STARTED:0:10}" ;;
   esac
-  if [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; then
-    at="$(ns_mtime "$NS/.ended")" || at=""
+  if [ -f "$ENDED_MARKER" ] && [ ! -L "$ENDED_MARKER" ]; then
+    at="$(ns_mtime "$ENDED_MARKER")" || at=""
     case "$at" in
       '' | *[!0-9]*) ;;
       *) _utc_stamp "$at" && ENDED_EPOCH="$at" && ENDED="$UTC_STAMP" ;;

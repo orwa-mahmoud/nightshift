@@ -47,6 +47,15 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
 fi
 
 NS="$WORKSPACE/.nightshift"
+declare ARMED_FILE ENDED_FILE STOP_FILE SESSION_END_FILE PULSE_FILE SESSION_FILE WATCHMAN_FILE LEASE_FILE
+ns_layout_set ARMED_FILE "$NS" armed
+ns_layout_set ENDED_FILE "$NS" ended
+ns_layout_set STOP_FILE "$NS" stop
+ns_layout_set SESSION_END_FILE "$NS" session-end
+ns_layout_set PULSE_FILE "$NS" pulse
+ns_layout_set SESSION_FILE "$NS" session
+ns_layout_set WATCHMAN_FILE "$NS" watchman
+ns_layout_set LEASE_FILE "$NS" lease
 [ -d "$NS" ] || {
   printf 'export-support: no .nightshift/ at %s\n' "$WORKSPACE" >&2
   exit 2
@@ -79,7 +88,8 @@ case "$STATE_KIND" in
   *) STATE_VER="" ;;
 esac
 
-RULES="$NS/rules.json"
+declare RULES
+ns_layout_set RULES "$NS" rules
 RULES_STATE="missing"
 RULES_KEYS=""
 if [ ! -f "$RULES" ]; then
@@ -171,7 +181,7 @@ LEASE_STATE="absent"
 LEASE_HOST=""
 LEASE_GENERATION=""
 LEASE_MODE=""
-if [ -e "$NS/.shift-lease" ] || [ -L "$NS/.shift-lease" ]; then
+if [ -e "$LEASE_FILE" ] || [ -L "$LEASE_FILE" ]; then
   if ns_lease_valid "$NS"; then
     LEASE_STATE="valid"
     LEASE_HOST="$NS_LEASE_HOST"
@@ -187,7 +197,8 @@ if [ -e "$NS/.shift-lease" ] || [ -L "$NS/.shift-lease" ]; then
 fi
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-outdir="$NS/support"
+declare outdir
+ns_layout_set outdir "$NS" support
 mkdir -p "$outdir" || {
   printf 'export-support: cannot create %s\n' "$outdir" >&2
   exit 2
@@ -228,40 +239,40 @@ dest="$outdir/${stamp}.txt"
     printf 'work_target: unresolved\n'
   fi
   printf '\n== markers ==\n'
-  if [ -L "$NS/.shift-armed" ]; then
+  if [ -L "$ARMED_FILE" ]; then
     printf 'armed: unusable\n'
   else
-    printf 'armed: %s\n' "$( [ -f "$NS/.shift-armed" ] && printf yes || printf no )"
+    printf 'armed: %s\n' "$( [ -f "$ARMED_FILE" ] && printf yes || printf no )"
   fi
-  if [ -L "$NS/.ended" ]; then
+  if [ -L "$ENDED_FILE" ]; then
     printf 'ended: unusable\n'
   else
-    printf 'ended: %s\n' "$( [ -f "$NS/.ended" ] && printf yes || printf no )"
+    printf 'ended: %s\n' "$( [ -f "$ENDED_FILE" ] && printf yes || printf no )"
   fi
-  printf 'stop: %s\n' "$( [ -f "$NS/STOP" ] && printf yes || printf no )"
-  if [ -L "$NS/.session-end" ]; then
+  printf 'stop: %s\n' "$( [ -f "$STOP_FILE" ] && printf yes || printf no )"
+  if [ -L "$SESSION_END_FILE" ]; then
     printf 'session_end: unusable\n'
   else
-    printf 'session_end: %s\n' "$( [ -f "$NS/.session-end" ] && printf yes || printf no )"
+    printf 'session_end: %s\n' "$( [ -f "$SESSION_END_FILE" ] && printf yes || printf no )"
   fi
-  if [ -L "$NS/.shift-pulse" ]; then
+  if [ -L "$PULSE_FILE" ]; then
     printf 'shift_pulse: unusable\n'
   else
-    printf 'shift_pulse: %s\n' "$( [ -f "$NS/.shift-pulse" ] && printf yes || printf no )"
+    printf 'shift_pulse: %s\n' "$( [ -f "$PULSE_FILE" ] && printf yes || printf no )"
   fi
-  if [ -L "$NS/.shift-session" ]; then
+  if [ -L "$SESSION_FILE" ]; then
     printf 'session_record: unusable\n'
   else
-    printf 'session_record: %s\n' "$( [ -f "$NS/.shift-session" ] && printf present || printf absent )"
+    printf 'session_record: %s\n' "$( [ -f "$SESSION_FILE" ] && printf present || printf absent )"
   fi
   printf 'process_lease: %s\n' "$LEASE_STATE"
   [ -z "$LEASE_HOST" ] || printf 'lease_host: %s\n' "$LEASE_HOST"
   [ -z "$LEASE_GENERATION" ] || printf 'lease_generation: %s\n' "$LEASE_GENERATION"
   [ -z "$LEASE_MODE" ] || printf 'lease_mode: %s\n' "$LEASE_MODE"
-  if [ -L "$NS/.watchman" ]; then
+  if [ -L "$WATCHMAN_FILE" ]; then
     printf 'watchman_pidfile: unusable\n'
   else
-    printf 'watchman_pidfile: %s\n' "$( [ -f "$NS/.watchman" ] && printf present || printf absent )"
+    printf 'watchman_pidfile: %s\n' "$( [ -f "$WATCHMAN_FILE" ] && printf present || printf absent )"
   fi
   printf '\n== rules ==\n'
   printf 'validity: %s\n' "$RULES_STATE"
@@ -278,7 +289,8 @@ dest="$outdir/${stamp}.txt"
   printf 'last activity: %s\n' "${activity:-none}"
   printf 'last checkpoint: %s\n' "$(ns_status_last_checkpoint "$WORKSPACE")"
   printf 'stall attempts: %s\n' "$(ns_status_stall_attempts "$NS")"
-  inv="$NS/capabilities.json"
+  declare inv
+  ns_layout_set inv "$NS" capabilities
   if [ -f "$inv" ] && [ ! -L "$inv" ] && command -v jq >/dev/null 2>&1; then
     printf 'inventory items: %s\n' "$(jq '.items | length' "$inv" 2>/dev/null || printf 0)"
   else

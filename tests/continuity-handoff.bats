@@ -78,5 +78,5 @@ LIB="$ROOT/plugins/nightshift/lib/lib.sh"
   if grep -qF 'transition-history' "$DOCTOR"; then
     return 1
   fi
-  grep -qF 'shift-log.md' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
+  grep -qF 'ns_layout_set LOG "$NS" shift-log' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
 }

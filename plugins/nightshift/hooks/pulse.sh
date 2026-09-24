@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pulse.sh — shared overwrite-only writer for .nightshift/.shift-pulse.
+# pulse.sh — shared overwrite-only writer for .nightshift/run/.shift-pulse.
 #
 # Host wrappers parse stdin, then call ns_pulse_emit with the bound session id.
 # One line: epoch<space>session-id. Identity check, not the lease: helpers never
@@ -21,11 +21,13 @@ ns_pulse_owner_ok() { # <ns> <sid>
 }
 
 ns_pulse_emit() { # <ns> <sid>
-  local ns="$1" sid="$2" punch epoch open
+  local ns="$1" sid="$2" punch armed ended pulse epoch open
   [ -n "$ns" ] && [ -n "$sid" ] || return 0
-  punch="$ns/punch-list.md"
-  if [ ! -f "$ns/.shift-armed" ] || [ ! -f "$punch" ] \
-    || { [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ]; }; then
+  ns_layout_set punch "$ns" punch-list
+  ns_layout_set armed "$ns" armed
+  ns_layout_set ended "$ns" ended
+  if [ ! -f "$armed" ] || [ ! -f "$punch" ] \
+    || { [ -f "$ended" ] && [ ! -L "$ended" ]; }; then
     return 0
   fi
   # A failed count is not zero. The session is alive either way, so the pulse stands.
@@ -33,8 +35,9 @@ ns_pulse_emit() { # <ns> <sid>
   [ "$open" -gt 0 ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
   epoch="$(date +%s)"
-  [ -L "$ns/.shift-pulse" ] && rm -f "$ns/.shift-pulse"
-  printf '%s %s\n' "$epoch" "$sid" >"$ns/.shift-pulse"
+  ns_layout_set pulse "$ns" pulse
+  [ -L "$pulse" ] && rm -f "$pulse"
+  printf '%s %s\n' "$epoch" "$sid" >"$pulse"
   return 0
 }
 
@@ -50,9 +53,10 @@ ns_pulse_emit() { # <ns> <sid>
 # Silent, and never fatal: a host that reports nothing leaves no snapshot, and the report says
 # `unavailable` rather than zero.
 ns_pulse_usage() {
-  local ns="$1" host="$2" sid="$3" src="$4" reading fields offset model
+  local ns="$1" host="$2" sid="$3" src="$4" reading fields offset model armed
   [ -n "$ns" ] && [ -n "$src" ] || return 0
-  [ -f "$ns/.shift-armed" ] || return 0
+  ns_layout_set armed "$ns" armed
+  [ -f "$armed" ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
   ns_report_enabled "${ns%/.nightshift}" || return 0
   [ "$(ns_report "${ns%/.nightshift}" usage)" != off ] || return 0
@@ -157,32 +161,34 @@ ns_pulse_receipts_sections() {
 
 # ns_pulse_receipts_start_line <project> <label>
 ns_pulse_receipts_start_line() {
-  printf 'receipts: item %s started — open .nightshift/receipts/%s.md with one paragraph on the approach; %s' \
-    "$2" "$(ns_pulse_receipts_basename "$1" "$2")" "$(ns_pulse_receipts_sections "$1")"
+  printf 'receipts: item %s started — open %s/%s.md with one paragraph on the approach; %s' \
+    "$2" "$(ns_layout_name "$1/.nightshift" receipts)" "$(ns_pulse_receipts_basename "$1" "$2")" \
+    "$(ns_pulse_receipts_sections "$1")"
 }
 
 # ns_pulse_receipts_tick_line <project> <label>
 ns_pulse_receipts_tick_line() {
-  printf 'receipts: item %s is ticked — write its closing paragraph in .nightshift/receipts/%s.md now, before starting the next item.' \
-    "$2" "$(ns_pulse_receipts_basename "$1" "$2")"
+  printf 'receipts: item %s is ticked — write its closing paragraph in %s/%s.md now, before starting the next item.' \
+    "$2" "$(ns_layout_name "$1/.nightshift" receipts)" "$(ns_pulse_receipts_basename "$1" "$2")"
 }
 
 # ns_pulse_receipts_cadence_line <project> <label>
 ns_pulse_receipts_cadence_line() {
-  printf 'receipts: progress update due for %s — refresh the progress paragraph in .nightshift/receipts/%s.md: where it stands, what is left.' \
-    "$2" "$(ns_pulse_receipts_basename "$1" "$2")"
+  printf 'receipts: progress update due for %s — refresh the progress paragraph in %s/%s.md: where it stands, what is left.' \
+    "$2" "$(ns_layout_name "$1/.nightshift" receipts)" "$(ns_pulse_receipts_basename "$1" "$2")"
 }
 
 # ns_pulse_ticked_labels <project> — every ticked item label, punch-list order, one per line.
 ns_pulse_ticked_labels() {
-  local punch="$1/.nightshift/punch-list.md"
+  local punch
+  ns_layout_set punch "$1/.nightshift" punch-list
   [ -f "$punch" ] || return 0
   ns_item_rows "$punch" ticked | cut -f1
 }
 
 # Previous-pulse facts live under usage/, never in the punch list.
-ns_pulse_previous_file() { printf '%s/usage/previous-pulse' "$1"; }
-ns_pulse_previous_ticked_file() { printf '%s/usage/previous-ticked' "$1"; }
+ns_pulse_previous_file() { printf '%s/previous-pulse' "$(ns_usage_dir "$1")"; }
+ns_pulse_previous_ticked_file() { printf '%s/previous-ticked' "$(ns_usage_dir "$1")"; }
 
 ns_pulse_previous_get() { # <ns> <key>
   local file line
@@ -201,7 +207,7 @@ ns_pulse_previous_get() { # <ns> <key>
 
 ns_pulse_previous_write() { # <ns> <active> <ticked>
   local dir file
-  dir="$1/usage"
+  dir="$(ns_usage_dir "$1")"
   mkdir -p "$dir" 2>/dev/null || return 0
   [ -L "$dir" ] && return 0
   file="$(ns_pulse_previous_file "$1")"
@@ -216,32 +222,34 @@ ns_pulse_previous_write() { # <ns> <active> <ticked>
 # open is dropped. A revived session still finds the notice; it stands until the receipt changes,
 # so a long pause is one overdue notice rather than one per minute that passed.
 ns_pulse_report_due() {
-  local ns="$1" project="$2" label due want
-  [ -f "$ns/.shift-armed" ] || return 1
+  local ns="$1" project="$2" label due want armed marker
+  ns_layout_set armed "$ns" armed
+  ns_layout_set marker "$ns" receipt-due
+  [ -f "$armed" ] || return 1
   ns_pulse_receipts_enabled "$project" || return 1
   label="$(ns_pulse_active_item "$project")" || return 1
   [ -n "$label" ] || return 1
   want="$(ns_pulse_receipts_cadence_line "$project" "$label")"
-  if [ -f "$ns/.receipt-due" ] && [ ! -L "$ns/.receipt-due" ]; then
-    due="$(cat "$ns/.receipt-due" 2>/dev/null)" || due=""
+  if [ -f "$marker" ] && [ ! -L "$marker" ]; then
+    due="$(cat "$marker" 2>/dev/null)" || due=""
     case "$due" in
       *"for ${label} —"*|*"for ${label}")
         # Refreshing the receipt is what answers the notice. The window notices the change and
         # drops the marker, so a refreshed receipt is not reminded again on the next call.
         ns_usage_window "$ns" "$label" "$(ns_receipt_path "$project" "$label")" >/dev/null || :
-        if [ -f "$ns/.receipt-due" ]; then
+        if [ -f "$marker" ]; then
           printf '%s' "$due"
           return 0
         fi
         ;;
       *)
         # The marker names an item that is no longer the open one; it answers nothing now.
-        rm -f "$ns/.receipt-due" 2>/dev/null || :
+        rm -f "$marker" 2>/dev/null || :
         ;;
     esac
   fi
   ns_usage_progress_due "$project" "$label" || return 1
-  printf '%s' "$want" >"$ns/.receipt-due" 2>/dev/null || return 1
+  printf '%s' "$want" >"$marker" 2>/dev/null || return 1
   printf '%s' "$want"
 }
 
@@ -251,19 +259,22 @@ ns_pulse_report_due() {
 # identical cadence text is not re-emitted after the item it names has been ticked.
 ns_pulse_receipts_notice() {
   local ns="$1" project="$2" prev_active prev_ticked active ticked line first=1 due
-  local labels_file
-  [ -f "$ns/.shift-armed" ] || return 1
+  local labels_file usage now_file armed
+  ns_layout_set armed "$ns" armed
+  [ -f "$armed" ] || return 1
   ns_pulse_receipts_enabled "$project" || return 1
   prev_active="$(ns_pulse_previous_get "$ns" active 2>/dev/null)" || prev_active=""
   prev_ticked="$(ns_pulse_previous_get "$ns" ticked 2>/dev/null)" || prev_ticked="0"
   case "$prev_ticked" in '' | *[!0-9]*) prev_ticked=0 ;; esac
   active="$(ns_pulse_active_item "$project" 2>/dev/null)" || active=""
-  ticked="$(ns_ticked_boxes "$ns/punch-list.md" 2>/dev/null)" || ticked=0
+  ticked="$(ns_ticked_boxes "$(ns_layout_path "$ns" punch-list)" 2>/dev/null)" || ticked=0
   case "$ticked" in '' | *[!0-9]*) ticked=0 ;; esac
   labels_file="$(ns_pulse_previous_ticked_file "$ns")"
-  mkdir -p "$ns/usage" 2>/dev/null || :
-  : >"$ns/usage/.ticked-now"
-  ns_pulse_ticked_labels "$project" >"$ns/usage/.ticked-now" 2>/dev/null || :
+  ns_layout_set usage "$ns" usage
+  now_file="$usage/.ticked-now"
+  mkdir -p "$usage" 2>/dev/null || :
+  : >"$now_file"
+  ns_pulse_ticked_labels "$project" >"$now_file" 2>/dev/null || :
   if [ "$ticked" -gt "$prev_ticked" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       [ -n "$line" ] || continue
@@ -276,7 +287,7 @@ ns_pulse_receipts_notice() {
       else
         printf '\n%s' "$(ns_pulse_receipts_tick_line "$project" "$line")"
       fi
-    done <"$ns/usage/.ticked-now"
+    done <"$now_file"
   fi
   if [ -n "$active" ] && [ "$active" != "$prev_active" ]; then
     # An item carried from an earlier shift may have been renumbered or retitled since; its receipt
@@ -302,8 +313,8 @@ ns_pulse_receipts_notice() {
   if [ -L "$labels_file" ]; then
     rm -f "$labels_file"
   fi
-  if [ -d "$ns/usage" ] && [ ! -L "$ns/usage" ]; then
-    mv "$ns/usage/.ticked-now" "$labels_file" 2>/dev/null || :
+  if [ -d "$usage" ] && [ ! -L "$usage" ]; then
+    mv "$now_file" "$labels_file" 2>/dev/null || :
   fi
   [ "$first" -eq 0 ]
 }
@@ -346,10 +357,10 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   [ -d "$ns" ] || return 0
   # The same three conditions the reading itself needs: an armed shift, owned by this session, with
   # the report on. Anything else is a to-do list in a folder, and it is not billed.
-  [ -f "$ns/.shift-armed" ] || return 0
+  [ -f "$(ns_layout_path "$ns" armed)" ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
   ns_report_enabled "$project" || return 0
-  punch="$ns/punch-list.md"
+  ns_layout_set punch "$ns" punch-list
   [ -f "$punch" ] || return 0
   # This file's own directory, never the caller's. The Codex and Cursor pulses source this file and
   # set `_here` to their own folder, which has no `shared/` in it.

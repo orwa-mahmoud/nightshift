@@ -26,9 +26,14 @@ case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
-PUNCH="$NS/punch-list.md"
+declare PUNCH ARMED ENDED SESSION SESSION_END
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set ARMED "$NS" armed
+ns_layout_set ENDED "$NS" ended
+ns_layout_set SESSION "$NS" session
+ns_layout_set SESSION_END "$NS" session-end
 
-if [ ! -f "$NS/.shift-armed" ] || [ ! -f "$PUNCH" ] || { [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; }; then
+if [ ! -f "$ARMED" ] || [ ! -f "$PUNCH" ] || { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; }; then
   exit 0
 fi
 # A failed count is not zero. An unreadable punch list leaves the shift standing, so the
@@ -39,15 +44,15 @@ OPEN="$(ns_open_boxes "$PUNCH")" || OPEN=1
 SID="${CURSOR_SESSION_ID:-}"
 REASON="${CURSOR_SESSION_END_REASON:-unknown}"
 
-if [ -f "$NS/.shift-session" ] && [ ! -L "$NS/.shift-session" ]; then
-  REC="$(sed -n 1p "$NS/.shift-session" 2>/dev/null)"
+if [ -f "$SESSION" ] && [ ! -L "$SESSION" ]; then
+  REC="$(sed -n 1p "$SESSION" 2>/dev/null)"
   WORKER="$(ns_cursor_worker_id "$NS")"
   if [ -n "$WORKER" ]; then
     [ -n "$SID" ] && [ "$SID" = "$WORKER" ] || exit 0
   else
     [ -n "$REC" ] && [ -n "$SID" ] && [ "$SID" != "$REC" ] && exit 0
   fi
-  HOST_LINE="$(sed -n 5p "$NS/.shift-session" 2>/dev/null)"
+  HOST_LINE="$(sed -n 5p "$SESSION" 2>/dev/null)"
   [ -z "$HOST_LINE" ] || [ "$HOST_LINE" = "cursor" ] || exit 0
 fi
 
@@ -56,6 +61,6 @@ case "$REASON" in
   *) exit 0 ;;
 esac
 
-[ -L "$NS/.session-end" ] && rm -f "$NS/.session-end"
-printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$NS/.session-end"
+[ -L "$SESSION_END" ] && rm -f "$SESSION_END"
+printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$SESSION_END"
 exit 0

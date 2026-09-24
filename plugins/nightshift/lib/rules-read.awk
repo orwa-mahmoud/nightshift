@@ -10,6 +10,9 @@
 #   canon    one JSON document as compact canonical JSON: sorted keys, one line
 #   pretty   the same document sorted and indented, for a file the owner reads
 #   setblock the same, with one top-level key set to -v value; every other key survives
+#   canonat  the compact canonical JSON of the value at dotted path -v key, or nothing when absent
+#   renamekey the document with top-level key -v key renamed to -v value, sorted and indented
+#   dropkey  the document without the value at dotted path -v key, sorted and indented
 #   unquote  one JSON string on stdin, decoded text on stdout
 
 {
@@ -32,11 +35,28 @@ END {
   if (i > n) {
     fail("empty document")
   }
-  if (mode == "canon" || mode == "pretty" || mode == "setblock") {
+  if (mode == "canon" || mode == "pretty" || mode == "setblock" || mode == "canonat" ||
+      mode == "renamekey" || mode == "dropkey") {
     jparse(".")
     skip_ws()
     if (i <= n) {
       fail("unexpected nesting")
+    }
+    if (mode == "canonat") {
+      if (key in V_TYPE) {
+        printf "%s\n", canon(key)
+      }
+      exit
+    }
+    if (mode == "renamekey") {
+      renamekey(key, value)
+      printf "%s\n", pretty(".", "")
+      exit
+    }
+    if (mode == "dropkey") {
+      dropkey(key)
+      printf "%s\n", pretty(".", "")
+      exit
     }
     if (mode == "setblock") {
       if (key == "") {
@@ -607,6 +627,51 @@ function setblock(k, text,    save_src, save_n, save_i, keys, count, j, found) {
       V_KEYS["."] = V_KEYS["."] "\t" k
     }
   }
+}
+
+# A top-level key under a new name, with everything it held. An absent key changes nothing.
+function renamekey(from, to,    text) {
+  if (!(from in V_TYPE)) {
+    return
+  }
+  text = canon(from)
+  dropkey(from)
+  setblock(to, text)
+}
+
+# The value at a dotted path, and its name in the object that held it, are gone. An absent path
+# changes nothing.
+function dropkey(path,    parent, leaf, cut, keys, count, j, kept) {
+  if (!(path in V_TYPE)) {
+    return
+  }
+  cut = 0
+  for (j = length(path); j > 0; j--) {
+    if (substr(path, j, 1) == ".") {
+      cut = j
+      break
+    }
+  }
+  if (cut == 0) {
+    parent = "."
+    leaf = path
+  } else {
+    parent = substr(path, 1, cut - 1)
+    leaf = substr(path, cut + 1)
+  }
+  count = split(V_KEYS[parent], keys, "\t")
+  if (V_KEYS[parent] == "") {
+    count = 0
+  }
+  kept = ""
+  for (j = 1; j <= count; j++) {
+    if (keys[j] == leaf) {
+      continue
+    }
+    kept = (kept == "" ? keys[j] : kept "\t" keys[j])
+  }
+  V_KEYS[parent] = kept
+  drop_subtree(path)
 }
 
 # Everything the old value owned goes with it, so a shorter replacement cannot leave a field

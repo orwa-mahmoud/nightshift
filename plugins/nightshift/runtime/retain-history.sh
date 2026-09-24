@@ -64,7 +64,9 @@ NS="$WORKSPACE/.nightshift"
 LOG_DAYS="$(ns_retention_days "$WORKSPACE" runtimeLogDays)"
 ARCH_DAYS="$(ns_retention_days "$WORKSPACE" archiveDays)"
 ARMED=0
-[ -f "$NS/.shift-armed" ] && ARMED=1
+declare ARMED_FILE
+ns_layout_set ARMED_FILE "$NS" armed
+[ -f "$ARMED_FILE" ] && ARMED=1
 
 printf 'Nightshift retention preview\n'
 printf 'Workspace:      %s\n' "$WORKSPACE"

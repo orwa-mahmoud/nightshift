@@ -64,7 +64,7 @@ resolve_target() {
   doctor="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   # Setup writes the record; the preflight reads it and refuses on what it finds. One contract,
   # stated once on each side of it.
-  grep -qF '$NS/work-target' "$setup_skill"
+  grep -qF '$NS/run/work-target' "$setup_skill"
   grep -qF 'work-target cannot be resolved from' "$pre"
   grep -qF 'Several child repositories make the choice ambiguous' "$explain"
   # Doctor is the one that says the workspace is standing in, and Status relays what it says.

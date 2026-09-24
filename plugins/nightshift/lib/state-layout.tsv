@@ -1,0 +1,121 @@
+# Where each Nightshift state file lives under .nightshift/, for every state-version.
+#
+# One row per path a file has had: its key, the first state-version that uses the path, the path,
+# and its kind. A key resolves to its row with the highest version at or below the workspace's own
+# (a legacy workspace reads as version 1). migrate-state moves whatever it finds at an earlier path
+# of a key to that key's newest path, so a later layout change adds rows here, never a step.
+#
+# Rows of one key stay together, oldest first. A `*` in a path stands for the part that names one
+# instance, as in usage-<shiftId>/. A group row is a folder that holds only other keys, so anything
+# else found in it is not a Nightshift file. A field row names a top-level JSON key inside the file
+# another key names, as <file-key>#<json-key>; a retired row names a JSON key no version reads.
+# A stray row names a file an earlier plugin wrote by mistake and no version reads: migrate-state
+# names it and leaves it for the owner to delete.
+#
+# key	since	path	kind
+punch-list	0	punch-list.md	file
+rules	0	rules.json	file
+state-version	0	state-version	file
+stop	0	STOP	file
+gitignore	0	.gitignore	file
+receipts-repo	0	.git	dir
+receipt-template	0	receipt-item.md	stray
+shift-defaults	0	shift-defaults.json	file
+receipts	0	receipts	dir
+receipts-index	0	receipts/README.md	file
+previous-report	0	shift-report.md	file
+previous-report	1	receipts/previous-report.md	file
+archive	0	archive	dir
+support	0	support	dir
+inbox	2	inbox	group
+parking-lot	0	parking-lot.md	file
+parking-lot	2	inbox/parking-lot.md	file
+snag-log	0	snag-log.md	file
+snag-log	2	inbox/snag-log.md	file
+staging	2	staging	group
+drafting-table	0	drafting-table.md	file
+drafting-table	2	staging/drafting-table.md	file
+work-orders	0	work-orders.md	file
+work-orders	2	staging/work-orders.md	file
+product	2	product	group
+opportunity-map	0	opportunity-map.md	file
+opportunity-map	2	product/opportunity-map.md	file
+product-research	0	product-research.md	file
+product-research	2	product/product-research.md	file
+run	2	run	group
+shift-log	0	shift-log.md	file
+shift-log	2	run/shift-log.md	file
+scheduled-log	0	scheduled.log	file
+scheduled-log	2	run/scheduled.log	file
+shift-policy	0	shift-policy.json	file
+shift-policy	2	run/shift-policy.json	file
+shift-defaults-backup	0	shift-defaults.json.bak	file
+shift-defaults-backup	2	run/shift-defaults.json.bak	file
+work-target	0	work-target	file
+work-target	2	run/work-target	file
+work-mode	0	work-mode	file
+work-mode	2	run/work-mode	file
+capabilities	0	capabilities.json	file
+capabilities	2	run/capabilities.json	file
+deadline	0	deadline	file
+deadline	2	run/deadline	file
+usage	0	usage	dir
+usage	2	run/usage	dir
+usage-shift	0	usage-*	dir
+usage-shift	2	run/usage-*	dir
+evidence	0	evidence	dir
+evidence	2	run/evidence	dir
+provision-transaction	0	provision-transaction.json	file
+provision-transaction	2	run/provision-transaction.json	file
+provision-baseline	0	provision-baseline	dir
+provision-baseline	2	run/provision-baseline	dir
+provision-surface	0	provision-surface	file
+provision-surface	2	run/provision-surface	file
+armed	0	.shift-armed	file
+armed	2	run/.shift-armed	file
+session	0	.shift-session	file
+session	2	run/.shift-session	file
+lease	0	.shift-lease	file
+lease	2	run/.shift-lease	file
+worker	0	.shift-worker	file
+worker	2	run/.shift-worker	file
+ended	0	.ended	file
+ended	2	run/.ended	file
+pending-filing	0	.pending-filing	file
+pending-filing	2	run/.pending-filing	file
+stall	0	.stall	file
+stall	2	run/.stall	file
+notified	0	.notified	file
+notified	2	run/.notified	file
+clock-out-reminder	0	.clock-out-reminder	file
+clock-out-reminder	2	run/.clock-out-reminder	file
+context-reset	0	.context-reset	file
+context-reset	2	run/.context-reset	file
+receipt-due	0	.receipt-due	file
+receipt-due	2	run/.receipt-due	file
+report-due	0	.report-due	file
+report-due	2	run/.report-due	file
+pulse	0	.shift-pulse	file
+pulse	2	run/.shift-pulse	file
+session-end	0	.session-end	file
+session-end	2	run/.session-end	file
+watchman	0	.watchman	file
+watchman	2	run/.watchman	file
+watchman-tick	0	.watchman-tick	file
+watchman-tick	2	run/.watchman-tick	file
+watch-reason	0	.watch-reason	file
+watch-reason	2	run/.watch-reason	file
+mint-failed	0	.mint-failed	file
+mint-failed	2	run/.mint-failed	file
+lock	0	.lock.d	dir
+lock	2	run/.lock.d	dir
+lease-lock	0	.lease-lock.d	dir
+lease-lock	2	run/.lease-lock.d	dir
+mutex-scope	0	.mutex-scope	file
+mutex-scope	2	run/.mutex-scope	file
+rules-receipts	0	rules#report	field
+rules-receipts	1	rules#receipts	field
+policy-receipts	0	shift-policy#report	field
+policy-receipts	1	shift-policy#receipts	field
+legacy-item-receipts	0	rules#receipts.legacyItemReceipts	retired
+policy-legacy-item-receipts	0	shift-policy#receipts.legacyItemReceipts	retired

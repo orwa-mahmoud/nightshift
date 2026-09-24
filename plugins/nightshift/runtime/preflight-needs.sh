@@ -114,13 +114,16 @@ scan() { # <source-label> <file>
   ' "$2"
 }
 
+declare PUNCH WORK_ORDERS
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set WORK_ORDERS "$NS" work-orders
 {
-  if [ -f "$NS/punch-list.md" ]; then
-    ns_items_section "$NS/punch-list.md" >"$TMPD/items.md"
+  if [ -f "$PUNCH" ]; then
+    ns_items_section "$PUNCH" >"$TMPD/items.md"
     scan punch-list "$TMPD/items.md"
   fi
-  if [ -f "$NS/work-orders.md" ]; then
-    sed -n '/^## Work order/,$p' "$NS/work-orders.md" >"$TMPD/orders.md"
+  if [ -f "$WORK_ORDERS" ]; then
+    sed -n '/^## Work order/,$p' "$WORK_ORDERS" >"$TMPD/orders.md"
     scan work-orders "$TMPD/orders.md"
   fi
 } >"$TMPD/scan"

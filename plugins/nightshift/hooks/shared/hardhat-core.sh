@@ -6,17 +6,25 @@
 # is the manual escape. A punch list that exists but will not count keeps the site armed:
 # only a readable list with every box ticked takes the hardhat off.
 ns_hardhat_active() {
-  local _open
+  local _open _armed _stop
   if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then
     return 1
   fi
-  [ -f "$NS/.shift-armed" ] || return 1
+  ns_layout_set _armed "$NS" armed
+  ns_layout_set _stop "$NS" stop
+  [ -f "$_armed" ] || return 1
   [ -f "$PUNCH" ] || return 1
-  if [ -f "$NS/STOP" ] && [ ! -L "$NS/STOP" ]; then
+  if [ -f "$_stop" ] && [ ! -L "$_stop" ]; then
     return 0
   fi
   _open="$(ns_open_boxes "$PUNCH")" || return 0
   [ "$_open" -gt 0 ]
+}
+
+# ns_hardhat_state_name <key> — a state file as a message names it, `.nightshift/<path>` in this
+# workspace's layout.
+ns_hardhat_state_name() {
+  ns_layout_name "${NS:-}" "$1"
 }
 
 ns_hardhat_is_command_tool() {
@@ -64,7 +72,7 @@ ns_hardhat_nightshift_dir_context() {
 }
 
 ns_hardhat_lease_targeted() {
-  local normalized nightshift_context=0
+  local normalized nightshift_context=0 run_rel
   normalized="$(printf '%s' "$1" | sed "s#\\\\/#/#g; s#[\"']##g")"
   if printf '%s' "$normalized" |
       grep -qE '(^|/)(\.shift-lease|\.mutex-scope)($|[^[:alnum:]_-])|(^|/)\.lease-lock\.d($|/)'; then
@@ -81,6 +89,12 @@ ns_hardhat_lease_targeted() {
         | *'.nightshift/*'* | *'.nightshift/.*'* | *'.nightshift/.?'* \
         | *'{'*'shift-lease'* | *'{'*'lease-lock'* | *'{'*'mutex-scope'* ) return 0 ;;
     esac
+    # A glob across the runtime directory reaches the lease as surely as one across the root.
+    if ns_hardhat_control_dir_rel run_rel; then
+      case "$normalized" in
+        *"$run_rel/"'*'* | *"$run_rel/.*"* | *"$run_rel/.?"*) return 0 ;;
+      esac
+    fi
   fi
   # The delete verb must target .nightshift itself. `cd .nightshift && unlink .shift-armed`
   # is a control-file write, not `rm .nightshift`.
@@ -192,12 +206,61 @@ ns_hardhat_payload_targets() { # $1 = tool, $2 = raw payload, $3 = command/patch
 # Bound-worker control plane: forge/delete of the files the gate keys off. The shift policy, the
 # remembered defaults and the derived deadline join them: tonight's authority is written before
 # arming, so an armed agent that could rewrite it could widen its own permissions.
-# punch-list.md may be edited; only a delete/rename of that file is denied.
-# Regex is a pre-filter. A write is a hit only when the target's canonical absolute path
-# equals $NS/<control-file>, so // /./ /../ backslashes and absolute twins cannot slip past.
+# punch-list.md may be edited; only a delete/rename of that file is denied, and so is a delete or
+# move of the directory the layout keeps the runtime's control files in, which takes them all.
+# Regex is a pre-filter. A write is a hit only when the target's canonical absolute path is the
+# control file's path in this layout, so // /./ /../ backslashes and absolute twins cannot slip past.
 ns_hardhat_control_prefilter() {
   printf '%s' "$1" | grep -qE \
-    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)'
+    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)' \
+    && return 0
+  ns_hardhat_control_dir_word_in "$1" && ns_hardhat_control_delete_verb "$1"
+}
+
+# ns_hardhat_control_key <file name> — the layout key of a control file, printed.
+ns_hardhat_control_key() {
+  case "$1" in
+    STOP) printf 'stop' ;;
+    .shift-armed) printf 'armed' ;;
+    .ended) printf 'ended' ;;
+    .shift-session) printf 'session' ;;
+    .shift-worker) printf 'worker' ;;
+    work-target | work-mode | deadline) printf '%s' "$1" ;;
+    shift-policy.json) printf 'shift-policy' ;;
+    shift-defaults.json) printf 'shift-defaults' ;;
+    punch-list.md) printf 'punch-list' ;;
+    *) return 1 ;;
+  esac
+}
+
+# The runtime directory of this layout (run/ in layout 2), as a path relative to the state
+# directory; status 1 in a layout that keeps its control files at the top.
+ns_hardhat_control_dir_rel() {
+  [ -n "${NS:-}" ] || return 1
+  ns_layout_rel_set "$1" "$NS" run
+}
+
+# True when the command names the runtime directory as a word of its own, bare or under a path.
+ns_hardhat_control_dir_word_in() {
+  local rel
+  ns_hardhat_control_dir_rel rel || return 1
+  printf '%s' "$1" | grep -qE "(^|[/[:space:];&|()])$rel/?([[:space:];&|()]|\$)"
+}
+
+# True when <candidate> is the runtime directory's bare name, as a command run inside the state
+# directory would spell it.
+ns_hardhat_control_dir_bare() {
+  local rel cand="${1#./}"
+  ns_hardhat_control_dir_rel rel || return 1
+  [ "${cand%/}" = "$rel" ]
+}
+
+# True when <canonical> is the runtime directory itself.
+ns_hardhat_control_dir_hit() {
+  local rel exp
+  ns_hardhat_control_dir_rel rel || return 1
+  exp="$(ns_hardhat_canon_write_target "$NS/$rel")" || return 1
+  [ "$1" = "$exp" ]
 }
 
 ns_hardhat_control_delete_verb() {
@@ -317,12 +380,12 @@ ns_hardhat_lex_write_target() {
 
 ns_hardhat_rules_expected() {
   [ -n "${NS:-}" ] || return 1
-  ns_hardhat_canon_write_target "$NS/rules.json"
+  ns_hardhat_canon_write_target "$(ns_layout_path "$NS" rules)"
 }
 
 ns_hardhat_parking_expected() {
   [ -n "${NS:-}" ] || return 1
-  ns_hardhat_canon_write_target "$NS/parking-lot.md"
+  ns_hardhat_canon_write_target "$(ns_layout_path "$NS" parking-lot)"
 }
 
 # Follow one symlink hop to a canonical write target. Missing or non-link: empty.
@@ -561,27 +624,29 @@ ns_hardhat_is_inert_parking_lot_write() {
   esac
 }
 
-ns_hardhat_control_expected() {
+ns_hardhat_control_expected() { # <key>
+  local path
   [ -n "${NS:-}" ] || return 1
-  ns_hardhat_canon_write_target "$NS/$1"
+  ns_layout_set path "$NS" "$1" || return 1
+  ns_hardhat_canon_write_target "$path"
 }
 
 ns_hardhat_control_rewrite_hit() {
-  local name exp
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    exp="$(ns_hardhat_control_expected "$name")" || continue
+  local key exp
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    exp="$(ns_hardhat_control_expected "$key")" || continue
     [ "$1" = "$exp" ] && return 0
   done <<'EOF'
-STOP
-.shift-armed
-.ended
-.shift-session
-.shift-worker
+stop
+armed
+ended
+session
+worker
 work-target
 work-mode
-shift-policy.json
-shift-defaults.json
+shift-policy
+shift-defaults
 deadline
 EOF
   return 1
@@ -589,7 +654,7 @@ EOF
 
 ns_hardhat_control_list_hit() {
   local exp
-  exp="$(ns_hardhat_control_expected punch-list.md)" || return 1
+  exp="$(ns_hardhat_control_expected punch-list)" || return 1
   [ "$1" = "$exp" ]
 }
 
@@ -598,16 +663,20 @@ ns_hardhat_control_candidates() {
 }
 
 ns_hardhat_control_candidate_hits() {
-  local cand="$1" full="$2" canon leaf
+  local cand="$1" full="$2" canon leaf rel
   leaf="${cand##*/}"
   leaf="${leaf#./}"
   if ns_hardhat_control_bare_name "$cand" && ns_hardhat_nightshift_dir_context "$full"; then
-    canon="$(ns_hardhat_control_expected "$leaf")" || return 1
+    canon="$(ns_hardhat_control_expected "$(ns_hardhat_control_key "$leaf")")" || return 1
+  elif ns_hardhat_control_dir_bare "$cand" && ns_hardhat_nightshift_dir_context "$full"; then
+    ns_hardhat_control_dir_rel rel || return 1
+    canon="$(ns_hardhat_canon_write_target "$NS/$rel")" || return 1
   else
     canon="$(ns_hardhat_canon_write_target "$cand")" || return 1
   fi
   ns_hardhat_control_rewrite_hit "$canon" && return 0
-  ns_hardhat_control_list_hit "$canon" && ns_hardhat_control_delete_verb "$full"
+  { ns_hardhat_control_list_hit "$canon" || ns_hardhat_control_dir_hit "$canon"; } \
+    && ns_hardhat_control_delete_verb "$full"
 }
 
 ns_hardhat_control_targeted() {
@@ -884,7 +953,7 @@ ns_hardhat_tool_deny_reason() {
 
 ns_hardhat_required_tool_deny_reason() {
   if ! ns_hardhat_rules_has "$1"; then
-    printf '%s' "BLOCKED: toolDeny is missing the required '$1' entry. Add that exact host tool name to .nightshift/rules.json with a denial message, or use an empty string to allow it; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex) to review the current template."
+    printf '%s' "BLOCKED: toolDeny is missing the required '$1' entry. Add that exact host tool name to $(ns_hardhat_state_name rules) with a denial message, or use an empty string to allow it; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex) to review the current template."
     return 0
   fi
   ns_hardhat_tool_deny_reason "$1"
@@ -943,7 +1012,7 @@ ns_hardhat_elevation_reason() {
       continue
     fi
     valid_ere "$_pat" || {
-      printf '%s' "BLOCKED: elevation.$_cat.pattern is not a valid extended regular expression, so the guard it configures cannot run. Fix the pattern in .nightshift/rules.json."
+      printf '%s' "BLOCKED: elevation.$_cat.pattern is not a valid extended regular expression, so the guard it configures cannot run. Fix the pattern in $(ns_hardhat_state_name rules)."
       return 0
     }
     printf '%s' "$_subject" | grep -qE "$_pat" || continue
@@ -954,7 +1023,7 @@ ns_hardhat_elevation_reason() {
     if [ "$_rc" -eq 2 ]; then
       printf '%s' "$_reason An exact-plan allowance exists but this command is not one of its approved commands."
     else
-      printf '%s' "$_reason The owner allows it in .nightshift/rules.json (elevation.$_cat.policy) or for one shift in shift-policy.json before arming. Park the item in .nightshift/parking-lot.md as \"needs allowance: $_cat\" and keep working."
+      printf '%s' "$_reason The owner allows it in $(ns_hardhat_state_name rules) (elevation.$_cat.policy) or for one shift in shift-policy.json before arming. Park the item in $(ns_hardhat_state_name parking-lot) as \"needs allowance: $_cat\" and keep working."
     fi
     return 0
   done <<EOF
@@ -1082,7 +1151,7 @@ ns_hardhat_command_reason() {
   fi
 
   if [ -n "$FORBIDDEN_COMMANDS" ] && printf '%s' "$SCRUBBED" | grep -qE "$FORBIDDEN_COMMANDS"; then
-    printf '%s' "BLOCKED: the command matches the owner's forbidden list for this shift. Find another way, or park the task with a note in .nightshift/parking-lot.md and keep working. Do not retry a rephrased form."
+    printf '%s' "BLOCKED: the command matches the owner's forbidden list for this shift. Find another way, or park the task with a note in $(ns_hardhat_state_name parking-lot) and keep working. Do not retry a rephrased form."
     return 0
   fi
 

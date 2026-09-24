@@ -56,13 +56,13 @@ KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
   # The repair names one verb, and says how to run it on native Windows.
   printf '%s\n' "$repair" | grep -qE 'ns"? link-workspace'
   printf '%s\n' "$repair" | grep -qF 'ns.ps1 link-workspace'
-  grep -qF 'Get-Content -TotalCount 1 .nightshift\work-mode' "$DOC"
-  grep -qF 'Get-Content -TotalCount 1 .nightshift\work-target' "$DOC"
+  grep -qF 'Get-Content -TotalCount 1 .nightshift\run\work-mode' "$DOC"
+  grep -qF 'Get-Content -TotalCount 1 .nightshift\run\work-target' "$DOC"
   grep -qF 'Get-ChildItem .nightshift\receipts -ErrorAction SilentlyContinue' "$DOC"
   grep -qF 'ConvertFrom-Json | Out-Null' "$DOC"
   grep -qF 'Get-Content -TotalCount 5 .nightshift\STOP' "$DOC"
-  grep -qF 'Get-Content -TotalCount 5 .nightshift\.shift-session' "$DOC"
-  grep -qF 'Get-Content -Tail 40 .nightshift\shift-log.md' "$DOC"
+  grep -qF 'Get-Content -TotalCount 5 .nightshift\run\.shift-session' "$DOC"
+  grep -qF 'Get-Content -Tail 40 .nightshift\run\shift-log.md' "$DOC"
 }
 
 @test "troubleshooting marks checks before repairs and splits the hosts" {

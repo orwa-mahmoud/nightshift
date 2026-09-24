@@ -144,8 +144,8 @@ ran, what was unavailable or disabled, and what needs your attention. Then read 
   delivered, what was tried and rejected, how it was verified, and where the output landed. It
   updates during the work, so you can read a long-running item before it finishes.
 - **The diff or output files** — the work you will accept, revise, or reject.
-- **The parking lot and the snag log** — defaults to accept or reverse, and the findings whose
-  disposition is something other than fixed.
+- **The parking lot and the snag log** — `.nightshift/inbox/`: defaults to accept or reverse, and
+  the findings whose disposition is something other than fixed.
 
 ### Token usage and time, per item
 

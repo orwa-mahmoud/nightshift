@@ -58,7 +58,7 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
     [ -f "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates"/$f.md ] || { echo "no template for $f"; return 1; }
   done
   # The destination is the bound directory, not the working directory.
-  grep -qF 'dest="$NS/$name"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
+  grep -qF 'ns_layout_set dest "$NS" "$key"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
 }
 
 @test "shared plugin paths resolve once through both host conventions" {
@@ -150,10 +150,10 @@ PY
 # Structural instruction contracts, not runtime E2E: pin the lifecycle words and shipped paths
 # whose accidental removal would leave a scheduled or headless shift unarmed or unstoppable.
 @test "start explicitly arms the shift and both host watchmen" {
-  grep -qF '$NS/.shift-armed' "$START"
+  grep -qF 'ns" path armed' "$START"
   grep -qF 'ns" watchman' "$START"
   grep -qF '### Bind this session' "$START"
-  grep -qF '$NS/.shift-lease' "$START"
+  grep -qF '$NS/run/.shift-lease' "$START"
   grep -qF 'ns_lease_reset_stale' "$START"
   grep -qF ': nightshift-binding-probe' "$START"
   # Start no longer restates what the preflight does or does not need; the policy verdict says it.
@@ -244,7 +244,7 @@ PY
 
 @test "stop writes the stop-work order through the trusted helper" {
   grep -qF '$NS/STOP' "$STOP"
-  grep -qF '$NS/.watchman' "$STOP"
+  grep -qF '$NS/run/.watchman' "$STOP"
   grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift' "$STOP"
   grep -qi 'kill' "$STOP"
 }
@@ -271,15 +271,16 @@ PY
 @test "the STOP lever a refusal offers is an absolute path on both platforms" {
   # The panic form is a repair now, so it carries the resolved workspace rather than a name the
   # owner would have to expand themselves.
-  grep -qF 'touch \"$NS/STOP\"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
-  grep -qF '$ns\STOP' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
+  grep -qF 'touch \"$STOP\"' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF 'ns_layout_set STOP "$NS" stop' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+  grep -qF "(Get-NSLayoutPath \$ns 'stop')" "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
 }
 
 @test "hunt and quality arm with the same bound pair as start" {
   for f in "$START" "$HUNT" "$QUALITY"; do
-    grep -qF 'touch "$NS/.shift-armed"' "$f" \
+    grep -qF 'touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"' "$f" \
       || { echo "missing POSIX arm: $f"; return 1; }
-    grep -qF 'New-Item -ItemType File -Force "$NS\.shift-armed"' "$f" \
+    grep -qF 'New-Item -ItemType File -Force (& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" path armed)' "$f" \
       || { echo "missing Windows arm: $f"; return 1; }
     grep -qF 'ns" watchman' "$f" || grep -qF '`ns watchman`' "$f" \
       || { echo "does not arm the watchman through the dispatcher: $f"; return 1; }
