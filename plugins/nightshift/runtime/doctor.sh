@@ -236,6 +236,20 @@ if [ "$DRAFTS" -gt 0 ]; then
   fact "staged drafting-table items=$DRAFTS"
 fi
 
+# Archive files only `- ` bullets, so an inbox entry written any other way stays live for good.
+INBOX_STRAYS=0
+declare INBOX_FILE
+for INBOX_KEY in parking-lot snag-log; do
+  ns_layout_set INBOX_FILE "$NS" "$INBOX_KEY"
+  while IFS=$'\t' read -r STRAY_LINE STRAY_TEXT; do
+    warn "$(ns_layout_name "$NS" "$INBOX_KEY") line $STRAY_LINE is not a \`- \` bullet, so Archive never files it: $STRAY_TEXT"
+    INBOX_STRAYS=$((INBOX_STRAYS + 1))
+  done < <(ns_inbox_strays "$INBOX_FILE")
+done
+if [ "$INBOX_STRAYS" -gt 0 ]; then
+  act confirm "rewrite each inbox entry Doctor names as one \`- \` bullet, keeping its text; Doctor does not edit the inbox"
+fi
+
 ARMED=0
 [ -f "$ARMED_FILE" ] && ARMED=1
 ENDED=0

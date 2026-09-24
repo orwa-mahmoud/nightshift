@@ -253,7 +253,12 @@ exist.
 Before reporting findings in a review or walkthrough, read
 `$NS/inbox/snag-log.md` and `$NS/inbox/parking-lot.md` first. Dedupe against ALL seen
 — fixed AND rejected — so a later cycle never re-reports an earlier one. Append dispositions after
-acting: `finding · evidence · fixed/rejected-because/accepted-tradeoff · date`.
+acting. Each entry is one `- ` bullet, `finding · evidence · disposition · date`, and Archive files
+an entry once it carries one of `fixed`, `ignored`, `answered`, `rejected-because` or
+`accepted-tradeoff`: write `fixed in <commit>`, or the disposition followed by its reason. An entry
+with no disposition is open and waits for the owner, and text that is not a bullet is never filed.
+A parking-lot entry is a bullet too; the owner answers it by appending ` · answered: <decision>`,
+and an answered entry is filed, never deleted.
 A `Filed:` pointer (label: id; target: relative path) is navigation, not an entry: follow that pointer and search the
 linked file by topic or identifier; do not open every archive. Historical decisions are evidence,
 not fresh authorization — a current rule always prevails over an archived allowance. A broken

@@ -51,6 +51,11 @@ HELPER="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/doctor.ps1"
   grep -qF 'lease held by a dead recovery attempt' "$HELPER"
   grep -qF 'the recorded conversation reclaims it on its next tool call' "$HELPER"
   grep -qF 'lease held by a dead recovery attempt' "$LOGIC"
+  grep -qF 'Get-NSInboxStrays' "$HELPER"
+  grep -qF 'bullet, so Archive never files it: ' "$HELPER"
+  grep -qF 'Doctor names a parking-lot paragraph by file and line' "$LOGIC"
+  grep -qF 'Doctor names a snag-log paragraph by file and line' "$LOGIC"
+  grep -qF 'the shipped inbox templates hold no entry Archive cannot file' "$LOGIC"
 }
 
 @test "Windows Doctor leftover and staged-work logic passes when pwsh is present" {

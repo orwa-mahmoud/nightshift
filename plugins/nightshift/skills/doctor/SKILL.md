@@ -33,7 +33,8 @@ and ownership libraries as the hooks, and both implementations print the same li
 
 The report answers, in its own words: where the workspace is and whether `.nightshift-link` is
 valid; the schema version and whether it is current, legacy, malformed, or newer than this plugin;
-work mode and work target; the punch-list and staged-work counts; markers, session, process lease
+work mode and work target; the punch-list and staged-work counts; each parking-lot or snag-log
+paragraph Archive can never file, by file and line; markers, session, process lease
 and watchman liveness; the deadline and whether it disagrees with the shift policy; an interrupted provisioning transaction; every
 `rules.json` knob it needs and the three native question-tool entries; a `resolved policy` block
 naming every effective setting with its source (`built-in`, `rules`, `defaults`, `one-shift` or

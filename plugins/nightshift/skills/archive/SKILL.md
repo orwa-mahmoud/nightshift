@@ -91,15 +91,18 @@ under the same name with an "original" suffix. Do not hand-edit either one.
  the folder and start a fresh one
  with the same one-line header. The journal is mechanical; its lines belong to the dates they
  happened.
-- **Snag log — only what's handled.** `archive-receipts` moves entries that carry a disposition
- (fixed, ignored, answered, rejected-because, accepted-tradeoff) from `$NS/inbox/snag-log.md` into the
+- **Snag log — only what's handled.** `archive-receipts` moves each `- ` bullet entry that carries a
+ disposition (`fixed`, `ignored`, `answered`, `rejected-because`, `accepted-tradeoff`) from
+ `$NS/inbox/snag-log.md` into the
  archive dest that `archive.root` and `archive.layout` resolve, then appends one
  `Filed:` pointer (label: date or shift id; target: relative path to the archived file)
  on the live file. Filing nothing
  writes no pointer and creates no empty archive file. Do not hand-copy those entries.
- Entries still awaiting the owner stay live: an open question is not history yet.
+ Entries still awaiting the owner stay live: an open question is not history yet. Text written as a
+ paragraph instead of a bullet is never filed; Doctor names it by file and line.
 - **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/inbox/parking-lot.md`.
- Parking-lot questions unanswered stay. Read live entries first; when checking whether a finding or decision
+ The owner answers an entry by appending ` · answered: <decision>`; an answered entry is filed,
+ never deleted. Parking-lot questions unanswered stay. Read live entries first; when checking whether a finding or decision
  was already handled, follow the pointer and search the linked file by topic or identifier.
  Historical decisions are evidence, not fresh authorization. A broken pointer is reported in the
  snag log; never guess or delete history.

@@ -80,6 +80,43 @@ table is the owner's: write it only when the owner asks for it" "$ROOT/nightshif
   grep -qF 'drafting-table.md' "$ROOT/import-issues/SKILL.md"
 }
 
+@test "the inbox templates name exactly the dispositions Archive files, and both runtimes file one list" {
+  plugin="$BATS_TEST_DIRNAME/../plugins/nightshift"
+  list="$(bash -c '. "$1"; printf %s "$NS_REVIEW_DISPOSITIONS"' _ "$plugin/lib/lib.sh")"
+  [ -n "$list" ]
+  [ "$(sed -n "s/^\$script:NSReviewDispositions = '\(.*\)'\$/\1/p" "$plugin/lib/Nightshift.psm1")" = "$list" ]
+  want="$(printf '%s\n' "$list" | tr '|' '\n' | sort)"
+  for t in parking-lot snag-log; do
+    got="$(grep '^\*\*Dispositions:\*\*' "$REF/templates/$t.md" | grep -o '`[^`]*`' | tr -d '`' | sort)"
+    [ "$got" = "$want" ] || { printf '%s.md names:\n%s\n' "$t" "$got"; return 1; }
+  done
+  for d in $(printf '%s' "$list" | tr '|' ' '); do
+    grep -qF "\`$d\`" "$ROOT/nightshift/SKILL.md"
+    grep -qF "\`$d\`" "$ROOT/archive/SKILL.md"
+  done
+  # The list is written once per runtime; every reader takes it from there.
+  run grep -rlF 'rejected-because|accepted-tradeoff' "$plugin"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | sort)" = "$(printf '%s\n' "$plugin/lib/Nightshift.psm1" "$plugin/lib/state.sh")" ]
+  [ "$(grep -cF 'rejected-because|accepted-tradeoff' "$plugin/lib/state.sh")" -eq 1 ]
+  [ "$(grep -cF 'rejected-because|accepted-tradeoff' "$plugin/lib/Nightshift.psm1")" -eq 1 ]
+}
+
+@test "an inbox entry is a bullet, an open one waits for the owner, and an answer is appended, never deleted" {
+  for t in parking-lot snag-log; do
+    grep -qF '**Each entry** is one `- ` bullet below the rule' "$REF/templates/$t.md"
+    grep -qF 'Archive files only' "$REF/templates/$t.md"
+    grep -qF 'Doctor names it' "$REF/templates/$t.md"
+    tr '\n' ' ' <"$REF/templates/$t.md" | grep -qF 'An entry with no disposition is open and waits for the owner'
+  done
+  tr '\n' ' ' <"$REF/templates/parking-lot.md" | grep -qF 'The owner answers by appending ` · answered: <decision>` to the entry, and Archive files it.'
+  tr '\n' ' ' <"$REF/templates/parking-lot.md" | grep -qF 'Never delete an answered entry'
+  if grep -qiE 'deletes? entries|once decided' "$REF/templates/parking-lot.md"; then return 1; fi
+  tr '\n' ' ' <"$ROOT/nightshift/SKILL.md" | grep -qF 'the owner answers it by appending ` · answered: <decision>`'
+  tr '\n' ' ' <"$ROOT/archive/SKILL.md" | tr -s ' ' | grep -qF 'The owner answers an entry by appending ` · answered: <decision>`; an answered entry is filed, never deleted.'
+  tr '\n' ' ' <"$ROOT/doctor/SKILL.md" | grep -qF 'each parking-lot or snag-log paragraph Archive can never file, by file and line'
+}
+
 @test "ordinary workflow guidance does not call later work parked" {
   if grep -RqiE 'park(ed|ing)? (known |ordinary )?(work|task|plan)|park(ed|ing)? for later' \
     "$ROOT/nightshift/SKILL.md" "$ROOT/setup/SKILL.md" "$ROOT/start/SKILL.md" \

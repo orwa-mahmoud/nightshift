@@ -67,6 +67,7 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ("ns-doctor-logic-" + [guid]::NewGu
 $notes = $null
 $clockout = $null
 $receiptsSite = $null
+$inboxSite = $null
 $linkNotes = $null
 $targetLink = $null
 $otherTarget = $null
@@ -140,6 +141,42 @@ try {
     Expect-True ($stop.ExitCode -eq 0) "unarmed STOP exits 0 (got $($stop.ExitCode) $($stop.Stderr))"
     Expect-True ($stop.Stdout -match 'STOP leftover') 'unarmed STOP is reported as leftover'
     Expect-True ($stop.Stdout -match '\[confirm\].*stale STOP') 'unarmed STOP is a confirm action'
+
+    # Doctor names each inbox paragraph Archive can never file, by file and line.
+    $inboxSite = $root + '-inbox'
+    $inboxNs = Join-Path $inboxSite '.nightshift'
+    $null = New-Item -ItemType Directory -Path (Join-Path $inboxNs 'inbox') -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $inboxNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $inboxNs 'state-version'), "2`n")
+    [IO.File]::WriteAllText((Join-Path $inboxNs 'punch-list.md'), "## Items`n`n")
+    $templates = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/templates'
+    foreach ($name in @('parking-lot.md', 'snag-log.md')) {
+        Copy-Item -LiteralPath (Join-Path $templates $name) -Destination (Join-Path (Join-Path $inboxNs 'inbox') $name)
+    }
+    $shipped = Invoke-Doctor $inboxSite
+    Expect-True ($shipped.ExitCode -eq 0) "inbox templates doctor exits 0 (got $($shipped.ExitCode) $($shipped.Stderr))"
+    Expect-True ($shipped.Stdout -notmatch 'Archive never files it') 'the shipped inbox templates hold no entry Archive cannot file'
+    $inboxDot = [string][char]0x00B7
+    [IO.File]::WriteAllText((Join-Path (Join-Path $inboxNs 'inbox') 'parking-lot.md'), ((@(
+        '# Parking Lot', '', 'A header paragraph above the rule is not an entry.', '', '---', '',
+        "- Keep the flag off? $inboxDot answered: ship it", '',
+        'Needs allowance for sudo, written as a paragraph.', '',
+        '- still open', '  wrapped under its bullet') -join "`n") + "`n"))
+    [IO.File]::WriteAllText((Join-Path (Join-Path $inboxNs 'inbox') 'snag-log.md'), ((@(
+        '# Snag Log', '', '---', '', "- leak $inboxDot tests/x.bats $inboxDot fixed in abc1234 $inboxDot 2026-09-24", '',
+        'A finding written as a paragraph, open', 'and its wrapped line') -join "`n") + "`n"))
+    $inboxBefore = Get-TreeStamp $inboxSite
+    $strays = Invoke-Doctor $inboxSite
+    Expect-True ($strays.ExitCode -eq 0) "inbox strays doctor exits 0 (got $($strays.ExitCode) $($strays.Stderr))"
+    Expect-True ($strays.Stdout.Contains('.nightshift/inbox/parking-lot.md line 9 is not a `- ` bullet, so Archive never files it: Needs allowance for sudo, written as a paragraph.')) `
+        'Doctor names a parking-lot paragraph by file and line'
+    Expect-True ($strays.Stdout.Contains('.nightshift/inbox/snag-log.md line 7 is not a `- ` bullet, so Archive never files it: A finding written as a paragraph, open')) `
+        'Doctor names a snag-log paragraph by file and line'
+    Expect-True (([regex]::Matches($strays.Stdout, 'Archive never files it')).Count -eq 2) `
+        'a header paragraph, a wrapped line and a bullet are never named'
+    Expect-True ($strays.Stdout.Contains('[confirm] rewrite each inbox entry Doctor names as one `- ` bullet, keeping its text; Doctor does not edit the inbox')) `
+        'unfileable inbox entries are a confirm action'
+    Expect-True ((Get-TreeStamp $inboxSite) -eq $inboxBefore) 'Doctor leaves the inbox untouched'
 
     $rulesPath = Join-Path $ns 'rules.json'
     $rules = Get-Content -LiteralPath $rulesPath -Raw | ConvertFrom-Json
@@ -308,6 +345,9 @@ finally {
     }
     if ($null -ne $receiptsSite) {
         Remove-Item -LiteralPath $receiptsSite -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $inboxSite) {
+        Remove-Item -LiteralPath $inboxSite -Recurse -Force -ErrorAction SilentlyContinue
     }
     if ($null -ne $linkNotes) {
         Remove-Item -LiteralPath $linkNotes -Recurse -Force -ErrorAction SilentlyContinue

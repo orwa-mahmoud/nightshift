@@ -243,6 +243,18 @@ if ($drafts -gt 0) {
     Add-NSFact "staged drafting-table items=$drafts"
 }
 
+# Archive files only `- ` bullets, so an inbox entry written any other way stays live for good.
+$inboxStrays = 0
+foreach ($inboxKey in @('parking-lot', 'snag-log')) {
+    foreach ($stray in (Get-NSInboxStrays (Get-NSLayoutPath $ns $inboxKey))) {
+        Add-NSWarn ('{0} line {1} is not a `- ` bullet, so Archive never files it: {2}' -f (Get-NSLayoutName $ns $inboxKey), $stray.Line, $stray.Text)
+        $inboxStrays++
+    }
+}
+if ($inboxStrays -gt 0) {
+    Add-NSAct confirm 'rewrite each inbox entry Doctor names as one `- ` bullet, keeping its text; Doctor does not edit the inbox'
+}
+
 $armed = [int](Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf)
 $endedPath = Get-NSLayoutPath $ns 'ended'
 $ended = 0
