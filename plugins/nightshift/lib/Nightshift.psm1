@@ -5274,7 +5274,7 @@ function Get-NSItemLabel {
     $t = $t -creplace $script:NSItemIdPattern, ''
     $t = $t -creplace '^- \[[ xX]\][ \t]*\*\*', ''
     $t = $t -creplace '^- \[[ xX]\][ \t]*', ''
-    $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
+    $t = $t -creplace ('[ \t]+(' + [char]0x2014 + '|-[ \t]).*$'), ''
     $t = $t -creplace '\*\*.*$', ''
     return $t.TrimEnd()
 }
