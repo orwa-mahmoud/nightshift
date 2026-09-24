@@ -26,9 +26,9 @@ armed() {
   armed "$p"
   run pulse "$p"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'receipts: item 36. First of the replay. started — open .nightshift/receipts/36-first-of-the-replay.md with one paragraph on the approach; sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'* ]]
+  [[ "$output" == *'receipts: item 36. First of the replay. started — open .nightshift/receipts/36-first-of-the-replay.md with one paragraph on the approach; sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'* ]] || false
   run pulse "$p"
-  [[ "$output" != *'started —'* ]]
+  [[ "$output" != *'started —'* ]] || false
 }
 
 @test "an owner template replaces the sections clause" {
@@ -38,8 +38,8 @@ armed() {
   jq '.receipts.templatePath = "notes/item.md"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
   run pulse "$p"
-  [[ "$output" == *"follow the owner's template at notes/item.md"* ]]
-  [[ "$output" != *'sections: What was delivered'* ]]
+  [[ "$output" == *"follow the owner's template at notes/item.md"* ]] || false
+  [[ "$output" != *'sections: What was delivered'* ]] || false
 }
 
 @test "cadence text names the item and file, and a stale marker is rewritten" {
@@ -54,9 +54,9 @@ armed() {
     >"$p/.nightshift/.receipt-due"
   run due "$p"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'progress update due for 38. Third of the replay.'* ]]
-  [[ "$output" == *'.nightshift/receipts/38-third-of-the-replay.md'* ]]
-  [[ "$output" != *'37. Second of the replay.'* ]]
+  [[ "$output" == *'progress update due for 38. Third of the replay.'* ]] || false
+  [[ "$output" == *'.nightshift/receipts/38-third-of-the-replay.md'* ]] || false
+  [[ "$output" != *'37. Second of the replay.'* ]] || false
 }
 
 @test "a stale marker for another item is dropped when nothing is due" {
@@ -84,9 +84,9 @@ armed() {
     >"$p/.nightshift/punch-list.md"
   run pulse "$p"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'receipts: item 36. First of the replay. is ticked — write its closing paragraph in .nightshift/receipts/36-first-of-the-replay.md now, before starting the next item.'* ]]
+  [[ "$output" == *'receipts: item 36. First of the replay. is ticked — write its closing paragraph in .nightshift/receipts/36-first-of-the-replay.md now, before starting the next item.'* ]] || false
   run pulse "$p"
-  [[ "$output" != *'36. First of the replay. is ticked'* ]]
+  [[ "$output" != *'36. First of the replay. is ticked'* ]] || false
 }
 
 @test "no injection when receipts are disabled" {

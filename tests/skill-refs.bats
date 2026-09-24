@@ -551,20 +551,20 @@ documented_pages() {
   grep -qF 'in full' "$m"
   grep -qF 'when the shift starts and before the first item' "$m"
   grep -qF 'as the punch-list contract says' "$m"
-  ! grep -qF "owner's commit setting" "$m"
+  ! grep -qF "owner's commit setting" "$m" || false
   grep -qF 'happens only' "$m"
   grep -qF 'when the punch list has no open item, and only through Start' "$m"
-  ! grep -qF 'Promote owner-approved work from' "$m"
+  ! grep -qF 'Promote owner-approved work from' "$m" || false
   grep -qF 'marked in progress in' "$m"
-  ! grep -qF 'or an artifact receipt (artifact mode)' "$m"
+  ! grep -qF 'or an artifact receipt (artifact mode)' "$m" || false
   grep -qF 'the page' "$m"
   grep -qF 'for source, cycle and specialist receipts' "$m"
   [ "$(grep -c 'From the table you already read' "$m")" -eq 2 ]
   [ "$(grep -c 'Read the resolved policy once' "$m")" -eq 1 ]
-  ! grep -qF 'Read the `report.*` rows of the resolved policy once' "$m"
+  ! grep -qF 'Read the `report.*` rows of the resolved policy once' "$m" || false
   grep -qF 'Completing the item is step 5 above' "$m"
-  ! grep -qF 'reachable with `git -C "$NS"` when Git is installed' "$m"
-  ! grep -qF 'Reading it is step 1 of every item' "$m"
+  ! grep -qF 'reachable with `git -C "$NS"` when Git is installed' "$m" || false
+  ! grep -qF 'Reading it is step 1 of every item' "$m" || false
   grep -qF 'Read `$NS/punch-list.md` in full, then begin item 1' "$SKILLS/start/SKILL.md"
 }
 

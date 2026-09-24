@@ -74,10 +74,10 @@ LIST
   printf '%s\n' "$output" | grep -qF "Run the item's own checks"
   printf '%s\n' "$output" | grep -qF 'P02 - the open one'
   # Not the finished item, not the one after it, not the trailing prose, not the contract.
-  ! printf '%s\n' "$output" | grep -qF 'P01 - already done'
-  ! printf '%s\n' "$output" | grep -qF 'P03 - the one after'
-  ! printf '%s\n' "$output" | grep -qF 'Trailing prose'
-  ! printf '%s\n' "$output" | grep -qF 'The contract the owner wrote'
+  ! printf '%s\n' "$output" | grep -qF 'P01 - already done' || false
+  ! printf '%s\n' "$output" | grep -qF 'P03 - the one after' || false
+  ! printf '%s\n' "$output" | grep -qF 'Trailing prose' || false
+  ! printf '%s\n' "$output" | grep -qF 'The contract the owner wrote' || false
 }
 
 @test "an item's fenced code and nested bullets come through whole" {
@@ -96,7 +96,7 @@ LIST
   run "$SH" --project "$p" item P03
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF 'P03 - the one after'
-  ! printf '%s\n' "$output" | grep -qF 'P02 - the open one'
+  ! printf '%s\n' "$output" | grep -qF 'P02 - the open one' || false
 
   # A model resuming mid-item after a revival asks for its own item, which may already be ticked.
   run "$SH" --project "$p" item P01
@@ -240,7 +240,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   run block "$p"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
-  ! reason "$output" | grep -qF 'since this shift armed'
+  ! reason "$output" | grep -qF 'since this shift armed' || false
 }
 
 @test "ticking a box is not a contract mismatch" {
@@ -248,7 +248,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   armed "$p"
   edit "$p" 's/- \[ \] \*\*P02/- [x] **P02/'
   run block "$p"
-  ! reason "$output" | grep -qF 'since this shift armed'
+  ! reason "$output" | grep -qF 'since this shift armed' || false
 }
 
 @test "an edited contract blocks, naming the contract" {
@@ -314,7 +314,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   p="$(new_project pl-gate-list-gone-legacy)"
   run block "$p"
   [ "$status" -eq 0 ]
-  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1
+  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1 || false
   [ -e "$p/.nightshift/.ended" ]
 }
 
@@ -324,7 +324,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   edit "$p" 's/- \[ \] \*\*P0/- [x] **P0/'
   run block "$p"
   [ "$status" -eq 0 ]
-  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1
+  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1 || false
   [ -e "$p/.nightshift/.ended" ]
 }
 
@@ -333,7 +333,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   armed "$p"
   edit "$p" "s/Run the item's own checks before its commit./Run the whole suite before every commit./"
   run block "$p"
-  ! reason "$output" | grep -qF 'since this shift armed'
+  ! reason "$output" | grep -qF 'since this shift armed' || false
 }
 
 @test "a policy written before these fields existed compares nothing" {
@@ -345,7 +345,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   run block "$p"
   # Still blocked — there is open work — but not on a comparison it cannot make.
   printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
-  ! reason "$output" | grep -qF 'since this shift armed'
+  ! reason "$output" | grep -qF 'since this shift armed' || false
 }
 
 @test "a tampered contract is answered in full, never with the short line" {
@@ -357,7 +357,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   edit "$p" 's/Nobody edits this while a shift runs./Anyone may edit this./'
   run block "$p"
   reason "$output" | grep -qF 'shift contract above the Items heading'
-  ! reason "$output" | grep -qF 'still binds'
+  ! reason "$output" | grep -qF 'still binds' || false
 }
 
 # A hyphen inside a word is part of the title. A spaced dash introduces a suffix and is stripped.

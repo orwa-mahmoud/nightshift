@@ -78,7 +78,7 @@ setup() {
   [ -f "$p/ignored/package.json" ]
   inventory "$BIN" --project "$p"
   [ "$status" -eq 0 ]
-  ! printf '%s\n' "$output" | grep -q 'ignored'
+  ! printf '%s\n' "$output" | grep -q 'ignored' || false
   printf '%s\n' "$output" | grep -c '^## ' | grep -qx 1
 }
 
@@ -137,7 +137,7 @@ setup() {
   p="$(prepare pnpm-monorepo mono)"
   [ -f "$p/dist/package.json" ]
   inventory "$BIN" --project "$p"
-  ! printf '%s\n' "$output" | grep -q '^## dist'
+  ! printf '%s\n' "$output" | grep -q '^## dist' || false
 }
 
 @test "a Python project reports the sections its manifests open" {
@@ -174,7 +174,7 @@ setup() {
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | head -1 | grep -qE '^inventory: 0 packages in .+ \(none\)$'
   printf '%s\n' "$output" | sed -n '2p' | grep -qx 'ci: none'
-  ! printf '%s\n' "$output" | grep -q '^## '
+  ! printf '%s\n' "$output" | grep -q '^## ' || false
 
   inventory "$BIN" --project "$p" --json
   printf '%s' "$output" | jq -e '.packages == [] and .ci == [] and .vcs == "none"' >/dev/null
@@ -375,7 +375,7 @@ setup() {
       || { echo "$skill does not mark the inventory optional"; return 1; }
   done
   # Automatic composes and works without it: no shift entry may require it.
-  ! grep -rlE 'inventory\.sh|ns inventory' "$PLUGIN/skills/nightshift/references/compose/shifts" | grep -q .
+  ! grep -rlE 'inventory\.sh|ns inventory' "$PLUGIN/skills/nightshift/references/compose/shifts" | grep -q . || false
   # The capabilities page names the verb owners run, on both hosts.
   grep -qF 'ns inventory' "$ROOT/docs/evidence-capabilities.md"
   grep -qF 'ns.ps1 inventory' "$ROOT/docs/evidence-capabilities.md"

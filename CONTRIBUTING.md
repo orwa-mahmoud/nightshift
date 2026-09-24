@@ -22,6 +22,10 @@ recovery, hook, platform, or public-run work with the relevant files and checks.
   bash 3.2 — no bashisms newer than 3.2, no GNU-only flags (`xargs -d`, `sed -i`
   without a suffix, etc.). Where a GNU tool has no portable equivalent, try it
   and fall back to the BSD form, as the deadline parser does.
+- **Assertions must fail on bash 3.2.** In a Bats test, end every `[[ ]]`,
+  `(( ))` and `!` statement with `|| false` (or a `|| { ...; return 1; }`
+  group): bash 3.2 ignores those failures anywhere but a test's last line, and
+  no bash fails a test on `!`. `tests/bats-assertions.bats` rejects the bare forms.
 - **PowerShell must stay portable.** Native Windows hooks and helpers run under
   Windows PowerShell 5.1 and PowerShell 7. Avoid syntax and APIs that exist on
   only one of those runtimes.

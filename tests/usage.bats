@@ -241,7 +241,7 @@ ticked_under() {
   p="$(ticked_under usage-off '{"usage":"off"}')"
   rec="$p/.nightshift/receipts/P01.md"
   grep -qxF '**Tokens:** off' "$rec"
-  ! grep -qF '| Tokens |' "$rec"
+  ! grep -qF '| Tokens |' "$rec" || false
   grep -qF '| Time |' "$rec"
   grep -F '| P01 | ticked |' "$p/.nightshift/receipts/README.md" | grep -qF '| **off** | **'
 }
@@ -251,7 +251,7 @@ ticked_under() {
   rec="$p/.nightshift/receipts/P01.md"
   grep -qF '| input | 4 |' "$rec"
   grep -qxF '**Time:** off' "$rec"
-  ! grep -qF '| Time |' "$rec"
+  ! grep -qF '| Time |' "$rec" || false
   grep -F '| P01 | ticked |' "$p/.nightshift/receipts/README.md" | grep -qF '| **off** | ['
 }
 
@@ -261,8 +261,8 @@ ticked_under() {
   [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = 'arm|P01:tick' ]
   grep -qxF '**Tokens:** off' "$rec"
   grep -qxF '**Time:** off' "$rec"
-  ! grep -qF '| Tokens |' "$rec"
-  ! grep -qF '| Time |' "$rec"
+  ! grep -qF '| Tokens |' "$rec" || false
+  ! grep -qF '| Time |' "$rec" || false
   grep -qF '| off | off | off | ticked |' "$rec"
   grep -qxF '| **Totals** |  | **off** | **off** |  |' "$p/.nightshift/receipts/README.md"
 }
@@ -901,5 +901,5 @@ pause_fixture() {
 @test "a recorded pause with no reason is listed without one" {
   run lib ns_usage_duration_line 600 60 '' 1000 1600
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'| working | 9m 0s |\n| paused | 1m 0s |\n| wall | 10m 0s |'* ]]
+  [[ "$output" == *$'| working | 9m 0s |\n| paused | 1m 0s |\n| wall | 10m 0s |'* ]] || false
 }

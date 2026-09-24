@@ -69,7 +69,7 @@ EOF
   for f in "$DOCTOR_SH" "$SCHED_SH"; do
     grep -qF 'ns_open_boxes_file' "$f"
     grep -qF 'ns_open_drafts' "$f"
-    ! grep -qF 'seen && /^[[:space:]]*-' "$f"
+    ! grep -qF 'seen && /^[[:space:]]*-' "$f" || false
   done
   for f in "$DOCTOR_PS1" "$SCHED_PS1"; do
     grep -qF 'Get-NSOpenBoxesInFile' "$f"

@@ -300,7 +300,7 @@ digest_of() {
   cd "$ROOT"
   cp "$FIX/eslint-json/sample.json" "$BATS_TEST_TMPDIR/first.json"
   jq -c . <"$FIX/eslint-json/sample.json" >"$BATS_TEST_TMPDIR/reformatted.json"
-  ! cmp -s "$BATS_TEST_TMPDIR/first.json" "$BATS_TEST_TMPDIR/reformatted.json"
+  ! cmp -s "$BATS_TEST_TMPDIR/first.json" "$BATS_TEST_TMPDIR/reformatted.json" || false
   jq -c '[.[] | .messages |= map(select(.severity != 2))]' \
     <"$FIX/eslint-json/sample.json" >"$BATS_TEST_TMPDIR/fixed.json"
 

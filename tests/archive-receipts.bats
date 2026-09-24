@@ -522,19 +522,19 @@ closed() { # <project> — the shift ended
 
   # Each index lists what its own folder holds, and the archived one carries the measurements.
   grep -qF '| 3. Trim the bundle. | open |' "$r/README.md"
-  ! grep -qF 'Fix the resolver' "$r/README.md"
-  ! grep -qF 'Cover the parser' "$r/README.md"
+  ! grep -qF 'Fix the resolver' "$r/README.md" || false
+  ! grep -qF 'Cover the parser' "$r/README.md" || false
   grep -qF '# Receipts — 2026-09-05' "$d/README.md"
   grep -qF '| 1. Fix the resolver. | ticked | **input 100 · cache_write 0 · cache_read 0 · output 20 · reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |' \
     "$d/README.md"
   grep -qF '| 2. Cover the parser. | ticked |' "$d/README.md"
-  ! grep -qF 'Trim the bundle' "$d/README.md"
+  ! grep -qF 'Trim the bundle' "$d/README.md" || false
   # The shift summary is linked above the table, never listed as an item, and only from the folder
   # that holds it.
   grep -qF 'Shift summary: [morning-2026-09-05-abc.md](./morning-2026-09-05-abc.md)' "$d/README.md"
   [ "$(grep -n '^Shift summary:' "$d/README.md" | cut -d: -f1)" -lt "$(grep -n '^| Item |' "$d/README.md" | cut -d: -f1)" ]
-  ! grep -qF '| morning-' "$d/README.md"
-  ! grep -qF 'morning-2026-09-05-abc.md' "$r/README.md"
+  ! grep -qF '| morning-' "$d/README.md" || false
+  ! grep -qF 'morning-2026-09-05-abc.md' "$r/README.md" || false
 }
 
 @test "the live index goes away when nothing is left to list" {
@@ -921,7 +921,7 @@ arch_dir() { bash -c '. "$1"; shift; ns_archive_dir "$@"' _ "$LIB" "$@"; }
   run clock_out "$p"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
   [ "$status" -eq 0 ]
-  [[ "$output" == *"/archive/2026-09-05-shift-2/receipts"* ]]
+  [[ "$output" == *"/archive/2026-09-05-shift-2/receipts"* ]] || false
 
   [ "$(cat "$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-an-item.md")" = 'the first night' ]
   [ "$(cat "$p/.nightshift/archive/2026-09-05-shift-2/receipts/2026-09-05-an-item.md")" = 'the second night' ]
@@ -962,11 +962,11 @@ ended_with() {
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
   [ "$status" -eq 0 ]
   f="$p/.nightshift/archive/2026-09-05/punch-list.md"
-  [[ "$output" == *"filed the punch list as "*"/archive/2026-09-05/punch-list.md"* ]]
+  [[ "$output" == *"filed the punch list as "*"/archive/2026-09-05/punch-list.md"* ]] || false
   [ "$(head -n1 "$f")" = '> Archived record of shift 9f2c40ab77e51d63, filed 2026-09-05. The items still open stayed in the live `.nightshift/punch-list.md`.' ]
   [ "$(sed -n 2p "$f")" = '' ]
   [ "$(tail -n +3 "$f")" = "$(printf '# Punch list\n\n## Shift\n\nThe contract.\n\n## Gates\n\n- run checks\n\n## Items\n\n- [x] **1. done.**\n  - its bullet')" ]
-  ! grep -qF '2. open.' "$f"
+  ! grep -qF '2. open.' "$f" || false
   [ "$(cat "$p/.nightshift/punch-list.md")" = "$(printf '# Punch list\n\n## Shift\n\nThe contract.\n\n## Gates\n\n- run checks\n\n## Items\n\n- [ ] **2. open.**')" ]
 }
 
@@ -983,7 +983,7 @@ ended_with() {
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
   [ "$status" -eq 0 ]
   grep -qF 'first night' "$p/.nightshift/archive/2026-09-05/punch-list.md"
-  ! grep -qF 'second night' "$p/.nightshift/archive/2026-09-05/punch-list.md"
+  ! grep -qF 'second night' "$p/.nightshift/archive/2026-09-05/punch-list.md" || false
   grep -qF 'second night' "$p/.nightshift/archive/2026-09-05-shift-2/punch-list.md"
   grep -qF 'shift 2222222222222222' "$p/.nightshift/archive/2026-09-05-shift-2/punch-list.md"
 }
@@ -1015,7 +1015,7 @@ ended_with() {
   printf 'an earlier record\n' >"$p/.nightshift/archive/2026-09-05/punch-list.md"
   before="$(cksum <"$p/.nightshift/punch-list.md")"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
-  [[ "$output" == *'a different punch list is already filed at'* ]]
+  [[ "$output" == *'a different punch list is already filed at'* ]] || false
   [ "$(cat "$p/.nightshift/archive/2026-09-05/punch-list.md")" = 'an earlier record' ]
   [ "$(cksum <"$p/.nightshift/punch-list.md")" = "$before" ]
 }
@@ -1097,13 +1097,13 @@ review_ended() { # <project> <shift-id> <layout>
   dest="$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
   [ -f "$dest" ]
   grep -qF 'leak · tests/x.bats · fixed · 2026-09-09' "$dest"
-  ! grep -qF 'still open' "$dest"
+  ! grep -qF 'still open' "$dest" || false
   [ ! -e "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/parking-lot.md" ]
   grep -qF 'Filed: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)' \
     "$p/.nightshift/snag-log.md"
   grep -qF 'still open · looking' "$p/.nightshift/snag-log.md"
-  ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md"
-  ! grep -qF 'Filed:' "$p/.nightshift/parking-lot.md"
+  ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md" || false
+  ! grep -qF 'Filed:' "$p/.nightshift/parking-lot.md" || false
 }
 
 @test "archive files a handled snag whose disposition wrapped" {
@@ -1123,9 +1123,9 @@ review_ended() { # <project> <shift-id> <layout>
   [ -f "$dest" ]
   grep -qF 'leak · tests/x.bats' "$dest"
   grep -qF 'fixed — join must see the disposition' "$dest"
-  ! grep -qF 'still open' "$dest"
+  ! grep -qF 'still open' "$dest" || false
   grep -qF 'still open · looking' "$p/.nightshift/snag-log.md"
-  ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md"
+  ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md" || false
 }
 
 @test "filing nothing adds no pointer and creates no empty archive file" {
@@ -1135,7 +1135,7 @@ review_ended() { # <project> <shift-id> <layout>
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
   [ "$status" -eq 0 ]
   [ ! -e "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md" ]
-  ! grep -qF 'Filed:' "$p/.nightshift/snag-log.md"
+  ! grep -qF 'Filed:' "$p/.nightshift/snag-log.md" || false
 }
 
 @test "a second archive run does not duplicate the pointer or the filed entry" {
@@ -1193,7 +1193,7 @@ review_ended() { # <project> <shift-id> <layout>
   grep -qF 'first · x · fixed' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
   # The second shift of the day files into its own dated folder, and its pointer says which.
   grep -qF 'second · y · answered' "$p/.nightshift/archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md"
-  ! grep -qF 'second' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
+  ! grep -qF 'second' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md" || false
   [ "$(grep -c '^Filed:' "$p/.nightshift/snag-log.md")" -eq 2 ]
   grep -qF 'Filed: [2026-09-09-shift-2](archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md)' \
     "$p/.nightshift/snag-log.md"

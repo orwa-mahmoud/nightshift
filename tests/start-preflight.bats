@@ -520,7 +520,7 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   kept="$(verdicts_only "$output")"
   [ -n "$kept" ]
   # Every kept line is a verdict, and no explanation survives the filter.
-  ! printf '%s\n' "$kept" | grep -qE '^(explain|repair) '
+  ! printf '%s\n' "$kept" | grep -qE '^(explain|repair) ' || false
   printf '%s\n' "$kept" | grep -qF 'refuse work-mode'
 }
 
@@ -670,7 +670,7 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   p="$(setup_site preflight-snapshot-none)"
   run bash "$PREFLIGHT" --project "$p" --host claude
   [ "$status" -eq 0 ]
-  ! printf '%s\n' "$output" | grep -q '^ok snapshot'
+  ! printf '%s\n' "$output" | grep -q '^ok snapshot' || false
   [ ! -e "$p/.nightshift/shift-policy.json" ]
 }
 
@@ -694,7 +694,7 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   : >"$p/.nightshift/.shift-armed"
   run gate "$p"
   is_block "$output"
-  [[ "$output" != *'since this shift armed'* ]]
+  [[ "$output" != *'since this shift armed'* ]] || false
 }
 
 @test "after a plain Start, deleting the unfinished item no longer clocks out as done" {

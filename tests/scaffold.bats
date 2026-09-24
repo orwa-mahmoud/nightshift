@@ -51,7 +51,7 @@ bare() { # a workspace with no state files at all
   run bash "$SCAFFOLD" --project "$p"
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qxF 'kept punch-list.md'
-  ! printf '%s\n' "$output" | grep -q '^wrote '
+  ! printf '%s\n' "$output" | grep -q '^wrote ' || false
   grep -qxF 'my own list, nothing like the template' "$p/.nightshift/punch-list.md"
 }
 
@@ -76,7 +76,7 @@ bare() { # a workspace with no state files at all
 
   # The template says `$NS/STOP` because it has to speak generically; the owner's copy says where.
   grep -qF "$ns" "$p/.nightshift/punch-list.md"
-  ! grep -q '\$NS' "$p/.nightshift/punch-list.md"
+  ! grep -q '\$NS' "$p/.nightshift/punch-list.md" || false
   # And the shipped template is exactly as it shipped.
   grep -q '\$NS' "$TEMPLATES/punch-list.md"
 }
