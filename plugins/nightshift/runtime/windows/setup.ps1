@@ -111,11 +111,10 @@ $workspaceTop = Invoke-NSGit $workspace @('rev-parse', '--show-toplevel')
 if (-not [string]::IsNullOrWhiteSpace($workspaceTop) `
     -and (Resolve-NSCanonicalPath $workspaceTop) -eq $workspace) {
     $gitignore = Join-Path $workspace '.gitignore'
-    $lines = if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
-        [Collections.Generic.List[string]]::new([string[]][IO.File]::ReadAllLines($gitignore))
-    }
-    else {
-        [Collections.Generic.List[string]]::new()
+    # Built in place: a list returned from an if-expression would be unrolled into its lines.
+    $lines = [Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
+        $lines.AddRange([string[]][IO.File]::ReadAllLines($gitignore))
     }
     if (-not $lines.Contains('.nightshift/')) {
         $lines.Add('.nightshift/')

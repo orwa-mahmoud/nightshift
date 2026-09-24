@@ -230,6 +230,31 @@ try {
         Expect-True ($null -eq $resolvedPlant -or $resolvedPlant -ne (Resolve-NSCanonicalPath $otherTop)) `
             'symlink work-target does not resolve the planted path'
     }
+
+    # A workspace that is its own repository keeps .nightshift/ out of it, whatever its
+    # .gitignore held before: nothing, one line, or several lines without the entry.
+    foreach ($case in @(
+            @{ Name = 'no-gitignore'; Text = $null },
+            @{ Name = 'one-line'; Text = "node_modules/`n" },
+            @{ Name = 'several-lines'; Text = "node_modules/`ndist/`n" })) {
+        $own = Join-Path $root ('own-repo-' + $case.Name)
+        New-GitRepo $own
+        & git -C $own -c user.name=t -c user.email=t@example.com commit --quiet --allow-empty -m init
+        # The path Git reports, so a temporary directory behind a symlink still reads as the top.
+        $own = [string](& git -C $own rev-parse --show-toplevel)
+        if ($null -ne $case.Text) { [IO.File]::WriteAllText((Join-Path $own '.gitignore'), $case.Text) }
+        $ownSetup = Invoke-Setup $own
+        Expect-True ($ownSetup.ExitCode -eq 0) "setup succeeds in its own repository ($($case.Name)): $($ownSetup.Stderr)"
+        $ignored = @([IO.File]::ReadAllLines((Join-Path $own '.gitignore')) | Where-Object { $_ -ceq '.nightshift/' })
+        Expect-True ($ignored.Count -eq 1) "setup ignores .nightshift/ once ($($case.Name))"
+        if ($null -ne $case.Text) {
+            Expect-True ([IO.File]::ReadAllText((Join-Path $own '.gitignore')).StartsWith($case.Text)) `
+                "setup keeps the lines that were there ($($case.Name))"
+        }
+        $again = Invoke-Setup $own
+        $ignored = @([IO.File]::ReadAllLines((Join-Path $own '.gitignore')) | Where-Object { $_ -ceq '.nightshift/' })
+        Expect-True ($again.ExitCode -eq 0 -and $ignored.Count -eq 1) "a second setup adds nothing ($($case.Name))"
+    }
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
