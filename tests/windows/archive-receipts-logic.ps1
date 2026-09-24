@@ -11,6 +11,8 @@ $helper = Join-Path $repository 'plugins/nightshift/runtime/windows/archive-rece
 $hostExecutable = (Get-Process -Id $PID).Path
 Import-Module (Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1') -Force -DisableNameChecking
 $failures = New-Object 'System.Collections.Generic.List[string]'
+# The separator the records use, spelled by its code: Windows PowerShell 5.1 reads this file as ANSI.
+$dot = [string][char]0x00B7
 $onWin32 = [Environment]::OSVersion.Platform -eq 'Win32NT'
 
 function Expect-True {
@@ -265,7 +267,7 @@ try {
     Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $ns 'rules.json')
     [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=aaaa1111bbbb2222`narchiveRoot=archive`narchiveLayout=date`n")
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
-        "# Snag Log`n`n- leak · tests/x.bats · fixed · 2026-09-09`n- still open · looking`n")
+        "# Snag Log`n`n- leak $dot tests/x.bats $dot fixed $dot 2026-09-09`n- still open $dot looking`n")
     [IO.File]::WriteAllText((Join-Path $ns 'parking-lot.md'), "# Parking Lot`n`n- wait for the owner`n")
     $one = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
     Expect-True ($one.ExitCode -eq 0) "review file exits 0 (got $($one.ExitCode) $($one.Stderr))"
@@ -276,8 +278,8 @@ try {
     $liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md'))
     Expect-True ($liveSnag.Contains('Filed: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)')) `
         'one pointer names the dest relative to the live file'
-    Expect-True ($liveSnag.Contains('still open · looking')) 'unresolved snag stays live'
-    Expect-True (-not $liveSnag.Contains('leak ·')) 'filed snag leaves the live file'
+    Expect-True ($liveSnag.Contains('still open ' + $dot + ' looking')) 'unresolved snag stays live'
+    Expect-True (-not $liveSnag.Contains('leak ' + $dot)) 'filed snag leaves the live file'
     $again = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
     Expect-True ($again.ExitCode -eq 0) "retry exits 0 (got $($again.ExitCode))"
     $liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md'))
@@ -286,7 +288,7 @@ try {
 
     # A second shift the same day files into its own dated folder, and its pointer says which.
     [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=cccc3333dddd4444`narchiveRoot=archive`narchiveLayout=date`n")
-    [IO.File]::AppendAllText((Join-Path $ns 'snag-log.md'), "- second · y · answered · 2026-09-09`n")
+    [IO.File]::AppendAllText((Join-Path $ns 'snag-log.md'), "- second $dot y $dot answered $dot 2026-09-09`n")
     $two = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
     Expect-True ($two.ExitCode -eq 0) "second shift exits 0 (got $($two.ExitCode) $($two.Stderr))"
     Expect-True (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md') -PathType Leaf) `
@@ -297,8 +299,8 @@ try {
 
     $dash = [string][char]0x2014
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
-        ("# Snag Log`n`n- leak · tests/x.bats`n  · fixed " + $dash +
-         " join must see the disposition`n  · 2026-09-13`n- still open · looking`n"))
+        ("# Snag Log`n`n- leak $dot tests/x.bats`n  $dot fixed " + $dash +
+         " join must see the disposition`n  $dot 2026-09-13`n- still open $dot looking`n"))
     $wrapped = Invoke-ArchiveReceipts $review @('-Date', '2026-09-13')
     Expect-True ($wrapped.ExitCode -eq 0) "wrapped review file exits 0 (got $($wrapped.ExitCode) $($wrapped.Stderr))"
     $wrapDest = Join-Path $ns 'archive/2026-09-13/aaaa1111bbbb2222/snag-log.md'
@@ -308,15 +310,15 @@ try {
             'the wrapped disposition is in the archive'
     }
     $liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md'))
-    Expect-True ($liveSnag.Contains('still open · looking')) 'unresolved snag stays live after wrap filing'
-    Expect-True (-not $liveSnag.Contains('leak ·')) 'filed wrapped snag leaves the live file'
+    Expect-True ($liveSnag.Contains('still open ' + $dot + ' looking')) 'unresolved snag stays live after wrap filing'
+    Expect-True (-not $liveSnag.Contains('leak ' + $dot)) 'filed wrapped snag leaves the live file'
 
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
         "# Snag Log`n`nFiled: [2026-09-09](archive/missing/snag-log.md)`n")
     $broken = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
     Expect-True ($broken.ExitCode -eq 0) "broken pointer exits 0 (got $($broken.ExitCode))"
     Expect-True ([IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')).Contains(
-        'broken archive pointer · archive/missing/snag-log.md is not a readable file')) `
+        'broken archive pointer ' + $dot + ' archive/missing/snag-log.md is not a readable file')) `
         'a broken pointer is reported in the snag log'
 }
 finally {
@@ -334,7 +336,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), ("Date: 2026-09-05`n`n## Items`n" +
         "- [x] **1. Fix the resolver.**`n- [x] **2. Cover the parser.**`n- [ ] **3. Trim the bundle.**`n"))
     [IO.File]::WriteAllText((Join-Path $recv '1-fix-the-resolver.md'), ("# 1. Fix the resolver.`n`nDone.`n`n" +
-        "**Usage:** input 100 · output 20`n" +
+        "**Usage:** input 100 $dot output 20`n" +
         "  Source: claude claude-opus-5, cumulative counters, segments 1; exact: 100 / 0 / 0 / 20 / 0`n" +
         "**Duration:** 10m 00s`n"))
     [IO.File]::WriteAllText((Join-Path $recv '2-cover-the-parser.md'),
@@ -377,7 +379,7 @@ try {
     $archivedIndex = [IO.File]::ReadAllText((Join-Path $dest 'README.md'))
     Expect-True ($archivedIndex.Contains('# Receipts ' + [char]0x2014 + ' 2026-09-05')) 'the archived index is dated'
     Expect-True ($archivedIndex.Contains(
-        '| 1. Fix the resolver. | ticked | **input 100 · cache_write 0 · cache_read 0 · output 20 · reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
+        '| 1. Fix the resolver. | ticked | **input 100 ' + $dot + ' cache_write 0 ' + $dot + ' cache_read 0 ' + $dot + ' output 20 ' + $dot + ' reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
         'the archived index carries the first receipt with its measurements'
     Expect-True ($archivedIndex.Contains('| 2. Cover the parser. | ticked |')) `
         'the archived index carries the second receipt'

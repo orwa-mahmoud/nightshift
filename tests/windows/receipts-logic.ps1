@@ -1,4 +1,4 @@
-# Portable PowerShell coverage for receipt slugs, tick files, and the report→receipts migration.
+# Portable PowerShell coverage for receipt slugs, tick files, and the report-to-receipts migration.
 # Run on macOS or Windows: pwsh -File tests/windows/receipts-logic.ps1
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'

@@ -13,6 +13,12 @@ MODULE="$PLUGIN/lib/Nightshift.psm1"
   [ -z "$hits" ] || { echo "$hits"; return 1; }
 }
 
+@test "the Windows logic suites are ASCII too, so a literal they compare means the same on 5.1" {
+  cd "$BATS_TEST_DIRNAME/windows"
+  hits="$(git ls-files '*.ps1' | xargs perl -ne 'print "$ARGV:$.: $_" if /[^\x00-\x7f]/; close ARGV if eof')"
+  [ -z "$hits" ] || { echo "$hits"; return 1; }
+}
+
 @test "the separators the POSIX runtime writes come out byte for byte" {
   command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
   run pwsh -NoProfile -NonInteractive -Command "

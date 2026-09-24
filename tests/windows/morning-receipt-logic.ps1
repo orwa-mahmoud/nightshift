@@ -504,7 +504,7 @@ try {
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $plainGateNs 'receipts/morning-2026-09-02-unknown.md') -PathType Leaf)) `
         'no receipt is filed under an invented shift id'
 
-    # === 3c. Valid, absent, and malformed policy fixtures — same facts on both hosts ===
+    # === 3c. Valid, absent, and malformed policy fixtures - same facts on both hosts ===
     $fixtureDir = Join-Path $repository 'tests/fixtures/morning-receipt'
     $receiptsLine = "Receipts:`n- [index](./README.md)`n- Policy record: "
     $itemLine = "- 2. Make the packed Node-only build reproducible. $dash ticked"

@@ -1067,7 +1067,7 @@ try {
         Set-TestPunch $recoveryWorkspace $true
         $recoveryArmed = Get-NSLayoutPath (Join-Path $recoveryWorkspace '.nightshift') 'armed'
         [IO.File]::WriteAllText($recoveryArmed, '')
-        # Codex revival now requires a stale pulse window (≥ 2 * IntervalMinutes). Age the
+        # Codex revival now requires a stale pulse window (>= 2 * IntervalMinutes). Age the
         # arm marker so MaxWakes=1 fixtures still prove dead-session recovery.
         (Get-Item -LiteralPath $recoveryArmed).LastWriteTimeUtc = [datetime]'2020-01-01T00:00:00Z'
         $recoverySession = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
