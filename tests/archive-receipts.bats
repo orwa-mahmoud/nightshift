@@ -1161,6 +1161,83 @@ review_ended() { # <project> <shift-id> <layout>
   ! grep -qF 'leak ·' "$p/.nightshift/snag-log.md" || false
 }
 
+# One parking lot that crosses every entry boundary: a bullet with an unindented Default line and
+# an indented Rollback after a blank line, a heading straight after a bullet, and a paragraph after
+# a blank line that carries a disposition of its own.
+inbox_bounds() { # <file>
+  printf '%s\n' \
+    '# Parking Lot' \
+    '' \
+    '---' \
+    '' \
+    '- Ship the flag on? · answered: yes, behind the setting' \
+    '- **Default:** kept off' \
+    '' \
+    '  - Rollback: turn it off again' \
+    '## Tomorrow' \
+    '- Rename the flag? · answered: keep the name' \
+    '' \
+    'A note the owner wrote as a paragraph · answered: later' \
+    '- still open' \
+    >"$1"
+}
+
+@test "an entry ends where the morning receipt ends it, so a heading or paragraph is never filed with it" {
+  p="$(new_project review-bounds)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  lot="$p/.nightshift/parking-lot.md"
+  inbox_bounds "$lot"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-24
+  [ "$status" -eq 0 ]
+  dest="$p/.nightshift/archive/2026-09-24/aaaa1111bbbb2222/parking-lot.md"
+  grep -qF 'Ship the flag on?' "$dest"
+  grep -qxF -- '- **Default:** kept off' "$dest"
+  grep -qxF -- '  - Rollback: turn it off again' "$dest"
+  grep -qF 'Rename the flag?' "$dest"
+  ! grep -qF 'Tomorrow' "$dest" || false
+  ! grep -qF 'A note the owner wrote' "$dest" || false
+  ! grep -qF 'still open' "$dest" || false
+  grep -qxF '## Tomorrow' "$lot"
+  grep -qxF 'A note the owner wrote as a paragraph · answered: later' "$lot"
+  grep -qxF -- '- still open' "$lot"
+  ! grep -qF 'Ship the flag' "$lot" || false
+  ! grep -qF 'kept off' "$lot" || false
+  ! grep -qF 'Rename the flag' "$lot" || false
+}
+
+@test "both runtimes split an inbox file into the same entries when pwsh is present" {
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh not installed'
+  lot="$BATS_TEST_TMPDIR/bounds.md"
+  inbox_bounds "$lot"
+  printf '%s\n' '' '- a snag · tests/x.bats' '  · fixed in abc1234 · 2026-09-24' '' \
+    'Written as a paragraph' '  and wrapped' '(empty)' '1. numbered, not a bullet' >>"$lot"
+  posix="$(bash -c '. "$1"; filed="$(mktemp)"; awk -v op=file -v filed="$filed" \
+    -v dispositions="$NS_REVIEW_DISPOSITIONS" -f "$_NS_INBOX_AWK" "$2"; printf "%s\n" "--- filed"; \
+    cat "$filed"; printf "%s\n" "--- strays"; ns_inbox_strays "$2"; rm -f "$filed"' _ "$LIB" "$lot")"
+  cat >"$BATS_TEST_TMPDIR/split.ps1" <<'PS'
+param([string]$Module, [string]$Path)
+Import-Module $Module -Force -DisableNameChecking
+$keep = New-Object Collections.Generic.List[string]
+$filed = New-Object Collections.Generic.List[string]
+foreach ($block in (Get-NSInboxBlocks ([IO.File]::ReadAllLines($Path)))) {
+  if ($block.Kind -ceq 'entry' -and (Test-NSReviewHandled ($block.Lines -join "`n"))) { $filed.AddRange($block.Lines) }
+  else { $keep.AddRange($block.Lines) }
+}
+$out = New-Object Collections.Generic.List[string]
+$out.AddRange($keep); $out.Add('--- filed'); $out.AddRange($filed); $out.Add('--- strays')
+foreach ($stray in (Get-NSInboxStrays $Path)) { $out.Add([string]$stray.Line + "`t" + $stray.Text) }
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+[Console]::Out.Write(($out -join "`n") + "`n")
+PS
+  windows="$(pwsh -NoProfile -NonInteractive -File "$BATS_TEST_TMPDIR/split.ps1" \
+    -Module "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1" -Path "$lot")"
+  [ "$posix" = "$windows" ]
+  printf '%s\n' "$posix" | grep -qxF "$(printf '12\tA note the owner wrote as a paragraph · answered: later')"
+  printf '%s\n' "$posix" | grep -qxF "$(printf '18\tWritten as a paragraph')"
+  printf '%s\n' "$posix" | grep -qxF "$(printf '21\t1. numbered, not a bullet')"
+  [ "$(printf '%s\n' "$posix" | sed -n '/^--- strays$/,$p' | grep -c .)" -eq 4 ]
+}
+
 @test "filing nothing adds no pointer and creates no empty archive file" {
   p="$(new_project review-noop)"
   review_ended "$p" aaaa1111bbbb2222 date

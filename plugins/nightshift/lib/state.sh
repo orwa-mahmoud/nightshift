@@ -1095,9 +1095,21 @@ ns_archive_automatic() {
   [ "$(ns_archive "$1" automatic)" = true ]
 }
 
-# ns_review_handled <text> — status 0 when the entry carries a filing disposition.
-ns_review_handled() {
-  printf '%s\n' "$1" | grep -qiE ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)'
+# The dispositions Archive files. An inbox entry that carries one after a ` · ` separator is
+# closed; one without is open and waits for the owner. The morning receipt reads the same list, and
+# the parking-lot and snag-log templates name it.
+NS_REVIEW_DISPOSITIONS='fixed|ignored|answered|rejected-because|accepted-tradeoff'
+
+# The inbox reader's awk half sits next to this file, resolved without dirname.
+_NS_INBOX_AWK="${BASH_SOURCE[0]%/*}"
+[ "$_NS_INBOX_AWK" != "${BASH_SOURCE[0]}" ] || _NS_INBOX_AWK=.
+_NS_INBOX_AWK="$_NS_INBOX_AWK/inbox-entries.awk"
+
+# ns_inbox_strays <file> — `<line>\t<text>` for each paragraph below the rule of a parking lot or
+# snag log: text that is not a `- ` bullet, which Archive never files.
+ns_inbox_strays() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v op=strays -f "$_NS_INBOX_AWK" "$1"
 }
 
 # ns_archive_review_label <folder-name> <shift-id> <layout> — what a Filed pointer is labelled: the
@@ -1156,27 +1168,8 @@ ns_archive_file_review_source() {
     rm -f "$tmp"
     return 2
   }
-  awk -v filed="$filed" '
-    function handled(s) {
-      t = tolower(s)
-      return t ~ / · (fixed|ignored|answered|rejected-because|accepted-tradeoff)/
-    }
-    function flush() {
-      if (buf == "") return
-      if (handled(buf)) printf "%s\n", buf >> filed
-      else printf "%s\n", buf
-      buf = ""
-    }
-    /^Filed:/ { flush(); print; next }
-    /^- Filed:/ { flush(); print; next }
-    /^- / { flush(); buf = $0; next }
-    /^# / { flush(); print; next }
-    {
-      if (buf != "") buf = buf "\n" $0
-      else print
-    }
-    END { flush() }
-  ' "$live" >"$tmp" || {
+  awk -v op=file -v filed="$filed" -v dispositions="$NS_REVIEW_DISPOSITIONS" -f "$_NS_INBOX_AWK" \
+    "$live" >"$tmp" || {
     rm -f "$tmp" "$filed"
     return 2
   }

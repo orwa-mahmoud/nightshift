@@ -672,8 +672,9 @@ _parked() {
   local title def rb kind
   P_COUNT=0
   [ -f "$LOT" ] && [ ! -L "$LOT" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$LOT" | awk -v op=parked -v fs="$FS" -v dot="$MIDDOT" -f "$READ_AWK" \
-    >"$TMPD/parked-parse"
+  sed 's/[[:cntrl:]]/ /g' "$LOT" \
+    | awk -v op=parked -v fs="$FS" -v dot="$MIDDOT" -v dispositions="$NS_REVIEW_DISPOSITIONS" \
+      -f "$READ_AWK" >"$TMPD/parked-parse"
   while IFS="$FS" read -r kind title def rb; do
     [ "$kind" = E ] || continue
     [ -n "$title" ] || continue

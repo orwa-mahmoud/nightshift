@@ -313,6 +313,32 @@ try {
     Expect-True ($liveSnag.Contains('still open ' + $dot + ' looking')) 'unresolved snag stays live after wrap filing'
     Expect-True (-not $liveSnag.Contains('leak ' + $dot)) 'filed wrapped snag leaves the live file'
 
+    # An entry ends where the morning receipt ends it: a heading straight after a bullet and a
+    # paragraph after a blank line stay live, and Default and Rollback lines travel with it.
+    [IO.File]::WriteAllText((Join-Path $ns 'parking-lot.md'), ((@(
+        '# Parking Lot', '', '---', '',
+        "- Ship the flag on? $dot answered: yes, behind the setting",
+        '- **Default:** kept off', '', '  - Rollback: turn it off again',
+        '## Tomorrow',
+        "- Rename the flag? $dot answered: keep the name", '',
+        "A note the owner wrote as a paragraph $dot answered: later",
+        '- still open') -join "`n") + "`n"))
+    $bounds = Invoke-ArchiveReceipts $review @('-Date', '2026-09-24')
+    Expect-True ($bounds.ExitCode -eq 0) "entry-bounds review file exits 0 (got $($bounds.ExitCode) $($bounds.Stderr))"
+    $boundsDest = Join-Path $ns 'archive/2026-09-24/aaaa1111bbbb2222/parking-lot.md'
+    $boundsFiled = $(if (Test-Path -LiteralPath $boundsDest -PathType Leaf) { [IO.File]::ReadAllText($boundsDest) } else { '' })
+    $boundsLive = [IO.File]::ReadAllText((Join-Path $ns 'parking-lot.md'))
+    Expect-True ($boundsFiled.Contains('Ship the flag on?') -and $boundsFiled.Contains("`n- **Default:** kept off`n") -and
+        $boundsFiled.Contains("`n  - Rollback: turn it off again`n") -and $boundsFiled.Contains('Rename the flag?')) `
+        'an answered entry is filed with its Default and Rollback lines'
+    Expect-True (-not $boundsFiled.Contains('Tomorrow') -and -not $boundsFiled.Contains('A note the owner wrote') -and
+        -not $boundsFiled.Contains('still open')) 'a heading or paragraph is never filed with the entry above it'
+    Expect-True ($boundsLive.Contains("`n## Tomorrow`n") -and
+        $boundsLive.Contains("`nA note the owner wrote as a paragraph $dot answered: later`n") -and
+        $boundsLive.Contains("`n- still open`n")) 'the heading, the paragraph and the open entry stay live'
+    Expect-True (-not $boundsLive.Contains('Ship the flag') -and -not $boundsLive.Contains('kept off') -and
+        -not $boundsLive.Contains('Rename the flag')) 'the filed entries leave the live parking lot whole'
+
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
         "# Snag Log`n`nFiled: [2026-09-09](archive/missing/snag-log.md)`n")
     $broken = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')

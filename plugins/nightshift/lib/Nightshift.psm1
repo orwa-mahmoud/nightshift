@@ -6304,23 +6304,96 @@ function Test-NSArchiveAutomatic {
     return ([string](Get-NSPolicyGroupSetting $Workspace 'archive.automatic')['value'] -ceq 'True')
 }
 
+# The dispositions Archive files. An inbox entry that carries one after a middle-dot separator
+# is closed; one without is open and waits for the owner. The morning receipt reads the
+# same list, the parking-lot and snag-log templates name it, and lib/state.sh
+# NS_REVIEW_DISPOSITIONS is the POSIX copy.
+$script:NSReviewDispositions = 'fixed|ignored|answered|rejected-because|accepted-tradeoff'
+
 function Test-NSReviewHandled {
     param([AllowEmptyString()][string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    return [bool]($Text -imatch ' \u00B7 (fixed|ignored|answered|rejected-because|accepted-tradeoff)')
+    return [bool]($Text -imatch (' \u00B7 (' + $script:NSReviewDispositions + ')'))
 }
 
-function Complete-NSReviewEntry {
-    param($Buffer, $Keep, $Filed)
-    if ($null -eq $Buffer -or $Buffer.Count -eq 0) { return }
-    $text = $Buffer -join "`n"
-    if (Test-NSReviewHandled $text) {
-        foreach ($entry in @($Buffer.ToArray())) { $Filed.Add($entry) }
+# Get-NSInboxBlocks <lines> - a parking lot or snag log read entry by entry, the way
+# lib/inbox-entries.awk reads it. An entry is a top-level `- ` bullet with its wrapped lines, its
+# indented lines and any Default: or Rollback: line, blank lines between them included; an
+# unindented line after a blank line ends it, and so does a heading, a `---` rule, a Filed:
+# pointer or the (empty) placeholder. Any other text is a paragraph, which Archive never files.
+# Each block is Kind entry, paragraph or line, the 1-based number of its first line, and its
+# lines as written.
+function Get-NSInboxBlocks {
+    param([AllowEmptyCollection()][string[]]$Lines)
+    $blocks = New-Object Collections.Generic.List[object]
+    $entry = $null
+    $paragraph = $null
+    $blank = $false
+    for ($i = 0; $i -lt $Lines.Length; $i++) {
+        $line = $Lines[$i]
+        $text = ($line -creplace '[\x00-\x1f\x7f]', ' ').TrimEnd(' ')
+        if ($text.Length -eq 0) {
+            $paragraph = $null
+            if ($null -ne $entry) { $entry.Lines.Add($line); $blank = $true; continue }
+        }
+        elseif ($text -cmatch '^--- *$' -or $text -cmatch '^#' -or $text -cmatch '^(- )?Filed:' -or
+            $text -cmatch '^\(empty') {
+            $entry = $null
+            $paragraph = $null
+        }
+        elseif ($null -ne $entry -and $text -cmatch '^ *(- )?(\*\*)?(Default|Rollback):') {
+            $entry.Lines.Add($line)
+            $blank = $false
+            continue
+        }
+        elseif ($text.StartsWith('- ', [StringComparison]::Ordinal)) {
+            $entry = [pscustomobject]@{ Kind = 'entry'; Line = $i + 1; Lines = (New-Object Collections.Generic.List[string]) }
+            $entry.Lines.Add($line)
+            $blocks.Add($entry)
+            $paragraph = $null
+            $blank = $false
+            continue
+        }
+        elseif ($null -ne $entry -and (-not $blank -or $text.StartsWith(' ', [StringComparison]::Ordinal))) {
+            $entry.Lines.Add($line)
+            $blank = $false
+            continue
+        }
+        else {
+            $entry = $null
+            $blank = $false
+            if ($null -eq $paragraph) {
+                $paragraph = [pscustomobject]@{ Kind = 'paragraph'; Line = $i + 1; Lines = (New-Object Collections.Generic.List[string]) }
+                $blocks.Add($paragraph)
+            }
+            $paragraph.Lines.Add($line)
+            continue
+        }
+        $single = [pscustomobject]@{ Kind = 'line'; Line = $i + 1; Lines = (New-Object Collections.Generic.List[string]) }
+        $single.Lines.Add($line)
+        $blocks.Add($single)
     }
-    else {
-        foreach ($entry in @($Buffer.ToArray())) { $Keep.Add($entry) }
+    return , $blocks.ToArray()
+}
+
+# Get-NSInboxStrays <path> - the first line of each paragraph below the first `---` rule of a
+# parking lot or snag log, or anywhere in a file that has none: text that is not a `- ` bullet,
+# which Archive never files. Each is Line and Text.
+function Get-NSInboxStrays {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $strays = New-Object Collections.Generic.List[object]
+    if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return , $strays.ToArray() }
+    $lines = [IO.File]::ReadAllLines($Path, $script:NSUtf8NoBom)
+    $rule = 0
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ((($lines[$i] -creplace '[\x00-\x1f\x7f]', ' ').TrimEnd(' ')) -cmatch '^--- *$') { $rule = $i + 1; break }
     }
-    $Buffer.Clear()
+    foreach ($block in (Get-NSInboxBlocks $lines)) {
+        if ($block.Kind -cne 'paragraph' -or $block.Line -le $rule) { continue }
+        $text = ($block.Lines[0] -creplace '[\x00-\x1f\x7f]', ' ').TrimEnd(' ')
+        $strays.Add([pscustomobject]@{ Line = $block.Line; Text = $text })
+    }
+    return , $strays.ToArray()
 }
 
 # Get-NSArchiveReviewLabel <folder-name> <shift-id> <layout> - what a Filed pointer is labelled: the
@@ -6377,26 +6450,14 @@ function Save-NSArchiveReviewSource {
     $rel = ConvertTo-NSRelativeLink (Split-Path -Parent $live) $dest
     $keep = New-Object Collections.Generic.List[string]
     $filed = New-Object Collections.Generic.List[string]
-    $buf = New-Object Collections.Generic.List[string]
-    foreach ($line in [IO.File]::ReadAllLines($live)) {
-        if ($line.StartsWith('Filed:') -or $line.StartsWith('- Filed:')) {
-            Complete-NSReviewEntry $buf $keep $filed
-            $keep.Add($line)
-            continue
+    foreach ($block in (Get-NSInboxBlocks ([IO.File]::ReadAllLines($live)))) {
+        if ($block.Kind -ceq 'entry' -and (Test-NSReviewHandled ($block.Lines -join "`n"))) {
+            $filed.AddRange($block.Lines)
         }
-        if ($line.StartsWith('# ')) {
-            Complete-NSReviewEntry $buf $keep $filed
-            $keep.Add($line)
-            continue
+        else {
+            $keep.AddRange($block.Lines)
         }
-        if ($line.StartsWith('- ')) {
-            Complete-NSReviewEntry $buf $keep $filed
-            $buf.Add($line)
-            continue
-        }
-        if ($buf.Count -gt 0) { $buf.Add($line) } else { $keep.Add($line) }
     }
-    Complete-NSReviewEntry $buf $keep $filed
     if ($filed.Count -eq 0) { return }
     if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
@@ -9470,7 +9531,7 @@ $script:NSReceiptReviewArtifact = 'Does not apply: an artifact shift is reviewed
 # What the runtime writes into the shift log when something interrupts the night, matched against
 # the lowercased line.
 $script:NSReceiptInterruptionPattern = 'resume attempt|reviv|resumed session|wedge|api down|(^|[^a-z])stall|stop-work|stopped by|pressed esc|quitting time|past the deadline|silent too long|usage limit'
-$script:NSReceiptHandledPattern = ' ' + [char]0x00b7 + ' (fixed|ignored|answered|rejected-because|accepted-tradeoff)'
+$script:NSReceiptHandledPattern = ' ' + [char]0x00b7 + ' (' + $script:NSReviewDispositions + ')'
 
 $script:NSReceiptLabels = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
 $script:NSReceiptLabels['shift'] = 'Shift'

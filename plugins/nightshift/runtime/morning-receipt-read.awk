@@ -24,7 +24,8 @@
 #                  is `i` fs <item label> when the commit landed in that item's mark span, and
 #                  `c` fs <hash> fs <subject> when it landed in no item's span.
 #
-# Variables: op, fs (the row separator), dot (the middle dot), day (YYYY-MM-DD or empty).
+# Variables: op, fs (the row separator), dot (the middle dot), day (YYYY-MM-DD or empty), and for
+# parked the dispositions Archive files (NS_REVIEW_DISPOSITIONS).
 
 function trim(s) {
   sub(/^ +/, "", s)
@@ -45,7 +46,7 @@ function p_add(s) {
 function p_flush(    all) {
   all = tolower(p_text " " p_def " " p_rb)
   if (p_open && p_text != "" && p_text !~ /^\[notice\]/ &&
-      all !~ (" " dot " (fixed|ignored|answered|rejected-because|accepted-tradeoff)"))
+      all !~ (" " dot " (" dispositions ")"))
     print "E" fs p_text fs p_def fs p_rb
   p_open = 0
   p_mode = ""
