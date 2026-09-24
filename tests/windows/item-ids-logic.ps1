@@ -89,11 +89,11 @@ try {
 
     # Label readers never see the id comment.
     $labels = Join-Path $root 'labels'
-    $labelsNs = New-Workspace $labels "## Items`n- [x] **1. done.** <!-- id: aa11 -->`n- [x] plain done <!-- id: bb22 -->`n- [ ] **3. open — later** <!-- id: cc33 -->`n"
+    $labelsNs = New-Workspace $labels "## Items`n- [x] **1. done.** <!-- id: aa11 -->`n- [x] plain done <!-- id: bb22 -->`n- [ ] **3. open $([char]0x2014) later** <!-- id: cc33 -->`n"
     $labelsPunch = Join-Path $labelsNs 'punch-list.md'
     Expect-True (((Get-NSGateTickedLabels $labelsPunch) -join '|') -ceq '1. done.|plain done') 'ticked labels carry no id'
     Expect-True ((Get-NSPulseActiveItem $labels) -ceq '3. open') 'the active item carries no id'
-    Expect-True ((Get-NSStatusOpenTitle $labelsPunch) -ceq '3. open — later') 'the status title carries no id'
+    Expect-True ((Get-NSStatusOpenTitle $labelsPunch) -ceq ('3. open ' + [char]0x2014 + ' later')) 'the status title carries no id'
     Expect-True (((Get-NSGateUnchargedLabels $labelsNs $labelsPunch) -join '|') -ceq '1. done.|plain done') 'uncharged labels carry no id'
 
     # An item is found by its number, its id, or its label.
