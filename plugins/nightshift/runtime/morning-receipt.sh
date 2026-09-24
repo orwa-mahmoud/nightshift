@@ -571,7 +571,8 @@ _find_policy() {
     return 0
   fi
   id="$(ns_ended_field "$WORKSPACE" shiftId)"
-  case "$id" in '' | *[!0-9a-f]*) return 0 ;; esac
+  # A 16-hex token or a UUID, as the schema allows; nothing that could reach a pattern.
+  case "$id" in '' | *[!0-9a-f-]*) return 0 ;; esac
   root="$(ns_archive_root "$WORKSPACE")" || return 0
   [ -d "$root" ] && [ ! -L "$root" ] || return 0
   cand="$(find "$root" -maxdepth 2 -type f -name "shift-policy-$id.json" -print 2>/dev/null |

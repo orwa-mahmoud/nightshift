@@ -203,6 +203,14 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
   run bash "$RECEIPT" --project "$p" --view owner
   [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
   [[ "$output" != *'1111111111111111'* ]] || false
+
+  # A shift the schema identifies by UUID is found the same way.
+  uuid=123e4567-e89b-12d3-a456-426614174000
+  jq --arg id "$uuid" '.shiftId = $id' "$FIX/shift-policy-valid.json" >"$a/2026-09-02/shift-policy-$uuid.json"
+  printf 'shiftId=%s\narchiveRoot=archive\narchiveLayout=date\n' "$uuid" >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: accepted'* ]] || false
+  [[ "$output" == *"- Shift: $uuid"* ]] || false
 }
 
 # verdict_project <name> — a shift with usage marks and pauses, a history of commits, a wrapped

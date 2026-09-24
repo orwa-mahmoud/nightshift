@@ -5518,7 +5518,7 @@ function Get-NSReceiptPolicyState {
     $state['error'] = ''
     $state['policy'] = $null
     $id = [string](Get-NSEndedField $Workspace 'shiftId')
-    if ($id -cnotmatch '^[0-9a-f]+$') { return $state }
+    if ($id -cnotmatch '^[0-9a-f-]+$') { return $state }
     $root = $null
     try { $root = Get-NSArchiveRoot $Workspace } catch { return $state }
     if ([string]::IsNullOrEmpty($root) -or -not (Test-NSMigrationDirectory $root)) { return $state }

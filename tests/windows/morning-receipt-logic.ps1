@@ -583,8 +583,11 @@ try {
         @{ Name = 'an ending that names no id'; Ended = ''; Own = $null; Want = 'absent' },
         @{ Name = 'an ending that names another id'; Ended = "shiftId=2222222222222222`narchiveRoot=archive`narchiveLayout=date`n"; Own = $null; Want = 'absent' },
         @{ Name = "the ended shift's own snapshot"; Ended = "shiftId=9f2c40ab77e51d63`narchiveRoot=archive`narchiveLayout=date`n"; Own = $validText; Want = 'accepted' },
-        @{ Name = 'a file under that name holding another shift'; Ended = "shiftId=9f2c40ab77e51d63`narchiveRoot=archive`narchiveLayout=date`n"; Own = $otherText; Want = 'absent' }
+        @{ Name = 'a file under that name holding another shift'; Ended = "shiftId=9f2c40ab77e51d63`narchiveRoot=archive`narchiveLayout=date`n"; Own = $otherText; Want = 'absent' },
+        @{ Name = 'a shift identified by UUID'; Ended = "shiftId=123e4567-e89b-12d3-a456-426614174000`narchiveRoot=archive`narchiveLayout=date`n"; Own = $null; Want = 'uuid' }
     )
+    [IO.File]::WriteAllText((Join-Path $archivedNs 'archive/2026-09-02/shift-policy-123e4567-e89b-12d3-a456-426614174000.json'),
+        $validText.Replace('"9f2c40ab77e51d63"', '"123e4567-e89b-12d3-a456-426614174000"'), $utf8)
     foreach ($case in $archivedCases) {
         [IO.File]::WriteAllText((Join-Path $archivedNs '.ended'), $case.Ended, $utf8)
         if ($null -ne $case.Own) { [IO.File]::WriteAllText($ownPolicy, $case.Own, $utf8) }
@@ -593,6 +596,10 @@ try {
         if ($case.Want -ceq 'accepted') {
             Expect-True $archivedRun.StdoutText.Contains('- Policy record: accepted') "$($case.Name) is the record"
             Expect-True $archivedRun.StdoutText.Contains('- Shift: 9f2c40ab77e51d63') "$($case.Name) supplies the shift id"
+        }
+        elseif ($case.Want -ceq 'uuid') {
+            Expect-True $archivedRun.StdoutText.Contains('- Policy record: accepted') "$($case.Name) is the record"
+            Expect-True $archivedRun.StdoutText.Contains('- Shift: 123e4567-e89b-12d3-a456-426614174000') "$($case.Name) supplies the shift id"
         }
         else {
             Expect-True $archivedRun.StdoutText.Contains("- Policy record: absent $dash the shift wrote no policy") "$($case.Name) reads as absent"
