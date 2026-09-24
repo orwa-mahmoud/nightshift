@@ -158,17 +158,17 @@ Trailing prose that belongs to no item.
     [IO.File]::WriteAllText($armedPunch, $text)
 
     # A hyphen inside a word is part of the title. A spaced dash introduces a suffix.
-    $hyphen = @'
+    $hyphen = (@'
 # Punch list
 
 ## Items
 
 - [x] **2. Make the packed Node-only build reproducible.**
 
-- [ ] **3. Ship it — already reviewed**
+- [ ] **3. Ship it {dash} already reviewed**
 
-- [ ] **4. Re-index — later**
-'@
+- [ ] **4. Re-index {dash} later**
+'@).Replace('{dash}', [string][char]0x2014)
     [IO.File]::WriteAllText($punch, $hyphen)
     Expect-True (((Get-NSGateTickedLabels $punch) -join '|') -ceq '2. Make the packed Node-only build reproducible.') `
         'a hyphenated ticked title stays whole'
@@ -176,7 +176,7 @@ Trailing prose that belongs to no item.
     Expect-True ($namedHyphen[0] -ceq '- [x] **2. Make the packed Node-only build reproducible.**') `
         'lookup by the whole hyphenated title finds the item'
     $reindex = @(Get-NSPunchItem -PunchList $punch -Id '4. Re-index')
-    Expect-True ($reindex[0] -ceq '- [ ] **4. Re-index — later**') `
+    Expect-True ($reindex[0] -ceq ('- [ ] **4. Re-index ' + [char]0x2014 + ' later**')) `
         'an em-dash suffix is stripped and a hyphen inside the word stays'
     Expect-True ((@(Get-NSPunchItem -PunchList $punch -Id '2. Make the packed Node')).Count -eq 0) `
         'a truncated hyphenated id finds nothing'
