@@ -1040,8 +1040,10 @@ _lines_review() {
   target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target=""
   [ -n "$target" ] || return 1
   target="$(ns_msys_path "$target")"
-  git -C "$target" log --no-merges --reverse --since "$SHIFT_SINCE" \
-    --format='@@%x09%h%x09%ct%x09%s' --numstat HEAD >"$TMPD/review-log" 2>/dev/null || return 1
+  # git runs inside the target rather than being handed its path: Git for Windows cannot resolve
+  # the shell's /c/... form when path conversion is off.
+  (cd -P "$target" 2>/dev/null && git log --no-merges --reverse --since "$SHIFT_SINCE" \
+    --format='@@%x09%h%x09%ct%x09%s' --numstat HEAD) >"$TMPD/review-log" 2>/dev/null || return 1
   [ -s "$TMPD/review-log" ] || return 1
   : >"$TMPD/review-marks"
   n=0
@@ -1073,7 +1075,7 @@ _lines_review() {
   done <<EOF
 $(tail -n +2 "$TMPD/review-rows" | LC_ALL=C sort -t "$FS" -k1,1nr -k2,2nr -k6)
 EOF
-  if git -C "$target" rev-parse --verify --quiet "$first^" >/dev/null 2>&1; then
+  if (cd -P "$target" 2>/dev/null && git rev-parse --verify --quiet "$first^") >/dev/null 2>&1; then
     range="$first^..$last"
   else
     range="$last"
