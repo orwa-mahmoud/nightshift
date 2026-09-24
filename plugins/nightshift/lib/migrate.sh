@@ -52,7 +52,7 @@ _ns_migrate_carry() {
     ns_layout_rel_at cur "$NS_LAYOUT_VERSION" "$key" || continue
     case "$cur" in *'*'*) continue ;; esac
     while IFS= read -r p; do
-      [ -n "$p" ] && [ "$p" != "$cur" ] || continue
+      if [ -z "$p" ] || [ "$p" = "$cur" ]; then continue; fi
       printf '%s\t%s\n' "$p" "$cur"
     done <<ROWS
 $(_ns_migrate_rows "$key")
@@ -114,7 +114,7 @@ _ns_migrate_live_file() {
     return 0
   fi
   while IFS= read -r p; do
-    [ -n "$p" ] && [ "$p" != "$cur" ] || continue
+    if [ -z "$p" ] || [ "$p" = "$cur" ]; then continue; fi
     if _ns_migrate_entry "$1" "$p"; then
       printf '%s' "$p"
       return 0
@@ -174,7 +174,7 @@ $(_ns_migrate_rows armed)
 EOF
   while IFS= read -r p; do
     [ -n "$p" ] || continue
-    [ -f "$ns/$p" ] && [ ! -L "$ns/$p" ] || continue
+    if [ ! -f "$ns/$p" ] || [ -L "$ns/$p" ]; then continue; fi
     pid="$(sed -n 1p "$ns/$p" 2>/dev/null | tr -d '[:space:]')"
     start="$(sed -n 2p "$ns/$p" 2>/dev/null)"
     case "$pid" in '' | *[!0-9]*) continue ;; esac
@@ -201,7 +201,7 @@ EOF
     [ -n "$key" ] || continue
     ns_layout_rel_at cur "$NS_LAYOUT_VERSION" "$key" || continue
     while IFS= read -r p; do
-      [ -n "$p" ] && [ "$p" != "$cur" ] || continue
+      if [ -z "$p" ] || [ "$p" = "$cur" ]; then continue; fi
       case "$p" in
         *'*'*)
           prefix="${p%%\**}"
@@ -265,7 +265,7 @@ EOF
     file="${fcur%%#*}"
     newv="${fcur#*#}"
     rel="$(_ns_migrate_live_file "$ns" "$file")"
-    [ -n "$rel" ] && [ -f "$ns/$rel" ] && [ ! -L "$ns/$rel" ] || continue
+    if [ -z "$rel" ] || [ ! -f "$ns/$rel" ] || [ -L "$ns/$rel" ]; then continue; fi
     ns_layout_rel_at to "$NS_LAYOUT_VERSION" "$file"
     doc="$work/$file.json"
     [ -f "$doc" ] || cp "$ns/$rel" "$doc" 2>/dev/null || continue
@@ -298,7 +298,7 @@ EOF
       doc="$work/$file.json"
       if [ ! -f "$doc" ]; then
         rel="$(_ns_migrate_live_file "$ns" "$file")"
-        [ -n "$rel" ] && [ -f "$ns/$rel" ] && [ ! -L "$ns/$rel" ] || continue
+        if [ -z "$rel" ] || [ ! -f "$ns/$rel" ] || [ -L "$ns/$rel" ]; then continue; fi
         cp "$ns/$rel" "$doc" 2>/dev/null || continue
       fi
       [ -n "$(_ns_migrate_json canonat "$doc" "$p")" ] || continue
