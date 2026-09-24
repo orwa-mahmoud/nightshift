@@ -1,0 +1,15 @@
+# input<TAB>expected — both runtimes print the expected value for every input
+0	0
+999	999
+1000	1.0k
+1049	1.0k
+1050	1.1k
+1950	2.0k
+55458	55.5k
+999949	999.9k
+999950	1.0M
+1000000	1.0M
+47457543	47.5M
+999949999	999.9M
+999950000	1.0B
+2049584461	2.0B

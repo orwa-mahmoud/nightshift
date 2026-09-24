@@ -144,6 +144,31 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   grep -qF '| **Totals** |' "$idx"
 }
 
+@test "the live index links each shift summary above the item table, the same on both runtimes" {
+  p="$(new_project receipts-index-morning)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf 'Date: 2026-09-09\n\n## Items\n- [x] **1. Fix the resolver.**\n- [ ] **2. Trim the bundle.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '# Morning receipt\n' >"$r/morning-2026-09-09-bbb.md"
+  printf '# Morning receipt\n' >"$r/morning-2026-09-09-aaa.md"
+  printf 'kept\n' >"$r/morning-2026-09-09-aaa.original.md"
+  lib ns_receipts_write_index "$p"
+  idx="$r/README.md"
+  [ "$(sed -n 3p "$idx")" = 'Shift summary: [morning-2026-09-09-aaa.md](./morning-2026-09-09-aaa.md)' ]
+  [ "$(sed -n 5p "$idx")" = 'Shift summary: [morning-2026-09-09-bbb.md](./morning-2026-09-09-bbb.md)' ]
+  [ "$(sed -n 7p "$idx")" = '| Item | State | **Usage** | **Time** | Receipt |' ]
+  ! grep -qF 'original' "$idx"
+  ! grep -qF '| morning-' "$idx"
+
+  ps_ready
+  cp "$idx" "$p/bash-index.md"
+  rm -f "$idx"
+  pwsh -NoProfile -NonInteractive -Command \
+    "Import-Module '$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1' -Force -DisableNameChecking; Write-NSReceiptsIndex '$p'"
+  diff -u "$p/bash-index.md" "$idx"
+}
+
 @test "editing the receipt file restarts the cadence window" {
   p="$(new_project receipts-window)"
   printf '## Items\n- [ ] **2. Make the packed Node-only build reproducible.**\n' \
@@ -192,8 +217,8 @@ print("ok")
 PY
 }
 
-@test "check-report is an alias that names check-receipts" {
+@test "check-receipts is an alias that names check-report" {
   p="$(new_project receipts-alias)"
-  run "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-report.sh" --project "$p" -h
-  printf '%s' "$output$stderr" | grep -qF 'ns check-receipts'
+  run "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-receipts.sh" --project "$p" -h
+  printf '%s' "$output$stderr" | grep -qF 'ns check-report'
 }

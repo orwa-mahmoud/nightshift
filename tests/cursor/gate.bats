@@ -107,3 +107,34 @@ cursor_gate() {
   [ "$aborted" != "$completed" ]
   [ "$(jq -r '.hook_event_name' "$FIXTURES/stop-aborted.json")" = "stop" ]
 }
+
+# Zero open boxes reached by deleting work, or by editing the contract, is not done.
+@test "cursor gate blocks a done clock-out after the open item was deleted" {
+  p="$(new_project)"
+  punch_open "$p"
+  arm_snapshot "$p"
+  printf '## Items\n- [x] **2. done.**\n' >"$p/.nightshift/punch-list.md"
+  run cursor_gate "$p" "$FIXTURES/stop-completed.json"
+  is_cursor_block
+  [ ! -e "$p/.nightshift/.ended" ]
+}
+
+@test "cursor gate blocks a done clock-out after the punch list was deleted" {
+  p="$(new_project)"
+  punch_open "$p"
+  arm_snapshot "$p"
+  rm "$p/.nightshift/punch-list.md"
+  run cursor_gate "$p" "$FIXTURES/stop-completed.json"
+  is_cursor_block
+  [ ! -e "$p/.nightshift/.ended" ]
+}
+
+@test "cursor gate releases a list finished by ticks alone" {
+  p="$(new_project)"
+  punch_open "$p"
+  arm_snapshot "$p"
+  punch_done "$p"
+  run cursor_gate "$p" "$FIXTURES/stop-completed.json"
+  is_cursor_release
+  [ -e "$p/.nightshift/.ended" ]
+}

@@ -295,6 +295,21 @@ catch {
     exit 2
 }
 
+# The punch list, once the shift has ended: its contract and its ticked items are filed in the
+# shift's own folder and the ticked items leave the live list. While it is armed the list is its
+# contract and nothing here touches it.
+$punchFiled = ''
+if ($rotate) {
+    $punch = Save-NSArchivePunchList -Workspace $workspace -Folder $group -ShiftId $shiftId -Date $Date
+    if ($punch.Status -eq 0) { $punchFiled = $punch.Path }
+    elseif ($punch.Status -eq 3) {
+        Write-NSArchiveReceiptsError ('archive-receipts: a different punch list is already filed at ' + (Join-Path $group 'punch-list.md') + '; the live list is unchanged')
+    }
+    else {
+        Write-NSArchiveReceiptsError ('archive-receipts: could not file the punch list into ' + $group)
+    }
+}
+
 $unmatched = @($Retire | Where-Object { -not $filed.Contains($_) })
 if ($unmatched.Count -gt 0) {
     Write-NSArchiveReceiptsError 'archive-receipts: refused to retire - this run filed no such record:'
@@ -306,11 +321,11 @@ if ($kept.Count -gt 0) {
     foreach ($line in $kept) { Write-NSArchiveReceiptsError $line }
 }
 
-if ($copied -eq 0 -and $removed -eq 0) {
-    exit 0
+if ($copied -ne 0 -or $removed -ne 0) {
+    Write-Output $dest
+    if ($removed -gt 0) {
+        Write-NSArchiveReceiptsError ("archive-receipts: retired {0} closed record(s) from live storage" -f $removed)
+    }
 }
-Write-Output $dest
-if ($removed -gt 0) {
-    Write-NSArchiveReceiptsError ("archive-receipts: retired {0} closed record(s) from live storage" -f $removed)
-}
+if ($punchFiled -cne '') { Write-Output ('archive-receipts: filed the punch list as ' + $punchFiled) }
 exit 0

@@ -12,8 +12,8 @@ outputs, and related snags or decisions. While it runs, a short progress paragra
 done and what remains. The closing paragraph replaces that when the item finishes.
 
 At clock-out, the [morning receipt](morning-receipt.md#the-morning-receipt) is the compact ending
-and evidence summary. The [example receipts](../examples/receipts.md#receipts) show an index and
-one item file.
+and evidence summary, linked from the top of the index. The
+[example receipts](../examples/receipts.md#receipts) show an index and one item file.
 
 ## Token usage is measured by the runtime
 
@@ -52,10 +52,35 @@ These thresholds control how often the progress paragraph is refreshed; they do 
 or enforce a token budget. Use the shift's deadline and stall settings to bound continued work.
 
 The settings are `receipts.progressMode`, `receipts.progressMinutes`, and `receipts.progressTokens`.
-`receipts.usage` defaults to `when-available`; `off` disables usage measurement and the runtime's
-progress-due notices. `receipts.enabled=false` disables receipt files while retaining the work
-contract and other records. See [Owner knobs](knobs.md#shift-handoff-and-archive) for the exact
-settings.
+
+Three settings each control one thing, and any combination works:
+
+| Setting | Controls |
+| --- | --- |
+| `receipts.usage` | Token counts. `when-available` reads the numbers your host exposes; `off` records none, and the receipt and index say `off`. |
+| `receipts.duration` | Working time. `on` writes the Time table and the Sessions working column; `off` writes neither, and they say `off`. |
+| `receipts.progressMode` | When a progress update is due, whatever the other two say. `tokens` and `either` use the time cadence while token usage is off or the host reports no counter. |
+
+Usage off with duration on keeps the Time table; duration off with usage on keeps the Tokens table;
+with both off the item is still ticked and its sessions still recorded. `off` means you turned a
+measurement off, and `unavailable` means the host did not report it. See
+[Owner knobs](knobs.md#shift-handoff-and-archive) for the exact settings.
+
+## Receipts and the morning receipt are separate switches
+
+`receipts.enabled` controls the item files, the index and usage measurement; `handoff.enabled`
+controls the morning receipt, which is still written into `receipts/`:
+
+- **Both on** (the default): item receipts, the index, and the morning receipt, linked from the
+  index.
+- **Receipts off:** the morning receipt alone. No item receipt or index is written and no usage is
+  measured, so the page has no Time and tokens section, its items are not linked, and Review first
+  lists each commit on its own line.
+- **Handoff off:** item receipts and the index, with no morning receipt.
+- **Both off:** nothing under `receipts/`.
+
+In every case the work contract, the shift log, the parking lot, the snag log, the evidence ledger
+and the archive are kept.
 
 ## Keep the receipts useful after the shift
 

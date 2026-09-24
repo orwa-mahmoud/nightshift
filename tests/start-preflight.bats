@@ -616,3 +616,97 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
     grep -qF '# Start on ' "$HOSTS/$page" || { echo "$page has no title"; return 1; }
   done
 }
+
+# A plain Start has no composition step, so it records tonight's snapshot itself: without one the
+# gate cannot tell an item that was deleted from one that was finished. It does so in its own phase,
+# right before arming, so an item Start cuts from the drafts is part of what the gate holds it to.
+@test "a plain Start records a start-defaults snapshot of the list it arms with" {
+  p="$(setup_site preflight-snapshot)"
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qE '^ok snapshot start-defaults recorded for shift [0-9a-f]{16}$'
+  pol="$p/.nightshift/shift-policy.json"
+  [ -f "$pol" ]
+  jq -e '.source == "start-defaults" and .verificationLevel == "none" and .toolingPolicy == "existing-tools" and .deadlineEpoch == null' "$pol" >/dev/null
+  lib="$PLUGIN/lib/lib.sh"
+  [ "$(jq -r .contractDigest "$pol")" = "$(bash -c '. "$1"; ns_punch_contract_digest "$2"' _ "$lib" "$p/.nightshift/punch-list.md")" ]
+  [ "$(jq -r .itemsDigest "$pol")" = "$(bash -c '. "$1"; ns_punch_items_digest "$2"' _ "$lib" "$p/.nightshift/punch-list.md")" ]
+}
+
+@test "a Start snapshot adopts a deadline the owner already wrote" {
+  p="$(setup_site preflight-snapshot-deadline)"
+  printf '%s\n' "$(($(date +%s) + 7200))" >"$p/.nightshift/deadline"
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .deadlineEpoch "$p/.nightshift/shift-policy.json")" = "$(tr -d '[:space:]' <"$p/.nightshift/deadline")" ]
+}
+
+@test "a dry run and a composed snapshot leave the policy as they found it" {
+  p="$(setup_site preflight-snapshot-dry)"
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot --dry-run
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'ok snapshot dry-run - nothing recorded'
+  [ ! -e "$p/.nightshift/shift-policy.json" ]
+
+  q="$(setup_site preflight-snapshot-composed)"
+  jq -nc '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",source:"composition",deadlineEpoch:null,verificationLevel:"final",toolingPolicy:"existing-tools"}' |
+    bash "$PLUGIN/runtime/shift-policy.sh" --project "$q" set --from-json - >/dev/null
+  before="$(cksum <"$q/.nightshift/shift-policy.json")"
+  run bash "$PREFLIGHT" --project "$q" --phase snapshot
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'ok snapshot composed - this shift keeps the policy it was composed with'
+  [ "$(cksum <"$q/.nightshift/shift-policy.json")" = "$before" ]
+}
+
+@test "Start records the snapshot right before it arms" {
+  s="$PLUGIN/skills/start/SKILL.md"
+  snap="$(grep -n 'start-preflight --phase snapshot' "$s" | head -n1 | cut -d: -f1)"
+  arm="$(grep -nF 'touch "$NS/.shift-armed"' "$s" | head -n1 | cut -d: -f1)"
+  [ -n "$snap" ] && [ -n "$arm" ]
+  [ "$snap" -lt "$arm" ]
+}
+
+@test "the preflight itself records no snapshot" {
+  p="$(setup_site preflight-snapshot-none)"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  ! printf '%s\n' "$output" | grep -q '^ok snapshot'
+  [ ! -e "$p/.nightshift/shift-policy.json" ]
+}
+
+@test "an empty punch list gets no snapshot" {
+  p="$(setup_site preflight-snapshot-empty '## Items
+')"
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'warn snapshot none recorded - the punch list has no open item to hold a shift to'
+  [ ! -e "$p/.nightshift/shift-policy.json" ]
+}
+
+@test "an item Start cuts after the preflight is part of the snapshot" {
+  p="$(setup_site preflight-snapshot-cut '## Items
+')"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '## Items\n- [ ] **1. cut from the drafts.**\n' >"$p/.nightshift/punch-list.md"
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot
+  [ "$status" -eq 0 ]
+  : >"$p/.nightshift/.shift-armed"
+  run gate "$p"
+  is_block "$output"
+  [[ "$output" != *'since this shift armed'* ]]
+}
+
+@test "after a plain Start, deleting the unfinished item no longer clocks out as done" {
+  p="$(setup_site preflight-snapshot-gate '## Items
+- [ ] **1. first.**
+- [ ] **2. second.**
+')"
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot
+  [ "$status" -eq 0 ]
+  : >"$p/.nightshift/.shift-armed"
+  printf '## Items\n- [x] **1. first.**\n' >"$p/.nightshift/punch-list.md"
+  run gate "$p"
+  is_block "$output"
+  [ ! -e "$p/.nightshift/.ended" ]
+}

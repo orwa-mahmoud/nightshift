@@ -2,8 +2,8 @@ load helpers
 
 CHECK="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-report.sh"
 CHECK_RECEIPTS="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/check-receipts.sh"
-CHECK_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-receipts.ps1"
-CHECK_REPORT_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-report.ps1"
+CHECK_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-report.ps1"
+CHECK_RECEIPTS_PS1="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/check-receipts.ps1"
 CHECK_LOGIC="$BATS_TEST_DIRNAME/windows/check-report-logic.ps1"
 CONTRACT="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/shift/cited-research.md"
 RECIPE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md"
@@ -165,15 +165,25 @@ EOF
   printf '%s' "$output$stderr" | grep -qi 'secret'
 }
 
+@test "check-receipts forwards to check-report and exits as it does" {
+  p="$(new_project cited-alias)"
+  run bash "$CHECK_RECEIPTS" --project "$p"
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'ns check-report'
+  printf '%s\n' "$output" | grep -qF 'check-report: --report is required'
+}
+
 @test "Windows check-report pairs POSIX and runs when pwsh is present" {
   grep -qE 'ns"? check-report' "$NIGHTSHIFT"
-  grep -qF 'ns check-receipts' "$CHECK_REPORT_PS1"
+  grep -qF 'ns check-report' "$CHECK_RECEIPTS_PS1"
+  grep -qF 'exit $LASTEXITCODE' "$CHECK_RECEIPTS_PS1"
+  grep -qF 'ns check-report' "$CHECK_RECEIPTS"
   grep -qF 'missing heading' "$CHECK_PS1"
   grep -qF 'fabricated citation' "$CHECK_PS1"
   grep -qF 'Test-NSSecretLine' "$CHECK_PS1"
   grep -qF 'Test-NSReparsePoint' "$CHECK_PS1"
-  grep -qF '[ -L "$abs" ]' "$CHECK_RECEIPTS"
-  grep -qF 'ns check-receipts' "$CHECK_LOGIC"
+  grep -qF '[ -L "$abs" ]' "$CHECK"
+  grep -qF 'ns check-report' "$CHECK_LOGIC"
   [ -f "$CHECK_LOGIC" ]
   grep -qF 'check-report-logic.ps1' "$RUN"
   if ! command -v pwsh >/dev/null 2>&1; then

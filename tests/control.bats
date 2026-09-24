@@ -92,9 +92,16 @@ stop_cmd() { # <project>
   run "$STOP" --project "$p"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'watchman stopped'
-  if kill -0 "$wpid" 2>/dev/null; then
-    return 1
-  fi
+  # The signal lands a moment after Stop returns, and a killed child of this shell stays a zombie
+  # until the shell reaps it; either way it is no longer running. Five seconds bound the wait.
+  gone=0
+  for _ in $(seq 1 50); do
+    case "$(ps -o stat= -p "$wpid" 2>/dev/null | tr -d ' ')" in
+      '' | Z*) gone=1; break ;;
+    esac
+    sleep 0.1
+  done
+  [ "$gone" -eq 1 ] || { echo "watchman $wpid is still running"; return 1; }
   [ ! -f "$p/.nightshift/.watchman" ]
 
   p2="$(new_project unverified)"

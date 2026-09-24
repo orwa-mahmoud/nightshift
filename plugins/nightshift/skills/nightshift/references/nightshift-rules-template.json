@@ -71,6 +71,7 @@
     "progressMinutes": 20,
     "progressTokens": 100000,
     "usage": "when-available",
+    "duration": "on",
     "templatePath": ""
   },
   "recovery": {

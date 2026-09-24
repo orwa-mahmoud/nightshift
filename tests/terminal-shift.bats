@@ -53,8 +53,9 @@ a_new_item() {
   [ -f "$receipt" ]
   grep -qF -- '- Policy record: malformed — the policy file is present but unreadable or fails the schema' \
     "$receipt"
-  grep -qF $'Receipts:\n- [index](./README.md)\n- [1. first.](./1-first.md)\n- [2. done.](./2-done.md)' \
-    "$receipt"
+  grep -qxF -- '- [index](./README.md)' "$receipt"
+  grep -qE '^- (\[)?1\. first\.(\]\(\./[a-z0-9-]+\.md\))? — ticked$' "$receipt"
+  grep -qE '^- (\[)?2\. done\.(\]\(\./[a-z0-9-]+\.md\))? — ticked$' "$receipt"
 }
 
 @test "quitting time with open items ends the shift" {

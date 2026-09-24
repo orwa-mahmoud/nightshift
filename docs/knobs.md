@@ -265,8 +265,21 @@ cannot turn an unavailable check into a passed one.
 | `view` | `owner` | `owner`, `reviewer`, `release`, `artifact` |
 | `language` | `auto` | Follows the language of the conversation that ran the shift. Paths, commands and identifiers are never translated |
 | `detail` | `concise` | `concise` or `detailed` |
-| `sections` | `[]` | Any of `shift`, `baseline`, `changed`, `parked`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view |
+| `sections` | `[]` | Any of `shift`, `usage`, `items`, `review`, `interruptions`, `parked`, `snags`, `baseline`, `changed`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view; [the morning receipt](morning-receipt.md) says what each one holds |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
+
+`handoff.enabled` and `receipts.enabled` are separate switches. What each combination writes under
+`.nightshift/receipts/`:
+
+| `receipts.enabled` | `handoff.enabled` | Written |
+|---|---|---|
+| `true` | `true` | Item receipts, the index, and the morning receipt, which the index links |
+| `false` | `true` | The morning receipt alone. No item receipt or index, and no usage is measured, so the page has no Time and tokens section, its items are unlinked, and Review first lists each commit on its own line |
+| `true` | `false` | Item receipts and the index; no morning receipt |
+| `false` | `false` | Nothing |
+
+The work contract, the shift log, the parking lot, the snag log, the ledger and the archive are kept
+under every combination.
 
 `receipts` is the shift's record — one file per punch-list item under `.nightshift/receipts/`,
 plus a runtime-written index. It never reaches a public commit message.
@@ -274,17 +287,21 @@ plus a runtime-written index. It never reaches a public commit message.
 | Key | Default | Values |
 |---|---|---|
 | `enabled` | `true` | `false` writes no receipt files. Punch status, real outputs, continuity and your selected verification are all still kept |
-| `progressMode` | `time` | `completion-only` writes the receipt once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first |
+| `progressMode` | `time` | `completion-only` writes the receipt once, at the end. `time` updates it after `progressMinutes` of work on that item, `tokens` after `progressTokens`, `either` at whichever comes first. Works whatever `usage` and `duration` say: `tokens` and `either` use the time cadence while token usage is off or the host reports no counter |
 | `progressMinutes` | `20` | Minutes of work on the current item before an update is due. Checked when a tool returns, so it never interrupts a running command |
 | `progressTokens` | `100000` | Tokens of work before an update is due. A starting value to tune, not a host limit |
-| `usage` | `when-available` | Record what each item cost, from the numbers your host already exposes. `off` records none. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out |
+| `usage` | `when-available` | Record the tokens each item cost, from the numbers your host already exposes. `off` records none, and the receipt and index say `off`. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out. Controls tokens only: the Time table and the progress cadence have settings of their own |
+| `duration` | `on` | Record how long each item took: the Time table and the Working column of the Sessions table. `off` writes neither, and they say `off`. Controls time only |
 | `templatePath` | `""` | A Markdown template for each item receipt, on the same terms as the handoff template: wording only |
 
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
-Nightshift already registers do see the numbers, and they take the readings. The tick is the
-boundary: everything spent between two ticks belongs to the item ticked second, and the gate writes
-that item's usage and duration lines into its section as it releases.
+Nightshift already registers do see the numbers, and they take the readings. A reading is taken at
+every tick, whenever the item being worked changes (the open item whose receipt was written last),
+and when a shift ends with an item open. Everything spent between two readings belongs to the item
+being worked, so an item set aside and picked up later is charged for each stretch and nothing
+else. At the tick the gate writes the item's usage and duration lines into its receipt, and every
+stretch is a row in the receipt's Sessions table, with totals that carry across shifts.
 
 Where each host's figures come from, and what each one leaves out:
 
@@ -361,7 +378,7 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 |---|---|---|
 | `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
 | `root` | `archive` | Directory for dated archives, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
-| `layout` | `date` | `date` groups a night under `YYYY-MM-DD`; `shift` gives each shift its own directory. The shift id names the files either way, so two shifts in a day never collide |
+| `layout` | `date` | `date` files the first shift of a day under `YYYY-MM-DD` and each later one under `YYYY-MM-DD-shift-2`, `-shift-3` and so on; `shift` gives each shift a `shift-<id>` directory. Either way one folder holds one shift, and filing a shift again returns to its own folder |
 | `templatePath` | `""` | A Markdown template for the archive summary |
 
 Changing `root` never moves or hides what is already filed: an older history under the previous

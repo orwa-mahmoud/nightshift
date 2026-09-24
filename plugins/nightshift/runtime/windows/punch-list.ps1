@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Mirrors runtime/punch-list.sh. `next` prints the gates block then the first
-  still-open item; `item <id>` prints the gates block then that named one.
+  still-open item; `item <item>` prints the gates block then that item, named by
+  its number, its id, or its whole label.
 
   The Gates block may legitimately change mid-shift, so an item needs it fresh -
   and reading the whole punch list to see one block is thousands of tokens per
@@ -34,7 +35,7 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 
 if (($Verb -ceq 'item') -and [string]::IsNullOrEmpty($Id)) {
-    [Console]::Error.WriteLine('punch-list: item needs an id')
+    [Console]::Error.WriteLine('punch-list: item needs a number, an id, or a label')
     exit 1
 }
 

@@ -1,0 +1,8 @@
+# item line<TAB>the label both runtimes read<TAB>the id both runtimes read, empty for none
+- [ ] **3. Fix the resolver.** <!-- id: k7q2 -->	3. Fix the resolver.	k7q2
+- [x] **3. Fix it — later** <!-- id: k7q2 -->	3. Fix it	k7q2
+- [ ] plain title <!-- id: ab12 -->	plain title	ab12
+- [X] **P03 - done**<!--id:zz9-->	P03	zz9
+- [ ] **4. No id.**	4. No id.
+- [ ] **5. Not an id.** <!-- id: K7Q2 -->	5. Not an id.
+- [ ] **6. An id mid-line <!-- id: aa11 --> is prose**	6. An id mid-line <!-- id: aa11 --> is prose

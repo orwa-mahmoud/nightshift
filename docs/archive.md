@@ -6,13 +6,15 @@ It files the records; it does not complete tasks or reset the work contract.
 
 ## What happens to the records
 
-The default destination is `.nightshift/archive/`, grouped by date. You can instead group by
-shift and choose another archive directory within `.nightshift/`. Filing preserves evidence;
+The default destination is `.nightshift/archive/`, grouped by date: the first shift of a day files
+into `<YYYY-MM-DD>/`, and each later shift that day into its own `<YYYY-MM-DD>-shift-2/`,
+`<YYYY-MM-DD>-shift-3/` and so on. Filing the same shift again returns to its folder. You can
+instead group by shift and choose another archive directory within `.nightshift/`. Filing preserves evidence;
 retiring a live record is a separate choice based on whether unfinished work still needs it.
 
 | Record | What Archive does |
 | --- | --- |
-| Completed punch-list items | Moves them into the archive's shipped-work record. Open items, the contract, and gates stay live. |
+| Completed punch-list items | Files the shift's punch list as `punch-list.md` in its own folder: the contract, the gates, and every ticked item as written. The ticked items then leave the live list; open items, the contract, and gates stay live. |
 | Shift log | Files the journal and starts a fresh log. |
 | Snags and parked decisions | Files handled entries; unresolved findings and unanswered decisions stay live. |
 | Work orders | Keeps pending work available for a later shift. |

@@ -284,6 +284,17 @@ try {
     Expect-True (([regex]::Matches($liveSnag, '(?m)^Filed:').Count) -eq 1) `
         'retry does not duplicate the pointer'
 
+    # A second shift the same day files into its own dated folder, and its pointer says which.
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=cccc3333dddd4444`narchiveRoot=archive`narchiveLayout=date`n")
+    [IO.File]::AppendAllText((Join-Path $ns 'snag-log.md'), "- second · y · answered · 2026-09-09`n")
+    $two = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
+    Expect-True ($two.ExitCode -eq 0) "second shift exits 0 (got $($two.ExitCode) $($two.Stderr))"
+    Expect-True (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md') -PathType Leaf) `
+        "the second shift files into its own folder"
+    Expect-True ([IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')).Contains('Filed: [2026-09-09-shift-2](archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md)')) `
+        'the second pointer names its folder'
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=aaaa1111bbbb2222`narchiveRoot=archive`narchiveLayout=date`n")
+
     $dash = [string][char]0x2014
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
         ("# Snag Log`n`n- leak · tests/x.bats`n  · fixed " + $dash +
@@ -364,15 +375,19 @@ try {
     Expect-True ($liveIndex.Contains('| 3. Trim the bundle. | open |')) 'the live index lists the open item'
     Expect-True (-not $liveIndex.Contains('Fix the resolver')) 'the live index drops a filed receipt'
     $archivedIndex = [IO.File]::ReadAllText((Join-Path $dest 'README.md'))
-    Expect-True ($archivedIndex.Contains('# Receipts — 2026-09-05')) 'the archived index is dated'
+    Expect-True ($archivedIndex.Contains('# Receipts ' + [char]0x2014 + ' 2026-09-05')) 'the archived index is dated'
     Expect-True ($archivedIndex.Contains(
         '| 1. Fix the resolver. | ticked | **input 100 · cache_write 0 · cache_read 0 · output 20 · reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |')) `
         'the archived index carries the first receipt with its measurements'
     Expect-True ($archivedIndex.Contains('| 2. Cover the parser. | ticked |')) `
         'the archived index carries the second receipt'
     Expect-True (-not $archivedIndex.Contains('Trim the bundle')) 'the archived index omits the open item'
-    Expect-True (-not $archivedIndex.Contains('morning-2026-09-05-abc.md')) `
-        'the archived index omits the morning receipt'
+    $summaryAt = $archivedIndex.IndexOf('Shift summary: [morning-2026-09-05-abc.md](./morning-2026-09-05-abc.md)')
+    Expect-True ($summaryAt -gt 0 -and $summaryAt -lt $archivedIndex.IndexOf('| Item | State |')) `
+        'the archived index links the morning receipt above the item table'
+    Expect-True (-not $archivedIndex.Contains('| morning-')) 'the morning receipt is never an item row'
+    Expect-True (-not $liveIndex.Contains('morning-2026-09-05-abc.md')) `
+        'the live index stops linking a morning receipt once it is filed'
 }
 finally {
     Remove-Item -LiteralPath $openWork -Recurse -Force -ErrorAction SilentlyContinue
@@ -457,6 +472,109 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $ordered -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# An ended shift's punch list is filed into its folder: the contract, the gates and the ticked items
+# under the archived-record note. Open items stay live; nothing ticked files nothing; an armed shift's
+# list is never touched; a different record already filed is refused.
+$punchRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-punch-filing-' + [guid]::NewGuid().ToString('N'))
+try {
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $body = "# Punch list`n`n## Shift`n`nThe contract.`n`n## Gates`n`n- run checks`n`n## Items`n`n- [x] **1. done.**`n  - its bullet`n`n- [ ] **2. open.**`n"
+    function New-EndedSite {
+        param([string]$Name, [string]$ShiftId, [string]$Punch, [switch]$Armed)
+        $site = Join-Path $punchRoot $Name
+        $siteNs = Join-Path $site '.nightshift'
+        $null = New-Item -ItemType Directory -Path $siteNs -Force
+        Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $siteNs 'rules.json')
+        [IO.File]::WriteAllText((Join-Path $siteNs 'punch-list.md'), $Punch, $utf8)
+        if ($Armed) { [IO.File]::WriteAllText((Join-Path $siteNs '.shift-armed'), '', $utf8) }
+        else { [IO.File]::WriteAllText((Join-Path $siteNs '.ended'), "shiftId=$ShiftId`narchiveRoot=archive`narchiveLayout=date`n", $utf8) }
+        return $site
+    }
+
+    $site = New-EndedSite 'filed' '9f2c40ab77e51d63' $body
+    $run = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
+    Expect-True ($run.ExitCode -eq 0) "punch filing exits 0 (got $($run.ExitCode) $($run.Stderr))"
+    $filedPath = Join-Path $site '.nightshift/archive/2026-09-05/punch-list.md'
+    Expect-True ($run.Stdout.Contains('filed the punch list as ')) "the helper says where the punch list went: $($run.Stdout)"
+    $want = '> Archived record of shift 9f2c40ab77e51d63, filed 2026-09-05. The items still open stayed in the live `.nightshift/punch-list.md`.' +
+        "`n`n# Punch list`n`n## Shift`n`nThe contract.`n`n## Gates`n`n- run checks`n`n## Items`n`n- [x] **1. done.**`n  - its bullet`n"
+    Expect-True ((Test-Path -LiteralPath $filedPath) -and [IO.File]::ReadAllText($filedPath) -ceq $want) 'the record is the contract, gates and ticked items under the note'
+    Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/punch-list.md')) -ceq "# Punch list`n`n## Shift`n`nThe contract.`n`n## Gates`n`n- run checks`n`n## Items`n`n- [ ] **2. open.**`n") `
+        'the open item and the contract stay live'
+
+    $site = New-EndedSite 'two' '1111111111111111' "## Items`n- [x] **1. first night.**`n"
+    $null = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
+    [IO.File]::WriteAllText((Join-Path $site '.nightshift/.ended'), "shiftId=2222222222222222`narchiveRoot=archive`narchiveLayout=date`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $site '.nightshift/punch-list.md'), "## Items`n- [x] **1. second night.**`n", $utf8)
+    $null = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
+    Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/archive/2026-09-05/punch-list.md')).Contains('first night')) 'the first shift keeps its record'
+    Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/archive/2026-09-05-shift-2/punch-list.md')).Contains('second night')) 'the second shift files its own record'
+
+    $site = New-EndedSite 'none' '9f2c40ab77e51d63' "## Items`n- [ ] **1. open.**`n"
+    $null = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $site '.nightshift/archive/2026-09-05/punch-list.md'))) 'nothing ticked files nothing'
+
+    $site = New-EndedSite 'armed' '9f2c40ab77e51d63' $body -Armed
+    $null = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
+    Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/punch-list.md')) -ceq $body) 'an armed shift keeps its list'
+
+    $site = New-EndedSite 'clash' '9f2c40ab77e51d63' $body
+    $clashDir = Join-Path $site '.nightshift/archive/2026-09-05'
+    $null = New-Item -ItemType Directory -Path $clashDir -Force
+    [IO.File]::WriteAllText((Join-Path $clashDir '.shift-id'), "9f2c40ab77e51d63`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $clashDir 'punch-list.md'), "an earlier record`n", $utf8)
+    $clash = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
+    Expect-True ($clash.Stderr.Contains('a different punch list is already filed at')) "a different record is refused: $($clash.Stderr)"
+    Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/punch-list.md')) -ceq $body) 'the live list is kept after a refusal'
+}
+finally {
+    Remove-Item -LiteralPath $punchRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Each later shift on a date files into its own numbered folder, and a shift filed again that day
+# comes back to its own.
+$sameDay = Join-Path ([IO.Path]::GetTempPath()) ('ns-same-day-' + [guid]::NewGuid().ToString('N'))
+try {
+    $sameNs = Join-Path $sameDay '.nightshift'
+    $null = New-Item -ItemType Directory -Path $sameNs -Force
+    $archiveBase = Join-Path $sameNs 'archive'
+    $first = Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '1111111111111111'
+    $second = Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '2222222222222222'
+    $third = Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '3333333333333333'
+    Expect-True ($first -ceq (Join-Path $archiveBase '2026-09-05')) "the first shift files into the date folder (got $first)"
+    Expect-True ($second -ceq (Join-Path $archiveBase '2026-09-05-shift-2')) "the second shift gets -shift-2 (got $second)"
+    Expect-True ($third -ceq (Join-Path $archiveBase '2026-09-05-shift-3')) "the third shift gets -shift-3 (got $third)"
+    Expect-True (([IO.File]::ReadAllText((Join-Path $second '.shift-id'))).Trim() -ceq '2222222222222222') 'a folder records its shift'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '2222222222222222') -ceq $second) 'the same shift returns to its folder'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $archiveBase '2026-09-05-shift-4'))) 'no extra folder is opened'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-06' -ShiftId 'unknown') -ceq (Join-Path $archiveBase '2026-09-06')) 'no id means the date folder'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $archiveBase '2026-09-06/.shift-id'))) 'no id claims nothing'
+
+    # A folder filed before folders recorded their shift is claimed, and the next shift moves on.
+    $legacy = Join-Path $archiveBase '2026-09-07'
+    $null = New-Item -ItemType Directory -Path $legacy -Force
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-07' -ShiftId '1111111111111111') -ceq $legacy) 'an unrecorded folder is claimed'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-07' -ShiftId '2222222222222222') -ceq ($legacy + '-shift-2')) 'the next shift moves on'
+
+    # The clock-out policy archive files a second same-day shift into its own folder.
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $today = Get-Date -Format 'yyyy-MM-dd'
+    foreach ($id in @('4444444444444444', '5555555555555555')) {
+        [IO.File]::WriteAllText((Join-Path $sameNs 'shift-policy.json'),
+            ('{"schemaVersion":1,"shiftId":"' + $id + '","createdAt":"2026-09-02T00:00:00Z","source":"composition",' +
+                '"verificationLevel":"none","toolingPolicy":"existing-tools"}'), $utf8)
+        $null = Invoke-NSShiftPolicyArchive -Workspace $sameDay -Date $today
+    }
+    $todayFirst = Join-Path $archiveBase $today
+    $todaySecond = Join-Path $archiveBase ($today + '-shift-2')
+    Expect-True (Test-Path -LiteralPath (Join-Path $todayFirst 'shift-policy-4444444444444444.json')) 'the first policy files into the date folder'
+    Expect-True (Test-Path -LiteralPath (Join-Path $todaySecond 'shift-policy-5555555555555555.json')) 'the second policy files into -shift-2'
+}
+finally {
+    Remove-Item -LiteralPath $sameDay -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($failures.Count -gt 0) {

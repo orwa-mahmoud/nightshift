@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # start-preflight.sh — the Start skill's one preflight. Prints one verdict per line.
 #
-#   start-preflight.sh --project DIR [--host claude|codex|cursor] [--phase preflight|bind]
-#                      [--dry-run]
+#   start-preflight.sh --project DIR [--host claude|codex|cursor]
+#                      [--phase preflight|snapshot|bind] [--dry-run]
 #
 # Verdict grammar, one per line. The verdict sentence is byte-identical on POSIX and native
 # Windows; only interpolated paths and a parser's own diagnostic tail differ.
@@ -12,8 +12,9 @@
 #   refuse <topic> <detail>  do not arm
 #   repair <text>            the exact repair for the refusal above it
 #
-# Phase preflight covers everything before `.shift-armed`; phase bind is the Codex identity
-# checkpoint that runs after the binding probe and before the watchman.
+# Phase preflight covers everything before `.shift-armed`; phase snapshot records the plain Start's
+# shift policy right before arming; phase bind is the Codex identity checkpoint that runs after the
+# binding probe and before the watchman.
 #
 # Exit: 0 may arm · 1 refused · 2 usage
 set -u
@@ -50,7 +51,7 @@ while [ $# -gt 0 ]; do
 done
 
 case "$PHASE" in
-  preflight | bind) ;;
+  preflight | snapshot | bind) ;;
   *) printf 'start-preflight: unknown phase: %s\n' "$PHASE" >&2; exit 2 ;;
 esac
 
@@ -149,6 +150,33 @@ if [ "$PHASE" = bind ]; then
       repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, append one failed-preflight line to shift-log.md, and stop before the watchman or item work" ;;
   esac
   [ "$REFUSED" -eq 0 ] || exit 1
+  exit 0
+fi
+
+# ------------------------------------------------------------ phase snapshot
+# Start runs this right before it arms, after any draft or order was cut into the list, so the gate
+# holds the shift to the contract and items it actually starts with. A composed shift already has
+# its snapshot and keeps it.
+if [ "$PHASE" = snapshot ]; then
+  if [ -e "$NS/shift-policy.json" ] || [ -L "$NS/shift-policy.json" ]; then
+    ok "snapshot composed - this shift keeps the policy it was composed with"
+    exit 0
+  fi
+  OPEN="$(ns_open_boxes "$NS/punch-list.md" 2>/dev/null)" || OPEN=0
+  case "$OPEN" in '' | *[!0-9]*) OPEN=0 ;; esac
+  if [ "$OPEN" -eq 0 ]; then
+    warn "snapshot none recorded - the punch list has no open item to hold a shift to"
+    exit 0
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    ok "snapshot dry-run - nothing recorded"
+    exit 0
+  fi
+  if SNAPSHOT_ID="$(ns_start_snapshot "$WORKSPACE" "$_here/shift-policy.sh")"; then
+    ok "snapshot start-defaults recorded for shift $SNAPSHOT_ID"
+  else
+    warn "snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt"
+  fi
   exit 0
 fi
 

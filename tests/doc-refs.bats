@@ -185,3 +185,17 @@ ALLOWED_REPORT_USES="plugins/nightshift/skills/nightshift/references/compose/too
       ' || true)"
   [ -z "$hit" ] || { echo "the shift's record is its receipts, not a report:$hit"; return 1; }
 }
+
+# The receipts and handoff switches are independent; tests/morning-receipt.bats pins what each
+# combination writes, and both pages state the same four rows.
+@test "knobs and receipts state every combination of the receipts and handoff switches" {
+  local knobs="$ROOT/docs/knobs.md" receipts="$ROOT/docs/receipts.md"
+  grep -qF '| `true` | `true` | Item receipts, the index, and the morning receipt, which the index links |' "$knobs"
+  grep -qF '| `false` | `true` | The morning receipt alone.' "$knobs"
+  grep -qF '| `true` | `false` | Item receipts and the index; no morning receipt |' "$knobs"
+  grep -qF '| `false` | `false` | Nothing |' "$knobs"
+  grep -qF '## Receipts and the morning receipt are separate switches' "$receipts"
+  grep -qF -- '- **Receipts off:** the morning receipt alone.' "$receipts"
+  grep -qF -- '- **Handoff off:** item receipts and the index, with no morning receipt.' "$receipts"
+  grep -qF -- '- **Both off:** nothing under `receipts/`.' "$receipts"
+}

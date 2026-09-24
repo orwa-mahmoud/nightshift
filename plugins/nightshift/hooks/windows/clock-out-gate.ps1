@@ -46,10 +46,7 @@ function Get-NSGateOpenItem {
         if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $inItems = $true; continue }
         if (-not $inItems) { continue }
         if ($line -cnotmatch '^- \[ \]') { continue }
-        $t = $line -creplace '^- \[ \][ \t]*\*\*', ''
-        $t = $t -creplace '[ \t]+(—|-[ \t]).*$', ''
-        $t = $t -creplace '\*\*.*$', ''
-        return $t.TrimEnd()
+        return (Get-NSItemLabel $line)
     }
     return ''
 }
@@ -269,6 +266,8 @@ function Complete-NSShift {
         }
         [IO.File]::WriteAllText($ended, '', $utf8)
     }
+    # An item still being worked closes its session as paused, while the shift is still armed.
+    Invoke-NSGateUsageFlush $ns $workspace
     Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
     Release-NSLeaseWithRetry
     Save-NSMorningReceipt
@@ -498,10 +497,12 @@ try {
     }
 
     if ($counts.Readable) {
-        if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) {
-            Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
-        }
-        if ($counts.Open -eq 0) {
+        if (-not (Test-Path -LiteralPath $punch -PathType Leaf) -or $counts.Open -eq 0) {
+            $doneMoved = Get-NSGateDoneMismatch $workspace $punch
+            if (-not [string]::IsNullOrEmpty($doneMoved)) {
+                Write-NSLogLine 'punch list changed since arming - the done clock-out is blocked until it is restored'
+                Write-Block $doneMoved
+            }
             Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
         }
     }

@@ -269,7 +269,7 @@
             "release",
             "artifact"
           ],
-          "description": "Which reader the page is written for. owner is every section, reviewer the baseline and the comparison, release the shift line with regressions only, and artifact the sections that make sense for a site rather than a repository."
+          "description": "Which reader the page is written for. owner is every section, reviewer where to start the review with the baseline and the comparison, release how the shift ended with regressions only, and artifact every section that makes sense for a site rather than a repository."
         },
         "language": {
           "type": "string",
@@ -291,9 +291,14 @@
             "type": "string",
             "enum": [
               "shift",
+              "usage",
+              "items",
+              "review",
+              "interruptions",
+              "parked",
+              "snags",
               "baseline",
               "changed",
-              "parked",
               "unsupported",
               "next"
             ]
@@ -370,6 +375,14 @@
             "when-available"
           ],
           "description": "Whether a section records what the item cost. when-available reads only the numbers the host already exposes to the session; where it exposes none, the section says unavailable. Unavailable is never written as zero, and nothing here polls an account, counts tokens itself, or turns a count into a price."
+        },
+        "duration": {
+          "type": "string",
+          "enum": [
+            "off",
+            "on"
+          ],
+          "description": "Whether a section records how long the item took: the Time table and the Working column of the Sessions table. on writes them from the runtime's own clock; off writes neither and the receipt says off. Independent of usage and of the progress cadence."
         },
         "templatePath": {
           "type": "string",

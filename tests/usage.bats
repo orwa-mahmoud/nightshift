@@ -194,6 +194,18 @@ ns() { printf '%s/.nightshift' "$1"; }
   [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
 }
 
+@test "an item ticked out of list order is charged to itself" {
+  p="$(new_project usage-out-of-order)"
+  printf '## Items\n- [ ] **P01 - first.**\n- [x] **P02 - second.**\n' >"$p/.nightshift/punch-list.md"
+  lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
+  printf '## Items\n- [x] **P01 - first.**\n- [x] **P02 - second.**\n' >"$p/.nightshift/punch-list.md"
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 2
+  [ "$(cut -f2 "$p/.nightshift/usage/marks.tsv" | paste -sd' ' -)" = 'arm P02 P01' ]
+  [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P02.md")" -eq 1 ]
+  [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
+}
+
 @test "a dimension the host does not report reads unavailable, never zero" {
   p="$(new_project usage-partial)"
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
@@ -206,16 +218,53 @@ ns() { printf '%s/.nightshift' "$1"; }
   grep -qF '| reasoning | unavailable |' "$p/.nightshift/receipts/P01.md"
 }
 
-@test "usage off measures nothing and keeps no snapshot" {
-  p="$(new_project usage-off)"
+# receipts_policy <project> <receipts-json> — set through the policy the shift was composed with,
+# which is where the receipts settings are fixed.
+receipts_policy() {
+  jq -n --argjson r "$2" '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
+    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",receipts:$r}' \
+    >"$1/.nightshift/shift-policy.json"
+}
+
+# ticked_under <name> <receipts-json> — P01 ticked after one reading, under that policy.
+ticked_under() {
+  local p
+  p="$(new_project "$1")"
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
-  # Set through the policy the shift was composed with, which is where the setting is fixed.
-  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",
-    source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools",
-    receipts:{usage:"off"}}' >"$p/.nightshift/shift-policy.json"
+  receipts_policy "$p" "$2"
+  lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  [ ! -e "$p/.nightshift/usage/marks.tsv" ]
-  [ ! -e "$p/.nightshift/receipts/P01.md" ]
+  printf '%s' "$p"
+}
+
+@test "usage off with duration on writes the Time table and says the tokens are off" {
+  p="$(ticked_under usage-off '{"usage":"off"}')"
+  rec="$p/.nightshift/receipts/P01.md"
+  grep -qxF '**Tokens:** off' "$rec"
+  ! grep -qF '| Tokens |' "$rec"
+  grep -qF '| Time |' "$rec"
+  grep -F '| P01 | ticked |' "$p/.nightshift/receipts/README.md" | grep -qF '| **off** | **'
+}
+
+@test "duration off with usage on writes the Tokens table and says the time is off" {
+  p="$(ticked_under duration-off '{"duration":"off"}')"
+  rec="$p/.nightshift/receipts/P01.md"
+  grep -qF '| input | 4 |' "$rec"
+  grep -qxF '**Time:** off' "$rec"
+  ! grep -qF '| Time |' "$rec"
+  grep -F '| P01 | ticked |' "$p/.nightshift/receipts/README.md" | grep -qF '| **off** | ['
+}
+
+@test "with usage and duration both off the tick still lands and neither table is written" {
+  p="$(ticked_under both-off '{"usage":"off","duration":"off"}')"
+  rec="$p/.nightshift/receipts/P01.md"
+  [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = 'arm|P01:tick' ]
+  grep -qxF '**Tokens:** off' "$rec"
+  grep -qxF '**Time:** off' "$rec"
+  ! grep -qF '| Tokens |' "$rec"
+  ! grep -qF '| Time |' "$rec"
+  grep -qF '| off | off | off | ticked |' "$rec"
+  grep -qxF '| **Totals** |  | **off** | **off** |  |' "$p/.nightshift/receipts/README.md"
 }
 
 # The cadence is the runtime's arithmetic against the same marks and the same counter. None of it
@@ -270,6 +319,36 @@ mark_at() {
   [ "$status" -ne 0 ]
 }
 
+@test "usage off leaves the time cadence firing after progressMinutes" {
+  p="$(new_project cadence-usage-off-time)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  receipts_policy "$p" '{"usage":"off","progressMode":"time","progressMinutes":20}'
+  now="$(date +%s)"
+  mark_at "$p/.nightshift" "$((now - 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+  rm -f "$p/.nightshift/usage/marks.tsv"
+  mark_at "$p/.nightshift" "$((now - 25 * 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
+}
+
+@test "usage off turns a token cadence into the time cadence" {
+  p="$(new_project cadence-usage-off-tokens)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  receipts_policy "$p" '{"usage":"off","progressMode":"tokens","progressTokens":1000,"progressMinutes":20}'
+  now="$(date +%s)"
+  mark_at "$p/.nightshift" "$((now - 60))" arm ''
+  # A reading past the token threshold does not count once the owner turned token usage off.
+  lib ns_usage_record "$p/.nightshift" claude m transcript-incremental /t/a 1 'input=5000,output=500'
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -ne 0 ]
+  rm -f "$p/.nightshift/usage/marks.tsv"
+  mark_at "$p/.nightshift" "$((now - 25 * 60))" arm ''
+  run lib ns_usage_progress_due "$p" P01
+  [ "$status" -eq 0 ]
+}
+
 @test "a token cadence with no counter to read falls back to the clock" {
   p="$(new_project cadence-fallback)"
   printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
@@ -318,6 +397,27 @@ mark_at() {
   [ "$output" = 'receipts: progress update due for P01 — refresh the progress paragraph in .nightshift/receipts/P01.md: where it stands, what is left.' ]
 }
 
+@test "refreshing the receipt answers the standing notice" {
+  p="$(new_project cadence-answered)"
+  printf '## Items\n- [ ] **P01 - open.**\n' >"$p/.nightshift/punch-list.md"
+  : >"$p/.nightshift/.shift-armed"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# P01\n\nWhere it has got to.\n' >"$p/.nightshift/receipts/P01.md"
+  mark_at "$p/.nightshift" "$(( $(date +%s) - 25 * 60 ))" arm ''
+
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/.receipt-due" ]
+
+  printf '# P01\n\nWhere it has got to, updated.\n' >"$p/.nightshift/receipts/P01.md"
+  run bash -c '. "$1"; . "$2"; ns_pulse_report_due "$3/.nightshift" "$3"' _ \
+    "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" "$p"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+  [ ! -f "$p/.nightshift/.receipt-due" ]
+}
+
 @test "the notice reaches the model in each host's own context field" {
   run bash -c '. "$1"; . "$2"; ns_pulse_context claude "report: progress update due for P01"' _ \
     "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"
@@ -350,7 +450,11 @@ mark_at() {
   # Working time is the wall clock minus the recorded gap; both figures stay on the table.
   grep -qF '| working | 30m 0s |' "$p/.nightshift/receipts/P01.md"
   grep -qF '| wall | 1h 0m |' "$p/.nightshift/receipts/P01.md"
-  grep -qE '\| paused \| 30m 0s \(the session ended and the shift was revived\) \|' \
+  # The gap closes at the reading the tick took, which the runtime stamps itself; a busy machine can
+  # take that reading a second or two after `now`. The expected pause comes from that stamp.
+  read_at="$(awk -F '\t' '$2 == "P01" { print $1 }' "$p/.nightshift/usage/marks.tsv")"
+  gap=$((read_at - (now - 1800)))
+  grep -qF "| paused | $((gap / 60))m $((gap % 60))s (the session ended and the shift was revived) |" \
     "$p/.nightshift/receipts/P01.md"
 }
 
@@ -763,4 +867,39 @@ parity_normalise() {
 @test "native Windows Start retires the finished shift's accounting like POSIX does" {
   grep -qF 'Move-NSUsageRetire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
   grep -qF 'ns_usage_retire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
+}
+
+# pause_fixture <project> — marks at 1000, 1600, 2800 and 4000; pauses at 1100 (Esc), 1300 (a
+# revival), 2000 (Esc) and 3900 (a usage limit), plus one at 4100 that no mark followed.
+pause_fixture() {
+  local u="$1/.nightshift/usage"
+  mkdir -p "$u"
+  printf '1000\tarm\t\n1600\t1. a.\t\ttick\n2800\t2. b.\t\ttick\n4000\t3. c.\t\tpause\n' >"$u/marks.tsv"
+  printf '1100\towner pressed Esc\n1300\tthe session ended and the shift was revived\n2000\towner pressed Esc\n3900\tusage limit\n4100\towner stop-work\n' \
+    >"$u/pauses.tsv"
+}
+
+@test "pauses by reason keep first-recorded order and sum to the paused total" {
+  p="$(new_project pauses-by-reason)"
+  pause_fixture "$p"
+  run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 4200
+  [ "$status" -eq 0 ]
+  # Esc: 1100→1600 and 2000→2800; the revival 1300→1600; the usage limit 3900→4000. The pause at
+  # 4100 has no mark after it and is left out.
+  [ "$output" = $'owner pressed Esc\t1300\nthe session ended and the shift was revived\t300\nusage limit\t100' ]
+  [ "$(lib ns_usage_paused_between "$p/.nightshift" 1000 4200 | cut -f1)" = 1700 ]
+}
+
+@test "a pause is cut at the end of the span it is measured in" {
+  p="$(new_project pauses-cut)"
+  pause_fixture "$p"
+  run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 1500
+  [ "$status" -eq 0 ]
+  [ "$output" = $'owner pressed Esc\t400\nthe session ended and the shift was revived\t200' ]
+}
+
+@test "a recorded pause with no reason is listed without one" {
+  run lib ns_usage_duration_line 600 60 '' 1000 1600
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'| working | 9m 0s |\n| paused | 1m 0s |\n| wall | 10m 0s |'* ]]
 }

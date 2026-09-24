@@ -71,7 +71,7 @@ def PREF: {
   "recovery": ["launchScope"],
   "handoff":  ["detail", "enabled", "language", "sections", "templatePath", "view"],
   "archive":  ["automatic", "layout", "root", "templatePath"],
-  "receipts": ["enabled", "progressMinutes", "progressMode",
+  "receipts": ["duration", "enabled", "progressMinutes", "progressMode",
                "progressTokens", "templatePath", "usage"]
 };
 

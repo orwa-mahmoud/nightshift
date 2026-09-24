@@ -139,9 +139,9 @@ ns_pulse_receipts_enabled() {
   [ "$(ns_receipts "$1" enabled)" != false ]
 }
 
-# ns_pulse_receipts_basename <label> — the file stem the notice names.
+# ns_pulse_receipts_basename <project> <label> — the file stem the notice names.
 ns_pulse_receipts_basename() {
-  ns_receipt_basename "$1"
+  ns_receipt_base "$1" "$2"
 }
 
 # ns_pulse_receipts_sections <project> — the approach clause on an item-start notice.
@@ -158,37 +158,26 @@ ns_pulse_receipts_sections() {
 # ns_pulse_receipts_start_line <project> <label>
 ns_pulse_receipts_start_line() {
   printf 'receipts: item %s started — open .nightshift/receipts/%s.md with one paragraph on the approach; %s' \
-    "$2" "$(ns_pulse_receipts_basename "$2")" "$(ns_pulse_receipts_sections "$1")"
+    "$2" "$(ns_pulse_receipts_basename "$1" "$2")" "$(ns_pulse_receipts_sections "$1")"
 }
 
-# ns_pulse_receipts_tick_line <label>
+# ns_pulse_receipts_tick_line <project> <label>
 ns_pulse_receipts_tick_line() {
   printf 'receipts: item %s is ticked — write its closing paragraph in .nightshift/receipts/%s.md now, before starting the next item.' \
-    "$1" "$(ns_pulse_receipts_basename "$1")"
+    "$2" "$(ns_pulse_receipts_basename "$1" "$2")"
 }
 
-# ns_pulse_receipts_cadence_line <label>
+# ns_pulse_receipts_cadence_line <project> <label>
 ns_pulse_receipts_cadence_line() {
   printf 'receipts: progress update due for %s — refresh the progress paragraph in .nightshift/receipts/%s.md: where it stands, what is left.' \
-    "$1" "$(ns_pulse_receipts_basename "$1")"
+    "$2" "$(ns_pulse_receipts_basename "$1" "$2")"
 }
 
 # ns_pulse_ticked_labels <project> — every ticked item label, punch-list order, one per line.
 ns_pulse_ticked_labels() {
   local punch="$1/.nightshift/punch-list.md"
   [ -f "$punch" ] || return 0
-  ns_items_section "$punch" 2>/dev/null | awk '
-    /^- \[[xX]\]/ {
-      line = $0
-      sub(/^- \[[xX]\][[:space:]]*\*\*/, "", line)
-      sub(/^- \[[xX]\][[:space:]]*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
-      if (line != "") print line
-    }
-  '
+  ns_item_rows "$punch" ticked | cut -f1
 }
 
 # Previous-pulse facts live under usage/, never in the punch list.
@@ -224,34 +213,34 @@ ns_pulse_previous_write() { # <ns> <active> <ticked>
 #
 # The notice is written to a marker before it is emitted, and cleared when the item's receipt
 # file changes or the item is ticked. A marker that names a different item than the one now
-# open is rewritten. A revived session still finds the notice; nothing repeats until the window
-# resets, so a long pause is one overdue notice rather than one per minute that passed.
+# open is dropped. A revived session still finds the notice; it stands until the receipt changes,
+# so a long pause is one overdue notice rather than one per minute that passed.
 ns_pulse_report_due() {
   local ns="$1" project="$2" label due want
   [ -f "$ns/.shift-armed" ] || return 1
   ns_pulse_receipts_enabled "$project" || return 1
   label="$(ns_pulse_active_item "$project")" || return 1
   [ -n "$label" ] || return 1
-  want="$(ns_pulse_receipts_cadence_line "$label")"
+  want="$(ns_pulse_receipts_cadence_line "$project" "$label")"
   if [ -f "$ns/.receipt-due" ] && [ ! -L "$ns/.receipt-due" ]; then
     due="$(cat "$ns/.receipt-due" 2>/dev/null)" || due=""
     case "$due" in
       *"for ${label} —"*|*"for ${label}")
-        printf '%s' "$due"
-        return 0
+        # Refreshing the receipt is what answers the notice. The window notices the change and
+        # drops the marker, so a refreshed receipt is not reminded again on the next call.
+        ns_usage_window "$ns" "$label" "$(ns_receipt_path "$project" "$label")" >/dev/null || :
+        if [ -f "$ns/.receipt-due" ]; then
+          printf '%s' "$due"
+          return 0
+        fi
+        ;;
+      *)
+        # The marker names an item that is no longer the open one; it answers nothing now.
+        rm -f "$ns/.receipt-due" 2>/dev/null || :
         ;;
     esac
-    # The marker names a different item than the one now open — regenerate.
   fi
-  ns_usage_progress_due "$project" "$label" || {
-    # Stale marker for another item: still rewrite so the next pulse names this one.
-    if [ -n "${due:-}" ]; then
-      printf '%s' "$want" >"$ns/.receipt-due" 2>/dev/null || return 1
-      printf '%s' "$want"
-      return 0
-    fi
-    return 1
-  }
+  ns_usage_progress_due "$project" "$label" || return 1
   printf '%s' "$want" >"$ns/.receipt-due" 2>/dev/null || return 1
   printf '%s' "$want"
 }
@@ -282,14 +271,17 @@ ns_pulse_receipts_notice() {
         grep -Fqx -- "$line" "$labels_file" 2>/dev/null && continue
       fi
       if [ "$first" -eq 1 ]; then
-        printf '%s' "$(ns_pulse_receipts_tick_line "$line")"
+        printf '%s' "$(ns_pulse_receipts_tick_line "$project" "$line")"
         first=0
       else
-        printf '\n%s' "$(ns_pulse_receipts_tick_line "$line")"
+        printf '\n%s' "$(ns_pulse_receipts_tick_line "$project" "$line")"
       fi
     done <"$ns/usage/.ticked-now"
   fi
   if [ -n "$active" ] && [ "$active" != "$prev_active" ]; then
+    # An item carried from an earlier shift may have been renumbered or retitled since; its receipt
+    # says so before the model opens it.
+    ns_receipt_track_label "$(ns_receipt_path "$project" "$active")" "$active" || :
     if [ "$first" -eq 1 ]; then
       printf '%s' "$(ns_pulse_receipts_start_line "$project" "$active")"
       first=0
@@ -316,23 +308,8 @@ ns_pulse_receipts_notice() {
   [ "$first" -eq 0 ]
 }
 
-# ns_pulse_active_item <project> — the first still-open item, which is the one being worked.
-ns_pulse_active_item() {
-  local punch="$1/.nightshift/punch-list.md"
-  [ -f "$punch" ] || return 1
-  ns_items_section "$punch" 2>/dev/null | awk '
-    /^- \[ \]/ {
-      line = $0
-      sub(/^- \[ \][[:space:]]*\*\*/, "", line)
-      sub(/[[:space:]]+—.*$/, "", line)
-      sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-      sub(/\*\*.*$/, "", line)
-      gsub(/[[:space:]]+$/, "", line)
-      print line
-      exit
-    }
-  '
-}
+# ns_pulse_active_item <project> — the item being worked; see ns_active_item.
+ns_pulse_active_item() { ns_active_item "$1"; }
 
 # ns_pulse_context <host> <line> — the notice in the field each host documents for model-visible
 # context. Claude Code and Codex read hookSpecificOutput.additionalContext; Cursor reads
@@ -386,7 +363,9 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   fi
   ticked="$(ns_ticked_boxes "$punch" 2>/dev/null)" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
-  ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || return 0
+  ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || :
+  # Then follow the item being worked, so a stretch spent on one item is not charged to another.
+  ns_gate_usage_switch "$ns" "$project" "$(ns_pulse_active_item "$project")"
 }
 
 # Executed as the Claude wrapper: parse stdin, emit, stay silent.

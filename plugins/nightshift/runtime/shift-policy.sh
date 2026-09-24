@@ -213,6 +213,14 @@ cmd_set() {
       mv "$tmpd/with-launch.json" "$candidate"
     fi
   fi
+  # Every item gets its permanent id before the items are digested, so the digest is of the list
+  # the shift arms with, ids included. A candidate that already states the items digest was
+  # written against the list as it is, and the list is left alone.
+  if ! printf '%s' "$(cat "$candidate")" | grep -q '"itemsDigest"'; then
+    ns_punch_assign_ids "$NS/punch-list.md" "$NS" ||
+      printf 'shift-policy: the items in %s could not be given ids; receipts stay named by label\n' \
+        "$NS/punch-list.md" >&2
+  fi
   # The contract as it stands right now, so the gate can tell later whether it moved. Two digests:
   # everything above the Items heading, which nobody may edit while a shift runs, and the items
   # with their checkbox state flattened, so a tick is invisible and any other edit is not. A
@@ -330,6 +338,7 @@ cmd_archive() {
   # The owner chooses where and how a shift is filed; the shift id names the file either way.
   dated="$(ns_archive_dir "$WORKSPACE" "$(date '+%Y-%m-%d')" "$shift_id")" ||
     die 'archive.root must name a directory inside .nightshift/' 2
+  [ ! -L "$dated" ] || die 'refuse to write through a symlink archive path' 2
   mkdir -p "$dated" || die "cannot create $dated" 2
   dest="$dated/shift-policy-$shift_id.json"
   mv "$POLICY" "$dest" || die "cannot archive $POLICY" 2

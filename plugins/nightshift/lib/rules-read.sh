@@ -452,6 +452,7 @@ handoff.sections
 handoff.templatePath
 handoff.view
 recovery.launchScope
+receipts.duration
 receipts.enabled
 receipts.progressMinutes
 receipts.progressMode

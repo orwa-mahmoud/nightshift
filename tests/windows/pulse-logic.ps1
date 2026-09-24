@@ -78,6 +78,39 @@ try {
     $cadence = Get-NSPulseReportDue $staleNs $stale
     Expect-True ($cadence.Contains('progress update due for 38. Third of the replay.')) `
         'a stale marker naming 37 with 38 active produces a message naming 38'
+
+    $quiet = Join-Path $root 'stale-quiet'
+    $quietNs = Join-Path $quiet '.nightshift'
+    $null = New-Item -ItemType Directory -Path (Join-Path $quietNs 'usage') -Force
+    [IO.File]::WriteAllText((Join-Path $quietNs 'punch-list.md'), "## Items`n- [x] **37. Second of the replay.**`n- [ ] **38. Third of the replay.**`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $quietNs '.shift-armed'), '', $utf8)
+    [IO.File]::WriteAllText((Join-Path $quietNs 'usage/marks.tsv'), "$((Get-NSUnixTime) - 60)`ttick`t`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $quietNs '.receipt-due'),
+        "receipts: progress update due for 37. Second of the replay. $dash refresh the progress paragraph in .nightshift/receipts/37-second-of-the-replay.md: where it stands, what is left.",
+        $utf8)
+    Expect-True ([string]::IsNullOrEmpty((Get-NSPulseReportDue $quietNs $quiet))) `
+        'a stale marker for another item is not rewritten when nothing is due'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $quietNs '.receipt-due'))) `
+        'a stale marker for another item is dropped'
+
+    $answer = Join-Path $root 'answered'
+    $answerNs = Join-Path $answer '.nightshift'
+    $null = New-Item -ItemType Directory -Path (Join-Path $answerNs 'usage') -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $answerNs 'receipts') -Force
+    [IO.File]::WriteAllText((Join-Path $answerNs 'punch-list.md'), "## Items`n- [ ] **P01 - open.**`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $answerNs '.shift-armed'), '', $utf8)
+    $receipt = Join-Path $answerNs 'receipts/P01.md'
+    [IO.File]::WriteAllText($receipt, "# P01`n`nWhere it has got to.`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $answerNs 'usage/marks.tsv'), "$((Get-NSUnixTime) - (25 * 60))`tarm`t`n", $utf8)
+    $standing = Get-NSPulseReportDue $answerNs $answer
+    Expect-True ($standing.Contains('progress update due for P01')) 'an overdue item gets the progress notice'
+    Expect-True ((Get-NSPulseReportDue $answerNs $answer) -ceq $standing) 'the notice stands until the receipt changes'
+    [IO.File]::WriteAllText($receipt, "# P01`n`nWhere it has got to, updated.`n", $utf8)
+    Expect-True ([string]::IsNullOrEmpty((Get-NSPulseReportDue $answerNs $answer))) `
+        'refreshing the receipt answers the standing notice'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $answerNs '.receipt-due'))) `
+        'the answered notice leaves no marker'
+    Expect-True (-not (Test-NSUsageProgressDue $answer 'P01')) 'the refresh restarts the cadence window'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
