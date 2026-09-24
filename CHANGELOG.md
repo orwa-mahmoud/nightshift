@@ -3,6 +3,28 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.24.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.23.0...v0.24.0) (2026-09-24)
+
+
+### Features
+
+* group the .nightshift folder by purpose ([08892b8](https://github.com/orwa-mahmoud/nightshift/commit/08892b83ac12f58f2a0d98efa0c889afadb681c7))
+
+
+### Bug Fixes
+
+* end an inbox entry where the morning receipt ends it ([e8bedd0](https://github.com/orwa-mahmoud/nightshift/commit/e8bedd06838e66b2a483d9486aa734d0c98b3585))
+* file and retire usage folders on both runtimes ([83e06bc](https://github.com/orwa-mahmoud/nightshift/commit/83e06bc4d4dbdbe205c8a2120bfc6088d5cddfeb))
+* find a UUID shift's archived policy in the morning receipt ([aa91bee](https://github.com/orwa-mahmoud/nightshift/commit/aa91bee7f8d0bb9a4e7c3688e7743178684607a9))
+* keep .nightshift/ ignored when the Windows workspace is its own repository ([72dd478](https://github.com/orwa-mahmoud/nightshift/commit/72dd4783ceebca8a3b3e63e6e62bbadfa004b30e))
+* keep the segment's model when a reading reports none ([57ed58b](https://github.com/orwa-mahmoud/nightshift/commit/57ed58b0815dabe49addc690c36b7fe95c7e54ab))
+* keep the shipped PowerShell ASCII so Windows PowerShell 5.1 reads it as written ([1ba7363](https://github.com/orwa-mahmoud/nightshift/commit/1ba73632babc677aae9af8fd050fc1ff7b115254))
+* read only the ended shift's archived policy in the morning receipt ([46dab64](https://github.com/orwa-mahmoud/nightshift/commit/46dab642778d4201f91df4eb562438e9cd2e1654))
+* refuse to arm a shift policy that has already run ([e3941c5](https://github.com/orwa-mahmoud/nightshift/commit/e3941c526a0cc74211d580b0997e16f8bd2219a9))
+* show how parking-lot and snag-log entries are closed ([b97d1aa](https://github.com/orwa-mahmoud/nightshift/commit/b97d1aaf1073a9c9da16f5261f3f38de262cf634))
+* stage drafting-table work only on the owner's request ([61c4872](https://github.com/orwa-mahmoud/nightshift/commit/61c487230ce2f95c22e7b83493529f56405894b2))
+* write park-needs entries as bullets Archive can file ([07bde30](https://github.com/orwa-mahmoud/nightshift/commit/07bde30b40cc7848ab7d4540ce1b500fd26a48cf))
+
 ## [0.23.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.4...v0.23.0) (2026-09-24)
 
 
