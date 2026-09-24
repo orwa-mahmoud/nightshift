@@ -87,6 +87,19 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
   done < <(rows progress-due.tsv)
 }
 
+@test "shifts are filed into the fixture's archive folders on Bash" {
+  local action day id want got p="$BATS_TEST_TMPDIR/folders"
+  mkdir -p "$p/.nightshift"
+  while IFS=$'\t' read -r action day id want; do
+    if [ "$action" = old ]; then
+      mkdir -p "$p/.nightshift/archive/$day"
+      continue
+    fi
+    got="$(lib ns_archive_dir "$p" "$day" "$id")"
+    [ "${got##*/}" = "$want" ] || { echo "$day $id: got ${got##*/}, want $want"; return 1; }
+  done < <(rows archive-folders.tsv)
+}
+
 @test "punch-list counts, tick labels, and digests match the fixture on Bash" {
   local file open ticked l1 l2 l3 contract items list
   while IFS=$'\t' read -r file open ticked l1 l2 l3 contract items; do

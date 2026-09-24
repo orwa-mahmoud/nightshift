@@ -981,17 +981,53 @@ ns_archive_dest() {
 }
 
 # ns_archive_dir <project-dir> <date> <shift-id> — the directory one shift is filed into.
-# The date layout groups a night together; the shift layout gives each shift its own directory.
-# The shift id names the files inside either way, so two shifts on one day never collide.
+#
+# The shift layout gives each shift `shift-<id>/`. The date layout gives the first shift of a day
+# `<date>/` and each later one `<date>-shift-2/`, `<date>-shift-3/` and so on, so two shifts never
+# share a punch list, a log or a receipt name. A folder records the shift it belongs to in
+# `.shift-id`, and a shift filed again that day comes back to its own folder. A folder filed before
+# folders recorded their shift is claimed by the first shift that files into it again. Without a
+# shift id the date folder is the answer. A candidate that is a link or not a directory is returned
+# as it is, for the caller to refuse.
 ns_archive_dir() {
-  local root layout
+  local root layout base dir n=1 owner
   root="$(ns_archive_root "$1")" || return 2
   layout="$(ns_archive "$1" layout)"
   if [ "$layout" = shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
     printf '%s/shift-%s' "$root" "$3"
     return 0
   fi
-  printf '%s/%s' "$root" "$2"
+  base="$root/$2"
+  if [ -z "$3" ] || [ "$3" = unknown ]; then
+    printf '%s' "$base"
+    return 0
+  fi
+  dir="$base"
+  while :; do
+    if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
+      printf '%s' "$dir"
+      return 0
+    fi
+    if [ ! -e "$dir" ]; then
+      mkdir -p "$dir" 2>/dev/null || return 2
+      printf '%s\n' "$3" >"$dir/.shift-id" 2>/dev/null || return 2
+      printf '%s' "$dir"
+      return 0
+    fi
+    owner=""
+    if [ -f "$dir/.shift-id" ] && [ ! -L "$dir/.shift-id" ]; then
+      IFS= read -r owner <"$dir/.shift-id" || :
+    elif [ ! -e "$dir/.shift-id" ]; then
+      printf '%s\n' "$3" >"$dir/.shift-id" 2>/dev/null || return 2
+      owner="$3"
+    fi
+    if [ "$owner" = "$3" ]; then
+      printf '%s' "$dir"
+      return 0
+    fi
+    n=$((n + 1))
+    dir="$base-shift-$n"
+  done
 }
 
 # ns_archive_automatic <project-dir> — status 0 when the owner asked for filing at clock-out.
@@ -1005,7 +1041,9 @@ ns_review_handled() {
   printf '%s\n' "$1" | grep -qiE ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)'
 }
 
-# ns_archive_review_label <date> <shift-id> <layout>
+# ns_archive_review_label <folder-name> <shift-id> <layout> — what a Filed pointer is labelled: the
+# shift id in the shift layout, the dated folder's own name (`2026-09-09`, `2026-09-09-shift-2`)
+# otherwise, so two shifts on one day are told apart.
 ns_archive_review_label() {
   if [ "$3" = shift ] && [ -n "$2" ] && [ "$2" != unknown ]; then
     printf '%s' "$2"
@@ -1048,7 +1086,8 @@ ns_archive_file_review_source() {
   [ -f "$live" ] && [ ! -L "$live" ] || return 0
   dest="$(ns_archive_review_dest "$project" "$date" "$shift_id" "$base")" || return 2
   layout="$(ns_archive "$project" layout)"
-  label="$(ns_archive_review_label "$date" "$shift_id" "$layout")"
+  label="$(ns_archive_dir "$project" "$date" "$shift_id")" || return 2
+  label="$(ns_archive_review_label "${label##*/}" "$shift_id" "$layout")"
   rel="$(ns_archive_rel_from_ns "$ns" "$dest")"
   case "$rel" in
     '' | /*) return 2 ;;
@@ -1718,9 +1757,12 @@ ns_retention_eligible() {
   for rel in "$ns/archive"/*; do
     [ -e "$rel" ] || continue
     rel="${rel#"$ns/"}"
+    rel="${rel%/}"
     case "$rel" in
       archive/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-      archive/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) rel="${rel%/}" ;;
+      archive/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-shift-[1-9]*)
+        case "${rel##*-shift-}" in *[!0-9]*) continue ;; esac
+        ;;
       *) continue ;;
     esac
     if [ ! -d "$ns/$rel" ] || [ -L "$ns/$rel" ]; then

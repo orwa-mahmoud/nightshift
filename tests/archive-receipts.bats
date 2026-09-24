@@ -868,6 +868,61 @@ composed() {
   [ "$(cat "$p/.nightshift/history/shift-2222222222222222/receipts/2026-09-05-an-item.md")" = 'the second night' ]
 }
 
+# arch_dir <project> <date> <shift-id> — where that shift is filed.
+arch_dir() { bash -c '. "$1"; shift; ns_archive_dir "$@"' _ "$LIB" "$@"; }
+
+@test "each later shift on a date files into its own numbered folder" {
+  p="$(new_project same-day-folders)"
+  a="$(arch_dir "$p" 2026-09-05 1111111111111111)"
+  b="$(arch_dir "$p" 2026-09-05 2222222222222222)"
+  c="$(arch_dir "$p" 2026-09-05 3333333333333333)"
+  [ "$a" = "$p/.nightshift/archive/2026-09-05" ]
+  [ "$b" = "$p/.nightshift/archive/2026-09-05-shift-2" ]
+  [ "$c" = "$p/.nightshift/archive/2026-09-05-shift-3" ]
+  [ "$(cat "$b/.shift-id")" = 2222222222222222 ]
+  # A shift filed again that day comes back to its own folder instead of opening the next one.
+  [ "$(arch_dir "$p" 2026-09-05 2222222222222222)" = "$b" ]
+  [ "$(arch_dir "$p" 2026-09-05 1111111111111111)" = "$a" ]
+  [ ! -e "$p/.nightshift/archive/2026-09-05-shift-4" ]
+}
+
+@test "a dated folder filed before folders recorded their shift is claimed, and the next shift moves on" {
+  p="$(new_project same-day-legacy)"
+  mkdir -p "$p/.nightshift/archive/2026-09-05"
+  printf 'an earlier night\n' >"$p/.nightshift/archive/2026-09-05/shipped.md"
+  [ "$(arch_dir "$p" 2026-09-05 1111111111111111)" = "$p/.nightshift/archive/2026-09-05" ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/.shift-id")" = 1111111111111111 ]
+  [ "$(arch_dir "$p" 2026-09-05 2222222222222222)" = "$p/.nightshift/archive/2026-09-05-shift-2" ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/shipped.md")" = 'an earlier night' ]
+}
+
+@test "a shift with no id files into the date folder and claims nothing" {
+  p="$(new_project same-day-unknown)"
+  [ "$(arch_dir "$p" 2026-09-05 unknown)" = "$p/.nightshift/archive/2026-09-05" ]
+  [ ! -e "$p/.nightshift/archive/2026-09-05/.shift-id" ]
+}
+
+@test "a second shift's receipt that shares a name with the first one's is filed in its own folder" {
+  p="$(new_project same-day-receipts)"
+  composed "$p" 1111111111111111
+  printf 'the first night\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  run clock_out "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
+  [ "$status" -eq 0 ]
+
+  rm -f "$p/.nightshift/.ended"
+  composed "$p" 2222222222222222
+  printf 'the second night\n' >"$p/.nightshift/receipts/2026-09-05-an-item.md"
+  run clock_out "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire 2026-09-05-an-item.md
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/archive/2026-09-05-shift-2/receipts"* ]]
+
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-an-item.md")" = 'the first night' ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05-shift-2/receipts/2026-09-05-an-item.md")" = 'the second night' ]
+  [ ! -e "$p/.nightshift/receipts/2026-09-05-an-item.md" ]
+}
+
 @test "an unfinished item keeps its evidence through the whole sequence" {
   p="$(new_project ident-open-work)"
   arch_rules "$p" '.archive.layout = "shift" | .archive.root = "history"'
@@ -1039,9 +1094,12 @@ review_ended() { # <project> <shift-id> <layout>
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
   [ "$status" -eq 0 ]
   grep -qF 'first · x · fixed' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
-  grep -qF 'second · y · answered' "$p/.nightshift/archive/2026-09-09/cccc3333dddd4444/snag-log.md"
+  # The second shift of the day files into its own dated folder, and its pointer says which.
+  grep -qF 'second · y · answered' "$p/.nightshift/archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md"
   ! grep -qF 'second' "$p/.nightshift/archive/2026-09-09/aaaa1111bbbb2222/snag-log.md"
   [ "$(grep -c '^Filed:' "$p/.nightshift/snag-log.md")" -eq 2 ]
+  grep -qF 'Filed: [2026-09-09-shift-2](archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md)' \
+    "$p/.nightshift/snag-log.md"
 }
 
 @test "a broken Filed pointer is reported in the snag log" {

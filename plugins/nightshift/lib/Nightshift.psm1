@@ -678,12 +678,9 @@ function Invoke-NSEvidenceArchive {
         if ($state['state'] -ceq 'valid') { $ShiftId = [string]$state['policy']['shiftId'] }
     }
     if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
-    $date = (Get-Date -Format 'yyyy-MM-dd')
-    $archiveRoot = Join-NSPath (Join-Path $Workspace '.nightshift') 'archive'
-    $directory = Join-NSPath $archiveRoot $date
-    foreach ($candidate in @($archiveRoot, $directory)) {
-        if (Test-NSReparsePoint $candidate) { return 2 }
-    }
+    # The owner chooses where and how a shift is filed; the shift id names the file either way.
+    $directory = Get-NSArchiveDir -Workspace $Workspace -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId $ShiftId
+    if ($null -eq $directory -or (Test-NSReparsePoint $directory)) { return 2 }
     $null = [IO.Directory]::CreateDirectory($directory)
     $destination = Join-NSPath $directory ('findings-' + $ShiftId + '.jsonl')
     Copy-Item -LiteralPath $jsonl -Destination $destination -Force
@@ -2795,7 +2792,7 @@ function Get-NSRetentionEligible {
         if ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) {
             continue
         }
-        if ($dir.Name -notmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}$') {
+        if ($dir.Name -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}(-shift-[1-9][0-9]*)?$') {
             continue
         }
         $rel = 'archive/' + $dir.Name
@@ -4798,9 +4795,15 @@ function Get-NSArchiveRoot {
     return (Get-NSStatePath (Join-Path $Workspace '.nightshift') $name)
 }
 
-# Get-NSArchiveDir <workspace> <date> <shift-id> - the directory one shift is filed into. The date
-# layout groups a night together; the shift layout gives each shift its own directory. The shift
-# id names the files inside either way, so two shifts on one day never collide.
+# Get-NSArchiveDir <workspace> <date> <shift-id> - the directory one shift is filed into.
+#
+# The shift layout gives each shift `shift-<id>/`. The date layout gives the first shift of a day
+# `<date>/` and each later one `<date>-shift-2/`, `<date>-shift-3/` and so on, so two shifts never
+# share a punch list, a log or a receipt name. A folder records the shift it belongs to in
+# `.shift-id`, and a shift filed again that day comes back to its own folder. A folder filed before
+# folders recorded their shift is claimed by the first shift that files into it again. Without a
+# shift id the date folder is the answer. A candidate that is a reparse point or not a directory is
+# returned as it is, for the caller to refuse.
 function Get-NSArchiveDir {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -4810,10 +4813,47 @@ function Get-NSArchiveDir {
     $root = Get-NSArchiveRoot $Workspace
     if ($null -eq $root) { return $null }
     $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
-    if ($layout -ceq 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
+    $known = -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown'
+    if ($layout -ceq 'shift' -and $known) {
         return (Join-Path $root ('shift-' + $ShiftId))
     }
-    return (Join-Path $root $Date)
+    $base = Join-Path $root $Date
+    if (-not $known) { return $base }
+    $dir = $base
+    $n = 1
+    while ($true) {
+        if ((Test-NSReparsePoint $dir) -or ((Test-Path -LiteralPath $dir) -and -not (Test-Path -LiteralPath $dir -PathType Container))) {
+            return $dir
+        }
+        if (-not (Test-Path -LiteralPath $dir)) {
+            try {
+                $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop
+                [IO.File]::WriteAllText((Join-Path $dir '.shift-id'), $ShiftId + "`n", (New-Object Text.UTF8Encoding($false)))
+            }
+            catch {
+                return $null
+            }
+            return $dir
+        }
+        $owner = ''
+        $record = Join-Path $dir '.shift-id'
+        if ((Test-Path -LiteralPath $record -PathType Leaf) -and -not (Test-NSReparsePoint $record)) {
+            $lines = @([IO.File]::ReadAllLines($record))
+            if ($lines.Count -gt 0) { $owner = $lines[0] }
+        }
+        elseif (-not (Test-Path -LiteralPath $record)) {
+            try {
+                [IO.File]::WriteAllText($record, $ShiftId + "`n", (New-Object Text.UTF8Encoding($false)))
+            }
+            catch {
+                return $null
+            }
+            $owner = $ShiftId
+        }
+        if ($owner -ceq $ShiftId) { return $dir }
+        $n++
+        $dir = $base + '-shift-' + $n
+    }
 }
 
 # Test-NSArchiveDest <path> - true when one file may be written at that exact path. A directory
@@ -4852,6 +4892,9 @@ function Complete-NSReviewEntry {
     $Buffer.Clear()
 }
 
+# Get-NSArchiveReviewLabel <folder-name> <shift-id> <layout> - what a Filed pointer is labelled: the
+# shift id in the shift layout, the dated folder's own name (`2026-09-09`, `2026-09-09-shift-2`)
+# otherwise, so two shifts on one day are told apart.
 function Get-NSArchiveReviewLabel {
     param([string]$Date, [AllowEmptyString()][string]$ShiftId, [AllowEmptyString()][string]$Layout)
     if ($Layout -ceq 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
@@ -4902,7 +4945,7 @@ function Save-NSArchiveReviewSource {
     $dest = Get-NSArchiveReviewDest $Workspace $Date $ShiftId $BaseName
     if ([string]::IsNullOrEmpty($dest)) { throw 'archive.root must name a directory inside .nightshift/' }
     $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
-    $label = Get-NSArchiveReviewLabel $Date $ShiftId $layout
+    $label = Get-NSArchiveReviewLabel (Split-Path -Leaf (Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $ShiftId)) $ShiftId $layout
     $rel = Get-NSArchiveRelFromNs $ns $dest
     if ([string]::IsNullOrEmpty($rel) -or $rel.StartsWith('/')) { throw 'archive dest is outside .nightshift/' }
     $keep = New-Object Collections.Generic.List[string]
@@ -6774,12 +6817,15 @@ function Invoke-NSShiftPolicyArchive {
     else {
         Write-NSPolicyError ('shift-policy: ' + $state['error'] + '; archiving as shift-policy-unknown.json')
     }
-    $directory = Join-NSPath $paths['archive'] $Date
-    foreach ($candidate in @($paths['archive'], $directory)) {
-        if (Test-NSReparsePoint $candidate) {
-            Write-NSPolicyError 'shift-policy: refuse to write through a symlink archive path'
-            return 2
-        }
+    # The owner chooses where and how a shift is filed; the shift id names the file either way.
+    $directory = Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $shiftId
+    if ($null -eq $directory) {
+        Write-NSPolicyError 'shift-policy: archive.root must name a directory inside .nightshift/'
+        return 2
+    }
+    if (Test-NSReparsePoint $directory) {
+        Write-NSPolicyError 'shift-policy: refuse to write through a symlink archive path'
+        return 2
     }
     $null = [IO.Directory]::CreateDirectory($directory)
     $destination = Join-NSPath $directory ('shift-policy-' + $shiftId + '.json')

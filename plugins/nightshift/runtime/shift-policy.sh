@@ -338,6 +338,7 @@ cmd_archive() {
   # The owner chooses where and how a shift is filed; the shift id names the file either way.
   dated="$(ns_archive_dir "$WORKSPACE" "$(date '+%Y-%m-%d')" "$shift_id")" ||
     die 'archive.root must name a directory inside .nightshift/' 2
+  [ ! -L "$dated" ] || die 'refuse to write through a symlink archive path' 2
   mkdir -p "$dated" || die "cannot create $dated" 2
   dest="$dated/shift-policy-$shift_id.json"
   mv "$POLICY" "$dest" || die "cannot archive $POLICY" 2

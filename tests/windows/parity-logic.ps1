@@ -94,6 +94,22 @@ finally {
     Remove-Item -LiteralPath $dueRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+$foldersRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-parity-folders-' + [guid]::NewGuid().ToString('N'))
+try {
+    $null = New-Item -ItemType Directory -Path (Join-Path $foldersRoot '.nightshift') -Force
+    foreach ($row in (Get-FixtureRows 'archive-folders.tsv')) {
+        if ($row[0] -ceq 'old') {
+            $null = New-Item -ItemType Directory -Path (Join-Path $foldersRoot ('.nightshift/archive/' + $row[1])) -Force
+            continue
+        }
+        $got = Get-NSArchiveDir -Workspace $foldersRoot -Date $row[1] -ShiftId $row[2]
+        Expect-Equal $row[3] (Split-Path -Leaf $got) "archive folder $($row[1]) $($row[2])"
+    }
+}
+finally {
+    Remove-Item -LiteralPath $foldersRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 foreach ($row in (Get-FixtureRows 'item-labels.tsv')) {
     $want = if ($row.Count -gt 2) { $row[2] } else { '' }
     Expect-Equal $row[1] (Get-NSItemLabel $row[0]) "item label '$($row[0])'"

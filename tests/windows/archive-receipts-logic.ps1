@@ -284,6 +284,17 @@ try {
     Expect-True (([regex]::Matches($liveSnag, '(?m)^Filed:').Count) -eq 1) `
         'retry does not duplicate the pointer'
 
+    # A second shift the same day files into its own dated folder, and its pointer says which.
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=cccc3333dddd4444`narchiveRoot=archive`narchiveLayout=date`n")
+    [IO.File]::AppendAllText((Join-Path $ns 'snag-log.md'), "- second · y · answered · 2026-09-09`n")
+    $two = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
+    Expect-True ($two.ExitCode -eq 0) "second shift exits 0 (got $($two.ExitCode) $($two.Stderr))"
+    Expect-True (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md') -PathType Leaf) `
+        "the second shift files into its own folder"
+    Expect-True ([IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')).Contains('Filed: [2026-09-09-shift-2](archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md)')) `
+        'the second pointer names its folder'
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=aaaa1111bbbb2222`narchiveRoot=archive`narchiveLayout=date`n")
+
     $dash = [string][char]0x2014
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
         ("# Snag Log`n`n- leak · tests/x.bats`n  · fixed " + $dash +
@@ -457,6 +468,49 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $ordered -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Each later shift on a date files into its own numbered folder, and a shift filed again that day
+# comes back to its own.
+$sameDay = Join-Path ([IO.Path]::GetTempPath()) ('ns-same-day-' + [guid]::NewGuid().ToString('N'))
+try {
+    $sameNs = Join-Path $sameDay '.nightshift'
+    $null = New-Item -ItemType Directory -Path $sameNs -Force
+    $archiveBase = Join-Path $sameNs 'archive'
+    $first = Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '1111111111111111'
+    $second = Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '2222222222222222'
+    $third = Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '3333333333333333'
+    Expect-True ($first -ceq (Join-Path $archiveBase '2026-09-05')) "the first shift files into the date folder (got $first)"
+    Expect-True ($second -ceq (Join-Path $archiveBase '2026-09-05-shift-2')) "the second shift gets -shift-2 (got $second)"
+    Expect-True ($third -ceq (Join-Path $archiveBase '2026-09-05-shift-3')) "the third shift gets -shift-3 (got $third)"
+    Expect-True (([IO.File]::ReadAllText((Join-Path $second '.shift-id'))).Trim() -ceq '2222222222222222') 'a folder records its shift'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '2222222222222222') -ceq $second) 'the same shift returns to its folder'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $archiveBase '2026-09-05-shift-4'))) 'no extra folder is opened'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-06' -ShiftId 'unknown') -ceq (Join-Path $archiveBase '2026-09-06')) 'no id means the date folder'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $archiveBase '2026-09-06/.shift-id'))) 'no id claims nothing'
+
+    # A folder filed before folders recorded their shift is claimed, and the next shift moves on.
+    $legacy = Join-Path $archiveBase '2026-09-07'
+    $null = New-Item -ItemType Directory -Path $legacy -Force
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-07' -ShiftId '1111111111111111') -ceq $legacy) 'an unrecorded folder is claimed'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-07' -ShiftId '2222222222222222') -ceq ($legacy + '-shift-2')) 'the next shift moves on'
+
+    # The clock-out policy archive files a second same-day shift into its own folder.
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $today = Get-Date -Format 'yyyy-MM-dd'
+    foreach ($id in @('4444444444444444', '5555555555555555')) {
+        [IO.File]::WriteAllText((Join-Path $sameNs 'shift-policy.json'),
+            ('{"schemaVersion":1,"shiftId":"' + $id + '","createdAt":"2026-09-02T00:00:00Z","source":"composition",' +
+                '"verificationLevel":"none","toolingPolicy":"existing-tools"}'), $utf8)
+        $null = Invoke-NSShiftPolicyArchive -Workspace $sameDay -Date $today
+    }
+    $todayFirst = Join-Path $archiveBase $today
+    $todaySecond = Join-Path $archiveBase ($today + '-shift-2')
+    Expect-True (Test-Path -LiteralPath (Join-Path $todayFirst 'shift-policy-4444444444444444.json')) 'the first policy files into the date folder'
+    Expect-True (Test-Path -LiteralPath (Join-Path $todaySecond 'shift-policy-5555555555555555.json')) 'the second policy files into -shift-2'
+}
+finally {
+    Remove-Item -LiteralPath $sameDay -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($failures.Count -gt 0) {

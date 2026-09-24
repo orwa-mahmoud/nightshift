@@ -43,6 +43,30 @@ age_file() {
   [ -d "$p/.nightshift/archive/2020-01-01" ]
 }
 
+@test "a later shift's dated folder is previewed and pruned by age like its day's first" {
+  p="$(new_project)"
+  rm -f "$p/.nightshift/.shift-armed"
+  set_retention "$p" 0 30
+  a="$p/.nightshift/archive"
+  mkdir -p "$a/2020-01-01" "$a/2020-01-01-shift-2" "$a/2020-01-01-shift-x" "$a/2026-08-01-shift-2"
+  printf '%s\n' '- [x] done' >"$a/2020-01-01-shift-2/punch-list.md"
+  age_file "$a/2020-01-01"
+  age_file "$a/2020-01-01-shift-2"
+  age_file "$a/2020-01-01-shift-x"
+  run bash "$RETAIN" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'archive/2020-01-01-shift-2'
+  ! printf '%s' "$output" | grep -q 'archive/2020-01-01-shift-x'
+  ! printf '%s' "$output" | grep -q 'archive/2026-08-01-shift-2'
+
+  run bash "$RETAIN" --project "$p" --apply
+  [ "$status" -eq 0 ]
+  [ ! -e "$a/2020-01-01" ]
+  [ ! -e "$a/2020-01-01-shift-2" ]
+  [ -d "$a/2020-01-01-shift-x" ]
+  [ -d "$a/2026-08-01-shift-2" ]
+}
+
 @test "preview lists eligible paths and apply deletes only those" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"

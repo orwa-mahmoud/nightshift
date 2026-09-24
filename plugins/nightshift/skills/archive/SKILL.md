@@ -56,12 +56,13 @@ helper did not file is refused and told back to you.
 
 ## Where it goes
 
-Everything lands under the archive root, which is `archive.root` in the resolved policy, in
-`<YYYY-MM-DD>/` or `shift-<id>/` according to `archive.layout`. Left alone those give the default
-`$NS/archive/<YYYY-MM-DD>/`, and receipts land in `archive/<YYYY-MM-DD>/receipts/` under it.
+Everything lands under the archive root, which is `archive.root` in the resolved policy, in the
+shift's own folder: `<YYYY-MM-DD>/` or `shift-<id>/` according to `archive.layout`. Left alone those
+give the default `$NS/archive/<YYYY-MM-DD>/`, and a later shift the same day gets
+`<YYYY-MM-DD>-shift-2/`, `-shift-3/` and so on. `archive-receipts` prints the folder it filed into
+(its `receipts/` is inside it), and anything else you file this run goes into that same folder.
 Today's date is `date +%Y-%m-%d` on POSIX, or `Get-Date -Format yyyy-MM-dd` on native Windows.
-One folder per archive run; create parents, and re-running on the same day appends to that day's
-files.
+Filing the same shift again returns to its folder; another shift never writes into it.
 
 **The receipts keep working from where they land.** The helper repoints their links: a record that
 travelled with them stays a sibling, a record that stayed live is reached back through the archive.
@@ -147,7 +148,8 @@ a preview that lists nothing is success, not a prompt to invent a number.
 Deletion is a second, explicit step. If the preview lists paths and the owner confirms in this
 interactive session, run the same command with `--apply` (POSIX) or `-Apply` (native Windows). If the shift is armed, the owner
 does not confirm, or either rule is `0`, stop after the preview. `--apply`/`-Apply` deletes only the
-allowlisted runtime log (`scheduled.log`) and dated `archive/YYYY-MM-DD/` directories that
+allowlisted runtime log (`scheduled.log`) and dated `archive/YYYY-MM-DD/` (or
+`archive/YYYY-MM-DD-shift-N/`) directories that
 are old enough, resolved under `$NS/`, not symlinks, and free of still-open work.
 
 Never call `ns retain-history` from start, hooks, status, Doctor, or recovery. Never call `ns archive-receipts` from start, hooks, status, Doctor, or recovery. Never delete

@@ -365,7 +365,7 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 |---|---|---|
 | `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
 | `root` | `archive` | Directory for dated archives, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
-| `layout` | `date` | `date` groups a night under `YYYY-MM-DD`; `shift` gives each shift its own directory. The shift id names the files either way, so two shifts in a day never collide |
+| `layout` | `date` | `date` files the first shift of a day under `YYYY-MM-DD` and each later one under `YYYY-MM-DD-shift-2`, `-shift-3` and so on; `shift` gives each shift a `shift-<id>` directory. Either way one folder holds one shift, and filing a shift again returns to its own folder |
 | `templatePath` | `""` | A Markdown template for the archive summary |
 
 Changing `root` never moves or hides what is already filed: an older history under the previous
