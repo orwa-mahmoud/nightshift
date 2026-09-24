@@ -103,9 +103,10 @@ write_shift_policy() {
     -Project "$win" -Out "$win/m.md"
   [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
 
-  # Each page names its own workspace; everything else has to match.
-  a="$(sed "s|$posix|WS|g" "$posix/m.md")"
-  b="$(sed "s|$win|WS|g" "$win/m.md")"
+  # Each page names its own workspace and its own repository's commits; everything else has to
+  # match.
+  a="$(sed -e "s|$posix|WS|g" -e "s|$(git -C "$posix" log --format=%h -n1)|HASH|g" "$posix/m.md")"
+  b="$(sed -e "s|$win|WS|g" -e "s|$(git -C "$win" log --format=%h -n1)|HASH|g" "$win/m.md")"
   diff -u <(printf '%s\n' "$a") <(printf '%s\n' "$b")
 
   # And neither leaks the template it read past.
