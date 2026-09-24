@@ -487,6 +487,13 @@ if ns_policy_json_tool >/dev/null 2>&1 || ns_rules_awk_bin >/dev/null 2>&1; then
     *)
       if [ -f "$POLICY" ]; then
         ok "policy resolved"
+        # A snapshot is one night's approval. One the archive has already filed would run that
+        # approval again, one-shift allowances included; Start's own snapshot draws a fresh id.
+        REPLAY_FILE="$(ns_policy_replayed "$WORKSPACE")" || REPLAY_FILE=""
+        if [ -n "$REPLAY_FILE" ]; then
+          refuse "replay shift-policy.json is shift $(ns_policy_shift_id "$WORKSPACE"), which has already run and is filed as $REPLAY_FILE"
+          repair "remove $POLICY so the next Start writes a fresh snapshot, or compose the shift again with Hunt or Quality"
+        fi
       else
         ok "policy none - arming from rules.json"
       fi

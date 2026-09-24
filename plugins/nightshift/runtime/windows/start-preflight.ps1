@@ -465,6 +465,14 @@ elseif ([string]$policyState['state'] -eq 'absent') {
 }
 else {
     Write-Ok 'policy resolved'
+    # A snapshot is one night's approval. One the archive has already filed would run that
+    # approval again, one-shift allowances included; Start's own snapshot draws a fresh id.
+    $replayed = Find-NSReplayedShiftPolicy $workspace
+    if (-not [string]::IsNullOrEmpty($replayed)) {
+        Write-Refuse ('replay shift-policy.json is shift ' + (Get-NSRecordText $policyState['policy'] 'shiftId') +
+            ', which has already run and is filed as ' + $replayed)
+        Write-Repair ('remove ' + (Get-NSLayoutPath $ns 'shift-policy') + ' so the next Start writes a fresh snapshot, or compose the shift again with Hunt or Quality')
+    }
 }
 
 # --------------------------------------------------- work and deadline

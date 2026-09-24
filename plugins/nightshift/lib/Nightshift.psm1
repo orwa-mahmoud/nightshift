@@ -5504,6 +5504,35 @@ function Read-NSShiftPolicyFile {
     return $state
 }
 
+# Find-NSReplayedShiftPolicy <workspace> - the archived copy of tonight's snapshot, when the archive
+# has already filed a shift under its id: the first shift-policy-<id>.json in any folder under the
+# resolved archive root. Empty when the snapshot is unreadable, carries no id, or has never run.
+# Mirrors ns_policy_replayed.
+function Find-NSReplayedShiftPolicy {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $state = Get-NSShiftPolicyState $Workspace
+    if ([string]$state['state'] -cne 'valid') { return '' }
+    $id = [string](Get-NSRecordText $state['policy'] 'shiftId')
+    if ($id -cnotmatch '^[0-9a-f-]+$') { return '' }
+    $root = $null
+    try { $root = Get-NSArchiveRoot $Workspace } catch { return '' }
+    if ([string]::IsNullOrEmpty($root) -or -not (Test-NSMigrationDirectory $root)) { return '' }
+    $name = 'shift-policy-' + $id + '.json'
+    $found = New-Object Collections.Generic.List[string]
+    $pending = New-Object Collections.Generic.Queue[string]
+    $pending.Enqueue($root)
+    while ($pending.Count -gt 0) {
+        $dir = $pending.Dequeue()
+        foreach ($entry in (Get-NSMigrationChildren $dir)) {
+            $path = Join-NSPath $dir $entry
+            if (Test-NSMigrationDirectory $path) { $pending.Enqueue($path); continue }
+            if ($entry -ceq $name -and (Test-NSMigrationFile $path)) { $found.Add($path) }
+        }
+    }
+    if ($found.Count -eq 0) { return '' }
+    return (Sort-NSOrdinal $found.ToArray())[0]
+}
+
 # Get-NSReceiptPolicyState <workspace> - the policy the morning receipt reports. It is the live
 # snapshot while one exists, and after clock-out only the copy filed under the id the ending
 # marker names. Any other archived snapshot is a different night's, and then this one has no

@@ -658,6 +658,40 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   [ "$(cksum <"$q/.nightshift/shift-policy.json")" = "$before" ]
 }
 
+# A policy is one night's approval: once a night has run under it and been filed, arming it again
+# would replay that approval, one-shift allowances included.
+@test "a policy whose shift has already run refuses to arm, and a fresh snapshot arms" {
+  p="$(setup_site preflight-replay)"
+  jq -nc '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",source:"composition",deadlineEpoch:null,verificationLevel:"final",toolingPolicy:"existing-tools"}' |
+    bash "$PLUGIN/runtime/shift-policy.sh" --project "$p" set --from-json - >/dev/null
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qxF 'ok policy resolved'
+  if printf '%s\n' "$output" | grep -q '^refuse replay'; then return 1; fi
+
+  # The same snapshot once a night has been filed under its id, in any folder of the archive.
+  mkdir -p "$p/.nightshift/archive/2026-09-02/older"
+  cp "$p/.nightshift/shift-policy.json" "$p/.nightshift/archive/2026-09-02/older/shift-policy-9f2c40ab77e51d63.json"
+  before="$(cksum <"$p/.nightshift/shift-policy.json")"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qE '^refuse replay shift-policy\.json is shift 9f2c40ab77e51d63, which has already run and is filed as .*/archive/2026-09-02/older/shift-policy-9f2c40ab77e51d63\.json$'
+  printf '%s\n' "$output" | grep -qF "explain replay A shift policy is one night's approval, and the verdict names the copy the archive filed"
+  printf '%s\n' "$output" | grep -qE '^repair remove .*/shift-policy\.json so the next Start writes a fresh snapshot, or compose the shift again with Hunt or Quality$'
+  [ "$(cksum <"$p/.nightshift/shift-policy.json")" = "$before" ]
+
+  # Removed as the repair says, Start's own snapshot draws an id the archive has never seen.
+  rm -f "$p/.nightshift/shift-policy.json"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .shiftId "$p/.nightshift/shift-policy.json")" != 9f2c40ab77e51d63 ]
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  if printf '%s\n' "$output" | grep -q '^refuse replay'; then return 1; fi
+}
+
 @test "Start records the snapshot right before it arms" {
   s="$PLUGIN/skills/start/SKILL.md"
   snap="$(grep -n 'start-preflight --phase snapshot' "$s" | head -n1 | cut -d: -f1)"

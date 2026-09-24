@@ -293,6 +293,37 @@ try {
         Expect-True ($doc.itemsDigest -ceq (Get-NSPunchItemsDigest $snapPunch)) 'the items digest is the list armed with'
     }
 
+    # A policy is one night's approval: once a night has run under it and been filed, arming it
+    # again would replay that approval. Start's own snapshot draws an id the archive has never seen.
+    $replay = New-Site (Join-Path $root 'replay')
+    $replayNs = Join-Path $replay '.nightshift'
+    $replayPolicy = Join-Path $replayNs 'shift-policy.json'
+    $replayText = '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T00:00:00Z","source":"composition","deadlineEpoch":null,"verificationLevel":"final","toolingPolicy":"existing-tools"}' + "`n"
+    [IO.File]::WriteAllText($replayPolicy, $replayText)
+    $freshRun = Invoke-Preflight $replay @('-HostName', 'claude')
+    Expect-True ($freshRun.ExitCode -eq 0 -and $freshRun.Stdout.Contains('ok policy resolved')) `
+        "a policy that has not run arms: $($freshRun.Stdout) $($freshRun.Stderr)"
+    Expect-True (-not $freshRun.Stdout.Contains('refuse replay')) 'a policy that has not run is no replay'
+    $filed = Join-Path $replayNs 'archive/2026-09-02/older'
+    $null = New-Item -ItemType Directory -Force -Path $filed
+    Copy-Item -LiteralPath $replayPolicy -Destination (Join-Path $filed 'shift-policy-9f2c40ab77e51d63.json')
+    $replayRun = Invoke-Preflight $replay @('-HostName', 'claude')
+    Expect-True ($replayRun.ExitCode -eq 1) "a policy that has already run refuses: $($replayRun.Stdout)"
+    Expect-True ($replayRun.Stdout -match '(?m)^refuse replay shift-policy\.json is shift 9f2c40ab77e51d63, which has already run and is filed as .*[\\/]archive[\\/]2026-09-02[\\/]older[\\/]shift-policy-9f2c40ab77e51d63\.json$') `
+        "the refusal names the filed copy: $($replayRun.Stdout)"
+    Expect-True ($replayRun.Stdout.Contains("explain replay A shift policy is one night's approval, and the verdict names the copy the archive filed")) `
+        'the refusal explains itself from the shared table'
+    Expect-True ($replayRun.Stdout -match '(?m)^repair remove .*shift-policy\.json so the next Start writes a fresh snapshot, or compose the shift again with Hunt or Quality$') `
+        'the repair removes the live file or composes again'
+    Expect-True ([IO.File]::ReadAllText($replayPolicy) -ceq $replayText) 'the refusal changes nothing'
+    Remove-Item -LiteralPath $replayPolicy -Force
+    $null = Invoke-Preflight $replay @('-Phase', 'snapshot')
+    $freshDoc = [IO.File]::ReadAllText($replayPolicy) | ConvertFrom-Json
+    Expect-True ($freshDoc.shiftId -cne '9f2c40ab77e51d63') "Start's own snapshot draws a fresh id"
+    $afterRun = Invoke-Preflight $replay @('-HostName', 'claude')
+    Expect-True ($afterRun.ExitCode -eq 0 -and -not $afterRun.Stdout.Contains('refuse replay')) `
+        "a fresh snapshot arms: $($afterRun.Stdout)"
+
     $snapDeadline = New-Site (Join-Path $root 'snapshot-deadline')
     $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 7200
     [IO.File]::WriteAllText((Join-Path (Join-Path $snapDeadline '.nightshift') 'deadline'), "$epoch`n")
