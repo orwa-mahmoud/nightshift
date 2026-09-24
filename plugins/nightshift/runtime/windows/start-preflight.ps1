@@ -542,9 +542,16 @@ if (-not $DryRun -and (Test-Path -LiteralPath $logPath -PathType Leaf) -and -not
         try {
             $archive = Join-Path (Get-NSLayoutPath $ns 'archive') $day
             $null = New-Item -ItemType Directory -Force -Path $archive
-            Move-Item -LiteralPath $logPath -Destination (Join-Path $archive 'shift-log.md') -Force
+            # A shift log Archive already filed that day keeps its name; the rotated journal takes the next.
+            $rotated = 'shift-log.md'
+            $rotateN = 1
+            while (Test-Path -LiteralPath (Join-Path $archive $rotated)) {
+                $rotateN++
+                $rotated = 'shift-log-' + $rotateN + '.md'
+            }
+            Move-Item -LiteralPath $logPath -Destination (Join-Path $archive $rotated)
             [IO.File]::WriteAllText($logPath, "# Shift log`n")
-            Write-Ok "journal rotated to archive/$day/shift-log.md"
+            Write-Ok "journal rotated to archive/$day/$rotated"
         }
         catch {
         }

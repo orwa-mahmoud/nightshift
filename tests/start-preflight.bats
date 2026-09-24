@@ -44,6 +44,20 @@ setup_site() { # <name> [punch-body]
   done < <(printf '%s\n' "$output")
 }
 
+@test "a rotated journal never replaces a shift log Archive already filed that day" {
+  p="$(setup_site preflight-rotate)"
+  log="$(bash -c '. "$1"; ns_layout_path "$2/.nightshift" shift-log' _ "$PLUGIN/lib/lib.sh" "$p")"
+  day="$(date +%Y-%m-%d)"
+  mkdir -p "$p/.nightshift/archive/$day"
+  printf 'a filed shift log\n' >"$p/.nightshift/archive/$day/shift-log.md"
+  head -c 600000 /dev/zero | tr '\0' 'x' >"$log"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "ok journal rotated to archive/$day/shift-log-2.md"
+  [ "$(cat "$p/.nightshift/archive/$day/shift-log.md")" = 'a filed shift log' ]
+  [ "$(wc -c <"$p/.nightshift/archive/$day/shift-log-2.md" | tr -d ' ')" -eq 600000 ]
+}
+
 @test "a missing site refuses and names the repair" {
   p="$BATS_TEST_TMPDIR/bare"
   mkdir -p "$p"
