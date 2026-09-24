@@ -268,6 +268,19 @@ cannot turn an unavailable check into a passed one.
 | `sections` | `[]` | Any of `shift`, `usage`, `items`, `review`, `interruptions`, `parked`, `snags`, `baseline`, `changed`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view; [the morning receipt](morning-receipt.md) says what each one holds |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
 
+`handoff.enabled` and `receipts.enabled` are separate switches. What each combination writes under
+`.nightshift/receipts/`:
+
+| `receipts.enabled` | `handoff.enabled` | Written |
+|---|---|---|
+| `true` | `true` | Item receipts, the index, and the morning receipt, which the index links |
+| `false` | `true` | The morning receipt alone. No item receipt or index, and no usage is measured, so the page has no Time and tokens section, its items are unlinked, and Review first lists each commit on its own line |
+| `true` | `false` | Item receipts and the index; no morning receipt |
+| `false` | `false` | Nothing |
+
+The work contract, the shift log, the parking lot, the snag log, the ledger and the archive are kept
+under every combination.
+
 `receipts` is the shift's record — one file per punch-list item under `.nightshift/receipts/`,
 plus a runtime-written index. It never reaches a public commit message.
 

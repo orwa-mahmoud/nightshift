@@ -405,3 +405,59 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
     diff -u <(printf '%s\n' "$a") <(printf '%s\n' "$b")
   done
 }
+
+# switch_project <name> <jq filter> — a shift with one ticked and one open item, a policy that names
+# it, and the owner's receipts and handoff switches set by the filter.
+switch_project() {
+  local p
+  p="$(new_project "$1")"
+  printf '## Items\n- [x] **1. first.**\n- [ ] **2. done.**\n' >"$p/.nightshift/punch-list.md"
+  write_shift_policy "$p" final
+  jq "$2" "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  printf '%s' "$p"
+}
+
+# work_through <project> — the stop that finds item 1 ticked and holds for item 2, then the stop
+# that finds every box ticked and clocks the shift out.
+work_through() {
+  run gate "$1"
+  is_block "$output"
+  printf '## Items\n- [x] **1. first.**\n- [x] **2. done.**\n' >"$1/.nightshift/punch-list.md"
+  run gate "$1"
+  is_release
+}
+
+@test "receipts off: the morning page is still written, with no item receipt or index beside it" {
+  p="$(switch_project switch-receipts-off '.receipts.enabled = false')"
+  work_through "$p"
+  page="morning-$(date '+%Y-%m-%d')-9f2c40ab77e51d63.md"
+  [ "$(ls "$p/.nightshift/receipts")" = "$page" ]
+  grep -qxF -- '- 1. first. — ticked' "$p/.nightshift/receipts/$page"
+  # Usage accounting belongs to the receipts, so the page has no time and tokens to report.
+  [ ! -e "$p/.nightshift/usage/marks.tsv" ]
+  ! grep -q '^## Time and tokens' "$p/.nightshift/receipts/$page"
+  # With no item spans to charge them to, each commit stands on its own line.
+  grep -qE '^- `[0-9a-f]+` init — ' "$p/.nightshift/receipts/$page"
+}
+
+@test "handoff off: the item receipts and their index stand, and no page is written" {
+  p="$(switch_project switch-handoff-off '.handoff.enabled = false')"
+  work_through "$p"
+  r="$p/.nightshift/receipts"
+  [ -f "$r/1-first.md" ]
+  [ -f "$r/2-done.md" ]
+  grep -qF '| 2. done. | ticked |' "$r/README.md"
+  ! grep -q '^Shift summary:' "$r/README.md"
+  [ -z "$(find "$r" -name 'morning-*')" ]
+  grep -qF 'morning receipt disabled by the owner (handoff.enabled)' "$p/.nightshift/shift-log.md"
+}
+
+@test "both off: no page, no item receipt and no index, and every other record stands" {
+  p="$(switch_project switch-both-off '.receipts.enabled = false | .handoff.enabled = false')"
+  work_through "$p"
+  [ -z "$(ls -A "$p/.nightshift/receipts" 2>/dev/null)" ]
+  grep -qF 'morning receipt disabled by the owner (handoff.enabled)' "$p/.nightshift/shift-log.md"
+  [ -f "$p/.nightshift/.ended" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy-9f2c40ab77e51d63.json" ]
+}

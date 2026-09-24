@@ -626,6 +626,54 @@ try {
     Expect-True (Test-Path -LiteralPath (Join-Path $blockedNs '.ended') -PathType Leaf) `
         'a receipt render failure still clocks the shift out'
 
+    # === 6c. How the receipts and handoff switches combine ===
+    # One stop finds the first item ticked and holds for the second; the next finds both ticked
+    # and clocks the shift out.
+    $rulesTemplate = Join-Path $plugin 'skills/nightshift/references/nightshift-rules-template.json'
+    $page = 'morning-2026-09-02-' + $shiftId + '.md'
+    foreach ($combo in @(
+            @{ Name = 'receipts-off'; Receipts = $false; Handoff = $true },
+            @{ Name = 'handoff-off'; Receipts = $true; Handoff = $false },
+            @{ Name = 'both-off'; Receipts = $false; Handoff = $false })) {
+        $comboProject = Join-Path $root ('switch-' + $combo.Name)
+        $comboNs = New-ReceiptProject -Path $comboProject -Items "- [x] Quiet the lint rule`n- [ ] Rewrite the import map`n"
+        $comboRules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($rulesTemplate))
+        $comboRules['receipts']['enabled'] = $combo.Receipts
+        $comboRules['handoff']['enabled'] = $combo.Handoff
+        [IO.File]::WriteAllText((Join-Path $comboNs 'rules.json'), ((ConvertTo-NSCanonicalJson $comboRules) + "`n"), $utf8)
+        [IO.File]::WriteAllText((Join-Path $comboNs '.shift-armed'), '', $utf8)
+        $payload = '{"session_id":"11111111-2222-3333-4444-555555555555","cwd":"' + ($comboProject -replace '\\', '/') + '"}'
+        $held = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $payload `
+            -Environment @{ CLAUDE_PROJECT_DIR = $comboProject }
+        Expect-True $held.StdoutText.Contains('"decision":"block"') "$($combo.Name): an open item holds the shift"
+        [IO.File]::WriteAllText((Join-Path $comboNs 'punch-list.md'),
+            "# Punch List`n`n## Gates`n`n- Item gate: ``npm run lint```n`n## Items`n`n- [x] Quiet the lint rule`n- [x] Rewrite the import map`n", $utf8)
+        $released = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $payload `
+            -Environment @{ CLAUDE_PROJECT_DIR = $comboProject }
+        Expect-True (-not $released.StdoutText.Contains('"decision":"block"')) "$($combo.Name): every box ticked releases the shift"
+        $receiptsDir = Join-Path $comboNs 'receipts'
+        $names = @(Get-ChildItem -LiteralPath $receiptsDir -File -Force -ErrorAction SilentlyContinue |
+                ForEach-Object { $_.Name } | Sort-Object)
+        switch ($combo.Name) {
+            'receipts-off' {
+                Expect-Equal $page ($names -join ',') 'receipts off: the page is written, with no item receipt or index beside it'
+                if ($names -ccontains $page) {
+                    Expect-True ([IO.File]::ReadAllText((Join-Path $receiptsDir $page)).Contains("- Quiet the lint rule $dash ticked")) `
+                        'receipts off: the page still lists every item'
+                }
+            }
+            'handoff-off' {
+                Expect-True (($names -ccontains 'quiet-the-lint-rule.md') -and ($names -ccontains 'rewrite-the-import-map.md') -and
+                    ($names -ccontains 'README.md')) 'handoff off: the item receipts and their index stand'
+                Expect-True (-not ($names -ccontains $page)) 'handoff off: no page is written'
+            }
+            'both-off' {
+                Expect-Equal 0 $names.Count 'both off: nothing is written under receipts/'
+                Expect-True (Test-Path -LiteralPath (Join-Path $comboNs '.ended') -PathType Leaf) 'both off: the shift still clocks out'
+            }
+        }
+    }
+
     # === 6b. An unreadable punch list is never reported as done ===
     $onWindows = $env:OS -eq 'Windows_NT'
     if (-not $onWindows) {

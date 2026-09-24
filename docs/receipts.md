@@ -63,9 +63,24 @@ Three settings each control one thing, and any combination works:
 
 Usage off with duration on keeps the Time table; duration off with usage on keeps the Tokens table;
 with both off the item is still ticked and its sessions still recorded. `off` means you turned a
-measurement off, and `unavailable` means the host did not report it. `receipts.enabled=false`
-disables receipt files while retaining the work contract and other records. See
+measurement off, and `unavailable` means the host did not report it. See
 [Owner knobs](knobs.md#shift-handoff-and-archive) for the exact settings.
+
+## Receipts and the morning receipt are separate switches
+
+`receipts.enabled` controls the item files, the index and usage measurement; `handoff.enabled`
+controls the morning receipt, which is still written into `receipts/`:
+
+- **Both on** (the default): item receipts, the index, and the morning receipt, linked from the
+  index.
+- **Receipts off:** the morning receipt alone. No item receipt or index is written and no usage is
+  measured, so the page has no Time and tokens section, its items are not linked, and Review first
+  lists each commit on its own line.
+- **Handoff off:** item receipts and the index, with no morning receipt.
+- **Both off:** nothing under `receipts/`.
+
+In every case the work contract, the shift log, the parking lot, the snag log, the evidence ledger
+and the archive are kept.
 
 ## Keep the receipts useful after the shift
 
