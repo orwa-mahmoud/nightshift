@@ -247,7 +247,7 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 @test "the archive skill moves only finished records, never the contract or open items" {
   s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/archive/SKILL.md"
   [ -f "$s" ]
-  grep -qF 'stay exactly where they are' "$s"      # open items + contract stay
+  grep -qF 'Open items, the contract and the gates stay live' "$s"  # open items + contract stay
   grep -qF 'never ticks a box' "$s"                # files paperwork, does no work
   grep -qF 'archive/<YYYY-MM-DD>/' "$s"            # dated folders are the shape
   grep -qF 'date +%Y-%m-%d' "$s"
