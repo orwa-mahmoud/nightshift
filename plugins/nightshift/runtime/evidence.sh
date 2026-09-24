@@ -15,8 +15,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
-# shellcheck source=plugins/nightshift/lib/paths.sh
-. "$_here/../lib/paths.sh"
+# shellcheck source=plugins/nightshift/lib/layout.sh
+. "$_here/../lib/layout.sh"
 SCHEMA_PATH="$_here/../skills/nightshift/references/schemas/v1/finding.json"
 EMIT_JQ="$_here/evidence-emit.jq"
 

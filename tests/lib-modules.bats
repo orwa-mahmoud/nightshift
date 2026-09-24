@@ -13,7 +13,7 @@ LIB_DIR="$BATS_TEST_DIRNAME/../plugins/nightshift/lib"
 }
 
 @test "lib.sh may be sourced twice" {
-  run bash -c '. "$1" && . "$1" && ns_have_cmd bash && [ "$NS_STATE_VERSION" = 1 ] && printf ok' _ "$LIB"
+  run bash -c '. "$1" && . "$1" && ns_have_cmd bash && [ "$NS_STATE_VERSION" = 2 ] && printf ok' _ "$LIB"
   [ "$status" -eq 0 ]
   [ "$output" = ok ]
 }
@@ -33,6 +33,22 @@ LIB_DIR="$BATS_TEST_DIRNAME/../plugins/nightshift/lib"
     fi
   done
   grep -R --include='*.sh' -lF 'lib/lib.sh' "$root/hooks" "$root/runtime" | grep -q .
+}
+
+@test "layout.sh loads on its own, and only the callers that answer before the library load it" {
+  ns="$BATS_TEST_TMPDIR/site/.nightshift"
+  mkdir -p "$ns"
+  run bash -c 'set -u; . "$1"; ns_layout_set a "$2" armed; printf "%s\n" "$a"
+    printf "2\n" >"$2/state-version"; ns_layout_set a "$2" armed; printf "%s\n" "$a"
+    if type ns_workspace_root >/dev/null 2>&1; then exit 1; fi' _ "$LIB_DIR/layout.sh" "$ns"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$ns/.shift-armed
+$ns/run/.shift-armed" ]
+  root="$BATS_TEST_DIRNAME/../plugins/nightshift"
+  run bash -c 'cd "$1" && grep -RlF --include="*.sh" "lib/layout.sh" hooks runtime | sort' _ "$root"
+  [ "$output" = "hooks/shared/cold-stop.sh
+hooks/shared/idle.sh
+runtime/evidence.sh" ]
 }
 
 @test "lib.sh is a loader; each public function has one implementation" {

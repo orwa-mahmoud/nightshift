@@ -525,7 +525,7 @@ documented_pages() {
   # Each state file the scaffold writes has a row under the path the current layout gives it.
   for key in punch-list parking-lot snag-log drafting-table work-orders opportunity-map product-research shift-log; do
     rel="$(bash -c '. "$1"; ns_layout_rel_at r "$NS_LAYOUT_VERSION" "$2"; printf %s "$r"' _ \
-      "$SKILLS/../lib/paths.sh" "$key")"
+      "$SKILLS/../lib/layout.sh" "$key")"
     grep -qF "| \`$rel\` |" "$map" || { echo "state-map.md has no row for $rel"; return 1; }
   done
   for f in rules.json run/shift-policy.json state-version run/deadline 'receipts/<id>-<slug>.md' \

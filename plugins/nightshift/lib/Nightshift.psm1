@@ -18,7 +18,7 @@ function Test-NSWindows {
 # State layout. Every path under .nightshift/ comes from state-layout.tsv beside this module, read
 # once at import: a key resolves to the path its workspace's layout gives it. Layout 2 is the one
 # this plugin writes; a version-1 or legacy workspace keeps the paths it has, so an upgraded plugin
-# goes on guarding it, a shift armed before the upgrade included. Mirrors lib/paths.sh.
+# goes on guarding it, a shift armed before the upgrade included. Mirrors lib/layout.sh.
 $script:NSLayoutVersion = $script:NSStateVersion
 $script:NSLayoutRows = New-Object 'System.Collections.Generic.List[object]'
 $script:NSLayoutPaths = @{}

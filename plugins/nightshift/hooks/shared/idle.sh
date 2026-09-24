@@ -3,7 +3,7 @@
 # project (CURSOR_PROJECT_DIR / CLAUDE_PROJECT_DIR / CODEX_PROJECT_DIR) and
 # that site has no armed shift, exit before loading the library or reading
 # stdin. Cursor sets that env even when it hands over a descriptor that never
-# closes — that is the hang this stands down. Only the path helper is loaded,
+# closes — that is the hang this stands down. Only the layout table is loaded,
 # to find the markers wherever the workspace's layout keeps them.
 #
 # If the host did not name a project, the payload cwd is the documented
@@ -13,8 +13,8 @@ if [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ]; then
   _ns_idle_host="${CURSOR_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-}}}"
   if [ -n "$_ns_idle_host" ] \
     && [ ! -e "$_ns_idle_host/.nightshift-link" ] && [ ! -L "$_ns_idle_host/.nightshift-link" ]; then
-    # shellcheck source=plugins/nightshift/lib/paths.sh
-    . "${BASH_SOURCE[0]%/*}/../../lib/paths.sh"
+    # shellcheck source=plugins/nightshift/lib/layout.sh
+    . "${BASH_SOURCE[0]%/*}/../../lib/layout.sh"
     declare _ns_idle_armed _ns_idle_ended
     ns_layout_set _ns_idle_armed "$_ns_idle_host/.nightshift" armed
     ns_layout_set _ns_idle_ended "$_ns_idle_host/.nightshift" ended
