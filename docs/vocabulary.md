@@ -1,6 +1,8 @@
 # Vocabulary
 
-The working files and the terms you will see during a shift:
+The working files and the terms you will see during a shift. Who writes each file under
+`.nightshift/`, whether it can be rebuilt, and when it changes or is filed is in the
+[state map](../plugins/nightshift/skills/nightshift/references/shift/state-map.md#every-file-and-who-writes-it).
 
 | Term | File / mechanism | Meaning |
 |---|---|---|
