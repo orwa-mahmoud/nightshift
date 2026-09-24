@@ -6,8 +6,9 @@ the clock starts, and how several entries become one shift.
 ## State map
 
 `punch-list.md` is owner-approved work active in this shift; `drafting-table.md` is known work
-staged for a later shift; `parking-lot.md` holds unresolved owner decisions and the default that
-kept work moving; `work-orders.md` holds timed catalog work composed through Hunt. Ordinary known
+staged for a later shift, by the owner or at the owner's request; `parking-lot.md` holds unresolved
+owner decisions and the default that kept work moving; `snag-log.md` holds every bug a shift found
+and fixed; `work-orders.md` holds timed catalog work composed through Hunt. Ordinary known
 plans never become work orders. Every skill binds `$TASK_ROOT`, `$NIGHTSHIFT_WORKSPACE`, and `$NS`
 itself, once, and never re-resolves them.
 

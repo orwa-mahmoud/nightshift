@@ -17,7 +17,7 @@ E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/comp
 }
 
 @test "API drift parks breaking decisions and refuses silent API changes" {
-  grep -qi 'drafting-table.md' "$E"
+  grep -qi 'owner decision in parking-lot.md' "$E"
   grep -qi 'Never silently change a public API' "$E"
   grep -qi 'Never add contract tooling' "$E"
   grep -qi 'accept a generated diff blindly' "$E"

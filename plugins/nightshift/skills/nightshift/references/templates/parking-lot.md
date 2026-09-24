@@ -2,7 +2,9 @@
 
 > Decisions for the owner. During a shift the agent parks here instead of asking — one short,
 > plain-language entry per decision, written for a human.
-> Known tasks and follow-ups do not belong here: stage those in `drafting-table.md`. Active approved
+> Known tasks do not belong here: the owner stages later work in `drafting-table.md`, and a bug a
+> shift finds is fixed on that shift and recorded in `snag-log.md`. A fix that would change
+> behaviour users rely on does belong here, with the default chosen and applied. Active approved
 > work belongs in `punch-list.md`; timed Hunt orders belong in `work-orders.md`.
 
 **Each entry:** a sentence or two of context · the production-grade default chosen so work could

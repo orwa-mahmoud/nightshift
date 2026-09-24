@@ -4,12 +4,15 @@ What each file under `.nightshift/` holds. One copy; every skill that stages, pr
 work points here.
 
 - `punch-list.md` → owner-approved work active in this shift.
-- `staging/drafting-table.md` → known work staged for a later shift.
+- `staging/drafting-table.md` → known work the owner stages for a later shift.
 - `inbox/parking-lot.md` → unresolved owner decisions plus the default chosen so work continues.
 - `staging/work-orders.md` → timed catalog work composed only through Hunt.
 
-Ordinary plans belong in the drafting table, never in Hunt or the parking lot. Each file keeps its
-own lifecycle; never reclassify one as another.
+Ordinary plans belong in the drafting table, never in Hunt or the parking lot, and the drafting
+table is the owner's: the agent writes it only when the owner asks. A bug found on a shift is fixed
+on that shift and recorded in the snag log, never staged for later; only a fix that would change
+behaviour users rely on becomes a parking-lot decision, with the default chosen and applied. Each
+file keeps its own lifecycle; never reclassify one as another.
 
 ## Layout
 
@@ -47,10 +50,10 @@ and refuses deleting or forging the control files: `STOP`, and in `run/` `.shift
 | File | Written by | Rebuilt | Changes | Leaves live storage | Governed by |
 |---|---|---|---|---|---|
 | `punch-list.md` | Owner, and the agent through Start, Hunt or Quality. The agent ticks boxes. The runtime adds each item's `<!-- id: … -->` comment when the shift policy is written, before arming. | No | Composed before arming; while armed only boxes tick | Once the shift has ended, `archive-receipts` files the contract and the ticked items as the shift folder's `punch-list.md`; open items stay | The contract above `## Items`; its digests in `run/shift-policy.json` |
-| `staging/drafting-table.md` | Owner, the agent, Import issues | No | When work is staged, or cut into the punch list | Start moves an item out when it cuts it; never archived | — |
+| `staging/drafting-table.md` | The owner; the agent only when the owner asks, as Quality's "draft for later" and Import issues do | No | When work is staged, or cut into the punch list | Start moves an item out when it cuts it; never archived | — |
 | `staging/work-orders.md` | Hunt; `ns scaffold work-orders` creates it the first time Hunt stages an order | No | Hunt composes; Start cuts | Archive files an order ticked in place and drops an empty heading | — |
-| `inbox/parking-lot.md` | The agent parks decisions. The runtime adds permission gaps (`park-needs`) and watchman revival notices. The owner answers. | No | During the shift; answered in the morning | Archive files answered entries and leaves a `Filed:` pointer | — |
-| `inbox/snag-log.md` | The agent. The runtime adds a broken archive-pointer entry. | No | As findings are made and dispositioned | Archive files handled entries and leaves a `Filed:` pointer | `finding · evidence · disposition · date` |
+| `inbox/parking-lot.md` | The agent parks decisions, including a fix that would change behaviour users rely on. The runtime adds permission gaps (`park-needs`) and watchman revival notices. An ordinary session or another agent may add one for the owner to review. The owner answers. | No | During the shift; answered in the morning | Archive files answered entries and leaves a `Filed:` pointer | — |
+| `inbox/snag-log.md` | The agent, for every bug it finds: fixed on the shift, with the fix as the disposition. The runtime adds a broken archive-pointer entry. An ordinary session or another agent may add one for the owner to review. | No | As findings are made and dispositioned | Archive files handled entries and leaves a `Filed:` pointer | `finding · evidence · disposition · date` |
 | `run/shift-log.md` | The runtime (gates, watchman, Stop and Reset) and the agent | No | Every cycle and control event | Start rotates it into the archive past about 500 KB; Archive moves it whole | — |
 | `product/product-research.md` | The agent; `ns scaffold product` creates it when a product-evolution item is cut | No | Product-evolution cycles | Between shifts Archive appends its entries to the archive copy and restores the template | — |
 | `product/opportunity-map.md` | The agent; `ns scaffold product` creates it when a product-evolution item is cut | No | Product-evolution cycles | Archive files `shipped` and `rejected` entries | Statuses in the template |

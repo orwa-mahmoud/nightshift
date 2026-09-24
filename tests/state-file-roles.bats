@@ -8,7 +8,7 @@ REF="$ROOT/nightshift/references"
   # reads its own list once from the main skill, and composition reads the file it is told to open.
   map="$REF/shift/state-map.md"
   grep -qF 'punch-list.md` → owner-approved work active in this shift' "$map"
-  grep -qF 'drafting-table.md` → known work staged for a later shift' "$map"
+  grep -qF 'drafting-table.md` → known work the owner stages for a later shift' "$map"
   grep -qF 'parking-lot.md` → unresolved owner' "$map"
   grep -qF 'work-orders.md` → timed catalog work composed' "$map"
   grep -qF 'only through Hunt' "$map"
@@ -45,17 +45,39 @@ REF="$ROOT/nightshift/references"
 @test "state templates say what belongs and what does not" {
   grep -qF 'Owner-approved active work belongs here' "$REF/templates/punch-list.md"
   grep -qF 'known later work' "$REF/templates/drafting-table.md"
-  grep -qF 'Known tasks and follow-ups do not belong here' "$REF/templates/parking-lot.md"
+  grep -qF 'Known tasks do not belong here' "$REF/templates/parking-lot.md"
   grep -qF 'composed only through Nightshift: Hunt' "$REF/templates/work-orders.md"
 }
 
 @test "the work-order file is scaffolded from its template, not written by hand" {
-  # Setup runs the scaffold, which copies every template including this one.
+  # Hunt runs the scaffold for it the first time it stages an order.
   grep -qE 'ns"? scaffold' "$ROOT/setup/SKILL.md"
+  grep -qF 'ns" scaffold work-orders' "$ROOT/hunt/SKILL.md"
   [ -f "$REF/templates/work-orders.md" ]
   if grep -qF 'work-orders.md` with a one-line header' "$ROOT/setup/SKILL.md"; then
     return 1
   fi
+}
+
+@test "only the owner puts work on the drafting table, and a bug is fixed on the shift that found it" {
+  grep -qF "The drafting
+table is the owner's: write it only when the owner asks for it" "$ROOT/nightshift/SKILL.md"
+  grep -qF 'record it in
+`$NS/inbox/snag-log.md` with the fix as its disposition' "$ROOT/nightshift/SKILL.md"
+  grep -qF '| `staging/drafting-table.md` | The owner; the agent only when the owner asks' "$REF/shift/state-map.md"
+  if grep -qF 'Owner, the agent, Import issues' "$REF/shift/state-map.md"; then return 1; fi
+  for t in punch-list drafting-table snag-log parking-lot; do
+    tr '\n' ' ' <"$REF/templates/$t.md" | tr -s ' >' ' ' | grep -qF 'fixed on' \
+      || { echo "$t.md does not say a bug is fixed on the shift that found it"; return 1; }
+  done
+  # No skill or catalog shift sends a finding or a follow-up to the drafting table on its own.
+  if grep -RniE '(stage|park|append|record|put|move)[^.]*drafting-table\.md' \
+    "$REF/compose/shifts" "$ROOT/nightshift/SKILL.md" "$ROOT/hunt/SKILL.md" "$ROOT/start/SKILL.md"; then
+    return 1
+  fi
+  # The owner's own requests still write it.
+  grep -qF 'draft for later' "$ROOT/quality/SKILL.md"
+  grep -qF 'drafting-table.md' "$ROOT/import-issues/SKILL.md"
 }
 
 @test "ordinary workflow guidance does not call later work parked" {

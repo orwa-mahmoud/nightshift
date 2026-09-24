@@ -18,7 +18,7 @@ E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/comp
 
 @test "localization parity parks language judgment and refuses invention" {
   grep -qi 'requires language judgment' "$E"
-  grep -qi 'drafting-table.md' "$E"
+  grep -qi 'owner decision in parking-lot.md' "$E"
   grep -qi 'Never invent or machine-generate translations' "$E"
 }
 

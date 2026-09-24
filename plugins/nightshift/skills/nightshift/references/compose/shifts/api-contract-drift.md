@@ -28,8 +28,10 @@ Never select this entry in artifact mode. Do not `git init` a notes folder to ma
     status codes, or compatibility policy.
   - Repair non-breaking artifact drift one coherent cluster at a time from the established source
     of truth. Run the contract command and item gate, commit.
-  - Park every potentially breaking change in drafting-table.md with affected consumers, evidence,
-    compatibility question, and rollback path. Do not choose the public contract unattended.
+  - Record every potentially breaking change as an owner decision in parking-lot.md with the
+    affected consumers, evidence, the compatibility question, the rollback path, and the default
+    this shift keeps: the public contract as it stands. Do not choose the public contract
+    unattended.
   - Never silently change a public API, invent a compatibility or versioning policy, or regenerate
     from a source whose authority is unclear.
   - Never add contract tooling, accept a generated diff blindly, or update snapshots merely to

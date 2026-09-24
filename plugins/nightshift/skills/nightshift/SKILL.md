@@ -24,7 +24,7 @@ for what it holds:
 - `receipts/` — what the night delivered, one file per item, written as the work happens.
 - `inbox/parking-lot.md` — unresolved owner decisions and the default chosen so work continued.
 - `inbox/snag-log.md` — findings with dispositions, so a later pass never re-reports an earlier one.
-- `staging/drafting-table.md` — known work staged for a later shift.
+- `staging/drafting-table.md` — known work the owner stages for a later shift.
 - `staging/work-orders.md` — timed catalog work composed only through Hunt.
 - `run/shift-log.md` — the journal: one line per cycle, plus a handover line if the night ended
   early. Everything else under `run/` is the runtime's own.
@@ -225,8 +225,14 @@ time rather than pretending it was custom.
 A shift usually runs while the owner sleeps, and the shipped setting parks questions rather than
 waiting on one. When the question tool for this host is denied, that is the answer: do NOT ask.
 Choose the most sensible production-grade default, record the decision and your reasoning in
-`$NS/inbox/parking-lot.md` in plain language, and keep working. The owner reads it over coffee. Known
-later work is not a decision: stage it in `$NS/staging/drafting-table.md`.
+`$NS/inbox/parking-lot.md` in plain language, and keep working. The owner reads it over coffee.
+
+A bug found on the shift is not a decision either. Fix it on this shift and record it in
+`$NS/inbox/snag-log.md` with the fix as its disposition; never stage it for later and never leave
+the owner to decide whether to fix it. Only a fix that would change behaviour users rely on is the
+owner's call: park it with the default chosen, apply that default, and keep working. The drafting
+table is the owner's: write it only when the owner asks for it, as Quality's "draft for later" and
+Import issues do.
 
 The owner can lift that deny for a host — an empty value against its question tool allows it — and
 then asking is permitted and this section does not forbid it. Ask only about what genuinely needs

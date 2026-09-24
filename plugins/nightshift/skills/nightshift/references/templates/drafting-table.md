@@ -3,8 +3,10 @@
 > A staging file, not the enforced list. The clock-out gate reads only `punch-list.md` — nothing
 > here is gated. Draft and agree items here first, then promote them into `punch-list.md` under
 > `## Items` to start the shift.
-> This is for known later work, including follow-ups with dependencies. It is not for unresolved
-> owner decisions (`parking-lot.md`) or timed catalog work composed through Hunt (`work-orders.md`).
+> This is for known later work the owner stages, including follow-ups with dependencies; the
+> agent writes here only when the owner asks. A bug a shift finds is fixed on that shift and
+> recorded in `snag-log.md`, never staged here. It is not for unresolved owner decisions
+> (`parking-lot.md`) or timed catalog work composed through Hunt (`work-orders.md`).
 
 **Item shape** — one top-level checkbox per item; all detail as indented plain `-` sub-bullets
 (never a nested checkbox — only the top line is a box, so the gate counts one open item per task).

@@ -24,12 +24,13 @@ Never select this entry in artifact mode. Do not `git init` a notes folder to ma
     compatibility, or scope still needs an owner decision.
   - Resolve one actionable cluster at a time, including the underlying work—not only the comment.
     Run the item gate, commit. Remove or update the marker only when its underlying debt is gone.
-  - Stage ambiguous findings in drafting-table.md with the decision needed, evidence, source path,
-    and next action. Do not put them in the live punch list and do not guess the answer.
+  - Record each ambiguous finding as an owner decision in parking-lot.md with the decision needed,
+    evidence, source path, next action, and the default this shift keeps: the marker and the code it
+    marks stay as they are. Do not put them in the live punch list and do not guess the answer.
   - Never invent a feature, requirement, or compatibility policy from a vague comment.
   - Never delete or reword a marker merely to make the inventory smaller.
-  - Ends when every discovered marker is either resolved with verified underlying work or staged
-    in drafting-table.md with a concrete owner decision and source reference.
+  - Ends when every discovered marker is either resolved with verified underlying work or recorded
+    in parking-lot.md as a concrete owner decision with its source reference.
   - Verify: the item gate is green at every commit; a final scoped search finds no unresolved
-    actionable markers and every remaining ambiguous marker has a drafting-table entry.
+    actionable markers and every remaining ambiguous marker has a parking-lot entry.
 ```
