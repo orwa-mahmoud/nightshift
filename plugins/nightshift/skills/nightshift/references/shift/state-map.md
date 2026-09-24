@@ -86,6 +86,7 @@ read it as empty.
 | `run/usage/` (`segments.tsv`, `marks.tsv`, `pauses.tsv`, `active`, `window`, `previous-pulse`, `previous-ticked`, `.ticked-now`) | The runtime | No | Every pulse, tick, switch of item, and pause | The next Start renames it `run/usage-<shiftId>/`, and Archive files that | — |
 | `run/evidence/findings.jsonl` | The agent, through the ledger helper, which validates each record | No | Append-only during the shift | The clock-out gate files it as `findings-<shiftId>.jsonl` and empties the live ledger | `schemas/v1/finding.json` |
 | `archive/` | The clock-out gate, `archive-receipts`, the Archive skill | No | Each clock-out and each Archive | Only `retain-history --apply`, when the owner set `retention.archiveDays` | `archive.root`, `archive.layout` |
+| `archive/history-index.md` | The Archive skill | No | One entry per archived shift, updated when the shift is filed again | Never | The Archive skill's `## Index` |
 | `run/scheduled.log` | Scheduled runs | No | Each scheduled run | Only `retain-history --apply`, when the owner set `retention.runtimeLogDays` | — |
 | `support/` | `export-support`, on request | Yes | On each export | Never automatically; the owner removes it | — |
 | `run/provision-transaction.json`, `run/provision-baseline/`, `run/provision-surface` | `provision` | No | Around a provisioning step | Removed when the step commits or rolls back | — |

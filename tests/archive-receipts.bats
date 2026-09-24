@@ -138,6 +138,16 @@ new_artifact() {
   grep -qF 'not-a-dir' "$p/.nightshift/archive/2026-08-28/receipts"
 }
 
+@test "the Archive skill gives the history index one name and one shape on every host" {
+  grep -qF '`history-index.md` at the top of the' "$ARCHIVE_SKILL"
+  grep -qF 'an `index.md` there opens with `# Archived shifts`' "$ARCHIVE_SKILL"
+  grep -qF 'Any other `index.md` is left alone.' "$ARCHIVE_SKILL"
+  grep -qF '# history-context / preset' "$ARCHIVE_SKILL"
+  grep -qF 'record gaps: <what is missing or corrupt, or none>' "$ARCHIVE_SKILL"
+  grep -qF '| `archive/history-index.md` | The Archive skill |' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/shift/state-map.md"
+}
+
 @test "Archive skill names the receipts helper on POSIX and Windows" {
   grep -qE 'ns"? archive-receipts' "$ARCHIVE_SKILL"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$ARCHIVE_SKILL"

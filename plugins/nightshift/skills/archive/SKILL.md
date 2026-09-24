@@ -164,11 +164,42 @@ files.
 
 ## Index
 
-After filing, write a lightweight private index of archived shifts for later comparison
-using the history-context template in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`.
-The index lists each archived shift's objective, contracts, host, work target, outcome, evidence
-locators, verification, commits or artifacts, duration, and ending. Corrupt or missing fields are
+After filing, add the shift to the private history index: `history-index.md` at the top of the
+archive root (`archive/history-index.md` by default), one file and one shape on every host. When it
+does not exist but an `index.md` there opens with `# Archived shifts`, that file is the index under
+an older name: rename it to `history-index.md` and say so. Any other `index.md` is left alone. With
+neither, create the file with its heading:
+
+~~~markdown
+# Archived shifts
+
+One entry per archived shift, from the history-context template. Fields not on record read unavailable.
+~~~
+
+Each shift is one entry in this shape. Its block is the history-context template in
+`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/receipts/cycle-specialist-evidence.md`:
+
+~~~markdown
+## <shift id, or unavailable> — <one-line objective> (<plugin version>)
+
+```text
+# history-context / preset
+objective: <text>
+contracts: <ids>
+verification: <profile>
+sources: <allowed locators>
+limits: <hours, elevation>
+```
+host: <host> · work target: <target, mode> · branch <branch> from <commit>
+outcome: <ticked of total; pull request, merge, release>
+evidence: <locators under the archive root>
+commits: <count and tip, or the artifacts>
+duration: <start> → <end>
+ending: <how the shift ended>
+record gaps: <what is missing or corrupt, or none>
+~~~
+
+Filing a shift again updates its entry instead of adding a second. Corrupt or missing fields are
 recorded — never invented. Compare prior shifts from that index to reuse evidence locators and
 plans only; never replay side effects. Render audience-specific handoffs from one evidence truth.
 
