@@ -97,10 +97,11 @@ else
 fi
 
 # The entry the owner reads over coffee: what is missing, which item it holds, and the default
-# taken so the night could continue. The line is also the idempotency key — an entry already in
-# the file is the same work already parked.
+# taken so the night could continue. It is a `- ` bullet, the shape Archive files once the owner
+# answers it. The text is also the idempotency key — an entry already in the file, as a bullet or
+# as the bare line an earlier release wrote, is the same work already parked.
 entry() { # <category> <title>
-  printf '**needs allowance: %s** — item "%s" needs the %s elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.' \
+  printf -- '- **needs allowance: %s** — item "%s" needs the %s elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.' \
     "$1" "$2" "$1"
 }
 
@@ -110,7 +111,7 @@ ADDED=0
 while IFS="$TAB" read -r category title; do
   [ -n "$category" ] || continue
   line="$(entry "$category" "$title")"
-  if [ -f "$LOT" ] && grep -qxF "$line" "$LOT"; then
+  if [ -f "$LOT" ] && grep -qxF -e "$line" -e "${line#- }" "$LOT"; then
     continue
   fi
   grep -qxF "$line" "$TMPD/new" 2>/dev/null && continue

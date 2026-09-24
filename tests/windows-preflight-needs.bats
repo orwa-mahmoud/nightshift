@@ -65,6 +65,8 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'a second run adds nothing' "$LOGIC"
   grep -qF 'a second run leaves the file byte-identical' "$LOGIC"
   grep -qF 'the file carries exactly one entry per gap' "$LOGIC"
+  grep -qF 'every entry is a bullet Archive files once answered' "$LOGIC"
+  grep -qF 'a bare-line entry is not parked a second time' "$LOGIC"
   grep -qF 'park-needs never touches a parking lot it has nothing to add to' "$LOGIC"
 }
 

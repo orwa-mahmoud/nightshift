@@ -8213,7 +8213,9 @@ function Get-NSPreflightNeeds {
 }
 
 # One parking-lot entry per item and category, idempotent: Start may run twice
-# over the same punch list and the owner still reads one entry per gap.
+# over the same punch list and the owner still reads one entry per gap. Each entry is
+# a `- ` bullet, the shape Archive files once the owner answers it; an entry an
+# earlier release wrote as a bare line is still recognised as already parked.
 function Add-NSParkedNeeds {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $paths = Get-NSPolicyPaths $Workspace
@@ -8240,7 +8242,7 @@ function Add-NSParkedNeeds {
         $title = [string]$gap['title']
         $marker = '**needs allowance: {0}** {1} item "{2}"' -f $category, $dash, $title
         if ($builder.ToString().Contains($marker)) { continue }
-        $null = $builder.Append("`n")
+        $null = $builder.Append("`n- ")
         $null = $builder.Append($marker)
         $null = $builder.Append((' needs the {0} elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.' -f $category))
         $null = $builder.Append("`n")
