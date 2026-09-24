@@ -17,25 +17,24 @@ The clock-out gate renders this page through `ns morning-receipt`. On a host wit
 neither `jq` nor `python3` the helper writes `JSON parser unavailable` to `$NS/shift-log.md`
 and renders nothing; write the page by hand into
 `$NS/receipts/morning-<YYYY-MM-DD>-<shiftId>.md`, or `morning-<YYYY-MM-DD>.md` when no shift
-policy carries an id. Fill every field from records already on disk — the punch list, the
-parking lot, `$NS/shift-log.md`, the ledger — and leave a field `unavailable` rather than
-inferring it. A check that did not run is never described as passed. Omit a section with
-nothing to report.
+policy carries an id. Fill every field from records already on disk — the punch list,
+`$NS/usage/`, the parking lot, the snag log, `$NS/shift-log.md`, the ledger, the work target's
+history — and leave a field `unavailable` rather than inferring it. A check that did not run is
+never described as passed. Omit a section with nothing to report.
 
 ```text
 # Morning receipt
 Receipts:
 - [index] (./README.md)
-- [<NN. full title>] (./<id>-<slug>.md)
 - Policy record: <accepted | absent — the shift wrote no policy | malformed — the policy file is present but unreadable or fails the schema>
 
-## Shift
+## How it ended
 
 - Shift: <shiftId or omit>
 - Host: <claude|codex|cursor>
 - Work target: <path>
-- Started: <UTC stamp or omit>
-- Ended: <last shift-log stamp>
+- Started: <the arming mark, else the policy createdAt; UTC with the zone>
+- Ended: <when the shift closed, UTC with the zone>
 - Ending: <done|stop|deadline|stall|unknown>
 - Items: <n> ticked, <n> open
 - Commits: <n>            # artifact mode: Receipts: <n>
@@ -45,13 +44,43 @@ Receipts:
 - Disabled by owner: <commands a chosen level of none skipped, else none>
 - Unavailable: <tools or sources the ledger marked unavailable, else none>
 
-## Parked
+## Time and tokens
 
-- <decision>
+- Span: <first usage mark> → <end>, UTC
+- Working: <wall minus paused>
+- Paused: <total, or none>
+  - <reason from usage/pauses.tsv>: <time>
+- Wall: <end minus start>
+
+| Tokens | Amount |
+| --- | ---: |
+| input | <n or unavailable> |      # a measurement the owner turned off: - Tokens: off
+
+## Items
+
+- [<NN. full title>] (./<id>-<slug>.md) — <ticked|open>
+
+## Review first
+
+- <item or commit> — <n> files, <n> lines (+<added>/-<removed>), <n> commits
+- Whole range: `git log --stat <first>^..<last>`     # artifact mode: does not apply
+
+## Interruptions
+
+- <shift-log line: revival, API failure, stall, usage limit, stop>
+
+## Decisions for you
+
+- <the whole parked entry>
   - Default: <what was chosen so work continued>
   - Rollback: <how to undo it>
 
-## Next
+## Found but not fixed
 
-- <the next open punch-list item>
+- <finding> — <disposition and reason, or open>
+
+## Next step
+
+- <each open punch-list item>
+- Handover: <the last handover line from the shift log>
 ```

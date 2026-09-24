@@ -265,7 +265,7 @@ cannot turn an unavailable check into a passed one.
 | `view` | `owner` | `owner`, `reviewer`, `release`, `artifact` |
 | `language` | `auto` | Follows the language of the conversation that ran the shift. Paths, commands and identifiers are never translated |
 | `detail` | `concise` | `concise` or `detailed` |
-| `sections` | `[]` | Any of `shift`, `baseline`, `changed`, `parked`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view |
+| `sections` | `[]` | Any of `shift`, `usage`, `items`, `review`, `interruptions`, `parked`, `snags`, `baseline`, `changed`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view; [the morning receipt](morning-receipt.md) says what each one holds |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
 
 `receipts` is the shift's record — one file per punch-list item under `.nightshift/receipts/`,

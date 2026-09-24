@@ -8,15 +8,17 @@
 # changes what the page shows, never what was measured.
 #
 # Renders from records only: the findings ledger, the shift policy that ran (the live file or the
-# archived snapshot), the resolved policy, the punch list, the parking lot, the opportunity map,
-# and the shift markers. It measures nothing, reruns nothing, and never renders a check the owner
-# disabled as one that passed. Six sections in a fixed order, each omitted when it is empty; the
-# view chooses which of them a reader gets:
+# archived snapshot), the resolved policy, the punch list, the usage marks, the shift log, the
+# parking lot, the snag log, the opportunity map, the work target's history and the shift markers.
+# It measures nothing, reruns nothing, and never renders a check the owner disabled as one that
+# passed. Eleven sections in a fixed order, each omitted when it is empty; the view chooses which
+# of them a reader gets:
 #
 #   owner     every section
-#   reviewer  2 and 3
-#   release   1, and 3 filtered to regressions
-#   artifact  1, 4, 5 and 6, in the vocabulary of a site rather than a repository
+#   reviewer  review first, baseline, what changed
+#   release   how it ended, and what changed filtered to regressions
+#   artifact  every section but baseline and what changed, in the vocabulary of a site rather
+#             than a repository
 #
 # Without --out the Markdown goes to stdout; with it the file is written by rename and its path
 # is printed. NIGHTSHIFT_COMPARE_HELPER overrides the comparison helper's path —
@@ -46,6 +48,8 @@ NL='
 FS=$(printf '\037')
 RS=$(printf '\036')
 DASH=$(printf '\xe2\x80\x94')
+ARROW=$(printf '\xe2\x86\x92')
+MIDDOT=$(printf '\xc2\xb7')
 
 # The ledger cells the receipt draws, in slot order. morning-receipt-emit.jq is handed the same
 # list, so neither half hard-codes the other.
@@ -126,8 +130,11 @@ NS="$WORKSPACE/.nightshift"
 JSONL="$NS/evidence/findings.jsonl"
 PUNCH="$NS/punch-list.md"
 LOT="$NS/parking-lot.md"
+SNAGS="$NS/snag-log.md"
+LOG="$NS/shift-log.md"
 MAP="$NS/opportunity-map.md"
 STOP="$NS/STOP"
+RECEIPTS_DIR="$(ns_receipts_dir "$WORKSPACE")"
 
 JSON_TOOL=""
 if command -v jq >/dev/null 2>&1; then
@@ -183,6 +190,7 @@ GATES_FROM='punch list'
 NO_POLICY='no shift policy was written'
 POLICY_MALFORMED='the policy file is present but unreadable or fails the schema'
 POLICY_KIND=absent
+REVIEW_ARTIFACT='Does not apply: an artifact shift is reviewed through its receipts.'
 
 # _short_digest FULL -> SHORT_DIGEST: the first twelve hex chars PowerShell shows.
 _short_digest() {
@@ -204,12 +212,52 @@ _md_cell() {
   fi
 }
 
-# _log_end -> LOG_END: the last shift-log stamp, as written.
-_log_end() {
-  LOG_END=""
-  [ -f "$NS/shift-log.md" ] && [ ! -L "$NS/shift-log.md" ] || return 0
-  LOG_END="$(sed -n 's/^\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\} [0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\).*/\1/p' \
-    "$NS/shift-log.md" | tail -n 1)"
+# _utc_stamp EPOCH -> UTC_STAMP: that moment in UTC to the second, zone included.
+_utc_stamp() {
+  UTC_STAMP=""
+  case "$1" in '' | *[!0-9]*) return 1 ;; esac
+  UTC_STAMP="$(date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null ||
+    date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"
+  [ -n "$UTC_STAMP" ]
+}
+
+# _count N NOUN -> COUNTED: "1 file", "3 files".
+_count() {
+  if [ "$1" = 1 ]; then COUNTED="1 $2"; else COUNTED="$1 $2s"; fi
+}
+
+# _item_link LABEL ID -> ITEM_LINK: the label, linked to its item receipt when that file exists.
+_item_link() {
+  local base
+  ITEM_LINK="$1"
+  base="$(ns_receipt_base "$WORKSPACE" "$1" "$2")"
+  [ -n "$base" ] && [ -n "$RECEIPTS_DIR" ] || return 0
+  [ -f "$RECEIPTS_DIR/$base.md" ] && [ ! -L "$RECEIPTS_DIR/$base.md" ] || return 0
+  ITEM_LINK="[$1](./$base.md)"
+}
+
+# _shift_log_lines interruptions|handover — shift-log lines written since the last `shift started`:
+# every interruption the runtime recorded, or the last handover line.
+_shift_log_lines() {
+  [ -f "$LOG" ] && [ ! -L "$LOG" ] || return 0
+  sed 's/[[:cntrl:]]/ /g' "$LOG" | awk -v want="$1" '
+    { line[NR] = $0; if (tolower($0) ~ /shift started/) start = NR }
+    END {
+      for (i = start + 1; i <= NR; i++) {
+        t = line[i]
+        sub(/^ +/, "", t)
+        sub(/ +$/, "", t)
+        if (t == "") continue
+        l = tolower(t)
+        if (want == "handover") {
+          if (l ~ /handover/) last = t
+        } else if (l ~ /resume attempt|reviv|resumed session|wedge|api down|(^|[^a-z])stall|stop-work|stopped by|pressed esc|quitting time|past the deadline|silent too long|usage limit/) {
+          print t
+        }
+      }
+      if (want == "handover" && last != "") print last
+    }
+  '
 }
 
 # _gate_commands -> $TMPD/gates: backtick commands under ## Gates, byte-ordered.
@@ -242,11 +290,11 @@ _gate_commands() {
 _commit_count() {
   local target count
   COMMIT_COUNT=""
-  [ -n "$P_CREATEDAT" ] || return 0
+  [ -n "$SHIFT_SINCE" ] || return 0
   target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target=""
   [ -n "$target" ] || return 0
   target="$(ns_msys_path "$target")"
-  count="$(cd -P "$target" 2>/dev/null && git rev-list --count --since "$P_CREATEDAT" HEAD)" || return 0
+  count="$(cd -P "$target" 2>/dev/null && git rev-list --count --since "$SHIFT_SINCE" HEAD)" || return 0
   case "$count" in
     '' | *[!0-9]*) return 0 ;;
   esac
@@ -547,20 +595,6 @@ _classify_policy() {
   esac
 }
 
-_receipts_line() {
-  local punch="$NS/punch-list.md" label id base
-  printf 'Receipts:\n- [index](./README.md)\n'
-  [ -f "$punch" ] || return 0
-  while IFS=$'\t' read -r label id || [ -n "$label" ]; do
-    [ -n "$label" ] || continue
-    base="$(ns_receipt_base "$WORKSPACE" "$label" "$id")"
-    [ -n "$base" ] || continue
-    printf -- '- [%s](./%s.md)\n' "$label" "$base"
-  done <<NSITEMS
-$(ns_item_rows "$punch" ticked)
-NSITEMS
-}
-
 _load_policy() {
   local kind h1 h2 h3 h4 h5 h6 h7
   [ -n "$POLICY_FILE" ] || return 0
@@ -612,23 +646,10 @@ _resolved() {
 
 # ---------------------------------------------------------------- owner-authored files
 
-# _open_items -> $TMPD/open-items: `<line>\t<title>` per open box below the Items heading. The
-# heading is the same boundary the gate and the watchman count from.
-_open_items() {
-  : >"$TMPD/open-items"
-  [ -f "$PUNCH" ] && [ ! -L "$PUNCH" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$PUNCH" | awk -v tab="$(printf '\t')" '
-    /^## Items[[:space:]]*$/ { items = 1; next }
-    items && /^[[:space:]]*-[[:space:]]*\[[[:space:]]\]/ {
-      title = $0
-      sub(/^[[:space:]]*-[[:space:]]*\[[[:space:]]\][[:space:]]*/, "", title)
-      sub(/[[:space:]]*$/, "", title)
-      print NR tab title
-    }
-  ' >"$TMPD/open-items"
-}
-
-# _parked -> P_COUNT and P_TITLE[], P_DEFAULT[], P_ROLLBACK[]: entries below the rule line.
+# _parked -> P_COUNT and P_TITLE[], P_DEFAULT[], P_ROLLBACK[]: every decision below the parking
+# lot's rule that still waits for the owner, whole. An entry is a `### ` heading and everything
+# under it, a top-level bullet and its wrapped and nested lines, or a paragraph; its Default and
+# Rollback lines are kept apart. Filed pointers, runtime notices and answered entries are skipped.
 P_COUNT=0
 P_TITLE=()
 P_DEFAULT=()
@@ -638,58 +659,50 @@ _parked() {
   local title def rb kind
   P_COUNT=0
   [ -f "$LOT" ] && [ ! -L "$LOT" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$LOT" | awk -v tab="$(printf '\t')" '
-    BEGIN { started = 0; title = ""; def = ""; rb = "" }
-    !started { if ($0 ~ /^---[[:space:]]*$/) started = 1; next }
-    /^[[:space:]]*- (Default|Rollback):[[:space:]]*/ {
-      if (title == "") next
-      line = $0
-      sub(/^[[:space:]]*- /, "", line)
-      if (line ~ /^Default:/) {
-        sub(/^Default:[[:space:]]*/, "", line)
-        def = line
-      } else {
-        sub(/^Rollback:[[:space:]]*/, "", line)
-        rb = line
+  sed 's/[[:cntrl:]]/ /g' "$LOT" | awk -v fs="$FS" -v dot="$MIDDOT" '
+    function trim(s) { sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
+    function add(s) {
+      s = trim(s)
+      if (s == "") return
+      if (field == "d") def = (def == "" ? s : def " " s)
+      else if (field == "r") rb = (rb == "" ? s : rb " " s)
+      else text = (text == "" ? s : text " " s)
+    }
+    function flush(    all) {
+      all = tolower(text " " def " " rb)
+      if (open && text != "" && text !~ /^\[notice\]/ &&
+          all !~ (" " dot " (fixed|ignored|answered|rejected-because|accepted-tradeoff)"))
+        print "E" fs text fs def fs rb
+      open = 0; mode = ""; field = "t"; text = ""; def = ""; rb = ""
+    }
+    function begin(m, s) { flush(); open = 1; mode = m; add(s) }
+    !started { if ($0 ~ /^--- *$/) started = 1; next }
+    {
+      t = $0
+      sub(/ +$/, "", t)
+      if (t == "") { blank = 1; if (mode == "p") flush(); next }
+      if (t ~ /^### +/) { s = t; sub(/^### +/, "", s); begin("h", s); blank = 0; next }
+      if (t ~ /^#/ || t ~ /^(- )?Filed:/ || t ~ /^\(empty/) { flush(); blank = 0; next }
+      if (open && match(t, /^ *(- )?(\*\*)?(Default|Rollback):(\*\*)?/)) {
+        s = substr(t, RSTART, RLENGTH)
+        if (s ~ /Default/) { field = "d"; def = "" } else { field = "r"; rb = "" }
+        add(substr(t, RSTART + RLENGTH))
+        blank = 0
+        next
       }
-      next
-    }
-    /^[[:space:]]*(Default|Rollback):[[:space:]]*/ {
-      if (title == "") next
-      line = $0
-      sub(/^[[:space:]]+/, "", line)
-      if (line ~ /^Default:/) {
-        sub(/^Default:[[:space:]]*/, "", line)
-        def = line
+      if (t ~ /^- /) {
+        if (open && mode == "h") add(substr(t, 3))
+        else begin("b", substr(t, 3))
+      } else if (!open || (mode == "b" && blank && t !~ /^ /)) {
+        begin("p", t)
       } else {
-        sub(/^Rollback:[[:space:]]*/, "", line)
-        rb = line
+        add(t)
       }
-      next
+      blank = 0
     }
-    /^[[:space:]]*- / {
-      if (title != "" && title != "(empty)") print "E" tab title tab def tab rb
-      line = $0
-      sub(/^[[:space:]]*- /, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      title = line
-      def = ""
-      rb = ""
-      next
-    }
-    /^[[:space:]]*### / {
-      if (title != "" && title != "(empty)") print "E" tab title tab def tab rb
-      line = $0
-      sub(/^[[:space:]]*### /, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      title = line
-      def = ""
-      rb = ""
-      next
-    }
-    END { if (title != "" && title != "(empty)") print "E" tab title tab def tab rb }
+    END { flush() }
   ' >"$TMPD/parked-parse"
-  while IFS="$(printf '\t')" read -r kind title def rb; do
+  while IFS="$FS" read -r kind title def rb; do
     [ "$kind" = E ] || continue
     [ -n "$title" ] || continue
     P_TITLE[P_COUNT]="$title"
@@ -697,6 +710,41 @@ _parked() {
     P_ROLLBACK[P_COUNT]="$rb"
     P_COUNT=$((P_COUNT + 1))
   done <"$TMPD/parked-parse"
+}
+
+# _snags -> $TMPD/snags: `<finding> FS <disposition>` for each snag-log entry of this shift whose
+# disposition is not fixed. An entry is `finding · evidence · disposition · date`; one without a
+# disposition is open. This shift's entries are the ones dated on or after the day it started.
+_snags() {
+  : >"$TMPD/snags"
+  [ -f "$SNAGS" ] && [ ! -L "$SNAGS" ] || return 0
+  sed 's/[[:cntrl:]]/ /g' "$SNAGS" | awk -v fs="$FS" -v dot="$MIDDOT" -v day="$SHIFT_DAY" '
+    function trim(s) { sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
+    function flush(    n, p, disp, d, rest) {
+      if (entry == "") return
+      n = split(entry, p, " " dot " ")
+      disp = "open"
+      if (n >= 3 && p[3] !~ /^ *[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] *$/) disp = trim(p[3])
+      d = ""
+      rest = entry
+      while (match(rest, /[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/)) {
+        d = substr(rest, RSTART, RLENGTH)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+      if (tolower(disp) !~ /^fixed/ && (day == "" || (d != "" && d >= day)))
+        print trim(p[1]) fs disp
+      entry = ""
+    }
+    !started { if ($0 ~ /^--- *$/) started = 1; next }
+    {
+      t = $0
+      sub(/ +$/, "", t)
+      if (t == "" || t ~ /^#/ || t ~ /^(- )?Filed:/ || t ~ /^\(empty/) { flush(); next }
+      if (t ~ /^- /) { flush(); entry = trim(substr(t, 3)); next }
+      if (entry != "") entry = entry " " trim(t)
+    }
+    END { flush() }
+  ' >"$TMPD/snags"
 }
 
 # _building -> BUILD_TITLE, BUILD_PHASE, BUILD_NEXT: the one opportunity the map
@@ -751,6 +799,54 @@ _building() {
 }
 
 # ---------------------------------------------------------------- section 1 facts
+
+# _load_marks -> NMARK, M_EPOCH[], M_LABEL[]: the usage marks in the order they were written.
+NMARK=0
+M_EPOCH=()
+M_LABEL=()
+
+_load_marks() {
+  local file="$NS/usage/marks.tsv" at label
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  while IFS="$FS" read -r at label; do
+    case "$at" in '' | *[!0-9]*) continue ;; esac
+    M_EPOCH[NMARK]="$at"
+    M_LABEL[NMARK]="$label"
+    NMARK=$((NMARK + 1))
+  done <<EOF
+$(awk -F'\t' -v fs="$FS" '{ print $1 fs $2 }' "$file")
+EOF
+}
+
+# _shift_times -> STARTED, SHIFT_SINCE, ENDED, ENDED_EPOCH, SHIFT_DAY. The start is the arming
+# mark, or the policy's createdAt for a shift that kept no usage marks, and commits are counted
+# from that same moment; the end is when the clock-out gate wrote .ended. Both are UTC with the
+# zone written out.
+STARTED=""
+SHIFT_SINCE=""
+ENDED=""
+ENDED_EPOCH=""
+SHIFT_DAY=""
+
+_shift_times() {
+  local at
+  STARTED="$P_CREATEDAT"
+  SHIFT_SINCE="$P_CREATEDAT"
+  if [ "$NMARK" -gt 0 ] && _utc_stamp "${M_EPOCH[0]}"; then
+    STARTED="$UTC_STAMP"
+    SHIFT_SINCE="@${M_EPOCH[0]}"
+  fi
+  case "$STARTED" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) SHIFT_DAY="${STARTED:0:10}" ;;
+  esac
+  if [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; then
+    at="$(ns_mtime "$NS/.ended")" || at=""
+    case "$at" in
+      '' | *[!0-9]*) ;;
+      *) _utc_stamp "$at" && ENDED_EPOCH="$at" && ENDED="$UTC_STAMP" ;;
+    esac
+  fi
+}
 
 ENDING=""
 
@@ -829,9 +925,8 @@ _lines_shift() {
   target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target=""
   target="$(ns_native_display_path "$target")"
   sec_field 'Work target' "$target"
-  sec_field Started "$P_CREATEDAT"
-  _log_end
-  sec_field Ended "$LOG_END"
+  sec_field Started "$STARTED"
+  sec_field Ended "$ENDED"
   sec_field Ending "$ENDING"
   ticked=0
   open=0
@@ -931,6 +1026,185 @@ EOF
   else
     sec_add "- Unavailable: $NONE"
   fi
+  [ -n "$SEC" ]
+}
+
+# The whole shift, from the arming mark to the end: working time with every recorded pause listed
+# by its reason, and the tokens the host reported, in its own counting. Nothing is priced, and a
+# measurement the owner turned off says off.
+_lines_usage() {
+  local start end wall paused=0 work reason secs fields host segs dim v word
+  SEC=""
+  [ "$NMARK" -gt 0 ] || return 1
+  start="${M_EPOCH[0]}"
+  end="${ENDED_EPOCH:-${M_EPOCH[$((NMARK - 1))]}}"
+  [ "$end" -ge "$start" ] || end="$start"
+  if [ "$(ns_report "$WORKSPACE" duration)" = off ]; then
+    sec_add '- Time: off'
+  else
+    wall=$((end - start))
+    ns_usage_pauses_by_reason "$NS" "$start" "$end" >"$TMPD/pauses" 2>/dev/null || : >"$TMPD/pauses"
+    while IFS=$'\t' read -r reason secs; do
+      case "$secs" in '' | *[!0-9]*) continue ;; esac
+      paused=$((paused + secs))
+    done <"$TMPD/pauses"
+    work=$((wall - paused))
+    [ "$work" -ge 0 ] || work=0
+    _utc_stamp "$start"
+    v="$UTC_STAMP"
+    _utc_stamp "$end"
+    sec_add "- Span: $v $ARROW $UTC_STAMP"
+    sec_add "- Working: $(ns_usage_duration "$work")"
+    if [ "$paused" -gt 0 ]; then
+      sec_add "- Paused: $(ns_usage_duration "$paused")"
+      while IFS=$'\t' read -r reason secs; do
+        case "$secs" in '' | *[!0-9]*) continue ;; esac
+        sec_add "  - $reason: $(ns_usage_duration "$secs")"
+      done <"$TMPD/pauses"
+    else
+      sec_add "- Paused: $NONE"
+    fi
+    sec_add "- Wall: $(ns_usage_duration "$wall")"
+  fi
+  if [ "$(ns_report "$WORKSPACE" usage)" = off ]; then
+    sec_add '- Tokens: off'
+  else
+    fields="$(ns_usage_total "$NS")" || fields=""
+    host="$(ns_usage_hosts "$NS" 2>/dev/null)" || host=""
+    [ -n "$host" ] || host=unknown
+    segs="$(ns_usage_segments "$NS")"
+    sec_add ''
+    sec_add '| Tokens | Amount |'
+    sec_add '| --- | ---: |'
+    for dim in $NS_USAGE_DIMENSIONS; do
+      v="$(ns_usage_field "$fields" "$dim")" || v=""
+      if [ -n "$v" ]; then v="$(ns_usage_scale "$v")"; else v=unavailable; fi
+      sec_add "| $(ns_usage_dim_label "$dim") | $v |"
+    done
+    sec_add ''
+    word=segments
+    [ "$segs" != 1 ] || word=segment
+    sec_add "$host $MIDDOT $segs $word. $(ns_usage_overlap "${host%% *}")"
+  fi
+  [ -n "$SEC" ]
+}
+
+# One line per item, in list order, linked to its item receipt where that file exists. The receipt
+# carries the item's own cost, sessions, checks and story; this page does not copy them.
+_lines_items() {
+  local state label id
+  SEC=""
+  [ -f "$PUNCH" ] && [ ! -L "$PUNCH" ] || return 1
+  while IFS=$'\t' read -r state label id || [ -n "$state" ]; do
+    [ -n "$label" ] || continue
+    _item_link "$label" "$id"
+    sec_add "- $ITEM_LINK $DASH $state"
+  done <<EOF
+$(ns_item_states "$PUNCH")
+EOF
+  [ -n "$SEC" ]
+}
+
+# Where review should start: the three largest changes of the shift, by lines and then files, each
+# charged to the item whose span its commit landed in, and the one command that shows the range.
+# A commit outside every item's span stands on its own line.
+_lines_review() {
+  local mode target first="" last="" range lines files add del commits kind k1 k2 display n=0
+  local fcount lcount ccount
+  SEC=""
+  mode="$(ns_work_mode "$WORKSPACE" 2>/dev/null)" || mode=repository
+  if [ "$VIEW" = artifact ] || [ "$mode" = artifact ]; then
+    sec_add "- $REVIEW_ARTIFACT"
+    return 0
+  fi
+  [ -n "$SHIFT_SINCE" ] || return 1
+  target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target=""
+  [ -n "$target" ] || return 1
+  target="$(ns_msys_path "$target")"
+  git -C "$target" log --no-merges --reverse --since "$SHIFT_SINCE" \
+    --format='@@%x09%h%x09%ct%x09%s' --numstat HEAD >"$TMPD/review-log" 2>/dev/null || return 1
+  [ -s "$TMPD/review-log" ] || return 1
+  : >"$TMPD/review-marks"
+  n=0
+  while [ "$n" -lt "$NMARK" ]; do
+    printf '%s%s%s\n' "${M_EPOCH[$n]}" "$FS" "${M_LABEL[$n]}" >>"$TMPD/review-marks"
+    n=$((n + 1))
+  done
+  awk -v fs="$FS" '
+    FILENAME == ARGV[1] { split($0, m, fs); stamp[++nm] = m[1] + 0; owner[nm] = m[2]; next }
+    /^@@\t/ {
+      n = split($0, f, "\t")
+      subject = f[4]
+      for (i = 5; i <= n; i++) subject = subject "\t" f[i]
+      if (first == "") first = f[2]
+      last = f[2]
+      key = ""
+      for (i = 1; i <= nm; i++) if (stamp[i] >= f[3] + 0) { if (owner[i] != "arm" && owner[i] != "") key = "i" fs owner[i]; break }
+      if (key == "") key = "c" fs f[2] fs subject
+      if (!(key in commits)) order[++no] = key
+      commits[key]++
+      cur = key
+      next
+    }
+    /^[0-9-]+\t[0-9-]+\t/ {
+      if (cur == "") next
+      split($0, f, "\t")
+      path = substr($0, length(f[1]) + length(f[2]) + 3)
+      if (!((cur SUBSEP path) in seen)) { seen[cur SUBSEP path] = 1; files[cur]++ }
+      if (f[1] ~ /^[0-9]+$/) added[cur] += f[1]
+      if (f[2] ~ /^[0-9]+$/) removed[cur] += f[2]
+    }
+    END {
+      print first fs last
+      for (i = 1; i <= no; i++) {
+        k = order[i]
+        printf "%d%s%d%s%d%s%d%s%d%s%s\n", added[k] + removed[k], fs, files[k], fs, added[k], fs, \
+          removed[k], fs, commits[k], fs, k
+      }
+    }
+  ' "$TMPD/review-marks" "$TMPD/review-log" >"$TMPD/review-rows" || return 1
+  IFS="$FS" read -r first last <"$TMPD/review-rows" || return 1
+  [ -n "$first" ] || return 1
+  n=0
+  while IFS="$FS" read -r lines files add del commits kind k1 k2; do
+    [ "$n" -lt 3 ] || break
+    n=$((n + 1))
+    if [ "$kind" = i ]; then
+      _item_link "$k1" "$(ns_item_id_for "$PUNCH" "$k1")"
+      display="$ITEM_LINK"
+    else
+      display="\`$k1\` $k2"
+    fi
+    _count "$files" file
+    fcount="$COUNTED"
+    _count "$lines" line
+    lcount="$COUNTED"
+    _count "$commits" commit
+    ccount="$COUNTED"
+    sec_add "- $display $DASH $fcount, $lcount (+$add/-$del), $ccount"
+  done <<EOF
+$(tail -n +2 "$TMPD/review-rows" | LC_ALL=C sort -t "$FS" -k1,1nr -k2,2nr -k6)
+EOF
+  if git -C "$target" rev-parse --verify --quiet "$first^" >/dev/null 2>&1; then
+    range="$first^..$last"
+  else
+    range="$last"
+  fi
+  sec_add "- Whole range: \`git log --stat $range\`"
+  [ -n "$SEC" ]
+}
+
+# What interrupted the night, as the runtime wrote it into the shift log: revivals, API failures,
+# stalls, usage limits and how it was stopped.
+_lines_interruptions() {
+  local line
+  SEC=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    sec_add "- $line"
+  done <<EOF
+$(_shift_log_lines interruptions)
+EOF
   [ -n "$SEC" ]
 }
 
@@ -1137,6 +1411,16 @@ _lines_parked() {
   [ -n "$SEC" ]
 }
 
+_lines_snags() {
+  local finding disposition
+  SEC=""
+  while IFS="$FS" read -r finding disposition; do
+    [ -n "$finding" ] || continue
+    sec_add "- $finding $DASH $disposition"
+  done <"$TMPD/snags"
+  [ -n "$SEC" ]
+}
+
 _lines_unsupported() {
   local i=0 id status loc
   SEC=""
@@ -1175,15 +1459,21 @@ EOF
 }
 
 _lines_next() {
-  local title
+  local label handover
   SEC=""
-  while IFS="$(printf '\t')" read -r _ title; do
-    [ -n "$title" ] || continue
-    sec_add "- $title"
-  done <"$TMPD/open-items"
+  if [ -f "$PUNCH" ] && [ ! -L "$PUNCH" ]; then
+    while IFS=$'\t' read -r label _ || [ -n "$label" ]; do
+      [ -n "$label" ] || continue
+      sec_add "- $label"
+    done <<EOF
+$(ns_item_rows "$PUNCH" open)
+EOF
+  fi
   if [ -n "$BUILD_TITLE" ] && [ -n "$BUILD_NEXT" ]; then
     sec_add "- Building: $BUILD_TITLE $DASH next: $BUILD_NEXT"
   fi
+  handover="$(_shift_log_lines handover)"
+  [ -z "$handover" ] || sec_add "- Handover: $handover"
   [ -n "$SEC" ]
 }
 
@@ -1195,13 +1485,16 @@ _classify_policy
 _load_policy
 ns_policy_resolve_table "$WORKSPACE" >"$TMPD/resolved" 2>/dev/null ||
   : >"$TMPD/resolved"
-_open_items
+_load_marks
+_shift_times
 _parked
+_snags
 _building
 _ending
 
 add '# Morning receipt'
-add "$(_receipts_line)"
+add 'Receipts:'
+add '- [index](./README.md)'
 case "$POLICY_KIND" in
   accepted) add "- Policy record: accepted" ;;
   malformed) add "- Policy record: malformed $DASH $POLICY_MALFORMED" ;;
@@ -1223,50 +1516,39 @@ _sections_in_order() {
   printf '%s' "$HANDOFF_SECTIONS" | tr ',' '\n' | tr -d '[]" '
 }
 
+# The release reader sees regressions only, whichever list chose the section.
+REGRESSIONS_ONLY=0
+[ "$VIEW" != release ] || REGRESSIONS_ONLY=1
+
 _emit_section() { # <name>
   case "$1" in
-    shift) _lines_shift && sec_flush '## Shift' ;;
+    shift) _lines_shift && sec_flush '## How it ended' ;;
+    usage) _lines_usage && sec_flush '## Time and tokens' ;;
+    items) _lines_items && sec_flush '## Items' ;;
+    review) _lines_review && sec_flush '## Review first' ;;
+    interruptions) _lines_interruptions && sec_flush '## Interruptions' ;;
+    parked) _lines_parked && sec_flush '## Decisions for you' ;;
+    snags) _lines_snags && sec_flush '## Found but not fixed' ;;
     baseline) _lines_baseline && sec_flush '## Baseline' ;;
-    changed) _lines_changed 0 && sec_flush '## What changed' ;;
-    parked) _lines_parked && sec_flush '## Parked' ;;
+    changed) _lines_changed "$REGRESSIONS_ONLY" && sec_flush '## What changed' ;;
     unsupported) _lines_unsupported && sec_flush '## Unsupported / unmeasured' ;;
-    next) _lines_next && sec_flush '## Next' ;;
+    next) _lines_next && sec_flush '## Next step' ;;
   esac
 }
 
 if [ -n "$HANDOFF_SECTIONS" ]; then
-  while IFS= read -r _sec; do
-    [ -n "$_sec" ] || continue
-    _emit_section "$_sec"
-  done <<EOF
-$(_sections_in_order)
-EOF
+  VIEW_SECTIONS="$(_sections_in_order)"
 else
-case "$VIEW" in
-  owner)
-    _lines_shift && sec_flush '## Shift'
-    _lines_baseline && sec_flush '## Baseline'
-    _lines_changed 0 && sec_flush '## What changed'
-    _lines_parked && sec_flush '## Parked'
-    _lines_unsupported && sec_flush '## Unsupported / unmeasured'
-    _lines_next && sec_flush '## Next'
-    ;;
-  reviewer)
-    _lines_baseline && sec_flush '## Baseline'
-    _lines_changed 0 && sec_flush '## What changed'
-    ;;
-  release)
-    _lines_shift && sec_flush '## Shift'
-    _lines_changed 1 && sec_flush '## What changed'
-    ;;
-  artifact)
-    _lines_shift && sec_flush '## Shift'
-    _lines_parked && sec_flush '## Parked'
-    _lines_unsupported && sec_flush '## Unsupported / unmeasured'
-    _lines_next && sec_flush '## Next'
-    ;;
-esac
+  case "$VIEW" in
+    owner) VIEW_SECTIONS='shift usage items review interruptions parked snags baseline changed unsupported next' ;;
+    reviewer) VIEW_SECTIONS='review baseline changed' ;;
+    release) VIEW_SECTIONS='shift changed' ;;
+    artifact) VIEW_SECTIONS='shift usage items review interruptions parked snags unsupported next' ;;
+  esac
 fi
+for _sec in $VIEW_SECTIONS; do
+  _emit_section "$_sec"
+done
 # One trailing newline, whichever section came last.
 while :; do
   case "$MD" in

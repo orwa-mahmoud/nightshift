@@ -68,6 +68,21 @@ try {
     Expect-True ($bodyAt -lt 0 -or $usageAt -lt $bodyAt) 'usage comes before later narrative'
     $missing = @(Get-NSReceiptsMissingNns $w)
     Expect-True ($missing.Count -eq 1) 'a usage-only receipt still needs model text'
+
+    # The live index links each shift summary above the item table, never as an item row.
+    $receipts = Join-Path $ns 'receipts'
+    [IO.File]::WriteAllText((Join-Path $receipts 'morning-2026-09-09-bbb.md'), "# Morning receipt`n")
+    [IO.File]::WriteAllText((Join-Path $receipts 'morning-2026-09-09-aaa.md'), "# Morning receipt`n")
+    [IO.File]::WriteAllText((Join-Path $receipts 'morning-2026-09-09-aaa.original.md'), "kept`n")
+    Write-NSReceiptsIndex $w
+    $index = [IO.File]::ReadAllText((Join-Path $receipts 'README.md'))
+    $first = $index.IndexOf('Shift summary: [morning-2026-09-09-aaa.md](./morning-2026-09-09-aaa.md)')
+    $second = $index.IndexOf('Shift summary: [morning-2026-09-09-bbb.md](./morning-2026-09-09-bbb.md)')
+    $table = $index.IndexOf('| Item | State |')
+    Expect-True ($first -gt 0 -and $second -gt $first -and $table -gt $second) `
+        'the index links each shift summary, in name order, above the item table'
+    Expect-True (-not $index.Contains('original')) 'the preserved original is not linked'
+    Expect-True (-not $index.Contains('| morning-')) 'a shift summary is never an item row'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

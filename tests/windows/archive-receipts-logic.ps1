@@ -382,8 +382,12 @@ try {
     Expect-True ($archivedIndex.Contains('| 2. Cover the parser. | ticked |')) `
         'the archived index carries the second receipt'
     Expect-True (-not $archivedIndex.Contains('Trim the bundle')) 'the archived index omits the open item'
-    Expect-True (-not $archivedIndex.Contains('morning-2026-09-05-abc.md')) `
-        'the archived index omits the morning receipt'
+    $summaryAt = $archivedIndex.IndexOf('Shift summary: [morning-2026-09-05-abc.md](./morning-2026-09-05-abc.md)')
+    Expect-True ($summaryAt -gt 0 -and $summaryAt -lt $archivedIndex.IndexOf('| Item | State |')) `
+        'the archived index links the morning receipt above the item table'
+    Expect-True (-not $archivedIndex.Contains('| morning-')) 'the morning receipt is never an item row'
+    Expect-True (-not $liveIndex.Contains('morning-2026-09-05-abc.md')) `
+        'the live index stops linking a morning receipt once it is filed'
 }
 finally {
     Remove-Item -LiteralPath $openWork -Recurse -Force -ErrorAction SilentlyContinue

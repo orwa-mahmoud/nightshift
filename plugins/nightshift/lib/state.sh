@@ -150,6 +150,17 @@ ns_item_rows() {
   '
 }
 
+# ns_item_states <punch-list> — `<open|ticked>\t<label>\t<id>` for each top-level item under
+# `## Items` that has a label, list order.
+ns_item_states() {
+  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
+    /^- \[[ xX]\]/ {
+      label = ns_item_label($0)
+      if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : "ticked") "\t" label "\t" ns_item_id($0)
+    }
+  '
+}
+
 # ns_item_ids <punch-list> — every id the list's items carry, one per line.
 ns_item_ids() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
@@ -626,9 +637,31 @@ ns_usage_parse_seconds() {
   printf '%s' "$((h * 3600 + m * 60 + s))"
 }
 
-# ns_receipts_index_head <date> — the title and column headers of an index page.
+# ns_receipts_morning_names <dir> — the shift summaries filed in <dir>, one name per line, byte order.
+ns_receipts_morning_names() {
+  local f name
+  { [ -d "$1" ] && [ ! -L "$1" ]; } || return 0
+  for f in "$1"/morning-*.md; do
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+    name="${f##*/}"
+    case "$name" in *.original.md) continue ;; esac
+    printf '%s\n' "$name"
+  done | LC_ALL=C sort
+}
+
+# ns_receipts_index_head <date> [dir] — the title, a link to each shift summary in <dir>, and the
+# column headers of an index page.
 ns_receipts_index_head() {
+  local name
   printf '# Receipts — %s\n\n' "$1"
+  if [ -n "${2:-}" ]; then
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      printf 'Shift summary: [%s](./%s)\n\n' "$name" "$name"
+    done <<EOF
+$(ns_receipts_morning_names "$2")
+EOF
+  fi
   printf '| Item | State | **Usage** | **Time** | Receipt |\n'
   printf '| --- | --- | --- | --- | --- |\n'
 }
@@ -770,7 +803,7 @@ FIND
     return 0
   fi
   {
-    ns_receipts_index_head "$date_s"
+    ns_receipts_index_head "$date_s" "$dir"
     cat "$rows"
     ns_receipts_index_totals \
       "$(_ns_index_total "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" "$offu")" \
@@ -803,12 +836,7 @@ ns_receipts_write_index() {
   rows="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-rows.XXXXXX")" || { rm -f "$items"; return 0; }
   : >"$items"
   if [ -f "$punch" ]; then
-    ns_items_section "$punch" 2>/dev/null | awk "$NS_AWK_ITEM"'
-      /^- \[[ xX]\] / {
-        label = ns_item_label($0)
-        if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : "ticked") "\t" label "\t" ns_item_id($0)
-      }
-    ' >"$items" || :
+    ns_item_states "$punch" >"$items" || :
   fi
   : >"$rows"
   while IFS=$'\t' read -r state label id || [ -n "$state" ]; do
@@ -834,7 +862,7 @@ EOF
     return 0
   fi
   {
-    ns_receipts_index_head "$date_s"
+    ns_receipts_index_head "$date_s" "$dir"
     cat "$rows"
     ns_receipts_index_totals \
       "$(_ns_index_total "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" "$offu")" \

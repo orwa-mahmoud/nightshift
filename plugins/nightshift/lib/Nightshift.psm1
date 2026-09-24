@@ -5715,26 +5715,52 @@ function Get-NSUsageParseSeconds {
     return [long]($h * 3600 + $m * 60 + $s)
 }
 
+# Get-NSReceiptsMorningNames <directory> - the shift summaries filed there, ordinal order.
+function Get-NSReceiptsMorningNames {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+    $names = New-Object Collections.Generic.List[string]
+    if ((Test-NSReparsePoint $Directory) -or -not (Test-Path -LiteralPath $Directory -PathType Container)) {
+        return , $names.ToArray()
+    }
+    foreach ($file in @(Get-ChildItem -LiteralPath $Directory -File -Force -ErrorAction SilentlyContinue)) {
+        if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+        $name = $file.Name
+        if (-not $name.StartsWith('morning-', [StringComparison]::Ordinal)) { continue }
+        if (-not $name.EndsWith('.md', [StringComparison]::Ordinal)) { continue }
+        if ($name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
+        $names.Add($name)
+    }
+    $sorted = $names.ToArray()
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    return , $sorted
+}
+
 function Get-NSReceiptsIndexPage {
     param(
         [Parameter(Mandatory = $true)][string]$Date,
         [AllowEmptyCollection()][string[]]$Rows = @(),
         [string]$UsageTotal = '',
         [string]$TimeTotal = '',
-        [long]$TokenTotal = 0
+        [long]$TokenTotal = 0,
+        [AllowEmptyCollection()][string[]]$Morning = @()
     )
     $dash = [string][char]0x2014
     $tokCell = $(if (-not [string]::IsNullOrEmpty($UsageTotal)) { $UsageTotal }
         elseif ($TokenTotal -gt 0) { Get-NSUsageScale $TokenTotal } else { $dash })
     $timeCell = $(if (-not [string]::IsNullOrEmpty($TimeTotal)) { $TimeTotal } else { $dash })
-    $sb = New-Object Text.StringBuilder
-    [void]$sb.AppendLine('# Receipts — ' + $Date)
-    [void]$sb.AppendLine()
-    [void]$sb.AppendLine('| Item | State | **Usage** | **Time** | Receipt |')
-    [void]$sb.AppendLine('| --- | --- | --- | --- | --- |')
-    foreach ($row in $Rows) { [void]$sb.AppendLine($row) }
-    [void]$sb.AppendLine(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $timeCell))
-    return $sb.ToString()
+    # LF on every platform, as the POSIX writer ends its lines.
+    $lines = New-Object Collections.Generic.List[string]
+    $lines.Add('# Receipts ' + $dash + ' ' + $Date)
+    $lines.Add('')
+    foreach ($name in $Morning) {
+        $lines.Add(('Shift summary: [{0}](./{0})' -f $name))
+        $lines.Add('')
+    }
+    $lines.Add('| Item | State | **Usage** | **Time** | Receipt |')
+    $lines.Add('| --- | --- | --- | --- | --- |')
+    foreach ($row in $Rows) { $lines.Add($row) }
+    $lines.Add(('| **Totals** |  | **{0}** | **{1}** |  |' -f $tokCell, $timeCell))
+    return (($lines -join "`n") + "`n")
 }
 
 # The receipts of items nobody finished. A receipt travels into the archive when its item is
@@ -5852,7 +5878,8 @@ function Write-NSArchiveReceiptsIndex {
     [IO.File]::WriteAllText($index,
         (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() `
             -UsageTotal (Get-NSIndexTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) $offUsage) `
-            -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime)), $utf8)
+            -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
+            -Morning (Get-NSReceiptsMorningNames $Directory)), $utf8)
 }
 
 # Write-NSReceiptsIndex <workspace> [-Remaining] - rewrite receipts/README.md from the list, marks
@@ -5877,12 +5904,10 @@ function Write-NSReceiptsIndex {
     $twork = [long]0; $tpause = [long]0
     $offUsage = $false; $offTime = $false
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
-        foreach ($line in (Get-NSPunchItemsSection $punch)) {
-            if ($line -cnotmatch '^- \[[ xX]\] ') { continue }
-            $state = $(if ($line -cmatch '^- \[[xX]\]') { 'ticked' } else { 'open' })
-            $label = Get-NSItemLabel $line
-            if ([string]::IsNullOrEmpty($label)) { continue }
-            $base = Get-NSReceiptBase $Workspace $label (Get-NSItemId $line)
+        foreach ($row in (Get-NSItemRows $punch 'all')) {
+            $state = $(if ($row.Open) { 'open' } else { 'ticked' })
+            $label = $row.Label
+            $base = Get-NSReceiptBase $Workspace $label $row.Id
             $file = './' + $base + '.md'
             $path = Join-Path $dir ($base + '.md')
             if ($Remaining -and $state -ceq 'ticked' -and
@@ -5905,7 +5930,8 @@ function Write-NSReceiptsIndex {
     [IO.File]::WriteAllText($index,
         (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
             -UsageTotal (Get-NSIndexTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) $offUsage) `
-            -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime)), $utf8)
+            -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
+            -Morning (Get-NSReceiptsMorningNames $dir)), $utf8)
 }
 
 # Get-NSIndexTotal <cell> <any-off> - a totals cell: off when nothing was measured because a row's
@@ -8076,18 +8102,29 @@ $script:NSReceiptNextFormat = '{0} {1} next: {2}'
 # data, same conclusions - a view only decides how much of it.
 
 $script:NSReceiptSectionTitle = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
-$script:NSReceiptSectionTitle['shift'] = '## Shift'
+$script:NSReceiptSectionTitle['shift'] = '## How it ended'
+$script:NSReceiptSectionTitle['usage'] = '## Time and tokens'
+$script:NSReceiptSectionTitle['items'] = '## Items'
+$script:NSReceiptSectionTitle['review'] = '## Review first'
+$script:NSReceiptSectionTitle['interruptions'] = '## Interruptions'
+$script:NSReceiptSectionTitle['parked'] = '## Decisions for you'
+$script:NSReceiptSectionTitle['snags'] = '## Found but not fixed'
 $script:NSReceiptSectionTitle['baseline'] = '## Baseline'
 $script:NSReceiptSectionTitle['changed'] = '## What changed'
-$script:NSReceiptSectionTitle['parked'] = '## Parked'
 $script:NSReceiptSectionTitle['unsupported'] = '## Unsupported / unmeasured'
-$script:NSReceiptSectionTitle['next'] = '## Next'
+$script:NSReceiptSectionTitle['next'] = '## Next step'
 
 $script:NSReceiptViewSections = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
-$script:NSReceiptViewSections['owner'] = @('shift', 'baseline', 'changed', 'parked', 'unsupported', 'next')
-$script:NSReceiptViewSections['reviewer'] = @('baseline', 'changed')
+$script:NSReceiptViewSections['owner'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'baseline', 'changed', 'unsupported', 'next')
+$script:NSReceiptViewSections['reviewer'] = @('review', 'baseline', 'changed')
 $script:NSReceiptViewSections['release'] = @('shift', 'changed')
-$script:NSReceiptViewSections['artifact'] = @('shift', 'parked', 'unsupported', 'next')
+$script:NSReceiptViewSections['artifact'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'unsupported', 'next')
+
+$script:NSReceiptReviewArtifact = 'Does not apply: an artifact shift is reviewed through its receipts.'
+# What the runtime writes into the shift log when something interrupts the night, matched against
+# the lowercased line.
+$script:NSReceiptInterruptionPattern = 'resume attempt|reviv|resumed session|wedge|api down|(^|[^a-z])stall|stop-work|stopped by|pressed esc|quitting time|past the deadline|silent too long|usage limit'
+$script:NSReceiptHandledPattern = ' ' + [char]0x00b7 + ' (fixed|ignored|answered|rejected-because|accepted-tradeoff)'
 
 $script:NSReceiptLabels = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
 $script:NSReceiptLabels['shift'] = 'Shift'
@@ -8618,6 +8655,8 @@ function Write-NSMorningReceiptFile {
     if (Test-Path -LiteralPath $path) { return $path }
     $view = Get-NSHandoffView $Workspace
     $null = Get-NSMorningReceipt -Workspace $Workspace -View $view -Out $path
+    # The receipts index links the page it now has.
+    if (Test-NSReceiptsEnabled $Workspace) { Write-NSReceiptsIndex $Workspace }
     return $path
 }
 
@@ -8660,22 +8699,100 @@ function Get-NSHandoffBlock {
     return $block
 }
 
-# The last stamp the shift log carries, as the log wrote it. The log is stamped
-# in host local time, so it is reported as written rather than relabelled UTC.
-function Get-NSReceiptLogEnd {
+# Get-NSReceiptUtcStamp <epoch> - that moment in UTC to the second, zone included.
+function Get-NSReceiptUtcStamp {
+    param([AllowEmptyString()][string]$Epoch)
+    $e = 0L
+    if ($Epoch -cnotmatch '^[0-9]+$' -or -not [long]::TryParse($Epoch, [ref]$e)) { return '' }
+    $utc = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+    return $utc.AddSeconds($e).ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+}
+
+# Get-NSReceiptEndedEpoch <nightshift-dir> - when the clock-out gate wrote .ended, or ''.
+function Get-NSReceiptEndedEpoch {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $path = Join-NSPath $NightshiftDir '.ended'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return '' }
+    $utc = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+    return [string][long][math]::Floor(([IO.File]::GetLastWriteTimeUtc($path) - $utc).TotalSeconds)
+}
+
+# Get-NSReceiptScrubbedLines <file> - the file's lines with every control character read as a space.
+function Get-NSReceiptScrubbedLines {
     param([Parameter(Mandatory = $true)][string]$Path)
-    $stamp = ''
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $stamp }
-    try {
-        foreach ($line in [IO.File]::ReadLines($Path)) {
-            $match = [regex]::Match([string]$line, '^([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})')
-            if ($match.Success) { $stamp = $match.Groups[1].Value }
+    if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return , @() }
+    $text = ''
+    try { $text = [IO.File]::ReadAllText($Path, $script:NSUtf8NoBom) }
+    catch { return , @() }
+    if ($text.Length -eq 0) { return , @() }
+    if ($text.EndsWith("`n", [StringComparison]::Ordinal)) { $text = $text.Substring(0, $text.Length - 1) }
+    $lines = New-Object Collections.Generic.List[string]
+    foreach ($line in $text.Split("`n")) { $lines.Add(($line -creplace '[\x00-\x1f\x7f]', ' ')) }
+    return , $lines.ToArray()
+}
+
+# Get-NSReceiptShiftLogLines <shift-log> interruptions|handover - lines written since the last
+# `shift started`: every interruption the runtime recorded, or the last handover line.
+function Get-NSReceiptShiftLogLines {
+    param([Parameter(Mandatory = $true)][string]$Path, [ValidateSet('interruptions', 'handover')][string]$Want)
+    $out = New-Object Collections.Generic.List[string]
+    $all = Get-NSReceiptScrubbedLines $Path
+    $start = -1
+    for ($i = 0; $i -lt $all.Length; $i++) {
+        if ($all[$i].ToLowerInvariant().Contains('shift started')) { $start = $i }
+    }
+    $last = ''
+    for ($i = $start + 1; $i -lt $all.Length; $i++) {
+        $line = $all[$i].Trim(' ')
+        if ($line.Length -eq 0) { continue }
+        $lower = $line.ToLowerInvariant()
+        if ($Want -ceq 'handover') {
+            if ($lower.Contains('handover')) { $last = $line }
+        }
+        elseif ($lower -cmatch $script:NSReceiptInterruptionPattern) {
+            $out.Add($line)
         }
     }
-    catch {
-        return $stamp
+    if ($Want -ceq 'handover' -and $last.Length -gt 0) { $out.Add($last) }
+    return , $out.ToArray()
+}
+
+# Get-NSReceiptMarks <nightshift-dir> - the usage marks in the order they were written.
+function Get-NSReceiptMarks {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $marks = New-Object Collections.Generic.List[object]
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf)) { return , $marks.ToArray() }
+    foreach ($line in @([IO.File]::ReadAllLines($file))) {
+        $parts = $line.Split("`t")
+        $at = 0L
+        if ($parts[0] -cnotmatch '^[0-9]+$' -or -not [long]::TryParse($parts[0], [ref]$at)) { continue }
+        $label = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
+        $marks.Add([pscustomobject]@{ Epoch = $at; Label = $label })
     }
-    return $stamp
+    return , $marks.ToArray()
+}
+
+# Get-NSReceiptCount <n> <noun> - "1 file", "3 files".
+function Get-NSReceiptCount {
+    param([long]$Count, [Parameter(Mandatory = $true)][string]$Noun)
+    if ($Count -eq 1) { return ('1 ' + $Noun) }
+    return ([string]$Count + ' ' + $Noun + 's')
+}
+
+# Get-NSReceiptItemLink <workspace> <label> <id> - the label, linked to its item receipt when that
+# file exists.
+function Get-NSReceiptItemLink {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Label,
+        [AllowEmptyString()][string]$Id = ''
+    )
+    $base = Get-NSReceiptBase $Workspace $Label $Id
+    if ([string]::IsNullOrEmpty($base)) { return $Label }
+    $path = Join-Path (Get-NSReceiptsDir $Workspace) ($base + '.md')
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $Label }
+    return ('[{0}](./{1}.md)' -f $Label, $base)
 }
 
 # done when every box is ticked, otherwise whatever STOP says. Stop writes
@@ -8775,71 +8892,149 @@ function Get-NSReceiptFindingMap {
     return $map
 }
 
-function Get-NSReceiptOpenItems {
-    param([Parameter(Mandatory = $true)][string]$PunchList)
-    $items = New-Object Collections.Generic.List[string]
-    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return , $items.ToArray() }
-    $inItems = $false
-    try {
-        foreach ($line in [IO.File]::ReadLines($PunchList)) {
-            $text = [string]$line
-            if (-not $inItems) {
-                if ($text -cmatch '^##\s+Items\s*$') { $inItems = $true }
-                continue
-            }
-            $match = [regex]::Match($text, '^-\s*\[\s\]\s*(.*)$')
-            if (-not $match.Success) { continue }
-            $body = $match.Groups[1].Value.Trim()
-            if ($body.Length -gt 0) { $items.Add($body) }
-        }
-    }
-    catch {
-        return , $items.ToArray()
-    }
-    return , $items.ToArray()
-}
-
-# Entries below the parking lot's rule, each as the owner wrote it, with the
-# default and the rollback kept as their own lines when the entry carries them.
+# Every decision below the parking lot's rule that still waits for the owner, whole. An entry is a
+# `### ` heading and everything under it, a top-level bullet and its wrapped and nested lines, or a
+# paragraph; its Default and Rollback lines are kept apart. Filed pointers, runtime notices and
+# answered entries are skipped.
 function Get-NSReceiptParkedEntries {
     param([Parameter(Mandatory = $true)][string]$ParkingLot)
     $entries = New-Object Collections.Generic.List[object]
-    if (-not (Test-Path -LiteralPath $ParkingLot -PathType Leaf)) { return , $entries.ToArray() }
-    $afterRule = $false
-    $entry = $null
-    try {
-        foreach ($line in [IO.File]::ReadLines($ParkingLot)) {
-            $text = [string]$line
-            if (-not $afterRule) {
-                if ($text -cmatch '^---\s*$') { $afterRule = $true }
-                continue
-            }
-            $head = [regex]::Match($text, '^(?:-\s+|###\s+)(.*)$')
-            if ($head.Success) {
-                $title = $head.Groups[1].Value.Trim()
-                if ($title.Length -eq 0 -or $title -ceq '(empty)') {
-                    $entry = $null
-                    continue
-                }
-                $entry = New-NSOrdinalMap
-                $entry['title'] = $title
-                $entry['default'] = ''
-                $entry['rollback'] = ''
-                $entries.Add($entry)
-                continue
-            }
-            if ($null -eq $entry) { continue }
-            $field = [regex]::Match($text, '^\s*(?:-\s+)?(Default|Rollback):\s*(.*)$')
-            if (-not $field.Success) { continue }
-            $value = $field.Groups[2].Value.Trim()
-            if ($field.Groups[1].Value -ceq 'Default') { $entry['default'] = $value }
-            else { $entry['rollback'] = $value }
+    $state = New-NSOrdinalMap
+    $state['open'] = $false
+    $state['mode'] = ''
+    $state['field'] = 't'
+    $state['text'] = ''
+    $state['default'] = ''
+    $state['rollback'] = ''
+    $add = {
+        param([string]$Value)
+        $value = $Value.Trim(' ')
+        if ($value.Length -eq 0) { return }
+        $key = 'text'
+        if ($state['field'] -ceq 'd') { $key = 'default' }
+        elseif ($state['field'] -ceq 'r') { $key = 'rollback' }
+        if (([string]$state[$key]).Length -eq 0) { $state[$key] = $value }
+        else { $state[$key] = ([string]$state[$key]) + ' ' + $value }
+    }
+    $flush = {
+        $text = [string]$state['text']
+        $all = ($text + ' ' + $state['default'] + ' ' + $state['rollback']).ToLowerInvariant()
+        if ($state['open'] -and $text.Length -gt 0 -and
+            -not $text.StartsWith('[notice]', [StringComparison]::Ordinal) -and
+            $all -cnotmatch $script:NSReceiptHandledPattern) {
+            $entry = New-NSOrdinalMap
+            $entry['title'] = $text
+            $entry['default'] = [string]$state['default']
+            $entry['rollback'] = [string]$state['rollback']
+            $entries.Add($entry)
         }
+        $state['open'] = $false
+        $state['mode'] = ''
+        $state['field'] = 't'
+        $state['text'] = ''
+        $state['default'] = ''
+        $state['rollback'] = ''
     }
-    catch {
-        return , $entries.ToArray()
+    $begin = {
+        param([string]$Mode, [string]$Value)
+        & $flush
+        $state['open'] = $true
+        $state['mode'] = $Mode
+        & $add $Value
     }
+    $started = $false
+    $blank = $false
+    foreach ($raw in (Get-NSReceiptScrubbedLines $ParkingLot)) {
+        if (-not $started) {
+            if ($raw -cmatch '^--- *$') { $started = $true }
+            continue
+        }
+        $line = $raw.TrimEnd(' ')
+        if ($line.Length -eq 0) {
+            $blank = $true
+            if ($state['mode'] -ceq 'p') { & $flush }
+            continue
+        }
+        if ($line -cmatch '^### +') {
+            & $begin 'h' ($line -creplace '^### +', '')
+            $blank = $false
+            continue
+        }
+        if ($line -cmatch '^#' -or $line -cmatch '^(- )?Filed:' -or $line -cmatch '^\(empty') {
+            & $flush
+            $blank = $false
+            continue
+        }
+        if ($state['open']) {
+            $field = [regex]::Match($line, '^ *(- )?(\*\*)?(Default|Rollback):(\*\*)?')
+            if ($field.Success) {
+                if ($field.Value.Contains('Default')) { $state['field'] = 'd'; $state['default'] = '' }
+                else { $state['field'] = 'r'; $state['rollback'] = '' }
+                & $add $line.Substring($field.Length)
+                $blank = $false
+                continue
+            }
+        }
+        if ($line.StartsWith('- ', [StringComparison]::Ordinal)) {
+            if ($state['open'] -and $state['mode'] -ceq 'h') { & $add $line.Substring(2) }
+            else { & $begin 'b' $line.Substring(2) }
+        }
+        elseif (-not $state['open'] -or ($state['mode'] -ceq 'b' -and $blank -and
+                -not $line.StartsWith(' ', [StringComparison]::Ordinal))) {
+            & $begin 'p' $line
+        }
+        else {
+            & $add $line
+        }
+        $blank = $false
+    }
+    & $flush
     return , $entries.ToArray()
+}
+
+# One snag-log entry of this shift whose disposition is not fixed. An entry is
+# `finding · evidence · disposition · date`; one without a disposition is open.
+function Add-NSReceiptSnagRow {
+    param($Rows, [AllowEmptyString()][string]$Entry, [AllowEmptyString()][string]$Day)
+    if ($Entry.Length -eq 0) { return }
+    $parts = $Entry.Split([string[]]@(' ' + [char]0x00b7 + ' '), [StringSplitOptions]::None)
+    $disposition = 'open'
+    if ($parts.Length -ge 3 -and $parts[2] -cnotmatch '^ *[0-9]{4}-[0-9]{2}-[0-9]{2} *$') {
+        $disposition = $parts[2].Trim(' ')
+    }
+    $date = ''
+    foreach ($match in [regex]::Matches($Entry, '[0-9]{4}-[0-9]{2}-[0-9]{2}')) { $date = $match.Value }
+    if ($disposition.ToLowerInvariant().StartsWith('fixed', [StringComparison]::Ordinal)) { return }
+    if ($Day.Length -gt 0 -and ($date.Length -eq 0 -or [string]::CompareOrdinal($date, $Day) -lt 0)) { return }
+    $Rows.Add([pscustomobject]@{ Finding = $parts[0].Trim(' '); Disposition = $disposition })
+}
+
+# The snag-log entries of this shift - dated on or after the day it started - that were not fixed.
+function Get-NSReceiptSnagEntries {
+    param([Parameter(Mandatory = $true)][string]$SnagLog, [AllowEmptyString()][string]$Day = '')
+    $rows = New-Object Collections.Generic.List[object]
+    $started = $false
+    $entry = ''
+    foreach ($raw in (Get-NSReceiptScrubbedLines $SnagLog)) {
+        if (-not $started) {
+            if ($raw -cmatch '^--- *$') { $started = $true }
+            continue
+        }
+        $line = $raw.TrimEnd(' ')
+        if ($line.Length -eq 0 -or $line -cmatch '^#' -or $line -cmatch '^(- )?Filed:' -or $line -cmatch '^\(empty') {
+            Add-NSReceiptSnagRow $rows $entry $Day
+            $entry = ''
+            continue
+        }
+        if ($line.StartsWith('- ', [StringComparison]::Ordinal)) {
+            Add-NSReceiptSnagRow $rows $entry $Day
+            $entry = $line.Substring(2).Trim(' ')
+            continue
+        }
+        if ($entry.Length -gt 0) { $entry = $entry + ' ' + $line.Trim(' ') }
+    }
+    Add-NSReceiptSnagRow $rows $entry $Day
+    return , $rows.ToArray()
 }
 
 # The one building entry from the opportunity map, with the exact next action it
@@ -8940,22 +9135,40 @@ function Get-NSReceiptContext {
     $context['workTarget'] = Get-NSEvidenceWorkTarget $workspacePath
 
     $shiftId = ''
-    $started = ''
+    $createdAt = ''
     if ($null -ne $policy) {
         $shiftId = Get-NSRecordText $policy 'shiftId'
-        $started = Get-NSRecordText $policy 'createdAt'
+        $createdAt = Get-NSRecordText $policy 'createdAt'
     }
     $context['shiftId'] = $shiftId
+    $context['createdAt'] = $createdAt
+
+    # The start is the arming mark, or the policy's createdAt for a shift that kept no usage marks,
+    # and commits are counted from that same moment; the end is when the clock-out gate wrote
+    # .ended. Both are UTC with the zone written out.
+    $marks = Get-NSReceiptMarks $ns
+    $context['marks'] = $marks
+    $started = $createdAt
+    $since = $createdAt
+    if ($marks.Length -gt 0) {
+        $armed = Get-NSReceiptUtcStamp ([string]$marks[0].Epoch)
+        if ($armed.Length -gt 0) {
+            $started = $armed
+            $since = '@' + [string]$marks[0].Epoch
+        }
+    }
     $context['started'] = $started
+    $context['since'] = $since
+    $context['shiftDay'] = $(if ($started -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}') { $started.Substring(0, 10) } else { '' })
+    $endedEpoch = Get-NSReceiptEndedEpoch $ns
+    $context['endedEpoch'] = $endedEpoch
+    $context['ended'] = Get-NSReceiptUtcStamp $endedEpoch
 
     $counts = Get-NSBoxCounts $context['punch']
     $context['ticked'] = [int]$counts.Ticked
     $context['open'] = [int]$counts.Open
     $context['punchReadable'] = [bool]$counts.Readable
     $context['ending'] = Get-NSReceiptEnding -NightshiftDir $ns -Open ([int]$counts.Open) -Readable ([bool]$counts.Readable)
-
-    $ended = Get-NSReceiptLogEnd (Join-NSPath $ns 'shift-log.md')
-    $context['ended'] = $ended
 
     $sessionHost = ''
     $session = $null
@@ -9062,7 +9275,7 @@ function Get-NSReceiptShiftLines {
     elseif (([string]$Context['workTarget']).Length -gt 0) {
         # No work target, no commit count: there is no repository to count in, and a zero would
         # read as a night that committed nothing.
-        Add-NSReceiptField $lines 'commits' (Get-NSReceiptCommitCount -Target ([string]$Context['workTarget']) -Since ([string]$Context['started']))
+        Add-NSReceiptField $lines 'commits' (Get-NSReceiptCommitCount -Target ([string]$Context['workTarget']) -Since ([string]$Context['since']))
     }
     $profile = [string]$Context['profile']
     if ($profile.Length -eq 0) { $profile = $script:NSReceiptNone }
@@ -9109,6 +9322,192 @@ function Get-NSReceiptShiftLines {
     }
     else {
         Add-NSReceiptField $lines 'unavailable' $script:NSReceiptNone
+    }
+    return , $lines.ToArray()
+}
+
+# The whole shift, from the arming mark to the end: working time with every recorded pause listed
+# by its reason, and the tokens the host reported, in its own counting. Nothing is priced, and a
+# measurement the owner turned off says off.
+function Get-NSReceiptUsageLines {
+    param($Context)
+    $lines = New-Object Collections.Generic.List[string]
+    $marks = @($Context['marks'])
+    if ($marks.Count -eq 0) { return , @() }
+    $ns = [string]$Context['ns']
+    $workspace = [string]$Context['workspace']
+    $start = [long]$marks[0].Epoch
+    $end = [long]$marks[$marks.Count - 1].Epoch
+    if (([string]$Context['endedEpoch']).Length -gt 0) { $end = [long]$Context['endedEpoch'] }
+    if ($end -lt $start) { $end = $start }
+    if ((Get-NSReceiptsField $workspace 'duration') -ceq 'off') {
+        $lines.Add('- Time: off')
+    }
+    else {
+        $wall = $end - $start
+        $pauses = Get-NSUsagePausesByReason $ns $start $end
+        $paused = 0L
+        foreach ($pause in $pauses) { $paused += [long]$pause.Seconds }
+        $work = $wall - $paused
+        if ($work -lt 0) { $work = 0 }
+        $lines.Add(('- Span: {0} {1} {2}' -f (Get-NSReceiptUtcStamp ([string]$start)), [char]0x2192,
+                (Get-NSReceiptUtcStamp ([string]$end))))
+        $lines.Add('- Working: ' + (Get-NSUsageDuration ([string]$work)))
+        if ($paused -gt 0) {
+            $lines.Add('- Paused: ' + (Get-NSUsageDuration ([string]$paused)))
+            foreach ($pause in $pauses) {
+                $lines.Add(('  - {0}: {1}' -f $pause.Reason, (Get-NSUsageDuration ([string]$pause.Seconds))))
+            }
+        }
+        else {
+            $lines.Add('- Paused: ' + $script:NSReceiptNone)
+        }
+        $lines.Add('- Wall: ' + (Get-NSUsageDuration ([string]$wall)))
+    }
+    if ((Get-NSReceiptsField $workspace 'usage') -ceq 'off') {
+        $lines.Add('- Tokens: off')
+    }
+    else {
+        $fields = Get-NSUsageTotal $ns
+        $hostName = Get-NSUsageHosts $ns
+        if ([string]::IsNullOrEmpty($hostName)) { $hostName = 'unknown' }
+        $segments = [string](Get-NSUsageSegmentCount $ns)
+        $lines.Add('')
+        $lines.Add('| Tokens | Amount |')
+        $lines.Add('| --- | ---: |')
+        foreach ($dim in $script:NSUsageDimensions) {
+            $value = Get-NSUsageField $fields $dim
+            if ([string]::IsNullOrEmpty($value)) { $value = 'unavailable' } else { $value = Get-NSUsageScale $value }
+            $lines.Add('| ' + (Get-NSUsageDimLabel $dim) + ' | ' + $value + ' |')
+        }
+        $lines.Add('')
+        $word = $(if ($segments -ceq '1') { 'segment' } else { 'segments' })
+        $lines.Add(('{0} {1} {2} {3}. {4}' -f $hostName, [char]0x00b7, $segments, $word,
+                (Get-NSUsageOverlapText ($hostName.Split(' ')[0]))))
+    }
+    return , $lines.ToArray()
+}
+
+# One line per item, in list order, linked to its item receipt where that file exists. The receipt
+# carries the item's own cost, sessions, checks and story; this page does not copy them.
+function Get-NSReceiptItemsLines {
+    param($Context)
+    $lines = New-Object Collections.Generic.List[string]
+    $workspace = [string]$Context['workspace']
+    foreach ($row in (Get-NSItemRows ([string]$Context['punch']) 'all')) {
+        $state = $(if ($row.Open) { 'open' } else { 'ticked' })
+        $lines.Add(('- {0} {1} {2}' -f (Get-NSReceiptItemLink $workspace $row.Label $row.Id), (Get-NSEvidenceDash), $state))
+    }
+    return , $lines.ToArray()
+}
+
+# Where review should start: the three largest changes of the shift, by lines and then files, each
+# charged to the item whose span its commit landed in, and the one command that shows the range.
+# A commit outside every item's span stands on its own line.
+function Get-NSReceiptReviewLines {
+    param($Context)
+    $lines = New-Object Collections.Generic.List[string]
+    if ((([string]$Context['view']) -ceq 'artifact') -or (([string]$Context['workMode']) -ceq 'artifact')) {
+        $lines.Add('- ' + $script:NSReceiptReviewArtifact)
+        return , $lines.ToArray()
+    }
+    $since = [string]$Context['since']
+    $target = [string]$Context['workTarget']
+    if ($since.Length -eq 0 -or $target.Length -eq 0) { return , @() }
+    $log = Invoke-NSGitCommand $target @('log', '--no-merges', '--reverse', '--since', $since,
+        '--format=@@%x09%h%x09%ct%x09%s', '--numstat', 'HEAD')
+    if ($log.ExitCode -ne 0) { return , @() }
+    $marks = @($Context['marks'])
+    $separator = [string][char]0x1f
+    $order = New-Object Collections.Generic.List[string]
+    $stats = New-Object 'Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
+    $seen = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    $first = ''
+    $last = ''
+    $current = ''
+    foreach ($line in @($log.Lines)) {
+        if ($line.StartsWith("@@`t", [StringComparison]::Ordinal)) {
+            $fields = $line.Split("`t")
+            $hash = $(if ($fields.Length -ge 2) { $fields[1] } else { '' })
+            $committed = 0L
+            if ($fields.Length -ge 3) { $null = [long]::TryParse($fields[2], [ref]$committed) }
+            $subject = $(if ($fields.Length -ge 4) { ($fields[3..($fields.Length - 1)] -join "`t") } else { '' })
+            if ($first.Length -eq 0) { $first = $hash }
+            $last = $hash
+            $key = ''
+            foreach ($mark in $marks) {
+                if ([long]$mark.Epoch -ge $committed) {
+                    if ($mark.Label -cne 'arm' -and $mark.Label.Length -gt 0) { $key = 'i' + $separator + $mark.Label }
+                    break
+                }
+            }
+            if ($key.Length -eq 0) { $key = 'c' + $separator + $hash + $separator + $subject }
+            if (-not $stats.ContainsKey($key)) {
+                $order.Add($key)
+                $stats[$key] = [pscustomobject]@{ Key = $key; Commits = 0L; Files = 0L; Added = 0L; Removed = 0L }
+            }
+            $stats[$key].Commits++
+            $current = $key
+            continue
+        }
+        $numstat = [regex]::Match($line, '^([0-9-]+)\t([0-9-]+)\t(.*)$')
+        if (-not $numstat.Success -or $current.Length -eq 0) { continue }
+        if ($seen.Add($current + $separator + $numstat.Groups[3].Value)) { $stats[$current].Files++ }
+        if ($numstat.Groups[1].Value -cmatch '^[0-9]+$') { $stats[$current].Added += [long]$numstat.Groups[1].Value }
+        if ($numstat.Groups[2].Value -cmatch '^[0-9]+$') { $stats[$current].Removed += [long]$numstat.Groups[2].Value }
+    }
+    if ($first.Length -eq 0) { return , @() }
+    $ranked = New-Object 'Collections.Generic.List[object]'
+    foreach ($key in $order) { $ranked.Add($stats[$key]) }
+    $ranked.Sort([Comparison[object]] {
+            param($left, $right)
+            $leftLines = $left.Added + $left.Removed
+            $rightLines = $right.Added + $right.Removed
+            if ($leftLines -ne $rightLines) { return $rightLines.CompareTo($leftLines) }
+            if ($left.Files -ne $right.Files) { return $right.Files.CompareTo($left.Files) }
+            return [string]::CompareOrdinal($left.Key, $right.Key)
+        })
+    $workspace = [string]$Context['workspace']
+    $punch = [string]$Context['punch']
+    $shown = 0
+    foreach ($row in $ranked) {
+        if ($shown -ge 3) { break }
+        $shown++
+        $parts = $row.Key.Split($separator)
+        if ($parts[0] -ceq 'i') {
+            $display = Get-NSReceiptItemLink $workspace $parts[1] (Get-NSItemIdFor $punch $parts[1])
+        }
+        else {
+            $display = '`' + $parts[1] + '` ' + $parts[2]
+        }
+        $lines.Add(('- {0} {1} {2}, {3} (+{4}/-{5}), {6}' -f $display, (Get-NSEvidenceDash),
+                (Get-NSReceiptCount $row.Files 'file'), (Get-NSReceiptCount ($row.Added + $row.Removed) 'line'),
+                $row.Added, $row.Removed, (Get-NSReceiptCount $row.Commits 'commit')))
+    }
+    $parent = Invoke-NSGitCommand $target @('rev-parse', '--verify', '--quiet', ($first + '^'))
+    $range = $(if ($parent.ExitCode -eq 0) { $first + '^..' + $last } else { $last })
+    $lines.Add('- Whole range: `git log --stat ' + $range + '`')
+    return , $lines.ToArray()
+}
+
+# What interrupted the night, as the runtime wrote it into the shift log: revivals, API failures,
+# stalls, usage limits and how it was stopped.
+function Get-NSReceiptInterruptionLines {
+    param($Context)
+    $lines = New-Object Collections.Generic.List[string]
+    foreach ($line in (Get-NSReceiptShiftLogLines (Join-NSPath ([string]$Context['ns']) 'shift-log.md') 'interruptions')) {
+        $lines.Add('- ' + $line)
+    }
+    return , $lines.ToArray()
+}
+
+function Get-NSReceiptSnagLines {
+    param($Context)
+    $lines = New-Object Collections.Generic.List[string]
+    $dash = Get-NSEvidenceDash
+    foreach ($row in (Get-NSReceiptSnagEntries (Join-NSPath ([string]$Context['ns']) 'snag-log.md') ([string]$Context['shiftDay']))) {
+        if ($row.Finding.Length -eq 0) { continue }
+        $lines.Add(('- {0} {1} {2}' -f $row.Finding, $dash, $row.Disposition))
     }
     return , $lines.ToArray()
 }
@@ -9244,8 +9643,8 @@ function Get-NSReceiptUnsupportedLines {
 function Get-NSReceiptNextLines {
     param($Context)
     $lines = New-Object Collections.Generic.List[string]
-    foreach ($item in (Get-NSReceiptOpenItems ([string]$Context['punch']))) {
-        $lines.Add(($script:NSReceiptPlainFormat -f ([string]$item)))
+    foreach ($row in (Get-NSItemRows ([string]$Context['punch']) 'open')) {
+        $lines.Add(($script:NSReceiptPlainFormat -f ([string]$row.Label)))
     }
     $building = Get-NSReceiptBuilding (Join-NSPath ([string]$Context['ns']) 'opportunity-map.md')
     $title = [string]$building['title']
@@ -9254,6 +9653,9 @@ function Get-NSReceiptNextLines {
         $body = $script:NSReceiptNextFormat -f $title, (Get-NSEvidenceDash), $next
         $lines.Add(($script:NSReceiptFieldFormat -f ([string]$script:NSReceiptLabels['building']), $body))
     }
+    foreach ($handover in (Get-NSReceiptShiftLogLines (Join-NSPath ([string]$Context['ns']) 'shift-log.md') 'handover')) {
+        $lines.Add('- Handover: ' + $handover)
+    }
     return , $lines.ToArray()
 }
 
@@ -9261,9 +9663,14 @@ function Get-NSReceiptSectionLines {
     param([Parameter(Mandatory = $true)][string]$Key, $Context)
     switch ($Key) {
         'shift' { return (Get-NSReceiptShiftLines $Context) }
+        'usage' { return (Get-NSReceiptUsageLines $Context) }
+        'items' { return (Get-NSReceiptItemsLines $Context) }
+        'review' { return (Get-NSReceiptReviewLines $Context) }
+        'interruptions' { return (Get-NSReceiptInterruptionLines $Context) }
+        'parked' { return (Get-NSReceiptParkedLines $Context) }
+        'snags' { return (Get-NSReceiptSnagLines $Context) }
         'baseline' { return (Get-NSReceiptBaselineLines $Context) }
         'changed' { return (Get-NSReceiptChangedLines $Context) }
-        'parked' { return (Get-NSReceiptParkedLines $Context) }
         'unsupported' { return (Get-NSReceiptUnsupportedLines $Context) }
         'next' { return (Get-NSReceiptNextLines $Context) }
     }
@@ -9271,21 +9678,22 @@ function Get-NSReceiptSectionLines {
 }
 
 # Markdown from records only. It invents nothing, never upgrades a claim into
-# proof, and omits a section it has no record for.
+# proof, and omits a section it has no record for. The page links the index;
+# each item links from the Items section.
 function Get-NSMorningReceiptsLine {
-    param([AllowEmptyString()][string]$PunchList)
-    $parts = New-Object Collections.Generic.List[string]
-    $parts.Add('[index](./README.md)')
-    if (-not [string]::IsNullOrEmpty($PunchList) -and (Test-Path -LiteralPath $PunchList -PathType Leaf)) {
-        $workspace = Split-Path -Parent (Split-Path -Parent $PunchList)
-        foreach ($row in (Get-NSItemRows $PunchList 'ticked')) {
-            $parts.Add(('[{0}](./{1}.md)' -f $row.Label, (Get-NSReceiptBase $workspace $row.Label $row.Id)))
-        }
+    return ("Receipts:`n- [index](./README.md)")
+}
+
+# Get-NSHandoffSections <workspace> - the sections the owner picked, in their order, or none.
+function Get-NSHandoffSections {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $block = Get-NSHandoffBlock $Workspace
+    if ($null -eq $block -or -not $block.Contains('sections')) { return , @() }
+    $names = New-Object Collections.Generic.List[string]
+    foreach ($name in @($block['sections'])) {
+        if ($name -is [string] -and $name.Length -gt 0) { $names.Add($name) }
     }
-    $lines = New-Object Collections.Generic.List[string]
-    $lines.Add('Receipts:')
-    foreach ($part in $parts) { $lines.Add('- ' + $part) }
-    return ($lines -join "`n")
+    return , $names.ToArray()
 }
 
 function Get-NSMorningReceipt {
@@ -9297,7 +9705,7 @@ function Get-NSMorningReceipt {
     $context = Get-NSReceiptContext -Workspace $Workspace -View $View
     $lines = New-Object Collections.Generic.List[string]
     $lines.Add($script:NSReceiptTitle)
-    $lines.Add((Get-NSMorningReceiptsLine ([string]$context['punch'])))
+    $lines.Add((Get-NSMorningReceiptsLine))
     $dash = Get-NSEvidenceDash
     switch ([string]$context['policyKind']) {
         'accepted' { $lines.Add('- Policy record: accepted') }
@@ -9308,7 +9716,12 @@ function Get-NSMorningReceipt {
             $lines.Add(('- Policy record: absent {0} {1}' -f $dash, $script:NSReceiptPolicyAbsentReason))
         }
     }
-    foreach ($key in @($script:NSReceiptViewSections[$View])) {
+    # An owner list picks from the documented sections and orders them; an empty list keeps the
+    # built-in order for the view.
+    $sections = Get-NSHandoffSections $Workspace
+    if ($sections.Length -eq 0) { $sections = @($script:NSReceiptViewSections[$View]) }
+    foreach ($key in $sections) {
+        if (-not $script:NSReceiptSectionTitle.Contains([string]$key)) { continue }
         $body = Get-NSReceiptSectionLines -Key ([string]$key) -Context $context
         if ($null -eq $body -or @($body).Count -eq 0) { continue }
         $lines.Add('')
@@ -10566,6 +10979,48 @@ function Get-NSUsagePausedBetween {
     }
     if ($total -le 0) { return '' }
     return ([string]$total + "`t" + $lastReason)
+}
+
+# Get-NSUsagePausesByReason <nightshift-dir> <from> <to> - the not-work inside one span, one entry
+# per reason in the order each was first recorded. Each gap is measured exactly as
+# Get-NSUsagePausedBetween measures it, so the entries sum to its total.
+function Get-NSUsagePausesByReason {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From,
+          [Parameter(Mandatory = $true)][long]$To)
+    $result = New-Object Collections.Generic.List[object]
+    $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'pauses.tsv'
+    $marksFile = Get-NSUsageMarksPath $NightshiftDir
+    if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $marksFile -PathType Leaf)) { return , $result.ToArray() }
+    $marks = New-Object Collections.Generic.List[long]
+    foreach ($line in @([IO.File]::ReadAllLines($marksFile))) {
+        $at = $line.Split("`t")[0]
+        if ($at -cmatch '^[0-9]+$') { $marks.Add([long]$at) }
+    }
+    $order = New-Object Collections.Generic.List[string]
+    $totals = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+    foreach ($line in @([IO.File]::ReadAllLines($file))) {
+        $parts = $line.Split("`t")
+        if ($parts[0] -cnotmatch '^[0-9]+$') { continue }
+        $at = [long]$parts[0]
+        if ($at -lt $From -or $at -ge $To) { continue }
+        $resumed = -1L
+        foreach ($mark in $marks) {
+            if ($mark -gt $at) { $resumed = $mark; break }
+        }
+        if ($resumed -lt 0) { continue }
+        if ($resumed -gt $To) { $resumed = $To }
+        $why = $(if ($parts.Length -ge 2 -and $parts[1].Length -gt 0) { $parts[1] } else { 'paused' })
+        if (-not $totals.ContainsKey($why)) {
+            $order.Add($why)
+            $totals[$why] = 0
+        }
+        $totals[$why] += ($resumed - $at)
+    }
+    foreach ($why in $order) {
+        if ($totals[$why] -gt 0) { $result.Add([pscustomobject]@{ Reason = $why; Seconds = $totals[$why] }) }
+    }
+    return , $result.ToArray()
 }
 
 # What the shift cost, written where the item's section is, at the moment the item is ticked. Marks

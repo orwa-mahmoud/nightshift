@@ -1,7 +1,7 @@
 # Portable PowerShell coverage for the native Windows morning receipt.
 # Run on macOS or Windows: pwsh -File tests/windows/morning-receipt-logic.ps1
 #
-# Covers the frozen 03A interface: the six sections in order, the four views,
+# Covers the receipt interface: every section in order, the four views,
 # the three lines that always appear in section 1, the zero-gate render with no
 # ledger, an artifact view free of repository terms, every table row citing a
 # record id, a disabled check never rendered as a check that passed, the file
@@ -334,7 +334,7 @@ $null = New-Item -ItemType Directory -Path $root -Force
 $bashCommand = Get-Command bash -ErrorAction SilentlyContinue
 
 try {
-    # === 1. The owner view: six sections in order, every row cited ===
+    # === 1. The owner view: every section in order, every row cited ===
     $project = Join-Path $root 'owner'
     $ns = New-ReceiptProject -Path $project
     & git -C $project init --quiet
@@ -361,17 +361,19 @@ try {
     Expect-True (-not (Test-NSHasBom $ownerRun.StdoutBytes)) 'the receipt has no BOM'
     $owner = $ownerRun.StdoutText
     Expect-True $owner.StartsWith('# Morning receipt') 'the receipt names itself'
-    Expect-Equal 'Shift|Baseline|What changed|Parked|Unsupported / unmeasured|Next' (Get-SectionOrder $owner) `
-        'the owner view renders the six sections in interface order'
+    Expect-Equal 'How it ended|Items|Review first|Decisions for you|Baseline|What changed|Unsupported / unmeasured|Next step' (Get-SectionOrder $owner) `
+        'the owner view renders every section in interface order'
 
-    Expect-True $owner.Contains("Receipts:`n- [index](./README.md)`n- [Quiet the lint rule](./quiet-the-lint-rule.md)") `
-        'the page links the index and each ticked item'
+    Expect-True $owner.Contains("Receipts:`n- [index](./README.md)`n- Policy record: accepted") `
+        'the page links the index'
+    Expect-True $owner.Contains("## Items`n`n- Quiet the lint rule $dash ticked`n- Rewrite the import map $dash open`n") `
+        'every item has its line with its state'
     Expect-True $owner.Contains('- Policy record: accepted') 'an accepted policy is named at the top'
     Expect-True $owner.Contains("- Shift: $shiftId") 'section 1 names the shift'
     Expect-True $owner.Contains('- Ending: unknown') 'an open punch list with no STOP is never reported as done'
     Expect-True $owner.Contains('- Items: 1 ticked, 1 open') 'section 1 counts ticked and open items'
     Expect-True $owner.Contains('- Started: 2020-01-01T00:00:00Z') 'section 1 takes the start from the policy that ran'
-    Expect-True $owner.Contains('- Ended: 2026-09-02 03:14:15') 'section 1 takes the end from the shift log'
+    Expect-True (-not $owner.Contains('- Ended:')) 'a shift that has not ended names no end'
     Expect-True $owner.Contains('- Policy: profile fast, verification final, tooling existing-tools') `
         'section 1 renders the policy that ran'
     Expect-True $owner.Contains('- Allowance: containers (category, one-shift)') 'every allowance carries its provenance'
@@ -412,13 +414,13 @@ try {
     # === 2. The views ===
     $reviewerRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $project, '-View', 'reviewer')
     Expect-Equal 0 $reviewerRun.ExitCode "the reviewer view renders ($($reviewerRun.StderrText))"
-    Expect-Equal 'Baseline|What changed' (Get-SectionOrder $reviewerRun.StdoutText) `
+    Expect-Equal 'Review first|Baseline|What changed' (Get-SectionOrder $reviewerRun.StdoutText) `
         'the reviewer view renders the baseline and the comparison'
     Expect-True $reviewerRun.StdoutText.Contains('| F-cleared | cleared |') 'the reviewer view keeps the locators'
 
     $releaseRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $project, '-View', 'release')
     Expect-Equal 0 $releaseRun.ExitCode "the release view renders ($($releaseRun.StderrText))"
-    Expect-Equal 'Shift|What changed' (Get-SectionOrder $releaseRun.StdoutText) `
+    Expect-Equal 'How it ended|What changed' (Get-SectionOrder $releaseRun.StdoutText) `
         'the release view renders the shift and the comparison'
     Expect-True (-not $releaseRun.StdoutText.Contains('| F-unchanged |')) 'the release view carries regressions only'
 
@@ -428,7 +430,7 @@ try {
     [IO.File]::WriteAllText((Join-Path $artifactNs 'receipts/2026-09-02-quiet-the-rule.md'), "# Receipt`n", $utf8)
     $artifactRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $artifactProject, '-View', 'artifact')
     Expect-Equal 0 $artifactRun.ExitCode "the artifact view renders ($($artifactRun.StderrText))"
-    Expect-Equal 'Shift|Parked|Next' (Get-SectionOrder $artifactRun.StdoutText) `
+    Expect-Equal 'How it ended|Items|Review first|Decisions for you|Next step' (Get-SectionOrder $artifactRun.StdoutText) `
         'the artifact view omits the repository sections'
     Expect-True $artifactRun.StdoutText.Contains('- Receipts: 1') 'the artifact view counts receipts, never commits'
     foreach ($term in @('Commits:', 'commit', 'HEAD', 'git ', 'branch')) {
@@ -463,8 +465,9 @@ try {
     $plainRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $plainProject)
     Expect-Equal 0 $plainRun.ExitCode "a shift with no policy renders ($($plainRun.StderrText))"
     $plain = $plainRun.StdoutText
-    Expect-True $plain.Contains("Receipts:`n- [index](./README.md)`n- [Tidy the changelog](./tidy-the-changelog.md)") `
-        'a shift with no policy still links ticked receipts'
+    Expect-True $plain.Contains("Receipts:`n- [index](./README.md)`n- Policy record: absent") `
+        'a shift with no policy still links the index'
+    Expect-True $plain.Contains("- Tidy the changelog $dash ticked") 'a shift with no policy still lists every item'
     Expect-True $plain.Contains("- Policy record: absent $dash the shift wrote no policy") `
         'a missing file is named as absent, not as malformed'
     Expect-True $plain.Contains('- Gates: npm test (punch list)') `
@@ -503,7 +506,8 @@ try {
 
     # === 3c. Valid, absent, and malformed policy fixtures — same facts on both hosts ===
     $fixtureDir = Join-Path $repository 'tests/fixtures/morning-receipt'
-    $receiptsLine = "Receipts:`n- [index](./README.md)`n- [2. Make the packed Node-only build reproducible.](./2-make-the-packed-node-only-build-reproducible.md)"
+    $receiptsLine = "Receipts:`n- [index](./README.md)`n- Policy record: "
+    $itemLine = "- 2. Make the packed Node-only build reproducible. $dash ticked"
     $malformedReason = "the policy file is present but unreadable or fails the schema"
     foreach ($case in @(
             @{ Name = 'accepted'; File = 'shift-policy-valid.json' },
@@ -522,7 +526,9 @@ try {
         $fixRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $fixProject, '-View', 'owner')
         Expect-Equal 0 $fixRun.ExitCode "the $($case.Name) policy fixture renders ($($fixRun.StderrText))"
         Expect-True $fixRun.StdoutText.Contains($receiptsLine) `
-            "the $($case.Name) fixture links the index and the ticked item"
+            "the $($case.Name) fixture links the index"
+        Expect-True $fixRun.StdoutText.Contains($itemLine) `
+            "the $($case.Name) fixture lists the ticked item"
         switch ($case.Name) {
             'accepted' {
                 Expect-True $fixRun.StdoutText.Contains('- Policy record: accepted') `
@@ -726,6 +732,144 @@ try {
     }
     else {
         Write-Host 'skip: runtime/morning-receipt.sh or bash not available; parity leg not run'
+    }
+
+    # === 11. The verdict: time and tokens, items, review, interruptions, decisions, snags ===
+    $verdictProject = Join-Path $root 'verdict'
+    $verdictNs = New-ReceiptProject -Path $verdictProject -WithPolicy $false `
+        -Items ("- [x] **1. Add the parser.** <!-- id: a1b2 -->`n" +
+            "- [x] **2. Wire the parser into the CLI.** <!-- id: c3d4 -->`n" +
+            "- [ ] **3. Document the flags.** <!-- id: e5f6 -->`n") `
+        -Parking ("- Ship the parser behind a flag because the CLI cannot complete anywhere but a`n" +
+            "  POSIX shell today, and Windows users would see a broken command.`n" +
+            "  - Default: flag off until the Windows path lands`n" +
+            "  - Rollback: delete the flag`n" +
+            "- [notice] 2026-09-24 03:00 $dash the shift session died and the watchman revived it.`n" +
+            "- An answered question $([char]0x00b7) answered 2026-09-24`n")
+    $middot = [string][char]0x00b7
+    [IO.File]::WriteAllText((Join-Path $verdictNs 'receipts/a1b2-add-the-parser.md'), "# 1. Add the parser.`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $verdictNs 'snag-log.md'), ("# Snag Log`n`n---`n`n" +
+            "- Old finding $middot evidence $middot rejected-because noisy $middot 2020-01-01`n" +
+            "- Parser drops a trailing comma $middot tests/parse.bats $middot fixed in abc123 $middot 2026-09-24`n" +
+            "- CLI help is stale $middot docs/cli.md $middot accepted-tradeoff renamed in item 3 $middot 2026-09-24`n" +
+            "- Windows path untested $middot no pwsh on the runner`n  still open $middot 2026-09-24`n"), $utf8)
+    [IO.File]::WriteAllText((Join-Path $verdictNs 'shift-log.md'), ("# Shift Log`n" +
+            "2026-09-21 10:00:00 $middot watchman: site dead quiet mid-shift $dash resume attempt 1 (resume)`n" +
+            "2026-09-21T14:12:20Z shift started $dash 3 items`n" +
+            "2026-09-21 18:01:00 $middot watchman: site dead quiet mid-shift $dash resume attempt 1 (resume)`n" +
+            "2026-09-21T18:05:00Z $middot item 1 done $dash install the parser`n" +
+            "2026-09-21T19:00:00Z $middot handover $dash item 3 half done; next: write the flags table`n" +
+            "2026-09-21 19:10:00 $middot stopped by owner`n"), $utf8)
+    $now = 1790000000
+    $usage = Join-Path $verdictNs 'usage'
+    $null = New-Item -ItemType Directory -Path $usage -Force
+    [IO.File]::WriteAllText((Join-Path $usage 'marks.tsv'), (
+            "$now`tarm`t`n" +
+            "$($now + 600)`t1. Add the parser.`tinput=100,output=50`ttick`n" +
+            "$($now + 1800)`t2. Wire the parser into the CLI.`tinput=300,output=90`ttick`n" +
+            "$($now + 3000)`t3. Document the flags.`tinput=400,output=120`tpause`n"), $utf8)
+    [IO.File]::WriteAllText((Join-Path $usage 'pauses.tsv'), (
+            "$($now + 700)`towner pressed Esc`n" +
+            "$($now + 1000)`tthe session ended and the shift was revived`n" +
+            "$($now + 2000)`towner pressed Esc`n"), $utf8)
+    [IO.File]::WriteAllText((Join-Path $usage 'segments.tsv'),
+        "claude-t1`tclaude`tclaude-opus-5-5`ttranscript-incremental`t10`tinput=0,output=0`tinput=400,cache_read=12000,output=120`t`n", $utf8)
+    $policy = New-NSOrdinalMap
+    $policy['schemaVersion'] = 1
+    $policy['shiftId'] = $shiftId
+    $policy['createdAt'] = '2026-09-21T14:12:20Z'
+    $policy['source'] = 'composition'
+    $policy['verificationLevel'] = 'final'
+    $policy['toolingPolicy'] = 'existing-tools'
+    [IO.File]::WriteAllText((Join-Path $verdictNs 'shift-policy.json'), ((ConvertTo-NSCanonicalJson $policy) + "`n"), $utf8)
+    $ended = Join-Path $verdictNs '.ended'
+    [IO.File]::WriteAllText($ended, "shiftId=$shiftId`n", $utf8)
+    [IO.File]::SetLastWriteTimeUtc($ended, (New-Object DateTime 2026, 9, 21, 15, 10, 5, ([DateTimeKind]::Utc)))
+    & git -C $verdictProject init --quiet
+    $history = @(
+        @{ At = $now - 100000; File = 'base.txt'; Lines = 1; Subject = 'chore: base' },
+        @{ At = $now + 100; File = 'parser.js'; Lines = 40; Subject = 'feat: add the parser' },
+        @{ At = $now + 500; File = 'parser.test.js'; Lines = 30; Subject = 'test: cover the parser' },
+        @{ At = $now + 1200; File = 'cli.js'; Lines = 5; Subject = 'feat: wire the parser' },
+        @{ At = $now + 3500; File = 'notes.md'; Lines = 200; Subject = 'docs: late notes' })
+    foreach ($commit in $history) {
+        $body = (1..$commit.Lines | ForEach-Object { "line $_" }) -join "`n"
+        [IO.File]::WriteAllText((Join-Path $verdictProject $commit.File), ($body + "`n"), $utf8)
+        & git -C $verdictProject add $commit.File
+        $env:GIT_AUTHOR_DATE = "@$($commit.At) +0000"
+        $env:GIT_COMMITTER_DATE = "@$($commit.At) +0000"
+        try {
+            & git -C $verdictProject -c user.name=nightshift -c user.email=nightshift@localhost `
+                -c commit.gpgsign=false commit --quiet -m $commit.Subject
+        }
+        finally {
+            Remove-Item Env:GIT_AUTHOR_DATE, Env:GIT_COMMITTER_DATE -ErrorAction SilentlyContinue
+        }
+    }
+    $first = ([string](& git -C $verdictProject log --format=%h -n1 HEAD~3)).Trim()
+    $last = ([string](& git -C $verdictProject log --format=%h -n1)).Trim()
+
+    $verdictRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $verdictProject)
+    Expect-Equal 0 $verdictRun.ExitCode "the verdict renders ($($verdictRun.StderrText))"
+    $verdict = $verdictRun.StdoutText
+    Expect-Equal 'How it ended|Time and tokens|Items|Review first|Interruptions|Decisions for you|Found but not fixed|Next step' `
+        (Get-SectionOrder $verdict) 'the verdict orders every section it has records for'
+    Expect-True ($verdict.Contains('- Started: 2026-09-21T14:13:20Z') -and $verdict.Contains('- Ended: 2026-09-21T15:10:05Z')) `
+        'both ends of the shift carry the zone'
+    Expect-True $verdict.Contains(("- Working: 8m 25s`n- Paused: 48m 20s`n  - owner pressed Esc: 35m 0s`n" +
+            "  - the session ended and the shift was revived: 13m 20s`n- Wall: 56m 45s")) `
+        'pause reasons sum to the paused total'
+    Expect-True ($verdict.Contains('| cache write | unavailable |') -and $verdict.Contains('| cache read | 12.0k |')) `
+        'a kind the host did not report reads unavailable'
+    Expect-True $verdict.Contains("- [1. Add the parser.](./a1b2-add-the-parser.md) $dash ticked`n- 2. Wire the parser into the CLI. $dash ticked") `
+        'an item links to its receipt only when the file exists'
+    Expect-True $verdict.Contains(("- ``$last`` docs: late notes $dash 1 file, 200 lines (+200/-0), 1 commit`n" +
+            "- [1. Add the parser.](./a1b2-add-the-parser.md) $dash 2 files, 70 lines (+70/-0), 2 commits`n" +
+            "- 2. Wire the parser into the CLI. $dash 1 file, 5 lines (+5/-0), 1 commit`n" +
+            "- Whole range: ``git log --stat $first^..$last``")) 'review first ranks by change size'
+    Expect-True ($verdict.Contains('resume attempt 1') -and -not $verdict.Contains('2026-09-21 10:00:00') -and
+        -not $verdict.Contains('install the parser') -and $verdict.Contains('stopped by owner')) `
+        'interruptions come from the shift log since the shift started'
+    Expect-True $verdict.Contains(("- Ship the parser behind a flag because the CLI cannot complete anywhere but a POSIX shell today, " +
+            "and Windows users would see a broken command.`n  - Default: flag off until the Windows path lands`n  - Rollback: delete the flag")) `
+        'a wrapped parked entry renders in full'
+    Expect-True (-not $verdict.Contains('[notice]') -and -not $verdict.Contains('An answered question')) `
+        'notices and answered entries are not decisions'
+    Expect-True $verdict.Contains("## Found but not fixed`n`n- CLI help is stale $dash accepted-tradeoff renamed in item 3`n- Windows path untested $dash open`n") `
+        'found but not fixed lists only this shift''s unfixed snags'
+    Expect-True $verdict.Contains("- Handover: 2026-09-21T19:00:00Z $middot handover $dash item 3 half done; next: write the flags table") `
+        'next step carries the handover line'
+
+    $offRules = Join-Path $verdictNs 'rules.json'
+    $rules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText(
+            (Join-Path $plugin 'skills/nightshift/references/nightshift-rules-template.json')))
+    $rules['receipts']['usage'] = 'off'
+    $rules['receipts']['duration'] = 'off'
+    [IO.File]::WriteAllText($offRules, ((ConvertTo-NSCanonicalJson $rules) + "`n"), $utf8)
+    $offRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $verdictProject)
+    Expect-True $offRun.StdoutText.Contains("## Time and tokens`n`n- Time: off`n- Tokens: off`n") `
+        'a measurement the owner turned off reads off'
+    if ((Test-Path -LiteralPath $bashReceipt -PathType Leaf) -and $null -ne $bashCommand) {
+        $offBash = Invoke-ProcessBytes -FileName $bashCommand.Source `
+            -Arguments @($bashReceipt, '--project', $verdictProject, '--view', 'owner') `
+            -EnvOverrides @{ LANG = 'C.UTF-8'; LC_ALL = 'C.UTF-8'; MSYS_NO_PATHCONV = '1'; MSYS2_ARG_CONV_EXCL = '*' }
+        Expect-NSRendererParity $offRun $offBash 'both renderers report a measurement turned off the same way'
+    }
+    Remove-Item -LiteralPath $offRules -Force
+
+    [IO.File]::WriteAllText((Join-Path $verdictNs 'work-mode'), "artifact`n", $utf8)
+    $artifactVerdict = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $verdictProject, '-View', 'artifact')
+    Expect-True $artifactVerdict.StdoutText.Contains("## Review first`n`n- Does not apply: an artifact shift is reviewed through its receipts.`n") `
+        'review first does not apply in artifact mode'
+    [IO.File]::WriteAllText((Join-Path $verdictNs 'work-mode'), "repository`n", $utf8)
+    if ((Test-Path -LiteralPath $bashReceipt -PathType Leaf) -and $null -ne $bashCommand) {
+        foreach ($view in @('owner', 'reviewer', 'release', 'artifact')) {
+            $bashRun = Invoke-ProcessBytes -FileName $bashCommand.Source `
+                -Arguments @($bashReceipt, '--project', $verdictProject, '--view', $view) `
+                -EnvOverrides @{ LANG = 'C.UTF-8'; LC_ALL = 'C.UTF-8'; MSYS_NO_PATHCONV = '1'; MSYS2_ARG_CONV_EXCL = '*' }
+            $nativeRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $verdictProject, '-View', $view)
+            Expect-NSRendererParity $nativeRun $bashRun "both renderers write the same verdict for the $view view"
+        }
     }
 }
 finally {

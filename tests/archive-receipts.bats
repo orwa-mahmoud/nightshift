@@ -529,7 +529,12 @@ closed() { # <project> — the shift ended
     "$d/README.md"
   grep -qF '| 2. Cover the parser. | ticked |' "$d/README.md"
   ! grep -qF 'Trim the bundle' "$d/README.md"
-  ! grep -qF 'morning-2026-09-05-abc.md' "$d/README.md"
+  # The shift summary is linked above the table, never listed as an item, and only from the folder
+  # that holds it.
+  grep -qF 'Shift summary: [morning-2026-09-05-abc.md](./morning-2026-09-05-abc.md)' "$d/README.md"
+  [ "$(grep -n '^Shift summary:' "$d/README.md" | cut -d: -f1)" -lt "$(grep -n '^| Item |' "$d/README.md" | cut -d: -f1)" ]
+  ! grep -qF '| morning-' "$d/README.md"
+  ! grep -qF 'morning-2026-09-05-abc.md' "$r/README.md"
 }
 
 @test "the live index goes away when nothing is left to list" {

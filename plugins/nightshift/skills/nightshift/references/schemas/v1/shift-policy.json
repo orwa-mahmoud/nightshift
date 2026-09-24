@@ -269,7 +269,7 @@
             "release",
             "artifact"
           ],
-          "description": "Which reader the page is written for. owner is every section, reviewer the baseline and the comparison, release the shift line with regressions only, and artifact the sections that make sense for a site rather than a repository."
+          "description": "Which reader the page is written for. owner is every section, reviewer where to start the review with the baseline and the comparison, release how the shift ended with regressions only, and artifact every section that makes sense for a site rather than a repository."
         },
         "language": {
           "type": "string",
@@ -291,9 +291,14 @@
             "type": "string",
             "enum": [
               "shift",
+              "usage",
+              "items",
+              "review",
+              "interruptions",
+              "parked",
+              "snags",
               "baseline",
               "changed",
-              "parked",
               "unsupported",
               "next"
             ]

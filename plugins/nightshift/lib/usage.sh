@@ -527,6 +527,32 @@ ns_usage_paused_between() {
   printf '%s\t%s' "$total" "$last_reason"
 }
 
+# ns_usage_pauses_by_reason <nightshift-dir> <from> <to> — the not-work inside one span, one
+# `<reason>\t<seconds>` line per reason in the order each was first recorded. Each gap is measured
+# exactly as ns_usage_paused_between measures it, so the lines sum to its total.
+ns_usage_pauses_by_reason() {
+  local file marks
+  file="$(ns_usage_dir "$1")/pauses.tsv"
+  marks="$(_ns_usage_marks "$1")"
+  [ -f "$file" ] && [ ! -L "$file" ] && [ -f "$marks" ] || return 1
+  awk -F'\t' -v from="$2" -v to="$3" '
+    FILENAME == ARGV[1] { if ($1 ~ /^[0-9]+$/) mark[++nm] = $1 + 0; next }
+    $1 !~ /^[0-9]+$/ { next }
+    {
+      at = $1 + 0
+      if (at < from || at >= to) next
+      resumed = -1
+      for (i = 1; i <= nm; i++) if (mark[i] > at) { resumed = mark[i]; break }
+      if (resumed < 0) next
+      if (resumed > to) resumed = to
+      why = (NF >= 2 && $2 != "") ? $2 : "paused"
+      if (!(why in total)) order[++n] = why
+      total[why] += resumed - at
+    }
+    END { for (i = 1; i <= n; i++) if (total[order[i]] > 0) printf "%s\t%d\n", order[i], total[order[i]] }
+  ' "$marks" "$file"
+}
+
 # _ns_usage_resumed_at <nightshift-dir> <epoch> — when work was next seen after a pause, from the
 # marks the runtime was already keeping.
 _ns_usage_resumed_at() {

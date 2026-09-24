@@ -12,8 +12,8 @@ outputs, and related snags or decisions. While it runs, a short progress paragra
 done and what remains. The closing paragraph replaces that when the item finishes.
 
 At clock-out, the [morning receipt](morning-receipt.md#the-morning-receipt) is the compact ending
-and evidence summary. The [example receipts](../examples/receipts.md#receipts) show an index and
-one item file.
+and evidence summary, linked from the top of the index. The
+[example receipts](../examples/receipts.md#receipts) show an index and one item file.
 
 ## Token usage is measured by the runtime
 

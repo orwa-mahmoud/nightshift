@@ -287,7 +287,7 @@ SH
   [ ! -e "$p/.nightshift/shift-policy.json" ]
 }
 
-@test "clock-out morning receipt links the receipts index and each ticked item" {
+@test "clock-out morning receipt links the receipts index, which links it back" {
   p="$(new_project gate-receipt-links)"
   punch_done "$p"
   write_policy_with_deadline "$p" null
@@ -296,8 +296,14 @@ SH
   is_release
   out="$p/.nightshift/receipts/morning-$today-9f2c40ab77e51d63.md"
   [ -f "$out" ]
-  grep -qF $'Receipts:\n- [index](./README.md)\n- [1. first.](./1-first.md)\n- [2. done.](./2-done.md)' "$out"
-  grep -qF -- '- Policy record: accepted' "$out"
+  grep -qxF -- '- [index](./README.md)' "$out"
+  grep -qxF -- '- Policy record: accepted' "$out"
+  # Every item has its line under Items, linked where its receipt exists.
+  grep -qE '^- (\[)?1\. first\.(\]\(\./[a-z0-9-]+\.md\))? — ticked$' "$out"
+  grep -qE '^- (\[)?2\. done\.(\]\(\./[a-z0-9-]+\.md\))? — ticked$' "$out"
+  # The live index names the page the gate just wrote.
+  grep -qxF "Shift summary: [morning-$today-9f2c40ab77e51d63.md](./morning-$today-9f2c40ab77e51d63.md)" \
+    "$p/.nightshift/receipts/README.md"
 }
 
 @test "clock-out renders the owner receipt into receipts/, named for tonight's shift" {
@@ -1043,10 +1049,10 @@ handoff() {
   is_release
   out="$(the_receipt "$p")"
   [ -f "$out" ]
-  # The reviewer page is the baseline and the comparison, and carries no Shift section.
+  # The reviewer page is the baseline and the comparison, and carries no How it ended section.
   grep -q '^## Baseline' "$out"
   grep -q '^## What changed' "$out"
-  if grep -q '^## Shift' "$out"; then
+  if grep -q '^## How it ended' "$out"; then
     echo "the reviewer view rendered the owner page"
     return 1
   fi
@@ -1066,7 +1072,7 @@ handoff() {
   [ -f "$out" ]
   # Both asked-for sections, in the order asked, and nothing else.
   [ "$(grep -c '^## ' "$out")" -eq 2 ]
-  [ "$(grep -n '^## What changed' "$out" | cut -d: -f1)" -lt "$(grep -n '^## Shift' "$out" | cut -d: -f1)" ]
+  [ "$(grep -n '^## What changed' "$out" | cut -d: -f1)" -lt "$(grep -n '^## How it ended' "$out" | cut -d: -f1)" ]
   if grep -q '^## Baseline' "$out"; then
     echo "a section the owner did not ask for was rendered"
     return 1
