@@ -208,6 +208,7 @@ try {
     $null = New-Item -ItemType Directory -Path $fileDestRecv, $fileDestDated -Force
     [IO.File]::WriteAllText((Join-Path $fileDestNs 'work-mode'), "artifact`n")
     [IO.File]::WriteAllText((Join-Path $fileDestRecv '20260101T000000Z-real.md'), "real`n")
+    [IO.File]::WriteAllText((Join-Path $fileDestDated '.shift-id'), "unknown`n")
     [IO.File]::WriteAllText((Join-Path $fileDestDated 'receipts'), "not-a-dir`n")
     $destRefused = Invoke-ArchiveReceipts $fileDest @('-Date', '2026-08-28')
     Expect-True ($destRefused.ExitCode -eq 2) "file archive dest exits 2 (got $($destRefused.ExitCode) $($destRefused.Stderr))"
@@ -622,14 +623,27 @@ try {
     Expect-True (([IO.File]::ReadAllText((Join-Path $second '.shift-id'))).Trim() -ceq '2222222222222222') 'a folder records its shift'
     Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId '2222222222222222') -ceq $second) 'the same shift returns to its folder'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $archiveBase '2026-09-05-shift-4'))) 'no extra folder is opened'
-    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-06' -ShiftId 'unknown') -ceq (Join-Path $archiveBase '2026-09-06')) 'no id means the date folder'
-    Expect-True (-not (Test-Path -LiteralPath (Join-Path $archiveBase '2026-09-06/.shift-id'))) 'no id claims nothing'
+    # A shift with no id claims its folder as unknown, comes back to it, and a shift with an id
+    # moves past it.
+    $noId = Join-Path $archiveBase '2026-09-06'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-06' -ShiftId 'unknown') -ceq $noId) 'no id files into the date folder'
+    Expect-True (([IO.File]::ReadAllText((Join-Path $noId '.shift-id'))).Trim() -ceq 'unknown') 'no id claims the folder as unknown'
+    [IO.File]::WriteAllText((Join-Path $noId 'punch-list.md'), "the first night`n", (New-Object Text.UTF8Encoding($false)))
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-06' -ShiftId 'unknown') -ceq $noId) 'no id comes back to its folder'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-06' -ShiftId '') -ceq $noId) 'an empty id is no id'
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-06' -ShiftId '2222222222222222') -ceq ($noId + '-shift-2')) 'a shift with an id moves past an unknown folder'
+    # A shift with no id moves past a folder another shift owns.
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-05' -ShiftId 'unknown') -ceq (Join-Path $archiveBase '2026-09-05-shift-4')) 'no id moves past owned folders'
 
-    # A folder filed before folders recorded their shift is claimed, and the next shift moves on.
+    # A folder holding records nobody claimed is left alone; an empty one is claimed.
     $legacy = Join-Path $archiveBase '2026-09-07'
     $null = New-Item -ItemType Directory -Path $legacy -Force
-    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-07' -ShiftId '1111111111111111') -ceq $legacy) 'an unrecorded folder is claimed'
-    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-07' -ShiftId '2222222222222222') -ceq ($legacy + '-shift-2')) 'the next shift moves on'
+    [IO.File]::WriteAllText((Join-Path $legacy 'shipped.md'), "an earlier night`n", (New-Object Text.UTF8Encoding($false)))
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-07' -ShiftId '1111111111111111') -ceq ($legacy + '-shift-2')) 'a folder with records nobody claimed is not claimed'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $legacy '.shift-id'))) 'that folder stays unclaimed'
+    $empty = Join-Path $archiveBase '2026-09-08'
+    $null = New-Item -ItemType Directory -Path $empty -Force
+    Expect-True ((Get-NSArchiveDir -Workspace $sameDay -Date '2026-09-08' -ShiftId '1111111111111111') -ceq $empty) 'an empty unclaimed folder is claimed'
 
     # The clock-out policy archive files a second same-day shift into its own folder.
     $utf8 = New-Object Text.UTF8Encoding($false)

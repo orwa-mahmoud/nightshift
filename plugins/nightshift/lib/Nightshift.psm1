@@ -6136,10 +6136,10 @@ function Get-NSArchiveRoot {
 # The shift layout gives each shift `shift-<id>/`. The date layout gives the first shift of a day
 # `<date>/` and each later one `<date>-shift-2/`, `<date>-shift-3/` and so on, so two shifts never
 # share a punch list, a log or a receipt name. A folder records the shift it belongs to in
-# `.shift-id`, and a shift filed again that day comes back to its own folder. A folder filed before
-# folders recorded their shift is claimed by the first shift that files into it again. Without a
-# shift id the date folder is the answer. A candidate that is a reparse point or not a directory is
-# returned as it is, for the caller to refuse.
+# `.shift-id`, `unknown` for a shift that ended without an id, and a shift filed again that day
+# comes back to its own folder. An empty folder without that record is claimed; one that already
+# holds records without it belongs to nobody we can name and is never claimed. A candidate that is
+# a reparse point or not a directory is returned as it is, for the caller to refuse.
 function Get-NSArchiveDir {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -6149,12 +6149,11 @@ function Get-NSArchiveDir {
     $root = Get-NSArchiveRoot $Workspace
     if ($null -eq $root) { return $null }
     $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
-    $known = -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown'
-    if ($layout -ceq 'shift' -and $known) {
+    if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
+    if ($layout -ceq 'shift' -and $ShiftId -cne 'unknown') {
         return (Join-Path $root ('shift-' + $ShiftId))
     }
     $base = Join-Path $root $Date
-    if (-not $known) { return $base }
     $dir = $base
     $n = 1
     while ($true) {
@@ -6177,7 +6176,8 @@ function Get-NSArchiveDir {
             $lines = @([IO.File]::ReadAllLines($record))
             if ($lines.Count -gt 0) { $owner = $lines[0] }
         }
-        elseif (-not (Test-Path -LiteralPath $record)) {
+        elseif (-not (Test-Path -LiteralPath $record) -and
+            @(Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
             try {
                 [IO.File]::WriteAllText($record, $ShiftId + "`n", (New-Object Text.UTF8Encoding($false)))
             }

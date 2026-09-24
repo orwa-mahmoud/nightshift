@@ -983,23 +983,20 @@ ns_archive_dest() {
 # The shift layout gives each shift `shift-<id>/`. The date layout gives the first shift of a day
 # `<date>/` and each later one `<date>-shift-2/`, `<date>-shift-3/` and so on, so two shifts never
 # share a punch list, a log or a receipt name. A folder records the shift it belongs to in
-# `.shift-id`, and a shift filed again that day comes back to its own folder. A folder filed before
-# folders recorded their shift is claimed by the first shift that files into it again. Without a
-# shift id the date folder is the answer. A candidate that is a link or not a directory is returned
-# as it is, for the caller to refuse.
+# `.shift-id`, `unknown` for a shift that ended without an id, and a shift filed again that day
+# comes back to its own folder. An empty folder without that record is claimed; one that already
+# holds records without it belongs to nobody we can name and is never claimed. A candidate that is
+# a link or not a directory is returned as it is, for the caller to refuse.
 ns_archive_dir() {
-  local root layout base dir n=1 owner
+  local root layout base dir n=1 owner id
   root="$(ns_archive_root "$1")" || return 2
   layout="$(ns_archive "$1" layout)"
-  if [ "$layout" = shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
-    printf '%s/shift-%s' "$root" "$3"
+  id="${3:-unknown}"
+  if [ "$layout" = shift ] && [ "$id" != unknown ]; then
+    printf '%s/shift-%s' "$root" "$id"
     return 0
   fi
   base="$root/$2"
-  if [ -z "$3" ] || [ "$3" = unknown ]; then
-    printf '%s' "$base"
-    return 0
-  fi
   dir="$base"
   while :; do
     if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
@@ -1008,18 +1005,18 @@ ns_archive_dir() {
     fi
     if [ ! -e "$dir" ]; then
       mkdir -p "$dir" 2>/dev/null || return 2
-      printf '%s\n' "$3" >"$dir/.shift-id" 2>/dev/null || return 2
+      printf '%s\n' "$id" >"$dir/.shift-id" 2>/dev/null || return 2
       printf '%s' "$dir"
       return 0
     fi
     owner=""
     if [ -f "$dir/.shift-id" ] && [ ! -L "$dir/.shift-id" ]; then
       IFS= read -r owner <"$dir/.shift-id" || :
-    elif [ ! -e "$dir/.shift-id" ]; then
-      printf '%s\n' "$3" >"$dir/.shift-id" 2>/dev/null || return 2
-      owner="$3"
+    elif [ ! -e "$dir/.shift-id" ] && [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+      printf '%s\n' "$id" >"$dir/.shift-id" 2>/dev/null || return 2
+      owner="$id"
     fi
-    if [ "$owner" = "$3" ]; then
+    if [ "$owner" = "$id" ]; then
       printf '%s' "$dir"
       return 0
     fi

@@ -95,6 +95,11 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
       mkdir -p "$p/.nightshift/archive/$day"
       continue
     fi
+    if [ "$action" = records ]; then
+      mkdir -p "$p/.nightshift/archive/$day"
+      printf 'an earlier night\n' >"$p/.nightshift/archive/$day/shipped.md"
+      continue
+    fi
     got="$(lib ns_archive_dir "$p" "$day" "$id")"
     [ "${got##*/}" = "$want" ] || { echo "$day $id: got ${got##*/}, want $want"; return 1; }
   done < <(rows archive-folders.tsv)

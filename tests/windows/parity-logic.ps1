@@ -102,6 +102,12 @@ try {
             $null = New-Item -ItemType Directory -Path (Join-Path $foldersRoot ('.nightshift/archive/' + $row[1])) -Force
             continue
         }
+        if ($row[0] -ceq 'records') {
+            $recordsDir = Join-Path $foldersRoot ('.nightshift/archive/' + $row[1])
+            $null = New-Item -ItemType Directory -Path $recordsDir -Force
+            [IO.File]::WriteAllText((Join-Path $recordsDir 'shipped.md'), "an earlier night`n", (New-Object Text.UTF8Encoding($false)))
+            continue
+        }
         $got = Get-NSArchiveDir -Workspace $foldersRoot -Date $row[1] -ShiftId $row[2]
         Expect-Equal $row[3] (Split-Path -Leaf $got) "archive folder $($row[1]) $($row[2])"
     }

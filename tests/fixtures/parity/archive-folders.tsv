@@ -1,5 +1,6 @@
-# action<TAB>date<TAB>shift id<TAB>folder — run in order against one archive; `old` makes a dated
-# folder the way it was filed before folders recorded their shift, and `file` resolves one
+# action<TAB>date<TAB>shift id<TAB>folder — run in order against one archive; `old` makes an empty
+# dated folder the way it was filed before folders recorded their shift, `records` makes one that
+# already holds records nobody claimed, and `file` resolves one
 file	2026-09-05	1111111111111111	2026-09-05
 file	2026-09-05	2222222222222222	2026-09-05-shift-2
 file	2026-09-05	1111111111111111	2026-09-05
@@ -9,5 +10,10 @@ file	2026-09-06	unknown	2026-09-06
 old	2026-09-07	-	-
 file	2026-09-07	4444444444444444	2026-09-07
 file	2026-09-07	5555555555555555	2026-09-07-shift-2
-file	2026-09-06	6666666666666666	2026-09-06
-file	2026-09-06	7777777777777777	2026-09-06-shift-2
+file	2026-09-06	6666666666666666	2026-09-06-shift-2
+file	2026-09-06	7777777777777777	2026-09-06-shift-3
+file	2026-09-06	unknown	2026-09-06
+file	2026-09-05	unknown	2026-09-05-shift-4
+records	2026-09-08	-	-
+file	2026-09-08	8888888888888888	2026-09-08-shift-2
+file	2026-09-08	unknown	2026-09-08-shift-3
