@@ -117,6 +117,27 @@ tick() { # <project> <number>
   grep -qE '^\| \*\*Total\*\* \| 2 sessions \|' "$r3"
 }
 
+@test "ticking an earlier item while another is worked closes the worked item's span first" {
+  p="$(site earlier)"
+  reading "$p" 10 1
+  wrote "$p" cc33-blocked-on-a-reply 202609240300
+  step "$p"
+  reading "$p" 30 3
+  wrote "$p" dd44-the-next-one 202609240310
+  step "$p"
+  reading "$p" 60 5
+  tick "$p" 3
+  step "$p"
+
+  [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = \
+    'arm|3. Blocked on a reply.:switch|4. The next one.:switch|3. Blocked on a reply.:tick' ]
+  r3="$p/.nightshift/receipts/cc33-blocked-on-a-reply.md"
+  r4="$p/.nightshift/receipts/dd44-the-next-one.md"
+  # Item 4's work in hand is its own; item 3 is charged only for what it spent before.
+  [ "$(sessions "$r4" | awk '{ print $5, $6, $7 }')" = '60 5 switched-away' ]
+  grep -qF '| input | 40 |' "$r3"
+}
+
 @test "only a tick is a charge: an item switched away from still gets its tick" {
   p="$(site charge)"
   reading "$p" 10 1

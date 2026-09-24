@@ -868,3 +868,38 @@ parity_normalise() {
   grep -qF 'Move-NSUsageRetire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
   grep -qF 'ns_usage_retire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
 }
+
+# pause_fixture <project> — marks at 1000, 1600, 2800 and 4000; pauses at 1100 (Esc), 1300 (a
+# revival), 2000 (Esc) and 3900 (a usage limit), plus one at 4100 that no mark followed.
+pause_fixture() {
+  local u="$1/.nightshift/usage"
+  mkdir -p "$u"
+  printf '1000\tarm\t\n1600\t1. a.\t\ttick\n2800\t2. b.\t\ttick\n4000\t3. c.\t\tpause\n' >"$u/marks.tsv"
+  printf '1100\towner pressed Esc\n1300\tthe session ended and the shift was revived\n2000\towner pressed Esc\n3900\tusage limit\n4100\towner stop-work\n' \
+    >"$u/pauses.tsv"
+}
+
+@test "pauses by reason keep first-recorded order and sum to the paused total" {
+  p="$(new_project pauses-by-reason)"
+  pause_fixture "$p"
+  run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 4200
+  [ "$status" -eq 0 ]
+  # Esc: 1100→1600 and 2000→2800; the revival 1300→1600; the usage limit 3900→4000. The pause at
+  # 4100 has no mark after it and is left out.
+  [ "$output" = $'owner pressed Esc\t1300\nthe session ended and the shift was revived\t300\nusage limit\t100' ]
+  [ "$(lib ns_usage_paused_between "$p/.nightshift" 1000 4200 | cut -f1)" = 1700 ]
+}
+
+@test "a pause is cut at the end of the span it is measured in" {
+  p="$(new_project pauses-cut)"
+  pause_fixture "$p"
+  run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 1500
+  [ "$status" -eq 0 ]
+  [ "$output" = $'owner pressed Esc\t400\nthe session ended and the shift was revived\t200' ]
+}
+
+@test "a recorded pause with no reason is listed without one" {
+  run lib ns_usage_duration_line 600 60 '' 1000 1600
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'| working | 9m 0s |\n| paused | 1m 0s |\n| wall | 10m 0s |'* ]]
+}

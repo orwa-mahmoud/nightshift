@@ -461,3 +461,23 @@ work_through() {
   [ -f "$p/.nightshift/.ended" ]
   [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy-9f2c40ab77e51d63.json" ]
 }
+
+@test "the reviewer and release views carry only their own sections" {
+  p="$(verdict_project verdict-views)"
+  run bash "$RECEIPT" --project "$p" --view reviewer
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep '^## ' | tr '\n' '|')" = '## Review first|' ]
+  run bash "$RECEIPT" --project "$p" --view release
+  [ "$status" -eq 0 ]
+  # No ledger, so no comparison: the release reader sees how the shift ended.
+  [ "$(printf '%s\n' "$output" | grep '^## ' | tr '\n' '|')" = '## How it ended|' ]
+}
+
+@test "an owner section list can pick the verdict sections" {
+  p="$(verdict_project verdict-sections)"
+  jq '.handoff.sections = ["next", "usage"]' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash "$RECEIPT" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep '^## ' | tr '\n' '|')" = '## Next step|## Time and tokens|' ]
+}
