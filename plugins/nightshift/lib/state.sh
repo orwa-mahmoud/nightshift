@@ -251,7 +251,7 @@ ns_receipt_base() {
   [ -n "$id" ] || { printf '%s' "$legacy"; return 0; }
   dir="$(ns_receipts_dir "$project")"
   for f in "$dir/$id.md" "$dir/$id"-*.md; do
-    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
     f="${f##*/}"
     printf '%s' "${f%.md}"
     return 0
@@ -301,7 +301,7 @@ ns_active_item() {
     elif [ -z "$f" ]; then
       f="$dir/$(ns_receipt_basename "$label").md"
     fi
-    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
     if [ -z "$best_f" ] || [ "$f" -nt "$best_f" ]; then
       best="$label"
       best_f="$f"

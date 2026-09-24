@@ -518,7 +518,7 @@ ns_usage_paused_between() {
     at="$(printf '%s' "$line" | cut -f1)"
     reason="$(printf '%s' "$line" | cut -f2)"
     case "$at" in '' | *[!0-9]*) continue ;; esac
-    [ "$at" -ge "$from" ] && [ "$at" -lt "$to" ] || continue
+    { [ "$at" -ge "$from" ] && [ "$at" -lt "$to" ]; } || continue
     next="$(_ns_usage_resumed_at "$ns" "$at")" || continue
     [ "$next" -le "$to" ] || next="$to"
     total=$((total + next - at))
