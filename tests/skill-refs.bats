@@ -528,7 +528,7 @@ documented_pages() {
       "$SKILLS/../lib/layout.sh" "$key")"
     grep -qF "| \`$rel\` |" "$map" || { echo "state-map.md has no row for $rel"; return 1; }
   done
-  for f in rules.json run/shift-policy.json state-version run/deadline 'receipts/<id>-<slug>.md' \
+  for f in rules.json run/shift-policy.json state-version run/deadline 'receipts/<NN>-<slug>-<id>.md' \
     receipts/README.md 'receipts/morning-<date>-<shiftId>.md' run/evidence/findings.jsonl archive/ \
     run/.shift-armed run/.ended STOP run/.pending-filing; do
     grep -qF "\`$f\`" "$map" || { echo "state-map.md does not name $f"; return 1; }

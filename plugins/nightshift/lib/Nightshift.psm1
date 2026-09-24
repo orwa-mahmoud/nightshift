@@ -5657,6 +5657,10 @@ function Set-NSShiftPolicy {
             Write-NSPolicyError ('shift-policy: the items in ' + $punch + ' could not be given ids; receipts stay named by label')
         }
     }
+    # Receipts take the names their items carry now, before the shift arms and the names hold still.
+    if (-not (Rename-NSReceipts $Workspace)) {
+        Write-NSPolicyError ('shift-policy: a receipt in ' + (Get-NSReceiptsDir $Workspace) + ' could not take its item''s name; it keeps the one it has')
+    }
     if (-not $document.Contains('contractDigest')) {
         $value = ''
         try { $value = Get-NSPunchContractDigest $punch } catch { $value = '' }
@@ -6677,9 +6681,17 @@ function Get-NSItemLabel {
     $t = $t -creplace $script:NSItemIdPattern, ''
     $t = $t -creplace '^- \[[ xX]\][ \t]*\*\*', ''
     $t = $t -creplace '^- \[[ xX]\][ \t]*', ''
+    # A dash right after a bare number numbers the item, as in "1 - Fix it": a number alone is no
+    # label, so only a later dash ends the title. A code such as P03 before a dash is the label.
+    $lead = ''
+    $dashes = [string][char]0x2014 + [char]0x2013
+    if ($t -cmatch ('^[0-9]+[ \t]*[' + $dashes + '][ \t]*') -or $t -cmatch '^[0-9]+[ \t]+-[ \t]+') {
+        $lead = $Matches[0]
+        $t = $t.Substring($lead.Length)
+    }
     $t = $t -creplace ('[ \t]+(' + [char]0x2014 + '|-[ \t]).*$'), ''
     $t = $t -creplace '\*\*.*$', ''
-    return $t.TrimEnd()
+    return ($lead + $t).TrimEnd()
 }
 
 # Get-NSItemRows <punch-list> [open|ticked|all] - Label, Id and Open for each top-level item under
@@ -6705,6 +6717,27 @@ function Get-NSItemRows {
     return , $rows.ToArray()
 }
 
+# Get-NSItemTitleFor <punch-list> <id> - the whole title of the item carrying that id: its bold
+# text, or the line after its checkbox, without the id comment. '' when no item carries it.
+function Get-NSItemTitleFor {
+    param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][string]$Id)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) { return '' }
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        if ($line -cnotmatch '^- \[[ xX]\]' -or (Get-NSItemId $line) -cne $Id) { continue }
+        $t = $line -creplace '\r$', ''
+        $t = $t -creplace $script:NSItemIdPattern, ''
+        if ($t -cmatch '^- \[[ xX]\][ \t]*\*\*') {
+            $t = $t -creplace '^- \[[ xX]\][ \t]*\*\*', ''
+            $t = $t -creplace '\*\*.*$', ''
+        }
+        else {
+            $t = $t -creplace '^- \[[ xX]\][ \t]*', ''
+        }
+        return $t.TrimEnd()
+    }
+    return ''
+}
+
 # Get-NSItemIdFor <punch-list> <label> - the id of the first item with that label, or ''.
 function Get-NSItemIdFor {
     param([Parameter(Mandatory = $true)][string]$PunchList, [AllowEmptyString()][string]$Label)
@@ -6725,6 +6758,7 @@ function Test-NSItemIdUsed {
         if (-not (Test-Path -LiteralPath $dir -PathType Container)) { continue }
         foreach ($file in (Get-ChildItem -LiteralPath $dir -File -Recurse -Force -ErrorAction SilentlyContinue)) {
             if ($file.Name -ceq ($Id + '.md') -or
+                $file.Name.EndsWith('-' + $Id + '.md', [StringComparison]::Ordinal) -or
                 ($file.Name.StartsWith($Id + '-', [StringComparison]::Ordinal) -and
                     $file.Name.EndsWith('.md', [StringComparison]::Ordinal))) { return $true }
             if ([IO.File]::ReadAllText($file.FullName).Contains('id: ' + $Id + ' ')) { return $true }
@@ -6806,10 +6840,20 @@ function Get-NSReceiptNn {
     return ''
 }
 
+# Get-NSReceiptTitle <label> - the words after the written number, for the slug. The number may be
+# followed by `.`, `)`, `:`, an em or en dash, or a hyphen with space around it.
 function Get-NSReceiptTitle {
     param([AllowEmptyString()][string]$Label)
     $t = $Label
-    $t = $t -creplace '^[0-9]+\.[ \t]*', ''
+    if ($t -cmatch '^[0-9]+[.):]') {
+        $t = $t -creplace '^[0-9]+[.):][ \t]*', ''
+    }
+    elseif ($t -cmatch ('^[0-9]+[ \t]*[' + [char]0x2014 + [char]0x2013 + ']')) {
+        $t = $t -creplace ('^[0-9]+[ \t]*[' + [char]0x2014 + [char]0x2013 + '][ \t]*'), ''
+    }
+    else {
+        $t = $t -creplace '^[0-9]+[ \t]+-[ \t]+', ''
+    }
     $t = $t -creplace '^[A-Za-z]+[0-9]+[ \t]+', ''
     return $t
 }
@@ -6831,10 +6875,87 @@ function Get-NSReceiptBasename {
     return (Get-NSReceiptSlug $Label)
 }
 
+# Get-NSReceiptWant <workspace> <label> <id> - the name an item's receipt carries: its number, two
+# digits at least, or its place in the list when the title has none; then its title; then its id.
+# `03-fix-the-resolver-k7q2`. A label that is only a code, such as P03, takes the words of the
+# item's whole title.
+function Get-NSReceiptWant {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Label,
+        [Parameter(Mandatory = $true)][string]$Id
+    )
+    $punch = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list'
+    $nn = Get-NSReceiptNn $Label
+    $title = Get-NSReceiptTitle $Label
+    if (-not [string]::IsNullOrEmpty($nn) -and $title -ceq $Label) {
+        $full = Get-NSItemTitleFor $punch $Id
+        $title = Get-NSReceiptTitle $full
+        if ($title -ceq $full) { $title = '' }
+    }
+    if ([string]::IsNullOrEmpty($nn)) {
+        $position = 0
+        foreach ($row in (Get-NSItemRows $punch)) {
+            $position++
+            if ($row.Label -ceq $Label) { $nn = [string]$position; break }
+        }
+    }
+    if ($nn -cmatch '^[0-9]+$') { $nn = ([decimal]::Parse($nn, [Globalization.CultureInfo]::InvariantCulture)).ToString('00', [Globalization.CultureInfo]::InvariantCulture) }
+    $parts = New-Object Collections.Generic.List[string]
+    if (-not [string]::IsNullOrEmpty($nn)) { $parts.Add($nn) }
+    $slug = Get-NSReceiptSlug $title
+    if (-not [string]::IsNullOrEmpty($slug)) { $parts.Add($slug) }
+    $parts.Add($Id)
+    return ($parts -join '-')
+}
+
+# Find-NSReceiptName <names> <id> - of the receipt file names given, the one an id already names:
+# `<NN>-<slug>-<id>.md`, or the `<id>.md` and `<id>-<slug>.md` names earlier versions gave it, in
+# that order and ordinal within each. '' when there is none.
+function Find-NSReceiptName {
+    param([AllowEmptyCollection()][string[]]$Names = @(), [Parameter(Mandatory = $true)][string]$Id)
+    $sorted = [string[]]@($Names)
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    foreach ($name in $sorted) {
+        if ($name.EndsWith('-' + $Id + '.md', [StringComparison]::Ordinal)) { return $name }
+    }
+    if ($sorted -ccontains ($Id + '.md')) { return ($Id + '.md') }
+    foreach ($name in $sorted) {
+        if ($name.StartsWith($Id + '-', [StringComparison]::Ordinal) -and
+            $name.EndsWith('.md', [StringComparison]::Ordinal)) { return $name }
+    }
+    return ''
+}
+
+# Get-NSReceiptFileNames <dir> - the regular .md files in a receipts folder, reparse points left out.
+function Get-NSReceiptFileNames {
+    param([Parameter(Mandatory = $true)][string]$Dir)
+    if (-not (Test-Path -LiteralPath $Dir -PathType Container)) { return , [string[]]@() }
+    return , [string[]]@(Get-ChildItem -LiteralPath $Dir -File -Force -ErrorAction SilentlyContinue |
+        Where-Object {
+            -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+            $_.Name.EndsWith('.md', [StringComparison]::Ordinal)
+        } | ForEach-Object { $_.Name })
+}
+
+# Get-NSReceiptLegacyName <dir> <label> - a receipt named by label before items had ids:
+# `NN-slug.md`, or the bare `NN.md` a dash-numbered title was once cut down to. '' when neither is
+# there.
+function Get-NSReceiptLegacyName {
+    param([Parameter(Mandatory = $true)][string]$Dir, [AllowEmptyString()][string]$Label)
+    foreach ($name in @(((Get-NSReceiptBasename $Label) + '.md'), ((Get-NSReceiptNn $Label) + '.md'))) {
+        if ($name -ceq '.md') { continue }
+        $path = Join-Path $Dir $name
+        if ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-NSReparsePoint $path)) { return $name }
+    }
+    return ''
+}
+
 # Get-NSReceiptBase <workspace> <label> [id] - the item's receipt file stem under receipts/. An item
 # with an id keeps the file that id already names, else an earlier shift's receipt found by its
-# label, else a new `<id>-<slug>`; an item without one is its label's `NN-slug`. With no -Id the id
-# is looked up in the punch list by label.
+# label, else a new `<NN>-<slug>-<id>`; an item without one is its label's `NN-slug`. With no -Id
+# the id is looked up in the punch list by label. Reading a name never renames anything:
+# Rename-NSReceipts moves a receipt to the name its item carries now.
 function Get-NSReceiptBase {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -6845,26 +6966,46 @@ function Get-NSReceiptBase {
         $Id = Get-NSItemIdFor (Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list') $Label
     }
     $legacy = Get-NSReceiptBasename $Label
-    if ([string]::IsNullOrEmpty($Id)) { return $legacy }
     $dir = Get-NSReceiptsDir $Workspace
     if (Test-Path -LiteralPath $dir -PathType Container) {
-        $named = @(Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue |
-            Where-Object {
-                -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
-                ($_.Name -ceq ($Id + '.md') -or
-                    ($_.Name.StartsWith($Id + '-', [StringComparison]::Ordinal) -and $_.Name.EndsWith('.md', [StringComparison]::Ordinal)))
-            } | ForEach-Object { $_.Name })
-        if ($named.Count -gt 0) {
-            [Array]::Sort($named, [StringComparer]::Ordinal)
-            return $named[0].Substring(0, $named[0].Length - 3)
-        }
-        $old = Join-Path $dir ($legacy + '.md')
-        if (-not [string]::IsNullOrEmpty($legacy) -and (Test-Path -LiteralPath $old -PathType Leaf) -and
-            -not (Test-NSReparsePoint $old)) { return $legacy }
+        $named = ''
+        if (-not [string]::IsNullOrEmpty($Id)) { $named = Find-NSReceiptName (Get-NSReceiptFileNames $dir) $Id }
+        if (-not $named) { $named = Get-NSReceiptLegacyName $dir $Label }
+        if ($named) { return $named.Substring(0, $named.Length - 3) }
     }
-    $slug = Get-NSReceiptSlug (Get-NSReceiptTitle $Label)
-    if ([string]::IsNullOrEmpty($slug)) { return $Id }
-    return ($Id + '-' + $slug)
+    if ([string]::IsNullOrEmpty($Id)) { return $legacy }
+    return (Get-NSReceiptWant $Workspace $Label $Id)
+}
+
+# Rename-NSReceipts <workspace> - move each live receipt of an item with an id to the name the item
+# carries now, so a reordered, renumbered or retitled item's receipt follows it and the folder reads
+# in item order. A name another file already holds is never overwritten, a receipt keeps its
+# modification time, and archived receipts keep the names they were filed under. Returns $false
+# when a move failed.
+function Rename-NSReceipts {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $punch = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list'
+    $dir = Get-NSReceiptsDir $Workspace
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf) -or -not (Test-Path -LiteralPath $dir -PathType Container) -or
+        (Test-NSReparsePoint $dir)) { return $true }
+    $ok = $true
+    foreach ($row in (Get-NSItemRows $punch)) {
+        if ([string]::IsNullOrEmpty($row.Id)) { continue }
+        $name = Find-NSReceiptName (Get-NSReceiptFileNames $dir) $row.Id
+        if (-not $name) { $name = Get-NSReceiptLegacyName $dir $row.Label }
+        if (-not $name) { continue }
+        $want = (Get-NSReceiptWant $Workspace $row.Label $row.Id) + '.md'
+        if ($name -ceq $want) { continue }
+        if (Test-Path -LiteralPath (Join-Path $dir $want)) { continue }
+        try {
+            [IO.File]::Move((Join-Path $dir $name), (Join-Path $dir $want))
+        }
+        catch {
+            Write-Warning ('receipts: ' + $name + ' could not take its item''s name ' + $want + ': ' + $_.Exception.Message)
+            $ok = $false
+        }
+    }
+    return $ok
 }
 
 function Get-NSReceiptPath {
@@ -7301,6 +7442,11 @@ function Write-NSReceiptsIndex {
     if (Test-NSReparsePoint $dir) { return }
     $index = Join-Path $dir 'README.md'
     if (Test-NSReparsePoint $index) { return }
+    # Between shifts a receipt moves to the name its item carries now; while one is armed the names
+    # hold still, so the model keeps writing the file it was given.
+    if (-not (Test-Path -LiteralPath (Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'armed'))) {
+        $null = Rename-NSReceipts $Workspace
+    }
     $punch = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list'
     $rows = New-Object Collections.Generic.List[string]
     $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
@@ -12750,14 +12896,7 @@ function Get-NSActiveItem {
     foreach ($row in (Get-NSItemRows $punch 'open')) {
         if ([string]::IsNullOrEmpty($first)) { $first = $row.Label }
         $name = ''
-        if ($row.Id) {
-            foreach ($candidate in $names) {
-                if ($candidate -ceq ($row.Id + '.md') -or $candidate.StartsWith($row.Id + '-', [StringComparison]::Ordinal)) {
-                    $name = $candidate
-                    break
-                }
-            }
-        }
+        if ($row.Id) { $name = Find-NSReceiptName $names $row.Id }
         # A receipt named by label starts with the item's number; only when one might exist is the
         # exact name worked out.
         if (-not $name) {
@@ -12769,6 +12908,7 @@ function Get-NSActiveItem {
             if ($maybe) {
                 $legacy = (Get-NSReceiptBasename $row.Label) + '.md'
                 if ($files.ContainsKey($legacy)) { $name = $legacy }
+                elseif ($nn -and $files.ContainsKey($nn + '.md')) { $name = $nn + '.md' }
             }
         }
         if (-not $name) { continue }

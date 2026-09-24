@@ -225,6 +225,10 @@ cmd_set() {
       printf 'shift-policy: the items in %s could not be given ids; receipts stay named by label\n' \
         "$PUNCH" >&2
   fi
+  # Receipts take the names their items carry now, before the shift arms and the names hold still.
+  ns_receipts_rename "$WORKSPACE" ||
+    printf 'shift-policy: a receipt in %s could not take its item'"'"'s name; it keeps the one it has\n' \
+      "$(ns_receipts_dir "$WORKSPACE")" >&2
   # The contract as it stands right now, so the gate can tell later whether it moved. Two digests:
   # everything above the Items heading, which nobody may edit while a shift runs, and the items
   # with their checkbox state flattened, so a tick is invisible and any other edit is not. A
