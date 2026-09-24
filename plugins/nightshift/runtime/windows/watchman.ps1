@@ -936,7 +936,7 @@ try {
                 $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
                 $cursorWorker = Get-NSCursorWorkerId
                 $notice = if (-not [string]::IsNullOrEmpty($sessionId) -and $HostName -eq 'claude') {
-                    "- [notice] $stamp - the shift session died and the watchman revived it. One thread: claude --resume $sessionId · cursor://anthropic.claude-code/open?session=$sessionId · vscode://anthropic.claude-code/open?session=$sessionId"
+                    "- [notice] $stamp - the shift session died and the watchman revived it. One thread: claude --resume $sessionId $([char]0x00B7) cursor://anthropic.claude-code/open?session=$sessionId $([char]0x00B7) vscode://anthropic.claude-code/open?session=$sessionId"
                 }
                 elseif ($HostName -eq 'cursor' -and -not [string]::IsNullOrEmpty($cursorWorker)) {
                     "- [notice] $stamp - the shift session died and the watchman revived it in a CLI worker. To see it, run this in a terminal: agent --resume=`"$cursorWorker`" --workspace `"$workspace`". To stop it, ask Nightshift to stop."

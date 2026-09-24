@@ -4,7 +4,7 @@ param(
     [switch]$Json
 )
 
-# inventory.ps1 — the native Windows twin of runtime/inventory.sh.
+# inventory.ps1 - the native Windows twin of runtime/inventory.sh.
 #
 #   inventory.ps1 -Project <work-target> [-Json]
 #
@@ -12,7 +12,7 @@ param(
 # same fixture trees. PowerShell reads package.json itself, so this side never
 # needs jq.
 #
-# Exit: 0 inventory · 1 usage · 3 unavailable
+# Exit: 0 inventory - 1 usage - 3 unavailable
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'

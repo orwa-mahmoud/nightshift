@@ -4,6 +4,10 @@ Set-StrictMode -Version 2.0
 # legacy workspaces stay operable in the paths they have; only migrate-state moves them.
 $script:NSStateVersion = 2
 $script:NSUtf8NoBom = New-Object System.Text.UTF8Encoding($false)
+# The separator the records and receipts share with the POSIX runtime, spelled by its code so this
+# file stays ASCII: Windows PowerShell 5.1 reads a script saved without a BOM as ANSI.
+$script:NSDot = [string][char]0x00B7
+$script:NSUsageTokensFormat = "input {0} $script:NSDot cache_write {1} $script:NSDot cache_read {2} $script:NSDot output {3} $script:NSDot reasoning {4}"
 $script:NSRulesCacheStamp = ''
 $script:NSRulesCache = $null
 
@@ -2144,7 +2148,7 @@ function Write-NSControlLog {
     )
     $log = Get-NSLayoutPath $NightshiftDir 'shift-log'
     $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    Add-Content -LiteralPath $log -Value "$stamp · $Line" -Encoding utf8
+    Add-Content -LiteralPath $log -Value "$stamp $script:NSDot $Line" -Encoding utf8
 }
 
 function Stop-NSShift {
@@ -2161,7 +2165,7 @@ function Stop-NSShift {
     if ([string]::IsNullOrEmpty($Reason)) { $Reason = 'stopped by owner' }
     $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     Remove-NSPath (Get-NSLayoutPath $ns 'stop')
-    [IO.File]::WriteAllText((Get-NSLayoutPath $ns 'stop'), "$Reason · $ts`n")
+    [IO.File]::WriteAllText((Get-NSLayoutPath $ns 'stop'), "$Reason $script:NSDot $ts`n")
     Remove-NSPath (Get-NSLayoutPath $ns 'session')
     $null = Write-NSUsagePause $ns 'owner stop-work'
     $watch = Stop-NSWatchman $ns
@@ -6234,7 +6238,7 @@ function Test-NSArchiveAutomatic {
 function Test-NSReviewHandled {
     param([AllowEmptyString()][string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    return [bool]($Text -imatch ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)')
+    return [bool]($Text -imatch ' \u00B7 (fixed|ignored|answered|rejected-because|accepted-tradeoff)')
 }
 
 function Complete-NSReviewEntry {
@@ -6378,14 +6382,14 @@ function Add-NSArchiveBrokenPointers {
             $already = $false
             if (Test-Path -LiteralPath $snag -PathType Leaf) {
                 $already = [IO.File]::ReadAllText($snag).Contains(
-                    'broken archive pointer · ' + $rel + ' ')
+                    ('broken archive pointer ' + $script:NSDot + ' ') + $rel + ' ')
             }
             if ($already) { continue }
             if (-not (Test-Path -LiteralPath $snag -PathType Leaf)) {
                 New-NSLayoutParent $ns 'snag-log'
                 [IO.File]::WriteAllText($snag, "# Snag Log$([Environment]::NewLine)$([Environment]::NewLine)", $utf8)
             }
-            [IO.File]::AppendAllText($snag, ('- broken archive pointer · ' + $rel + ' is not a readable file' + [Environment]::NewLine), $utf8)
+            [IO.File]::AppendAllText($snag, (('- broken archive pointer ' + $script:NSDot + ' ') + $rel + ' is not a readable file' + [Environment]::NewLine), $utf8)
         }
     }
 }
@@ -6931,7 +6935,7 @@ function Get-NSReceiptUsageCells {
                 $cells['Out'] = $nums[3]
                 $cells['Reasoning'] = $nums[4]
                 $cells['Sum'] = $nums[0] + $nums[3]
-                $cells['Tokens'] = ('input {0} · cache_write {1} · cache_read {2} · output {3} · reasoning {4}' -f
+                $cells['Tokens'] = ($script:NSUsageTokensFormat -f
                     (Get-NSUsageScale ([string]$nums[0])), (Get-NSUsageScale ([string]$nums[1])),
                     (Get-NSUsageScale ([string]$nums[2])), (Get-NSUsageScale ([string]$nums[3])),
                     (Get-NSUsageScale ([string]$nums[4])))
@@ -6945,7 +6949,7 @@ function Get-NSReceiptUsageCells {
             $cells['Out'] = [long]$Matches[4]
             $cells['Reasoning'] = [long]$Matches[5]
             $cells['Sum'] = [long]$Matches[1] + [long]$Matches[4]
-            $cells['Tokens'] = ('input {0} · cache_write {1} · cache_read {2} · output {3} · reasoning {4}' -f
+            $cells['Tokens'] = ($script:NSUsageTokensFormat -f
                 (Get-NSUsageScale $Matches[1]), (Get-NSUsageScale $Matches[2]),
                 (Get-NSUsageScale $Matches[3]), (Get-NSUsageScale $Matches[4]),
                 (Get-NSUsageScale $Matches[5]))
@@ -7216,7 +7220,7 @@ function Get-NSReceiptsUsageTotalCell {
     if (($In + $CacheWrite + $CacheRead + $Out + $Reasoning) -eq 0) {
         return [string][char]0x2014
     }
-    return ('input {0} · cache_write {1} · cache_read {2} · output {3} · reasoning {4}' -f
+    return ($script:NSUsageTokensFormat -f
         (Get-NSUsageScale $In), (Get-NSUsageScale $CacheWrite),
         (Get-NSUsageScale $CacheRead), (Get-NSUsageScale $Out),
         (Get-NSUsageScale $Reasoning))
@@ -7226,7 +7230,7 @@ function Get-NSReceiptsTimeCell {
     param([long]$Work, [long]$Pause = 0)
     if ($Work -le 0 -and $Pause -le 0) { return [string][char]0x2014 }
     if ($Pause -gt 0) {
-        return ((Get-NSUsageDuration ([string]$Work)) + ' working · ' +
+        return ((Get-NSUsageDuration ([string]$Work)) + (' working ' + $script:NSDot + ' ') +
             (Get-NSUsageDuration ([string]$Pause)) + ' paused')
     }
     return ((Get-NSUsageDuration ([string]$Work)) + ' working')
@@ -7447,7 +7451,7 @@ function Get-NSShiftBlock {
     return $block
 }
 
-# Set-NSShiftBlock <workspace> <block> — the owner file with its shift block replaced. Every other
+# Set-NSShiftBlock <workspace> <block> - the owner file with its shift block replaced. Every other
 # key survives, including one a later version added.
 function Set-NSShiftBlock {
     param(
@@ -9532,7 +9536,7 @@ function Get-NSBaselineSeenMap {
 }
 
 # A receipt records what the run knew. A work target that could not be resolved is not the
-# workspace by default — naming it would put a path on the morning page that nothing ever chose —
+# workspace by default - naming it would put a path on the morning page that nothing ever chose -
 # so this answers with nothing and the field is left out, which is what the POSIX renderer does.
 function Get-NSEvidenceWorkTarget {
     param([Parameter(Mandatory = $true)][string]$Workspace)
@@ -10264,7 +10268,7 @@ function Get-NSReceiptParkedEntries {
 }
 
 # One snag-log entry of this shift whose disposition is not fixed. An entry is
-# `finding · evidence · disposition · date`; one without a disposition is open.
+# `finding`, `evidence`, `disposition`, `date`, joined by middle dots; one without a disposition is open.
 function Add-NSReceiptSnagRow {
     param($Rows, [AllowEmptyString()][string]$Entry, [AllowEmptyString()][string]$Day)
     if ($Entry.Length -eq 0) { return }
@@ -11678,7 +11682,7 @@ function Write-NSStatusReport {
 # The module carried the three readers and nothing that used them: no record, no marks, no total,
 # no report line. A shift on native Windows measured its transcripts and then threw the numbers
 # away. These are the POSIX functions in `lib/usage.sh` and `hooks/shared/gate-core.sh`, ported to
-# the same file formats — `segments.tsv` and `marks.tsv`, tab separated, the same columns in the
+# the same file formats - `segments.tsv` and `marks.tsv`, tab separated, the same columns in the
 # same order, including the eighth that carries the last response identity across a read.
 #
 # The formats are the contract between the two halves, not an implementation detail: a shift that
@@ -11745,7 +11749,7 @@ function Get-NSUsageSubtract {
 # never be read back as a complete one.
 function Write-NSUsageSegments {
     # `[string[]]` refuses an empty array under a Mandatory binding, and an empty segment file is an
-    # ordinary state — a workspace that has armed and read nothing yet.
+    # ordinary state - a workspace that has armed and read nothing yet.
     param([Parameter(Mandatory = $true)][string]$Path,
           [AllowEmptyCollection()][string[]]$Lines = @())
     $text = ''
@@ -12114,7 +12118,7 @@ function Get-NSUsageLine {
         $null = $rows.Add('| ' + (Get-NSUsageDimLabel $dim) + ' | ' + $v + ' |')
     }
     return (($rows -join "`n") + "`n`n<!-- tokens " + ($comment -join ' ') + " -->`n" +
-            $Sources + ' · ' + $Segments + ' ' + $word + '. ' + (Get-NSUsageOverlapText $HostName))
+            $Sources + ' ' + $script:NSDot + ' ' + $Segments + ' ' + $word + '. ' + (Get-NSUsageOverlapText $HostName))
 }
 
 # The item's own section of the report, written where the model already writes its account of the
@@ -12686,7 +12690,7 @@ function Get-NSPulseReceiptsSections {
     if (-not [string]::IsNullOrEmpty($path)) {
         return ('follow the owner''s template at ' + $path)
     }
-    return 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+    return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Outputs $script:NSDot Parked decisions and snags."
 }
 
 function Get-NSPulseReceiptsStartLine {
@@ -12746,7 +12750,7 @@ function Test-NSReceiptHasModelText {
         if ($line.StartsWith('<!-- tokens ')) { continue }
         if ($line.StartsWith('<!-- item: ')) { continue }
         if ($line -cmatch '^Renamed from .* on [0-9]{4}-[0-9]{2}-[0-9]{2}\.$') { continue }
-        if ($line -match ' · [0-9]+ segments?\.') { continue }
+        if ($line -match ' \u00B7 [0-9]+ segments?\.') { continue }
         return $true
     }
     return $false

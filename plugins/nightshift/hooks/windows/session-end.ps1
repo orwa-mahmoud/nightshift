@@ -119,7 +119,7 @@ if ($HostName -eq 'cursor') {
     }
 }
 
-$line = '{0} · clean session end ({1}){2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $reason, [Environment]::NewLine
+$line = '{0} {3} clean session end ({1}){2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $reason, [Environment]::NewLine, [char]0x00B7
 $sessionEnd = Get-NSLayoutPath $ns 'session-end'
 if (Test-NSReparsePoint $sessionEnd) {
     Remove-Item -LiteralPath $sessionEnd -Force -ErrorAction SilentlyContinue

@@ -178,7 +178,7 @@ function Save-NSReceipt {
     if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'receipts-repo') -PathType Container)) {
         return
     }
-    # Owner opt-in. Default off — a receipts git alone does not authorize headless commits.
+    # Owner opt-in. Default off - a receipts git alone does not authorize headless commits.
     $auto = Get-NSRule $workspace 'receiptsAutoCommit' ([string]$env:NIGHTSHIFT_RECEIPTS_AUTO_COMMIT)
     switch -Regex ($auto) {
         '^(?i:true|1|yes)$' { }
