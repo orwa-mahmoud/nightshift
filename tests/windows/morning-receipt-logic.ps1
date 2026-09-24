@@ -645,13 +645,16 @@ try {
         }
         [IO.File]::WriteAllText((Join-Path $comboNs 'rules.json'), $comboRules, $utf8)
         [IO.File]::WriteAllText((Join-Path $comboNs '.shift-armed'), '', $utf8)
+        # Windows PowerShell 5.1 -File does not read redirected stdin as pipeline input, so the payload
+        # goes in as -HookJson, the way the Windows suite runner passes it.
         $payload = '{"session_id":"11111111-2222-3333-4444-555555555555","cwd":"' + ($comboProject -replace '\\', '/') + '"}'
-        $held = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $payload `
+        $held = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude', '-HookJson', $payload) `
             -Environment @{ CLAUDE_PROJECT_DIR = $comboProject }
-        Expect-True $held.StdoutText.Contains('"decision":"block"') "$($combo.Name): an open item holds the shift"
+        Expect-True ($held.StdoutText.Contains('"decision":"block"') -and -not $held.StdoutText.Contains('payload is unreadable')) `
+            "$($combo.Name): an open item holds the shift ($($held.StdoutText.Trim()))"
         [IO.File]::WriteAllText((Join-Path $comboNs 'punch-list.md'),
             "# Punch List`n`n## Gates`n`n- Item gate: ``npm run lint```n`n## Items`n`n- [x] Quiet the lint rule`n- [x] Rewrite the import map`n", $utf8)
-        $released = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $payload `
+        $released = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude', '-HookJson', $payload) `
             -Environment @{ CLAUDE_PROJECT_DIR = $comboProject }
         Expect-True (-not $released.StdoutText.Contains('"decision":"block"')) `
             "$($combo.Name): every box ticked releases the shift ($($released.StdoutText.Trim()) $($released.StderrText.Trim()))"
