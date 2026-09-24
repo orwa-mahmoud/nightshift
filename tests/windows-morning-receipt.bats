@@ -19,17 +19,22 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   fi
 }
 
-@test "the receipt renders the six frozen sections and the four views" {
-  grep -qF "\$script:NSReceiptSectionTitle['shift'] = '## Shift'" "$MODULE"
+@test "the receipt renders the eleven sections and the four views" {
+  grep -qF "\$script:NSReceiptSectionTitle['shift'] = '## How it ended'" "$MODULE"
+  grep -qF "\$script:NSReceiptSectionTitle['usage'] = '## Time and tokens'" "$MODULE"
+  grep -qF "\$script:NSReceiptSectionTitle['items'] = '## Items'" "$MODULE"
+  grep -qF "\$script:NSReceiptSectionTitle['review'] = '## Review first'" "$MODULE"
+  grep -qF "\$script:NSReceiptSectionTitle['interruptions'] = '## Interruptions'" "$MODULE"
+  grep -qF "\$script:NSReceiptSectionTitle['parked'] = '## Decisions for you'" "$MODULE"
+  grep -qF "\$script:NSReceiptSectionTitle['snags'] = '## Found but not fixed'" "$MODULE"
   grep -qF "\$script:NSReceiptSectionTitle['baseline'] = '## Baseline'" "$MODULE"
   grep -qF "\$script:NSReceiptSectionTitle['changed'] = '## What changed'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['parked'] = '## Parked'" "$MODULE"
   grep -qF "\$script:NSReceiptSectionTitle['unsupported'] = '## Unsupported / unmeasured'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['next'] = '## Next'" "$MODULE"
-  grep -qF "\$script:NSReceiptViewSections['owner'] = @('shift', 'baseline', 'changed', 'parked', 'unsupported', 'next')" "$MODULE"
-  grep -qF "\$script:NSReceiptViewSections['reviewer'] = @('baseline', 'changed')" "$MODULE"
+  grep -qF "\$script:NSReceiptSectionTitle['next'] = '## Next step'" "$MODULE"
+  grep -qF "\$script:NSReceiptViewSections['owner'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'baseline', 'changed', 'unsupported', 'next')" "$MODULE"
+  grep -qF "\$script:NSReceiptViewSections['reviewer'] = @('review', 'baseline', 'changed')" "$MODULE"
   grep -qF "\$script:NSReceiptViewSections['release'] = @('shift', 'changed')" "$MODULE"
-  grep -qF "\$script:NSReceiptViewSections['artifact'] = @('shift', 'parked', 'unsupported', 'next')" "$MODULE"
+  grep -qF "\$script:NSReceiptViewSections['artifact'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'unsupported', 'next')" "$MODULE"
 }
 
 @test "section 1 always carries the three honesty lines" {
@@ -68,7 +73,7 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 }
 
 @test "Windows morning-receipt logic covers every view and the zero-gate render" {
-  grep -qF 'the owner view renders the six sections in interface order' "$LOGIC"
+  grep -qF 'the owner view renders every section in interface order' "$LOGIC"
   grep -qF 'the reviewer view renders the baseline and the comparison' "$LOGIC"
   grep -qF 'the release view carries regressions only' "$LOGIC"
   grep -qF 'the artifact view omits the repository sections' "$LOGIC"
@@ -85,7 +90,8 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'the artifact view names no repository term' "$LOGIC"
   grep -qF 'every allowance carries its provenance' "$LOGIC"
   grep -qF 'an unreadable punch list reports Ending unknown, never done' "$LOGIC"
-  grep -qF 'the page links the index and each ticked item' "$LOGIC"
+  grep -qF 'the page links the index' "$LOGIC"
+  grep -qF 'every item has its line with its state' "$LOGIC"
   grep -qF 'an accepted policy is named at the top' "$LOGIC"
   grep -qF 'a missing file is named as absent, not as malformed' "$LOGIC"
   grep -qF 'the unreadable fixture is named as malformed' "$LOGIC"
@@ -99,6 +105,18 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'a closed and verified record leaves live storage' "$LOGIC"
   grep -qF 'the artifact receipt is retired on the same terms, not by its name' "$LOGIC"
   grep -qF 'the record already filed is never overwritten' "$LOGIC"
+}
+
+@test "Windows morning-receipt logic covers the verdict sections" {
+  grep -qF 'both ends of the shift carry the zone' "$LOGIC"
+  grep -qF 'pause reasons sum to the paused total' "$LOGIC"
+  grep -qF 'a kind the host did not report reads unavailable' "$LOGIC"
+  grep -qF 'a measurement the owner turned off reads off' "$LOGIC"
+  grep -qF 'an item links to its receipt only when the file exists' "$LOGIC"
+  grep -qF 'review first ranks by change size' "$LOGIC"
+  grep -qF 'review first does not apply in artifact mode' "$LOGIC"
+  grep -qF 'a wrapped parked entry renders in full' "$LOGIC"
+  grep -qF 'both renderers write the same verdict' "$LOGIC"
 }
 
 @test "Windows morning-receipt logic checks exact byte formatting and bash parity" {

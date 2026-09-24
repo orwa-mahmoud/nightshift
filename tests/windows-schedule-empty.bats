@@ -16,15 +16,9 @@ HELPER="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/schedule.ps1"
   grep -qF '/nightshift:setup on Claude Code; ask Nightshift to set up on Codex' "$HELPER"
 }
 
-@test "Windows Schedule empty-list parked-work logic passes when Task Scheduler identity is available" {
+@test "Windows Schedule empty-list parked-work logic passes wherever pwsh runs" {
   if ! command -v pwsh >/dev/null 2>&1; then
-    return 0
-  fi
-  # Task Scheduler XML names [WindowsIdentity]::GetCurrent(); macOS pwsh cannot.
-  if ! pwsh -NoProfile -NonInteractive -Command \
-    'try { $null = [Security.Principal.WindowsIdentity]::GetCurrent().Name; exit 0 } catch { exit 1 }'
-  then
-    return 0
+    skip "pwsh not installed"
   fi
   run pwsh -NoProfile -NonInteractive -File "$LOGIC"
   [ "$status" -eq 0 ]

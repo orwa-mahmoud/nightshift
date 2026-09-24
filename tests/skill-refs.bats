@@ -106,6 +106,18 @@ provision-preflight.sh provision-preflight.ps1"
   done < <(owned_skills)
 }
 
+# Receipts stay out of commit messages, the morning page is rendered, and fetched text is data. A
+# reference that says otherwise contradicts the skill it serves.
+@test "no shipped skill or reference misstates where receipts go or how fetched text is treated" {
+  local phrase
+  while read -r f; do
+    for phrase in 'in the commit body' 'writes this receipt by hand' 'is instructional' \
+      'instructional text' 'model is the boundary'; do
+      ! grep -qiF "$phrase" "$f" || { echo "$f says: $phrase"; return 1; }
+    done
+  done < <(owned_skills)
+}
+
 # A name the references forbid must stay unshipped, and must never reappear as an instruction.
 @test "a name the references call out as no command ships as nothing" {
   for helper in $NOT_COMMANDS; do
@@ -505,6 +517,22 @@ documented_pages() {
     ! grep -qF '**State map:**' "$s" || { echo "carries its own state map: $s"; return 1; }
     grep -qF 'references/shift/state-map.md' "$s" || { echo "does not point at the state map: $s"; return 1; }
   done
+}
+
+@test "the state map names who writes every file Setup scaffolds and the runtime keeps" {
+  map="$SKILLS/nightshift/references/shift/state-map.md"
+  grep -qF '## Every file, and who writes it' "$map"
+  for t in "$SKILLS"/nightshift/references/templates/*.md; do
+    name="${t##*/}"
+    [ "$name" = receipt-item.md ] && continue
+    grep -qF "| \`$name\` |" "$map" || { echo "state-map.md has no row for $name"; return 1; }
+  done
+  for f in rules.json shift-policy.json state-version deadline 'receipts/<id>-<slug>.md' \
+    receipts/README.md 'receipts/morning-<date>-<shiftId>.md' evidence/findings.jsonl archive/ \
+    .shift-armed .ended STOP .pending-filing; do
+    grep -qF "\`$f\`" "$map" || { echo "state-map.md does not name $f"; return 1; }
+  done
+  grep -qF 'state-map.md#every-file-and-who-writes-it' "$BATS_TEST_DIRNAME/../docs/vocabulary.md"
 }
 
 @test "hunt and quality send composition refusals to the preflight rather than restating them" {

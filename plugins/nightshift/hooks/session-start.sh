@@ -61,20 +61,9 @@ REC="$(ns_session_line "$NS" 1)"
 : >"$NS/.context-reset" 2>/dev/null || :
 
 LINE='nightshift: context was compacted — reload the nightshift skill, the contract in punch-list.md, and the active receipt under receipts/ before continuing.'
-ACTIVE="$(ns_items_section "$NS/punch-list.md" 2>/dev/null | awk '
-  /^- \[ \]/ {
-    line = $0
-    sub(/^- \[ \][[:space:]]*\*\*/, "", line)
-    sub(/[[:space:]]+—.*$/, "", line)
-    sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-    sub(/\*\*.*$/, "", line)
-    gsub(/[[:space:]]+$/, "", line)
-    print line
-    exit
-  }
-')"
+ACTIVE="$(ns_active_item "$PROJECT_DIR" 2>/dev/null)" || ACTIVE=""
 if [ -n "$ACTIVE" ]; then
-  LINE="$LINE Receipts: one file per item under .nightshift/receipts/; the current item is ${ACTIVE} → $(ns_receipt_basename "$ACTIVE").md."
+  LINE="$LINE Receipts: one file per item under .nightshift/receipts/; the current item is ${ACTIVE} → $(ns_receipt_base "$PROJECT_DIR" "$ACTIVE").md."
 fi
 if command -v jq >/dev/null 2>&1; then
   jq -nc --arg c "$LINE" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$c}}'

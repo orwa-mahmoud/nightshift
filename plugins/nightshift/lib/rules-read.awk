@@ -341,7 +341,7 @@ function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
   fields["recovery"] = "launchScope"
   fields["handoff"] = "detail enabled language sections templatePath view"
   fields["archive"] = "automatic layout root templatePath"
-  fields["receipts"] = "enabled progressMinutes progressMode progressTokens templatePath usage"
+  fields["receipts"] = "duration enabled progressMinutes progressMode progressTokens templatePath usage"
   for (j = 1; j <= count; j++) {
     put("ty\t" blocks[j] "\t" ptype(blocks[j]))
     if (!(blocks[j] in V_TYPE)) {

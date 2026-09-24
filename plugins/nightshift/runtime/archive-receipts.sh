@@ -8,6 +8,10 @@
 # Handled snag and answered parking entries are filed into the same group, then the live file
 # gets one Filed: pointer to that dest. Filing nothing writes no pointer and creates no empty file.
 #
+# Once the shift has ended, its punch list is filed too, as punch-list.md in the same group: a note
+# naming it the archived record of that shift, then the contract, the gates and every ticked item
+# exactly as written. The ticked items then leave the live list; open items never do.
+#
 # Filing is a copy. A ticked item's receipt leaves live storage once the shift has ended. An
 # open item's receipt never files and never leaves: the next shift writes the same file. Other
 # records (morning, the shift report, usage-*) leave only when named. The caller still names
@@ -412,6 +416,20 @@ if ! ns_archive_file_review_records "$WORKSPACE" "$DATE" "$shift_id"; then
   exit 2
 fi
 
+# The punch list, once the shift has ended: its contract and its ticked items are filed in the
+# shift's own folder and the ticked items leave the live list. While it is armed the list is its
+# contract and nothing here touches it.
+punch_filed=""
+if [ "$ROTATE" -eq 1 ]; then
+  punch_filed="$(ns_archive_punch_list "$WORKSPACE" "$group" "$shift_id" "$DATE")"
+  case "$?" in
+    0) ;;
+    3) printf 'archive-receipts: a different punch list is already filed at %s; the live list is unchanged\n' \
+         "$group/punch-list.md" >&2 ;;
+    *) printf 'archive-receipts: could not file the punch list into %s\n' "$group" >&2 ;;
+  esac
+fi
+
 unmatched=""
 while IFS= read -r wanted; do
   [ -n "$wanted" ] || continue
@@ -436,9 +454,9 @@ if [ -n "$kept" ]; then
   printf '%s' "$kept" >&2
 fi
 
-if [ "$copied" -eq 0 ] && [ "$removed" -eq 0 ]; then
-  exit 0
+if [ "$copied" -ne 0 ] || [ "$removed" -ne 0 ]; then
+  printf '%s\n' "$dest"
+  [ "$removed" -eq 0 ] || printf 'archive-receipts: retired %s closed record(s) from live storage\n' "$removed"
 fi
-printf '%s\n' "$dest"
-[ "$removed" -eq 0 ] || printf 'archive-receipts: retired %s closed record(s) from live storage\n' "$removed"
+[ -z "$punch_filed" ] || printf 'archive-receipts: filed the punch list as %s\n' "$punch_filed"
 exit 0

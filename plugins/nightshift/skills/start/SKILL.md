@@ -115,7 +115,15 @@ One deadline governs the whole shift: finite items first, the walkthrough soaks 
 
 ## 4. Arm the gate
 
-Every check has passed and the work is known, so the shift begins here. Create the marker:
+Every check has passed and the work is known, so the shift begins here. First record tonight's
+snapshot, the contract and items the gate holds this shift to, now that any cut item is in the list:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" start-preflight --phase snapshot
+```
+
+Relay a `warn` line once and arm anyway; a composed shift keeps the policy it already has. Then
+create the marker:
 
 ```bash
 touch "$NS/.shift-armed"

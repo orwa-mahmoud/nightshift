@@ -28,6 +28,7 @@ _NS_USAGE_AWK_DIR="$_NS_USAGE_CLAUDE_AWK"
 _NS_USAGE_CLAUDE_AWK="$_NS_USAGE_AWK_DIR/usage-claude.awk"
 _NS_USAGE_CODEX_AWK="$_NS_USAGE_AWK_DIR/usage-codex.awk"
 _NS_USAGE_CURSOR_AWK="$_NS_USAGE_AWK_DIR/usage-cursor.awk"
+_NS_USAGE_PAUSES_AWK="$_NS_USAGE_AWK_DIR/usage-pauses.awk"
 
 # ns_usage_retire <nightshift-dir> <shift-id> — move a finished shift's accounting aside.
 #
@@ -336,18 +337,69 @@ ns_usage_hosts() {
   cut -f2,3 "$file" 2>/dev/null | sort -u | tr '\t' ' ' | paste -sd'; ' - 2>/dev/null
 }
 
-# ns_usage_mark <nightshift-dir> <label> — the running total and the clock at one moment.
+# ns_usage_mark <nightshift-dir> <label> [tick|switch|pause] — the running total and the clock at
+# one moment, closing the span that ran since the mark before it and charging it to <label>.
 #
-# Written when the shift arms and at every tick. Time is measured exactly like tokens: one
-# cumulative counter, marks on it at the boundaries, deltas for everything else. Item N runs from
-# mark N-1 to mark N, so an item's start is the previous tick and never the model announcing one.
+# Written when the shift arms, at every tick, when the item being worked changes, and when a shift
+# ends with an item open. Time is measured exactly like tokens: one cumulative counter, marks on it
+# at the boundaries, deltas for everything else. Only a tick mark says the item is done; a mark
+# written before kinds existed is a tick.
 ns_usage_mark() {
-  local ns="$1" label="$2" dir file total
+  local ns="$1" label="$2" kind="${3:-tick}" dir file total
   dir="$(ns_usage_dir "$ns")"
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$(_ns_usage_marks "$ns")"
   total="$(ns_usage_total "$ns")" || total=""
-  printf '%s\t%s\t%s\n' "$(date +%s)" "$label" "$total" >>"$file" 2>/dev/null || return 1
+  printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$label" "$total" "$kind" >>"$file" 2>/dev/null || return 1
+}
+
+# ns_usage_active <nightshift-dir> — the item the running span is being charged to, or nothing.
+ns_usage_active() {
+  local file line=""
+  file="$1/usage/active"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  IFS= read -r line <"$file" || [ -n "$line" ] || return 0
+  printf '%s' "$line"
+}
+
+# ns_usage_set_active <nightshift-dir> [label] — charge the running span to <label> from here on;
+# no label clears it.
+ns_usage_set_active() {
+  local dir file
+  dir="$(ns_usage_dir "$1")"
+  file="$dir/active"
+  [ ! -L "$file" ] || rm -f "$file"
+  if [ -z "${2:-}" ]; then
+    rm -f "$file" 2>/dev/null || :
+    return 0
+  fi
+  mkdir -p "$dir" 2>/dev/null || return 1
+  printf '%s\n' "$2" >"$file" 2>/dev/null || return 1
+}
+
+# ns_usage_item_total <nightshift-dir> <label> — what this shift has charged to one item across
+# every span that closed on it: `<fields>\t<wall-sec>\t<first-start>\t<paused-sec>\t<reason>`.
+ns_usage_item_total() {
+  local ns="$1" label="$2" file line prev="" fields="" wall=0 first="" paused=0 reason="" pe e gap
+  file="$(_ns_usage_marks "$ns")"
+  [ -f "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ -n "$prev" ] && [ "$(printf '%s' "$line" | cut -f2)" = "$label" ]; then
+      pe="$(printf '%s' "$prev" | cut -f1)"
+      e="$(printf '%s' "$line" | cut -f1)"
+      fields="$(ns_usage_add "$fields" \
+        "$(ns_usage_sub "$(printf '%s' "$line" | cut -f3)" "$(printf '%s' "$prev" | cut -f3)")")"
+      wall=$((wall + e - pe))
+      [ -n "$first" ] || first="$pe"
+      if gap="$(ns_usage_paused_between "$ns" "$pe" "$e")"; then
+        paused=$((paused + $(printf '%s' "$gap" | cut -f1)))
+        reason="$(printf '%s' "$gap" | cut -f2)"
+      fi
+    fi
+    prev="$line"
+  done <"$file"
+  [ -n "$first" ] || return 1
+  printf '%s\t%s\t%s\t%s\t%s' "$fields" "$wall" "$first" "$paused" "$reason"
 }
 
 # ns_usage_mark_arm <nightshift-dir> [transcript...] — the shift's own start.
@@ -452,28 +504,40 @@ ns_usage_pause() {
   printf '%s\t%s\n' "$(date +%s)" "${2:-paused}" >>"$file" 2>/dev/null || return 1
 }
 
-# ns_usage_paused_since <nightshift-dir> <epoch> — how long was recorded as not-work since that
-# moment, and why. `<seconds>\t<reason>`, empty when the runtime knows of no gap.
+# ns_usage_paused_between <nightshift-dir> <from> <to> — how long was recorded as not-work inside
+# one span, and why: `<seconds>\t<reason>`, empty when the runtime knows of no gap.
 #
 # A pause is closed by the next thing that happens: the gap runs from the pause to the reading
-# that follows it. Where nothing followed, the gap is open and is reported as such rather than
-# guessed at.
-ns_usage_paused_since() {
-  local ns="$1" from="$2" file line at reason total=0 last_reason="" next
+# that follows it, never past <to>. Where nothing followed, the gap is open and is reported as such
+# rather than guessed at.
+ns_usage_paused_between() {
+  local ns="$1" from="$2" to="$3" file line at reason total=0 last_reason="" next
   file="$(ns_usage_dir "$ns")/pauses.tsv"
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   while IFS= read -r line; do
     at="$(printf '%s' "$line" | cut -f1)"
     reason="$(printf '%s' "$line" | cut -f2)"
     case "$at" in '' | *[!0-9]*) continue ;; esac
-    [ "$at" -ge "$from" ] || continue
-    next="$(_ns_usage_resumed_at "$ns" "$at")" || next=""
-    [ -n "$next" ] || continue
+    { [ "$at" -ge "$from" ] && [ "$at" -lt "$to" ]; } || continue
+    next="$(_ns_usage_resumed_at "$ns" "$at")" || continue
+    [ "$next" -le "$to" ] || next="$to"
     total=$((total + next - at))
     last_reason="$reason"
   done <"$file"
   [ "$total" -gt 0 ] || return 1
   printf '%s\t%s' "$total" "$last_reason"
+}
+
+# ns_usage_pauses_by_reason <nightshift-dir> <from> <to> — the not-work inside one span, one
+# `<reason>\t<seconds>` line per reason in the order each was first recorded. Each gap is measured
+# exactly as ns_usage_paused_between measures it, so the lines sum to its total.
+ns_usage_pauses_by_reason() {
+  local file marks bin
+  file="$(ns_usage_dir "$1")/pauses.tsv"
+  marks="$(_ns_usage_marks "$1")"
+  [ -f "$file" ] && [ ! -L "$file" ] && [ -f "$marks" ] || return 1
+  bin="$(ns_usage_awk_bin)" || return 1
+  "$bin" -v from="$2" -v to="$3" -f "$_NS_USAGE_PAUSES_AWK" "$marks" "$file"
 }
 
 # _ns_usage_resumed_at <nightshift-dir> <epoch> — when work was next seen after a pause, from the
@@ -646,14 +710,14 @@ ns_usage_window() {
 
 # ns_usage_progress_due <project-dir> <item-label> — status 0 when the owner's cadence says an
 # update is now due. `completion-only` never is; `time` and `tokens` measure against the window;
-# `either` is whichever comes first. A mode that needs a counter no host reported falls back to
-# the time cadence rather than quietly never firing.
+# `either` is whichever comes first. The cadence is its own setting: a mode that needs a counter
+# the owner turned off, or one no host reported, falls back to the time cadence rather than
+# quietly never firing.
 ns_usage_progress_due() {
   local project="$1" label="$2" ns="$1/.nightshift" mode minutes tokens window epoch base now spent moved
   mode="$(ns_receipts "$project" progressMode)"
   [ -n "$mode" ] || mode="time"
   [ "$mode" != completion-only ] || return 1
-  [ "$(ns_receipts "$project" usage)" != off ] || return 1
   window="$(ns_usage_window "$ns" "$label" "$(ns_receipt_path "$project" "$label")")" || return 1
   epoch="$(printf '%s' "$window" | cut -f1)"
   base="$(printf '%s' "$window" | cut -f2)"
@@ -665,7 +729,8 @@ ns_usage_progress_due() {
   case "$mode" in
     time) [ "$((now - epoch))" -ge "$((minutes * 60))" ] && return 0 ;;
     tokens | either)
-      spent="$(ns_usage_total "$ns")" || spent=""
+      spent=""
+      [ "$(ns_receipts "$project" usage)" = off ] || spent="$(ns_usage_total "$ns")" || spent=""
       if [ -n "$spent" ]; then
         moved="$(ns_usage_countable "$(ns_usage_sub "$spent" "$base")")"
         [ "$moved" -ge "$tokens" ] && return 0

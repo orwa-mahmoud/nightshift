@@ -226,6 +226,44 @@ try {
         Expect-True (-not (Test-Path -LiteralPath $linkArchive)) 'apply deletes the archive whose punch-list is a symlink'
         Expect-True (Test-Path -LiteralPath (Join-Path $hns 'punch-list.md')) 'apply leaves the live punch list'
     }
+
+    # A later shift's dated folder is previewed and pruned by age like its day's first.
+    $laterRoot = Join-Path $root 'later-shift'
+    $lns = Join-Path $laterRoot '.nightshift'
+    $null = New-Item -ItemType Directory -Path $lns -Force
+    Copy-Item -LiteralPath $template -Destination (Join-Path $lns 'rules.json')
+    Set-RetentionRules $lns 0 30
+    $second = Join-Path $lns 'archive/2020-01-01-shift-2'
+    $notOurs = Join-Path $lns 'archive/2020-01-01-shift-x'
+    $recentSecond = Join-Path $lns 'archive/2026-08-01-shift-2'
+    foreach ($dir in @($second, $notOurs, $recentSecond)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+    [IO.File]::WriteAllText((Join-Path $second 'punch-list.md'), "- [x] done`n")
+    Age-Path $second
+    Age-Path $notOurs
+    $laterPreview = Invoke-RetainHistory $laterRoot
+    Expect-True ($laterPreview.Stdout -match 'archive/2020-01-01-shift-2') 'preview lists an old later-shift folder'
+    Expect-True ($laterPreview.Stdout -notmatch 'archive/2020-01-01-shift-x') 'preview omits a folder that is not a later shift'
+    Expect-True ($laterPreview.Stdout -notmatch 'archive/2026-08-01-shift-2') 'preview omits a recent later-shift folder'
+    $laterApply = Invoke-RetainHistory $laterRoot -Apply
+    Expect-True ($laterApply.ExitCode -eq 0) "later-shift apply exits 0 (got $($laterApply.ExitCode) $($laterApply.Stderr))"
+    Expect-True (-not (Test-Path -LiteralPath $second)) 'apply deletes the old later-shift folder'
+    Expect-True (Test-Path -LiteralPath $notOurs) 'apply keeps a folder that is not a later shift'
+    Expect-True (Test-Path -LiteralPath $recentSecond) 'apply keeps a recent later-shift folder'
+
+    # An old folder holding an archived punch list is pruned; its contract's boxes are not open work.
+    $punchRoot = Join-Path $root 'archived-punch'
+    $pns = Join-Path $punchRoot '.nightshift'
+    $null = New-Item -ItemType Directory -Path $pns -Force
+    Copy-Item -LiteralPath $template -Destination (Join-Path $pns 'rules.json')
+    Set-RetentionRules $pns 0 30
+    $filedPunch = Join-Path $pns 'archive/2020-01-01'
+    $null = New-Item -ItemType Directory -Path $filedPunch -Force
+    [IO.File]::WriteAllText((Join-Path $filedPunch 'punch-list.md'),
+        "> Archived record of shift 1111222233334444, filed 2020-01-01.`n`n# Punch list`n`n- [ ] a box in the contract prose`n`n## Items`n`n- [x] **1. done.**`n")
+    Age-Path $filedPunch
+    $punchApply = Invoke-RetainHistory $punchRoot -Apply
+    Expect-True ($punchApply.ExitCode -eq 0) "archived punch apply exits 0 (got $($punchApply.ExitCode) $($punchApply.Stderr))"
+    Expect-True (-not (Test-Path -LiteralPath $filedPunch)) 'apply prunes a folder holding an archived punch list'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

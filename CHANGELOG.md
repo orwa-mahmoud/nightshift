@@ -3,6 +3,36 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.23.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.4...v0.23.0) (2026-09-24)
+
+
+### Features
+
+* archive each shift's punch list with its contract ([8182c7b](https://github.com/orwa-mahmoud/nightshift/commit/8182c7b628719c6f879540a80b658741e1c75ee8))
+* charge time and tokens to the item being worked ([6b002a0](https://github.com/orwa-mahmoud/nightshift/commit/6b002a0f53257207a780bb10dba10fe1ae30d597))
+* control token usage, duration and progress updates separately ([dd6c01f](https://github.com/orwa-mahmoud/nightshift/commit/dd6c01f08697d7b5bc5c2b848d475582e697f7f6))
+* give every punch-list item a permanent id ([db50487](https://github.com/orwa-mahmoud/nightshift/commit/db5048730fc81ae9c00a65f97f579b659603f8fd))
+* make the morning receipt the end-of-shift verdict ([0834c3d](https://github.com/orwa-mahmoud/nightshift/commit/0834c3df5d6e4a2d19c7aa404cad5c083fdf47d3))
+
+
+### Bug Fixes
+
+* charge each ticked item to itself when ticks land out of order ([9137ba3](https://github.com/orwa-mahmoud/nightshift/commit/9137ba3ebe7730c2541c54a6668cb366ee6a71e6))
+* check the approved list before clocking out a finished shift ([a509f2d](https://github.com/orwa-mahmoud/nightshift/commit/a509f2d6e6d24f029d265561334d512e5e8b2d5a))
+* count a capital [X] as a tick when labelling usage ([04ecdc6](https://github.com/orwa-mahmoud/nightshift/commit/04ecdc62aab237c6afd816c82bae69f4ec771da7))
+* file each same-day shift into its own archive folder ([dc8ab60](https://github.com/orwa-mahmoud/nightshift/commit/dc8ab60d723d6d2f1e81cf05a9f6f77b589d4608))
+* group the receipt-path and pause-window conditions for shellcheck ([81685ac](https://github.com/orwa-mahmoud/nightshift/commit/81685ac7d3e7a79b6724e3d8418033a945eff274))
+* match the em dash in item labels under Windows PowerShell ([a28d935](https://github.com/orwa-mahmoud/nightshift/commit/a28d9357c7f515b92cc5c63165e5c532c94a9c85))
+* name the cited-report checker check-report ([442474a](https://github.com/orwa-mahmoud/nightshift/commit/442474a0f22248320026593badba6b53c7ff9290))
+* read the work target's history from inside it in the morning receipt ([6b47ca7](https://github.com/orwa-mahmoud/nightshift/commit/6b47ca7e3a0f480790346f7c6d119bf1e1ab4ca3))
+* record tonight's snapshot when Start arms an uncomposed shift ([a85c596](https://github.com/orwa-mahmoud/nightshift/commit/a85c5962a570e72510b2d2af5d71e223e41a1525))
+* round usage numbers the same way on every runtime ([fb6c5be](https://github.com/orwa-mahmoud/nightshift/commit/fb6c5bedf4d9886b77db3f3e9f302dbb3de659a2))
+* run the Windows schedule preflight under PowerShell off Windows ([4ceb2cb](https://github.com/orwa-mahmoud/nightshift/commit/4ceb2cb33884047282563e3b73b8d0ed1b08afc7))
+* say where archived receipts land in the Archive skill ([77d8530](https://github.com/orwa-mahmoud/nightshift/commit/77d8530b2effb9b95ee78883b2a6d5aa69682345))
+* state the receipt and fetched-text rules plainly in skill references ([739f785](https://github.com/orwa-mahmoud/nightshift/commit/739f785810efe0779439e7a8b6f1e6e0f834cf15))
+* stop repeating a progress reminder once the receipt is refreshed ([389bb09](https://github.com/orwa-mahmoud/nightshift/commit/389bb094772c1837ff3a11cb4ebebb689e244f15))
+* take the plain Start snapshot right before arming ([bce9980](https://github.com/orwa-mahmoud/nightshift/commit/bce998032aac5541e619005f5930fb171c74bcd7))
+
 ## [0.22.4](https://github.com/orwa-mahmoud/nightshift/compare/v0.22.3...v0.22.4) (2026-09-23)
 
 

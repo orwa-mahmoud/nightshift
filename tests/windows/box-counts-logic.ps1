@@ -75,21 +75,21 @@ try {
         'a missing drafting table counts as zero'
 
     $hyphen = Join-Path $root 'hyphen-punch.md'
-    [IO.File]::WriteAllText($hyphen, @'
+    [IO.File]::WriteAllText($hyphen, (@'
 # Punch List
 
 ## Items
 - [x] **2. Make the packed Node-only build reproducible.**
-- [ ] **3. Ship it — already reviewed**
-- [ ] **4. Re-index — later**
-'@)
-    Expect-True ((Get-NSGateItemLabel $hyphen 1) -ceq '2. Make the packed Node-only build reproducible.') `
+- [ ] **3. Ship it {dash} already reviewed**
+- [ ] **4. Re-index {dash} later**
+'@).Replace('{dash}', [string][char]0x2014))
+    Expect-True (((Get-NSGateTickedLabels $hyphen) -join '|') -ceq '2. Make the packed Node-only build reproducible.') `
         'box-count lists still expose a hyphenated title whole'
     $openHyphen = @(Get-NSPunchItem -PunchList $hyphen -Id '')
-    Expect-True ($openHyphen[0] -ceq '- [ ] **3. Ship it — already reviewed**') `
+    Expect-True ($openHyphen[0] -ceq ('- [ ] **3. Ship it ' + [char]0x2014 + ' already reviewed**')) `
         'the first open item is chosen by the spaced-dash suffix rule'
     $reindex = @(Get-NSPunchItem -PunchList $hyphen -Id '4. Re-index')
-    Expect-True ($reindex[0] -ceq '- [ ] **4. Re-index — later**') `
+    Expect-True ($reindex[0] -ceq ('- [ ] **4. Re-index ' + [char]0x2014 + ' later**')) `
         'Re-index keeps its hyphen after the suffix is stripped'
 }
 finally {

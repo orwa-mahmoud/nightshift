@@ -116,7 +116,8 @@ expected() { printf '%s' "$FIX/$1/expected.json"; }
          == ["owner", "reviewer", "release", "artifact"]' "$SCHEMA" >/dev/null
   jq -e '.properties.handoff.properties.detail.enum == ["concise", "detailed"]' "$SCHEMA" >/dev/null
   jq -e '.properties.handoff.properties.sections.items.enum
-         == ["shift", "baseline", "changed", "parked", "unsupported", "next"]' "$SCHEMA" >/dev/null
+         == ["shift", "usage", "items", "review", "interruptions", "parked", "snags",
+             "baseline", "changed", "unsupported", "next"]' "$SCHEMA" >/dev/null
   jq -e '.properties.archive.properties.layout.enum == ["date", "shift"]' "$SCHEMA" >/dev/null
 }
 

@@ -80,6 +80,26 @@ try {
     Expect-True (@([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns))).Count -eq 3) `
         'a second sync with nothing newly ticked writes no mark'
 
+    # Marks name the item they charged, so a later item ticked first is charged to itself.
+    $w = Join-Path $root 'out-of-order'
+    $ns = New-Workspace $w "## Items`n- [ ] **A1 - first.**`n- [x] **A2 - second.**`n"
+    $punch = Join-Path $ns 'punch-list.md'
+    $t = Join-Path $w 't.jsonl'
+    Copy-Item -LiteralPath (Join-Path $fixtures 'claude-multiline.jsonl') -Destination $t
+    $null = Write-NSUsageMarkArm $ns
+    $r = (Read-NSUsageClaude $t 0 '').Split("`t")
+    $null = Write-NSUsageRecord $ns 'claude' $r[2] 'transcript-incremental' $t $r[1] $r[0] $r[4]
+    Expect-True (Invoke-NSGateUsageSync $ns $w $punch 1) 'the sync closes the one ticked item'
+    [IO.File]::WriteAllText($punch, "## Items`n- [x] **A1 - first.**`n- [x] **A2 - second.**`n",
+        (New-Object Text.UTF8Encoding($false)))
+    Expect-True (Invoke-NSGateUsageSync $ns $w $punch 2) 'the sync closes the item ticked second'
+    $names = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns)) | ForEach-Object { $_.Split("`t")[1] })
+    Expect-True (($names -join ' ') -ceq 'arm A2 A1') "each mark names the item ticked (got $($names -join ' '))"
+    foreach ($id in @('A1', 'A2')) {
+        $tables = @([IO.File]::ReadAllLines((Get-NSReceiptPath $w $id)) | Where-Object { $_.StartsWith('| Tokens |') })
+        Expect-True ($tables.Count -eq 1) "$id is charged exactly once (got $($tables.Count))"
+    }
+
     # A pause is listed beside the duration and subtracted from working time.
     $w = Join-Path $root 'paused'
     $ns = New-Workspace $w $punchText
@@ -131,6 +151,76 @@ try {
         "a Cursor payload reads in the order the report prints (got $($cursor.Split([char]9)[0]))"
     Expect-True ($null -eq (Read-NSUsageCursor '{"model":"cursor-fast"}')) `
         'a payload with no figures is no measurement, not zero'
+
+    # Tokens, duration and the progress cadence each follow their own setting. The settings come
+    # from the policy the shift was composed with, as they do at run time.
+    function Set-ReceiptsPolicy {
+        param([string]$Ns, [string]$Receipts)
+        [IO.File]::WriteAllText((Join-Path $Ns 'shift-policy.json'),
+            ('{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T00:00:00Z",' +
+                '"source":"composition","verificationLevel":"none","toolingPolicy":"existing-tools","receipts":' +
+                $Receipts + '}'), (New-Object Text.UTF8Encoding($false)))
+    }
+    function New-TickedUnder {
+        param([string]$Name, [string]$Receipts)
+        $site = Join-Path $root $Name
+        $siteNs = New-Workspace $site "## Items`n- [x] **P01 - first.**`n- [ ] **P02 - open.**`n"
+        Set-ReceiptsPolicy $siteNs $Receipts
+        $null = Write-NSUsageRecord $siteNs 'claude' 'claude-opus-5' 'transcript-incremental' '/t/a' '10' 'input=4,output=2'
+        $null = Invoke-NSGateUsageSync $siteNs $site (Join-Path $siteNs 'punch-list.md') 1
+        return $site
+    }
+    $w = New-TickedUnder 'usage-off' '{"usage":"off"}'
+    $rec = [IO.File]::ReadAllText((Join-Path $w '.nightshift/receipts/P01.md'))
+    Expect-True ($rec.Contains("`n**Tokens:** off`n") -and -not $rec.Contains('| Tokens |')) 'usage off says the tokens are off'
+    Expect-True ($rec.Contains('| Time |')) 'usage off still writes the Time table'
+    $row = @([IO.File]::ReadAllLines((Join-Path $w '.nightshift/receipts/README.md')) | Where-Object { $_.StartsWith('| P01 | ticked |') })
+    Expect-True ($row.Count -eq 1 -and $row[0].Contains('| **off** | **')) "the index reads the tokens as off (got $($row -join ' '))"
+
+    $w = New-TickedUnder 'duration-off' '{"duration":"off"}'
+    $rec = [IO.File]::ReadAllText((Join-Path $w '.nightshift/receipts/P01.md'))
+    Expect-True ($rec.Contains('| input | 4 |')) 'duration off still writes the Tokens table'
+    Expect-True ($rec.Contains("`n**Time:** off`n") -and -not $rec.Contains('| Time |')) 'duration off says the time is off'
+
+    $w = New-TickedUnder 'both-off' '{"usage":"off","duration":"off"}'
+    $recPath = Join-Path $w '.nightshift/receipts/P01.md'
+    $rec = [IO.File]::ReadAllText($recPath)
+    $kinds = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath (Join-Path $w '.nightshift'))) | ForEach-Object {
+            $f = $_.Split("`t") + @('', '', '', '')
+            if ($f[3]) { $f[1] + ':' + $f[3] } else { $f[1] }
+        })
+    Expect-True (($kinds -join '|') -ceq 'arm|P01:tick') "both off still ticks (got $($kinds -join '|'))"
+    Expect-True (-not $rec.Contains('| Tokens |') -and -not $rec.Contains('| Time |')) 'both off writes neither table'
+    Expect-True ($rec.Contains('| off | off | off | ticked |')) 'the session reads off'
+    Expect-True (@([IO.File]::ReadAllLines((Join-Path $w '.nightshift/receipts/README.md'))) -ccontains '| **Totals** |  | **off** | **off** |  |') `
+        'the index totals read off'
+
+    # The cadence.
+    $w = Join-Path $root 'cadence'
+    $ns = New-Workspace $w "## Items`n- [ ] **P01 - open.**`n"
+    $marksFile = Get-NSUsageMarksPath $ns
+    $null = New-Item -ItemType Directory -Path (Get-NSUsageDir $ns) -Force
+    $now = Get-NSUnixTime
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    Set-ReceiptsPolicy $ns '{"usage":"off","progressMode":"time","progressMinutes":20}'
+    [IO.File]::WriteAllText($marksFile, "$($now - 60)`tarm`t`n", $utf8)
+    Expect-True (-not (Test-NSUsageProgressDue $w 'P01')) 'usage off: time is not due before progressMinutes'
+    [IO.File]::WriteAllText($marksFile, "$($now - 25 * 60)`tarm`t`n", $utf8)
+    Expect-True (Test-NSUsageProgressDue $w 'P01') 'usage off: time still fires after progressMinutes'
+
+    Set-ReceiptsPolicy $ns '{"usage":"off","progressMode":"tokens","progressTokens":1000,"progressMinutes":20}'
+    [IO.File]::WriteAllText($marksFile, "$($now - 60)`tarm`t`n", $utf8)
+    $null = Write-NSUsageRecord $ns 'claude' 'm' 'transcript-incremental' '/t/a' '1' 'input=5000,output=500'
+    Expect-True (-not (Test-NSUsageProgressDue $w 'P01')) 'usage off: a reading past the threshold does not count'
+    [IO.File]::WriteAllText($marksFile, "$($now - 25 * 60)`tarm`t`n", $utf8)
+    Expect-True (Test-NSUsageProgressDue $w 'P01') 'usage off: tokens falls back to time'
+
+    Set-ReceiptsPolicy $ns '{"progressMode":"tokens","progressTokens":1000,"progressMinutes":20}'
+    [IO.File]::WriteAllText($marksFile, "$($now - 60)`tarm`tinput=0,output=0`n", $utf8)
+    Expect-True (Test-NSUsageProgressDue $w 'P01') 'tokens fires on the counter'
+    Set-ReceiptsPolicy $ns '{"progressMode":"completion-only"}'
+    [IO.File]::WriteAllText($marksFile, "$($now - 90 * 60)`tarm`t`n", $utf8)
+    Expect-True (-not (Test-NSUsageProgressDue $w 'P01')) 'completion-only never fires'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

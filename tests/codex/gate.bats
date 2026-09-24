@@ -144,3 +144,34 @@ codex_gate() {
   is_block "$output"
   printf '%s' "$output" | grep -q 'back to the bench'
 }
+
+# Zero open boxes reached by deleting work, or by editing the contract, is not done.
+@test "codex gate blocks a done clock-out after the open item was deleted" {
+  p="$(new_project)"
+  punch_open "$p"
+  arm_snapshot "$p"
+  printf '## Items\n- [x] **2. done.**\n' >"$p/.nightshift/punch-list.md"
+  run codex_gate "$p"
+  is_block "$output"
+  [ ! -e "$p/.nightshift/.ended" ]
+}
+
+@test "codex gate blocks a done clock-out after the punch list was deleted" {
+  p="$(new_project)"
+  punch_open "$p"
+  arm_snapshot "$p"
+  rm "$p/.nightshift/punch-list.md"
+  run codex_gate "$p"
+  is_block "$output"
+  [ ! -e "$p/.nightshift/.ended" ]
+}
+
+@test "codex gate releases a list finished by ticks alone" {
+  p="$(new_project)"
+  punch_open "$p"
+  arm_snapshot "$p"
+  punch_done "$p"
+  run codex_gate "$p"
+  is_codex_release
+  [ -e "$p/.nightshift/.ended" ]
+}

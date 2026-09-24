@@ -174,7 +174,11 @@ render_morning_receipt() {
     log_line "morning receipt kept: $out already exists for this shift"
     return 0
   fi
-  err="$(bash "$renderer" --project "$PROJECT_DIR" --out "$out" 2>&1)" && return 0
+  if err="$(bash "$renderer" --project "$PROJECT_DIR" --out "$out" 2>&1)"; then
+    # The receipts index links the page it now has.
+    if ns_report_enabled "$PROJECT_DIR"; then ns_receipts_write_index "$PROJECT_DIR"; fi
+    return 0
+  fi
   log_line "morning receipt render failed: $(printf '%s' "$err" | head -n1)"
 }
 
@@ -199,6 +203,8 @@ end_shift() {
     [ -L "$ENDED" ] && rm -f "$ENDED"
     : >"$ENDED"
   fi
+  # An item still being worked closes its session as paused, while the shift is still armed.
+  ns_gate_usage_flush "$NS" "$PROJECT_DIR"
   # The shift is over, so the site stops being on shift: without this the guards would still apply
   # to whatever ordinary session opens this project next.
   rm -f "$NS/.shift-armed"
@@ -333,10 +339,13 @@ fi
 # 2. Done — no punch list at all, or every box ticked. An unreadable punch
 # list is not zero open: do not release.
 if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
-  if [ ! -f "$PUNCH" ]; then
-    end_and_stop "shift done: $TICKED/$TOTAL"
-  fi
-  if [ "$OPEN" -eq 0 ]; then
+  if [ ! -f "$PUNCH" ] || [ "$OPEN" -eq 0 ]; then
+    NS_DONE_MOVED="$(ns_gate_done_mismatch "$PROJECT_DIR" "$PUNCH")" || NS_DONE_MOVED=""
+    if [ -n "$NS_DONE_MOVED" ]; then
+      log_line "punch list changed since arming — the done clock-out is blocked until it is restored"
+      _ns_clock_out_block "$NS_DONE_MOVED"
+      exit 0
+    fi
     end_and_stop "shift done: $TICKED/$TOTAL"
   fi
 fi

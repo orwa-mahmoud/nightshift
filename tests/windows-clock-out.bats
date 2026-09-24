@@ -33,6 +33,13 @@ CURSOR="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/cursor/clock-out-gate.sh"
   grep -qF 'Get-NSProgressToken' "$HELPER"
 }
 
+@test "every clock-out gate checks the armed list before a done clock-out" {
+  grep -qF 'ns_gate_done_mismatch' "$CORE"
+  grep -qF 'ns_gate_done_mismatch' "$CODEX"
+  grep -qF 'ns_gate_done_mismatch' "$CURSOR"
+  grep -qF 'Get-NSGateDoneMismatch' "$HELPER"
+}
+
 @test "Windows unreadable punch list does not clock out as 0 open" {
   grep -qF '$counts.Readable' "$HELPER"
   grep -qF 'PUNCH_UNREADABLE' "$CORE"

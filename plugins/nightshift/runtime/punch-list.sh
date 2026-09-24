@@ -2,7 +2,8 @@
 # punch-list.sh — the gates block and one item, printed exactly as the owner wrote them.
 #
 #   punch-list.sh --project <ws> next        the gates block, then the first still-open item
-#   punch-list.sh --project <ws> item <id>   the gates block, then that named item
+#   punch-list.sh --project <ws> item <item> the gates block, then that item, named by its
+#                                            number, its id, or its whole label
 #
 # The `## Gates` block may legitimately change mid-shift, so an item needs it fresh — and reading
 # the whole punch list to see one block is thousands of tokens per item on a long list. This prints
@@ -39,7 +40,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     item)
-      [ $# -ge 2 ] || { printf 'punch-list: item needs an id\n' >&2; exit 1; }
+      [ $# -ge 2 ] || { printf 'punch-list: item needs a number, an id, or a label\n' >&2; exit 1; }
       VERB=item
       WANT="$2"
       shift 2
@@ -51,7 +52,7 @@ while [ $# -gt 0 ]; do
     *) printf 'punch-list: unknown argument: %s\n' "$1" >&2; exit 1 ;;
   esac
 done
-[ -n "$VERB" ] || { printf 'punch-list: usage: punch-list.sh [--project DIR] next|item <id>\n' >&2; exit 1; }
+[ -n "$VERB" ] || { printf 'punch-list: usage: punch-list.sh [--project DIR] next|item <number|id|label>\n' >&2; exit 1; }
 
 HOST="$(cd -P "$PROJECT" 2>/dev/null && pwd)" || {
   printf 'punch-list: cannot cd to %s\n' "$PROJECT" >&2

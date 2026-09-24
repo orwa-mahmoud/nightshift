@@ -137,7 +137,14 @@ $quotedPrompt = Escape-NSSingleQuoted $Prompt
 $quotedLog = Escape-NSSingleQuoted $log
 $runScript = "& { Set-Location -LiteralPath '$quotedWorkspace'; $Agent '$quotedPrompt' *>> '$quotedLog' }"
 $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($runScript))
-$identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+# The task runs as the account that registers it. Off Windows the identity API does not exist, and
+# the environment's domain and user name stand in so the preflight and the printed task still render.
+if (Test-NSWindows) {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+}
+else {
+    $identity = [Environment]::UserDomainName + '\' + [Environment]::UserName
+}
 
 $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>

@@ -1,0 +1,15 @@
+# progressMode<TAB>usage<TAB>minutes since the window opened<TAB>input tokens since, or -<TAB>due — progressMinutes 20, progressTokens 1000
+time	when-available	5	-	no
+time	when-available	25	-	yes
+time	off	25	-	yes
+tokens	when-available	5	1500	yes
+tokens	when-available	5	500	no
+tokens	when-available	25	500	no
+tokens	when-available	25	-	yes
+tokens	off	5	5000	no
+tokens	off	25	5000	yes
+either	when-available	5	1500	yes
+either	when-available	25	500	yes
+either	when-available	5	500	no
+either	off	25	5000	yes
+completion-only	when-available	90	5000	no
