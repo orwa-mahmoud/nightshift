@@ -3,7 +3,7 @@
 #
 #   evidence-compare.sh --project DIR --baseline ID [--json|--md]
 #
-# Reruns nothing and measures nothing. It reads $NS/evidence/findings.jsonl, takes the baseline
+# Reruns nothing and measures nothing. It reads the live findings ledger, takes the baseline
 # record carrying that id, and classifies every finding of the baseline's source — the records
 # whose sourceClass is the baseline's, plus the deduped records that keep it in sources[] — as
 # one of eight classes, by id and digest against the state the baseline recorded in
@@ -877,7 +877,7 @@ done
 
 PROJECT="$(cd -P "$(ns_msys_path "$PROJECT_ARG")" 2>/dev/null && pwd)"
 [ -n "$PROJECT" ] || die "cannot read $PROJECT_ARG" 2
-JSONL="$PROJECT/.nightshift/evidence/findings.jsonl"
+JSONL="$(ns_layout_path "$PROJECT/.nightshift" evidence)/findings.jsonl"
 [ -f "$JSONL" ] || die "no ledger at $JSONL" 2
 
 JSON_TOOL="$(ns_policy_json_tool)" || die 'JSON parser unavailable; compare in the skill' 2

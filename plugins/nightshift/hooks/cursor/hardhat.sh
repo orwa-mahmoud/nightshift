@@ -45,8 +45,10 @@ HOST_DIR="$(cursor_project_dir)"
 LINK_ERROR=""
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || LINK_ERROR=1
 NS="$PROJECT_DIR/.nightshift"
-PUNCH="$NS/punch-list.md"
-ENDED="$NS/.ended"
+declare PUNCH ENDED ARMED
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set ENDED "$NS" ended
+ns_layout_set ARMED "$NS" armed
 
 
 # The emission (and its escaping) is the seam's; the guard only decides.
@@ -78,7 +80,7 @@ LEASE_GENERATION="${NIGHTSHIFT_LEASE_GENERATION:-}"
 # that is what stands these rules down.
 if ! ns_hardhat_active; then
   if [ "${NIGHTSHIFT_REVIVAL:-}" = "1" ]; then
-    if [ ! -f "$NS/.shift-armed" ] || [ ! -f "$PUNCH" ] || { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; } \
+    if [ ! -f "$ARMED" ] || [ ! -f "$PUNCH" ] || { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; } \
       || ! ns_lease_nonce_matches "$NS" cursor "$LEASE_NONCE" "$LEASE_GENERATION"; then
       deny "BLOCKED: this recovered worker no longer owns an active shift. Do not continue after clock-out."
     fi
@@ -141,16 +143,16 @@ own_rc=$?
 # observable PreToolUse call here; hosted tools that Codex does not expose remain outside it.
 TOOL_RULES="$(ns_tool_rules "$PROJECT_DIR" "${NIGHTSHIFT_TOOL_RULES:-}")"
 if ns_hardhat_tool_deny_broken; then
-  deny "BLOCKED: the toolDeny rules are not a JSON object, so the tool rules cannot run. Fix .nightshift/rules.json or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex or Cursor)."
+  deny "BLOCKED: the toolDeny rules are not a JSON object, so the tool rules cannot run. Fix $(ns_hardhat_state_name rules) or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex or Cursor)."
 fi
 
 # The active agent never inspects or changes the owner's rules through any observable tool.
 # Inspect target-bearing arguments and patch headers, not unrelated prose in a payload.
 if ns_hardhat_payload_targets_rules "$TOOL" "$CURSOR_RAW" "$SCRUBBED"; then
-  deny "BLOCKED: the rules file is the owner's — the night neither reads nor rewrites its own rules. Park the need in .nightshift/parking-lot.md and keep working."
+  deny "BLOCKED: the rules file is the owner's — the night neither reads nor rewrites its own rules. Park the need in $(ns_hardhat_state_name parking-lot) and keep working."
 fi
 if ns_hardhat_payload_targets_control "$TOOL" "$CURSOR_RAW" "$SCRUBBED"; then
-  deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in .nightshift/parking-lot.md and keep working."
+  deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in $(ns_hardhat_state_name parking-lot) and keep working."
 fi
 
 if [ "$TOOL" = "AskQuestion" ] \

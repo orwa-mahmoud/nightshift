@@ -373,6 +373,7 @@ try {
     $parking = [IO.File]::ReadAllText($parkingPath, $utf8)
     Expect-True $parking.StartsWith('# Parking Lot', [StringComparison]::Ordinal) 'park-needs keeps the owner file it appends to'
     Expect-True $parking.Contains('**needs allowance: containers**') 'the entry carries the missing category'
+    Expect-Equal 6 ([regex]::Matches($parking, '(?m)^- \*\*needs allowance: ')).Count 'every entry is a bullet Archive files once answered'
     Expect-True $parking.Contains('item "Bring the review stack up."') 'the entry names the item'
     Expect-True $parking.Contains('worked last if the owner allows it before then') 'the entry states the default'
     $secondRun = Invoke-Park -Project $project
@@ -380,6 +381,13 @@ try {
     Expect-Equal $parking ([IO.File]::ReadAllText($parkingPath, $utf8)) 'a second run leaves the file byte-identical'
     Expect-Equal 6 ([regex]::Matches($parking, '\*\*needs allowance: ')).Count 'the file carries exactly one entry per gap'
     Expect-Equal 0 (Add-NSParkedNeeds -Workspace $project).Count 'the library call is idempotent too'
+
+    # An entry an earlier release wrote as a bare line is the same work already parked.
+    $bare = [regex]::Replace($parking, '(?m)^- (\*\*needs allowance: )', '$1')
+    [IO.File]::WriteAllText($parkingPath, $bare, $utf8)
+    $bareRun = Invoke-Park -Project $project
+    Expect-True $bareRun.StdoutText.Contains('park-needs: added 0') 'a bare-line entry is not parked a second time'
+    Expect-Equal $bare ([IO.File]::ReadAllText($parkingPath, $utf8)) 'a bare-line entry is left as the owner has it'
 
     # === 8. park-needs writes nothing when there is no gap ===
     $noGap = Join-Path $root 'no-gap'

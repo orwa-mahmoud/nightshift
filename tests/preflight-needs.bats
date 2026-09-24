@@ -269,9 +269,33 @@ MD
   [ "${lines[1]}" = 'parked global-packages: 2. Install jq system-wide.' ]
   [ "${lines[2]}" = 'park-needs: added 2' ]
   lot="$p/.nightshift/parking-lot.md"
-  grep -qxF '**needs allowance: sudo** — item "2. Install jq system-wide." needs the sudo elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.' "$lot"
-  grep -qxF '**needs allowance: global-packages** — item "2. Install jq system-wide." needs the global-packages elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.' "$lot"
+  grep -qxF -- '- **needs allowance: sudo** — item "2. Install jq system-wide." needs the sudo elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.' "$lot"
+  grep -qxF -- '- **needs allowance: global-packages** — item "2. Install jq system-wide." needs the global-packages elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.' "$lot"
   [ "$(grep -c 'needs allowance:' "$lot")" -eq 2 ]
+}
+
+@test "park-needs writes a bullet Archive files once answered, and never repeats a bare-line entry" {
+  p="$(unarmed park-bullet)"
+  fixture_list "$p"
+  policy "$p" '"allowances":[{"category":"containers","scope":"category","provenance":"one-shift"}]'
+  lot="$p/.nightshift/parking-lot.md"
+  sudo_entry='**needs allowance: sudo** — item "2. Install jq system-wide." needs the sudo elevation category, which is denied for this shift. Default: parked, worked last if the owner allows it before then.'
+  printf '# Parking Lot\n\n---\n\n%s\n' "$sudo_entry" >"$lot"
+  run park "$p"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = 'parked global-packages: 2. Install jq system-wide.' ]
+  [ "${lines[1]}" = 'park-needs: added 1' ]
+  [ "$(grep -c 'needs allowance: sudo' "$lot")" -eq 1 ]
+  # The owner answers the new entry in place; Archive files it and leaves the pointer.
+  sed 's/before then\.$/before then. · answered: allowed for the next shift/' "$lot" \
+    | grep -v 'needs allowance: sudo' >"$lot.next"
+  mv "$lot.next" "$lot"
+  printf 'shiftId=9f2c40ab77e51d63\narchiveRoot=archive\narchiveLayout=date\n' >"$p/.nightshift/.ended"
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/archive-receipts.sh" --project "$p" --date 2026-09-24
+  [ "$status" -eq 0 ]
+  grep -qF 'needs allowance: global-packages' "$p/.nightshift/archive/2026-09-24/9f2c40ab77e51d63/parking-lot.md"
+  ! grep -qF 'needs allowance:' "$lot" || false
+  grep -qF 'Filed: [2026-09-24](archive/2026-09-24/9f2c40ab77e51d63/parking-lot.md)' "$lot"
 }
 
 @test "park-needs is idempotent: a second run adds nothing and changes no byte" {

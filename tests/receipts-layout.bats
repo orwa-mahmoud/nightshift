@@ -47,7 +47,7 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   grep -qF '| reasoning | 7.3k |' "$f"
   grep -qF '<!-- tokens 122 55458 47457543 42091 7332 -->' "$f"
   grep -qF '| Time |' "$f"
-  ! grep -qF 'exact:' "$f"
+  ! grep -qF 'exact:' "$f" || false
   grep -q $'\t2. Make the packed Node-only build reproducible.\t' "$p/.nightshift/usage/marks.tsv"
   # Tokens and Time sit under the heading, before any later narrative.
   awk '
@@ -158,8 +158,8 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   [ "$(sed -n 3p "$idx")" = 'Shift summary: [morning-2026-09-09-aaa.md](./morning-2026-09-09-aaa.md)' ]
   [ "$(sed -n 5p "$idx")" = 'Shift summary: [morning-2026-09-09-bbb.md](./morning-2026-09-09-bbb.md)' ]
   [ "$(sed -n 7p "$idx")" = '| Item | State | **Usage** | **Time** | Receipt |' ]
-  ! grep -qF 'original' "$idx"
-  ! grep -qF '| morning-' "$idx"
+  ! grep -qF 'original' "$idx" || false
+  ! grep -qF '| morning-' "$idx" || false
 
   ps_ready
   cp "$idx" "$p/bash-index.md"
@@ -195,10 +195,13 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   printf 'the old page\n' >"$p/.nightshift/shift-report.md"
   mkdir -p "$p/.nightshift/receipts"
   printf 'keep\n' >"$p/.nightshift/receipts/20260902T190000Z-attended-evidence-program.md"
-  lib ns_migrate_receipts_layout "$p"
-  ! jq -e '.report' "$p/.nightshift/rules.json" >/dev/null
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/migrate-state.sh" --project "$p" --apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'move      shift-report.md -> receipts/previous-report.md'
+  printf '%s\n' "$output" | grep -qF 'rename    rules.json: report -> receipts'
+  ! jq -e '.report' "$p/.nightshift/rules.json" >/dev/null || false
   jq -e '.receipts.enabled == true' "$p/.nightshift/rules.json"
-  ! jq -e '.receipts | has("legacyItemReceipts")' "$p/.nightshift/rules.json" >/dev/null
+  ! jq -e '.receipts | has("legacyItemReceipts")' "$p/.nightshift/rules.json" >/dev/null || false
   [ -f "$p/.nightshift/receipts/previous-report.md" ]
   grep -qxF 'the old page' "$p/.nightshift/receipts/previous-report.md"
   [ ! -e "$p/.nightshift/shift-report.md" ]

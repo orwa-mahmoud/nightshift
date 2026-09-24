@@ -22,7 +22,7 @@
 # the second time. Two explicit values that disagree are the owner's to settle: it names both and
 # changes neither. --dry-run prints the same report and writes nothing.
 #
-# Writes only .nightshift/shift-policy.json, .nightshift/shift-defaults.json, and the dated
+# Writes only .nightshift/run/shift-policy.json, .nightshift/shift-defaults.json, and the dated
 # archive directory the clock-out gate files the snapshot into. Both writes are refused while the
 # shift is armed: composition writes before arming, and hardhat guards the files after.
 # Exit: 0 ok · 1 usage · 2 contract failure, naming the field · 3 nothing to read or archive
@@ -119,9 +119,13 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
     die 'invalid .nightshift-link — Nightshift will not guess a workspace' 2
 fi
 NS="$WORKSPACE/.nightshift"
-POLICY="$NS/shift-policy.json"
-DEFAULTS="$NS/shift-defaults.json"
-RULES="$NS/rules.json"
+declare POLICY DEFAULTS RULES DEFAULTS_BAK PUNCH ARMED_FILE
+ns_layout_set POLICY "$NS" shift-policy
+ns_layout_set DEFAULTS "$NS" shift-defaults
+ns_layout_set RULES "$NS" rules
+ns_layout_set DEFAULTS_BAK "$NS" shift-defaults-backup
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set ARMED_FILE "$NS" armed
 
 # The snapshot is where tonight's deadline, verification level and elevation allowances live.
 # A host with no jq and no python3 still reads and writes it through the bounded reader; only a
@@ -144,7 +148,7 @@ atomic_write() { # <destination> — content on stdin
 }
 
 refuse_while_armed() {
-  [ -e "$NS/.shift-armed" ] || [ -L "$NS/.shift-armed" ] || return 0
+  [ -e "$ARMED_FILE" ] || [ -L "$ARMED_FILE" ] || return 0
   die 'refuse to write the shift policy while the shift is armed — park the need' 4
 }
 
@@ -217,9 +221,9 @@ cmd_set() {
   # the shift arms with, ids included. A candidate that already states the items digest was
   # written against the list as it is, and the list is left alone.
   if ! printf '%s' "$(cat "$candidate")" | grep -q '"itemsDigest"'; then
-    ns_punch_assign_ids "$NS/punch-list.md" "$NS" ||
+    ns_punch_assign_ids "$PUNCH" "$NS" ||
       printf 'shift-policy: the items in %s could not be given ids; receipts stay named by label\n' \
-        "$NS/punch-list.md" >&2
+        "$PUNCH" >&2
   fi
   # The contract as it stands right now, so the gate can tell later whether it moved. Two digests:
   # everything above the Items heading, which nobody may edit while a shift runs, and the items
@@ -228,8 +232,8 @@ cmd_set() {
   for digest in contractDigest itemsDigest; do
     printf '%s' "$(cat "$candidate")" | grep -q "\"$digest\"" && continue
     case "$digest" in
-      contractDigest) value="$(ns_punch_contract_digest "$NS/punch-list.md")" || value="" ;;
-      *) value="$(ns_punch_items_digest "$NS/punch-list.md")" || value="" ;;
+      contractDigest) value="$(ns_punch_contract_digest "$PUNCH")" || value="" ;;
+      *) value="$(ns_punch_items_digest "$PUNCH")" || value="" ;;
     esac
     [ -n "$value" ] || continue
     if ns_rules_set_block "$candidate" "$digest" "\"$value\"" >"$tmpd/with-$digest.json"; then
@@ -404,7 +408,7 @@ cmd_migrate() {
 
   # An armed shift keeps the contract it started under; changing it underneath the running agent
   # would leave the shift and its policy describing different nights.
-  if [ -e "$NS/.shift-armed" ] || [ -L "$NS/.shift-armed" ]; then
+  if [ -e "$ARMED_FILE" ] || [ -L "$ARMED_FILE" ]; then
     die 'refuse to migrate while the shift is armed — stop the shift, migrate, then start again' 4
   fi
 
@@ -464,15 +468,14 @@ cmd_migrate() {
   fi
 
   if [ -f "$DEFAULTS" ]; then
-    cp "$DEFAULTS" "$DEFAULTS.bak" || {
+    if { [ ! -d "${DEFAULTS_BAK%/*}" ] && ! mkdir -p "${DEFAULTS_BAK%/*}"; } || ! cp "$DEFAULTS" "$DEFAULTS_BAK"; then
       rm -rf "$tmpd"
       die 'cannot keep a backup of the legacy file' 2
-    }
+    fi
   fi
   atomic_write "$RULES" <"$tmpd/next.json"
   rm -rf "$tmpd"
   rm -f "$DEFAULTS"
-  ns_migrate_receipts_layout "$WORKSPACE"
   printf '%s\n' "$RULES"
 }
 

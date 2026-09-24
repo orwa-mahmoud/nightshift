@@ -30,7 +30,7 @@ doctor() {
   grep -qF 'write the parking lot or ask' "$SKILL"
   grep -qF 'Offer the classified repairs' "$SKILL"
   grep -qF 'Never perform a repair' "$SKILL" || grep -qF 'change nothing' "$SKILL"
-  grep -qF '$NS/.shift-armed' "$SKILL"
+  grep -qF '$NS/run/.shift-armed' "$SKILL"
   jq -e '.skills == "./skills/"' "$CODEX_PLUGIN" >/dev/null
   [ -d "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/doctor" ]
 }
@@ -457,6 +457,43 @@ EOF
   printf '%s' "$output" | grep -q '\[confirm\].*drafting-table items'
 }
 
+@test "Doctor names each inbox paragraph Archive can never file, by file and line" {
+  p="$(new_project)"
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '## Items\n\n' >"$p/.nightshift/punch-list.md"
+  for t in parking-lot snag-log; do
+    cp "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/$t.md" \
+      "$p/.nightshift/$t.md"
+  done
+  before="$(fingerprint "$p")"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  # The shipped templates hold no entry Archive cannot file.
+  ! printf '%s' "$output" | grep -qF 'Archive never files it' || false
+  [ "$(fingerprint "$p")" = "$before" ]
+  printf '%s\n' '# Parking Lot' '' 'A header paragraph above the rule is not an entry.' '' '---' '' \
+    '- Keep the flag off? · answered: ship it' '' \
+    '**needs allowance: sudo** — item "2. Install jq." needs the sudo elevation category.' '' \
+    '- still open' '  wrapped under its bullet' >"$p/.nightshift/parking-lot.md"
+  printf '%s\n' '# Snag Log' '' '---' '' '- leak · tests/x.bats · fixed in abc1234 · 2026-09-24' '' \
+    'A finding written as a paragraph · evidence · open · 2026-09-24' 'and its wrapped line' \
+    >"$p/.nightshift/snag-log.md"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF '.nightshift/parking-lot.md line 9 is not a `- ` bullet, so Archive never files it: **needs allowance: sudo** — item "2. Install jq." needs the sudo elevation category.'
+  printf '%s\n' "$output" | grep -qxF '.nightshift/snag-log.md line 7 is not a `- ` bullet, so Archive never files it: A finding written as a paragraph · evidence · open · 2026-09-24'
+  [ "$(printf '%s\n' "$output" | grep -c 'Archive never files it')" -eq 2 ]
+  printf '%s\n' "$output" | grep -qxF '[confirm] rewrite each inbox entry Doctor names as one `- ` bullet, keeping its text; Doctor does not edit the inbox'
+  # The grouped layout names the file where it lives.
+  mkdir "$p/.nightshift/inbox"
+  mv "$p/.nightshift/parking-lot.md" "$p/.nightshift/snag-log.md" "$p/.nightshift/inbox/"
+  printf '2\n' >"$p/.nightshift/state-version"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF '.nightshift/inbox/parking-lot.md line 9 is not a `- ` bullet'
+  printf '%s\n' "$output" | grep -qF '.nightshift/inbox/snag-log.md line 7 is not a `- ` bullet'
+}
+
 @test "pending Hunt work orders are counted when the punch list is empty" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"
@@ -709,7 +746,7 @@ stalled_provision() { # <project> <stage> — a transaction whose baseline is re
   printf '%s' "$output" |
     grep -qF 'provision transaction stage=smoke capability=fixture-recover baseline=unprovable; Start will refuse to arm'
   printf '%s' "$output" |
-    grep -qF '[confirm] inspect .nightshift/provision-transaction.json and provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again'
+    grep -qF '[confirm] inspect .nightshift/provision-transaction.json and .nightshift/provision-baseline/, restore by hand or run provision.sh rollback after fixing the target, then Start again'
 }
 
 @test "Doctor names the malformed field in a provisioning transaction" {

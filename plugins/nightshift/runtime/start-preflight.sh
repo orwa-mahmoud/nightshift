@@ -94,6 +94,23 @@ if [ -e "$HOST_ROOT/.nightshift-link" ] || [ -L "$HOST_ROOT/.nightshift-link" ];
 fi
 
 NS="$WORKSPACE/.nightshift"
+declare PUNCH LOG DEADLINE WATCHMAN_PID STOP POLICY RULES PROVISION_TXN PENDING_FILING LEASE ENDED ARCHIVE WORK_ORDERS WORK_MODE_FILE DRAFTING_TABLE ARMED
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set LOG "$NS" shift-log
+ns_layout_set DEADLINE "$NS" deadline
+ns_layout_set WATCHMAN_PID "$NS" watchman
+ns_layout_set STOP "$NS" stop
+ns_layout_set POLICY "$NS" shift-policy
+ns_layout_set RULES "$NS" rules
+ns_layout_set PROVISION_TXN "$NS" provision-transaction
+ns_layout_set PENDING_FILING "$NS" pending-filing
+ns_layout_set LEASE "$NS" lease
+ns_layout_set ENDED "$NS" ended
+ns_layout_set ARCHIVE "$NS" archive
+ns_layout_set WORK_ORDERS "$NS" work-orders
+ns_layout_set WORK_MODE_FILE "$NS" work-mode
+ns_layout_set DRAFTING_TABLE "$NS" drafting-table
+ns_layout_set ARMED "$NS" armed
 ok "host $HOST_NAME"
 ok "workspace $WORKSPACE"
 
@@ -158,11 +175,11 @@ fi
 # holds the shift to the contract and items it actually starts with. A composed shift already has
 # its snapshot and keeps it.
 if [ "$PHASE" = snapshot ]; then
-  if [ -e "$NS/shift-policy.json" ] || [ -L "$NS/shift-policy.json" ]; then
+  if [ -e "$POLICY" ] || [ -L "$POLICY" ]; then
     ok "snapshot composed - this shift keeps the policy it was composed with"
     exit 0
   fi
-  OPEN="$(ns_open_boxes "$NS/punch-list.md" 2>/dev/null)" || OPEN=0
+  OPEN="$(ns_open_boxes "$PUNCH" 2>/dev/null)" || OPEN=0
   case "$OPEN" in '' | *[!0-9]*) OPEN=0 ;; esac
   if [ "$OPEN" -eq 0 ]; then
     warn "snapshot none recorded - the punch list has no open item to hold a shift to"
@@ -183,8 +200,12 @@ fi
 # ------------------------------------------------------------ state version
 STATE_KIND="$(ns_state_kind "$WORKSPACE")"
 case "$STATE_KIND" in
-  current | legacy)
+  current)
     ok "state-version $(ns_state_version "$WORKSPACE" || true) ($STATE_KIND)" ;;
+  legacy)
+    STATE_VER="$(ns_state_version "$WORKSPACE" || true)"
+    ok "state-version $STATE_VER ($STATE_KIND)"
+    warn "state-version $STATE_VER keeps every state file at the top of .nightshift/ - Doctor offers the move to version $NS_STATE_VERSION, previewed by ns migrate-state and made only with --apply" ;;
   *)
     refuse "state-version $(ns_state_refuse_message "$STATE_KIND")"
     repair "Setup or Doctor repairs the marker with migrate-state; Start never writes it" ;;
@@ -194,7 +215,7 @@ esac
 WORK_MODE=""
 if WORK_MODE="$(ns_work_mode "$WORKSPACE" 2>/dev/null)"; then
   ok "work-mode $WORK_MODE"
-  if [ ! -s "$NS/work-mode" ]; then
+  if [ ! -s "$WORK_MODE_FILE" ]; then
     proposed="$(ns_propose_work_mode "$WORKSPACE" 2>/dev/null)" || proposed=""
     if [ "$proposed" = artifact ]; then
       refuse "work-mode unset and Setup would propose artifact"
@@ -233,7 +254,7 @@ fi
 
 # ---------------------------------------------------- one shift, one agent
 LEASE_STATE=absent
-if [ -e "$NS/.shift-lease" ] || [ -L "$NS/.shift-lease" ]; then
+if [ -e "$LEASE" ] || [ -L "$LEASE" ]; then
   if ns_lease_valid "$NS"; then
     LEASE_STATE=valid
   else
@@ -287,26 +308,26 @@ fi
 
 OPEN=0
 TICKED=0
-if [ -f "$NS/punch-list.md" ] && [ ! -L "$NS/punch-list.md" ]; then
-  OPEN="$(ns_open_boxes "$NS/punch-list.md")"
-  TICKED="$(ns_ticked_boxes "$NS/punch-list.md")"
+if [ -f "$PUNCH" ] && [ ! -L "$PUNCH" ]; then
+  OPEN="$(ns_open_boxes "$PUNCH")"
+  TICKED="$(ns_ticked_boxes "$PUNCH")"
 fi
 
 WATCHMAN_LIVE=0
-if [ -f "$NS/.watchman" ] && [ ! -L "$NS/.watchman" ]; then
-  w_pid="$(sed -n 1p "$NS/.watchman" 2>/dev/null | tr -d '[:space:]')"
-  w_start="$(sed -n 2p "$NS/.watchman" 2>/dev/null || true)"
+if [ -f "$WATCHMAN_PID" ] && [ ! -L "$WATCHMAN_PID" ]; then
+  w_pid="$(sed -n 1p "$WATCHMAN_PID" 2>/dev/null | tr -d '[:space:]')"
+  w_start="$(sed -n 2p "$WATCHMAN_PID" 2>/dev/null || true)"
   case "$w_pid" in
     '' | *[!0-9]*) ;;
     *) ns_recorded_process "$w_pid" "$w_start" && WATCHMAN_LIVE=1 ;;
   esac
 fi
-if [ "$WATCHMAN_LIVE" -eq 1 ] && [ -f "$NS/.shift-armed" ] && [ "$OPEN" -gt 0 ]; then
+if [ "$WATCHMAN_LIVE" -eq 1 ] && [ -f "$ARMED" ] && [ "$OPEN" -gt 0 ]; then
   refuse "watchman a live watchman is recovering this shift, including between recovery attempts"
   repair "ask Nightshift for status, or pause it with ns stop-shift; never kill that watchman as stale"
   # The panic form when the helper cannot be run: it only writes the marker, so the watchman stands
   # down at its next Stop event rather than immediately.
-  repair "if you cannot run that, write the marker yourself with: touch \"$NS/STOP\" - the watchman then stands down at its next Stop event"
+  repair "if you cannot run that, write the marker yourself with: touch \"$STOP\" - the watchman then stands down at its next Stop event"
 fi
 
 [ "$REFUSED" -eq 0 ] || exit 1
@@ -344,28 +365,31 @@ if [ "$DRY_RUN" -eq 0 ]; then
     exit 1
   fi
   CLEARED=""
-  for m in STOP .stall .notified .ended .session-end .shift-pulse .mint-failed .shift-session .shift-armed .watchman-tick .lock.d; do
-    if [ -e "$NS/$m" ] || [ -L "$NS/$m" ]; then
-      CLEARED="${CLEARED}${CLEARED:+ }$m"
+  for key in stop stall notified ended session-end pulse mint-failed session armed watchman-tick lock; do
+    ns_layout_set marker "$NS" "$key"
+    if [ -e "$marker" ] || [ -L "$marker" ]; then
+      CLEARED="${CLEARED}${CLEARED:+ }${marker##*/}"
     fi
   done
   # A finished shift's accounting is set aside so the next night starts clean. A stop-work
   # resume keeps the same marks: retiring them is what made stop-then-start lose the item's cost.
-  if [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; then
+  if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then
     RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
     [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
-  elif [ -f "$NS/STOP" ] && [ ! -L "$NS/STOP" ]; then
+  elif [ -f "$STOP" ] && [ ! -L "$STOP" ]; then
     :
   else
     RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
     [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
   fi
-  ns_control_drop "$NS/STOP"
+  ns_control_drop "$STOP"
   ns_control_drop_runtime_markers "$NS"
   if ns_control_deadline_passed "$NS"; then
-    ns_control_drop "$NS/deadline"
+    ns_control_drop "$DEADLINE"
     CLEARED="${CLEARED}${CLEARED:+ }deadline"
   fi
+  # The markers Start writes next land where the layout keeps them.
+  ns_layout_parent "$NS" armed || :
   ok "markers ${CLEARED:-none}"
   ok "lease reset"
 else
@@ -383,7 +407,7 @@ case "$RULES_RC" in
     repair "run Setup and accept the shipped rules template" ;;
   *)
     refuse "rules rules.json is not the accepted shape: ${RULES_REASON:-unreadable}"
-    repair "fix that named reason in $NS/rules.json or re-run Setup; never half-apply a broken file" ;;
+    repair "fix that named reason in $RULES or re-run Setup; never half-apply a broken file" ;;
 esac
 
 if [ "$RULES_RC" -eq 0 ]; then
@@ -412,7 +436,7 @@ if [ "$RULES_RC" -eq 0 ]; then
   NEW_KEYS=""
   TEMPLATE="$_here/../skills/nightshift/references/nightshift-rules-template.json"
   if [ -f "$TEMPLATE" ]; then
-    present="$(ns_rules_keys "$NS/rules.json" 2>/dev/null || true)"
+    present="$(ns_rules_keys "$RULES" 2>/dev/null || true)"
     for key in $(ns_rules_keys "$TEMPLATE" 2>/dev/null || true); do
       case "
 $present
@@ -425,7 +449,7 @@ $key
     done
   fi
   for tool in AskUserQuestion request_user_input AskQuestion; do
-    case "$(ns_rules_tool_state "$NS/rules.json" "$tool")" in
+    case "$(ns_rules_tool_state "$RULES" "$tool")" in
       allow | deny) ;;
       *)
         warn "rules toolDeny.$tool has no explicit policy and must be repaired with Setup before that ask tool can run; a non-empty value denies, an empty value allows" ;;
@@ -435,7 +459,7 @@ $key
 fi
 
 # ----------------------------------------------------------- provisioning
-if [ -e "$NS/provision-transaction.json" ] || [ -L "$NS/provision-transaction.json" ]; then
+if [ -e "$PROVISION_TXN" ] || [ -L "$PROVISION_TXN" ]; then
   PROVISION_TAB="$(printf '\t')"
   PROVISION_LINE=""
   if [ -x "$_here/provision-recover.sh" ]; then
@@ -445,7 +469,7 @@ if [ -e "$NS/provision-transaction.json" ] || [ -L "$NS/provision-transaction.js
     ok "provision an interrupted install is proven recovered"
   else
     refuse "provision an interrupted install cannot be proven recovered"
-    repair ".nightshift/provision-transaction.json and provision-baseline/, restore by hand or run ns provision rollback after fixing the target, then Start again"
+    repair "$(ns_layout_name "$NS" provision-transaction) and $(ns_layout_name "$NS" provision-baseline)/, restore by hand or run ns provision rollback after fixing the target, then Start again"
   fi
 else
   ok "provision none pending"
@@ -459,10 +483,17 @@ if ns_policy_json_tool >/dev/null 2>&1 || ns_rules_awk_bin >/dev/null 2>&1; then
   case "$?" in
     2)
       refuse "policy shift-policy.json is malformed: $POLICY_OUT"
-      repair "repair the named field in $NS/shift-policy.json, or delete the file so the next Start writes safe defaults" ;;
+      repair "repair the named field in $POLICY, or delete the file so the next Start writes safe defaults" ;;
     *)
-      if [ -f "$NS/shift-policy.json" ]; then
+      if [ -f "$POLICY" ]; then
         ok "policy resolved"
+        # A snapshot is one night's approval. One the archive has already filed would run that
+        # approval again, one-shift allowances included; Start's own snapshot draws a fresh id.
+        REPLAY_FILE="$(ns_policy_replayed "$WORKSPACE")" || REPLAY_FILE=""
+        if [ -n "$REPLAY_FILE" ]; then
+          refuse "replay shift-policy.json is shift $(ns_policy_shift_id "$WORKSPACE"), which has already run and is filed as $REPLAY_FILE"
+          repair "remove $POLICY so the next Start writes a fresh snapshot, or compose the shift again with Hunt or Quality"
+        fi
       else
         ok "policy none - arming from rules.json"
       fi
@@ -475,8 +506,8 @@ fi
 
 # ------------------------------------------------------- work and deadline
 ok "punch-list open=$OPEN ticked=$TICKED"
-ORDERS="$(ns_open_boxes_file "$NS/work-orders.md")"
-DRAFTS="$(ns_open_drafts "$NS/drafting-table.md")"
+ORDERS="$(ns_open_boxes_file "$WORK_ORDERS")"
+DRAFTS="$(ns_open_drafts "$DRAFTING_TABLE")"
 ok "staged orders=$ORDERS drafts=$DRAFTS"
 if [ "$OPEN" -eq 0 ]; then
   if [ "$ORDERS" -gt 0 ] || [ "$DRAFTS" -gt 0 ]; then
@@ -493,7 +524,7 @@ fi
 RECOVERY_SCOPE="$(ns_recovery_effective_scope "$WORKSPACE" "$HOST_NAME" 2>/dev/null)" || RECOVERY_SCOPE=""
 case "$RECOVERY_SCOPE" in
   unavailable:*)
-    warn "recovery $(ns_recovery_refusal "$RECOVERY_SCOPE") - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Set recovery.launchScope to host-default or host-grant in .nightshift/rules.json to authorize one."
+    warn "recovery $(ns_recovery_refusal "$RECOVERY_SCOPE") - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Set recovery.launchScope to host-default or host-grant in $(ns_layout_name "$NS" rules) to authorize one."
     ;;
   '') ;;
   *) ok "recovery revival scope $RECOVERY_SCOPE" ;;
@@ -501,25 +532,25 @@ esac
 
 # A shift that asked for filing at clock-out and ended before it could. The next explicit Archive
 # is where it gets picked up; Start neither files nor clears it.
-if [ -f "$NS/.pending-filing" ] && [ ! -L "$NS/.pending-filing" ]; then
-  warn "pending-filing the last shift asked for filing at clock-out and ended before it could - the next explicit Archive picks it up from .nightshift/.pending-filing"
+if [ -f "$PENDING_FILING" ] && [ ! -L "$PENDING_FILING" ]; then
+  warn "pending-filing the last shift asked for filing at clock-out and ended before it could - the next explicit Archive picks it up from $(ns_layout_name "$NS" pending-filing)"
 fi
 
 OPEN_ENDED=0
-if [ -f "$NS/punch-list.md" ] && [ ! -L "$NS/punch-list.md" ]; then
-  ns_items_section "$NS/punch-list.md" | grep -qF 'Ending: open-ended' && OPEN_ENDED=1
+if [ -f "$PUNCH" ] && [ ! -L "$PUNCH" ]; then
+  ns_items_section "$PUNCH" | grep -qF 'Ending: open-ended' && OPEN_ENDED=1
 fi
 
 DEADLINE_FILE=""
-if [ -f "$NS/deadline" ] && [ ! -L "$NS/deadline" ]; then
-  DEADLINE_FILE="$(tr -d '[:space:]' <"$NS/deadline" 2>/dev/null || true)"
+if [ -f "$DEADLINE" ] && [ ! -L "$DEADLINE" ]; then
+  DEADLINE_FILE="$(tr -d '[:space:]' <"$DEADLINE" 2>/dev/null || true)"
   case "$DEADLINE_FILE" in '' | *[!0-9]*) DEADLINE_FILE="" ;; esac
 fi
 POLICY_DEADLINE="$(ns_policy_deadline_epoch "$WORKSPACE" 2>/dev/null)" || POLICY_DEADLINE=""
 case "$POLICY_DEADLINE" in *[!0-9]*) POLICY_DEADLINE="" ;; esac
 
 if [ -n "$POLICY_DEADLINE" ]; then
-  ok "deadline $POLICY_DEADLINE (policy - write it to $NS/deadline)"
+  ok "deadline $POLICY_DEADLINE (policy - write it to $DEADLINE)"
 elif [ -n "$DEADLINE_FILE" ]; then
   ok "deadline $DEADLINE_FILE (file - keep it and adopt it as the policy deadlineEpoch)"
 elif [ "$OPEN_ENDED" -eq 1 ]; then
@@ -530,13 +561,13 @@ else
 fi
 
 # --------------------------------------------------------------- journal
-if [ "$DRY_RUN" -eq 0 ] && [ -f "$NS/shift-log.md" ] && [ ! -L "$NS/shift-log.md" ]; then
-  LOG_BYTES="$(wc -c <"$NS/shift-log.md" 2>/dev/null | tr -d '[:space:]')"
+if [ "$DRY_RUN" -eq 0 ] && [ -f "$LOG" ] && [ ! -L "$LOG" ]; then
+  LOG_BYTES="$(wc -c <"$LOG" 2>/dev/null | tr -d '[:space:]')"
   case "$LOG_BYTES" in '' | *[!0-9]*) LOG_BYTES=0 ;; esac
   if [ "$LOG_BYTES" -gt 512000 ]; then
     DAY="$(date +%Y-%m-%d)"
-    if mkdir -p "$NS/archive/$DAY" 2>/dev/null && mv "$NS/shift-log.md" "$NS/archive/$DAY/shift-log.md" 2>/dev/null; then
-      printf '# Shift log\n' >"$NS/shift-log.md"
+    if mkdir -p "$ARCHIVE/$DAY" 2>/dev/null && mv "$LOG" "$ARCHIVE/$DAY/shift-log.md" 2>/dev/null; then
+      printf '# Shift log\n' >"$LOG"
       ok "journal rotated to archive/$DAY/shift-log.md"
     fi
   fi

@@ -3,7 +3,9 @@
 
 # ns_evidence_jsonl <workspace> — absolute path to the live findings ledger.
 ns_evidence_jsonl() {
-  printf '%s/.nightshift/evidence/findings.jsonl' "${1%/}"
+  local dir
+  ns_layout_set dir "${1%/}/.nightshift" evidence
+  printf '%s/findings.jsonl' "$dir"
 }
 
 # ns_gate_checkpoint_token <workspace> — latest checkpoint id for stall fingerprints.
@@ -113,8 +115,8 @@ ns_status_last_checkpoint() {
 
 # ns_status_stall_attempts <ns> — integer from .stall line 2
 ns_status_stall_attempts() {
-  local ns="${1:?}" n=""
-  local stall="$ns/.stall"
+  local ns="${1:?}" n="" stall
+  ns_layout_set stall "$ns" stall
   if [ ! -f "$stall" ] || [ -L "$stall" ]; then
     printf '0'
     return 0
@@ -129,7 +131,7 @@ ns_long_unit_warn_due() {
   local ws="${1:?}" mins="${2:-0}" ns armed start now
   case "$mins" in '' | 0 | *[!0-9]*) return 1 ;; esac
   ns="$ws/.nightshift"
-  armed="$ns/.shift-armed"
+  ns_layout_set armed "$ns" armed
   [ -f "$armed" ] && [ ! -L "$armed" ] || return 1
   start="$(ns_mtime "$armed")"
   [ -n "$start" ] || return 1

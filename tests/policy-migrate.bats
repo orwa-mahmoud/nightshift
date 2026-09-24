@@ -138,6 +138,16 @@ want() { jq -r "$2" "$FIX/$1/expected.json"; }
   python3 "$VALIDATOR" "$SCHEMA" "$f"
 }
 
+@test "a version-2 workspace keeps the backup in run/" {
+  p="$(case_site legacy)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  migrate "$p"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ -f "$p/.nightshift/run/shift-defaults.json.bak" ]
+  [ ! -e "$p/.nightshift/shift-defaults.json.bak" ]
+  [ ! -e "$p/.nightshift/shift-defaults.json" ]
+}
+
 @test "the migration works with neither jq nor python3" {
   bin="$(build_toolset_bin migrate-no-json bash sh sed tr sort grep cut awk cat mktemp uname date \
     rm mv cp ln printf head tail wc find test dirname basename cksum)"

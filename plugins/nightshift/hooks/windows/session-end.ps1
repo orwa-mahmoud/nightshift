@@ -61,12 +61,12 @@ if ((Get-NSStateKind $workspace) -in @('malformed', 'future')) {
 }
 
 $ns = Join-Path $workspace '.nightshift'
-$punch = Join-Path $ns 'punch-list.md'
+$punch = Get-NSLayoutPath $ns 'punch-list'
 $counts = Get-NSBoxCounts $punch
-if (-not (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) `
+if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf) `
     -or -not (Test-Path -LiteralPath $punch -PathType Leaf) `
-    -or ((Test-Path -LiteralPath (Join-Path $ns '.ended') -PathType Leaf) `
-        -and -not (Test-NSReparsePoint (Join-Path $ns '.ended'))) `
+    -or ((Test-Path -LiteralPath (Get-NSLayoutPath $ns 'ended') -PathType Leaf) `
+        -and -not (Test-NSReparsePoint (Get-NSLayoutPath $ns 'ended'))) `
     -or $counts.Open -eq 0) {
     exit 0
 }
@@ -77,7 +77,7 @@ if ($HostName -eq 'cursor' -and $null -ne $payload.PSObject.Properties['conversa
     $sessionId = [string]$payload.conversation_id
 }
 $session = Read-NSSession $ns
-$workerPath = Join-Path $ns '.shift-worker'
+$workerPath = Get-NSLayoutPath $ns 'worker'
 $worker = ''
 if ($HostName -eq 'cursor' -and (Test-Path -LiteralPath $workerPath -PathType Leaf) `
     -and -not (Test-NSReparsePoint $workerPath)) {
@@ -95,7 +95,7 @@ elseif ($null -ne $session -and -not [string]::IsNullOrEmpty($session.SessionId)
     exit 0
 }
 
-$leasePath = Join-Path $ns '.shift-lease'
+$leasePath = Get-NSLayoutPath $ns 'lease'
 if ($HostName -ne 'codex' -and (Test-NSPathEntry $leasePath)) {
     $hostProcess = Get-NSHostProcess $HostName
     $processId = if ($null -eq $hostProcess) { '' } else { [string]$hostProcess.Id }
@@ -119,8 +119,8 @@ if ($HostName -eq 'cursor') {
     }
 }
 
-$line = '{0} · clean session end ({1}){2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $reason, [Environment]::NewLine
-$sessionEnd = Join-Path $ns '.session-end'
+$line = '{0} {3} clean session end ({1}){2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $reason, [Environment]::NewLine, [char]0x00B7
+$sessionEnd = Get-NSLayoutPath $ns 'session-end'
 if (Test-NSReparsePoint $sessionEnd) {
     Remove-Item -LiteralPath $sessionEnd -Force -ErrorAction SilentlyContinue
 }

@@ -103,9 +103,9 @@ fact_of() { # <project> <label>
     >"$p/.nightshift/snag-log.md"
   [ "$(fact_of "$p" 'parked')" = '1' ]
   facts "$p" | grep -qF 'parked entry First decision.'
-  ! facts "$p" | grep -qF 'Filed:'
+  ! facts "$p" | grep -qF 'Filed:' || false
   facts "$p" | grep -qF 'snag A snag.'
-  ! facts "$p" | grep -qF 'snag Filed'
+  ! facts "$p" | grep -qF 'snag Filed' || false
 }
 
 @test "parked entries are counted and titled, one line each" {
@@ -133,7 +133,7 @@ fact_of() { # <project> <label>
   fact_of "$p" 'staged' | grep -qF 'informational while items are open'
 
   printf '## Items\n' >"$p/.nightshift/punch-list.md"
-  ! fact_of "$p" 'staged' | grep -qF 'informational'
+  ! fact_of "$p" 'staged' | grep -qF 'informational' || false
 }
 
 @test "the last three snag dispositions are reported, not the whole log" {
@@ -144,7 +144,7 @@ fact_of() { # <project> <label>
   } >"$p/.nightshift/snag-log.md"
   [ "$(facts "$p" | grep -c '^snag ')" -eq 3 ]
   facts "$p" | grep -qF 'snag Snag 5. Detail.'
-  ! facts "$p" | grep -qF 'snag Snag 1.'
+  ! facts "$p" | grep -qF 'snag Snag 1.' || false
 }
 
 @test "the shipped opportunity template counts as no opportunities at all" {
@@ -153,7 +153,7 @@ fact_of() { # <project> <label>
     printf '# Opportunity map\n\n<!--\n### <title>\nStatus: building\nNext: <action>\n-->\n' \
       >"$p/.nightshift/opportunity-map.md"
   [ "$(fact_of "$p" 'opportunities')" = 'candidate=0 building=0 shipped=0 rejected=0 parked=0' ]
-  ! facts "$p" | grep -q '^building '
+  ! facts "$p" | grep -q '^building ' || false
 }
 
 @test "a building entry carries its phase, next action and remaining verification" {
@@ -201,7 +201,7 @@ MAP
   fact_of "$p" 'opportunities' | grep -qF 'building=2'
   # Only the first is detailed; the count is what says there is more than one.
   facts "$p" | grep -qF 'building title One'
-  ! facts "$p" | grep -qF 'building title Two'
+  ! facts "$p" | grep -qF 'building title Two' || false
   [ "$(cksum <"$p/.nightshift/opportunity-map.md")" = "$before" ]
 }
 
@@ -240,7 +240,7 @@ LOG
   facts "$p" | grep -qF 'transition watchman armed'
   facts "$p" | grep -qF 'transition watchman: the armed marker is gone'
   # An item summary that merely mentions a handoff is not a transition.
-  ! facts "$p" | grep -qF 'P14 done'
+  ! facts "$p" | grep -qF 'P14 done' || false
 }
 
 @test "artifact ticks with no receipts are called out as unreviewable" {
@@ -252,7 +252,7 @@ LOG
 
   mkdir -p "$p/.nightshift/receipts"
   printf '# P01\n\nThe work is done.\n' >"$p/.nightshift/receipts/P01.md"
-  ! facts "$p" | grep -q 'receipts missing model text'
+  ! facts "$p" | grep -q 'receipts missing model text' || false
 }
 
 @test "disabled receipts are a fact, never a missing-text warning" {
@@ -261,7 +261,7 @@ LOG
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
   printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
   facts "$p" | grep -qF 'completion record none; the owner disabled receipts'
-  ! facts "$p" | grep -q 'receipts missing model text'
+  ! facts "$p" | grep -q 'receipts missing model text' || false
 }
 
 @test "nothing sensitive reaches the output" {
@@ -273,9 +273,9 @@ LOG
   [ "$status" -eq 0 ]
   # The session is reported as bound, never by id, and no transcript path is echoed.
   printf '%s\n' "$output" | grep -qF 'session bound'
-  ! printf '%s\n' "$output" | grep -qF 'abc123-secret-session-id'
-  ! printf '%s\n' "$output" | grep -qF 'transcript.jsonl'
-  ! printf '%s\n' "$output" | grep -qF '.claude/projects'
+  ! printf '%s\n' "$output" | grep -qF 'abc123-secret-session-id' || false
+  ! printf '%s\n' "$output" | grep -qF 'transcript.jsonl' || false
+  ! printf '%s\n' "$output" | grep -qF '.claude/projects' || false
 }
 
 @test "status changes nothing it reads" {
@@ -335,10 +335,10 @@ LOG
   # Not an empty night: something is there, and it is not a directory.
   printf 'not a directory\n' >"$p/.nightshift/receipts"
   facts "$p" | grep -qF 'receipts warning the artifact receipts path is not a usable directory'
-  ! facts "$p" | grep -qF 'receipts missing model text'
+  ! facts "$p" | grep -qF 'receipts missing model text' || false
 
   # An absent path is the empty case, not the planted one.
   rm -f "$p/.nightshift/receipts"
   facts "$p" | grep -qF 'receipts missing model text 1'
-  ! facts "$p" | grep -qF 'not a usable directory'
+  ! facts "$p" | grep -qF 'not a usable directory' || false
 }

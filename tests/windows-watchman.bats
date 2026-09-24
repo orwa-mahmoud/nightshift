@@ -10,9 +10,9 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'watchMinutes missing or not whole minutes' "$CLAUDE"
   grep -qF 'watchMinutes missing or not whole minutes' "$CODEX"
   grep -qF 'watchMinutes missing or not whole minutes' "$HELPER"
-  grep -qF '.nightshift/rules.json absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)' "$CLAUDE"
-  grep -qF '.nightshift/rules.json absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)' "$CODEX"
-  grep -qF '.nightshift/rules.json absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)' "$HELPER"
+  grep -qF '%s absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)' "$CLAUDE"
+  grep -qF '%s absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)' "$CODEX"
+  grep -qF "\$(Get-NSLayoutName \$ns 'rules') absent or incomplete; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)" "$HELPER"
 }
 
 @test "Codex watchman sandbox comment names repository commits and artifact receipts" {
@@ -23,30 +23,30 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 }
 
 @test "watchmen skip a symlink deadline" {
-  grep -qF '[ -L "$NS/deadline" ]' "$CLAUDE"
-  grep -qF '[ ! -L "$NS/deadline" ]' "$CODEX"
+  grep -qF '[ -L "$DEADLINE" ]' "$CLAUDE"
+  grep -qF '[ ! -L "$DEADLINE" ]' "$CODEX"
   awk '/function Test-NSDeadlinePassed/,/^function Test-NSRealEnded/' "$HELPER" | grep -qF 'Test-NSReparsePoint $path'
 }
 
 @test "watchmen skip a symlink ended marker" {
-  grep -qF '[ ! -L "$NS/.ended" ]' "$CLAUDE"
-  grep -qF '[ ! -L "$NS/.ended" ]' "$CODEX"
+  grep -qF '[ ! -L "$ENDED" ]' "$CLAUDE"
+  grep -qF '[ ! -L "$ENDED" ]' "$CODEX"
   grep -qF 'function Test-NSRealEnded' "$HELPER"
 }
 
 @test "watchmen skip a symlink session-end marker" {
-  grep -qF '[ ! -L "$NS/.session-end" ]' "$CLAUDE"
-  grep -qF '[ ! -L "$NS/.session-end" ]' "$CODEX"
+  grep -qF '[ ! -L "$SESSION_END" ]' "$CLAUDE"
+  grep -qF '[ ! -L "$SESSION_END" ]' "$CODEX"
   grep -qF 'function Test-NSRealSessionEnd' "$HELPER"
 }
 
 @test "watchmen skip a symlink shift-session" {
-  grep -qF '[ -L "$NS/.shift-session" ]' "$CLAUDE"
-  grep -qF '[ -L "$NS/.shift-session" ]' "$CODEX"
+  grep -qF '[ -L "$SESSION_FILE" ]' "$CLAUDE"
+  grep -qF '[ -L "$SESSION_FILE" ]' "$CODEX"
   grep -qF 'ns_session_line' "$OWNERSHIP"
   grep -qF 'ns_session_present' "$OWNERSHIP"
   grep -qF '[ ! -L "$rec" ]' "$OWNERSHIP"
-  grep -qF '[ -L "$ns/.shift-session" ]' "$OWNERSHIP"
+  grep -qF '[ -L "$rec" ] && rm -f "$rec"' "$OWNERSHIP"
   awk '/function Read-NSSession/,/^function Write-NSSession/' "$PSM1" | grep -qF 'Test-NSReparsePoint $path'
   awk '/function Claim-NSSession/,/^function Read-NSSession/' "$PSM1" | grep -qF 'Test-NSReparsePoint $path'
   awk '/function Write-NSSession/,/^function Read-NSLease/' "$PSM1" | grep -qF 'Test-NSReparsePoint $path'

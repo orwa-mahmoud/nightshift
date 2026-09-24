@@ -56,8 +56,8 @@ age_file() {
   run bash "$RETAIN" --project "$p"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -q 'archive/2020-01-01-shift-2'
-  ! printf '%s' "$output" | grep -q 'archive/2020-01-01-shift-x'
-  ! printf '%s' "$output" | grep -q 'archive/2026-08-01-shift-2'
+  ! printf '%s' "$output" | grep -q 'archive/2020-01-01-shift-x' || false
+  ! printf '%s' "$output" | grep -q 'archive/2026-08-01-shift-2' || false
 
   run bash "$RETAIN" --project "$p" --apply
   [ "$status" -eq 0 ]

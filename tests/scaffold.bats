@@ -17,6 +17,12 @@ ps_ready() {
   command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"
 }
 
+fresh() { # a workspace Setup has never touched: no .nightshift/ yet
+  local p="$BATS_TEST_TMPDIR/$1"
+  mkdir -p "$p"
+  printf '%s' "$p"
+}
+
 bare() { # a workspace with no state files at all
   local p
   p="$(new_project "$1")"
@@ -32,15 +38,28 @@ bare() { # a workspace with no state files at all
   done
 }
 
-@test "a bare workspace gets every template, reported one per line" {
-  p="$(bare scaffold-bare)"
+@test "a bare workspace gets what every shift uses in the current layout, the rest on request" {
+  p="$(fresh scaffold-bare)"
   run bash "$SCAFFOLD" --project "$p"
   [ "$status" -eq 0 ]
-  for f in "$TEMPLATES"/*.md; do
-    name="${f##*/}"
+  [ "$(cat "$p/.nightshift/state-version")" = 2 ]
+  for name in punch-list.md inbox/parking-lot.md inbox/snag-log.md staging/drafting-table.md run/shift-log.md; do
     [ -f "$p/.nightshift/$name" ] || { echo "not written: $name"; return 1; }
     printf '%s\n' "$output" | grep -qxF "wrote $name" || { echo "not reported: $name"; return 1; }
   done
+  [ -d "$p/.nightshift/run" ]
+  for name in staging/work-orders.md product/opportunity-map.md product/product-research.md receipt-item.md; do
+    [ ! -e "$p/.nightshift/$name" ] || { echo "written unasked: $name"; return 1; }
+  done
+  run bash "$SCAFFOLD" --project "$p" work-orders product
+  [ "$status" -eq 0 ]
+  for name in staging/work-orders.md product/opportunity-map.md product/product-research.md; do
+    [ -f "$p/.nightshift/$name" ] || { echo "not written on request: $name"; return 1; }
+    printf '%s\n' "$output" | grep -qxF "wrote $name" || { echo "not reported: $name"; return 1; }
+  done
+  run bash "$SCAFFOLD" --project "$p" receipt-item
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'is not a file scaffold writes on request (work-orders, product)'
 }
 
 @test "a file the owner already has is kept, whatever it now contains" {
@@ -51,7 +70,7 @@ bare() { # a workspace with no state files at all
   run bash "$SCAFFOLD" --project "$p"
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qxF 'kept punch-list.md'
-  ! printf '%s\n' "$output" | grep -q '^wrote '
+  ! printf '%s\n' "$output" | grep -q '^wrote ' || false
   grep -qxF 'my own list, nothing like the template' "$p/.nightshift/punch-list.md"
 }
 
@@ -76,7 +95,7 @@ bare() { # a workspace with no state files at all
 
   # The template says `$NS/STOP` because it has to speak generically; the owner's copy says where.
   grep -qF "$ns" "$p/.nightshift/punch-list.md"
-  ! grep -q '\$NS' "$p/.nightshift/punch-list.md"
+  ! grep -q '\$NS' "$p/.nightshift/punch-list.md" || false
   # And the shipped template is exactly as it shipped.
   grep -q '\$NS' "$TEMPLATES/punch-list.md"
 }
@@ -107,21 +126,23 @@ bare() { # a workspace with no state files at all
 
 @test "both hosts write the same files with the same substitutions" {
   ps_ready
-  p="$(bare scaffold-twin)"
+  p="$(fresh scaffold-twin)"
   bash "$SCAFFOLD" --project "$p" >"$p/posix.txt"
-  cp -R "$p/.nightshift" "$p/from-posix"
-  rm -f "$p/.nightshift"/*.md
+  bash "$SCAFFOLD" --project "$p" work-orders product >>"$p/posix.txt"
+  mv "$p/.nightshift" "$p/from-posix"
 
   pwsh -NoProfile -NonInteractive -File "$PS_SCAFFOLD" -Project "$p" >"$p/windows.txt" 2>&1
+  pwsh -NoProfile -NonInteractive -File "$PS_SCAFFOLD" -Project "$p" work-orders product >>"$p/windows.txt" 2>&1
   diff -u "$p/posix.txt" "$p/windows.txt"
+  diff -u <(cd "$p/from-posix" && find . | LC_ALL=C sort) <(cd "$p/.nightshift" && find . | LC_ALL=C sort)
 
   # The two resolvers spell a symlinked path differently on this fixture — the POSIX one
   # canonicalises, so a macOS temp dir comes back as /private/var. That divergence is the
   # resolvers' and is recorded as such; what belongs to the scaffold is the substituted content,
   # so the workspace prefix is normalised out before comparing.
   real="$(cd -P "$p" && pwd)"
-  for f in "$TEMPLATES"/*.md; do
-    name="${f##*/}"
+  for name in punch-list.md inbox/parking-lot.md inbox/snag-log.md staging/drafting-table.md \
+    staging/work-orders.md product/opportunity-map.md product/product-research.md run/shift-log.md; do
     sed "s|$real|WS|g" "$p/from-posix/$name" >"$p/a.md"
     sed "s|$real|WS|g;s|$p|WS|g" "$p/.nightshift/$name" >"$p/b.md"
     diff -u "$p/a.md" "$p/b.md"

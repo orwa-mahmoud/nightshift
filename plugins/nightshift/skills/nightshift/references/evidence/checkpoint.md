@@ -1,6 +1,6 @@
 # Checkpoint evidence
 
-A checkpoint is a ledger record in `.nightshift/evidence/findings.jsonl` with
+A checkpoint is a ledger record in `.nightshift/run/evidence/findings.jsonl` with
 `domain` `checkpoint`. It records recoverable intermediate state before a risky
 cluster — a migration, a codemod, a provisioning step, anything whose undo is
 not obvious. Name the touched paths, the rollback reference when one exists, and

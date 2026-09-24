@@ -350,7 +350,7 @@ try {
     Expect-True ([string]::IsNullOrEmpty($messageOnly)) "a commit message names no category: $messageOnly"
 
     # A rules file that names no elevation answers from the built-in patterns alone, and answers
-    # the same corpus the same way — the guard does not depend on the owner's file carrying them.
+    # the same corpus the same way - the guard does not depend on the owner's file carrying them.
     $templateRules = [IO.File]::ReadAllText($rulesPath)
     $strippedRules = $templateRules | ConvertFrom-Json
     $null = $strippedRules.PSObject.Properties.Remove('elevation')

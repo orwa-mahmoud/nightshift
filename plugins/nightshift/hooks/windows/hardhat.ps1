@@ -203,7 +203,7 @@ function Test-NSWriteTargetReachesRules {
     if ([string]::IsNullOrWhiteSpace($Target) -or [string]::IsNullOrEmpty($script:ns)) {
         return $false
     }
-    $rules = Resolve-NSWriteTarget (Join-Path $script:ns 'rules.json')
+    $rules = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'rules')
     if ($null -eq $rules) {
         return $false
     }
@@ -252,7 +252,7 @@ function Test-NSRealParkingLot {
     if (Test-NSWriteTargetReachesRules $Target) {
         return $false
     }
-    $parking = Resolve-NSWriteTarget (Join-Path $script:ns 'parking-lot.md')
+    $parking = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'parking-lot')
     $canon = Resolve-NSWriteTarget $Target
     return ($null -ne $parking -and $null -ne $canon -and $canon -ceq $parking)
 }
@@ -426,6 +426,12 @@ function Test-NSLeaseTarget {
     if ($nightshiftContext -and $normalized -match '(?i)\.(shift|lease|mutex)-(?:\*|\?|\[|\{|\$|`)') {
         return $true
     }
+    # A glob across the runtime directory reaches the lease as surely as one across the root.
+    $runRel = Get-NSControlDirRelative
+    if ($nightshiftContext -and $runRel.Length -gt 0 -and
+        $normalized -match ('(?i)' + [regex]::Escape($runRel) + '/(?:\.\*|\*|\.\?)')) {
+        return $true
+    }
     if ($normalized -match '(?i)(^|[;&|()\s])(rm|rmdir|unlink|mv|Remove-Item|Move-Item|Rename-Item)\s+([^;&|\r\n]*\s+)?(\./)?\.nightshift/?([;&|()\s]|$)') {
         return $true
     }
@@ -459,11 +465,43 @@ function Test-NSNightshiftDirContext {
 
 # The shift policy, the remembered defaults and the derived deadline are control files too:
 # tonight's authority is written before arming, so an armed agent that could rewrite it could
-# widen its own permissions. Regex is a pre-filter; a write is a hit only when the
-# target's canonical absolute path equals $ns/<control-file>.
+# widen its own permissions. A delete or move of the directory the layout keeps the runtime's
+# control files in takes them all, so it is refused the same way. Regex is a pre-filter; a write
+# is a hit only when the target's canonical absolute path is the control file's path in this layout.
 function Test-NSControlPrefilter {
     param([AllowEmptyString()][string]$Target)
-    return $Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)'
+    if ($Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)') {
+        return $true
+    }
+    $runRel = Get-NSControlDirRelative
+    return ($runRel.Length -gt 0 -and (Test-NSControlDeleteVerb $Target) -and
+        $Target -match ('(?i)(^|[/\s;&|()])' + [regex]::Escape($runRel) + '/?([\s;&|()]|$)'))
+}
+
+# The layout key of a control file, from its name.
+function Get-NSControlKey {
+    param([AllowEmptyString()][string]$Name)
+    switch -CaseSensitive ($Name) {
+        'STOP' { return 'stop' }
+        '.shift-armed' { return 'armed' }
+        '.ended' { return 'ended' }
+        '.shift-session' { return 'session' }
+        '.shift-worker' { return 'worker' }
+        'work-target' { return 'work-target' }
+        'work-mode' { return 'work-mode' }
+        'shift-policy.json' { return 'shift-policy' }
+        'shift-defaults.json' { return 'shift-defaults' }
+        'deadline' { return 'deadline' }
+        'punch-list.md' { return 'punch-list' }
+    }
+    return ''
+}
+
+# The runtime directory of this layout (run in layout 2), relative to the state directory; empty in
+# a layout that keeps its control files at the top.
+function Get-NSControlDirRelative {
+    if ([string]::IsNullOrEmpty($script:ns)) { return '' }
+    return (Get-NSLayoutRelativePath $script:ns 'run')
 }
 
 function Test-NSControlDeleteVerb {
@@ -578,11 +616,11 @@ function Test-NSControlRewriteHit {
     if ([string]::IsNullOrEmpty($Canon) -or [string]::IsNullOrEmpty($script:ns)) {
         return $false
     }
-    foreach ($name in @(
-            'STOP', '.shift-armed', '.ended', '.shift-session', '.shift-worker',
-            'work-target', 'work-mode', 'shift-policy.json', 'shift-defaults.json', 'deadline'
+    foreach ($key in @(
+            'stop', 'armed', 'ended', 'session', 'worker',
+            'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline'
         )) {
-        $expected = Resolve-NSWriteTarget (Join-Path $script:ns $name)
+        $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns $key)
         if ($null -ne $expected -and $Canon -ceq $expected) {
             return $true
         }
@@ -595,7 +633,17 @@ function Test-NSControlListHit {
     if ([string]::IsNullOrEmpty($Canon) -or [string]::IsNullOrEmpty($script:ns)) {
         return $false
     }
-    $expected = Resolve-NSWriteTarget (Join-Path $script:ns 'punch-list.md')
+    $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'punch-list')
+    return ($null -ne $expected -and $Canon -ceq $expected)
+}
+
+function Test-NSControlDirHit {
+    param([AllowEmptyString()][string]$Canon)
+    $runRel = Get-NSControlDirRelative
+    if ([string]::IsNullOrEmpty($Canon) -or $runRel.Length -eq 0) {
+        return $false
+    }
+    $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'run')
     return ($null -ne $expected -and $Canon -ceq $expected)
 }
 
@@ -605,9 +653,16 @@ function Test-NSControlCandidateHits {
         [AllowEmptyString()][string]$Full
     )
     $leaf = Split-Path -Leaf ($Candidate.Replace('/', [IO.Path]::DirectorySeparatorChar))
+    $runRel = Get-NSControlDirRelative
+    $bare = $Candidate
+    if ($bare.StartsWith('./')) { $bare = $bare.Substring(2) }
+    $bare = $bare.TrimEnd('/')
     $canon = $null
     if ((Test-NSControlBareName $Candidate) -and (Test-NSNightshiftDirContext $Full)) {
-        $canon = Resolve-NSWriteTarget (Join-Path $script:ns $leaf)
+        $canon = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns (Get-NSControlKey $leaf))
+    }
+    elseif ($runRel.Length -gt 0 -and $bare -ceq $runRel -and (Test-NSNightshiftDirContext $Full)) {
+        $canon = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'run')
     }
     else {
         $canon = Resolve-NSWriteTarget $Candidate
@@ -615,7 +670,7 @@ function Test-NSControlCandidateHits {
     if (Test-NSControlRewriteHit $canon) {
         return $true
     }
-    return (Test-NSControlListHit $canon) -and (Test-NSControlDeleteVerb $Full)
+    return ((Test-NSControlListHit $canon) -or (Test-NSControlDirHit $canon)) -and (Test-NSControlDeleteVerb $Full)
 }
 
 function Test-NSControlTarget {
@@ -885,7 +940,7 @@ function Get-NSElevationDenyReason {
             $regex = New-NSRegex $pattern
         }
         catch {
-            return "BLOCKED: elevation.$category.pattern is not a valid extended regular expression, so the guard it configures cannot run. Fix the pattern in .nightshift/rules.json."
+            return "BLOCKED: elevation.$category.pattern is not a valid extended regular expression, so the guard it configures cannot run. Fix the pattern in $(Get-NSLayoutName $script:ns 'rules')."
         }
         if (-not $regex.IsMatch($subject)) { continue }
         $status = Test-NSPolicyAllowed -Workspace $Workspace -Category $category -Command $Scrubbed
@@ -894,7 +949,7 @@ function Get-NSElevationDenyReason {
         if ($status -eq 2) {
             return "$reason An exact-plan allowance exists but this command is not one of its approved commands."
         }
-        return "$reason The owner allows it in .nightshift/rules.json (elevation.$category.policy) or for one shift in shift-policy.json before arming. Park the item in .nightshift/parking-lot.md as `"needs allowance: $category`" and keep working."
+        return "$reason The owner allows it in $(Get-NSLayoutName $script:ns 'rules') (elevation.$category.policy) or for one shift in shift-policy.json before arming. Park the item in $(Get-NSLayoutName $script:ns 'parking-lot') as `"needs allowance: $category`" and keep working."
     }
     return ''
 }
@@ -1016,7 +1071,7 @@ function Get-NSCommandDenyReason {
     }
 
     if ($null -ne $forbiddenRegex -and $forbiddenRegex.IsMatch($Scrubbed)) {
-        return "BLOCKED: the command matches the owner's forbidden list for this shift. Find another way, or park the task with a note in .nightshift/parking-lot.md and keep working. Do not retry a rephrased form."
+        return "BLOCKED: the command matches the owner's forbidden list for this shift. Find another way, or park the task with a note in $(Get-NSLayoutName $script:ns 'parking-lot') and keep working. Do not retry a rephrased form."
     }
 
     # forbiddenCommands is the owner's own list and stays independent of the categories: a command
@@ -1089,9 +1144,9 @@ catch {
         $script:ns = $ns
     }
 }
-$punch = Join-Path $ns 'punch-list.md'
-$armed = Join-Path $ns '.shift-armed'
-$ended = Join-Path $ns '.ended'
+$punch = Get-NSLayoutPath $ns 'punch-list'
+$armed = Get-NSLayoutPath $ns 'armed'
+$ended = Get-NSLayoutPath $ns 'ended'
 $endedReal = (Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)
 $active = Test-NSHardhatActive $ns
 
@@ -1179,7 +1234,7 @@ try {
     $toolRules = Get-NSToolRules $workspace ([string]$env:NIGHTSHIFT_TOOL_RULES)
 }
 catch {
-    Write-Deny 'BLOCKED: toolDeny is not a JSON object of string values, so the tool rules cannot run. Fix .nightshift/rules.json or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex).'
+    Write-Deny "BLOCKED: toolDeny is not a JSON object of string values, so the tool rules cannot run. Fix $(Get-NSLayoutName $script:ns 'rules') or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)."
 }
 
 if (-not (Test-NSInertParkingLotWrite $tool $toolInput $command)) {
@@ -1197,7 +1252,7 @@ if (-not (Test-NSInertParkingLotWrite $tool $toolInput $command)) {
         }
     }
     if ($rulesHit) {
-        Write-Deny 'BLOCKED: the rules file is the owner''s - the night neither reads nor rewrites its own rules. Park the need in .nightshift/parking-lot.md and keep working.'
+        Write-Deny "BLOCKED: the rules file is the owner's - the night neither reads nor rewrites its own rules. Park the need in $(Get-NSLayoutName $script:ns 'parking-lot') and keep working."
     }
 }
 
@@ -1208,7 +1263,7 @@ $controlPassive = $tool -in @(
 if (-not $controlPassive) {
     foreach ($target in $targets) {
         if (Test-NSControlTarget ([string]$target)) {
-            Write-Deny 'BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in .nightshift/parking-lot.md and keep working.'
+            Write-Deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in $(Get-NSLayoutName $script:ns 'parking-lot') and keep working."
         }
     }
 }
@@ -1216,7 +1271,7 @@ if (-not $controlPassive) {
 if ($tool -in @('AskQuestion', 'AskUserQuestion', 'request_user_input')) {
     $property = if ($null -eq $toolRules) { $null } else { $toolRules.PSObject.Properties[$tool] }
     if ($null -eq $property) {
-        Write-Deny "BLOCKED: toolDeny is missing the required '$tool' entry. Add that exact host tool name to .nightshift/rules.json with a denial message, or use an empty string to allow it; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex) to review the current template."
+        Write-Deny "BLOCKED: toolDeny is missing the required '$tool' entry. Add that exact host tool name to $(Get-NSLayoutName $script:ns 'rules') with a denial message, or use an empty string to allow it; run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex) to review the current template."
     }
     if (-not [string]::IsNullOrEmpty([string]$property.Value)) {
         Write-Deny ([string]$property.Value)

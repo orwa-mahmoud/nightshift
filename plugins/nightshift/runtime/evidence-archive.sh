@@ -3,7 +3,7 @@
 #
 #   evidence-archive.sh --project DIR [--shift-id ID]
 #
-# Copies $NS/evidence/findings.jsonl to archive/<YYYY-MM-DD>/findings-<shiftId>.jsonl when the
+# Copies the live findings ledger to archive/<YYYY-MM-DD>/findings-<shiftId>.jsonl when the
 # ledger exists and is non-empty, then truncates the live file so the next shift starts lean.
 # Best effort: a missing ledger or unreadable shiftId exits 0 with no output.
 #
@@ -47,7 +47,7 @@ done
 
 WORKSPACE="$(ns_workspace_root "$PROJECT" 2>/dev/null)" || WORKSPACE="$PROJECT"
 NS="$WORKSPACE/.nightshift"
-JSONL="$NS/evidence/findings.jsonl"
+JSONL="$(ns_layout_path "$NS" evidence)/findings.jsonl"
 
 [ -f "$JSONL" ] && [ ! -L "$JSONL" ] || exit 0
 [ -s "$JSONL" ] || exit 0

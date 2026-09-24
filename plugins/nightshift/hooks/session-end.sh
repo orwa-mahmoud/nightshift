@@ -31,9 +31,15 @@ case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
-PUNCH="$NS/punch-list.md"
+declare PUNCH ARMED ENDED SESSION LEASE SESSION_END
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set ARMED "$NS" armed
+ns_layout_set ENDED "$NS" ended
+ns_layout_set SESSION "$NS" session
+ns_layout_set LEASE "$NS" lease
+ns_layout_set SESSION_END "$NS" session-end
 
-if [ ! -f "$NS/.shift-armed" ] || [ ! -f "$PUNCH" ] || { [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; }; then
+if [ ! -f "$ARMED" ] || [ ! -f "$PUNCH" ] || { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; }; then
   exit 0
 fi
 # A failed count is not zero. An unreadable punch list leaves the shift standing, so the
@@ -49,15 +55,15 @@ if command -v jq >/dev/null 2>&1; then
 else
   SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
 fi
-if [ -f "$NS/.shift-session" ] && [ ! -L "$NS/.shift-session" ]; then
-  REC="$(sed -n 1p "$NS/.shift-session" 2>/dev/null)"
+if [ -f "$SESSION" ] && [ ! -L "$SESSION" ]; then
+  REC="$(sed -n 1p "$SESSION" 2>/dev/null)"
   [ -n "$REC" ] && [ "$SID" != "$REC" ] && exit 0
 fi
 
 # After recovery, the stale IDE process still carries the same conversation id. Closing that
 # stale panel must not masquerade as the recovered owner's clean exit and stand the watchman down.
 # Only the current process lease may write the marker; a missing lease keeps legacy behavior.
-if [ -e "$NS/.shift-lease" ] || [ -L "$NS/.shift-lease" ]; then
+if [ -e "$LEASE" ] || [ -L "$LEASE" ]; then
   CURRENT_PID="$(ns_ancestor_pid claude "$$" 2>/dev/null || true)"
   CURRENT_START=""
   [ -z "$CURRENT_PID" ] || CURRENT_START="$(ns_process_start "$CURRENT_PID" 2>/dev/null || true)"
@@ -72,8 +78,8 @@ else
   REASON="${REASON:-unknown}"
 fi
 
-[ -L "$NS/.session-end" ] && rm -f "$NS/.session-end"
-printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$NS/.session-end"
+[ -L "$SESSION_END" ] && rm -f "$SESSION_END"
+printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$SESSION_END"
 # The session is over while the shift is not: whatever passes until something works again is a
 # gap nobody spent. Recorded so the duration line can list it, never subtracted silently.
 ns_usage_pause "$NS" "the session ended and the shift was revived" || :

@@ -139,11 +139,11 @@ if ($Phase -eq 'bind') {
 # holds the shift to the contract and items it actually starts with. A composed shift already has
 # its snapshot and keeps it.
 if ($Phase -eq 'snapshot') {
-    if (Test-Path -LiteralPath (Join-Path $ns 'shift-policy.json')) {
+    if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'shift-policy')) {
         Write-Ok 'snapshot composed - this shift keeps the policy it was composed with'
         exit 0
     }
-    if ((Get-NSBoxCounts (Join-Path $ns 'punch-list.md')).Open -eq 0) {
+    if ((Get-NSBoxCounts (Get-NSLayoutPath $ns 'punch-list')).Open -eq 0) {
         Write-Warn 'snapshot none recorded - the punch list has no open item to hold a shift to'
         exit 0
     }
@@ -163,8 +163,13 @@ if ($Phase -eq 'snapshot') {
 
 # --------------------------------------------------------- state version
 $stateKind = Get-NSStateKind $workspace
-if ($stateKind -eq 'current' -or $stateKind -eq 'legacy') {
+if ($stateKind -eq 'current') {
     Write-Ok ('state-version ' + (Get-NSStateVersion $workspace) + " ($stateKind)")
+}
+elseif ($stateKind -eq 'legacy') {
+    $stateVersion = Get-NSStateVersion $workspace
+    Write-Ok ('state-version ' + $stateVersion + " ($stateKind)")
+    Write-Warn ('state-version ' + $stateVersion + ' keeps every state file at the top of .nightshift/ - Doctor offers the move to version ' + (Get-NSCurrentStateVersion) + ', previewed by ns migrate-state and made only with --apply')
 }
 else {
     Write-Refuse ('state-version ' + (Get-NSStateRefuseMessage $stateKind))
@@ -176,7 +181,7 @@ $workMode = ''
 try {
     $workMode = Get-NSWorkMode $workspace
     Write-Ok "work-mode $workMode"
-    $modeRecord = Join-Path $ns 'work-mode'
+    $modeRecord = Get-NSLayoutPath $ns 'work-mode'
     $modeRecorded = (Test-Path -LiteralPath $modeRecord -PathType Leaf) -and ((Get-Item -LiteralPath $modeRecord).Length -gt 0)
     if (-not $modeRecorded) {
         $proposed = ''
@@ -221,7 +226,7 @@ catch {
 # ------------------------------------------------- one shift, one agent
 $lease = Read-NSLease $ns
 $leaseState = 'absent'
-if (Test-NSPathEntry (Join-Path $ns '.shift-lease')) {
+if (Test-NSPathEntry (Get-NSLayoutPath $ns 'lease')) {
     if ($null -ne $lease) {
         $leaseState = 'valid'
     }
@@ -261,25 +266,25 @@ if ((Get-NSReasonCode $ns) -eq 'clock-out-failed' -and $leaseState -eq 'valid' -
     Write-Warn 'lease terminal clock-out failed without releasing the shift - reopen the recorded conversation rather than resetting the lease'
 }
 
-$punch = Join-Path $ns 'punch-list.md'
+$punch = Get-NSLayoutPath $ns 'punch-list'
 $counts = Get-NSBoxCounts $punch
 $open = [int]$counts.Open
 $ticked = [int]$counts.Ticked
 
 $watchmanLive = $false
-$watchmanPath = Join-Path $ns '.watchman'
+$watchmanPath = Get-NSLayoutPath $ns 'watchman'
 if ((Test-Path -LiteralPath $watchmanPath -PathType Leaf) -and -not (Test-NSReparsePoint $watchmanPath)) {
     $watchLines = @([IO.File]::ReadAllLines($watchmanPath))
     $watchPid = if ($watchLines.Count -gt 0) { $watchLines[0].Trim() } else { '' }
     $watchStart = if ($watchLines.Count -gt 1) { $watchLines[1] } else { '' }
     if ((Test-NSRecordedProcess $watchPid $watchStart) -eq 'Alive') { $watchmanLive = $true }
 }
-if ($watchmanLive -and (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) -and $open -gt 0) {
+if ($watchmanLive -and (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf) -and $open -gt 0) {
     Write-Refuse 'watchman a live watchman is recovering this shift, including between recovery attempts'
     Write-Repair "ask Nightshift for status, or pause it with ns stop-shift; never kill that watchman as stale"
     # The panic form when the helper cannot be run: it only writes the marker, so the watchman
     # stands down at its next Stop event rather than immediately.
-    Write-Repair "if you cannot run that, write the marker yourself with: New-Item -ItemType File -Force `"$ns\STOP`" - the watchman then stands down at its next Stop event"
+    Write-Repair ("if you cannot run that, write the marker yourself with: New-Item -ItemType File -Force `"" + (Get-NSLayoutPath $ns 'stop') + "`" - the watchman then stands down at its next Stop event")
 }
 
 if ($script:Refused) { exit 1 }
@@ -319,20 +324,21 @@ if (-not $DryRun) {
         exit 1
     }
     $cleared = New-Object 'System.Collections.Generic.List[string]'
-    foreach ($marker in @('STOP', '.stall', '.notified', '.ended', '.session-end', '.shift-pulse',
-            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.lock.d')) {
-        if (Test-NSPathEntry (Join-Path $ns $marker)) { $null = $cleared.Add($marker) }
+    foreach ($key in @('stop', 'stall', 'notified', 'ended', 'session-end', 'pulse',
+            'mint-failed', 'session', 'armed', 'watchman-tick', 'lock')) {
+        $marker = Get-NSLayoutPath $ns $key
+        if (Test-NSPathEntry $marker) { $null = $cleared.Add((Split-Path -Leaf $marker)) }
     }
-    $endedPath = Join-Path $ns '.ended'
-    $stopPath = Join-Path $ns 'STOP'
+    $endedPath = Get-NSLayoutPath $ns 'ended'
+    $stopPath = Get-NSLayoutPath $ns 'stop'
     $ended = ((Test-Path -LiteralPath $endedPath -PathType Leaf) -and -not (Test-NSReparsePoint $endedPath))
     $stopped = ((Test-Path -LiteralPath $stopPath -PathType Leaf) -and -not (Test-NSReparsePoint $stopPath))
     if ($ended -or -not $stopped) {
         $retiredUsage = Move-NSUsageRetire $ns (Get-NSEndedField $workspace 'shiftId')
         if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
     }
-    Remove-NSPath (Join-Path $ns 'STOP')
-    $deadlinePath = Join-Path $ns 'deadline'
+    Remove-NSPath (Get-NSLayoutPath $ns 'stop')
+    $deadlinePath = Get-NSLayoutPath $ns 'deadline'
     $deadlineSpent = $false
     if ((Test-Path -LiteralPath $deadlinePath -PathType Leaf) -and -not (Test-NSReparsePoint $deadlinePath)) {
         $rawDeadline = ([IO.File]::ReadAllText($deadlinePath)).Trim()
@@ -343,6 +349,8 @@ if (-not $DryRun) {
         Remove-NSPath $deadlinePath
         $null = $cleared.Add('deadline')
     }
+    # The markers Start writes next land where the layout keeps them.
+    New-NSLayoutParent $ns 'armed'
     if ($cleared.Count -eq 0) { Write-Ok 'markers none' } else { Write-Ok ('markers ' + ($cleared -join ' ')) }
     Write-Ok 'lease reset'
 }
@@ -352,7 +360,7 @@ else {
 }
 
 # ---------------------------------------------------------------- rules
-$rulesPath = Join-Path $ns 'rules.json'
+$rulesPath = Get-NSLayoutPath $ns 'rules'
 $rules = $null
 if (-not (Test-Path -LiteralPath $rulesPath -PathType Leaf)) {
     Write-Refuse 'rules rules.json is missing'
@@ -362,7 +370,7 @@ else {
     $rules = Get-NSRulesObject $workspace
     if ($null -eq $rules) {
         Write-Refuse 'rules rules.json is not the accepted shape: unreadable or not a JSON object'
-        Write-Repair "fix that named reason in $ns/rules.json or re-run Setup; never half-apply a broken file"
+        Write-Repair ('fix that named reason in ' + (Get-NSLayoutPath $ns 'rules') + ' or re-run Setup; never half-apply a broken file')
     }
     else {
         Write-Ok 'rules readable'
@@ -425,7 +433,7 @@ if ($null -ne $rules) {
 }
 
 # --------------------------------------------------------- provisioning
-if (Test-NSPathEntry (Join-Path $ns 'provision-transaction.json')) {
+if (Test-NSPathEntry (Get-NSLayoutPath $ns 'provision-transaction')) {
     $provable = $false
     try {
         $report = Get-NSProvisionDiagnosis $workspace
@@ -439,7 +447,7 @@ if (Test-NSPathEntry (Join-Path $ns 'provision-transaction.json')) {
     }
     else {
         Write-Refuse 'provision an interrupted install cannot be proven recovered'
-        Write-Repair '.nightshift/provision-transaction.json and provision-baseline/, restore by hand or run ns provision rollback after fixing the target, then Start again'
+        Write-Repair "$(Get-NSLayoutName $ns 'provision-transaction') and provision-baseline/, restore by hand or run ns provision rollback after fixing the target, then Start again"
     }
 }
 else {
@@ -450,19 +458,27 @@ else {
 $policyState = Get-NSShiftPolicyState $workspace
 if ([string]$policyState['state'] -eq 'malformed') {
     Write-Refuse ('policy shift-policy.json is malformed: ' + [string]$policyState['error'])
-    Write-Repair "repair the named field in $ns/shift-policy.json, or delete the file so the next Start writes safe defaults"
+    Write-Repair ('repair the named field in ' + (Get-NSLayoutPath $ns 'shift-policy') + ', or delete the file so the next Start writes safe defaults')
 }
 elseif ([string]$policyState['state'] -eq 'absent') {
     Write-Ok 'policy none - arming from rules.json'
 }
 else {
     Write-Ok 'policy resolved'
+    # A snapshot is one night's approval. One the archive has already filed would run that
+    # approval again, one-shift allowances included; Start's own snapshot draws a fresh id.
+    $replayed = Find-NSReplayedShiftPolicy $workspace
+    if (-not [string]::IsNullOrEmpty($replayed)) {
+        Write-Refuse ('replay shift-policy.json is shift ' + (Get-NSRecordText $policyState['policy'] 'shiftId') +
+            ', which has already run and is filed as ' + $replayed)
+        Write-Repair ('remove ' + (Get-NSLayoutPath $ns 'shift-policy') + ' so the next Start writes a fresh snapshot, or compose the shift again with Hunt or Quality')
+    }
 }
 
 # --------------------------------------------------- work and deadline
 Write-Ok "punch-list open=$open ticked=$ticked"
-$orders = Get-NSOpenBoxesInFile (Join-Path $ns 'work-orders.md')
-$drafts = Get-NSOpenDrafts (Join-Path $ns 'drafting-table.md')
+$orders = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')
+$drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
 Write-Ok "staged orders=$orders drafts=$drafts"
 if ($open -eq 0) {
     if ($orders -gt 0 -or $drafts -gt 0) {
@@ -475,9 +491,9 @@ if ($open -eq 0) {
 
 # A shift that asked for filing at clock-out and ended before it could. The next explicit Archive
 # is where it gets picked up; Start neither files nor clears it.
-$pendingFiling = Join-Path $ns '.pending-filing'
+$pendingFiling = Get-NSLayoutPath $ns 'pending-filing'
 if ((Test-Path -LiteralPath $pendingFiling -PathType Leaf) -and -not (Test-NSReparsePoint $pendingFiling)) {
-    Write-Warn 'pending-filing the last shift asked for filing at clock-out and ended before it could - the next explicit Archive picks it up from .nightshift/.pending-filing'
+    Write-Warn "pending-filing the last shift asked for filing at clock-out and ended before it could - the next explicit Archive picks it up from $(Get-NSLayoutName $ns 'pending-filing')"
 }
 
 $openEnded = $false
@@ -493,7 +509,7 @@ if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoin
 }
 
 $deadlineFile = ''
-$deadlinePath = Join-Path $ns 'deadline'
+$deadlinePath = Get-NSLayoutPath $ns 'deadline'
 if ((Test-Path -LiteralPath $deadlinePath -PathType Leaf) -and -not (Test-NSReparsePoint $deadlinePath)) {
     $raw = ([IO.File]::ReadAllText($deadlinePath)).Trim()
     if ($raw -match '^[0-9]+$') { $deadlineFile = $raw }
@@ -505,7 +521,7 @@ if ([string]$policyState['state'] -eq 'ok' -and $null -ne $policyState['policy']
 }
 
 if (-not [string]::IsNullOrEmpty($policyDeadline)) {
-    Write-Ok "deadline $policyDeadline (policy - write it to $ns/deadline)"
+    Write-Ok ("deadline $policyDeadline (policy - write it to " + (Get-NSLayoutPath $ns 'deadline') + ')')
 }
 elseif (-not [string]::IsNullOrEmpty($deadlineFile)) {
     Write-Ok "deadline $deadlineFile (file - keep it and adopt it as the policy deadlineEpoch)"
@@ -519,12 +535,12 @@ else {
 }
 
 # -------------------------------------------------------------- journal
-$logPath = Join-Path $ns 'shift-log.md'
+$logPath = Get-NSLayoutPath $ns 'shift-log'
 if (-not $DryRun -and (Test-Path -LiteralPath $logPath -PathType Leaf) -and -not (Test-NSReparsePoint $logPath)) {
     if ((Get-Item -LiteralPath $logPath).Length -gt 512000) {
         $day = (Get-Date -Format 'yyyy-MM-dd')
         try {
-            $archive = Join-Path $ns (Join-Path 'archive' $day)
+            $archive = Join-Path (Get-NSLayoutPath $ns 'archive') $day
             $null = New-Item -ItemType Directory -Force -Path $archive
             Move-Item -LiteralPath $logPath -Destination (Join-Path $archive 'shift-log.md') -Force
             [IO.File]::WriteAllText($logPath, "# Shift log`n")

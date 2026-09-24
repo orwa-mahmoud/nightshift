@@ -95,6 +95,10 @@ case "$KIND" in
 esac
 
 NS="$WORKSPACE/.nightshift"
+declare ARMED_FILE ENDED_FILE USAGE_PREFIX
+ns_layout_set ARMED_FILE "$NS" armed
+ns_layout_set ENDED_FILE "$NS" ended
+ns_layout_set USAGE_PREFIX "$NS" usage-shift ""
 if [ -z "$DATE" ]; then
   DATE="$(date +%Y-%m-%d)"
 fi
@@ -146,9 +150,9 @@ fi
 # has been read back and matches. While a shift is armed nothing is removed at all: its receipts
 # are what its own progress checks read, and a half-filed night is worse than an unfiled one.
 ARMED=0
-{ [ -e "$NS/.shift-armed" ] || [ -L "$NS/.shift-armed" ]; } && ARMED=1
+{ [ -e "$ARMED_FILE" ] || [ -L "$ARMED_FILE" ]; } && ARMED=1
 ENDED=0
-{ [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; } && ENDED=1
+{ [ -f "$ENDED_FILE" ] && [ ! -L "$ENDED_FILE" ]; } && ENDED=1
 ROTATE=0
 [ "$ARMED" -eq 0 ] && [ "$ENDED" -eq 1 ] && ROTATE=1
 if [ "$ROTATE" -eq 0 ] && [ -n "$RETIRE" ]; then
@@ -227,8 +231,11 @@ ensure_dest() {
 }
 
 # file_one <path> — copy one record, verify it, and retire the source when this shift is closed.
+# FILE_ONE_FILED says whether the record now has a verified archived copy.
+FILE_ONE_FILED=0
 file_one() {
   local f="$1" base
+  FILE_ONE_FILED=0
   base="${f##*/}"
   case "$base" in
     .* | '') return 0 ;;
@@ -265,6 +272,7 @@ file_one() {
   fi
   FILED="$FILED$base
 "
+  FILE_ONE_FILED=1
   ARCHIVED_PATHS="$ARCHIVED_PATHS${f#"$NS"/}
 "
   # A verified copy makes retiring safe. A ticked item's receipt leaves once the shift has
@@ -299,27 +307,47 @@ fi
 # A retired shift's accounting travels too. `usage-<id>/` is what the Start preflight renamed when
 # it cleared the last shift's leftovers, so it is the closed shift's own readings — its offsets, its
 # marks, its totals. Filed under the group with everything else and retired from live storage on the
-# same rule, so the state directory does not accumulate one directory per night.
-for u in "$NS"/usage-*; do
+# same rule, so the state directory does not accumulate one directory per night. The folder is one
+# record: filed, under its own name, only when every record in it was, and removed only then.
+for u in "$USAGE_PREFIX"*; do
   if ! { [ -d "$u" ] && [ ! -L "$u" ]; }; then continue; fi
   ubase="${u##*/}"
+  [ "$ubase" != "${USAGE_PREFIX##*/}" ] || continue
   usrc="$dest"
   dest="$group/$ubase"
+  whole=1
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    if ! { [ -f "$f" ] && [ ! -L "$f" ]; }; then continue; fi
-    file_one "$f"
+    if [ -f "$f" ] && [ ! -L "$f" ]; then
+      file_one "$f"
+      [ "$FILE_ONE_FILED" -eq 1 ] || whole=0
+    else
+      whole=0
+    fi
   done <<FIND
-$(find "$u" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
+$(find "$u" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null)
 FIND
   dest="$usrc"
+  if [ "$whole" -eq 0 ]; then
+    kept="$kept$ubase (not every record in it could be filed)
+"
+    continue
+  fi
+  FILED="$FILED$ubase
+"
   if [ "$ROTATE" -eq 1 ] && retire_named "$ubase"; then
-    rm -rf "$u" 2>/dev/null && removed=$((removed + 1))
+    if rm -rf "$u" 2>/dev/null && [ ! -e "$u" ]; then
+      removed=$((removed + 1))
+    else
+      kept="$kept$ubase (could not be removed from live storage)
+"
+    fi
   fi
 done
 
 # A leftover shift-report.md (not yet migrated into receipts/) still travels.
-report="$WORKSPACE/.nightshift/shift-report.md"
+ns_layout_rel_at report 0 previous-report
+report="$NS/$report"
 report_base=""
 report_relocated=0
 if [ -f "$report" ] && [ ! -L "$report" ]; then

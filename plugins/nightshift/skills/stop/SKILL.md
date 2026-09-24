@@ -13,20 +13,21 @@ attached from (`skills/stop/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
-Run the trusted helper. Do not write `$NS/STOP` by hand, do not delete `$NS/.shift-armed`, and do
-not kill `$NS/.watchman` yourself — the helper performs the safe teardown:
+Run the trusted helper. Do not write `$NS/STOP` by hand, do not delete `$NS/run/.shift-armed`, and do
+not kill `$NS/run/.watchman` yourself — the helper performs the safe teardown:
 
 ```bash
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift
 ```
 
 The helper writes `$NS/STOP` with a reason and UTC timestamp, appends `stopped by owner` to
-`$NS/shift-log.md`, and kills only a verified live Nightshift watchman. It does not remove
-`$NS/.shift-armed`. It drops `$NS/.shift-session` so the same conversation is not a second
+`$NS/run/shift-log.md`, and kills only a verified live Nightshift watchman. It does not remove
+`$NS/run/.shift-armed`. It drops `$NS/run/.shift-session` so the same conversation is not a second
 agent on the next Start. Open boxes stay open as the record. Hardhat stays until clock-out writes
-`$NS/.ended`. Reset is the manual escape. The deadline, punch list, rules, parking lot, work
+`$NS/run/.ended`. Reset is the manual escape. The deadline, punch list, rules, parking lot, work
 orders, receipts, archives, research, opportunities, and shift history stay on disk. Do not wait
 for a later Stop event to write the marker — the helper writes it now.
 
@@ -35,7 +36,7 @@ Report the helper's `open-items` count and that the deadline was preserved. A se
 Resume later with Start (`/nightshift:start` on Claude Code, or ask Nightshift to start on Codex).
 Start clears the pause markers and begins a new ownership lease. A future preserved deadline
 remains the deadline. An expired preserved deadline is not silently renewed: write a new UNIX epoch
-to `$NS/deadline`, or run Reset then Start.
+to `$NS/run/deadline`, or run Reset then Start.
 
 This works from the bound conversation, from a helper conversation, and when a failed clock-out left a recovery nonce that still fences the recorded conversation.
 

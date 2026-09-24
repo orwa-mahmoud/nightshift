@@ -2,8 +2,7 @@ param(
     [string]$Project = [Environment]::CurrentDirectory,
     [string]$WorkTarget = '',
     [ValidateSet('repository', 'artifact')][string]$Mode = 'repository',
-    [switch]$Receipts,
-    [switch]$MigrateLegacy
+    [switch]$Receipts
 )
 
 Set-StrictMode -Version 2.0
@@ -26,7 +25,7 @@ $ns = Join-Path $workspace '.nightshift'
 $newSite = -not (Test-Path -LiteralPath $ns -PathType Container)
 
 if ($Mode -eq 'repository' -and [string]::IsNullOrEmpty($WorkTarget) `
-    -and -not (Test-Path -LiteralPath (Join-Path $ns 'work-target') -PathType Leaf)) {
+    -and -not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'work-target') -PathType Leaf)) {
     $proposed = $null
     try {
         $proposed = Get-NSProposedWorkMode $workspace
@@ -38,56 +37,35 @@ if ($Mode -eq 'repository' -and [string]::IsNullOrEmpty($WorkTarget) `
     }
 }
 
+# An older layout stays operable where it is; Setup describes the move into the current one and
+# leaves making it to migrate-state on the owner's word.
+$migration = ''
 if (-not $newSite) {
     $kind = Get-NSStateKind $workspace
     if ($kind -in @('malformed', 'future')) {
         throw (Get-NSStateRefuseMessage $kind)
     }
-    if ($kind -eq 'legacy') {
-        if (-not $MigrateLegacy) {
-            throw 'Nightshift state is legacy version 0. Re-run with -MigrateLegacy only after the owner approves migration.'
-        }
-        if (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) {
-            throw 'An armed workspace cannot be migrated.'
-        }
+    $plan = Get-NSMigrationPlan $workspace
+    if ($plan.Code -eq 0) {
+        $migration = Get-NSMigrationOffer -Records $plan.Records -Command (Join-Path $PSScriptRoot 'migrate-state.ps1')
     }
 }
 
-$null = New-Item -ItemType Directory -Path $ns -Force
-
-$templates = [ordered]@{
-    'skills/nightshift/references/templates/punch-list.md' = 'punch-list.md'
-    'skills/nightshift/references/templates/drafting-table.md' = 'drafting-table.md'
-    'skills/nightshift/references/templates/parking-lot.md' = 'parking-lot.md'
-    'skills/nightshift/references/templates/snag-log.md' = 'snag-log.md'
-    'skills/nightshift/references/templates/product-research.md' = 'product-research.md'
-    'skills/nightshift/references/templates/opportunity-map.md' = 'opportunity-map.md'
-    'skills/nightshift/references/templates/work-orders.md' = 'work-orders.md'
-    'skills/nightshift/references/nightshift-rules-template.json' = 'rules.json'
-}
-
+# A new site is born in the current layout; the scaffold writes what every shift uses, and the
+# work orders and the product notebook wait until something needs them.
 $created = New-Object Collections.Generic.List[string]
-foreach ($entry in $templates.GetEnumerator()) {
-    $source = Join-Path $pluginRoot $entry.Key
-    $destination = Join-Path $ns $entry.Value
-    if (-not (Test-NSPathEntry $destination)) {
-        Copy-NSOwnerTemplate -Source $source -Destination $destination -Workspace $workspace
-        $created.Add($entry.Value)
-    }
+foreach ($line in (Invoke-NSScaffold -Workspace $workspace -Keys (Get-NSScaffoldKeys @()))) {
+    if ($line.StartsWith('wrote ', [StringComparison]::Ordinal)) { $created.Add($line.Substring(6)) }
 }
-
-$shiftLog = Join-Path $ns 'shift-log.md'
-if (-not (Test-NSPathEntry $shiftLog)) {
-    $null = Write-NSAtomicLines -Path $shiftLog -Lines @('# Nightshift log')
-    $created.Add('shift-log.md')
-}
-
-if ($newSite -or $MigrateLegacy) {
-    $null = Write-NSAtomicLines -Path (Join-Path $ns 'state-version') -Lines @('1')
+$rulesPath = Get-NSLayoutPath $ns 'rules'
+if (-not (Test-NSPathEntry $rulesPath)) {
+    Copy-NSOwnerTemplate -Source (Join-Path $pluginRoot 'skills/nightshift/references/nightshift-rules-template.json') `
+        -Destination $rulesPath -Workspace $workspace
+    $created.Add((Get-NSLayoutRelativePath $ns 'rules'))
 }
 
 try {
-    $rules = Get-Content -LiteralPath (Join-Path $ns 'rules.json') -Raw | ConvertFrom-Json -ErrorAction Stop
+    $rules = Get-Content -LiteralPath (Get-NSLayoutPath $ns 'rules') -Raw | ConvertFrom-Json -ErrorAction Stop
     if ($null -eq $rules -or $rules -is [Array] -or $rules -is [string] -or $rules -is [ValueType]) {
         throw 'rules.json must contain one JSON object'
     }
@@ -101,7 +79,7 @@ if (-not [string]::IsNullOrEmpty($WorkTarget)) {
     $resolvedTarget = Resolve-NSCanonicalPath $WorkTarget
     $null = Write-NSWorkTarget $workspace $resolvedTarget -Mode $Mode
 }
-elseif (Test-Path -LiteralPath (Join-Path $ns 'work-target') -PathType Leaf) {
+elseif (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'work-target') -PathType Leaf) {
     $resolvedTarget = Resolve-NSWorkTarget $workspace
 }
 elseif ($Mode -eq 'artifact') {
@@ -133,11 +111,10 @@ $workspaceTop = Invoke-NSGit $workspace @('rev-parse', '--show-toplevel')
 if (-not [string]::IsNullOrWhiteSpace($workspaceTop) `
     -and (Resolve-NSCanonicalPath $workspaceTop) -eq $workspace) {
     $gitignore = Join-Path $workspace '.gitignore'
-    $lines = if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
-        [Collections.Generic.List[string]]::new([string[]][IO.File]::ReadAllLines($gitignore))
-    }
-    else {
-        [Collections.Generic.List[string]]::new()
+    # Built in place: a list returned from an if-expression would be unrolled into its lines.
+    $lines = [Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $gitignore -PathType Leaf) {
+        $lines.AddRange([string[]][IO.File]::ReadAllLines($gitignore))
     }
     if (-not $lines.Contains('.nightshift/')) {
         $lines.Add('.nightshift/')
@@ -146,7 +123,7 @@ if (-not [string]::IsNullOrWhiteSpace($workspaceTop) `
 }
 
 $receiptsCreated = $false
-$receiptRepo = Join-Path $ns '.git'
+$receiptRepo = Get-NSLayoutPath $ns 'receipts-repo'
 if ($Receipts -or (Test-Path -LiteralPath $receiptRepo -PathType Container)) {
     if (-not (Test-Path -LiteralPath $receiptRepo -PathType Container)) {
         $initialized = Invoke-NSGitCommand $ns @('init', '--quiet')
@@ -155,27 +132,8 @@ if ($Receipts -or (Test-Path -LiteralPath $receiptRepo -PathType Container)) {
         }
         $receiptsCreated = $true
     }
-    $receiptIgnore = @(
-        'STOP',
-        '.stall',
-        '.notified',
-        'deadline',
-        '.session-end',
-        '.shift-pulse',
-        '.mint-failed',
-        '.shift-session',
-        '.shift-session.tmp.*',
-        '.shift-worker',
-        '.shift-lease',
-        '.shift-lease.tmp.*',
-        '.mutex-scope',
-        '.mutex-scope.tmp.*',
-        '.watchman',
-        '.watchman-tick',
-        '.lock.d/',
-        '.lease-lock.d/'
-    )
-    $receiptIgnorePath = Join-Path $ns '.gitignore'
+    $receiptIgnore = Get-NSReceiptIgnoreLines $ns
+    $receiptIgnorePath = Get-NSLayoutPath $ns 'gitignore'
     $receiptIgnoreLines = [Collections.Generic.List[string]]::new()
     if (Test-Path -LiteralPath $receiptIgnorePath -PathType Leaf) {
         $receiptIgnoreLines.AddRange([string[]][IO.File]::ReadAllLines($receiptIgnorePath))
@@ -211,4 +169,5 @@ if ($Receipts -or (Test-Path -LiteralPath $receiptRepo -PathType Container)) {
     workMode = $Mode
     created = $created.ToArray()
     receiptsCreated = $receiptsCreated
+    migration = $migration
 } | ConvertTo-Json -Depth 5

@@ -58,7 +58,7 @@ on() {
   for f in "$RT"/*.sh; do
     printf '%s\n' "$output" | grep -qE "^  $(basename "$f" .sh) "
   done
-  ! printf '%s\n' "$output" | grep -qE '^  (ns|lib) '
+  ! printf '%s\n' "$output" | grep -qE '^  (ns|lib) ' || false
   run on claude "$p" no-such-helper
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF 'no verb no-such-helper on claude'
@@ -81,7 +81,7 @@ on() {
   # catalog-index takes no --project; the dispatcher must not invent one for it.
   run on claude "$p" catalog-index --help
   [ "$status" -ne 2 ]
-  ! printf '%s\n' "$output" | grep -qF 'unknown argument: --project'
+  ! printf '%s\n' "$output" | grep -qF 'unknown argument: --project' || false
 }
 
 @test "a caller who names the project themselves is not overridden" {
@@ -159,8 +159,8 @@ on() {
   run env CLAUDE_PROJECT_DIR="$p" pwsh -NoProfile -NonInteractive -File "$NSPS" \
     start-preflight --host claude
   # Whatever the preflight decides, it must not have failed to bind its own parameter.
-  ! printf '%s\n' "$output" | grep -qiF 'cannot find a positional parameter'
-  ! printf '%s\n' "$output" | grep -qiF 'parameter cannot be found'
+  ! printf '%s\n' "$output" | grep -qiF 'cannot find a positional parameter' || false
+  ! printf '%s\n' "$output" | grep -qiF 'parameter cannot be found' || false
 }
 
 @test "a flag no PowerShell helper answers to is refused by the helper, not swallowed" {
@@ -289,7 +289,7 @@ bound() {
 
   run on claude "$p" status
   [ "$status" -eq 0 ]
-  ! printf '%s\n' "$output" | grep -q '^workspace '
+  ! printf '%s\n' "$output" | grep -q '^workspace ' || false
 }
 
 @test "a bound workspace that differs refuses in two lines, and writes nothing anywhere" {

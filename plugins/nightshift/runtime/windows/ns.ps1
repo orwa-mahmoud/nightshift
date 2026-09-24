@@ -167,7 +167,7 @@ if ($Verb -ceq 'bind') {
 }
 
 if ($Verb -ceq 'help') {
-    [Console]::Out.WriteLine('ns <verb> [args…] — host ' + $hostName)
+    [Console]::Out.WriteLine('ns <verb> [args' + [char]0x2026 + '] ' + [char]0x2014 + ' host ' + $hostName)
     [Console]::Out.WriteLine('')
     foreach ($name in (Get-NSDispatchVerbs)) {
         $target = Get-NSDispatchTarget $name
@@ -179,7 +179,7 @@ if ($Verb -ceq 'help') {
 
 $target = Get-NSDispatchTarget $Verb
 if ([string]::IsNullOrEmpty($target)) {
-    [Console]::Error.WriteLine('ns: no verb ' + $Verb + ' on ' + $hostName + ' — run ns help for this host''s verbs')
+    [Console]::Error.WriteLine('ns: no verb ' + $Verb + ' on ' + $hostName + ' ' + [char]0x2014 + ' run ns help for this host''s verbs')
     exit 1
 }
 

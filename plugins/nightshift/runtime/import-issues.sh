@@ -82,7 +82,10 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
   }
 fi
 NS="$WORKSPACE/.nightshift"
-DRAFT="$NS/drafting-table.md"
+declare DRAFT PUNCH ARCHIVE
+ns_layout_set DRAFT "$NS" drafting-table
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set ARCHIVE "$NS" archive
 
 # parse_spec SPEC
 # Prints: owner<TAB>repo<TAB>number<TAB>canonical
@@ -195,15 +198,15 @@ quote_body() {
 already_known() {
   local url="$1" f
   [ -f "$DRAFT" ] && grep -F -q "$url" "$DRAFT" && return 0
-  [ -f "$NS/punch-list.md" ] && grep -F -q "$url" "$NS/punch-list.md" && return 0
-  [ -d "$NS/archive" ] && [ ! -L "$NS/archive" ] || return 1
-  for f in "$NS/archive"/*.md; do
+  [ -f "$PUNCH" ] && grep -F -q "$url" "$PUNCH" && return 0
+  [ -d "$ARCHIVE" ] && [ ! -L "$ARCHIVE" ] || return 1
+  for f in "$ARCHIVE"/*.md; do
     [ -e "$f" ] || continue
     [ -L "$f" ] && continue
     [ -f "$f" ] || continue
     grep -F -q "$url" "$f" && return 0
   done
-  for dated in "$NS/archive"/*; do
+  for dated in "$ARCHIVE"/*; do
     if [ ! -d "$dated" ] || [ -L "$dated" ]; then
       continue
     fi
@@ -413,7 +416,7 @@ if [ "$MODE" = list-proposed ] || [ "$MODE" = promote ]; then
     import_md list "$DRAFT" "$AUTH_REPO"
     exit $?
   fi
-  [ -f "$NS/punch-list.md" ] || {
+  [ -f "$PUNCH" ] || {
     printf 'import-issues: missing punch-list.md — run setup first. No files were changed.\n' >&2
     exit 2
   }
@@ -430,29 +433,29 @@ if [ "$MODE" = list-proposed ] || [ "$MODE" = promote ]; then
     printf 'import-issues: nothing to promote\n' >&2
     exit 1
   }
-  import_md promote "$DRAFT" "$AUTH_REPO" "$NS/punch-list.md" "$ALLOW_FLAGGED" "$@" || {
-    rm -f "$DRAFT.next" "$NS/punch-list.md.next"
+  import_md promote "$DRAFT" "$AUTH_REPO" "$PUNCH" "$ALLOW_FLAGGED" "$@" || {
+    rm -f "$DRAFT.next" "$PUNCH.next"
     exit 2
   }
-  draft_backup="$NS/.drafting-table.md.rollback.$$"
-  punch_backup="$NS/.punch-list.md.rollback.$$"
-  if ! cp "$DRAFT" "$draft_backup" || ! cp "$NS/punch-list.md" "$punch_backup"; then
-    rm -f "$DRAFT.next" "$NS/punch-list.md.next" "$draft_backup" "$punch_backup"
+  draft_backup="${DRAFT%/*}/.drafting-table.md.rollback.$$"
+  punch_backup="${PUNCH%/*}/.punch-list.md.rollback.$$"
+  if ! cp "$DRAFT" "$draft_backup" || ! cp "$PUNCH" "$punch_backup"; then
+    rm -f "$DRAFT.next" "$PUNCH.next" "$draft_backup" "$punch_backup"
     printf 'import-issues: could not prepare a rollback copy. Both live queues are unchanged.\n' >&2
     exit 2
   fi
   # Replace the destination first while the source remains live. If the second
   # replace fails, restore both files so an issue is never lost between queues.
-  if ! mv "$NS/punch-list.md.next" "$NS/punch-list.md"; then
-    rm -f "$DRAFT.next" "$NS/punch-list.md.next" "$draft_backup" "$punch_backup"
+  if ! mv "$PUNCH.next" "$PUNCH"; then
+    rm -f "$DRAFT.next" "$PUNCH.next" "$draft_backup" "$punch_backup"
     printf 'import-issues: could not update the punch list. Both live queues are unchanged.\n' >&2
     exit 2
   fi
   if ! mv "$DRAFT.next" "$DRAFT"; then
     rollback_ok=1
-    cp "$punch_backup" "$NS/punch-list.md" || rollback_ok=0
+    cp "$punch_backup" "$PUNCH" || rollback_ok=0
     cp "$draft_backup" "$DRAFT" || rollback_ok=0
-    rm -f "$DRAFT.next" "$NS/punch-list.md.next"
+    rm -f "$DRAFT.next" "$PUNCH.next"
     if [ "$rollback_ok" -eq 1 ]; then
       rm -f "$draft_backup" "$punch_backup"
       printf 'import-issues: could not update the drafting table. Both live queues were restored.\n' >&2
@@ -641,7 +644,7 @@ if [ ! -s "$work/blocks" ]; then
   exit 0
 fi
 
-tmp="$NS/.drafting-table.md.$$"
+tmp="${DRAFT%/*}/.drafting-table.md.$$"
 cp "$DRAFT" "$tmp" || {
   printf 'import-issues: could not copy drafting table\n' >&2
   exit 2

@@ -6,18 +6,18 @@ param(
     [switch]$Json
 )
 
-# normalize-output.ps1 — the native Windows twin of runtime/normalize-output.sh.
+# normalize-output.ps1 - the native Windows twin of runtime/normalize-output.sh.
 #
 #   normalize-output.ps1 -Format <fmt> -InputPath <file> [-Top N] [-Json]
 #
 # Same formats, same summary, same bytes: the parity test diffs both engines over
 # every fixture. PowerShell reads JSON itself, so this side never needs jq.
 #
-# Two digests travel with a summary. `digest` covers the result — the format, the
-# headline and the counts — so a rerun that reports the same numbers keeps one
+# Two digests travel with a summary. `digest` covers the result - the format, the
+# headline and the counts - so a rerun that reports the same numbers keeps one
 # digest. `source` covers the raw file byte for byte.
 #
-# Exit: 0 summary · 1 usage · 3 unavailable
+# Exit: 0 summary - 1 usage - 3 unavailable
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -889,8 +889,8 @@ $countLabels = [string[]]@($script:Counts | ForEach-Object { $_.Label })
 $countValues = @{}
 foreach ($entry in $script:Counts) { $countValues[$entry.Label] = $entry.Value }
 
-# The result digest covers what the run found — the format, the headline and every
-# count, in label order — and nothing about the bytes it read. Two runs that report
+# The result digest covers what the run found - the format, the headline and every
+# count, in label order - and nothing about the bytes it read. Two runs that report
 # the same numbers therefore carry one digest, and a ledger comparison reads a
 # reformatted or rerun report as unchanged rather than as a regression.
 $preimage = New-Object Text.StringBuilder

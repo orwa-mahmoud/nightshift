@@ -39,15 +39,15 @@ WRAPPER="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hardhat.sh"
 @test "Windows toolDeny repairs name Setup like POSIX" {
   grep -qF '/nightshift:setup on Claude Code; ask Nightshift to set up on Codex' "$WRAPPER"
   grep -qF '/nightshift:setup on Claude Code; ask Nightshift to set up on Codex' "$CORE"
-  grep -qF 'Fix .nightshift/rules.json or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex).' "$HELPER"
+  grep -qF "Fix \$(Get-NSLayoutName \$script:ns 'rules') or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)." "$HELPER"
   grep -qF 'run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex) to review the current template.' "$HELPER"
 }
 
 @test "Windows forbidden-command denials match POSIX wording" {
   grep -qF "the command matches the owner's forbidden list" "$CORE"
   grep -qF "the command matches the owner's forbidden list" "$HELPER"
-  grep -qF 'parking-lot.md and keep working' "$CORE"
-  grep -qF 'parking-lot.md and keep working' "$HELPER"
+  grep -qF '$(ns_hardhat_state_name parking-lot) and keep working' "$CORE"
+  grep -qF "\$(Get-NSLayoutName \$script:ns 'parking-lot') and keep working" "$HELPER"
   grep -qF 'forbidden list' "$RUN"
   grep -qF 'forbidden list' "$LOGIC"
 }

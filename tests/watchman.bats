@@ -250,13 +250,15 @@ STUB
 
 @test "Windows session-end marker matches POSIX wording" {
   grep -qF ' · clean session end' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
-  grep -qF ' · clean session end' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-end.ps1"
+  # The same separator, spelled by its code so the script stays ASCII.
+  grep -qF "'{0} {3} clean session end ({1}){2}'" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-end.ps1"
+  grep -qF '$reason, [Environment]::NewLine, [char]0x00B7' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-end.ps1"
   if grep -qF ' - clean session end' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-end.ps1"; then
     return 1
   fi
-  grep -qF '[ -L "$NS/.session-end" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
+  grep -qF '[ -L "$SESSION_END" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
   grep -qF 'Test-NSReparsePoint $sessionEnd' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/session-end.ps1"
-  grep -qF '[ ! -L "$NS/.shift-session" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
+  grep -qF '[ ! -L "$SESSION" ]' "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
 }
 
 @test "session-end hook writes the marker only during an active shift" {

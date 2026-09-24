@@ -5,7 +5,7 @@
 # The punch list is the only truth. Release order on every stop attempt:
 #   1. stop-work order — .nightshift/STOP exists              -> release (open boxes stay open)
 #   2. done            — zero open "- [ ]" (or no punch list) -> release
-#   3. quitting time   — now past .nightshift/deadline        -> write STOP, log, release
+#   3. quitting time   — now past .nightshift/run/deadline    -> write STOP, log, release
 #   4. otherwise       — block, re-injecting the contract
 #
 # Stall guard: consecutive stop attempts with no progress are counted (progress = a tick or a
@@ -47,13 +47,15 @@ case "$STATE_KIND" in
     ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
-PUNCH="$NS/punch-list.md"
-STOP="$NS/STOP"
-DEADLINE="$NS/deadline"
-STALL="$NS/.stall"
-NOTIFIED="$NS/.notified"
-ENDED="$NS/.ended" # written when the shift actually ends; hardhat keeps the site rules armed until then
-LOG="$NS/shift-log.md"
+declare PUNCH STOP DEADLINE STALL NOTIFIED ENDED ARMED LOG
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set STOP "$NS" stop
+ns_layout_set DEADLINE "$NS" deadline
+ns_layout_set STALL "$NS" stall
+ns_layout_set NOTIFIED "$NS" notified
+ns_layout_set ENDED "$NS" ended # written when the shift actually ends; hardhat keeps the site rules armed until then
+ns_layout_set ARMED "$NS" armed
+ns_layout_set LOG "$NS" shift-log
 # One copy: the rules file is the config; env vars are session-start overrides only. A gate
 # whose knobs are unreadable still gates (fail closed): the stall bookkeeping stands down
 # loudly and the block carries the repair.
@@ -90,8 +92,9 @@ whistle() {
 # with commit.gpgsign=true globally would otherwise lose every receipt to a key prompt that
 # nothing is there to answer at 3am.
 receipts_commit() {
-  local err auto
-  [ -d "$NS/.git" ] || return 0
+  local err auto repo
+  ns_layout_set repo "$NS" receipts-repo
+  [ -d "$repo" ] || return 0
   # Owner opt-in. Default off — a receipts git alone does not authorize headless commits.
   auto="$(rule "$PROJECT_DIR" receiptsAutoCommit "${NIGHTSHIFT_RECEIPTS_AUTO_COMMIT:-}")"
   case "$auto" in true | TRUE | 1 | yes | YES) ;; *) return 0 ;; esac
@@ -115,7 +118,8 @@ release_lease() {
 # receipt could not be written still keeps its evidence. $1 is tonight's shiftId, empty when no
 # policy was written.
 render_morning_receipt() {
-  local renderer="$_here/../../runtime/morning-receipt.sh" dir="$NS/receipts" err out
+  local renderer="$_here/../../runtime/morning-receipt.sh" dir err out
+  ns_layout_set dir "$NS" receipts
   if [ ! -f "$renderer" ]; then
     log_line "morning receipt skipped: runtime/morning-receipt.sh is not installed"
     return 0
@@ -167,7 +171,7 @@ end_shift() {
   ns_gate_usage_flush "$NS" "$PROJECT_DIR"
   # The shift is over, so the site stops being on shift: without this the guards would still apply
   # to whatever ordinary session opens this project next.
-  rm -f "$NS/.shift-armed"
+  rm -f "$ARMED"
   release_lease
   # A shift that never wrote a policy has no id, and its receipt is named for the date alone.
   shift_id="$(ns_policy_shift_id "$PROJECT_DIR" 2>/dev/null)" || shift_id=""
@@ -219,7 +223,7 @@ honor_stop() {
 # A shift exists because the owner started one, never because a list exists. Nightshift Start
 # writes .shift-armed; without it the punch list is a to-do file and every session stops freely —
 # including the one that just wrote the list while planning.
-if [ ! -f "$NS/.shift-armed" ]; then cursor_emit_release; exit 0; fi
+if [ ! -f "$ARMED" ]; then cursor_emit_release; exit 0; fi
 
 
 # Owner interrupt — live Stop button sends status "aborted" (Cursor 3.17.21).
@@ -343,7 +347,7 @@ if [ "$STALL_OK" -eq 1 ]; then
   [ -L "$STALL" ] && rm -f "$STALL"
   printf '%s\n%s\n' "$FP" "$attempts" >"$STALL"
 else
-  log_line "stall guard down — stallMax/stallWarnEvery unreadable (.nightshift/rules.json absent or incomplete); run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex or Cursor)"
+  log_line "stall guard down — stallMax/stallWarnEvery unreadable ($(ns_layout_name "$NS" rules) absent or incomplete); run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex or Cursor)"
 fi
 
 if ns_long_unit_warn_due "$PROJECT_DIR" "$LONG_UNIT_WARN"; then
@@ -374,5 +378,5 @@ if [ -n "$GATE_MESSAGE" ]; then
     "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"
   exit 0
 fi
-cursor_emit_block "$(ns_gate_reminder_text "$PROJECT_DIR" "$(ns_expand_injected_paths "$PROJECT_DIR" "DO NOT STOP — the punch list (.nightshift/punch-list.md) still has open items. Work them one at a time per its contract, run each item's gate, and tick only after completion; park owner decisions in .nightshift/parking-lot.md and keep working. (nightshift: the full contract reinjection lives in .nightshift/rules.json clockOutMessage — unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)")" "$OPEN" "$TICKED" "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"
+cursor_emit_block "$(ns_gate_reminder_text "$PROJECT_DIR" "$(ns_expand_injected_paths "$PROJECT_DIR" "DO NOT STOP — the punch list ($(ns_layout_name "$NS" punch-list)) still has open items. Work them one at a time per its contract, run each item's gate, and tick only after completion; park owner decisions in $(ns_layout_name "$NS" parking-lot) and keep working. (nightshift: the full contract reinjection lives in $(ns_layout_name "$NS" rules) clockOutMessage — unreadable here; run Setup again: /nightshift:setup on Claude Code, or ask Nightshift to set up on Codex.)")" "$OPEN" "$TICKED" "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"
 exit 0

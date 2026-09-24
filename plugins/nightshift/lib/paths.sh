@@ -108,12 +108,14 @@ ns_hook_host_dir() {
 # closes. Revival workers stay in.
 ns_hook_idle_exit() {
   [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || return 0
-  local host project ns
+  local host project ns armed ended
   host="$(ns_hook_host_dir)"
   project="$(ns_workspace_root "$host" 2>/dev/null)" || return 0
   ns="$project/.nightshift"
-  [ -f "$ns/.shift-armed" ] || exit 0
-  if [ -f "$ns/.ended" ] && [ ! -L "$ns/.ended" ]; then
+  ns_layout_set armed "$ns" armed
+  [ -f "$armed" ] || exit 0
+  ns_layout_set ended "$ns" ended
+  if [ -f "$ended" ] && [ ! -L "$ended" ]; then
     exit 0
   fi
 }
@@ -206,16 +208,43 @@ ns_under_nightshift() {
 }
 
 # Qualify bare .nightshift/ mentions in owner-authored injection text (clock-out,
-# revival, toolDeny) so a drifted cwd cannot send the agent to a nested copy.
-# Expansion happens at injection time; the owner's rules file keeps the relative
-# form so it stays editable without a skill variable.
+# revival, toolDeny) so a drifted cwd cannot send the agent to a nested copy, and name each
+# state file where this workspace's layout keeps it: text written for one layout still sends the
+# agent to the right file in another. Expansion happens at injection time; the owner's rules file
+# keeps the relative form so it stays editable without a skill variable.
 ns_expand_injected_paths() {
-  local ws="$1" text="$2"
+  local ws="$1" text="$2" version
   [ -n "$ws" ] || { printf '%s' "$text"; return 0; }
   text="${text//\$NIGHTSHIFT_WORKSPACE/$ws}"
   text="${text//\$NS/$ws/.nightshift}"
-  printf '%s' "$text" | awk -v ws="$ws" '
-    BEGIN { ORS="" }
+  ns_layout_version_set version "$ws/.nightshift"
+  printf '%s' "$text" | NS_LAYOUT_ROWS="$NS_LAYOUT_ROWS" awk -v ws="$ws" -v version="$version" '
+    BEGIN {
+      ORS = ""
+      n = split(ENVIRON["NS_LAYOUT_ROWS"], rows, "\n")
+      for (k = 1; k <= n; k++) {
+        if (split(rows[k], f, "\t") < 4 || f[4] == "field" || f[4] == "retired" || f[4] == "stray" || index(f[3], "*")) continue
+        key[k] = f[1]
+        path[k] = f[3]
+        if (f[2] + 0 <= version && (!(f[1] in best) || f[2] + 0 >= bestv[f[1]])) {
+          best[f[1]] = f[3]
+          bestv[f[1]] = f[2] + 0
+        }
+      }
+      m = 0
+      for (k = 1; k <= n; k++) {
+        if (!(k in key) || !(key[k] in best) || path[k] == best[key[k]]) continue
+        from[++m] = path[k]
+        to[m] = best[key[k]]
+      }
+      # The longest name first, so a file is never read as the folder it sits in.
+      for (a = 2; a <= m; a++) {
+        for (b = a; b > 1 && length(from[b]) > length(from[b - 1]); b--) {
+          t = from[b]; from[b] = from[b - 1]; from[b - 1] = t
+          t = to[b]; to[b] = to[b - 1]; to[b - 1] = t
+        }
+      }
+    }
     {
       s = $0
       while (match(s, /\.nightshift[\/\\]/)) {
@@ -229,6 +258,13 @@ ns_expand_injected_paths() {
           printf "%s%s/.nightshift%s", prefix, ws, sep
         }
         s = substr(s, RSTART + RLENGTH)
+        for (j = 1; j <= m; j++) {
+          if (substr(s, 1, length(from[j])) == from[j] && substr(s, length(from[j]) + 1, 1) !~ /[A-Za-z0-9._-]/) {
+            printf "%s", to[j]
+            s = substr(s, length(from[j]) + 1)
+            break
+          }
+        }
       }
       printf "%s", s
     }
@@ -251,7 +287,8 @@ ns_is_scratch_path() {
 # Print repository or artifact. A missing record is repository — the historical default.
 # Return 1 when the record exists and is not one of those two words.
 ns_work_mode() {
-  local record="$1/.nightshift/work-mode" mode=""
+  local record mode=""
+  ns_layout_set record "$1/.nightshift" work-mode
   if [ -L "$record" ]; then
     return 1
   fi
@@ -272,12 +309,14 @@ ns_work_mode() {
 
 # ns_record_work_mode <workspace> <repository|artifact>
 ns_record_work_mode() {
-  local project="$1" mode="$2" tmp
+  local project="$1" mode="$2" record tmp
   case "$mode" in repository | artifact) ;; *) return 1 ;; esac
-  mkdir -p "$project/.nightshift" || return 1
-  tmp="$project/.nightshift/.work-mode.$$"
+  ns_state_dir_ensure "$project" || return 1
+  ns_layout_parent "$project/.nightshift" work-mode || return 1
+  ns_layout_set record "$project/.nightshift" work-mode
+  tmp="${record%/*}/.work-mode.$$"
   printf '%s\n' "$mode" >"$tmp" || return 1
-  mv "$tmp" "$project/.nightshift/work-mode"
+  mv "$tmp" "$record"
 }
 
 # ns_propose_work_mode <workspace>
@@ -313,4 +352,57 @@ ns_propose_work_mode() {
   fi
   printf 'artifact'
   return 0
+}
+
+# ns_normalize_path <path> — the path with its `.` and `..` segments resolved as text, the way a
+# relative link is read. A `..` above the start is kept.
+ns_normalize_path() {
+  local in="$1" out="" seg rest lead=""
+  case "$in" in /*) lead=/ ;; esac
+  rest="$in"
+  while [ -n "$rest" ]; do
+    seg="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    case "$seg" in
+      '' | .) ;;
+      ..)
+        case "$out" in
+          '' | .. | */..) out="${out:+$out/}.." ;;
+          */*) out="${out%/*}" ;;
+          *) out="" ;;
+        esac
+        ;;
+      *) out="${out:+$out/}$seg" ;;
+    esac
+  done
+  printf '%s%s' "$lead" "$out"
+}
+
+# ns_relative_path <from-dir> <to-path> — <to-path> relative to <from-dir>. Both are absolute and
+# spelled alike up to where they part, as two paths built from one state directory are.
+ns_relative_path() {
+  local common="${1%/}" to="$2" up=""
+  while [ -n "$common" ]; do
+    case "$to" in "$common"/*) break ;; esac
+    common="${common%/*}"
+    up="../$up"
+  done
+  printf '%s%s' "$up" "${to#"$common"/}"
+}
+
+# ns_state_dir_ensure <workspace> — create <workspace>/.nightshift/ when it does not exist yet. A
+# state directory is born in the current layout, so a new one gets its state-version before any
+# file lands in it; an existing one is left exactly as it is.
+ns_state_dir_ensure() {
+  [ -d "$1/.nightshift" ] && return 0
+  mkdir -p "$1/.nightshift" || return 1
+  ns_write_state_version "$1" "$NS_LAYOUT_VERSION"
+}
+
+# ns_layout_parent <state-dir> <key> — create the directory <key> lives in, for a writer that may
+# be the first to use it.
+ns_layout_parent() {
+  local _nsl_out
+  ns_layout_set _nsl_out "$1" "$2" || return 1
+  mkdir -p "${_nsl_out%/*}" 2>/dev/null
 }

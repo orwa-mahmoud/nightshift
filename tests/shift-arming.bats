@@ -101,7 +101,7 @@ sp() {
 
 @test "start is the command that arms the gate" {
   s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
-  grep -qF '$NS/.shift-armed' "$s"
+  grep -qF 'touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"' "$s"
   grep -qF 'Arm the gate' "$s"
 }
 
@@ -132,7 +132,7 @@ sp() {
 # skips the marker writes the items and holds nothing — the failure is silent and looks like work.
 @test "every skill that starts a shift arms the gate" {
   for s in start hunt quality; do
-    grep -qF '$NS/.shift-armed' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/$s/SKILL.md" \
+    grep -qF 'touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/$s/SKILL.md" \
       || { echo "starts a shift without arming: $s"; return 1; }
   done
 }
@@ -149,7 +149,7 @@ sp() {
   # Status no longer reads the marker: the helper prints an `armed` fact, and says plainly when an
   # unarmed workspace with open boxes is a to-do file rather than a shift.
   h="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
-  grep -qF '.shift-armed' "$h"
+  grep -qF 'ns_layout_set ARMED_FILE "$NS" armed' "$h"
   grep -qF 'fact "armed"' "$h"
   grep -qF 'to-do file, not a shift' "$h"
 }

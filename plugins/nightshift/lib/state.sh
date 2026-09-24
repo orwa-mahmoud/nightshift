@@ -9,7 +9,8 @@
 # rule <project-dir> <file-key> <env-value> — prints the effective value ('' = default).
 rule() {
   if [ -n "$3" ]; then printf '%s' "$3"; return; fi
-  local f="$1/.nightshift/rules.json"
+  local f
+  ns_layout_set f "$1/.nightshift" rules
   [ -f "$f" ] || return 0
   ns_rules_get "$f" "$2"
 }
@@ -35,7 +36,7 @@ ns_report_enabled() {
 
 # ns_receipts_dir <project-dir> — the folder that holds the index, morning page, and item files.
 ns_receipts_dir() {
-  printf '%s/.nightshift/receipts' "$1"
+  ns_layout_path "$1/.nightshift" receipts
 }
 
 # ns_receipt_slug <title> — title lowercased, non-alphanumerics collapsed to one -, trimmed, 60.
@@ -179,10 +180,12 @@ ns_item_id_for() {
 # an archived list or receipt, or already names a receipt file, so an id means one item for as
 # long as the history is kept.
 ns_item_id_used() {
-  local ns="$1" id="$2"
+  local ns="$1" id="$2" archive receipts
   case " ${3:-} " in *" $id "*) return 0 ;; esac
-  grep -rqsF -- "id: $id " "$ns/archive" "$ns/receipts" && return 0
-  [ -n "$(find "$ns/receipts" "$ns/archive" \( -name "$id.md" -o -name "$id-*.md" \) -print 2>/dev/null | head -n1)" ]
+  ns_layout_set archive "$ns" archive
+  ns_layout_set receipts "$ns" receipts
+  grep -rqsF -- "id: $id " "$archive" "$receipts" && return 0
+  [ -n "$(find "$receipts" "$archive" \( -name "$id.md" -o -name "$id-*.md" \) -print 2>/dev/null | head -n1)" ]
 }
 
 # ns_item_new_id <nightshift-dir> [taken] — a fresh id: a letter, then three letters or digits, that
@@ -246,7 +249,7 @@ ns_punch_assign_ids() {
 # argument the id is looked up in the punch list by label.
 ns_receipt_base() {
   local project="$1" label="$2" id="${3-}" dir legacy f slug
-  [ $# -ge 3 ] || id="$(ns_item_id_for "$project/.nightshift/punch-list.md" "$label")"
+  [ $# -ge 3 ] || id="$(ns_item_id_for "$(ns_layout_path "$project/.nightshift" punch-list)" "$label")"
   legacy="$(ns_receipt_basename "$label")"
   [ -n "$id" ] || { printf '%s' "$legacy"; return 0; }
   dir="$(ns_receipts_dir "$project")"
@@ -274,7 +277,8 @@ ns_receipt_path() {
 # work on its item starts, and the runtime's own writes keep a receipt's time, so only the model's
 # writing moves this. Two receipts written in the same instant go to the earlier item.
 ns_active_item() {
-  local punch="$1/.nightshift/punch-list.md" dir label id f cand best="" best_f="" first=""
+  local punch dir label id f cand best="" best_f="" first=""
+  ns_layout_set punch "$1/.nightshift" punch-list
   [ -f "$punch" ] || return 1
   dir="$(ns_receipts_dir "$1")"
   while IFS=$'\t' read -r label id; do
@@ -487,15 +491,16 @@ ns_receipt_has_model_text() {
 
 # ns_receipts_missing_nns <project> — one item number per ticked item with no model text.
 ns_receipts_missing_nns() {
-  local project="$1" punch ns label id base nn
+  local project="$1" punch ns receipts label id base nn
   ns="$project/.nightshift"
-  punch="$ns/punch-list.md"
+  ns_layout_set punch "$ns" punch-list
+  ns_layout_set receipts "$ns" receipts
   [ -f "$punch" ] || return 0
   ns_receipts_enabled "$project" || return 0
   ns_item_rows "$punch" ticked | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
     [ -n "$label" ] || continue
     base="$(ns_receipt_base "$project" "$label" "$id")"
-    ns_receipt_has_model_text "$ns/receipts/${base}.md" && continue
+    ns_receipt_has_model_text "$receipts/${base}.md" && continue
     nn="$(ns_receipt_nn "$label")"
     [ -n "$nn" ] || nn="$label"
     printf '%s\n' "$nn"
@@ -528,7 +533,9 @@ ns_usage_scale() {
 
 # ns_receipts_shift_date <project-dir> — Date: on the punch list, else the policy day, else today.
 ns_receipts_shift_date() {
-  local punch="$1/.nightshift/punch-list.md" policy="$1/.nightshift/shift-policy.json" day
+  local punch policy day
+  ns_layout_set punch "$1/.nightshift" punch-list
+  ns_layout_set policy "$1/.nightshift" shift-policy
   if [ -f "$punch" ]; then
     day="$(sed -n 's/^Date:[[:space:]]*//p' "$punch" | head -n1)"
     day="${day%%[$'\r\n']*}"
@@ -710,7 +717,8 @@ ns_receipts_time_total_cell() {
 # A ticked item's receipt leaves live storage once the shift has ended; an open item's stays, so
 # the next shift writes into the same file.
 ns_receipts_item_names() {
-  local punch="$1/.nightshift/punch-list.md" state="${2:-open}" label id
+  local punch state="${2:-open}" label id
+  ns_layout_set punch "$1/.nightshift" punch-list
   [ -f "$punch" ] || return 0
   [ "$state" = ticked ] || state=open
   ns_item_rows "$punch" "$state" | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
@@ -816,11 +824,12 @@ FIND
 # marks, files. `remaining` writes the index a live receipts folder still needs — every open item
 # and every ticked item whose receipt is still there — and removes it when nothing is left.
 ns_receipts_write_index() {
-  local project="$1" mode="${2:-}" punch="$1/.nightshift/punch-list.md"
+  local project="$1" mode="${2:-}" punch
   local dir index date_s state base file cells
   local in cw cr out rea work pause usage time _sum
   local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
   local label id items rows
+  ns_layout_set punch "$project/.nightshift" punch-list
   dir="$(ns_receipts_dir "$project")"
   [ -n "$dir" ] || return 0
   if [ "$mode" = remaining ]; then
@@ -829,7 +838,7 @@ ns_receipts_write_index() {
     mkdir -p "$dir" 2>/dev/null || return 0
   fi
   [ ! -L "$dir" ] || return 0
-  index="$dir/README.md"
+  ns_layout_set index "$project/.nightshift" receipts-index
   [ -L "$index" ] && return 0
   date_s="$(ns_receipts_shift_date "$project")"
   items="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-index.XXXXXX")" || return 0
@@ -871,50 +880,6 @@ EOF
   rm -f "$items" "$rows"
 }
 
-# ns_migrate_receipts_layout <workspace> — report→receipts; shift-report.md → previous-report.md.
-# Idempotent. Does not bump state-version. Leaves timestamp-named receipt files untouched.
-ns_migrate_receipts_layout() {
-  local ws="$1" ns="$1/.nightshift" rules policy report dest dir tmp
-  [ -d "$ns" ] || return 0
-  for rules in "$ns/rules.json" "$ns/shift-policy.json"; do
-    { [ -f "$rules" ] && [ ! -L "$rules" ]; } || continue
-    if grep -q '"report"' "$rules" 2>/dev/null; then
-      tmp="$rules.receipts-mig.$$"
-      if command -v jq >/dev/null 2>&1; then
-        jq 'if has("report") then
-              .receipts = ((.receipts // .report) | del(.legacyItemReceipts))
-              | del(.report)
-            else . end' "$rules" >"$tmp" 2>/dev/null && mv "$tmp" "$rules"
-      elif command -v python3 >/dev/null 2>&1; then
-        python3 -c '
-import json, sys
-p = sys.argv[1]
-with open(p, encoding="utf-8") as f:
-    d = json.load(f)
-if "report" in d:
-    src = dict(d.get("receipts") or d["report"])
-    src.pop("legacyItemReceipts", None)
-    d["receipts"] = src
-    del d["report"]
-    with open(p, "w", encoding="utf-8") as o:
-        json.dump(d, o, indent=2, ensure_ascii=False)
-        o.write("\n")
-' "$rules" 2>/dev/null || rm -f "$tmp"
-      fi
-      rm -f "$tmp"
-    fi
-  done
-  report="$ns/shift-report.md"
-  dir="$ns/receipts"
-  dest="$dir/previous-report.md"
-  if [ -f "$report" ] && [ ! -L "$report" ]; then
-    mkdir -p "$dir" 2>/dev/null || return 0
-    if [ ! -e "$dest" ]; then
-      mv "$report" "$dest" 2>/dev/null || :
-    fi
-  fi
-}
-
 # ns_archive <project-dir> <field> — one field of the archive block, or empty.
 ns_archive() {
   ns_policy_pref "$1" archive "$2"
@@ -930,15 +895,17 @@ ns_archive() {
 #
 # ns_ended_record <state-dir> <shift-id> <archive-root-name> <archive-layout>
 ns_ended_record() {
-  local ns="$1"
+  local ns="$1" ended
   [ -d "$ns" ] || return 0
-  [ -L "$ns/.ended" ] && rm -f "$ns/.ended"
-  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\n' "$2" "$3" "$4" >"$ns/.ended" 2>/dev/null || :
+  ns_layout_set ended "$ns" ended
+  [ -L "$ended" ] && rm -f "$ended"
+  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\n' "$2" "$3" "$4" >"$ended" 2>/dev/null || :
 }
 
 # ns_ended_field <project-dir> <key> — one field of the ending marker, or empty.
 ns_ended_field() {
-  local f="$1/.nightshift/.ended"
+  local f
+  ns_layout_set f "$1/.nightshift" ended
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
   sed -n "s/^$2=//p" "$f" 2>/dev/null | head -n1
 }
@@ -989,14 +956,17 @@ ns_state_path() {
 # the owner's records somewhere they cannot find them. Writing outside the state area is an
 # unsupported request, not a setting.
 ns_archive_root() {
-  local ns="$1/.nightshift" name
+  local ns="$1/.nightshift" name key live
   name="$(ns_archive "$1" root)"
-  [ -n "$name" ] || name=archive
+  [ -n "$name" ] || ns_layout_rel_set name "$ns" archive
   # The live records are not an archive destination: filing into them would file a shift on top
   # of the shift that is still running.
-  case "$name" in
-    receipts | receipts/*) return 2 ;;
-  esac
+  for key in receipts inbox staging product run; do
+    ns_layout_rel_set live "$ns" "$key" || continue
+    case "$name" in
+      "$live" | "$live"/*) return 2 ;;
+    esac
+  done
   ns_state_path "$ns" "$name" || return 2
 }
 
@@ -1068,7 +1038,9 @@ ns_archive_dir() {
 # nothing when no item was ticked. Status 3 when a different record is already filed at that path;
 # the live list is then left as it is.
 ns_archive_punch_list() {
-  local live="$1/.nightshift/punch-list.md" dir="$2" sid="$3" day="$4" dest tmp who cr=""
+  local live live_rel dir="$2" sid="$3" day="$4" dest tmp who cr=""
+  ns_layout_set live "$1/.nightshift" punch-list
+  ns_layout_rel_set live_rel "$1/.nightshift" punch-list
   [ -f "$live" ] && [ ! -L "$live" ] || return 0
   [ "$(ns_punch_items "$live" | grep -c '^- \[[xX]\]')" -gt 0 ] || return 0
   dest="$dir/punch-list.md"
@@ -1080,7 +1052,7 @@ ns_archive_punch_list() {
   tmp="$dest.tmp.$$"
   {
     printf '> Archived record of %s, filed %s. The items still open stayed in the live %s.%s\n%s\n' \
-      "$who" "$day" "\`.nightshift/punch-list.md\`" "$cr" "$cr"
+      "$who" "$day" "\`.nightshift/$live_rel\`" "$cr" "$cr"
     awk '
       { line = $0; sub(/\r$/, "", line) }
       !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
@@ -1123,9 +1095,21 @@ ns_archive_automatic() {
   [ "$(ns_archive "$1" automatic)" = true ]
 }
 
-# ns_review_handled <text> — status 0 when the entry carries a filing disposition.
-ns_review_handled() {
-  printf '%s\n' "$1" | grep -qiE ' · (fixed|ignored|answered|rejected-because|accepted-tradeoff)( ·|$)'
+# The dispositions Archive files. An inbox entry that carries one after a ` · ` separator is
+# closed; one without is open and waits for the owner. The morning receipt reads the same list, and
+# the parking-lot and snag-log templates name it.
+NS_REVIEW_DISPOSITIONS='fixed|ignored|answered|rejected-because|accepted-tradeoff'
+
+# The inbox reader's awk half sits next to this file, resolved without dirname.
+_NS_INBOX_AWK="${BASH_SOURCE[0]%/*}"
+[ "$_NS_INBOX_AWK" != "${BASH_SOURCE[0]}" ] || _NS_INBOX_AWK=.
+_NS_INBOX_AWK="$_NS_INBOX_AWK/inbox-entries.awk"
+
+# ns_inbox_strays <file> — `<line>\t<text>` for each paragraph below the rule of a parking lot or
+# snag log: text that is not a `- ` bullet, which Archive never files.
+ns_inbox_strays() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v op=strays -f "$_NS_INBOX_AWK" "$1"
 }
 
 # ns_archive_review_label <folder-name> <shift-id> <layout> — what a Filed pointer is labelled: the
@@ -1157,25 +1141,25 @@ ns_archive_pointer_line() {
   printf 'Filed: [%s](%s)' "$1" "$2"
 }
 
-# ns_archive_rel_from_ns <nightshift-dir> <absolute-dest>
-ns_archive_rel_from_ns() {
-  local ns="$1" dest="$2"
-  printf '%s' "${dest#"$ns"/}"
-}
-
-# ns_archive_file_review_source <project> <basename> <date> <shift-id>
-# Moves handled entries from the live review file into the archive dest and appends one pointer.
+# ns_archive_file_review_source <project> <parking-lot|snag-log> <date> <shift-id>
+# Moves handled entries from the live review file into the archive dest and appends one pointer,
+# written relative to the live file that carries it.
 ns_archive_file_review_source() {
-  local project="$1" base="$2" date="$3" shift_id="$4"
-  local ns live dest label rel layout tmp filed ptr title
+  local project="$1" key="$2" date="$3" shift_id="$4"
+  local ns live base dest label rel layout tmp filed ptr title
   ns="$project/.nightshift"
-  live="$ns/$base"
+  ns_layout_set live "$ns" "$key" || return 2
+  base="${live##*/}"
   [ -f "$live" ] && [ ! -L "$live" ] || return 0
   dest="$(ns_archive_review_dest "$project" "$date" "$shift_id" "$base")" || return 2
   layout="$(ns_archive "$project" layout)"
   label="$(ns_archive_dir "$project" "$date" "$shift_id")" || return 2
   label="$(ns_archive_review_label "${label##*/}" "$shift_id" "$layout")"
-  rel="$(ns_archive_rel_from_ns "$ns" "$dest")"
+  case "$dest" in
+    "$ns"/*) ;;
+    *) return 2 ;;
+  esac
+  rel="$(ns_relative_path "${live%/*}" "$dest")"
   case "$rel" in
     '' | /*) return 2 ;;
   esac
@@ -1184,27 +1168,8 @@ ns_archive_file_review_source() {
     rm -f "$tmp"
     return 2
   }
-  awk -v filed="$filed" '
-    function handled(s) {
-      t = tolower(s)
-      return t ~ / · (fixed|ignored|answered|rejected-because|accepted-tradeoff)/
-    }
-    function flush() {
-      if (buf == "") return
-      if (handled(buf)) printf "%s\n", buf >> filed
-      else printf "%s\n", buf
-      buf = ""
-    }
-    /^Filed:/ { flush(); print; next }
-    /^- Filed:/ { flush(); print; next }
-    /^- / { flush(); buf = $0; next }
-    /^# / { flush(); print; next }
-    {
-      if (buf != "") buf = buf "\n" $0
-      else print
-    }
-    END { flush() }
-  ' "$live" >"$tmp" || {
+  awk -v op=file -v filed="$filed" -v dispositions="$NS_REVIEW_DISPOSITIONS" -f "$_NS_INBOX_AWK" \
+    "$live" >"$tmp" || {
     rm -f "$tmp" "$filed"
     return 2
   }
@@ -1224,7 +1189,7 @@ ns_archive_file_review_source() {
     printf '\n' >>"$dest"
     cat "$filed" >>"$dest"
   else
-    if [ "$base" = snag-log.md ]; then
+    if [ "$key" = snag-log ]; then
       title='# Snag Log'
     else
       title='# Parking Lot'
@@ -1244,12 +1209,14 @@ ns_archive_file_review_source() {
   return 0
 }
 
-# ns_archive_check_review_pointers <project> — one snag per missing Filed: target.
+# ns_archive_check_review_pointers <project> — one snag per missing Filed: target. A pointer is
+# read relative to the file that carries it and must stay inside the state directory.
 ns_archive_check_review_pointers() {
-  local project="$1" ns live dest rel line snag
+  local project="$1" ns live dest rel line snag key
   ns="$project/.nightshift"
-  snag="$ns/snag-log.md"
-  for live in "$ns/snag-log.md" "$ns/parking-lot.md"; do
+  ns_layout_set snag "$ns" snag-log
+  for key in snag-log parking-lot; do
+    ns_layout_set live "$ns" "$key"
     { [ -f "$live" ] && [ ! -L "$live" ]; } || continue
     while IFS= read -r line || [ -n "$line" ]; do
       printf '%s\n' "$line" | grep -qE '^Filed: \[[^]]+\]\([^)]+\)$' || continue
@@ -1258,8 +1225,11 @@ ns_archive_check_review_pointers() {
       [ -n "$rel" ] || continue
       dest=""
       case "$rel" in
-        /* | *..*) dest="" ;;
-        *) dest="$ns/$rel" ;;
+        /*) ;;
+        *)
+          dest="$(ns_normalize_path "${live%/*}/$rel")"
+          case "$dest" in "$ns"/*) ;; *) dest="" ;; esac
+          ;;
       esac
       if [ -n "$dest" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
         continue
@@ -1268,6 +1238,7 @@ ns_archive_check_review_pointers() {
         continue
       fi
       if [ ! -f "$snag" ]; then
+        ns_layout_parent "$ns" snag-log || return 2
         printf '# Snag Log\n\n' >"$snag" || return 2
       fi
       printf -- '- broken archive pointer · %s is not a readable file\n' "$rel" >>"$snag"
@@ -1278,8 +1249,8 @@ ns_archive_check_review_pointers() {
 
 # ns_archive_file_review_records <project> <date> <shift-id>
 ns_archive_file_review_records() {
-  ns_archive_file_review_source "$1" snag-log.md "$2" "$3" || return $?
-  ns_archive_file_review_source "$1" parking-lot.md "$2" "$3" || return $?
+  ns_archive_file_review_source "$1" snag-log "$2" "$3" || return $?
+  ns_archive_file_review_source "$1" parking-lot "$2" "$3" || return $?
   ns_archive_check_review_pointers "$1"
 }
 
@@ -1508,7 +1479,8 @@ ns_tool_map_ok() { # stdin = a JSON object of string values
 }
 
 ns_tool_rules() { # $1 = project dir, $2 = session override
-  local f="$1/.nightshift/rules.json" raw
+  local f raw
+  ns_layout_set f "$1/.nightshift" rules
   if [ -n "$2" ]; then
     raw="$2"
     ns_rules_map_parse "$raw" || {
@@ -1574,7 +1546,7 @@ ns_open_drafts() {
   ' "$1"
 }
 
-# Watchman reason codes — one token, no transcript. Written to .nightshift/.watch-reason
+# Watchman reason codes — one token, no transcript. Written to .nightshift/run/.watch-reason
 # (line 1 = code, line 2 = optional non-sensitive detail). Status and Doctor render the same
 # labels. Adding a code here is the contract; callers must not invent ad-hoc strings.
 ns_reason_label() {
@@ -1612,29 +1584,33 @@ ns_record_reason() { # <nightshift-dir> <code> [detail]
     *) code="stand-down" ;;
   esac
   detail="$(printf '%s' "$detail" | tr -d '\000-\037' | sed 's/[[:space:]]*$//')"
-  printf '%s\n%s\n' "$code" "$detail" >"$dir/.watch-reason"
+  ns_layout_parent "$dir" watch-reason || return 1
+  printf '%s\n%s\n' "$code" "$detail" >"$(ns_layout_path "$dir" watch-reason)"
 }
 
-ns_reason_code() { sed -n 1p "$1/.watch-reason" 2>/dev/null | tr -d '[:space:]'; }
-ns_reason_detail() { sed -n 2p "$1/.watch-reason" 2>/dev/null; }
+ns_reason_code() { sed -n 1p "$(ns_layout_path "$1" watch-reason)" 2>/dev/null | tr -d '[:space:]'; }
+ns_reason_detail() { sed -n 2p "$(ns_layout_path "$1" watch-reason)" 2>/dev/null; }
 
 # The shift log is the owner's record of what the runtime did. Append-only, one line per
 # event, in the format the gate and the control helpers already write. Hooks do not load
 # the control module, so this is the writer they share.
 ns_shift_log() { # <nightshift-dir> <line>
+  local log
   [ -d "$1" ] || return 0
-  printf '%s · %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$2" >>"$1/shift-log.md"
+  ns_layout_set log "$1" shift-log
+  mkdir -p "${log%/*}" 2>/dev/null || :
+  printf '%s · %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$2" >>"$log"
 }
 
-# Workspace schema. One integer in .nightshift/state-version is the authority. This plugin
-# supports version 1. A missing marker is legacy version 0 — existing files stay compatible,
-# and only an explicit setup/Doctor repair writes the marker. Newer integers fail closed.
-# Never rewrite or downgrade a future marker; never migrate from hooks, start, status,
-# archive, or recovery.
-NS_STATE_VERSION=1
+# Workspace schema. One integer in .nightshift/state-version is the authority, and it names the
+# layout the state files sit in. This plugin writes version 2. A missing marker is legacy version
+# 0, and version 1 is the flat layout before it; both stay operable in the paths they have, and
+# only an explicit migrate-state moves them. Newer integers fail closed. Never rewrite or downgrade
+# a future marker; never migrate from hooks, start, status, archive, or recovery.
+NS_STATE_VERSION="$NS_LAYOUT_VERSION"
 
 # ns_state_kind <workspace>
-# Prints: absent | legacy | current | malformed | future
+# Prints: absent | legacy | current | malformed | future. Legacy is any version below this one.
 # Return: 0 operable (legacy or current) · 1 malformed · 2 future · 3 absent
 ns_state_kind() {
   local ws="$1" ns marker raw lines
@@ -1643,7 +1619,7 @@ ns_state_kind() {
     printf 'absent'
     return 3
   fi
-  marker="$ns/state-version"
+  ns_layout_set marker "$ns" state-version
   if [ ! -e "$marker" ] && [ ! -L "$marker" ]; then
     printf 'legacy'
     return 0
@@ -1686,14 +1662,19 @@ ns_state_kind() {
 # Prints the integer when it can be read (0 if the marker is missing). Empty on
 # absent or malformed. Return matches ns_state_kind.
 ns_state_version() {
-  local ws="$1" kind raw
+  local ws="$1" kind raw="" marker
   kind="$(ns_state_kind "$ws")"
+  ns_layout_set marker "$ws/.nightshift" state-version
   case "$kind" in
     absent)
       return 3
       ;;
     legacy)
-      printf '0'
+      if [ -f "$marker" ]; then
+        IFS= read -r raw <"$marker" || true
+        raw="$(printf '%s' "$raw" | tr -d '\r')"
+      fi
+      printf '%s' "${raw:-0}"
       return 0
       ;;
     current)
@@ -1701,7 +1682,7 @@ ns_state_version() {
       return 0
       ;;
     future)
-      IFS= read -r raw <"$ws/.nightshift/state-version" || true
+      IFS= read -r raw <"$marker" || true
       raw="$(printf '%s' "$raw" | tr -d '\r')"
       printf '%s' "$raw"
       return 2
@@ -1732,7 +1713,7 @@ ns_state_refuse_message() {
 ns_write_state_version() {
   local ws="$1" n="$2" ns marker tmp
   ns="$ws/.nightshift"
-  marker="$ns/state-version"
+  ns_layout_set marker "$ns" state-version
   case "$n" in
     '' | *[!0-9]* | 0?*) return 1 ;;
   esac
@@ -1740,35 +1721,9 @@ ns_write_state_version() {
   if [ -L "$marker" ]; then
     return 1
   fi
-  tmp="$ns/.state-version.$$"
+  tmp="${marker%/*}/.state-version.$$"
   printf '%s\n' "$n" >"$tmp" || { rm -f "$tmp"; return 1; }
   mv "$tmp" "$marker" || { rm -f "$tmp"; return 1; }
-}
-
-# ns_migrate_state <workspace>
-# Legacy 0 → 1: write only the marker. Idempotent when already current.
-# Return: 0 migrated or already current · 1 armed · 2 unsupported · 3 write failed
-# Callers: setup and an explicit Doctor repair only. Never hooks, start, status, archive, recovery.
-ns_migrate_state() {
-  local ws="$1" kind
-  kind="$(ns_state_kind "$ws")"
-  case "$kind" in
-    current)
-      ns_migrate_receipts_layout "$ws"
-      return 0
-      ;;
-    legacy)
-      if [ -f "$ws/.nightshift/.shift-armed" ]; then
-        return 1
-      fi
-      ns_migrate_receipts_layout "$ws"
-      ns_write_state_version "$ws" "$NS_STATE_VERSION" || return 3
-      return 0
-      ;;
-    *)
-      return 2
-      ;;
-  esac
 }
 
 # Retention — archive-only, preview-first. 0 means keep forever. Unreadable rules
@@ -1778,7 +1733,8 @@ ns_migrate_state() {
 # ns_retention_days <workspace> <runtimeLogDays|archiveDays>
 # Prints a non-negative integer. Missing, nested, or unreadable → 0.
 ns_retention_days() {
-  local ws="$1" key="$2" f="$1/.nightshift/rules.json" raw=""
+  local ws="$1" key="$2" f raw=""
+  ns_layout_set f "$ws/.nightshift" rules
   case "$key" in
     runtimeLogDays)
       [ -z "${NIGHTSHIFT_RETENTION_RUNTIME_LOG_DAYS:-}" ] || { printf '%s' "$NIGHTSHIFT_RETENTION_RUNTIME_LOG_DAYS"; return 0; }
@@ -1824,30 +1780,32 @@ ns_archive_has_open_work() {
 # ns_retention_eligible <workspace>
 # Print "kind<TAB>rel<TAB>age<TAB>days" for allowlisted, old-enough, unprotected targets.
 ns_retention_eligible() {
-  local ws="$1" ns log_days arch_days age path rel
+  local ws="$1" ns log_days arch_days age path rel log_rel archive
   ns="$ws/.nightshift"
   [ -d "$ns" ] || return 0
   log_days="$(ns_retention_days "$ws" runtimeLogDays)"
   arch_days="$(ns_retention_days "$ws" archiveDays)"
+  ns_layout_rel_set log_rel "$ns" scheduled-log
+  ns_layout_rel_set archive "$ns" archive
 
-  if [ "$log_days" -gt 0 ] && [ -e "$ns/scheduled.log" ]; then
-    path="$(ns_under_nightshift "$ws" scheduled.log)" && {
+  if [ "$log_days" -gt 0 ] && [ -e "$ns/$log_rel" ]; then
+    path="$(ns_under_nightshift "$ws" "$log_rel")" && {
       age="$(ns_age_days "$path")" || age=""
       if [ -n "$age" ] && [ "$age" -ge "$log_days" ]; then
-        printf '%s\t%s\t%s\t%s\n' runtime-log scheduled.log "$age" "$log_days"
+        printf '%s\t%s\t%s\t%s\n' runtime-log "$log_rel" "$age" "$log_days"
       fi
     }
   fi
 
   [ "$arch_days" -gt 0 ] || return 0
-  [ -d "$ns/archive" ] && [ ! -L "$ns/archive" ] || return 0
-  for rel in "$ns/archive"/*; do
+  [ -d "$ns/$archive" ] && [ ! -L "$ns/$archive" ] || return 0
+  for rel in "$ns/$archive"/*; do
     [ -e "$rel" ] || continue
     rel="${rel#"$ns/"}"
     rel="${rel%/}"
     case "$rel" in
-      archive/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-      archive/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-shift-[1-9]*)
+      "$archive"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+      "$archive"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-shift-[1-9]*)
         case "${rel##*-shift-}" in *[!0-9]*) continue ;; esac
         ;;
       *) continue ;;
@@ -1866,10 +1824,11 @@ ns_retention_eligible() {
 # ns_retention_apply <workspace> — delete currently eligible allowlisted targets.
 # Return: 0 deleted or nothing eligible · 1 armed · 2 refused/failed
 ns_retention_apply() {
-  local ws="$1" ns kind rel path
+  local ws="$1" ns kind rel path armed
   ns="$ws/.nightshift"
   [ -d "$ns" ] || return 2
-  if [ -f "$ns/.shift-armed" ]; then
+  ns_layout_set armed "$ns" armed
+  if [ -f "$armed" ]; then
     return 1
   fi
   while IFS="$(printf '\t')" read -r kind rel _ _; do
@@ -2244,7 +2203,8 @@ ns_status_building() {
 
 # ns_status_stop_reason <ns> — the first line of the stop-work marker, or nothing.
 ns_status_stop_reason() {
-  ns_marker="$1/STOP"
+  local ns_marker
+  ns_layout_set ns_marker "$1" stop
   [ -f "$ns_marker" ] && [ ! -L "$ns_marker" ] || return 0
   IFS= read -r ns_line <"$ns_marker" 2>/dev/null || return 0
   printf '%s' "$ns_line"
@@ -2278,7 +2238,8 @@ ns_status_transitions() {
 # ns_status_deadline_remaining <ns> — `<n>h<m>m remaining`, `passed`, or nothing when there is no
 # deadline. The clock is read once, here, rather than in the skill.
 ns_status_deadline_remaining() {
-  ns_file="$1/deadline"
+  local ns_file
+  ns_layout_set ns_file "$1" deadline
   [ -f "$ns_file" ] && [ ! -L "$ns_file" ] || return 0
   IFS= read -r ns_epoch <"$ns_file" 2>/dev/null || return 0
   case "$ns_epoch" in '' | *[!0-9]*) return 0 ;; esac

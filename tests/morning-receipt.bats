@@ -30,22 +30,22 @@ write_shift_policy() {
   p="$(gated_project receipt-no-policy)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *'- Gates: npm run lint, npm test (punch list)'* ]]
+  [[ "$output" == *'- Gates: npm run lint, npm test (punch list)'* ]] || false
 }
 
 @test "a shift with no policy reports why nothing was verified" {
   p="$(gated_project receipt-no-policy-verified)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]]
-  [[ "$output" == *'- Verified: none — no shift policy was written'* ]]
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" == *'- Verified: none — no shift policy was written'* ]] || false
 }
 
 @test "a shift with no policy credits the owner with disabling nothing" {
   p="$(gated_project receipt-no-policy-disabled)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *'- Disabled by owner: none'* ]]
+  [[ "$output" == *'- Disabled by owner: none'* ]] || false
 }
 
 @test "a policy that chose verification none names the gates it disabled" {
@@ -53,10 +53,10 @@ write_shift_policy() {
   write_shift_policy "$p" none
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *'- Policy record: accepted'* ]]
-  [[ "$output" == *'- Verified: none — verification level none (owner)'* ]]
-  [[ "$output" == *'- Disabled by owner: npm run lint, npm test'* ]]
-  [[ "$output" != *'- Gates:'* ]]
+  [[ "$output" == *'- Policy record: accepted'* ]] || false
+  [[ "$output" == *'- Verified: none — verification level none (owner)'* ]] || false
+  [[ "$output" == *'- Disabled by owner: npm run lint, npm test'* ]] || false
+  [[ "$output" != *'- Gates:'* ]] || false
 }
 
 @test "a policy that kept verification on disables nothing" {
@@ -64,8 +64,8 @@ write_shift_policy() {
   write_shift_policy "$p" final
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *'- Verified: none — verification level final (owner)'* ]]
-  [[ "$output" == *'- Disabled by owner: none'* ]]
+  [[ "$output" == *'- Verified: none — verification level final (owner)'* ]] || false
+  [[ "$output" == *'- Disabled by owner: none'* ]] || false
 }
 
 @test "a shift with no policy and no gates states the same reason without a gate line" {
@@ -73,9 +73,9 @@ write_shift_policy() {
   printf '# Punch list\n\n## Items\n\n- [x] Tidy the changelog\n' >"$p/.nightshift/punch-list.md"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" != *'- Gates:'* ]]
-  [[ "$output" == *'- Verified: none — no shift policy was written'* ]]
-  [[ "$output" == *'- Disabled by owner: none'* ]]
+  [[ "$output" != *'- Gates:'* ]] || false
+  [[ "$output" == *'- Verified: none — no shift policy was written'* ]] || false
+  [[ "$output" == *'- Disabled by owner: none'* ]] || false
 }
 
 # The morning page is the one artefact an owner reads without being asked, so the two renderers
@@ -110,8 +110,8 @@ write_shift_policy() {
   diff -u <(printf '%s\n' "$a") <(printf '%s\n' "$b")
 
   # And neither leaks the template it read past.
-  ! printf '%s' "$a" | grep -qF '<title>'
-  ! printf '%s' "$b" | grep -qF '<title>'
+  ! printf '%s' "$a" | grep -qF '<title>' || false
+  ! printf '%s' "$b" | grep -qF '<title>' || false
 }
 
 FIX="$BATS_TEST_DIRNAME/fixtures/morning-receipt"
@@ -135,23 +135,23 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
   p="$(policy_fixture_project receipt-policy-accepted shift-policy-valid.json)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$RECEIPTS_LINE"* ]]
-  [[ "$output" == *"$ITEM_LINE"* ]]
-  [[ "$output" == *'- Policy record: accepted'* ]]
-  [[ "$output" == *'- Shift: 9f2c40ab77e51d63'* ]]
-  [[ "$output" == *'- Started: 2026-09-02T02:30:00Z'* ]]
-  [[ "$output" != *'no shift policy was written'* ]]
+  [[ "$output" == *"$RECEIPTS_LINE"* ]] || false
+  [[ "$output" == *"$ITEM_LINE"* ]] || false
+  [[ "$output" == *'- Policy record: accepted'* ]] || false
+  [[ "$output" == *'- Shift: 9f2c40ab77e51d63'* ]] || false
+  [[ "$output" == *'- Started: 2026-09-02T02:30:00Z'* ]] || false
+  [[ "$output" != *'no shift policy was written'* ]] || false
 }
 
 @test "an absent policy is named as absent and still lists every item" {
   p="$(policy_fixture_project receipt-policy-absent absent)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$RECEIPTS_LINE"* ]]
-  [[ "$output" == *"$ITEM_LINE"* ]]
-  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]]
-  [[ "$output" == *'- Verified: none — no shift policy was written'* ]]
-  [[ "$output" != *'- Shift: 9f2c40ab77e51d63'* ]]
+  [[ "$output" == *"$RECEIPTS_LINE"* ]] || false
+  [[ "$output" == *"$ITEM_LINE"* ]] || false
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" == *'- Verified: none — no shift policy was written'* ]] || false
+  [[ "$output" != *'- Shift: 9f2c40ab77e51d63'* ]] || false
 }
 
 @test "unreadable and schema-failing policies are named as malformed and still render the page" {
@@ -160,14 +160,57 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
     p="$(policy_fixture_project "receipt-policy-$kind" "$kind")"
     run bash "$RECEIPT" --project "$p" --view owner
     [ "$status" -eq 0 ]
-    [[ "$output" == *"$RECEIPTS_LINE"* ]]
-    [[ "$output" == *"$ITEM_LINE"* ]]
-    [[ "$output" == *'- Policy record: malformed — the policy file is present but unreadable or fails the schema'* ]]
-    [[ "$output" == *'- Verified: none — the policy file is present but unreadable or fails the schema'* ]]
-    [[ "$output" != *'no shift policy was written'* ]]
-    [[ "$output" != *'- Shift: 9f2c40ab77e51d63'* ]]
-    [[ "$output" == *'- Items: 1 ticked, 1 open'* ]]
+    [[ "$output" == *"$RECEIPTS_LINE"* ]] || false
+    [[ "$output" == *"$ITEM_LINE"* ]] || false
+    [[ "$output" == *'- Policy record: malformed — the policy file is present but unreadable or fails the schema'* ]] || false
+    [[ "$output" == *'- Verified: none — the policy file is present but unreadable or fails the schema'* ]] || false
+    [[ "$output" != *'no shift policy was written'* ]] || false
+    [[ "$output" != *'- Shift: 9f2c40ab77e51d63'* ]] || false
+    [[ "$output" == *'- Items: 1 ticked, 1 open'* ]] || false
   done
+}
+
+@test "after clock-out only the ended shift's own archived policy is read" {
+  p="$(policy_fixture_project receipt-policy-archived absent)"
+  rm -f "$p/.nightshift/.shift-armed"
+  a="$p/.nightshift/archive"
+  mkdir -p "$a/2026-09-01" "$a/2026-09-02"
+  # An earlier night, filed under its own id.
+  jq '.shiftId = "1111111111111111"' "$FIX/shift-policy-valid.json" >"$a/2026-09-01/shift-policy-1111111111111111.json"
+
+  # This shift wrote no policy, so its ending names no id: the earlier night's is not its record.
+  : >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" != *'1111111111111111'* ]] || false
+
+  # An ending that names another id finds nothing of its own either.
+  printf 'shiftId=2222222222222222\narchiveRoot=archive\narchiveLayout=date\n' >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" != *'1111111111111111'* ]] || false
+
+  # The ended shift's own filed snapshot is the record.
+  cp "$FIX/shift-policy-valid.json" "$a/2026-09-02/shift-policy-9f2c40ab77e51d63.json"
+  printf 'shiftId=9f2c40ab77e51d63\narchiveRoot=archive\narchiveLayout=date\n' >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: accepted'* ]] || false
+  [[ "$output" == *'- Shift: 9f2c40ab77e51d63'* ]] || false
+
+  # A file under that name that holds another shift's snapshot is not this shift's.
+  jq '.shiftId = "1111111111111111"' "$FIX/shift-policy-valid.json" >"$a/2026-09-02/shift-policy-9f2c40ab77e51d63.json"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: absent — the shift wrote no policy'* ]] || false
+  [[ "$output" != *'1111111111111111'* ]] || false
+
+  # A shift the schema identifies by UUID is found the same way.
+  uuid=123e4567-e89b-12d3-a456-426614174000
+  jq --arg id "$uuid" '.shiftId = $id' "$FIX/shift-policy-valid.json" >"$a/2026-09-02/shift-policy-$uuid.json"
+  printf 'shiftId=%s\narchiveRoot=archive\narchiveLayout=date\n' "$uuid" >"$p/.nightshift/.ended"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [[ "$output" == *'- Policy record: accepted'* ]] || false
+  [[ "$output" == *"- Shift: $uuid"* ]] || false
 }
 
 # verdict_project <name> — a shift with usage marks and pauses, a history of commits, a wrapped
@@ -268,24 +311,24 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   p="$(verdict_project verdict-times)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'## How it ended\n'* ]]
+  [[ "$output" == *$'## How it ended\n'* ]] || false
   # The arming mark, not the policy's earlier createdAt.
-  [[ "$output" == *'- Started: 2026-09-21T14:13:20Z'* ]]
-  [[ "$output" == *'- Ended: 2026-09-21T15:10:05Z'* ]]
+  [[ "$output" == *'- Started: 2026-09-21T14:13:20Z'* ]] || false
+  [[ "$output" == *'- Ended: 2026-09-21T15:10:05Z'* ]] || false
 }
 
 @test "time and tokens split the pauses by reason, and the reasons sum to the total" {
   p="$(verdict_project verdict-usage)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *'- Span: 2026-09-21T14:13:20Z → 2026-09-21T15:10:05Z'* ]]
+  [[ "$output" == *'- Span: 2026-09-21T14:13:20Z → 2026-09-21T15:10:05Z'* ]] || false
   # Esc gaps 1100s and 1000s, the revival 800s: 2900s paused inside a 3405s wall.
-  [[ "$output" == *$'- Working: 8m 25s\n- Paused: 48m 20s\n  - owner pressed Esc: 35m 0s\n  - the session ended and the shift was revived: 13m 20s\n- Wall: 56m 45s'* ]]
-  [[ "$output" == *'| input | 400 |'* ]]
-  [[ "$output" == *'| cache write | unavailable |'* ]]
-  [[ "$output" == *'| cache read | 12.0k |'* ]]
-  [[ "$output" == *'| reasoning | unavailable |'* ]]
-  [[ "$output" == *'claude claude-opus-5-5 · 1 segment. Cache reads and cache writes are separate from the input figure; reasoning is inside output.'* ]]
+  [[ "$output" == *$'- Working: 8m 25s\n- Paused: 48m 20s\n  - owner pressed Esc: 35m 0s\n  - the session ended and the shift was revived: 13m 20s\n- Wall: 56m 45s'* ]] || false
+  [[ "$output" == *'| input | 400 |'* ]] || false
+  [[ "$output" == *'| cache write | unavailable |'* ]] || false
+  [[ "$output" == *'| cache read | 12.0k |'* ]] || false
+  [[ "$output" == *'| reasoning | unavailable |'* ]] || false
+  [[ "$output" == *'claude claude-opus-5-5 · 1 segment. Cache reads and cache writes are separate from the input figure; reasoning is inside output.'* ]] || false
 }
 
 @test "a measurement the owner turned off reads off, not unavailable" {
@@ -294,15 +337,15 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'## Time and tokens\n\n- Time: off\n- Tokens: off\n'* ]]
-  [[ "$output" != *'| Tokens | Amount |'* ]]
+  [[ "$output" == *$'## Time and tokens\n\n- Time: off\n- Tokens: off\n'* ]] || false
+  [[ "$output" != *'| Tokens | Amount |'* ]] || false
 }
 
 @test "every item has one line, linked only to a receipt that exists" {
   p="$(verdict_project verdict-items)"
   run bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'## Items\n\n- [1. Add the parser.](./a1b2-add-the-parser.md) — ticked\n- 2. Wire the parser into the CLI. — ticked\n- 3. Document the flags. — open\n'* ]]
+  [[ "$output" == *$'## Items\n\n- [1. Add the parser.](./a1b2-add-the-parser.md) — ticked\n- 2. Wire the parser into the CLI. — ticked\n- 3. Document the flags. — open\n'* ]] || false
   local link
   for link in $(printf '%s\n' "$output" | grep -o '](\./[^)]*\.md)' | sed 's/^](\.\///; s/)$//' | grep -v '^README.md$'); do
     [ -f "$p/.nightshift/receipts/$link" ] || { echo "dangling link: $link"; return 1; }
@@ -321,7 +364,7 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
 - \`$late\` docs: late notes — 1 file, 200 lines (+200/-0), 1 commit
 - [1. Add the parser.](./a1b2-add-the-parser.md) — 2 files, 70 lines (+70/-0), 2 commits
 - 2. Wire the parser into the CLI. — 1 file, 5 lines (+5/-0), 1 commit
-- Whole range: \`git log --stat $first^..$last\`"* ]]
+- Whole range: \`git log --stat $first^..$last\`"* ]] || false
 }
 
 @test "review first does not apply to an artifact shift" {
@@ -329,8 +372,8 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   printf 'artifact\n' >"$p/.nightshift/work-mode"
   run bash "$RECEIPT" --project "$p" --view artifact
   [ "$status" -eq 0 ]
-  [[ "$output" == *$'## Review first\n\n- Does not apply: an artifact shift is reviewed through its receipts.\n'* ]]
-  [[ "$output" != *'git log'* ]]
+  [[ "$output" == *$'## Review first\n\n- Does not apply: an artifact shift is reviewed through its receipts.\n'* ]] || false
+  [[ "$output" != *'git log'* ]] || false
 }
 
 @test "interruptions come from the shift log, since the shift started" {
@@ -342,9 +385,9 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
 - 2026-09-21 18:01:00 · watchman: site dead quiet mid-shift — resume attempt 1 (resume)
 - 2026-09-21 18:30:00 · stall warning — session active, no durable checkpoint since the last 3 stop attempts, 1/3 done; keeping shift open
 - 2026-09-21 19:10:00 · stopped by owner
-'* ]]
-  [[ "$output" != *'2026-09-21 10:00:00'* ]]
-  [[ "$output" != *'install the parser'* ]]
+'* ]] || false
+  [[ "$output" != *'2026-09-21 10:00:00'* ]] || false
+  [[ "$output" != *'install the parser'* ]] || false
 }
 
 @test "parked decisions render in full, with the default and the rollback" {
@@ -357,9 +400,9 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   - Default: flag off until the Windows path lands
   - Rollback: delete the flag
 - **The schema promises a replay check that nothing implements.** Start never refuses a reused id. Default chosen: not built in this shift.
-'* ]]
-  [[ "$output" != *'[notice]'* ]]
-  [[ "$output" != *'An answered question'* ]]
+'* ]] || false
+  [[ "$output" != *'[notice]'* ]] || false
+  [[ "$output" != *'An answered question'* ]] || false
 }
 
 @test "found but not fixed lists this shift's unfixed snags with their reason" {
@@ -370,9 +413,9 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
 
 - CLI help is stale for --flag — accepted-tradeoff the flag is renamed in item 3
 - Windows path untested — open
-'* ]]
-  [[ "$output" != *'Old finding'* ]]
-  [[ "$output" != *'trailing comma'* ]]
+'* ]] || false
+  [[ "$output" != *'Old finding'* ]] || false
+  [[ "$output" != *'trailing comma'* ]] || false
 }
 
 @test "next step carries the open items and the handover line" {
@@ -382,7 +425,7 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   [[ "$output" == *'## Next step
 
 - 3. Document the flags.
-- Handover: 2026-09-21T19:00:00Z · handover — item 3 half done; next: write the flags table'* ]]
+- Handover: 2026-09-21T19:00:00Z · handover — item 3 half done; next: write the flags table'* ]] || false
 }
 
 @test "the owner view orders every verdict section" {
@@ -436,7 +479,7 @@ work_through() {
   grep -qxF -- '- 1. first. — ticked' "$p/.nightshift/receipts/$page"
   # Usage accounting belongs to the receipts, so the page has no time and tokens to report.
   [ ! -e "$p/.nightshift/usage/marks.tsv" ]
-  ! grep -q '^## Time and tokens' "$p/.nightshift/receipts/$page"
+  ! grep -q '^## Time and tokens' "$p/.nightshift/receipts/$page" || false
   # With no item spans to charge them to, each commit stands on its own line.
   grep -qE '^- `[0-9a-f]+` init — ' "$p/.nightshift/receipts/$page"
 }
@@ -448,7 +491,7 @@ work_through() {
   [ -f "$r/1-first.md" ]
   [ -f "$r/2-done.md" ]
   grep -qF '| 2. done. | ticked |' "$r/README.md"
-  ! grep -q '^Shift summary:' "$r/README.md"
+  ! grep -q '^Shift summary:' "$r/README.md" || false
   [ -z "$(find "$r" -name 'morning-*')" ]
   grep -qF 'morning receipt disabled by the owner (handoff.enabled)' "$p/.nightshift/shift-log.md"
 }

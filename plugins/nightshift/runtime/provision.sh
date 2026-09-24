@@ -167,9 +167,10 @@ HOST="$(cd -P "$PROJECT" 2>/dev/null && pwd)" || die "cannot cd to $PROJECT" 1
 WORKSPACE="$(ns_workspace_root "$HOST" 2>/dev/null)" || WORKSPACE="$HOST"
 TARGET="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || TARGET="$WORKSPACE"
 NS="$WORKSPACE/.nightshift"
-BASE="$NS/provision-baseline"
-MANIFEST="$NS/provision-surface"
-TX="$NS/provision-transaction.json"
+declare BASE MANIFEST TX
+ns_layout_set BASE "$NS" provision-baseline
+ns_layout_set MANIFEST "$NS" provision-surface
+ns_layout_set TX "$NS" provision-transaction
 
 # recover of a leftover engine transaction stays next door.
 if [ "$VERB" = recover ] && [ -f "$TX" ] && [ ! -f "$MANIFEST" ]; then

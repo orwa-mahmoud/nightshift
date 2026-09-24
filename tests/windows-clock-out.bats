@@ -8,11 +8,12 @@ CURSOR="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/cursor/clock-out-gate.sh"
 @test "Windows unreadable-rules clock-out names Setup like POSIX" {
   grep -qF '/nightshift:setup' "$CORE"
   grep -qF 'ask Nightshift to set up on Codex' "$CORE"
-  grep -qF '.nightshift/rules.json' "$CORE"
+  grep -qF '$(ns_layout_name "$NS" rules) clockOutMessage' "$CORE"
+  grep -qF 'stallMax/stallWarnEvery unreadable ($(ns_layout_name "$NS" rules) absent or incomplete)' "$CORE"
   grep -qF '/nightshift:setup' "$HELPER"
   grep -qF 'ask Nightshift to set up on Codex' "$HELPER"
-  grep -qF '.nightshift/rules.json clockOutMessage' "$HELPER"
-  grep -qF 'stallMax/stallWarnEvery unreadable (.nightshift/rules.json absent or incomplete)' "$HELPER"
+  grep -qF "\$(Get-NSLayoutName \$ns 'rules') clockOutMessage" "$HELPER"
+  grep -qF "stallMax/stallWarnEvery unreadable (\$(Get-NSLayoutName \$ns 'rules') absent or incomplete)" "$HELPER"
 }
 
 @test "Windows clock-out receipts commits match POSIX headless identity" {

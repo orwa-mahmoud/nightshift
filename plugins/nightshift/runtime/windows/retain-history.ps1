@@ -38,7 +38,7 @@ if ($kind -eq 'absent') {
 $ns = Join-Path $workspace '.nightshift'
 $logDays = Get-NSRetentionDays $workspace 'runtimeLogDays'
 $archDays = Get-NSRetentionDays $workspace 'archiveDays'
-$armed = Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf
+$armed = Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf
 
 Write-Output 'Nightshift retention preview'
 Write-Output "Workspace:      $workspace"

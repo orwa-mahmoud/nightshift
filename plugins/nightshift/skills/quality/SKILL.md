@@ -14,7 +14,8 @@ attached from (`skills/quality/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 Before scanning, read
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/execution-modes.md` — the state map, who
@@ -64,7 +65,7 @@ write the safe defaults in `execution-modes.md`. Otherwise ask three independent
    hours, tooling policy, and elevation, asked before any scan, compose, cut, or arm, per
    `execution-modes.md`.
 
-For the third question, read `$NS/work-mode` and the remembered project default with
+For the third question, read `$NS/run/work-mode` and the remembered project default with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy defaults-get`,
 run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" preflight-needs` against the areas this
 compose would select, fold every gap into the same question, and write the resolved policy with
@@ -133,13 +134,14 @@ In Guided mode keep only the areas and scope the owner selected.
 When review first was chosen, summarize evidence per catalog entry and top-level directory in plain
 numbers, then show the exact ordered work order. Offer three answers:
 
-- **fix now** — compose one Hunt work order from the selected catalog entries: append it to
- `$NS/work-orders.md` (heading, hours, and item; never clobber orders already
+- **fix now** — compose one Hunt work order from the selected catalog entries: run
+ `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" scaffold work-orders` and append it to
+ `$NS/staging/work-orders.md` (heading, hours, and item; never clobber orders already
  sitting there), then cut and start it through the Hunt cut and Start lifecycle. Never write
  the punch list first. Preserve every entry's contract. Apply the one deadline chosen for the
  combined shift. Follow Start's entire preflight before cutting or arming, exactly as run
  directly does.
-- **draft for later** — append them to `$NS/drafting-table.md` and arm nothing. The
+- **draft for later** — append them to `$NS/staging/drafting-table.md` and arm nothing. The
  drafting table is staging: it is never read by the gate, which is exactly why proposals can wait
  there safely. Tell the owner they can promote what they want into the punch list and run Start
  after promotion (`/nightshift:start` on Claude Code, or ask Nightshift to start on Codex), or
@@ -154,7 +156,8 @@ owner that nobody agreed to — the box and the start belong together, or neithe
 ## 5. Run directly
 
 When run directly was chosen, do not present the three-answer review menu. Compose one ordered Hunt
-work order, append it to `$NS/work-orders.md` (heading, hours, and item; never
+work order, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" scaffold work-orders` and append it to
+`$NS/staging/work-orders.md` (heading, hours, and item; never
 clobber orders already sitting there), then enter the same Hunt cut and Start lifecycle used by
 **fix now**. Never write the punch list first. Follow Start's entire preflight before cutting or
 arming, including the one-shift check, state and work target validation, stale run-control markers,
@@ -162,11 +165,11 @@ deadline handling, rules, and unattended permissions, and report unsupported per
 before arming as `execution-modes.md` describes.
 
 Only after it passes, cut the order and arm one shift with
-`touch "$NS/.shift-armed"` on POSIX, or
-`New-Item -ItemType File -Force "$NS\.shift-armed"` in native
+`touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"` on POSIX, or
+`New-Item -ItemType File -Force (& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" path armed)` in native
 Windows PowerShell; log the start, run the binding probe
 (`: nightshift-binding-probe` on POSIX, `$null = 'nightshift-binding-probe'`
-on native Windows), classify Codex `$NS/.shift-session` line 1 with
+on native Windows), classify Codex `$NS/run/.shift-session` line 1 with
 `ns_codex_identity_kind` from `$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh` (native
 Windows: `Get-NSCodexIdentityKind` after importing `Nightshift.psm1`) before arming the watchman
 or beginning item work, and arm the watchman exactly as the Start skill requires, with
@@ -174,7 +177,7 @@ or beginning item work, and arm the watchman exactly as the Start skill requires
 
 Implement and verify the selected entry contracts, and continue
 until the finite work is clear or the shared deadline ends. Record significant decisions and
-rollback instructions in `$NS/parking-lot.md`; never create a second
+rollback instructions in `$NS/inbox/parking-lot.md`; never create a second
 shift per quality area.
 
 If the stack no longer matches the current `## Gates` block, say so in one line and point to

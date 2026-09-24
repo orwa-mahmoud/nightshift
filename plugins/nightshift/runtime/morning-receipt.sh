@@ -129,13 +129,18 @@ fi
 NS="$WORKSPACE/.nightshift"
 [ -d "$NS" ] || die "no .nightshift/ at $WORKSPACE — run setup first" 2
 
-JSONL="$NS/evidence/findings.jsonl"
-PUNCH="$NS/punch-list.md"
-LOT="$NS/parking-lot.md"
-SNAGS="$NS/snag-log.md"
-LOG="$NS/shift-log.md"
-MAP="$NS/opportunity-map.md"
-STOP="$NS/STOP"
+JSONL="$(ns_layout_path "$NS" evidence)/findings.jsonl"
+declare PUNCH LOT SNAGS LOG MAP STOP SESSION_REC LIVE_POLICY USAGE ENDED_MARKER
+ns_layout_set PUNCH "$NS" punch-list
+ns_layout_set LOT "$NS" parking-lot
+ns_layout_set SNAGS "$NS" snag-log
+ns_layout_set LOG "$NS" shift-log
+ns_layout_set MAP "$NS" opportunity-map
+ns_layout_set STOP "$NS" stop
+ns_layout_set SESSION_REC "$NS" session
+ns_layout_set LIVE_POLICY "$NS" shift-policy
+ns_layout_set USAGE "$NS" usage
+ns_layout_set ENDED_MARKER "$NS" ended
 RECEIPTS_DIR="$(ns_receipts_dir "$WORKSPACE")"
 
 JSON_TOOL=""
@@ -290,7 +295,7 @@ _commit_count() {
 _session_host() {
   local i host
   SESSION_HOST=""
-  if [ -f "$NS/.shift-session" ] && [ ! -L "$NS/.shift-session" ]; then
+  if [ -f "$SESSION_REC" ] && [ ! -L "$SESSION_REC" ]; then
     host="$(ns_session_line "$NS" 5 2>/dev/null | tr -d '[:space:]')"
     [ -n "$host" ] && SESSION_HOST="$host" && return 0
   fi
@@ -547,6 +552,7 @@ _detail() {
 # ---------------------------------------------------------------- the policy that ran
 
 POLICY_FILE=""
+POLICY_WANT_ID=""
 P_SHIFTID=""
 P_CREATEDAT=""
 NALLOW=0
@@ -555,18 +561,25 @@ A_SCOPE=()
 A_PROVENANCE=()
 
 # The snapshot the shift ran under is the live file until the clock-out gate files it, and the
-# dated archive copy afterwards. A receipt rendered either side of that move says the same thing.
+# copy filed under the shift's own id afterwards. A receipt rendered either side of that move says
+# the same thing. An archived snapshot counts only when it is the one the ending marker names: any
+# other is a different night's, and this one then has no policy record.
 _find_policy() {
-  local cand
-  if [ -f "$NS/shift-policy.json" ] && [ ! -L "$NS/shift-policy.json" ]; then
-    POLICY_FILE="$NS/shift-policy.json"
+  local id root cand
+  if [ -f "$LIVE_POLICY" ] && [ ! -L "$LIVE_POLICY" ]; then
+    POLICY_FILE="$LIVE_POLICY"
     return 0
   fi
-  [ -d "$NS/archive" ] && [ ! -L "$NS/archive" ] || return 0
-  cand="$(find "$NS/archive" -maxdepth 2 -type f -name 'shift-policy-*.json' -print 2>/dev/null |
+  id="$(ns_ended_field "$WORKSPACE" shiftId)"
+  # A 16-hex token or a UUID, as the schema allows; nothing that could reach a pattern.
+  case "$id" in '' | *[!0-9a-f-]*) return 0 ;; esac
+  root="$(ns_archive_root "$WORKSPACE")" || return 0
+  [ -d "$root" ] && [ ! -L "$root" ] || return 0
+  cand="$(find "$root" -maxdepth 2 -type f -name "shift-policy-$id.json" -print 2>/dev/null |
     LC_ALL=C sort | tail -n 1)"
   [ -n "$cand" ] || return 0
   POLICY_FILE="$cand"
+  POLICY_WANT_ID="$id"
 }
 
 _classify_policy() {
@@ -578,6 +591,21 @@ _classify_policy() {
     absent) POLICY_KIND=absent ;;
     *) POLICY_KIND=malformed ;;
   esac
+}
+
+# _match_policy — an archived snapshot filed under this shift's id that names another shift inside
+# is not this night's record either.
+_match_policy() {
+  [ -n "$POLICY_WANT_ID" ] && [ "$POLICY_KIND" = accepted ] || return 0
+  [ "$P_SHIFTID" != "$POLICY_WANT_ID" ] || return 0
+  POLICY_FILE=""
+  POLICY_KIND=absent
+  P_SHIFTID=""
+  P_CREATEDAT=""
+  NALLOW=0
+  A_CATEGORY=()
+  A_SCOPE=()
+  A_PROVENANCE=()
 }
 
 _load_policy() {
@@ -644,8 +672,9 @@ _parked() {
   local title def rb kind
   P_COUNT=0
   [ -f "$LOT" ] && [ ! -L "$LOT" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$LOT" | awk -v op=parked -v fs="$FS" -v dot="$MIDDOT" -f "$READ_AWK" \
-    >"$TMPD/parked-parse"
+  sed 's/[[:cntrl:]]/ /g' "$LOT" \
+    | awk -v op=parked -v fs="$FS" -v dot="$MIDDOT" -v dispositions="$NS_REVIEW_DISPOSITIONS" \
+      -f "$READ_AWK" >"$TMPD/parked-parse"
   while IFS="$FS" read -r kind title def rb; do
     [ "$kind" = E ] || continue
     [ -n "$title" ] || continue
@@ -725,7 +754,7 @@ M_EPOCH=()
 M_LABEL=()
 
 _load_marks() {
-  local file="$NS/usage/marks.tsv" at label
+  local file="$USAGE/marks.tsv" at label
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   while IFS="$FS" read -r at label; do
     case "$at" in '' | *[!0-9]*) continue ;; esac
@@ -758,8 +787,8 @@ _shift_times() {
   case "$STARTED" in
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) SHIFT_DAY="${STARTED:0:10}" ;;
   esac
-  if [ -f "$NS/.ended" ] && [ ! -L "$NS/.ended" ]; then
-    at="$(ns_mtime "$NS/.ended")" || at=""
+  if [ -f "$ENDED_MARKER" ] && [ ! -L "$ENDED_MARKER" ]; then
+    at="$(ns_mtime "$ENDED_MARKER")" || at=""
     case "$at" in
       '' | *[!0-9]*) ;;
       *) _utc_stamp "$at" && ENDED_EPOCH="$at" && ENDED="$UTC_STAMP" ;;
@@ -1373,6 +1402,7 @@ _load_ledger
 _find_policy
 _classify_policy
 _load_policy
+_match_policy
 ns_policy_resolve_table "$WORKSPACE" >"$TMPD/resolved" 2>/dev/null ||
   : >"$TMPD/resolved"
 _load_marks

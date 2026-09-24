@@ -56,8 +56,8 @@ if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {
 }
 
 $ns = Join-NSPath $workspace '.nightshift'
-$manifest = Join-NSPath $ns 'provision-surface'
-$tx = Join-NSPath $ns 'provision-transaction.json'
+$manifest = Get-NSLayoutPath $ns 'provision-surface'
+$tx = Get-NSLayoutPath $ns 'provision-transaction'
 
 # Leftover engine transaction: the native recover still settles it.
 if (($Command -eq 'recover' -or $Command -eq 'rollback') -and
@@ -68,7 +68,7 @@ if (($Command -eq 'recover' -or $Command -eq 'rollback') -and
 
 # Thin seatbelt for the new surface format.
 $target = $workspace
-$wt = Join-NSPath $ns 'work-target'
+$wt = Get-NSLayoutPath $ns 'work-target'
 if (Test-Path -LiteralPath $wt -PathType Leaf) {
     $line = (Get-Content -LiteralPath $wt -TotalCount 1)
     if (-not [string]::IsNullOrEmpty($line)) {
@@ -105,7 +105,7 @@ switch ($Command) {
     'baseline' {
         if ($Surface.Count -lt 1) { exit (Write-NSSeatbeltUsage) }
         New-Item -ItemType Directory -Force -Path $ns | Out-Null
-        $base = Join-NSPath $ns 'provision-baseline'
+        $base = Get-NSLayoutPath $ns 'provision-baseline'
         if (Test-Path -LiteralPath $base) { Remove-Item -LiteralPath $base -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $base | Out-Null
         $rows = New-Object System.Collections.Generic.List[string]
@@ -176,7 +176,7 @@ switch ($Command) {
             Write-NSLf '{"detail":"no transaction","ok":true,"recovered":false}'
             exit 0
         }
-        $base = Join-NSPath $ns 'provision-baseline'
+        $base = Get-NSLayoutPath $ns 'provision-baseline'
         Get-Content -LiteralPath $manifest | ForEach-Object {
             if ([string]::IsNullOrEmpty($_)) { return }
             $parts = $_ -split "`t", 3

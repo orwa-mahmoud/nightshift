@@ -47,13 +47,14 @@ repo_root() {
 # ns_work_target <workspace>
 #
 # Resolve the work target Nightshift works on while keeping run state in <workspace>/.nightshift.
-# Setup persists the choice in .nightshift/work-target and the mode in .nightshift/work-mode.
+# Setup persists the choice in .nightshift/run/work-target and the mode in .nightshift/run/work-mode.
 # Readers prefer those records so resumed, scheduled, and revived sessions do not rediscover a
 # different folder. The path record may be absolute or relative to the workspace.
 # Return 2 when several child repositories make an unstored repository choice ambiguous, 3 when
 # the target is a disposable scratch path, 1 when nothing can be resolved.
 ns_work_target() {
-  local project="$1" record="$1/.nightshift/work-target" target="" child base top found="" mode=""
+  local project="$1" record target="" child base top found="" mode=""
+  ns_layout_set record "$project/.nightshift" work-target
   mode="$(ns_work_mode "$project")" || return 1
   if [ -L "$record" ]; then
     return 1
@@ -105,10 +106,10 @@ ns_work_target() {
 
 # ns_record_work_target <workspace> <path> [repository|artifact]
 # Persist an absolute canonical work-target path atomically. The optional mode defaults to
-# repository and is written to .nightshift/work-mode. Artifact mode records a persistent
+# repository and is written to .nightshift/run/work-mode. Artifact mode records a persistent
 # directory and does not require Git. Scratch paths are refused.
 ns_record_work_target() {
-  local project="$1" target="$2" mode="${3:-repository}" top tmp
+  local project="$1" target="$2" mode="${3:-repository}" top record tmp
   case "$mode" in repository | artifact) ;; *) return 1 ;; esac
   if ns_is_scratch_path "$target"; then
     return 3
@@ -122,11 +123,12 @@ ns_record_work_target() {
   if ns_is_scratch_path "$top"; then
     return 3
   fi
-  mkdir -p "$project/.nightshift" || return 1
+  ns_state_dir_ensure "$project" || return 1
   ns_record_work_mode "$project" "$mode" || return 1
-  tmp="$project/.nightshift/.work-target.$$"
+  ns_layout_set record "$project/.nightshift" work-target
+  tmp="${record%/*}/.work-target.$$"
   printf '%s\n' "$top" >"$tmp" || return 1
-  mv "$tmp" "$project/.nightshift/work-target"
+  mv "$tmp" "$record"
   ns_ensure_work_target_link "$project" || return 1
 }
 

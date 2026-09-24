@@ -109,5 +109,5 @@ ENVIRONMENTS="$BATS_TEST_DIRNAME/environments"
   [ "$remote_cleanup" -lt "$remote_receipt" ]
   grep -qF 'watchman_pid=$!' "$ENVIRONMENTS/disconnect-watchman.sh"
   grep -qF 'cleanup_best_effort()' "$CI"
-  ! grep -A2 'cleanup() {' "$CI" | grep -qF '|| true'
+  ! grep -A2 'cleanup() {' "$CI" | grep -qF '|| true' || false
 }

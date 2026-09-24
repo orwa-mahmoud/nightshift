@@ -98,7 +98,8 @@ ns_rules_load() {
 # ns_rules_check <workspace> — status 0 the file is the accepted shape.
 # Status 1 prints one named reason. Status 3 the file is absent.
 ns_rules_check() {
-  local f="$1/.nightshift/rules.json"
+  local f
+  ns_layout_set f "$1/.nightshift" rules
   if [ ! -f "$f" ]; then
     printf 'missing\n'
     return 3

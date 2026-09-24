@@ -25,7 +25,7 @@ path) · `3` a restore that could not be proven.
 
 Inspect the package manager → choose a compatible tool → `baseline` the files that will
 change → install → smoke → `diff` → record → tooling commit. On smoke or commit failure,
-`rollback` must actually run. Write `$NS/capabilities.json` only after the commit succeeds.
+`rollback` must actually run. Write `$NS/run/capabilities.json` only after the commit succeeds.
 Do not ask the owner to install Python or `jq`. No pinned recipe runner.
 
 [`tooling-hints.md`](tooling-hints.md) names the tools commonly used per ecosystem. It is a
@@ -39,6 +39,6 @@ bytes in the work target — it never writes through the link.
 
 ## Recovery
 
-Incomplete work is `$NS/provision-surface` plus `$NS/provision-baseline/`. A leftover
+Incomplete work is `$NS/run/provision-surface` plus `$NS/run/provision-baseline/`. A leftover
 `provision-transaction.json` from an older engine still settles through `recover`.
 Start refuses to arm on an unproven restore.

@@ -77,12 +77,12 @@ if ((Get-NSStateKind $workspace) -in @('malformed', 'future')) {
 }
 
 $ns = Join-Path $workspace '.nightshift'
-$punch = Join-Path $ns 'punch-list.md'
+$punch = Get-NSLayoutPath $ns 'punch-list'
 $counts = Get-NSBoxCounts $punch
-if (-not (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf) `
+if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf) `
     -or -not (Test-Path -LiteralPath $punch -PathType Leaf) `
-    -or ((Test-Path -LiteralPath (Join-Path $ns '.ended') -PathType Leaf) `
-        -and -not (Test-NSReparsePoint (Join-Path $ns '.ended')))) {
+    -or ((Test-Path -LiteralPath (Get-NSLayoutPath $ns 'ended') -PathType Leaf) `
+        -and -not (Test-NSReparsePoint (Get-NSLayoutPath $ns 'ended')))) {
     exit 0
 }
 
@@ -91,7 +91,7 @@ if ([string]::IsNullOrEmpty($sessionId)) {
 }
 
 $session = Read-NSSession $ns
-$workerPath = Join-Path $ns '.shift-worker'
+$workerPath = Get-NSLayoutPath $ns 'worker'
 $worker = ''
 if ((Test-Path -LiteralPath $workerPath -PathType Leaf) -and -not (Test-NSReparsePoint $workerPath)) {
     try {
@@ -109,7 +109,7 @@ elseif ($null -eq $session -or [string]::IsNullOrEmpty($session.SessionId) -or $
 }
 
 if ($counts.Open -gt 0) {
-    $pulse = Join-Path $ns '.shift-pulse'
+    $pulse = Get-NSLayoutPath $ns 'pulse'
     if (Test-NSReparsePoint $pulse) {
         Remove-Item -LiteralPath $pulse -Force -ErrorAction SilentlyContinue
     }

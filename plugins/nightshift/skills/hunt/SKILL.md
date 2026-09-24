@@ -14,7 +14,8 @@ attached from (`skills/hunt/SKILL.md`). Run every command below through
 in the PowerShell tool, same verbs — which resolves the host and the workspace; `ns help` lists the
 verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WORKSPACE`, `NS`,
 `NIGHTSHIFT_PLUGIN_ROOT`, `HOST`, `SOURCE`); `$NS` below is that `NS`. Never a bare relative path: the working
-directory persists between calls.
+directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
+`ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
 Read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/execution-modes.md` before composing: it
 carries the state map, who selects work, when the clock starts, direct-mode authority, the tooling
@@ -79,7 +80,7 @@ not a usable directory. Never `git init` a notes folder to get past a refusal.
 
 The GitHub issue-hunt entry is offered with the rest of the catalog. It consumes only
 drafting-table entries the Import issues skill created (canonical Source URL and
-`Status: proposed`); list them by reading `$NS/drafting-table.md`. Promote a selection by cutting
+`Status: proposed`); list them by reading `$NS/staging/drafting-table.md`. Promote a selection by cutting
 the item — never a copy — with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" import-issues --promote …`,
 or do the cut here when that helper cannot parse the file.
@@ -121,7 +122,7 @@ it for that shift alone and changes nothing persistent. Carrying a policy forwar
 elevation — an allowance is still the owner's to give. Otherwise ask **before scanning**, and
 before any compose, cut, or arm.
 
-Read `$NS/work-mode` and the remembered project default with
+Read `$NS/run/work-mode` and the remembered project default with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-policy defaults-get`,
 and run the permission preflight
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" preflight-needs`
@@ -184,10 +185,12 @@ objective, overlaps removed, rejected alternatives, and the stopping rule.
 This is the last look before anything is armed. Write nothing before approval.
 
 In **run directly**, do not ask again: write the order and immediately cut it into the active
-shift. Record significant discovery and selection decisions in `$NS/parking-lot.md`.
+shift. Record significant discovery and selection decisions in `$NS/inbox/parking-lot.md`.
 
-On approval, append to `$NS/work-orders.md` — hunt's own file; the drafting table stays the
-owner's room. Never clobber orders already sitting there — append below them:
+On approval, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" scaffold work-orders`, which creates
+`$NS/staging/work-orders.md` from its template the first time and keeps it after, then append to it —
+hunt's own file; the drafting table stays the owner's room. Never clobber orders already sitting
+there — append below them:
 
 ```text
 ## Work order — <ISO date time>
@@ -208,26 +211,31 @@ question and always starts now; choosing it was already explicit authorization.
 On **now** — start the shift yourself, here, without making the owner type another command. Follow
 the Start skill exactly, including its whole preflight and the unsupported-permission report
 described in `execution-modes.md`. Then clear the stale markers and
-**cut** the whole `## Work order` section out of `$NS/work-orders.md` (heading, hours, and item —
+**cut** the whole `## Work order` section out of `$NS/staging/work-orders.md` (heading, hours, and item —
 do not leave an empty order heading behind), put only the item under `## Items` in the punch list
 (a cut, never a copy — it must not exist in two places), and:
 
-- write `$NS/deadline` as a UNIX epoch from the recorded hours — `date +%s` plus hours*3600 on
+- for a product-evolution item (the standing loop or the owner walkthrough), run
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" scaffold product`, which creates
+  `$NS/product/opportunity-map.md` and `$NS/product/product-research.md` from their templates and
+  keeps any already there;
+
+- write `$NS/run/deadline` as a UNIX epoch from the recorded hours — `date +%s` plus hours*3600 on
   POSIX, or `Get-NSUnixTime` plus hours*3600 after
   `Import-Module "$NIGHTSHIFT_PLUGIN_ROOT\lib\Nightshift.psm1" -Force` on native Windows;
-- **arm the gate** with `touch "$NS/.shift-armed"` on POSIX, or
-  `New-Item -ItemType File -Force "$NS\.shift-armed"` in native Windows PowerShell;
+- **arm the gate** with `touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"` on POSIX, or
+  `New-Item -ItemType File -Force (& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" path armed)` in native Windows PowerShell;
 - log the start and run the binding probe (`: nightshift-binding-probe` on POSIX,
   `$null = 'nightshift-binding-probe'` on native Windows);
-- classify Codex `$NS/.shift-session` line 1 with `ns_codex_identity_kind` from
+- classify Codex `$NS/run/.shift-session` line 1 with `ns_codex_identity_kind` from
   `$NIGHTSHIFT_PLUGIN_ROOT/lib/lib.sh`, or `Get-NSCodexIdentityKind` after importing
   `Nightshift.psm1` on native Windows, before arming the watchman or beginning item work;
 - **arm the watchman** as the Start skill requires, with `ns watchman`, which resolves to this
   host's own.
 
 An empty `## Items` section still keeps the Shift contract and Gates; they bind the cut item.
-Record leftover campaign rules in `$NS/parking-lot.md` when they are not this order's.
+Record leftover campaign rules in `$NS/inbox/parking-lot.md` when they are not this order's.
 
-On **later** — the order stays parked in `$NS/work-orders.md` with its hours, costing nothing. It
+On **later** — the order stays parked in `$NS/staging/work-orders.md` with its hours, costing nothing. It
 arms nothing and the gate stays inert. Start (`/nightshift:start` on Claude Code, or ask Nightshift
 to start on Codex) will offer it when the owner is ready.

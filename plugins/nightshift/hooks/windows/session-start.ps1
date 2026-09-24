@@ -71,7 +71,7 @@ if ((Get-NSStateKind $workspace) -in @('malformed', 'future')) {
 }
 
 $ns = Join-Path $workspace '.nightshift'
-if (-not (Test-Path -LiteralPath (Join-Path $ns '.shift-armed') -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf)) {
     exit 0
 }
 
@@ -87,7 +87,7 @@ if ($null -eq $session -or [string]::IsNullOrEmpty($session.SessionId)) { exit 0
 $sessionId = Get-PayloadValue $payload 'session_id'
 if ([string]::IsNullOrEmpty($sessionId) -or $session.SessionId -cne $sessionId) { exit 0 }
 
-$marker = Join-Path $ns '.context-reset'
+$marker = Get-NSLayoutPath $ns 'context-reset'
 if (Test-NSReparsePoint $marker) {
     Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
 }
@@ -98,11 +98,11 @@ catch {
     Write-Verbose ('nightshift: could not write the context-reset marker - ' + $_.Exception.Message)
 }
 
-$line = 'nightshift: context was compacted — reload the nightshift skill, the contract in ' +
+$line = 'nightshift: context was compacted ' + [char]0x2014 + ' reload the nightshift skill, the contract in ' +
     'punch-list.md, and the active receipt under receipts/ before continuing.'
 $active = Get-NSActiveItem $workspace
 if (-not [string]::IsNullOrEmpty($active)) {
-    $line = $line + ' Receipts: one file per item under .nightshift/receipts/; the current item is ' +
+    $line = $line + ' Receipts: one file per item under ' + (Get-NSLayoutName (Join-Path $workspace '.nightshift') 'receipts') + '/; the current item is ' +
         $active + ' -> ' + (Get-NSReceiptBase $workspace $active) + '.md.'
 }
 $out = [pscustomobject]@{

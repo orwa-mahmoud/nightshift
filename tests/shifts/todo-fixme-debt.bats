@@ -22,8 +22,8 @@ SHIFT_MODES="$BATS_TEST_DIRNAME/../../docs/shift-modes.md"
   grep -qi 'underlying work' "$E"
 }
 
-@test "TODO debt stages ambiguity and refuses invented features" {
-  grep -qi 'drafting-table.md' "$E"
+@test "TODO debt parks ambiguity as an owner decision and refuses invented features" {
+  grep -qi 'owner decision in parking-lot.md' "$E"
   grep -qi 'do not guess the answer' "$E"
   grep -qi 'Never invent a feature' "$E"
   grep -qi 'Never delete or reword a marker' "$E"

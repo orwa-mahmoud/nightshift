@@ -4,15 +4,20 @@
 > while any item in the **Items** list below is an open `- [ ]`. Everything above that heading is
 > the contract — binding for the duration of the shift. Only the Items list changes: tick boxes to
 > `- [x]` as work finishes.
-> Owner-approved active work belongs here. Known later work belongs in `drafting-table.md`;
-> unresolved owner decisions belong in `parking-lot.md`; timed Hunt orders belong in
-> `work-orders.md`.
+> Owner-approved active work belongs here. The owner stages known later work in
+> `drafting-table.md`; findings go to `snag-log.md`; unresolved owner decisions belong in
+> `parking-lot.md`; timed Hunt orders belong in `work-orders.md`.
 
 ## Never idle, never ask, never wait
 
 - During a shift, asking the user is denied — park, don't ask. A decision that is genuinely the
   owner's goes in `parking-lot.md` in plain language, with the most sensible production-grade
   default chosen so work continues. Never block the run waiting for an answer.
+- A bug found while working is fixed on this shift and recorded in `snag-log.md` with the fix as its
+  disposition — never staged for later, never left for the owner to decide. Only a fix that would
+  change behaviour users rely on is the owner's: park it in `parking-lot.md` with the default
+  chosen, apply that default, and keep working. The drafting table is the owner's; write it only
+  when the owner asks.
 - There is always a next concrete edit. A walkthrough cycle that finds nothing new is success, not
   idleness.
 

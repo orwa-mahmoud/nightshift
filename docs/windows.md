@@ -29,7 +29,8 @@ session until it is.
 
 The native path uses the same on-disk contract and marker names as macOS and Linux:
 
-- setup copies only absent templates, writes `state-version`, records work-mode and the selected
+- setup copies only absent templates, writes `state-version` for a new site and describes the move
+  for an older one, records work-mode and the selected
   work target (a Git repository or a persistent folder), and can create the optional local-only
   receipts repository;
 - PreToolUse binds one session, creates and enforces the process lease, protects `rules.json` and
@@ -113,7 +114,7 @@ Generate and inspect a task without registering it:
 
 The generator prints one PowerShell registration command and the complete XML. The action invokes
 `powershell.exe` with an encoded command, preserves paths containing spaces, writes output to
-`.nightshift\scheduled.log`, and registers nothing itself. The deterministic `Nightshift-*` task
+`.nightshift\run\scheduled.log`, and registers nothing itself. The deterministic `Nightshift-*` task
 name lives in Task Scheduler's existing root folder, so first registration needs no separate folder
 creation. Preflight also fails `work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm` when the mode file is missing and Setup would propose artifact.
 It also fails `work target could not be resolved - a scheduled start will refuse to arm` when the recorded work target cannot be read.

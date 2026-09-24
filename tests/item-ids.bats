@@ -48,7 +48,7 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
   : >"$p/.nightshift/.shift-armed"
   run gate "$p"
   is_block "$output"
-  [[ "$output" != *'since this shift armed'* ]]
+  [[ "$output" != *'since this shift armed'* ]] || false
 }
 
 @test "recording again keeps every id, and a line that loses its id gets a new one" {
@@ -80,7 +80,7 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
   [ "$status" -ne 0 ]
   run lib ns_item_new_id "$p/.nightshift" "cccc"
   [ "$status" -eq 0 ]
-  [[ "$output" =~ ^[a-z][a-z0-9]{3}$ ]]
+  [[ "$output" =~ ^[a-z][a-z0-9]{3}$ ]] || false
 }
 
 @test "a policy that states its items digest leaves the list alone" {
@@ -124,7 +124,7 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
   [ "$(lib ns_receipt_path "$p" '5. Charge the right item.')" = "$p/.nightshift/receipts/k7q2-charge-the-right-item.md" ]
   [ "$(lib ns_receipt_path "$p" '6. No id yet.')" = "$p/.nightshift/receipts/6-no-id-yet.md" ]
   run pulse ns_pulse_receipts_start_line "$p" '5. Charge the right item.'
-  [[ "$output" == *'.nightshift/receipts/k7q2-charge-the-right-item.md'* ]]
+  [[ "$output" == *'.nightshift/receipts/k7q2-charge-the-right-item.md'* ]] || false
 }
 
 @test "renumbering and retitling an open item between shifts keeps its receipt and totals" {
