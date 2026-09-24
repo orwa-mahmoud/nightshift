@@ -637,10 +637,13 @@ try {
             @{ Name = 'both-off'; Receipts = $false; Handoff = $false })) {
         $comboProject = Join-Path $root ('switch-' + $combo.Name)
         $comboNs = New-ReceiptProject -Path $comboProject -Items "- [x] Quiet the lint rule`n- [ ] Rewrite the import map`n"
-        $comboRules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($rulesTemplate))
-        $comboRules['receipts']['enabled'] = $combo.Receipts
-        $comboRules['handoff']['enabled'] = $combo.Handoff
-        [IO.File]::WriteAllText((Join-Path $comboNs 'rules.json'), ((ConvertTo-NSCanonicalJson $comboRules) + "`n"), $utf8)
+        # The shipped template with only the two switches changed, byte for byte otherwise.
+        $comboRules = [IO.File]::ReadAllText($rulesTemplate)
+        foreach ($switch in @(@('receipts', $combo.Receipts), @('handoff', $combo.Handoff))) {
+            $comboRules = [regex]::Replace($comboRules, ('("' + $switch[0] + '"\s*:\s*\{\s*"enabled"\s*:\s*)true'),
+                ('${1}' + ([string]$switch[1]).ToLowerInvariant()))
+        }
+        [IO.File]::WriteAllText((Join-Path $comboNs 'rules.json'), $comboRules, $utf8)
         [IO.File]::WriteAllText((Join-Path $comboNs '.shift-armed'), '', $utf8)
         $payload = '{"session_id":"11111111-2222-3333-4444-555555555555","cwd":"' + ($comboProject -replace '\\', '/') + '"}'
         $held = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $payload `
@@ -650,7 +653,8 @@ try {
             "# Punch List`n`n## Gates`n`n- Item gate: ``npm run lint```n`n## Items`n`n- [x] Quiet the lint rule`n- [x] Rewrite the import map`n", $utf8)
         $released = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $payload `
             -Environment @{ CLAUDE_PROJECT_DIR = $comboProject }
-        Expect-True (-not $released.StdoutText.Contains('"decision":"block"')) "$($combo.Name): every box ticked releases the shift"
+        Expect-True (-not $released.StdoutText.Contains('"decision":"block"')) `
+            "$($combo.Name): every box ticked releases the shift ($($released.StdoutText.Trim()) $($released.StderrText.Trim()))"
         $receiptsDir = Join-Path $comboNs 'receipts'
         $names = @(Get-ChildItem -LiteralPath $receiptsDir -File -Force -ErrorAction SilentlyContinue |
                 ForEach-Object { $_.Name } | Sort-Object)
