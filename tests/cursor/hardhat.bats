@@ -13,6 +13,7 @@ is_cursor_deny() {
 @test "AskQuestion is parked with the template's own message" {
   p="$(new_project)"
   punch_open "$p"
+  bind_session "$p" cursor-tab cursor
   jq -nc --arg p "$p" \
     '{tool_name:"AskQuestion",conversation_id:"cursor-tab",transcript_path:"",cwd:$p,tool_input:{}}' \
     >"$BATS_TEST_TMPDIR/ask-question.json"
@@ -24,6 +25,7 @@ is_cursor_deny() {
 @test "cursor hardhat denies a forbidden Shell command during a shift" {
   p="$(new_project)"
   punch_open "$p"
+  bind_session "$p" fixture-cursor-conversation cursor
   run env CURSOR_PROJECT_DIR="$p" NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push' \
     bash "$CURSOR_HOOKS/hardhat.sh" <"$FIXTURES/shell-forbidden.json"
   is_cursor_deny
@@ -33,7 +35,7 @@ is_cursor_deny() {
   p="$(new_project)"
   punch_open "$p"
   jq -nc --arg p "$p" \
-    '{tool_name:"Shell",conversation_id:"cursor-tab",transcript_path:"/Users/o/.cursor/projects/x/agent-transcripts/u/u.jsonl",cwd:$p,tool_input:{command:"echo hi"}}' |
+    '{tool_name:"Shell",conversation_id:"cursor-tab",transcript_path:"/Users/o/.cursor/projects/x/agent-transcripts/u/u.jsonl",cwd:$p,tool_input:{command:": nightshift-binding-probe"}}' |
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/hardhat.sh"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "cursor-tab" ]
   [ "$(sed -n 5p "$p/.nightshift/.shift-session")" = "cursor" ]
@@ -133,9 +135,10 @@ is_cursor_deny() {
 
 # --- the policy files are control files, and elevation is the owner's switch ---
 
-# cursor_shell <project> <command> — the Shell payload this host sends.
+# cursor_shell <project> <command> — the Shell payload this host sends, from the shift's own tab.
 cursor_shell() {
   local p="$1" c="$2"
+  bind_session "$p" cursor-tab cursor
   jq -nc --arg p "$p" --arg c "$c" \
     '{tool_name:"Shell",conversation_id:"cursor-tab",transcript_path:"",cwd:$p,tool_input:{command:$c}}' |
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/hardhat.sh"
@@ -324,6 +327,7 @@ CMDS
 @test "a real write to the rules file is still refused" {
   p="$(new_project)"
   punch_open "$p"
+  bind_session "$p" cursor-tab cursor
   run cursor_sid_shell "$p" cursor-tab "echo '{}' > .nightshift/rules.json"
   is_cursor_deny
 }
@@ -332,6 +336,7 @@ CMDS
   p="$(new_project)"
   punch_open "$p"
   ln -s rules.json "$p/.nightshift/parking-lot.md"
+  bind_session "$p" cursor-tab cursor
   run cursor_sid_shell "$p" cursor-tab "echo 'inert looking note' >> .nightshift/parking-lot.md"
   is_cursor_deny
 }
@@ -340,6 +345,7 @@ CMDS
   p="$(new_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
+  bind_session "$p" cursor-tab cursor
   run cursor_sid_shell "$p" cursor-tab 'echo $(cat .nightshift/rules.json) >> .nightshift/parking-lot.md'
   is_cursor_deny
 }
@@ -348,6 +354,7 @@ CMDS
   p="$(new_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
+  bind_session "$p" cursor-tab cursor
   run cursor_sid_shell "$p" cursor-tab "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json"
   is_cursor_deny
 }

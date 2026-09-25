@@ -73,8 +73,10 @@ interactive one. Host-specific detail behind a verdict lives in
 Immediately after arming, Start — and Hunt or Quality when they start immediately — make a
 harmless host-shell probe—Bash on POSIX, PowerShell on
 native Windows—that records `.shift-session` before item work and creates `.shift-lease` for that
-process. Passive reads, searches, and MCP calls cannot
-make that first claim. The complete session record appears atomically; if two Start probes race,
+process. Only that probe makes the first claim: until it runs no conversation is on shift, so a
+tool call or stop attempt from any other conversation leaves the armed site unbound. A stop-work
+order drops the record and keeps the lease, and only the conversation the lease names records
+itself again. The complete session record appears atomically; if two Start probes race,
 one wins and the other is explicitly rejected. Gate and guard decisions then apply to the bound
 session and current lease owner; another conversation opened beside the shift can chat, ask, or
 issue the stop-work order without inheriting the shift gate. The session record's fifth line names

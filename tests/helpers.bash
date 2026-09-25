@@ -88,10 +88,22 @@ hook_payload() {
   "$@" <<<"$json"
 }
 
-# gate <project> [ENV=VAL ...] — a minimal Stop payload; the gate reads stdin now.
+# bind_session <project> [sid] [host] — record the shift's conversation in an armed site that names
+# none, as Start's binding probe does. A site already bound, or not armed, is left as it is.
+bind_session() {
+  bash -c '. "$1" || exit 1
+    root="$(ns_workspace_root "$2" 2>/dev/null)" || exit 0
+    ns="$root/.nightshift"
+    [ -f "$(ns_layout_path "$ns" armed)" ] || exit 0
+    ns_session_present "$ns" || ns_session_claim "$ns" "$3" "" "" "" "$4" || :' \
+    nightshift "$_TEST_ROOT/../plugins/nightshift/lib/lib.sh" "$1" "${2:-test-shift-session}" "${3:-claude}"
+}
+
+# gate <project> [ENV=VAL ...] — a Stop from the shift's own conversation; the gate reads stdin now.
 gate() {
   local p="$1"
   shift
+  bind_session "$p"
   hook_payload "$(jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/clock-out-gate.sh"
 }

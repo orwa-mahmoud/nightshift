@@ -847,6 +847,7 @@ REPORT
 
 # clock_out <project> — the real gate, on a shift with every box ticked.
 clock_out() {
+  bind_session "$1"
   jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}' |
     env CLAUDE_PROJECT_DIR="$1" bash "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/clock-out-gate.sh"
 }

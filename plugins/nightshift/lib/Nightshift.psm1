@@ -2353,19 +2353,36 @@ function Resolve-NSShiftUnbound {
         [AllowEmptyString()][string]$Nonce = '',
         [AllowEmptyString()][string]$Generation = '',
         [bool]$Revival = $false,
-        [Parameter(Mandatory = $true)][ValidateSet('hardhat', 'gate')][string]$Mode
+        [Parameter(Mandatory = $true)][ValidateSet('hardhat', 'gate')][string]$Mode,
+        [AllowEmptyString()][string]$SessionId = '',
+        [bool]$BindingProbe = $false
     )
     $session = Read-NSSession $NightshiftDir
+    if ($null -ne $session) {
+        return New-NSShiftDecision -Status Continue -Session $session
+    }
     $lease = Read-NSLease $NightshiftDir
-    if ($null -eq $session -and $null -ne $lease -and -not [string]::IsNullOrEmpty($lease.Nonce)) {
+    if ($null -ne $lease -and -not [string]::IsNullOrEmpty($lease.Nonce)) {
         if (-not $Revival -or -not (Test-NSLeaseNonce $NightshiftDir $HostName $Nonce $Generation)) {
             if ($Mode -eq 'hardhat') {
                 return New-NSShiftDecision -Status Fail -Message 'BLOCKED: this shift is being recovered before its new conversation is bound. Reopen the recorded conversation and retry after recovery.'
             }
             return New-NSShiftDecision -Status Pass
         }
+        return New-NSShiftDecision -Status Continue -Session $session
     }
-    return New-NSShiftDecision -Status Continue -Session $session
+    # No conversation is recorded. Start's binding probe writes that record right after arming, so a
+    # Stop or a tool call from any other conversation is not the shift's: a Start interrupted before
+    # its probe, or a stop-work order that dropped the record, leaves the site to no one. The
+    # conversation the lease still names may record itself again, and rebind judges a revival child.
+    # A payload that names no conversation cannot be told apart, so rebind and authorize judge it.
+    if ([string]::IsNullOrEmpty($SessionId) -or $BindingProbe -or $Revival) {
+        return New-NSShiftDecision -Status Continue -Session $session
+    }
+    if ($null -ne $lease -and -not [string]::IsNullOrEmpty($lease.SessionId) -and $lease.SessionId -eq $SessionId) {
+        return New-NSShiftDecision -Status Continue -Session $session
+    }
+    return New-NSShiftDecision -Status Pass
 }
 
 function Resolve-NSShiftRebind {

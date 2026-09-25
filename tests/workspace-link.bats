@@ -63,6 +63,7 @@ CODEX_HOOKS="$HOOKS/codex"
   workspace="$(new_project workspace)"
   punch_open "$workspace"
   bash "$RUNTIME/link-workspace.sh" --host-root "$host" --workspace "$workspace" >/dev/null
+  bind_session "$host" test-shift-session codex
 
   run bash -c 'jq -nc '\''{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}'\'' | env CODEX_PROJECT_DIR="$1" bash "$2/clock-out-gate.sh"' _ "$host" "$CODEX_HOOKS"
   is_block "$output"

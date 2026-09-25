@@ -19,6 +19,7 @@ mv rm ln env cmp date uname test dirname basename readlink stat printf true fals
 
 codex_gate() {
   local p="$1"
+  bind_session "$p" fixture-session codex
   hook_payload "$(jq -nc --arg p "$p" \
     '{hook_event_name:"Stop",session_id:"fixture-session",transcript_path:"",cwd:$p}')" \
     env CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/clock-out-gate.sh"
@@ -232,6 +233,7 @@ STUB
   mv "$p/.nightshift/punch-list.md.tmp" "$p/.nightshift/punch-list.md"
   grep -qxF -- '- [x] **1. Ship the fast-path feature.**' "$p/.nightshift/punch-list.md"
 
+  bind_session "$p" e2e-fast-session
   payload='{"hook_event_name":"Stop","session_id":"e2e-fast-session","transcript_path":""}'
   run bash -c 'printf "%s" "$1" | env -i PATH="$2" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" CLAUDE_PROJECT_DIR="$3" bash "$4"' \
     _ "$payload" "$bin" "$p" "$HOOKS/clock-out-gate.sh"

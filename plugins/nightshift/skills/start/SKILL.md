@@ -162,8 +162,8 @@ This harmless host-shell probe makes the hardhat record this conversation in `$N
 and claim generation 1 in `$NS/run/.shift-lease` before item work or the watchman begins. Its
 distinctive marker also makes a concurrent second Start fail explicitly if another session won the
 atomic session-file claim. Do not read files, search, call MCP, or yield between the marker and the
-probe: catch-all tool rules observe those calls, but passive tools cannot make the first session
-claim. Never create or edit the lease directly.
+probe: only the probe makes the first session claim, and until it runs no conversation is on shift.
+Never create or edit the lease directly.
 
 The probe must execute cleanly with no hook denial or hook error. On native Windows this is also
 the live check that the filesystem can make an atomic private session claim and lease. If it fails,

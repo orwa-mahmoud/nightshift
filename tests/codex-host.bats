@@ -101,8 +101,9 @@ codex_hook() {
   [ "$(cat "$outside")" = untouched ]
 }
 
-# codex_stop <project> — a Codex stop payload.
+# codex_stop <project> — a Codex stop payload from the shift's own conversation.
 codex_stop() {
+  bind_session "$1" sess-1 codex
   hook_payload "$(jq -nc --arg w "$1" '{session_id:"sess-1",cwd:$w,hook_event_name:"Stop"}')" \
     env CODEX_PROJECT_DIR="$1" bash "$CODEX/clock-out-gate.sh"
 }

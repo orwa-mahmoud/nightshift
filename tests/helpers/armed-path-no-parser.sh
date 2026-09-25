@@ -147,6 +147,10 @@ gate() {
     env CLAUDE_PROJECT_DIR="$PROJECT" bash "$HOOKS/clock-out-gate.sh"
 }
 
+probe_out="$(hardhat '{"tool_name":"Bash","session_id":"armed-path-session","transcript_path":"","tool_input":{"command":": nightshift-binding-probe"}}')"
+[ -z "$probe_out" ] || die "the binding probe was denied: $probe_out"
+say 'binding probe → bound armed-path-session'
+
 # --- Hardhat: 01B elevation + 01A slash-trick, real hook, no payload faker ---
 sudo_payload='{"tool_name":"Bash","tool_input":{"command":"/usr/bin/sudo id"}}'
 sudo_out="$(hardhat "$sudo_payload")"

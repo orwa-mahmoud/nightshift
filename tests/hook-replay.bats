@@ -4,7 +4,10 @@ FIX="$BATS_TEST_DIRNAME/fixtures/hooks/v1"
 CODEX_HOOKS="$HOOKS/codex"
 
 replay() { # <host-dir> <adapter> <fixture>
-  local host="$1" adapter="$2" fixture="$3"
+  local host="$1" adapter="$2" fixture="$3" sid
+  # The fixture's conversation is the shift's own, bound as Start's probe binds it.
+  sid="$(jq -r '.session_id // empty' "$fixture")"
+  [ -z "$sid" ] || bind_session "$host" "$sid" "${adapter%%-*}"
   case "$adapter" in
     claude-stop) env CLAUDE_PROJECT_DIR="$host" bash "$HOOKS/clock-out-gate.sh" <"$fixture" ;;
     claude-hardhat) env CLAUDE_PROJECT_DIR="$host" NIGHTSHIFT_FORBIDDEN_COMMANDS='git push' bash "$HOOKS/hardhat.sh" <"$fixture" ;;

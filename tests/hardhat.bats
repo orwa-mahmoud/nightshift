@@ -529,10 +529,10 @@ elevation_message() { # <project> <category>
 # The shift records its own identity: the first session to work under an active shift writes
 # .shift-session, and a second tab never overwrites it — the watchman must know WHICH
 # conversation to read and revive, not guess at the newest.
-@test "the first working session records itself and is never overwritten" {
+@test "the binding probe records its session, and a second tab never overwrites it" {
   p="$(new_project)"
   punch_open "$p"
-  jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:"echo hi"}}' |
+  jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "first-tab" ]
   jq -nc '{tool_name:"Bash",session_id:"second-tab",transcript_path:"/tmp/b.jsonl",tool_input:{command:"echo hi"}}' |
@@ -540,12 +540,12 @@ elevation_message() { # <project> <category>
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "first-tab" ]
 }
 
-@test "a symlink shift-session does not block the first working session" {
+@test "a symlink shift-session does not block the binding probe" {
   p="$(new_project)"
   punch_open "$p"
   printf 'planted-tab\n/tmp/plant.jsonl\n99999\nstart\nclaude\n' >"$p/.nightshift/session-plant"
   ln -s session-plant "$p/.nightshift/.shift-session"
-  jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:"echo hi"}}' |
+  jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
   [ -f "$p/.nightshift/.shift-session" ]
   [ ! -L "$p/.nightshift/.shift-session" ]
@@ -566,7 +566,7 @@ elevation_message() { # <project> <category>
 @test "a claude transcript keeps recording the claude host" {
   p="$(new_project)"
   punch_open "$p"
-  jq -nc '{tool_name:"Bash",session_id:"claude-tab",transcript_path:"/Users/o/.claude/projects/x/u.jsonl",tool_input:{command:"echo hi"}}' |
+  jq -nc '{tool_name:"Bash",session_id:"claude-tab",transcript_path:"/Users/o/.claude/projects/x/u.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
   [ "$(sed -n 5p "$p/.nightshift/.shift-session")" = "claude" ]
 }
@@ -595,7 +595,7 @@ case "$*" in
 esac
 STUB
   chmod +x "$stub/ps"
-  jq -nc '{tool_name:"Bash",session_id:"pid-tab",transcript_path:"/tmp/t.jsonl",tool_input:{command:"echo hi"}}' |
+  jq -nc '{tool_name:"Bash",session_id:"pid-tab",transcript_path:"/tmp/t.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     PATH="$stub:$PATH" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "pid-tab" ]
   sed -n 3p "$p/.nightshift/.shift-session" | grep -qE '^[0-9]+$'
@@ -605,7 +605,7 @@ STUB
 @test "no claude ancestor leaves the pid lines empty, never breaks the record" {
   p="$(new_project)"
   punch_open "$p"
-  jq -nc '{tool_name:"Bash",session_id:"bare-tab",transcript_path:"",tool_input:{command:"echo hi"}}' |
+  jq -nc '{tool_name:"Bash",session_id:"bare-tab",transcript_path:"",tool_input:{command:": nightshift-binding-probe"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "bare-tab" ]
   [ "$(wc -l <"$p/.nightshift/.shift-session")" -eq 5 ]
@@ -613,16 +613,16 @@ STUB
   [ "$(sed -n 5p "$p/.nightshift/.shift-session")" = "claude" ]
 }
 
-# The claim is an exclusive create: two racing first sessions cannot interleave — one record
+# The claim is an exclusive create: two racing binding probes cannot interleave — one record
 # lands whole, id and transcript from the same writer.
 @test "two racing identity claims land exactly one whole record" {
   for round in 1 2 3; do
     p="$(new_project "race$round")"
     punch_open "$p"
-    jq -nc '{tool_name:"Bash",session_id:"race-a",transcript_path:"/tmp/a.jsonl",tool_input:{command:"echo hi"}}' |
+    jq -nc '{tool_name:"Bash",session_id:"race-a",transcript_path:"/tmp/a.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
       CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh" &
     one=$!
-    jq -nc '{tool_name:"Bash",session_id:"race-b",transcript_path:"/tmp/b.jsonl",tool_input:{command:"echo hi"}}' |
+    jq -nc '{tool_name:"Bash",session_id:"race-b",transcript_path:"/tmp/b.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
       CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh" &
     two=$!
     wait "$one" "$two"
@@ -669,7 +669,7 @@ STUB
   is_deny "$output"
 }
 
-@test "a passive catch-all tool cannot claim the shift session" {
+@test "only the binding probe claims the shift session" {
   p="$(new_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"Read",tool_input:{file_path:"README.md"},session_id:"helper-tab"}' |
@@ -677,6 +677,10 @@ STUB
   [ -z "$out" ]
   [ ! -f "$p/.nightshift/.shift-session" ]
   out="$(jq -nc '{tool_name:"Bash",tool_input:{command:"pwd"},session_id:"shift-tab"}' |
+    env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
+  [ -z "$out" ]
+  [ ! -f "$p/.nightshift/.shift-session" ]
+  out="$(jq -nc '{tool_name:"Bash",tool_input:{command:": nightshift-binding-probe"},session_id:"shift-tab"}' |
     env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
   [ -z "$out" ]
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "shift-tab" ]

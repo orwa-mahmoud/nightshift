@@ -270,10 +270,10 @@ codex_hardhat_ask() {
   [ -z "$out" ]
 }
 
-@test "the codex hardhat records its host, and a second tab never overwrites it" {
+@test "the codex binding probe records its host, and a second tab never overwrites it" {
   p="$(new_project)"
   punch_open "$p"
-  jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:"echo hi"}}' |
+  jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "first-tab" ]
   [ "$(sed -n 2p "$p/.nightshift/.shift-session")" = "/tmp/a.jsonl" ]
@@ -285,13 +285,16 @@ codex_hardhat_ask() {
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "first-tab" ]
 }
 
-@test "a passive catch-all tool cannot claim the Codex shift session" {
+@test "only the binding probe claims the Codex shift session" {
   p="$(new_project)"
   punch_open "$p"
   jq -nc '{tool_name:"mcp__filesystem__read_file",session_id:"helper-tab",tool_input:{path:"README.md"}}' |
     CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
   [ ! -f "$p/.nightshift/.shift-session" ]
   jq -nc '{tool_name:"Bash",session_id:"shift-tab",tool_input:{command:"pwd"}}' |
+    CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
+  [ ! -f "$p/.nightshift/.shift-session" ]
+  jq -nc '{tool_name:"Bash",session_id:"shift-tab",tool_input:{command:": nightshift-binding-probe"}}' |
     CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "shift-tab" ]
 }

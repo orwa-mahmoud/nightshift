@@ -385,22 +385,36 @@ ns_lease_release_retry() { # $1 = the .nightshift dir
 # Sets NS_SHIFT_REC and NS_SHIFT_FAIL.
 # Returns 0 = continue as owner, 1 = pass through, 2 = fail closed.
 # shellcheck disable=SC2034
-ns_shift_unbound() { # <host> <mode:hardhat|gate>
-  local host="$1" mode="$2" bound
+ns_shift_unbound() { # <host> <mode:hardhat|gate> [binding-probe:0|1]
+  local host="$1" mode="$2" probe="${3:-0}" bound scope=""
   : "${LEASE_NONCE:=}" "${LEASE_GENERATION:=}"
   NS_SHIFT_FAIL=""
   bound="$(ns_session_line "$NS" 1)"
-  if [ -z "$bound" ] && ns_lease_load "$NS" && [ -n "$NS_LEASE_NONCE" ]; then
-    if [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] \
-      || ! ns_lease_nonce_matches "$NS" "$host" "$LEASE_NONCE" "$LEASE_GENERATION"; then
-      if [ "$mode" = hardhat ]; then
-        NS_SHIFT_FAIL="BLOCKED: this shift is being recovered before its new conversation is bound. Reopen the recorded conversation and retry after recovery."
-        return 2
+  [ -z "$bound" ] || return 0
+  if ns_lease_load "$NS"; then
+    if [ -n "$NS_LEASE_NONCE" ]; then
+      if [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] \
+        || ! ns_lease_nonce_matches "$NS" "$host" "$LEASE_NONCE" "$LEASE_GENERATION"; then
+        if [ "$mode" = hardhat ]; then
+          NS_SHIFT_FAIL="BLOCKED: this shift is being recovered before its new conversation is bound. Reopen the recorded conversation and retry after recovery."
+          return 2
+        fi
+        return 1
       fi
-      return 1
+      return 0
     fi
+    scope="$NS_LEASE_SID"
   fi
-  return 0
+  # No conversation is recorded. Start's binding probe writes that record right after arming, so a
+  # Stop or a tool call from any other conversation is not the shift's: a Start interrupted before
+  # its probe, or a stop-work order that dropped the record, leaves the site to no one. The
+  # conversation the lease still names may record itself again, and rebind judges a revival child.
+  # A payload that names no conversation cannot be told apart, so rebind and authorize judge it.
+  [ -n "${SID:-}" ] || return 0
+  [ "$probe" = 1 ] && return 0
+  [ "${NIGHTSHIFT_REVIVAL:-}" = "1" ] && return 0
+  [ -n "$scope" ] && [ "$scope" = "$SID" ] && return 0
+  return 1
 }
 
 # shellcheck disable=SC2034

@@ -464,7 +464,7 @@ $generation = [string]$env:NIGHTSHIFT_LEASE_GENERATION
 $revival = $env:NIGHTSHIFT_REVIVAL -eq '1'
 
 $unbound = Resolve-NSShiftUnbound -NightshiftDir $ns -HostName $HostName `
-    -Nonce $nonce -Generation $generation -Revival $revival -Mode gate
+    -Nonce $nonce -Generation $generation -Revival $revival -Mode gate -SessionId $sessionId
 if ($unbound.Status -eq 'Pass') { Write-Release }
 if ($unbound.Status -eq 'Fail') { Write-Block $unbound.Message }
 

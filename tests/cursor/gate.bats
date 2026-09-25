@@ -21,6 +21,7 @@ cursor_gate() {
     fixture="$1"
     shift
   fi
+  bind_session "$p" "$(jq -r '.conversation_id // .session_id' "$fixture")" cursor
   hook_payload "$(jq -nc --argjson base "$(cat "$fixture")" --arg p "$p" '$base + {cwd:$p}')" \
     env "$@" CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/clock-out-gate.sh"
 }
@@ -56,9 +57,12 @@ cursor_gate() {
   [ -f "$p/.nightshift/.ended" ]
 }
 
-@test "cursor gate records the shift session with cursor as its host" {
+@test "cursor gate holds the session its binding probe recorded with cursor as its host" {
   p="$(new_project)"
   punch_open "$p"
+  jq -nc --arg p "$p" \
+    '{tool_name:"Shell",conversation_id:"fixture-cursor-conversation",transcript_path:"",cwd:$p,tool_input:{command:": nightshift-binding-probe"}}' |
+    env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/hardhat.sh"
   run cursor_gate "$p" "$FIXTURES/stop-completed.json"
   is_cursor_block
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "fixture-cursor-conversation" ]

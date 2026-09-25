@@ -87,6 +87,12 @@ resolved_target="$(ns_work_target "$resolved_workspace")"
 [ "$resolved_workspace" = "$(cd "$workspace" && pwd)" ]
 [ "$resolved_target" = "$(cd "$work_target" && pwd)" ]
 
+claude_bound="$(
+  jq -nc --arg cwd "$host_root" \
+    '{tool_name:"Bash",session_id:"environment-claude",transcript_path:"",cwd:$cwd,tool_input:{command:": nightshift-binding-probe"}}' |
+    env CLAUDE_PROJECT_DIR="$host_root" bash "$CLAUDE_HARDHAT"
+)"
+[ -z "$claude_bound" ]
 claude_output="$(
   jq -nc --arg cwd "$host_root" \
     '{tool_name:"AskUserQuestion",session_id:"environment-claude",transcript_path:"",cwd:$cwd,tool_input:{}}' |
@@ -97,6 +103,12 @@ printf '%s' "$claude_output" |
 [ "$(stat -c '%a' "$workspace/.nightshift/.shift-lease")" = "600" ]
 
 rm -f "$workspace/.nightshift/.shift-session" "$workspace/.nightshift/.shift-lease"
+codex_bound="$(
+  jq -nc --arg cwd "$host_root" \
+    '{tool_name:"Bash",session_id:"12345678-1234-1234-1234-123456789abc",cwd:$cwd,tool_input:{command:": nightshift-binding-probe"}}' |
+    env CODEX_PROJECT_DIR="$host_root" bash "$CODEX_HARDHAT"
+)"
+[ -z "$codex_bound" ]
 codex_output="$(
   jq -nc --arg cwd "$host_root" \
     '{tool_name:"request_user_input",session_id:"12345678-1234-1234-1234-123456789abc",cwd:$cwd,tool_input:{}}' |

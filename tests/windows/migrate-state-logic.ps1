@@ -380,6 +380,9 @@ try {
     Remove-Item -LiteralPath (Join-Path $ns '.ended') -Force
     Write-Text (Join-Path $ns 'punch-list.md') "## Items`n- [ ] **1. work.**`n"
     Write-Text (Join-Path $ns '.shift-armed') ''
+    $probe = '{"session_id":"sess-1","transcript_path":"","cwd":"' + $old.Replace('\', '\\') + '","tool_name":"Bash","tool_input":{"command":"$null = ''nightshift-binding-probe''"}}'
+    $bound = Invoke-Script $hardhat @('-HostName', 'codex') $probe @{ CODEX_PROJECT_DIR = $old }
+    Expect-True ($bound.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($bound.Stdout)) "Start binds an armed version-1 site ($($bound.Stdout) $($bound.Stderr))"
     $payload = '{"session_id":"sess-1","transcript_path":"","cwd":"' + $old.Replace('\', '\\') + '","tool_name":"Bash","tool_input":{"command":"Remove-Item -Force .nightshift\\.shift-armed"}}'
     $deny = Invoke-Script $hardhat @('-HostName', 'codex') $payload @{ CODEX_PROJECT_DIR = $old }
     Expect-True ($deny.Stdout -match 'control files') "an armed version-1 site keeps its armed marker guarded ($($deny.Stdout) $($deny.Stderr))"
@@ -394,6 +397,9 @@ try {
     Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $ns 'rules.json') -Force
     Write-Text (Join-Path $ns 'punch-list.md') "## Items`n- [ ] **1. work.**`n"
     Write-Text (Join-Path $ns 'run/.shift-armed') ''
+    $probe = '{"session_id":"sess-2","transcript_path":"","cwd":"' + $new.Replace('\', '\\') + '","tool_name":"Bash","tool_input":{"command":"$null = ''nightshift-binding-probe''"}}'
+    $bound = Invoke-Script $hardhat @('-HostName', 'codex') $probe @{ CODEX_PROJECT_DIR = $new }
+    Expect-True ($bound.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($bound.Stdout)) "Start binds an armed version-2 site ($($bound.Stdout) $($bound.Stderr))"
     $payload = '{"session_id":"sess-2","transcript_path":"","cwd":"' + $new.Replace('\', '\\') + '","tool_name":"Bash","tool_input":{"command":"Remove-Item -Force .nightshift\\run\\.shift-armed"}}'
     $deny = Invoke-Script $hardhat @('-HostName', 'codex') $payload @{ CODEX_PROJECT_DIR = $new }
     Expect-True ($deny.Stdout -match 'control files') "a version-2 site keeps run/.shift-armed guarded ($($deny.Stdout) $($deny.Stderr))"
