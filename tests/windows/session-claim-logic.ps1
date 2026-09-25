@@ -26,7 +26,7 @@ function Expect-True {
     }
 }
 
-# Invoke-Hook <script> <payload> <workspace> [arguments] — one hook run as the host runs it, with
+# Invoke-Hook <script> <payload> <workspace> [arguments]: one hook run as the host runs it, with
 # the payload piped in and only CLAUDE_PROJECT_DIR set.
 function Invoke-Hook {
     param(
@@ -56,6 +56,7 @@ function Invoke-Hook {
         return [pscustomobject]@{
             ExitCode = [int]$LASTEXITCODE
             Stdout = (@($output | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) -join "`n")
+            Stderr = (@($output | Where-Object { $_ -is [Management.Automation.ErrorRecord] }) -join "`n")
         }
     }
     finally {
@@ -73,13 +74,13 @@ function Invoke-Stop {
     return Invoke-Hook $gate $payload $Workspace
 }
 
-function Invoke-Bash {
-    param([string]$Workspace, [string]$SessionId, [string]$Command)
+function Invoke-Tool {
+    param([string]$Workspace, [string]$SessionId, [string]$Tool, [string]$Command)
     $payload = @{
         session_id = $SessionId
         transcript_path = ''
         cwd = $Workspace
-        tool_name = 'Bash'
+        tool_name = $Tool
         tool_input = @{ command = $Command }
     } | ConvertTo-Json -Compress
     return Invoke-Hook $hardhat $payload $Workspace
@@ -112,15 +113,15 @@ try {
     $stop = Invoke-Stop $workspace 'helper-session'
     Expect-True ($stop.ExitCode -eq 0 -and $stop.Stdout -notmatch $blockPattern) `
         "a foreign Stop on a shift armed but never bound is released: $($stop.Stdout)"
-    $bash = Invoke-Bash $workspace 'helper-session' 'git status'
+    $bash = Invoke-Tool $workspace 'helper-session' 'Bash' 'git status'
     Expect-True ($bash.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($bash.Stdout)) `
-        "a foreign tool call on a shift armed but never bound is allowed: $($bash.Stdout)"
+        "a foreign tool call on a shift armed but never bound is allowed: $($bash.Stdout) $($bash.Stderr)"
     Expect-True ($null -eq (Read-NSSession $ns)) 'another conversation does not record itself on an unbound shift'
     Expect-True ($null -eq (Read-NSLease $ns)) 'another conversation does not lease an unbound shift'
 
-    $probe = Invoke-Bash $workspace 'shift-session' ": nightshift-binding-probe"
+    $probe = Invoke-Tool $workspace 'shift-session' 'PowerShell' "`$null = 'nightshift-binding-probe'"
     Expect-True ($probe.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($probe.Stdout)) `
-        "the binding probe still binds the shift: $($probe.Stdout)"
+        "the binding probe still binds the shift: $($probe.Stdout) $($probe.Stderr)"
     $session = Read-NSSession $ns
     Expect-True ($null -ne $session -and $session.SessionId -eq 'shift-session') 'the probe records its own conversation'
     $helperStop = Invoke-Stop $workspace 'helper-session'
@@ -133,11 +134,11 @@ try {
     Expect-True ($stopped.ExitCode -eq 0) "stop-shift succeeds: $($stopped.Stdout)"
     Expect-True ($null -eq (Read-NSSession $ns)) 'stop-shift drops the session record'
     Expect-True ($null -ne (Read-NSLease $ns)) 'stop-shift keeps the lease'
-    $helperBash = Invoke-Bash $workspace 'investigating-session' 'git status'
+    $helperBash = Invoke-Tool $workspace 'investigating-session' 'Bash' 'git status'
     Expect-True ($helperBash.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($helperBash.Stdout)) `
-        "another conversation is neither claimed nor fenced after a stop-work order: $($helperBash.Stdout)"
+        "another conversation is neither claimed nor fenced after a stop-work order: $($helperBash.Stdout) $($helperBash.Stderr)"
     Expect-True ($null -eq (Read-NSSession $ns)) 'another conversation does not take the dropped record'
-    $ownerBash = Invoke-Bash $workspace 'shift-session' "Remove-Item -Force .nightshift\run\.shift-armed"
+    $ownerBash = Invoke-Tool $workspace 'shift-session' 'Bash' "Remove-Item -Force .nightshift\run\.shift-armed"
     Expect-True ($ownerBash.Stdout -match 'control files') "the leased conversation stays under the site rules: $($ownerBash.Stdout)"
     $session = Read-NSSession $ns
     Expect-True ($null -ne $session -and $session.SessionId -eq 'shift-session') 'the leased conversation records itself again'
