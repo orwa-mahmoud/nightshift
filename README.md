@@ -140,7 +140,7 @@ ran, what was unavailable or disabled, and what needs your attention. Then read 
 
 - **The receipts index** — `.nightshift/receipts/README.md` lists every item with its state, its
   tokens, and its time, so the shape of the night is one table.
-- **Any item's receipt** — `.nightshift/receipts/<id>-<slug>.md` holds that item's story: what was
+- **Any item's receipt** — `.nightshift/receipts/<NN>-<slug>-<id>.md` holds that item's story: what was
   delivered, what was tried and rejected, how it was verified, and where the output landed. It
   updates during the work, so you can read a long-running item before it finishes.
 - **The diff or output files** — the work you will accept, revise, or reject.

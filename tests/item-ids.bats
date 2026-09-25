@@ -117,14 +117,84 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
   [ "$status" -eq 2 ]
 }
 
-@test "a new receipt is named for the item's id" {
+@test "a new receipt is named for the item's number, its title and its id" {
   p="$(new_project ids-receipt)"
   printf '## Items\n- [ ] **5. Charge the right item.** <!-- id: k7q2 -->\n- [ ] **6. No id yet.**\n' \
     >"$p/.nightshift/punch-list.md"
-  [ "$(lib ns_receipt_path "$p" '5. Charge the right item.')" = "$p/.nightshift/receipts/k7q2-charge-the-right-item.md" ]
+  [ "$(lib ns_receipt_path "$p" '5. Charge the right item.')" = "$p/.nightshift/receipts/05-charge-the-right-item-k7q2.md" ]
   [ "$(lib ns_receipt_path "$p" '6. No id yet.')" = "$p/.nightshift/receipts/6-no-id-yet.md" ]
   run pulse ns_pulse_receipts_start_line "$p" '5. Charge the right item.'
-  [[ "$output" == *'.nightshift/receipts/k7q2-charge-the-right-item.md'* ]] || false
+  [[ "$output" == *'.nightshift/receipts/05-charge-the-right-item-k7q2.md'* ]] || false
+}
+
+@test "a bare number followed by a dash, a bracket or a colon keeps the title in the label and the name" {
+  p="$(new_project ids-dash-number)"
+  printf '## Items\n- [ ] **1 — Inventory every surface.** <!-- id: ab12 -->\n- [ ] **12) Twelve things** <!-- id: cd34 -->\n- [ ] **3: Colon title** <!-- id: ef56 -->\n- [ ] **4 - Hyphen title — a note** <!-- id: gh78 -->\n- [ ] **P05 - Letter number.** <!-- id: ij90 -->\n' \
+    >"$p/.nightshift/punch-list.md"
+  [ "$(lib ns_item_rows "$p/.nightshift/punch-list.md" | cut -f1 | paste -sd'|' -)" = \
+    '1 — Inventory every surface.|12) Twelve things|3: Colon title|4 - Hyphen title|P05' ]
+  r="$p/.nightshift/receipts"
+  [ "$(lib ns_receipt_path "$p" '1 — Inventory every surface.')" = "$r/01-inventory-every-surface-ab12.md" ]
+  [ "$(lib ns_receipt_path "$p" '12) Twelve things')" = "$r/12-twelve-things-cd34.md" ]
+  [ "$(lib ns_receipt_path "$p" '3: Colon title')" = "$r/03-colon-title-ef56.md" ]
+  [ "$(lib ns_receipt_path "$p" '4 - Hyphen title')" = "$r/04-hyphen-title-gh78.md" ]
+  # A code before a dash stays the label, and the name takes the words of the whole title.
+  [ "$(lib ns_receipt_path "$p" 'P05')" = "$r/P05-letter-number-ij90.md" ]
+}
+
+@test "an item whose title carries no number is numbered by its place in the list" {
+  p="$(new_project ids-unnumbered)"
+  printf '## Items\n- [ ] **1. First.** <!-- id: ab12 -->\n- [ ] **Keep the model** <!-- id: cd34 -->\n' \
+    >"$p/.nightshift/punch-list.md"
+  [ "$(lib ns_receipt_path "$p" 'Keep the model')" = "$p/.nightshift/receipts/02-keep-the-model-cd34.md" ]
+}
+
+@test "between shifts a receipt takes the name its item carries now; on shift it keeps its name" {
+  p="$(new_project ids-rename)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf '## Items\n- [x] **1 — Inventory.** <!-- id: ab12 -->\n- [ ] **2. Fix the resolver.** <!-- id: cd34 -->\n- [ ] **3. Held.** <!-- id: ef56 -->\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf 'cut down to its number\n' >"$r/1.md"
+  printf 'named by id first\n' >"$r/cd34-fix-the-resolver.md"
+  touch -t 202609240101 "$r/cd34-fix-the-resolver.md"
+  # On shift the names hold still.
+  touch "$p/.nightshift/.shift-armed"
+  lib ns_receipts_write_index "$p"
+  [ -f "$r/1.md" ] && [ -f "$r/cd34-fix-the-resolver.md" ]
+  # Between shifts each receipt follows its item, keeps its time, and the index links the new name.
+  rm -f "$p/.nightshift/.shift-armed"
+  lib ns_receipts_write_index "$p"
+  [ "$(cat "$r/01-inventory-ab12.md")" = 'cut down to its number' ]
+  [ "$(cat "$r/02-fix-the-resolver-cd34.md")" = 'named by id first' ]
+  [ ! -e "$r/1.md" ] && [ ! -e "$r/cd34-fix-the-resolver.md" ]
+  [ -z "$(find "$r/02-fix-the-resolver-cd34.md" -newermt '2026-09-24 01:02' 2>/dev/null)" ]
+  grep -qF '[./02-fix-the-resolver-cd34.md](./02-fix-the-resolver-cd34.md)' "$r/README.md"
+}
+
+@test "a receipt never moves onto a link planted at its new name" {
+  p="$(new_project ids-rename-link)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '## Items\n- [ ] **3. Held.** <!-- id: ef56 -->\n' >"$p/.nightshift/punch-list.md"
+  printf 'the receipt\n' >"$r/ef56-held.md"
+  printf 'outside\n' >"$BATS_TEST_TMPDIR/outside.md"
+  ln -s "$BATS_TEST_TMPDIR/outside.md" "$r/03-held-ef56.md"
+  lib ns_receipts_rename "$p"
+  [ "$(cat "$r/ef56-held.md")" = 'the receipt' ]
+  [ -L "$r/03-held-ef56.md" ]
+  [ "$(cat "$BATS_TEST_TMPDIR/outside.md")" = outside ]
+}
+
+@test "recording the policy gives receipts their items' names before the shift arms" {
+  p="$(new_project ids-rename-record)"
+  mkdir -p "$p/.nightshift/receipts"
+  printf '# c\n\n## Items\n- [ ] **4. Renumbered.** <!-- id: k7q2 -->\n' >"$p/.nightshift/punch-list.md"
+  printf 'carried\n' >"$p/.nightshift/receipts/k7q2-old-title.md"
+  record "$p"
+  [ "$(cat "$p/.nightshift/receipts/04-renumbered-k7q2.md")" = carried ]
+  [ ! -e "$p/.nightshift/receipts/k7q2-old-title.md" ]
 }
 
 @test "renumbering and retitling an open item between shifts keeps its receipt and totals" {
@@ -150,6 +220,12 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
   # Tracking the same label again records nothing new.
   lib ns_receipt_track_label "$rec" '5. New title.'
   [ "$(grep -c '^Renamed from ' "$rec")" -eq 1 ]
+  # Between shifts the file takes the item's new name and keeps everything in it.
+  rm -f "$p/.nightshift/.shift-armed"
+  lib ns_receipts_write_index "$p"
+  [ ! -e "$rec" ]
+  grep -qxF 'Where it stands.' "$p/.nightshift/receipts/05-new-title-k7q2.md"
+  grep -qF '[./05-new-title-k7q2.md](./05-new-title-k7q2.md)' "$p/.nightshift/receipts/README.md"
 }
 
 @test "the runtime's own lines do not count as the model's receipt text" {
@@ -175,11 +251,11 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
     >"$p/.nightshift/punch-list.md"
   lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=4,output=2'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  rec="$p/.nightshift/receipts/aa11-p01.md"
+  rec="$p/.nightshift/receipts/P01-first-aa11.md"
   [ -f "$rec" ]
   grep -qF '| input | 4 |' "$rec"
   grep -qxF '<!-- item: P01 -->' "$rec"
-  grep -qF '[./aa11-p01.md](./aa11-p01.md)' "$p/.nightshift/receipts/README.md"
+  grep -qF '[./P01-first-aa11.md](./P01-first-aa11.md)' "$p/.nightshift/receipts/README.md"
 }
 
 @test "the archive index lists id-named receipts in the order of their headings" {

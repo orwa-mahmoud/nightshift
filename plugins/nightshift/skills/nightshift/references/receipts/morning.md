@@ -58,7 +58,7 @@ Receipts:
 
 ## Items
 
-- [<NN. full title>] (./<id>-<slug>.md) — <ticked|open>
+- [<NN. full title>] (./<NN>-<slug>-<id>.md) — <ticked|open>
 
 ## Review first
 

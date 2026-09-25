@@ -77,6 +77,18 @@ try {
     Expect-True ($cleanRun.Stdout.Contains('ok punch-list open=1 ticked=0')) 'clean site counts the punch list'
     Expect-True ($cleanRun.Stdout.Contains('ok deadline none (finite list')) 'a finite list needs no clock'
 
+    # A rotated journal never replaces a shift log Archive already filed that day.
+    $rotate = New-Site (Join-Path $root 'rotate')
+    $day = Get-Date -Format 'yyyy-MM-dd'
+    $filedDir = Join-Path $rotate ('.nightshift/archive/' + $day)
+    $null = New-Item -ItemType Directory -Force -Path $filedDir
+    [IO.File]::WriteAllText((Join-Path $filedDir 'shift-log.md'), "a filed shift log`n")
+    [IO.File]::WriteAllText((Join-Path $rotate '.nightshift/shift-log.md'), ('x' * 600000))
+    $rotateRun = Invoke-Preflight $rotate @('-HostName', 'claude')
+    Expect-True ($rotateRun.Stdout.Contains("ok journal rotated to archive/$day/shift-log-2.md")) "the journal takes the next name: $($rotateRun.Stdout)"
+    Expect-True ([IO.File]::ReadAllText((Join-Path $filedDir 'shift-log.md')) -ceq "a filed shift log`n") 'the filed shift log is kept'
+    Expect-True ((Get-Item -LiteralPath (Join-Path $filedDir 'shift-log-2.md')).Length -eq 600000) 'the whole journal is rotated'
+
     # Nothing scaffolded: refuse and name Setup.
     $bare = Join-Path $root 'bare'
     $null = New-Item -ItemType Directory -Path $bare

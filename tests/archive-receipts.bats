@@ -131,10 +131,21 @@ new_artifact() {
   p="$(new_artifact dest-file)"
   mkdir -p "$p/.nightshift/receipts" "$p/.nightshift/archive/2026-08-28"
   printf 'real\n' >"$p/.nightshift/receipts/20260101T000000Z-real.md"
+  printf 'unknown\n' >"$p/.nightshift/archive/2026-08-28/.shift-id"
   printf 'not-a-dir\n' >"$p/.nightshift/archive/2026-08-28/receipts"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-08-28
   [ "$status" -eq 2 ]
   grep -qF 'not-a-dir' "$p/.nightshift/archive/2026-08-28/receipts"
+}
+
+@test "the Archive skill gives the history index one name and one shape on every host" {
+  grep -qF '`history-index.md` at the top of the' "$ARCHIVE_SKILL"
+  grep -qF 'an `index.md` there opens with `# Archived shifts`' "$ARCHIVE_SKILL"
+  grep -qF 'Any other `index.md` is left alone.' "$ARCHIVE_SKILL"
+  grep -qF '# history-context / preset' "$ARCHIVE_SKILL"
+  grep -qF 'record gaps: <what is missing or corrupt, or none>' "$ARCHIVE_SKILL"
+  grep -qF '| `archive/history-index.md` | The Archive skill |' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/shift/state-map.md"
 }
 
 @test "Archive skill names the receipts helper on POSIX and Windows" {
@@ -300,6 +311,7 @@ arch_rules() { # <project> <jq-expression>
   # copy and the live record would be retired into a file outside the archive.
   outside="$BATS_TEST_TMPDIR/planted-target.md"
   printf 'the real record\n' >"$outside"
+  printf 'unknown\n' >"$p/.nightshift/archive/2026-09-05/.shift-id"
   ln -s "$outside" "$p/.nightshift/archive/2026-09-05/receipts/morning-2026-09-05-abc.md"
   closed "$p"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
@@ -924,20 +936,41 @@ arch_dir() { bash -c '. "$1"; shift; ns_archive_dir "$@"' _ "$LIB" "$@"; }
   [ ! -e "$p/.nightshift/archive/2026-09-05-shift-4" ]
 }
 
-@test "a dated folder filed before folders recorded their shift is claimed, and the next shift moves on" {
+@test "a dated folder that holds records nobody claimed is left alone, and the shift moves on" {
   p="$(new_project same-day-legacy)"
   mkdir -p "$p/.nightshift/archive/2026-09-05"
   printf 'an earlier night\n' >"$p/.nightshift/archive/2026-09-05/shipped.md"
-  [ "$(arch_dir "$p" 2026-09-05 1111111111111111)" = "$p/.nightshift/archive/2026-09-05" ]
-  [ "$(cat "$p/.nightshift/archive/2026-09-05/.shift-id")" = 1111111111111111 ]
-  [ "$(arch_dir "$p" 2026-09-05 2222222222222222)" = "$p/.nightshift/archive/2026-09-05-shift-2" ]
+  [ "$(arch_dir "$p" 2026-09-05 1111111111111111)" = "$p/.nightshift/archive/2026-09-05-shift-2" ]
+  [ ! -e "$p/.nightshift/archive/2026-09-05/.shift-id" ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05-shift-2/.shift-id")" = 1111111111111111 ]
   [ "$(cat "$p/.nightshift/archive/2026-09-05/shipped.md")" = 'an earlier night' ]
 }
 
-@test "a shift with no id files into the date folder and claims nothing" {
+@test "an empty dated folder nobody claimed is claimed" {
+  p="$(new_project same-day-empty)"
+  mkdir -p "$p/.nightshift/archive/2026-09-05"
+  [ "$(arch_dir "$p" 2026-09-05 1111111111111111)" = "$p/.nightshift/archive/2026-09-05" ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/.shift-id")" = 1111111111111111 ]
+}
+
+@test "a shift with no id claims its folder as unknown, and a shift with an id moves past it" {
   p="$(new_project same-day-unknown)"
   [ "$(arch_dir "$p" 2026-09-05 unknown)" = "$p/.nightshift/archive/2026-09-05" ]
-  [ ! -e "$p/.nightshift/archive/2026-09-05/.shift-id" ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/.shift-id")" = unknown ]
+  printf 'the first night\n' >"$p/.nightshift/archive/2026-09-05/punch-list.md"
+  # Filed again, it comes back; the next shift of the day opens its own folder.
+  [ "$(arch_dir "$p" 2026-09-05 unknown)" = "$p/.nightshift/archive/2026-09-05" ]
+  [ "$(arch_dir "$p" 2026-09-05 '')" = "$p/.nightshift/archive/2026-09-05" ]
+  [ "$(arch_dir "$p" 2026-09-05 2222222222222222)" = "$p/.nightshift/archive/2026-09-05-shift-2" ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/.shift-id")" = unknown ]
+}
+
+@test "a shift with no id moves past a folder another shift owns" {
+  p="$(new_project same-day-unknown-second)"
+  [ "$(arch_dir "$p" 2026-09-05 1111111111111111)" = "$p/.nightshift/archive/2026-09-05" ]
+  [ "$(arch_dir "$p" 2026-09-05 unknown)" = "$p/.nightshift/archive/2026-09-05-shift-2" ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05-shift-2/.shift-id")" = unknown ]
+  [ "$(cat "$p/.nightshift/archive/2026-09-05/.shift-id")" = 1111111111111111 ]
 }
 
 @test "a second shift's receipt that shares a name with the first one's is filed in its own folder" {
@@ -1078,6 +1111,7 @@ ended_with() {
   p="$(new_project rot-clash)"
   mkdir -p "$p/.nightshift/receipts" "$p/.nightshift/archive/2026-09-05/receipts"
   printf 'live\n' >"$p/.nightshift/receipts/2026-09-05-same.md"
+  printf 'unknown\n' >"$p/.nightshift/archive/2026-09-05/.shift-id"
   printf 'already filed\n' >"$p/.nightshift/archive/2026-09-05/receipts/2026-09-05-same.md"
   closed "$p"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05

@@ -566,9 +566,16 @@ if [ "$DRY_RUN" -eq 0 ] && [ -f "$LOG" ] && [ ! -L "$LOG" ]; then
   case "$LOG_BYTES" in '' | *[!0-9]*) LOG_BYTES=0 ;; esac
   if [ "$LOG_BYTES" -gt 512000 ]; then
     DAY="$(date +%Y-%m-%d)"
-    if mkdir -p "$ARCHIVE/$DAY" 2>/dev/null && mv "$LOG" "$ARCHIVE/$DAY/shift-log.md" 2>/dev/null; then
+    # A shift log Archive already filed that day keeps its name; the rotated journal takes the next.
+    ROTATED="shift-log.md"
+    ROTATE_N=1
+    while [ -e "$ARCHIVE/$DAY/$ROTATED" ] || [ -L "$ARCHIVE/$DAY/$ROTATED" ]; do
+      ROTATE_N=$((ROTATE_N + 1))
+      ROTATED="shift-log-$ROTATE_N.md"
+    done
+    if mkdir -p "$ARCHIVE/$DAY" 2>/dev/null && mv "$LOG" "$ARCHIVE/$DAY/$ROTATED" 2>/dev/null; then
       printf '# Shift log\n' >"$LOG"
-      ok "journal rotated to archive/$DAY/shift-log.md"
+      ok "journal rotated to archive/$DAY/$ROTATED"
     fi
   fi
 fi

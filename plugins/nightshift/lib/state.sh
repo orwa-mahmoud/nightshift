@@ -72,15 +72,19 @@ ns_receipt_nn() {
   '
 }
 
-# ns_receipt_title <label> — the words after the written number, for the slug.
+# ns_receipt_title <label> — the words after the written number, for the slug. The number may be
+# followed by `.`, `)`, `:`, an em or en dash, or a hyphen with space around it.
 ns_receipt_title() {
-  printf '%s' "$1" | LC_ALL=C awk '
-    {
-      sub(/^[0-9]+\.[[:space:]]*/, "")
-      sub(/^[A-Za-z]+[0-9]+[[:space:]]+/, "")
-      print
-    }
-  '
+  local t="$1" re dashes=$'\xe2\x80\x94|\xe2\x80\x93'
+  for re in '^[0-9]+[.):][[:space:]]*' "^[0-9]+[[:space:]]*($dashes)[[:space:]]*" '^[0-9]+[[:space:]]+-[[:space:]]+'; do
+    if [[ $t =~ $re ]]; then
+      t="${t:${#BASH_REMATCH[0]}}"
+      break
+    fi
+  done
+  re='^[A-Za-z]+[0-9]+[[:space:]]+'
+  [[ ! $t =~ $re ]] || t="${t:${#BASH_REMATCH[0]}}"
+  printf '%s' "$t"
 }
 
 # ns_receipt_basename <label> — NN-slug, no suffix.
@@ -124,16 +128,23 @@ function ns_item_id(line,    s) {
   sub(/[[:space:]]*-->[[:space:]]*$/, "", s)
   return s
 }
-function ns_item_label(line) {
+function ns_item_label(line,    lead) {
   sub(/\r$/, "", line)
   sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "", line)
   sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", line)
   sub(/^- \[[ xX]\][[:space:]]*/, "", line)
+  # A dash right after a bare number numbers the item, as in "1 — Fix it": a number alone is no
+  # label, so only a later dash ends the title. A code such as P03 before a dash is the label.
+  lead = ""
+  if (match(line, /^[0-9]+[[:space:]]*(—|–)[[:space:]]*/) || match(line, /^[0-9]+[[:space:]]+-[[:space:]]+/)) {
+    lead = substr(line, 1, RLENGTH)
+    line = substr(line, RLENGTH + 1)
+  }
   sub(/[[:space:]]+—.*$/, "", line)
   sub(/[[:space:]]+-[[:space:]].*$/, "", line)
   sub(/\*\*.*$/, "", line)
   gsub(/[[:space:]]+$/, "", line)
-  return line
+  return lead line
 }
 '
 
@@ -169,6 +180,27 @@ ns_item_ids() {
   '
 }
 
+# ns_item_title_for <punch-list> <id> — the whole title of the item carrying that id: its bold text,
+# or the line after its checkbox, without the id comment.
+ns_item_title_for() {
+  local line box='^- \[[ xX]\][[:space:]]*' tail="[[:space:]]*<!--[[:space:]]*id:[[:space:]]*$2[[:space:]]*-->[[:space:]]*\$"
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    [[ $line =~ $box ]] || continue
+    [[ $line =~ $tail ]] || continue
+    line="${line:0:$((${#line} - ${#BASH_REMATCH[0]}))}"
+    [[ $line =~ $box ]] && line="${line:${#BASH_REMATCH[0]}}"
+    if [ "${line#\*\*}" != "$line" ]; then
+      line="${line#\*\*}"
+      line="${line%%\*\**}"
+    fi
+    printf '%s' "${line%"${line##*[![:space:]]}"}"
+    return 0
+  done <<EOF
+$(ns_items_section "$1" 2>/dev/null)
+EOF
+}
+
 # ns_item_id_for <punch-list> <label> — the id of the first item with that label, or nothing.
 ns_item_id_for() {
   ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
@@ -185,7 +217,7 @@ ns_item_id_used() {
   ns_layout_set archive "$ns" archive
   ns_layout_set receipts "$ns" receipts
   grep -rqsF -- "id: $id " "$archive" "$receipts" && return 0
-  [ -n "$(find "$receipts" "$archive" \( -name "$id.md" -o -name "$id-*.md" \) -print 2>/dev/null | head -n1)" ]
+  [ -n "$(find "$receipts" "$archive" \( -name "$id.md" -o -name "$id-*.md" -o -name "*-$id.md" \) -print 2>/dev/null | head -n1)" ]
 }
 
 # ns_item_new_id <nightshift-dir> [taken] — a fresh id: a letter, then three letters or digits, that
@@ -243,28 +275,108 @@ ns_punch_assign_ids() {
   mv "$tmp" "$list" || { rm -f "$tmp"; return 1; }
 }
 
+# ns_receipt_want <project-dir> <label> <id> — the name an item's receipt carries: its number,
+# two digits at least, or its place in the list when the title has none; then its title; then its
+# id. `03-fix-the-resolver-k7q2`. A label that is only a code, such as P03, takes the words of the
+# item's whole title.
+ns_receipt_want() {
+  local project="$1" label="$2" id="$3" punch nn title full slug out=""
+  punch="$(ns_layout_path "$project/.nightshift" punch-list)"
+  nn="$(ns_receipt_nn "$label")"
+  title="$(ns_receipt_title "$label")"
+  if [ -n "$nn" ] && [ "$title" = "$label" ]; then
+    full="$(ns_item_title_for "$punch" "$id")"
+    title="$(ns_receipt_title "$full")"
+    [ "$title" != "$full" ] || title=""
+  fi
+  if [ -z "$nn" ]; then
+    nn="$(ns_item_rows "$punch" | awk -F'\t' -v want="$label" '$1 == want { print NR; exit }')"
+  fi
+  case "$nn" in
+    '' | *[!0-9]*) ;;
+    *) nn="$(printf '%02d' "$((10#$nn))")" ;;
+  esac
+  slug="$(ns_receipt_slug "$title")"
+  [ -z "$nn" ] || out="$nn"
+  [ -z "$slug" ] || out="${out:+$out-}$slug"
+  printf '%s' "${out:+$out-}$id"
+}
+
+# ns_receipt_find_id <receipts-dir> <id> — the receipt an id already names: `<NN>-<slug>-<id>.md`,
+# or the `<id>.md` and `<id>-<slug>.md` names earlier versions gave it. Nothing when there is none.
+ns_receipt_find_id() {
+  local f
+  for f in "$1"/*-"$2".md "$1/$2.md" "$1/$2"-*.md; do
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+    printf '%s' "$f"
+    return 0
+  done
+}
+
+# ns_receipt_legacy_file <receipts-dir> <label> — a receipt named by label before items had ids:
+# `NN-slug.md`, or the bare `NN.md` a dash-numbered title was once cut down to. Nothing when neither
+# is there.
+ns_receipt_legacy_file() {
+  local f nn
+  f="$1/$(ns_receipt_basename "$2").md"
+  if [ "$f" != "$1/.md" ] && [ -f "$f" ] && [ ! -L "$f" ]; then
+    printf '%s' "$f"
+    return 0
+  fi
+  nn="$(ns_receipt_nn "$2")"
+  f="$1/$nn.md"
+  if [ -n "$nn" ] && [ -f "$f" ] && [ ! -L "$f" ]; then
+    printf '%s' "$f"
+  fi
+}
+
 # ns_receipt_base <project-dir> <label> [id] — the item's receipt file stem under receipts/. An item
 # with an id keeps the file that id already names, else an earlier shift's receipt found by its
-# label, else a new `<id>-<slug>`; an item without one is its label's `NN-slug`. With no id
-# argument the id is looked up in the punch list by label.
+# label, else a new `<NN>-<slug>-<id>`; an item without one is its label's `NN-slug`. With no id
+# argument the id is looked up in the punch list by label. Reading a name never renames anything:
+# ns_receipts_rename moves a receipt to the name its item carries now.
 ns_receipt_base() {
-  local project="$1" label="$2" id="${3-}" dir legacy f slug
+  local project="$1" label="$2" id="${3-}" dir legacy f
   [ $# -ge 3 ] || id="$(ns_item_id_for "$(ns_layout_path "$project/.nightshift" punch-list)" "$label")"
   legacy="$(ns_receipt_basename "$label")"
-  [ -n "$id" ] || { printf '%s' "$legacy"; return 0; }
   dir="$(ns_receipts_dir "$project")"
-  for f in "$dir/$id.md" "$dir/$id"-*.md; do
-    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+  f=""
+  [ -z "$id" ] || f="$(ns_receipt_find_id "$dir" "$id")"
+  [ -n "$f" ] || f="$(ns_receipt_legacy_file "$dir" "$label")"
+  if [ -n "$f" ]; then
     f="${f##*/}"
     printf '%s' "${f%.md}"
     return 0
-  done
-  if [ -n "$legacy" ] && [ -f "$dir/$legacy.md" ] && [ ! -L "$dir/$legacy.md" ]; then
+  fi
+  if [ -z "$id" ]; then
     printf '%s' "$legacy"
     return 0
   fi
-  slug="$(ns_receipt_slug "$(ns_receipt_title "$label")")"
-  if [ -n "$slug" ]; then printf '%s-%s' "$id" "$slug"; else printf '%s' "$id"; fi
+  ns_receipt_want "$project" "$label" "$id"
+}
+
+# ns_receipts_rename <project-dir> — move each live receipt of an item with an id to the name the
+# item carries now, so a reordered, renumbered or retitled item's receipt follows it and the folder
+# reads in item order. A name another file already holds is never overwritten, a receipt keeps its
+# modification time, and archived receipts keep the names they were filed under.
+ns_receipts_rename() {
+  local project="$1" punch dir label id f want rc=0
+  ns_layout_set punch "$project/.nightshift" punch-list
+  dir="$(ns_receipts_dir "$project")"
+  { [ -f "$punch" ] && [ -d "$dir" ] && [ ! -L "$dir" ]; } || return 0
+  while IFS=$'\t' read -r label id || [ -n "$label" ]; do
+    { [ -n "$label" ] && [ -n "$id" ]; } || continue
+    f="$(ns_receipt_find_id "$dir" "$id")"
+    [ -n "$f" ] || f="$(ns_receipt_legacy_file "$dir" "$label")"
+    [ -n "$f" ] || continue
+    want="$dir/$(ns_receipt_want "$project" "$label" "$id").md"
+    [ "$f" != "$want" ] || continue
+    { [ -e "$want" ] || [ -L "$want" ]; } && continue
+    mv "$f" "$want" || rc=1
+  done <<EOF
+$(ns_item_rows "$punch")
+EOF
+  return "$rc"
 }
 
 # ns_receipt_path <project-dir> <label> [id] — the item's file under receipts/.
@@ -285,8 +397,9 @@ ns_active_item() {
     [ -n "$label" ] || continue
     [ -n "$first" ] || first="$label"
     f=""
+    # Inline rather than ns_receipt_find_id: the pulse runs this on every tool call.
     if [ -n "$id" ]; then
-      for cand in "$dir/$id.md" "$dir/$id"-*.md; do
+      for cand in "$dir"/*-"$id".md "$dir/$id.md" "$dir/$id"-*.md; do
         if [ -f "$cand" ] && [ ! -L "$cand" ]; then
           f="$cand"
           break
@@ -299,6 +412,7 @@ ns_active_item() {
       for cand in "$dir/${BASH_REMATCH[1]}.md" "$dir/${BASH_REMATCH[1]}"-*.md; do
         if [ -f "$cand" ]; then
           f="$dir/$(ns_receipt_basename "$label").md"
+          [ -f "$f" ] || f="$dir/${BASH_REMATCH[1]}.md"
           break
         fi
       done
@@ -828,7 +942,7 @@ ns_receipts_write_index() {
   local dir index date_s state base file cells
   local in cw cr out rea work pause usage time _sum
   local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
-  local label id items rows
+  local label id items rows armed
   ns_layout_set punch "$project/.nightshift" punch-list
   dir="$(ns_receipts_dir "$project")"
   [ -n "$dir" ] || return 0
@@ -840,6 +954,10 @@ ns_receipts_write_index() {
   [ ! -L "$dir" ] || return 0
   ns_layout_set index "$project/.nightshift" receipts-index
   [ -L "$index" ] && return 0
+  # Between shifts a receipt moves to the name its item carries now; while one is armed the names
+  # hold still, so the model keeps writing the file it was given.
+  ns_layout_set armed "$project/.nightshift" armed
+  { [ -e "$armed" ] || [ -L "$armed" ]; } || ns_receipts_rename "$project"
   date_s="$(ns_receipts_shift_date "$project")"
   items="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-index.XXXXXX")" || return 0
   rows="$(mktemp "${TMPDIR:-/tmp}/ns-receipts-rows.XXXXXX")" || { rm -f "$items"; return 0; }
@@ -983,23 +1101,20 @@ ns_archive_dest() {
 # The shift layout gives each shift `shift-<id>/`. The date layout gives the first shift of a day
 # `<date>/` and each later one `<date>-shift-2/`, `<date>-shift-3/` and so on, so two shifts never
 # share a punch list, a log or a receipt name. A folder records the shift it belongs to in
-# `.shift-id`, and a shift filed again that day comes back to its own folder. A folder filed before
-# folders recorded their shift is claimed by the first shift that files into it again. Without a
-# shift id the date folder is the answer. A candidate that is a link or not a directory is returned
-# as it is, for the caller to refuse.
+# `.shift-id`, `unknown` for a shift that ended without an id, and a shift filed again that day
+# comes back to its own folder. An empty folder without that record is claimed; one that already
+# holds records without it belongs to nobody we can name and is never claimed. A candidate that is
+# a link or not a directory is returned as it is, for the caller to refuse.
 ns_archive_dir() {
-  local root layout base dir n=1 owner
+  local root layout base dir n=1 owner id
   root="$(ns_archive_root "$1")" || return 2
   layout="$(ns_archive "$1" layout)"
-  if [ "$layout" = shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
-    printf '%s/shift-%s' "$root" "$3"
+  id="${3:-unknown}"
+  if [ "$layout" = shift ] && [ "$id" != unknown ]; then
+    printf '%s/shift-%s' "$root" "$id"
     return 0
   fi
   base="$root/$2"
-  if [ -z "$3" ] || [ "$3" = unknown ]; then
-    printf '%s' "$base"
-    return 0
-  fi
   dir="$base"
   while :; do
     if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
@@ -1008,18 +1123,18 @@ ns_archive_dir() {
     fi
     if [ ! -e "$dir" ]; then
       mkdir -p "$dir" 2>/dev/null || return 2
-      printf '%s\n' "$3" >"$dir/.shift-id" 2>/dev/null || return 2
+      printf '%s\n' "$id" >"$dir/.shift-id" 2>/dev/null || return 2
       printf '%s' "$dir"
       return 0
     fi
     owner=""
     if [ -f "$dir/.shift-id" ] && [ ! -L "$dir/.shift-id" ]; then
       IFS= read -r owner <"$dir/.shift-id" || :
-    elif [ ! -e "$dir/.shift-id" ]; then
-      printf '%s\n' "$3" >"$dir/.shift-id" 2>/dev/null || return 2
-      owner="$3"
+    elif [ ! -e "$dir/.shift-id" ] && [ -z "$(ls -A "$dir" 2>/dev/null)" ]; then
+      printf '%s\n' "$id" >"$dir/.shift-id" 2>/dev/null || return 2
+      owner="$id"
     fi
-    if [ "$owner" = "$3" ]; then
+    if [ "$owner" = "$id" ]; then
       printf '%s' "$dir"
       return 0
     fi

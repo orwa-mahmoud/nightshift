@@ -121,9 +121,9 @@ Top to bottom, one item:
   belongs with, still local, still a real change. When the contract asks for no commits, finish the
   item and leave the work in the tree — say plainly in the handoff that it is uncommitted, and
   never invent a commit to satisfy a convention. Artifact mode writes the item's receipt at
-  `$NS/receipts/<id>-<slug>.md`, with links to what it produced. Push yourself only when the punch
+  `$NS/receipts/<NN>-<slug>-<id>.md`, with links to what it produced. Push yourself only when the punch
   list says to.
-5. **Write the item's receipt** at `$NS/receipts/<id>-<slug>.md` before the tick, however long or
+5. **Write the item's receipt** at `$NS/receipts/<NN>-<slug>-<id>.md` before the tick, however long or
   short the item was.
 6. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete —
   that claim is about the work, not about how it was recorded or how often a gate ran.
@@ -135,7 +135,7 @@ left them, and you never invent scope the owner didn't ask for.
 
 ## The receipts
 
-`$NS/receipts/<id>-<slug>.md` is the narrative of each item, written as you go rather than
+`$NS/receipts/<NN>-<slug>-<id>.md` is the narrative of each item, written as you go rather than
 reconstructed at the end. It says what was delivered and why; the shift log stays the execution
 journal, the snag log the findings, the parking lot the decisions. Link to those rather than
 copying them, and keep it out of public commit messages — a commit says what the change does, not
@@ -148,11 +148,11 @@ The shape of every item file is What was delivered · Why · Tried and rejected 
 Outputs · Parked decisions and snags. Read that shape once when the first item starts. When
 `receipts.templatePath` is set, follow that template instead.
 
-**One file per punch-list item**, named `<id>-<slug>.md` after the permanent id on the item's line
-(`<!-- id: k7q2 -->`); the pulse names the file, and it stays put when the item is renumbered or
-retitled. It carries what was delivered, why, what
-was tried and rejected, the verification that actually ran, where the outputs or commits are, and
-any snag or parked decision it touched. The runtime adds what the item cost when `receipts.usage`
+**One file per punch-list item**, named `<NN>-<slug>-<id>.md`: the item's number, its title, and
+the permanent id on the item's line (`<!-- id: k7q2 -->`). The pulse names the file, the runtime
+finds it by its id, and between shifts it is renamed to follow a renumbered or retitled item. It
+carries what was delivered, why, what was tried and rejected, the verification that actually ran,
+where the outputs or commits are, and any snag or parked decision it touched. The runtime adds what the item cost when `receipts.usage`
 is `when-available`, and how long it took when `receipts.duration` is `on`.
 
 The runtime measures what each item cost, from the records the host already keeps, and writes the

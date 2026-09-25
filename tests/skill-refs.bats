@@ -9,7 +9,8 @@ SKILLS="$PLUGIN/skills"
 
 # Files under .nightshift/ that the owner's workspace holds, not the plugin.
 STATE_FILES="punch-list.md drafting-table.md parking-lot.md work-orders.md snag-log.md
-shift-log.md shift-report.md product-research.md opportunity-map.md shipped.md"
+shift-log.md shift-report.md product-research.md opportunity-map.md shipped.md history-index.md
+index.md"
 
 # Names the references quote in order to forbid them: the model is told these are not Nightshift
 # commands and must not look for them. A name here must never become a shipped helper.
@@ -528,7 +529,7 @@ documented_pages() {
       "$SKILLS/../lib/layout.sh" "$key")"
     grep -qF "| \`$rel\` |" "$map" || { echo "state-map.md has no row for $rel"; return 1; }
   done
-  for f in rules.json run/shift-policy.json state-version run/deadline 'receipts/<id>-<slug>.md' \
+  for f in rules.json run/shift-policy.json state-version run/deadline 'receipts/<NN>-<slug>-<id>.md' \
     receipts/README.md 'receipts/morning-<date>-<shiftId>.md' run/evidence/findings.jsonl archive/ \
     run/.shift-armed run/.ended STOP run/.pending-filing; do
     grep -qF "\`$f\`" "$map" || { echo "state-map.md does not name $f"; return 1; }
