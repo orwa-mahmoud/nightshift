@@ -332,7 +332,7 @@ if ($rotate) {
         Write-NSArchiveReceiptsError ('archive-receipts: a different punch list is already filed at ' + (Join-NSArchiveRel $group (Get-NSArchiveRel 'punch-list')) + '; the live list is unchanged')
     }
     else {
-        Write-NSArchiveReceiptsError ('archive-receipts: could not file the punch list into ' + $group)
+        Write-NSArchiveReceiptsError ('archive-receipts: could not file the punch list into ' + $group + ': ' + $punch.Reason)
     }
 }
 

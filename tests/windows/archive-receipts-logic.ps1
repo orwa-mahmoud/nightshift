@@ -574,7 +574,7 @@ try {
     $run = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
     Expect-True ($run.ExitCode -eq 0) "punch filing exits 0 (got $($run.ExitCode) $($run.Stderr))"
     $filedPath = Join-Path $site '.nightshift/archive/2026-09-05/punch-list.md'
-    Expect-True ($run.Stdout.Contains('filed the punch list as ')) "the helper says where the punch list went: $($run.Stdout)"
+    Expect-True ($run.Stdout.Contains('filed the punch list as ')) "the helper says where the punch list went: $($run.Stdout) $($run.Stderr)"
     Expect-True ((Test-Path -LiteralPath $filedPath) -and [IO.File]::ReadAllText($filedPath) -ceq $body) 'the record is the whole list as it stood'
     Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/punch-list.md')) -ceq "# Punch list`n`n## Shift`n`nThe contract.`n`n## Gates`n`n- run checks`n`n## Items`n`n- [ ] **2. open.**`n") `
         'the open item and the contract stay live'

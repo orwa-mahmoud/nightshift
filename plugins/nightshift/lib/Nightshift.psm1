@@ -5811,8 +5811,11 @@ function Write-NSEndedRecord {
 function Get-NSShiftName {
     param([Parameter(Mandatory = $true)][string]$PunchList)
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) { return '' }
-    $first = ''
-    foreach ($line in [IO.File]::ReadLines($PunchList)) { $first = $line; break }
+    # Only the title line is read, and the reader is closed before returning: a handle left open
+    # would stop the list being replaced when Archive trims it.
+    $reader = New-Object IO.StreamReader($PunchList)
+    try { $first = $reader.ReadLine() } finally { $reader.Dispose() }
+    if ($null -eq $first) { $first = '' }
     $first = $first.TrimEnd([char]"`r")
     $dashes = [string][char]0x2014 + [char]0x2013
     if ($first -cmatch ('^#[ \t]+Punch[ \t]+List[ \t]*([' + $dashes + ']|-|:)[ \t]*(.*[^ \t])[ \t]*$')) { return $Matches[2] }
@@ -6327,7 +6330,7 @@ function Test-NSSameFileBytes {
 # into its folder, at the path it has live, then take the ticked items out of the live list. The
 # record is the list exactly as it stood: the contract, the gates, every ticked and every open item.
 # Open items stay live, and so does everything above `## Items`. Returns Status 0 (Path '' when the
-# list holds no item), 2 when it could not write, or 3 when a different list is already filed there
+# list holds no item), 2 when it could not write (Reason says why), or 3 when a different list is already filed there
 # while the live one still has ticked items to take out; the live list is then left as it is.
 # Mirrors ns_archive_punch_list.
 function Save-NSArchivePunchList {
@@ -6337,27 +6340,27 @@ function Save-NSArchivePunchList {
     )
     $ns = Join-Path $Workspace '.nightshift'
     $live = Get-NSLayoutPath $ns 'punch-list'
-    $none = [pscustomobject]@{ Status = 0; Path = '' }
+    $none = [pscustomobject]@{ Status = 0; Path = ''; Reason = '' }
     if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return $none }
     $section = @(Get-NSPunchItemsSection $live)
     if (@($section | Where-Object { $_ -cmatch '^- \[[ xX]\]' }).Count -eq 0) { return $none }
     $ticked = @($section | Where-Object { $_ -cmatch '^- \[[xX]\]' }).Count
     $dest = Join-NSPath $Folder ((Get-NSLayoutRelativePath $ns 'punch-list').Replace('/', [IO.Path]::DirectorySeparatorChar))
-    if (-not (Test-NSArchiveDest $dest)) { return [pscustomobject]@{ Status = 2; Path = '' } }
+    if (-not (Test-NSArchiveDest $dest)) { return [pscustomobject]@{ Status = 2; Path = ''; Reason = 'a link or a directory is in the way' } }
     try {
         $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force -ErrorAction Stop
         if (Test-Path -LiteralPath $dest -PathType Leaf) {
             if (-not (Test-NSArchiveSame $live $dest)) {
                 # What stayed live after an earlier filing of this shift is not a new record.
                 if ($ticked -eq 0) { return $none }
-                return [pscustomobject]@{ Status = 3; Path = '' }
+                return [pscustomobject]@{ Status = 3; Path = ''; Reason = '' }
             }
         }
         else {
             Copy-Item -LiteralPath $live -Destination $dest -Force -ErrorAction Stop
             if (-not (Test-NSSameFileBytes $live $dest)) {
                 Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
-                return [pscustomobject]@{ Status = 2; Path = '' }
+                return [pscustomobject]@{ Status = 2; Path = ''; Reason = 'the filed copy does not match the live list' }
             }
         }
         if ($ticked -gt 0) {
@@ -6409,9 +6412,9 @@ function Save-NSArchivePunchList {
         }
     }
     catch {
-        return [pscustomobject]@{ Status = 2; Path = '' }
+        return [pscustomobject]@{ Status = 2; Path = ''; Reason = $_.Exception.Message }
     }
-    return [pscustomobject]@{ Status = 0; Path = $dest }
+    return [pscustomobject]@{ Status = 0; Path = $dest; Reason = '' }
 }
 
 # Save-NSArchiveJournal <workspace> <folder> - move the shift log into the folder at the path it has
