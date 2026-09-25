@@ -3,6 +3,16 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.24.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.24.0...v0.24.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* give the archive history index one name ([12f341a](https://github.com/orwa-mahmoud/nightshift/commit/12f341a86e69bce098e7285dd3bc39ce6688aac0))
+* keep a filed shift log when Start rotates the journal ([fc56693](https://github.com/orwa-mahmoud/nightshift/commit/fc56693a678728415f7c8818515b90ac59b73b5b))
+* name receipts by number, title and id ([d215f76](https://github.com/orwa-mahmoud/nightshift/commit/d215f76c5ce1a2f8264f3c2e9dbbfc1d91a92d55))
+* never let one shift take over another shift's archive folder ([74b2d15](https://github.com/orwa-mahmoud/nightshift/commit/74b2d15aa7ca3c94e7edcade50565ec99d6f93af))
+
 ## [0.24.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.23.0...v0.24.0) (2026-09-24)
 
 
