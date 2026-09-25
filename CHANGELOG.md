@@ -10,11 +10,6 @@ version users receive. Dates are release dates; the tags carry the exact trees.
 
 * file each shift into its own archive folder laid out like the live site ([5851088](https://github.com/orwa-mahmoud/nightshift/commit/5851088c87499028bae82a4a50a99fcfc9b2970d))
 
-
-### Bug Fixes
-
-* **windows:** close the punch list after reading the shift name ([762eddf](https://github.com/orwa-mahmoud/nightshift/commit/762eddf220d84785ddd8cbecf0c1e1695a4529e7))
-
 ## [0.24.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.24.0...v0.24.1) (2026-09-25)
 
 
