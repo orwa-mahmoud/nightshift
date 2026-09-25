@@ -696,6 +696,8 @@ try {
         }
         [IO.File]::WriteAllText((Join-Path $comboNs 'rules.json'), $comboRules, $utf8)
         [IO.File]::WriteAllText((Join-Path $comboNs '.shift-armed'), '', $utf8)
+        # The conversation below is the shift's own, recorded as Start's binding probe records it.
+        $null = Claim-NSSession $comboNs '11111111-2222-3333-4444-555555555555' '' '' '' 'claude'
         # Windows PowerShell 5.1 -File does not read redirected stdin as pipeline input, so the payload
         # goes in as -HookJson, the way the Windows suite runner passes it.
         $payload = '{"session_id":"11111111-2222-3333-4444-555555555555","cwd":"' + ($comboProject -replace '\\', '/') + '"}'

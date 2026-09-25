@@ -54,6 +54,7 @@ assert_contained() {
 @test "hostile strings never reach the shell from either adapter" {
   p="$(new_project)"
   punch_open "$p"
+  bind_session "$p" "$(printf '$(touch %s/pwned)' "$OUTSIDE")"
   payload="$(printf '{"tool_name":"Bash","session_id":"$(touch %s/pwned)","tool_input":{"command":"`touch %s/pwned`; git push"}}' "$OUTSIDE" "$OUTSIDE")"
   run invoke "$p" "$HOOKS/hardhat.sh" "$payload" CLAUDE_PROJECT_DIR="$p" NIGHTSHIFT_FORBIDDEN_COMMANDS='git push'
   assert_contained

@@ -652,6 +652,10 @@ try {
     $pulseLogicRun = Invoke-TestScript $pulseLogic
     Assert-Equal 0 $pulseLogicRun.ExitCode `
         "receipt duty injection: $($pulseLogicRun.Stdout) $($pulseLogicRun.Stderr)"
+    $sessionClaimLogic = Join-Path $PSScriptRoot 'session-claim-logic.ps1'
+    $sessionClaimLogicRun = Invoke-TestScript $sessionClaimLogic
+    Assert-Equal 0 $sessionClaimLogicRun.ExitCode `
+        "unbound shift claims: $($sessionClaimLogicRun.Stdout) $($sessionClaimLogicRun.Stderr)"
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost

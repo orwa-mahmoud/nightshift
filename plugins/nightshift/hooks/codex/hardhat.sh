@@ -103,7 +103,9 @@ fi
 
 # Codex offers no interactive process ancestry this hook can vouch for, so the initial pid and
 # start-time lines stay empty. Watchman children carry a unique lease nonce and generation.
-ns_shift_unbound codex hardhat
+PROBE=0
+ns_hardhat_binding_probe "$TOOL" "$CMD" && PROBE=1
+ns_shift_unbound codex hardhat "$PROBE"
 own_rc=$?
 [ "$own_rc" -eq 1 ] && exit 0
 [ "$own_rc" -eq 2 ] && deny "$NS_SHIFT_FAIL"

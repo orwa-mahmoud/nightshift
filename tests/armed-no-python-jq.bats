@@ -57,6 +57,7 @@ chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
   printf '%s\n' "$output" | grep -qF 'shift-policy set → wrote tonight-s snapshot with no parser'
   printf '%s\n' "$output" | grep -qF 'shift-policy get → read it back'
   printf '%s\n' "$output" | grep -qF 'resolve → the chosen level, tooling and one-shift allowance all survive with no parser'
+  printf '%s\n' "$output" | grep -qF 'binding probe → bound armed-path-session'
   printf '%s\n' "$output" | grep -qF 'hardhat /usr/bin/sudo → deny'
   printf '%s\n' "$output" | grep -qF 'hardhat .nightshift//shift-policy.json write → deny'
   printf '%s\n' "$output" | grep -qF 'clock-out unreadable punch list → block (no release)'
@@ -81,6 +82,7 @@ chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
     return 1
   fi
 
+  bind_session "$p" no-parser-session
   # jq builds the payload outside the guarded PATH; only the hook runs without a parser.
   bare_hardhat() {
     jq -nc --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}' |

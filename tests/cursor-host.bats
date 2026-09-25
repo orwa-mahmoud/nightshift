@@ -11,19 +11,22 @@ load helpers
 CURSOR="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/cursor"
 CURSOR_WATCHMAN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh"
 
-# cursor_tool <project> <command> [ENV=VAL ...] — a preToolUse payload as Cursor sends it.
+# cursor_tool <project> <command> [ENV=VAL ...] — a preToolUse payload as Cursor sends it, from the
+# shift's own conversation.
 cursor_tool() {
   local p="$1" c="$2"
   shift 2
+  bind_session "$p" conv-1 cursor
   hook_payload "$(jq -nc --arg c "$c" --arg w "$p" \
     '{tool_name:"Bash",conversation_id:"conv-1",cwd:$w,tool_input:{command:$c}}')" \
     env "$@" CURSOR_PROJECT_DIR="$p" bash "$CURSOR/hardhat.sh"
 }
 
-# cursor_stop <project> — a stop payload as Cursor sends it.
+# cursor_stop <project> — a stop payload as Cursor sends it, from the shift's own conversation.
 cursor_stop() {
   local p="$1"
   shift
+  bind_session "$p" conv-1 cursor
   hook_payload "$(jq -nc --arg w "$p" \
     '{conversation_id:"conv-1",cwd:$w,status:"completed",loop_count:1}')" \
     env "$@" CURSOR_PROJECT_DIR="$p" bash "$CURSOR/clock-out-gate.sh"
@@ -104,6 +107,7 @@ cursor_blocked() {
     src="$(command -v "$tool" 2>/dev/null)" || continue
     ln -sf "$src" "$bin/$tool"
   done
+  bind_session "$p" conv-1 cursor
   payload="$(jq -nc --arg w "$p" \
     '{tool_name:"Bash",conversation_id:"conv-1",cwd:$w,tool_input:{command:"sudo id"}}')"
   run env -i PATH="$bin" HOME="$HOME" CURSOR_PROJECT_DIR="$p" \

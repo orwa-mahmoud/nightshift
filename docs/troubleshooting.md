@@ -274,9 +274,14 @@ open. On Claude Code the watchman then treats the newest conversation ending in 
 event as the wedge and resumes with `--continue`. On Codex, with no recorded id, revival falls
 back to a fresh headless run; the punch list on disk is the handover.
 
+An armed site with no session record holds no conversation to the shift: the clock-out gate
+releases every stop and the shift rules bind no one until Start binds a conversation again. The one
+exception is the conversation a surviving lease still names, as after a stop-work order: it stays
+on shift.
+
 **Repair.** Do not invent a session id. If the shift is still armed and boxes are open, let the
-watchman run, or start a fresh session that reads the punch list. Pasting an id from another
-project will append to the wrong conversation.
+watchman run, or run Start in a fresh session so it binds that conversation. Pasting an id from
+another project will append to the wrong conversation.
 
 ## 7. Watchman stood down or will not revive
 

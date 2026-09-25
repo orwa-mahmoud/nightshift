@@ -21,6 +21,7 @@ reminder() {
 
 # block <project> — one Stop event through the real Claude gate, printing its reason.
 block() {
+  bind_session "$1"
   hook_payload "$(jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}')" \
     env CLAUDE_PROJECT_DIR="$1" bash "$GATE"
 }

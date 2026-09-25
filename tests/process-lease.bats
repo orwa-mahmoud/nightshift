@@ -851,3 +851,133 @@ RUNNER
   [ -z "$(lease_holder_pid "$p")" ]
   [ "$(reclaim_log_count "$p" 4 5)" -eq 1 ]
 }
+
+# ---- a shift Start armed but never bound belongs to no conversation ----
+#
+# Start records its conversation with the binding probe the moment it arms. A site armed without
+# that record — Start interrupted between the two, or the record dropped by a stop-work order — is
+# nobody's to pick up: a Stop or a tool call from another conversation leaves it as it found it.
+
+STOP_SHIFT="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/stop-shift.sh"
+
+claude_stop() { # <project> <sid>
+  hook_payload "$(jq -nc --arg sid "$2" '{hook_event_name:"Stop",session_id:$sid,transcript_path:""}')" \
+    env CLAUDE_PROJECT_DIR="$1" bash "$HOOKS/clock-out-gate.sh"
+}
+
+codex_stop() { # <project> <sid>
+  hook_payload "$(jq -nc --arg sid "$2" '{hook_event_name:"Stop",session_id:$sid,transcript_path:""}')" \
+    env CODEX_PROJECT_DIR="$1" bash "$CODEX_HOOKS/clock-out-gate.sh"
+}
+
+codex_bash() { # <project> <sid> <command>
+  hook_payload "$(jq -nc --arg sid "$2" --arg c "$3" \
+    '{tool_name:"Bash",session_id:$sid,transcript_path:"",tool_input:{command:$c}}')" \
+    env CODEX_PROJECT_DIR="$1" bash "$CODEX_HOOKS/hardhat.sh"
+}
+
+cursor_stop() { # <project> <conversation-id>
+  hook_payload "$(jq -nc --arg sid "$2" --arg p "$1" \
+    '{hook_event_name:"stop",status:"completed",loop_count:0,conversation_id:$sid,session_id:$sid,transcript_path:"",cwd:$p}')" \
+    env CURSOR_PROJECT_DIR="$1" bash "$HOOKS/cursor/clock-out-gate.sh"
+}
+
+cursor_shell() { # <project> <conversation-id> <command>
+  hook_payload "$(jq -nc --arg sid "$2" --arg p "$1" --arg c "$3" \
+    '{tool_name:"Shell",conversation_id:$sid,transcript_path:"",cwd:$p,tool_input:{command:$c}}')" \
+    env CURSOR_PROJECT_DIR="$1" bash "$HOOKS/cursor/hardhat.sh"
+}
+
+@test "a Stop from another conversation does not claim a shift Start armed but never bound" {
+  p="$(new_project)"
+  punch_open "$p"
+
+  run claude_stop "$p" helper-session
+  is_release
+  [ ! -e "$p/.nightshift/.shift-session" ]
+  [ ! -e "$p/.nightshift/.shift-lease" ]
+  [ ! -e "$p/.nightshift/.stall" ]
+  [ ! -e "$p/.nightshift/shift-log.md" ]
+
+  run claude_bash "$p" helper-session "cat $p/.nightshift/.shift-armed"
+  is_allow
+  run claude_read "$p" helper-session
+  is_allow
+  [ ! -e "$p/.nightshift/.shift-session" ]
+
+  # The conversation Start armed from still binds with its probe, and only it is held.
+  run claude_bind "$p" shift-session
+  is_allow
+  [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "shift-session" ]
+  run claude_stop "$p" helper-session
+  is_release
+  run claude_stop "$p" shift-session
+  is_block "$output"
+}
+
+@test "after a stop-work order drops the record, only the leased conversation records itself again" {
+  p="$(new_project)"
+  punch_open "$p"
+  claude_bind "$p" shift-session
+  run bash "$STOP_SHIFT" --project "$p"
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/.shift-session" ]
+  [ -f "$p/.nightshift/.shift-lease" ]
+
+  # Another conversation carries on, neither claimed nor fenced.
+  run claude_bash "$p" helper-session "cat $p/.nightshift/STOP"
+  is_allow
+  [ ! -e "$p/.nightshift/.shift-session" ]
+
+  # The shift's own conversation stays under the site rules until its clock-out.
+  run claude_bash "$p" shift-session "rm -f $p/.nightshift/.shift-armed"
+  is_deny "$output"
+  printf '%s' "$output" | grep -q "control files"
+  [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "shift-session" ]
+
+  run claude_stop "$p" shift-session
+  is_release
+  [ -f "$p/.nightshift/.ended" ]
+  [ ! -e "$p/.nightshift/.shift-armed" ]
+}
+
+@test "Codex and Cursor leave a shift armed but never bound to its own Start" {
+  c="$(new_project codex-unbound)"
+  punch_open "$c"
+  run codex_stop "$c" helper-session
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.continue == true' >/dev/null
+  run codex_bash "$c" helper-session "cat $c/.nightshift/.shift-armed"
+  is_allow
+  [ ! -e "$c/.nightshift/.shift-session" ]
+  [ ! -e "$c/.nightshift/.shift-lease" ]
+  run codex_bind "$c" shift-session
+  is_allow
+  run codex_stop "$c" shift-session
+  is_block "$output"
+
+  u="$(new_project cursor-unbound)"
+  punch_open "$u"
+  run cursor_stop "$u" helper-tab
+  [ "$status" -eq 0 ]
+  if printf '%s' "$output" | grep -q 'followup_message'; then return 1; fi
+  run cursor_shell "$u" helper-tab "cat $u/.nightshift/.shift-armed"
+  is_allow
+  [ ! -e "$u/.nightshift/.shift-session" ]
+  [ ! -e "$u/.nightshift/.shift-lease" ]
+  run cursor_shell "$u" shift-tab ": nightshift-binding-probe"
+  is_allow
+  [ "$(sed -n 1p "$u/.nightshift/.shift-session")" = "shift-tab" ]
+  run cursor_stop "$u" shift-tab
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '.followup_message | type == "string" and length > 0' >/dev/null
+}
+
+@test "the Windows hooks leave a shift armed but never bound to its own Start" {
+  logic="$BATS_TEST_DIRNAME/windows/session-claim-logic.ps1"
+  [ -f "$logic" ]
+  grep -qF 'session-claim-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  run pwsh -NoProfile -NonInteractive -File "$logic"
+  [ "$status" -eq 0 ]
+}

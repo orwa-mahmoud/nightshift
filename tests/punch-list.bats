@@ -229,6 +229,7 @@ edit() {
 }
 
 block() {
+  bind_session "$1"
   jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}' |
     env CLAUDE_PROJECT_DIR="$1" bash "$GATE"
 }

@@ -129,12 +129,14 @@ fi
 ns_host_process claude "$NS" "$$"
 CURRENT_PID="$NS_CURRENT_PID"
 CURRENT_START="$NS_CURRENT_START"
-ns_shift_unbound claude hardhat
+PROBE=0
+ns_hardhat_binding_probe "$TOOL" "$CMD" && PROBE=1
+ns_shift_unbound claude hardhat "$PROBE"
 own_rc=$?
 [ "$own_rc" -eq 1 ] && exit 0
 [ "$own_rc" -eq 2 ] && deny "$NS_SHIFT_FAIL"
-# Only the original binding-tool set may make the first claim; the catch-all matcher must not
-# let a passive helper Read, search, or MCP call steal the shift.
+# Only the binding-tool set writes the record, and only for a caller ns_shift_unbound let through;
+# the catch-all matcher must not let a passive helper Read, search, or MCP call steal the shift.
 if ! ns_session_present "$NS" && [ -n "${SID:-}" ]; then
   case "$TOOL" in
     Bash | AskUserQuestion | Edit | Write | MultiEdit | NotebookEdit)

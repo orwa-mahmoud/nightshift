@@ -15,11 +15,12 @@ is_codex_release() {
   fi
 }
 
-# codex_gate <project> [ENV=VAL ...] — pipes a minimal Stop payload to the Codex gate, with
-# CODEX_PROJECT_DIR as the explicit override lever.
+# codex_gate <project> [ENV=VAL ...] — pipes a minimal Stop payload from the shift's own
+# conversation to the Codex gate, with CODEX_PROJECT_DIR as the explicit override lever.
 codex_gate() {
   local p="$1"
   shift
+  bind_session "$p" test-shift-session codex
   hook_payload "$(jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}')" \
     env "$@" CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/clock-out-gate.sh"
 }
@@ -36,6 +37,7 @@ codex_gate() {
 @test "the payload cwd alone locates the shift" {
   p="$(new_project)"
   punch_open "$p"
+  bind_session "$p" test-shift-session codex
   out="$(jq -nc --arg p "$p" '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:null,cwd:$p}' |
     bash "$CODEX_HOOKS/clock-out-gate.sh")"
   is_block "$out"
@@ -84,9 +86,11 @@ codex_gate() {
   [ ! -f "$p/.nightshift/.shift-session" ]
 }
 
-@test "the codex gate records the shift session with codex as its host" {
+@test "the codex gate holds the session its binding probe recorded with codex as its host" {
   p="$(new_project)"
   punch_open "$p"
+  jq -nc '{tool_name:"Bash",session_id:"test-shift-session",transcript_path:"",tool_input:{command:": nightshift-binding-probe"}}' |
+    CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
   run codex_gate "$p"
   is_block "$output"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "test-shift-session" ]

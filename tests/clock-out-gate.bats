@@ -22,6 +22,7 @@ plugin_copy() {
 gate_from() {
   local root="$1" p="$2"
   shift 2
+  bind_session "$p"
   hook_payload "$(jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}')" \
     env "$@" CLAUDE_PROJECT_DIR="$p" bash "$root/hooks/clock-out-gate.sh"
 }

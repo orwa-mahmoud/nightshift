@@ -19,6 +19,7 @@ kind() {
 }
 
 codex_gate() {
+  bind_session "$1" test-shift-session codex
   hook_payload "$(jq -nc '{hook_event_name:"Stop",session_id:"test-shift-session",transcript_path:""}')" \
     env CODEX_PROJECT_DIR="$1" bash "$CODEX_HOOKS/clock-out-gate.sh"
 }

@@ -1186,8 +1186,13 @@ if ($HostName -eq 'claude' -and (Test-NSClaudeForeignCursorSurface -NightshiftDi
     exit 0
 }
 
+$bindingProbe = ($tool -in @('Bash', 'PowerShell')) -and (
+    $command.Trim() -in @(': nightshift-binding-probe', "`$null = 'nightshift-binding-probe'")
+)
+
 $unbound = Resolve-NSShiftUnbound -NightshiftDir $ns -HostName $HostName `
-    -Nonce $nonce -Generation $generation -Revival $revival -Mode hardhat
+    -Nonce $nonce -Generation $generation -Revival $revival -Mode hardhat `
+    -SessionId $sessionId -BindingProbe $bindingProbe
 if ($unbound.Status -eq 'Pass') { exit 0 }
 if ($unbound.Status -eq 'Fail') { Write-Deny $unbound.Message }
 
@@ -1195,9 +1200,6 @@ $hostProcess = Get-NSHostProcess $HostName
 $processId = if ($null -eq $hostProcess) { '' } else { [string]$hostProcess.Id }
 $processStart = if ($null -eq $hostProcess) { '' } else { [string]$hostProcess.Start }
 
-$bindingProbe = ($tool -in @('Bash', 'PowerShell')) -and (
-    $command.Trim() -in @(': nightshift-binding-probe', "`$null = 'nightshift-binding-probe'")
-)
 $bindingTools = @('Bash', 'PowerShell', 'AskQuestion', 'AskUserQuestion', 'request_user_input', 'apply_patch', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit')
 
 $session = Read-NSSession $ns
