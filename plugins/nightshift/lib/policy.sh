@@ -1172,17 +1172,15 @@ ns_policy_shift_id() {
 }
 
 # ns_policy_replayed <workspace> — the archived copy of tonight's snapshot, when the archive has
-# already filed a shift under its id: the first `shift-policy-<id>.json` in any folder under the
-# resolved archive root. Status 1, printing nothing, when the snapshot is unreadable, carries no
-# id, or has never run.
+# already filed a shift under its id: the policy in the folder that shift claimed, or a
+# `shift-policy-<id>.json` an earlier version filed anywhere under the archive root. Status 1,
+# printing nothing, when the snapshot is unreadable, carries no id, or has never run.
 ns_policy_replayed() {
-  local id root found
+  local id found
   id="$(ns_policy_shift_id "$1")" || return 1
   # A 16-hex token or a UUID, as the schema allows; nothing that could reach a pattern.
   case "$id" in *[!0-9a-f-]*) return 1 ;; esac
-  root="$(ns_archive_root "$1")" || return 1
-  [ -d "$root" ] && [ ! -L "$root" ] || return 1
-  found="$(find "$root" -type f -name "shift-policy-$id.json" -print 2>/dev/null | LC_ALL=C sort | head -n 1)"
+  found="$(ns_archived_policy "$1" "$id")"
   [ -n "$found" ] || return 1
   printf '%s' "$found"
 }

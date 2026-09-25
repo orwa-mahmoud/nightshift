@@ -363,9 +363,11 @@
           "type": "string",
           "enum": [
             "date",
-            "shift"
+            "shift",
+            "name",
+            "date-name"
           ],
-          "description": "How an archive directory is named: date groups a night under YYYY-MM-DD, shift gives each shift its own directory named for its id. Two shifts on one day never collide either way, because the shift id names the files inside."
+          "description": "How a shift's archive folder is named: date by the day (YYYY-MM-DD, then YYYY-MM-DD-shift-2 for a later shift that day), shift by its id (shift-<id>), name by the name on the punch list's title line, and date-name by both (YYYY-MM-DD-<name>). A shift with no name files by date under name and date-name. Every shift gets a folder of its own either way, laid out like the live site."
         },
         "templatePath": {
           "type": "string",

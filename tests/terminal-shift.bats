@@ -42,7 +42,7 @@ a_new_item() {
   is_release
   terminal "$p"
   today="$(date '+%Y-%m-%d')"
-  archived="$p/.nightshift/archive/$today/findings-unknown.jsonl"
+  archived="$p/.nightshift/archive/$today/evidence/findings.jsonl"
   live="$p/.nightshift/evidence/findings.jsonl"
   if [ -f "$archived" ]; then
     grep -qF '"id":"keep-me"' "$archived"

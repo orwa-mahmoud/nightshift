@@ -1,6 +1,6 @@
 ---
 name: archive
-description: File finished shift state into a dated archive so the live files stay lean.
+description: File a finished shift into its own archive folder, laid out like the live site, so the live files keep only open work.
 license: MIT
 ---
 
@@ -20,7 +20,7 @@ verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WOR
 directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
 `ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
-Read `$NS/state-version` first. Legacy (missing) and current (`1`) may be archived.
+Read `$NS/state-version` first. Legacy (missing), `1` and the current `2` may be archived.
 A newer or malformed marker fails closed — file nothing, rewrite nothing, and never migrate.
 `state-version` itself stays live; it is not an archive record.
 
@@ -36,17 +36,20 @@ If `$NS/run/.pending-filing` exists, a shift asked for filing at clock-out. It c
 session to ask for it. Delete the marker once filing is done, and only then. Nothing else about it
 is special: file the same way you would on any explicit Archive.
 
-`$NS/run/.ended` names the shift that finished and where it files, in `shiftId=`, `archiveRoot=` and
-`archiveLayout=` lines. Those are what a later Archive follows: clock-out has already archived
-the policy that carried them.
+`$NS/run/.ended` names the shift that finished and where it files, in `shiftId=`, `archiveRoot=`,
+`archiveLayout=`, `shiftName=` and `archiveFolder=` lines. Clock-out claimed that folder for the
+shift, and every later Archive of it returns there, whatever day it runs.
 
-**Filing is a copy.** A ticked item's receipt leaving live storage is a separate step, and the
+**Filing is a copy.** Every record is filed as it stands, and then the live side keeps only what is
+still open. A ticked item's receipt leaving live storage is a separate step, and the
 agent running Archive takes it from `$NS/punch-list.md` — not later, not the owner, and not by
-guessing. `--retire` with one record name, repeated once per ticked item on POSIX; on native
-Windows, `-Retire` takes those names as a single comma-separated list. Receipts of open items are
-never named. The morning receipt is named only when that shift has ended and no open
-item still needs it. Once the shift has ended, the helper also retires every ticked item's
-receipt it filed, even if a name was missed. It will not retire an open item's receipt.
+guessing.
+`--retire` with one record name, repeated once per ticked item on POSIX; on native Windows,
+`-Retire` takes those names as a single comma-separated list. Receipts of open items are never
+named: they are filed as they stand and stay live. The morning receipt is named only when that shift
+has ended and no open item still needs it. Once the shift has ended, the helper also retires every
+ticked item's receipt it filed, even if a name was missed. It will not retire an open item's
+receipt.
 
 Before naming anything, read `$NS/punch-list.md` and the records themselves. A shift can end with
 items still open — `STOP` and the deadline both do that — so `.ended` is not a reason to leave a
@@ -57,68 +60,94 @@ helper did not file is refused and told back to you.
 
 ## Where it goes
 
-Everything lands under the archive root, which is `archive.root` in the resolved policy, in the
-shift's own folder: `<YYYY-MM-DD>/` or `shift-<id>/` according to `archive.layout`. Left alone those
-give the default `$NS/archive/<YYYY-MM-DD>/`, and a later shift the same day gets
-`<YYYY-MM-DD>-shift-2/`, `-shift-3/` and so on. Receipts land in the folder's `receipts/`, which is
-`archive/<YYYY-MM-DD>/receipts/` by default; `archive-receipts` prints it, and anything else you
-file this run goes into that same folder.
-Today's date is `date +%Y-%m-%d` on POSIX, or `Get-Date -Format yyyy-MM-dd` on native Windows.
-Filing the same shift again returns to its folder; another shift never writes into it.
+Each shift has one folder under the archive root (`archive.root` in the resolved policy), named by
+`archive.layout`:
 
-**The receipts keep working from where they land.** The helper repoints their links: a record that
-travelled with them stays a sibling, a record that stayed live is reached back through the archive.
-That rewriting changes bytes, so the untouched original is preserved beside each rewritten file,
-under the same name with an "original" suffix. Do not hand-edit either one.
+- `date` (the default): `<YYYY-MM-DD>/`, and a later shift that day `<YYYY-MM-DD>-shift-2/`,
+  `-shift-3/` and so on.
+- `shift`: `shift-<id>/`.
+- `name`: the name on the punch list's title line, as in `# Punch List — Archive follow-ups`, so
+  `archive-follow-ups/`.
+- `date-name`: both, `<YYYY-MM-DD>-archive-follow-ups/`.
+
+A shift with no name files by date under `name` and `date-name`, and a second shift under the same
+name takes `-shift-2`. The folder records its shift in `.shift-id`; another shift never writes into
+it, and filing the same shift again returns to it. `archive-receipts` prints the folder; receipts
+land in its `receipts/`, which is `archive/<YYYY-MM-DD>/receipts/` by default. A shift that never
+reached clock-out has no claimed folder yet and files by today's date: `date +%Y-%m-%d` on POSIX,
+or `Get-Date -Format yyyy-MM-dd` on native Windows.
+
+**The folder is laid out like the live site.** Every record sits at the path it has under `$NS/`:
+
+```text
+archive/<folder>/
+├── .shift-id
+├── punch-list.md            the whole list as the shift ended: contract, ticked and open items
+├── receipts/                every receipt, the morning page, and an index of this folder
+├── inbox/
+│   ├── parking-lot.md       the whole file as it stood
+│   └── snag-log.md          the whole file as it stood
+└── run/
+    ├── shift-policy.json    filed by clock-out
+    ├── shift-log.md
+    ├── usage/               the shift's usage readings
+    └── evidence/findings.jsonl   filed by clock-out, when the shift used it
+```
+
+Links between those records keep working as written. A link to a record that stayed live — the
+drafting table, a receipt of an open item still being worked — is repointed back to it. That
+rewriting changes bytes, so the untouched original is preserved beside each rewritten file, under the
+same name with an "original" suffix. Do not hand-edit either one.
 
 ## What moves, what stays
 
-- **Punch list → filed by the runtime.** Once the shift has ended, `archive-receipts` writes
- `punch-list.md` into the shift's folder: a note naming it the archived record of that shift, then
- the contract, the gates and every ticked item exactly as written. It then takes the ticked items
- out of `$NS/punch-list.md`. Open items, the contract and the gates stay live, and nothing ticked
- files nothing. Do not move items by hand. When the owner is present and no open box is left, ask
- whether to keep the contract for the next shift or change it. In unattended filing (a
- `.pending-filing` from clock-out) do not ask: append one reminder under `## Notes` (create the
- heading below `## Items` if it is missing): leftover Shift contract and Gates still bind the next
- Hunt or Start cut; review them before composing a new campaign; Archive does not reset them. Skip
- the note when open work remains, when the same sentence is already present, or if adding it would
- require an open checkbox. Never write `- [ ]` here and never edit above `## Items`.
-- **Receipts — the ticked ones.** For each ticked item, pass `--retire <receipt-name>`; receipts
- of open items are never named. `archive-receipts` rebuilds `receipts/README.md` on both sides of
- the move so each index lists only the receipts in its own folder.
-- **Shift log → the archive, whole.** Move `$NS/run/shift-log.md` into
- the folder and start a fresh one
- with the same one-line header. The journal is mechanical; its lines belong to the dates they
- happened.
-- **Snag log — only what's handled.** `archive-receipts` moves each `- ` bullet entry that carries a
- disposition (`fixed`, `ignored`, `answered`, `rejected-because`, `accepted-tradeoff`) from
- `$NS/inbox/snag-log.md` into the
- archive dest that `archive.root` and `archive.layout` resolve, then appends one
- `Filed:` pointer (label: date or shift id; target: relative path to the archived file)
- on the live file. Filing nothing
- writes no pointer and creates no empty archive file. Do not hand-copy those entries.
- Entries still awaiting the owner stay live: an open question is not history yet. Text written as a
- paragraph instead of a bullet is never filed; Doctor names it by file and line.
-- **Parking lot — only what's answered.** Same helper, same pointer rule on `$NS/inbox/parking-lot.md`.
- The owner answers an entry by appending ` · answered: <decision>`; an answered entry is filed,
- never deleted. Parking-lot questions unanswered stay. Read live entries first; when checking whether a finding or decision
- was already handled, follow the pointer and search the linked file by topic or identifier.
- Historical decisions are evidence, not fresh authorization. A broken pointer is reported in the
- snag log; never guess or delete history.
+- **Punch list → filed by the runtime.** Once the shift has ended, `archive-receipts` files the
+ whole list, exactly as it stood, then takes the ticked items out of `$NS/punch-list.md`.
+ Open items, the contract and the gates stay live. Do not move items by hand. When the owner is present
+ and no open box is left, ask whether to keep the contract for the next shift or change it. In
+ unattended filing (a `.pending-filing` from clock-out) do not ask: append one reminder under
+ `## Notes` (create the heading below `## Items` if it is missing):
+ leftover Shift contract and Gates still bind the next Hunt or Start cut; review them before
+ composing a new campaign; Archive does not reset them. Skip the note when open work remains, when the same sentence is already
+ present, or if adding it would require an open checkbox. Never write `- [ ]` here and never edit
+ above `## Items`.
+- **Receipts — every one filed, the ticked ones retired.** For each ticked item, pass `--retire <receipt-name>`;
+ receipts of open items are filed as they stand and stay live.
+ `archive-receipts` rebuilds `receipts/README.md` on both sides of the move so each index lists
+ only the receipts in its own folder.
+- **Shift log, usage, policy → filed by the runtime.** Once the shift has ended, the helper moves
+ `$NS/run/shift-log.md` into the folder and starts a fresh one under the same heading, moves the
+ shift's usage readings, and moves a policy of that shift that is still live. A `usage-<id>/`
+ folder the Start preflight set aside goes to the folder of the shift it belongs to. Do not move
+ any of these by hand.
+- **Snag log — filed whole, only the open entries stay.** `archive-receipts` files
+ `$NS/inbox/snag-log.md` as it stands, then takes out each `- ` bullet entry that carries a
+ disposition (`fixed`, `ignored`, `answered`, `rejected-because`, `accepted-tradeoff`) and appends
+ one `Filed:` pointer to the filed copy (label: the folder's name, or the shift id in the `shift`
+ layout; target: relative path to the filed file). A file with no entry files nothing. Do not
+ hand-copy entries. Entries still awaiting the owner stay live: an open question is not history
+ yet. Text written as a paragraph instead of a bullet is never filed; Doctor names it by file and
+ line.
+- **Parking lot — filed whole, only the unanswered stay.** Same helper, same pointer rule on
+ `$NS/inbox/parking-lot.md`. The owner answers an entry by appending ` · answered: <decision>`; an
+ answered entry is filed, never deleted. Parking-lot questions unanswered stay. Read live entries
+ first; when checking whether a finding or decision was already handled, follow the pointer and
+ search the linked file by topic or identifier. Historical decisions are evidence, not fresh
+ authorization. A broken pointer is reported in the snag log; never guess or delete history.
 - **Work orders — only what's spent.** Pending orders are open boxes; they stay.
  A `## Work order` heading with no remaining box is leftover shell from a cut — delete it,
- do not file it. File only an order whose box was ticked in place.
+ do not file it. File only an order whose box was ticked in place, into the folder's
+ `staging/work-orders.md`.
 - **Product research → the archive after its shift.** When no shift is active, append the completed
- entries from `$NS/product/product-research.md` to the archive's `product-research.md`, preserving their dates,
- sources, evidence, and conclusions; then restore the live file from the shipped template. During
- an active shift, leave all research live. Research is evidence, so never summarize it away or
- strip its source URLs while filing it.
+ entries from `$NS/product/product-research.md` to the folder's `product/product-research.md`,
+ preserving their dates, sources, evidence, and conclusions; then restore the live file from the
+ shipped template. During an active shift, leave all research live. Research is evidence, so never
+ summarize it away or strip its source URLs while filing it.
 - **Opportunity map — only terminal outcomes.** Move `shipped` and `rejected` entries from
- `$NS/product/opportunity-map.md` into the archive's `opportunity-map.md`, preserving their evidence links and
- reasons. Keep `candidate`, `building`, and `parked` entries live: they can still affect a future
- cycle or need the owner. Restore the shipped headings if moving the last terminal entry leaves an
- empty section. Never renumber or silently change a status during archive.
+ `$NS/product/opportunity-map.md` into the folder's `product/opportunity-map.md`, preserving their
+ evidence links and reasons. Keep `candidate`, `building`, and `parked` entries live: they can still
+ affect a future cycle or need the owner. Restore the shipped headings if moving the last terminal
+ entry leaves an empty section. Never renumber or silently change a status during archive.
 
 ## Timing
 
@@ -154,9 +183,10 @@ a preview that lists nothing is success, not a prompt to invent a number.
 Deletion is a second, explicit step. If the preview lists paths and the owner confirms in this
 interactive session, run the same command with `--apply` (POSIX) or `-Apply` (native Windows). If the shift is armed, the owner
 does not confirm, or either rule is `0`, stop after the preview. `--apply`/`-Apply` deletes only the
-allowlisted runtime log (`scheduled.log`) and dated `archive/YYYY-MM-DD/` (or
-`archive/YYYY-MM-DD-shift-N/`) directories that
-are old enough, resolved under `$NS/`, not symlinks, and free of still-open work.
+allowlisted runtime log (`scheduled.log`) and shift folders — dated `archive/YYYY-MM-DD/` and
+`archive/YYYY-MM-DD-shift-N/`, and any folder a shift claimed in its `.shift-id` — that are old
+enough, resolved under `$NS/`, not symlinks, and free of still-open work. A claimed folder's punch
+list is a copy whose open items stayed live, so it never holds work back.
 
 Never call `ns retain-history` from start, hooks, status, Doctor, or recovery. Never call `ns archive-receipts` from start, hooks, status, Doctor, or recovery. Never delete
 the live punch list, drafting table, parking lot, rules, current shift files, or owner-authored
@@ -205,6 +235,6 @@ plans only; never replay side effects. Render audience-specific handoffs from on
 
 ## Summarize
 
-Print the archive path and one line per file moved or trimmed — and what stayed live and why.
+Print the shift's folder and one line per file moved or trimmed — and what stayed live and why.
 If a retention preview ran, include whether anything was eligible and whether the owner
 confirmed a delete.

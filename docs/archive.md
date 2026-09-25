@@ -6,23 +6,42 @@ It files the records; it does not complete tasks or reset the work contract.
 
 ## What happens to the records
 
-The default destination is `.nightshift/archive/`, grouped by date: the first shift of a day files
-into `<YYYY-MM-DD>/`, and each later shift that day into its own `<YYYY-MM-DD>-shift-2/`,
-`<YYYY-MM-DD>-shift-3/` and so on. Filing the same shift again returns to its folder. You can
-instead group by shift and choose another archive directory within `.nightshift/`. Filing preserves evidence;
-retiring a live record is a separate choice based on whether unfinished work still needs it.
+Each shift gets one folder under `.nightshift/archive/`, laid out exactly like the live site, so a
+filed shift reads the way it did while it ran:
 
-| Record | What Archive does |
-| --- | --- |
-| Completed punch-list items | Files the shift's punch list as `punch-list.md` in its own folder: the contract, the gates, and every ticked item as written. The ticked items then leave the live list; open items, the contract, and gates stay live. |
-| Shift log | Files the journal and starts a fresh log. |
-| Snags and parked decisions | Files handled entries; unresolved findings and unanswered decisions stay live. |
-| Work orders | Keeps pending work available for a later shift. |
-| Product research and opportunity map | Preserves research and terminal outcomes with their evidence. Candidate, building, and parked opportunities stay live. |
-| Receipts and usage records | Files the receipt of every ticked item, the morning receipt, and the shift's usage readings; the receipt of an item that is still open stays live with its box, and the receipts index is rebuilt on both sides of the move. |
+```text
+archive/2026-09-25/
+├── punch-list.md            the whole list as the shift ended
+├── receipts/                every receipt, the morning page, and an index
+├── inbox/
+│   ├── parking-lot.md
+│   └── snag-log.md
+└── run/
+    ├── shift-policy.json
+    ├── shift-log.md
+    └── usage/
+```
 
-The links inside a filed receipt are adjusted so its evidence remains reachable, and an untouched
-original is preserved beside it. Archive also writes a history index with objectives, outcomes,
+The folder is named by `archive.layout`: by date (the default, `2026-09-25/`, then
+`2026-09-25-shift-2/` for a later shift that day), by shift id (`shift-<id>/`), by name
+(`archive-follow-ups/`), or by date and name (`2026-09-25-archive-follow-ups/`). The name is the one
+on the punch list's title line — `# Punch List — Archive follow-ups` — and a shift with no name
+files by date. Clock-out claims the folder, and filing the same shift again returns to it, on
+whatever day you run Archive. You can also choose another archive directory within `.nightshift/`.
+
+Every record is filed as it stands; the live files then keep only what is still open:
+
+| Record | Filed | Stays live |
+| --- | --- | --- |
+| Punch list | The whole list: contract, gates, ticked and open items | The contract, the gates, and the open items |
+| Receipts | Every receipt, the morning page, and an index of the folder | The receipts of open items |
+| Snag log and parking lot | Each file whole | Open findings and unanswered decisions, plus a `Filed:` link to the copy |
+| Shift log, usage readings, policy | Moved into `run/` | A fresh shift log |
+| Work orders | Orders ticked in place | Pending orders |
+| Product research and opportunity map | Research and terminal outcomes with their evidence | Candidate, building, and parked opportunities |
+
+Links between filed records keep working as written. A link to a record that stayed live is
+adjusted so it still reaches it, and an untouched original is preserved beside the adjusted page. Archive also writes a history index with objectives, outcomes,
 verification, evidence locations, and continuation context, so later shifts can revisit earlier
 work without reconstructing every conversation. Missing information stays marked as missing.
 

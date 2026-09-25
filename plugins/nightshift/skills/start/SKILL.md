@@ -201,9 +201,11 @@ that does not request an unattended shift remains unaffected.
 
 Surface any still-unanswered entries in `$NS/inbox/parking-lot.md` (read-only) so the owner sees what the
 last shift parked — printed, never waited on. Append a `shift started` line to `$NS/run/shift-log.md`.
-The preflight rotates that journal itself when it grows past ~500 KB, into
-`$NS/archive/<YYYY-MM-DD>/shift-log.md` (`date +%Y-%m-%d` on POSIX, `Get-Date -Format yyyy-MM-dd`
-on native Windows). Only the mechanical journal auto-rotates — `snag-log.md` and `parking-lot.md`
+The preflight rotates that journal itself when it grows past ~500 KB, into the last ended shift's
+archive folder at `run/shift-log.md`, beside anything Archive already filed there, or into a folder
+claimed for today (`date +%Y-%m-%d` on POSIX, `Get-Date -Format yyyy-MM-dd` on native Windows)
+when no shift is on record. Only the
+mechanical journal auto-rotates — `snag-log.md` and `parking-lot.md`
 are the owner's review material, and Archive files those on the owner's order.
 
 ## 6. Arm the night watchman

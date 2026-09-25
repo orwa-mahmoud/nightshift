@@ -561,11 +561,11 @@ A_SCOPE=()
 A_PROVENANCE=()
 
 # The snapshot the shift ran under is the live file until the clock-out gate files it, and the
-# copy filed under the shift's own id afterwards. A receipt rendered either side of that move says
+# copy filed in the shift's own folder afterwards. A receipt rendered either side of that move says
 # the same thing. An archived snapshot counts only when it is the one the ending marker names: any
 # other is a different night's, and this one then has no policy record.
 _find_policy() {
-  local id root cand
+  local id cand
   if [ -f "$LIVE_POLICY" ] && [ ! -L "$LIVE_POLICY" ]; then
     POLICY_FILE="$LIVE_POLICY"
     return 0
@@ -573,10 +573,7 @@ _find_policy() {
   id="$(ns_ended_field "$WORKSPACE" shiftId)"
   # A 16-hex token or a UUID, as the schema allows; nothing that could reach a pattern.
   case "$id" in '' | *[!0-9a-f-]*) return 0 ;; esac
-  root="$(ns_archive_root "$WORKSPACE")" || return 0
-  [ -d "$root" ] && [ ! -L "$root" ] || return 0
-  cand="$(find "$root" -maxdepth 2 -type f -name "shift-policy-$id.json" -print 2>/dev/null |
-    LC_ALL=C sort | tail -n 1)"
+  cand="$(ns_archived_policy "$WORKSPACE" "$id")"
   [ -n "$cand" ] || return 0
   POLICY_FILE="$cand"
   POLICY_WANT_ID="$id"

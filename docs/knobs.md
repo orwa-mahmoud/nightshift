@@ -377,8 +377,8 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 | Key | Default | Values |
 |---|---|---|
 | `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
-| `root` | `archive` | Directory for dated archives, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
-| `layout` | `date` | `date` files the first shift of a day under `YYYY-MM-DD` and each later one under `YYYY-MM-DD-shift-2`, `-shift-3` and so on; `shift` gives each shift a `shift-<id>` directory. Either way one folder holds one shift, and filing a shift again returns to its own folder |
+| `root` | `archive` | Directory the shift folders live in, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
+| `layout` | `date` | `date` files the first shift of a day under `YYYY-MM-DD` and each later one under `YYYY-MM-DD-shift-2`, `-shift-3` and so on; `shift` gives each shift a `shift-<id>` directory; `name` uses the name on the punch list's title line (`# Punch List — Archive follow-ups` files under `archive-follow-ups`); `date-name` uses both (`YYYY-MM-DD-archive-follow-ups`). A shift with no name files by date. Every way, one folder holds one shift, laid out like the live site, and filing a shift again returns to its own folder |
 | `templatePath` | `""` | A Markdown template for the archive summary |
 
 Changing `root` never moves or hides what is already filed: an older history under the previous

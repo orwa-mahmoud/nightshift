@@ -293,9 +293,9 @@ MD
   printf 'shiftId=9f2c40ab77e51d63\narchiveRoot=archive\narchiveLayout=date\n' >"$p/.nightshift/.ended"
   run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/archive-receipts.sh" --project "$p" --date 2026-09-24
   [ "$status" -eq 0 ]
-  grep -qF 'needs allowance: global-packages' "$p/.nightshift/archive/2026-09-24/9f2c40ab77e51d63/parking-lot.md"
+  grep -qF 'needs allowance: global-packages' "$p/.nightshift/archive/2026-09-24/parking-lot.md"
   ! grep -qF 'needs allowance:' "$lot" || false
-  grep -qF 'Filed: [2026-09-24](archive/2026-09-24/9f2c40ab77e51d63/parking-lot.md)' "$lot"
+  grep -qF 'Filed: [2026-09-24](archive/2026-09-24/parking-lot.md)' "$lot"
 }
 
 @test "park-needs is idempotent: a second run adds nothing and changes no byte" {

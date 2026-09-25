@@ -138,3 +138,15 @@ cursor_gate() {
   is_cursor_release
   [ -e "$p/.nightshift/.ended" ]
 }
+
+@test "cursor clock-out files the shift policy into the folder it claims for the shift" {
+  p="$(new_project)"
+  punch_done "$p"
+  printf '%s\n' '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-25T00:00:00Z","source":"composition","verificationLevel":"none","toolingPolicy":"existing-tools"}' >"$p/.nightshift/shift-policy.json"
+  run cursor_gate "$p" "$FIXTURES/stop-completed.json"
+  is_cursor_release
+  d="$p/.nightshift/archive/$(sed -n 's/^archiveFolder=//p' "$p/.nightshift/.ended")"
+  [ "$(cat "$d/.shift-id")" = 9f2c40ab77e51d63 ]
+  jq -e '.shiftId == "9f2c40ab77e51d63"' "$d/shift-policy.json" >/dev/null
+  [ ! -e "$p/.nightshift/shift-policy.json" ]
+}

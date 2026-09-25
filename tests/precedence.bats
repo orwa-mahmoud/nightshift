@@ -379,7 +379,7 @@ bound_plan() { # <project> <deadline JSON> <command>...
   policy "$p" '"allowances":[{"category":"containers","scope":"category","provenance":"one-shift"}]'
   [ "$(setting "$p" elevation.containers)" = 'allow|one-shift|shift' ]
   bash "$SP" --project "$p" archive >/dev/null
-  archived="$(find "$p/.nightshift/archive" -name 'shift-policy-*.json' | head -n 1)"
+  archived="$(find "$p/.nightshift/archive" -name 'shift-policy.json' | head -n 1)"
   [ -f "$archived" ]
 
   # A hand edit that breaks one field: the archived snapshot must not stand in for it.

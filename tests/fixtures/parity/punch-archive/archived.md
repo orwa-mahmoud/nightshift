@@ -1,5 +1,3 @@
-> Archived record of shift 1111222233334444, filed 2026-09-05. The items still open stayed in the live `.nightshift/punch-list.md`.
-
 # Punch list
 
 - [ ] prose box in the contract
@@ -15,4 +13,11 @@
 
   - sub a2
 
+- [ ] **2. B.**
+  - sub b
+
 - [X] **3. C.**
+
+## Notes
+
+- a note

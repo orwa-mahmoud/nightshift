@@ -83,6 +83,31 @@ age_file() {
   [ ! -e "$a" ]
 }
 
+@test "a folder a shift claimed is pruned by age whatever its name, and its open boxes are the live list's" {
+  p="$(new_project)"
+  rm -f "$p/.nightshift/.shift-armed"
+  set_retention "$p" 0 30
+  a="$p/.nightshift/archive"
+  mkdir -p "$a/archive-follow-ups" "$a/2020-01-01-archive-follow-ups" "$a/notes"
+  printf '1111222233334444\n' >"$a/archive-follow-ups/.shift-id"
+  printf '5555666677778888\n' >"$a/2020-01-01-archive-follow-ups/.shift-id"
+  # The filed list as the shift ended: its open item stayed live, so it holds nothing back.
+  printf '## Items\n\n- [ ] **1. still open.**\n' >"$a/archive-follow-ups/punch-list.md"
+  age_file "$a/archive-follow-ups"
+  age_file "$a/2020-01-01-archive-follow-ups"
+  age_file "$a/notes"
+  run bash "$RETAIN" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'archive/archive-follow-ups'
+  printf '%s' "$output" | grep -q 'archive/2020-01-01-archive-follow-ups'
+  ! printf '%s' "$output" | grep -q 'archive/notes' || false
+  run bash "$RETAIN" --project "$p" --apply
+  [ "$status" -eq 0 ]
+  [ ! -e "$a/archive-follow-ups" ]
+  [ ! -e "$a/2020-01-01-archive-follow-ups" ]
+  [ -d "$a/notes" ]
+}
+
 @test "preview lists eligible paths and apply deletes only those" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"

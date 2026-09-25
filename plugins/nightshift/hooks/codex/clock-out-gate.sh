@@ -47,7 +47,7 @@ case "$STATE_KIND" in
     ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
-declare PUNCH STOP DEADLINE STALL NOTIFIED ENDED ARMED LOG
+declare PUNCH STOP DEADLINE STALL NOTIFIED ENDED ARMED POLICY LOG
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set STOP "$NS" stop
 ns_layout_set DEADLINE "$NS" deadline
@@ -55,6 +55,7 @@ ns_layout_set STALL "$NS" stall
 ns_layout_set NOTIFIED "$NS" notified
 ns_layout_set ENDED "$NS" ended # written when the shift actually ends; hardhat keeps the site rules armed until then
 ns_layout_set ARMED "$NS" armed
+ns_layout_set POLICY "$NS" shift-policy
 ns_layout_set LOG "$NS" shift-log
 # One copy: the rules file is the config; env vars are session-start overrides only. A gate
 # whose knobs are unreadable still gates (fail closed): the stall bookkeeping stands down
@@ -148,6 +149,16 @@ render_morning_receipt() {
   log_line "morning receipt render failed: $(printf '%s' "$err" | head -n1)"
 }
 
+# Best effort, never blocks the release: file tonight's shift-policy.json in the shift's archive
+# folder, at the path it has live, via the same helper the owner runs by hand, so the next Start
+# records a fresh snapshot rather than arming this one again.
+archive_shift_policy() {
+  local err
+  [ -f "$POLICY" ] && [ ! -L "$POLICY" ] || return 0
+  err="$("$_here/../../runtime/shift-policy.sh" --project "$PROJECT_DIR" archive 2>&1)" && return 0
+  log_line "shift policy archive failed: $(printf '%s' "$err" | head -n1)"
+}
+
 archive_findings_ledger() {
   local archiver="$_here/../../runtime/evidence-archive.sh" err
   [ -f "$archiver" ] || {
@@ -183,6 +194,7 @@ end_shift() {
   # The marker that says this shift ended also says which shift and where it files, and notes that
   # filing is due when the owner asked for it.
   ns_gate_record_ending "$NS" "$PROJECT_DIR" "${shift_id:-unknown}"
+  archive_shift_policy
   archive_findings_ledger "${shift_id:-unknown}"
   receipts_commit "$1"
   whistle "$1"

@@ -77,17 +77,20 @@ try {
     Expect-True ($cleanRun.Stdout.Contains('ok punch-list open=1 ticked=0')) 'clean site counts the punch list'
     Expect-True ($cleanRun.Stdout.Contains('ok deadline none (finite list')) 'a finite list needs no clock'
 
-    # A rotated journal never replaces a shift log Archive already filed that day.
+    # An oversized journal joins the last ended shift's folder, after the log Archive filed there.
     $rotate = New-Site (Join-Path $root 'rotate')
-    $day = Get-Date -Format 'yyyy-MM-dd'
-    $filedDir = Join-Path $rotate ('.nightshift/archive/' + $day)
+    $filedDir = Join-Path $rotate '.nightshift/archive/2026-09-20'
     $null = New-Item -ItemType Directory -Force -Path $filedDir
-    [IO.File]::WriteAllText((Join-Path $filedDir 'shift-log.md'), "a filed shift log`n")
-    [IO.File]::WriteAllText((Join-Path $rotate '.nightshift/shift-log.md'), ('x' * 600000))
+    [IO.File]::WriteAllText((Join-Path $filedDir '.shift-id'), "1111222233334444`n")
+    [IO.File]::WriteAllText((Join-Path $filedDir 'shift-log.md'), "# Shift Log`na filed line`n")
+    [IO.File]::WriteAllText((Join-Path $rotate '.nightshift/.ended'),
+        "shiftId=1111222233334444`narchiveRoot=archive`narchiveLayout=date`nshiftName=`narchiveFolder=2026-09-20`n")
+    [IO.File]::WriteAllText((Join-Path $rotate '.nightshift/shift-log.md'), "# Shift Log`n" + ('x' * 600000) + "`n")
     $rotateRun = Invoke-Preflight $rotate @('-HostName', 'claude')
-    Expect-True ($rotateRun.Stdout.Contains("ok journal rotated to archive/$day/shift-log-2.md")) "the journal takes the next name: $($rotateRun.Stdout)"
-    Expect-True ([IO.File]::ReadAllText((Join-Path $filedDir 'shift-log.md')) -ceq "a filed shift log`n") 'the filed shift log is kept'
-    Expect-True ((Get-Item -LiteralPath (Join-Path $filedDir 'shift-log-2.md')).Length -eq 600000) 'the whole journal is rotated'
+    Expect-True ($rotateRun.Stdout.Contains('ok journal rotated to archive/2026-09-20/shift-log.md')) "the journal joins the ended shift's folder: $($rotateRun.Stdout)"
+    $filedLines = @([IO.File]::ReadAllLines((Join-Path $filedDir 'shift-log.md')))
+    Expect-True ($filedLines.Count -eq 3 -and $filedLines[1] -ceq 'a filed line' -and $filedLines[2].Length -eq 600000) 'the filed log keeps its lines and gains the journal'
+    Expect-True ([IO.File]::ReadAllText((Join-Path $rotate '.nightshift/shift-log.md')) -ceq "# Shift Log`n") 'the live journal starts again under its heading'
 
     # Nothing scaffolded: refuse and name Setup.
     $bare = Join-Path $root 'bare'

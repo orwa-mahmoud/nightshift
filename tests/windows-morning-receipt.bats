@@ -62,13 +62,13 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
     echo "the Windows archive still decides by filename"
     return 1
   fi
-  grep -qF 'Test-NSSameBytes' "$WIN/archive-receipts.ps1"
+  grep -qF 'Test-NSArchiveSame' "$WIN/archive-receipts.ps1"
   grep -qF '$rotate = (-not $armed) -and $ended' "$WIN/archive-receipts.ps1"
   grep -qF 'a different record is already filed under that name' "$WIN/archive-receipts.ps1"
   # And the POSIX helper says the same thing.
   sh="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/archive-receipts.sh"
   grep -qF 'ROTATE=1' "$sh"
-  grep -qF 'same_bytes' "$sh"
+  grep -qF 'ns_archive_same' "$sh"
   grep -qF 'a different record is already filed under that name' "$sh"
 }
 
