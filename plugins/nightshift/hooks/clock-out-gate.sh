@@ -141,8 +141,8 @@ release_lease() {
     || log_line "process lease release deferred: lease mutex remained busy"
 }
 
-# Best effort, never blocks the release: file tonight's shift-policy.json under
-# archive/<YYYY-MM-DD>/shift-policy-<shiftId>.json via the same helper the owner runs by hand.
+# Best effort, never blocks the release: file tonight's shift-policy.json in the shift's archive
+# folder, at the path it has live, via the same helper the owner runs by hand.
 # A shift that armed with safe defaults and never wrote a policy leaves nothing to archive.
 archive_shift_policy() {
   local err
@@ -187,8 +187,8 @@ render_morning_receipt() {
   log_line "morning receipt render failed: $(printf '%s' "$err" | head -n1)"
 }
 
-# Best effort: file findings.jsonl under archive/<date>/findings-<shiftId>.jsonl and truncate
-# the live ledger so the next shift starts lean.
+# Best effort: file findings.jsonl in the shift's archive folder, at the path it has live, and
+# truncate the live ledger so the next shift starts lean.
 archive_findings_ledger() {
   local archiver="$_here/../runtime/evidence-archive.sh" err
   [ -f "$archiver" ] || {

@@ -333,7 +333,7 @@ cmd_resolve() {
 }
 
 cmd_archive() {
-  local out rc shift_id dated dest
+  local out rc shift_id dated dest rel
   out="$(ns_policy_read_shift "$WORKSPACE")"
   rc=$?
   case "$rc" in
@@ -343,12 +343,17 @@ cmd_archive() {
     *) die "invalid shift-policy.json: $out" 2 ;;
   esac
   shift_id="$(ns_policy_shift_id "$WORKSPACE")" || die 'shift-policy.json carries no shiftId' 2
-  # The owner chooses where and how a shift is filed; the shift id names the file either way.
-  dated="$(ns_archive_dir "$WORKSPACE" "$(date '+%Y-%m-%d')" "$shift_id")" ||
+  # The shift's own folder, at the path the policy has live: the archive reads like the live site.
+  dated="$(ns_archive_group "$WORKSPACE" "$(date '+%Y-%m-%d')" "$shift_id")" ||
     die 'archive.root must name a directory inside .nightshift/' 2
   [ ! -L "$dated" ] || die 'refuse to write through a symlink archive path' 2
-  mkdir -p "$dated" || die "cannot create $dated" 2
-  dest="$dated/shift-policy-$shift_id.json"
+  ns_layout_rel_set rel "$NS" shift-policy
+  dest="$dated/$rel"
+  ns_archive_dest "$dest" || die "refuse to write through $dest" 2
+  mkdir -p "${dest%/*}" || die "cannot create ${dest%/*}" 2
+  if [ -f "$dest" ] && ! cmp -s "$POLICY" "$dest"; then
+    die "a different shift policy is already filed at $dest; the live one is unchanged" 2
+  fi
   mv "$POLICY" "$dest" || die "cannot archive $POLICY" 2
   printf '%s\n' "$dest"
   exit 0

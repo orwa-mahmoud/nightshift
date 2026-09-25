@@ -874,12 +874,15 @@ function Invoke-NSEvidenceArchive {
         if ($state['state'] -ceq 'valid') { $ShiftId = [string]$state['policy']['shiftId'] }
     }
     if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
-    # The owner chooses where and how a shift is filed; the shift id names the file either way.
-    $directory = Get-NSArchiveDir -Workspace $Workspace -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId $ShiftId
+    # The shift's own folder, at the path the ledger has live. A ledger already filed for the shift
+    # keeps every record and gains the new ones.
+    $directory = Get-NSArchiveGroup -Workspace $Workspace -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId $ShiftId
     if ($null -eq $directory -or (Test-NSReparsePoint $directory)) { return 2 }
-    $null = [IO.Directory]::CreateDirectory($directory)
-    $destination = Join-NSPath $directory ('findings-' + $ShiftId + '.jsonl')
-    Copy-Item -LiteralPath $jsonl -Destination $destination -Force
+    $ns = Join-Path $Workspace '.nightshift'
+    $destination = Join-NSPath $directory (((Get-NSLayoutRelativePath $ns 'evidence') + '/findings.jsonl').Replace('/', [IO.Path]::DirectorySeparatorChar))
+    if (-not (Test-NSArchiveDest $destination)) { return 2 }
+    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
+    [IO.File]::AppendAllText($destination, [IO.File]::ReadAllText($jsonl, $script:NSUtf8NoBom), $script:NSUtf8NoBom)
     [IO.File]::WriteAllText($jsonl, '', $script:NSUtf8NoBom)
     # The console, not the pipeline: the caller writes `exit (Invoke-NSEvidenceArchive ...)`, which
     # would consume this path as part of the expression's value and print nothing, and the archived
@@ -3883,6 +3886,9 @@ function Test-NSArchiveHasOpenWork {
     if ((Test-NSPathEntry $armed)) {
         return $true
     }
+    # A folder a shift claimed holds a copy of its list as it ended, whose open items stayed live;
+    # only a page filed by an older version, without that claim, can hold work nothing else has.
+    if ((Get-NSArchiveFolderOwner $Directory) -cne '') { return $false }
     foreach ($file in @(Get-ChildItem -LiteralPath $Directory -File -Force -ErrorAction SilentlyContinue)) {
         if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) {
             continue
@@ -3930,7 +3936,10 @@ function Get-NSRetentionEligible {
         if ($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) {
             continue
         }
-        if ($dir.Name -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}(-shift-[1-9][0-9]*)?$') {
+        # A dated folder, the same with a shift number or a name after the date, or any folder a
+        # shift claimed, as the name layout files one.
+        if ($dir.Name -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}(-shift-[1-9][0-9]*)?$' -and
+            (Get-NSArchiveFolderOwner $dir.FullName) -ceq '') {
             continue
         }
         $rel = (Get-NSLayoutRelativePath $ns 'archive') + '/' + $dir.Name
@@ -5505,36 +5514,20 @@ function Read-NSShiftPolicyFile {
 }
 
 # Find-NSReplayedShiftPolicy <workspace> - the archived copy of tonight's snapshot, when the archive
-# has already filed a shift under its id: the first shift-policy-<id>.json in any folder under the
-# resolved archive root. Empty when the snapshot is unreadable, carries no id, or has never run.
-# Mirrors ns_policy_replayed.
+# has already filed a shift under its id: the policy in the folder that shift claimed, or a
+# shift-policy-<id>.json an earlier version filed anywhere under the archive root. Empty when the
+# snapshot is unreadable, carries no id, or has never run. Mirrors ns_policy_replayed.
 function Find-NSReplayedShiftPolicy {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $state = Get-NSShiftPolicyState $Workspace
     if ([string]$state['state'] -cne 'valid') { return '' }
     $id = [string](Get-NSRecordText $state['policy'] 'shiftId')
     if ($id -cnotmatch '^[0-9a-f-]+$') { return '' }
-    $root = $null
-    try { $root = Get-NSArchiveRoot $Workspace } catch { return '' }
-    if ([string]::IsNullOrEmpty($root) -or -not (Test-NSMigrationDirectory $root)) { return '' }
-    $name = 'shift-policy-' + $id + '.json'
-    $found = New-Object Collections.Generic.List[string]
-    $pending = New-Object Collections.Generic.Queue[string]
-    $pending.Enqueue($root)
-    while ($pending.Count -gt 0) {
-        $dir = $pending.Dequeue()
-        foreach ($entry in (Get-NSMigrationChildren $dir)) {
-            $path = Join-NSPath $dir $entry
-            if (Test-NSMigrationDirectory $path) { $pending.Enqueue($path); continue }
-            if ($entry -ceq $name -and (Test-NSMigrationFile $path)) { $found.Add($path) }
-        }
-    }
-    if ($found.Count -eq 0) { return '' }
-    return (Sort-NSOrdinal $found.ToArray())[0]
+    return (Find-NSArchivedShiftPolicy $Workspace $id)
 }
 
 # Get-NSReceiptPolicyState <workspace> - the policy the morning receipt reports. It is the live
-# snapshot while one exists, and after clock-out only the copy filed under the id the ending
+# snapshot while one exists, and after clock-out only the copy filed for the shift the ending
 # marker names. Any other archived snapshot is a different night's, and then this one has no
 # policy record. Mirrors _find_policy and _match_policy in runtime/morning-receipt.sh.
 function Get-NSReceiptPolicyState {
@@ -5548,20 +5541,9 @@ function Get-NSReceiptPolicyState {
     $state['policy'] = $null
     $id = [string](Get-NSEndedField $Workspace 'shiftId')
     if ($id -cnotmatch '^[0-9a-f-]+$') { return $state }
-    $root = $null
-    try { $root = Get-NSArchiveRoot $Workspace } catch { return $state }
-    if ([string]::IsNullOrEmpty($root) -or -not (Test-NSMigrationDirectory $root)) { return $state }
-    $name = 'shift-policy-' + $id + '.json'
-    $candidates = New-Object Collections.Generic.List[string]
-    $top = Join-NSPath $root $name
-    if (Test-NSMigrationFile $top) { $candidates.Add($top) }
-    foreach ($dir in @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue)) {
-        $inside = Join-NSPath $dir.FullName $name
-        if (Test-NSMigrationFile $inside) { $candidates.Add($inside) }
-    }
-    if ($candidates.Count -eq 0) { return $state }
-    $sorted = Sort-NSOrdinal $candidates.ToArray()
-    $found = Read-NSShiftPolicyFile $sorted[$sorted.Count - 1]
+    $filed = Find-NSArchivedShiftPolicy $Workspace $id
+    if ([string]::IsNullOrEmpty($filed)) { return $state }
+    $found = Read-NSShiftPolicyFile $filed
     # A file filed under this shift's id that names another shift inside is not this night's either.
     if ([string]$found['state'] -ceq 'valid' -and (Get-NSRecordText $found['policy'] 'shiftId') -cne $id) { return $state }
     return $found
@@ -5812,13 +5794,32 @@ function Write-NSEndedRecord {
         [Parameter(Mandatory = $true)][string]$StateDir,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ShiftId,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveRoot,
-        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveLayout
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveLayout,
+        [AllowEmptyString()][string]$ShiftName = '',
+        [AllowEmptyString()][string]$ArchiveFolder = ''
     )
     if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { return }
     $path = Get-NSLayoutPath $StateDir 'ended'
     if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
-    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`n"
+    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`nshiftName=$ShiftName`narchiveFolder=$ArchiveFolder`n"
     [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding($false)))
+}
+
+# Get-NSShiftName <punch-list> - the name the owner gave the shift on the list's title line, as in
+# `# Punch List - Archive follow-ups`, with an em or en dash, a hyphen or a colon after the words.
+# '' when the title carries no name. Mirrors ns_shift_name.
+function Get-NSShiftName {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) { return '' }
+    # Only the title line is read, and the reader is closed before returning: a handle left open
+    # would stop the list being replaced when Archive trims it.
+    $reader = New-Object IO.StreamReader($PunchList)
+    try { $first = $reader.ReadLine() } finally { $reader.Dispose() }
+    if ($null -eq $first) { $first = '' }
+    $first = $first.TrimEnd([char]"`r")
+    $dashes = [string][char]0x2014 + [char]0x2013
+    if ($first -cmatch ('^#[ \t]+Punch[ \t]+List[ \t]*([' + $dashes + ']|-|:)[ \t]*(.*[^ \t])[ \t]*$')) { return $Matches[2] }
+    return ''
 }
 
 # Get-NSEndedField <workspace> <key> - one field of the ending marker, or an empty string.
@@ -6135,11 +6136,14 @@ function Get-NSArchiveRoot {
     return (Get-NSStatePath $ns $name)
 }
 
-# Get-NSArchiveDir <workspace> <date> <shift-id> - the directory one shift is filed into.
+# Get-NSArchiveDir <workspace> <date> <shift-id> [<shift-name>] - the directory one shift is filed
+# into.
 #
 # The shift layout gives each shift `shift-<id>/`. The date layout gives the first shift of a day
 # `<date>/` and each later one `<date>-shift-2/`, `<date>-shift-3/` and so on, so two shifts never
-# share a punch list, a log or a receipt name. A folder records the shift it belongs to in
+# share a punch list, a log or a receipt name. The name layout uses the shift's name instead of the
+# date, and date-name both, as in `2026-09-25-archive-follow-ups/`; a shift with no name falls back
+# to the date. A second shift under the same name takes `-shift-2` the same way. A folder records the shift it belongs to in
 # `.shift-id`, `unknown` for a shift that ended without an id, and a shift filed again that day
 # comes back to its own folder. An empty folder without that record is claimed; one that already
 # holds records without it belongs to nobody we can name and is never claimed. A candidate that is
@@ -6148,7 +6152,8 @@ function Get-NSArchiveDir {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
         [Parameter(Mandatory = $true)][string]$Date,
-        [AllowEmptyString()][string]$ShiftId = ''
+        [AllowEmptyString()][string]$ShiftId = '',
+        [AllowEmptyString()][string]$Name = ''
     )
     $root = Get-NSArchiveRoot $Workspace
     if ($null -eq $root) { return $null }
@@ -6157,7 +6162,13 @@ function Get-NSArchiveDir {
     if ($layout -ceq 'shift' -and $ShiftId -cne 'unknown') {
         return (Join-Path $root ('shift-' + $ShiftId))
     }
+    $slug = ''
+    if (-not [string]::IsNullOrEmpty($Name)) { $slug = Get-NSReceiptSlug $Name }
     $base = Join-Path $root $Date
+    if ($slug -cne '') {
+        if ($layout -ceq 'name') { $base = Join-Path $root $slug }
+        elseif ($layout -ceq 'date-name') { $base = Join-Path $root ($Date + '-' + $slug) }
+    }
     $dir = $base
     $n = 1
     while ($true) {
@@ -6196,99 +6207,249 @@ function Get-NSArchiveDir {
     }
 }
 
+# Get-NSArchiveGroup <workspace> <date> <shift-id> - the folder one shift files into. Once clock-out
+# has claimed it, the ending marker names it and every later filing of that shift returns there,
+# whatever day it runs; before that, or when the named folder is gone or is another shift's, it is
+# resolved from the date, the id and the shift's name. Mirrors ns_archive_group.
+function Get-NSArchiveGroup {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId = ''
+    )
+    if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
+    $claimed = Get-NSArchiveGroupIfClaimed $Workspace $ShiftId
+    if ($claimed -cne '') { return $claimed }
+    $name = ''
+    if ((Get-NSEndedField $Workspace 'shiftId') -ceq $ShiftId) { $name = Get-NSEndedField $Workspace 'shiftName' }
+    if ([string]::IsNullOrEmpty($name)) {
+        $name = Get-NSShiftName (Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list')
+    }
+    return (Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $ShiftId -Name $name)
+}
+
+# Get-NSArchiveGroupIfClaimed <workspace> <shift-id> - the folder the ending marker names for that
+# shift, only when it exists and that shift still owns it. '' otherwise.
+function Get-NSArchiveGroupIfClaimed {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$ShiftId = '')
+    if ((Get-NSEndedField $Workspace 'shiftId') -cne $ShiftId) { return '' }
+    $folder = [string](Get-NSEndedField $Workspace 'archiveFolder')
+    if ($folder -ceq '' -or $folder -cmatch '[\\/]' -or $folder.StartsWith('.', [StringComparison]::Ordinal)) { return '' }
+    $root = Get-NSArchiveRoot $Workspace
+    if ($null -eq $root) { return '' }
+    $dir = Join-Path $root $folder
+    if ((Get-NSArchiveFolderOwner $dir) -ceq $ShiftId) { return $dir }
+    return ''
+}
+
+# Get-NSArchiveFolderOwner <dir> - the shift a folder records in its .shift-id, or '' for a folder
+# that is a reparse point or records none.
+function Get-NSArchiveFolderOwner {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container) -or (Test-NSReparsePoint $Directory)) { return '' }
+    $record = Join-Path $Directory '.shift-id'
+    if (-not (Test-Path -LiteralPath $record -PathType Leaf) -or (Test-NSReparsePoint $record)) { return '' }
+    $lines = @([IO.File]::ReadAllLines($record))
+    if ($lines.Count -eq 0) { return '' }
+    return [string]$lines[0]
+}
+
+# Get-NSArchiveFolderOf <workspace> <shift-id> - the archive folder a shift with that id claimed, or
+# ''. A shift without an id owns no folder anyone can find by it. Mirrors ns_archive_folder_of.
+function Get-NSArchiveFolderOf {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$ShiftId = '')
+    if ([string]::IsNullOrEmpty($ShiftId) -or $ShiftId -ceq 'unknown' -or $ShiftId -cmatch '[^A-Za-z0-9-]') { return '' }
+    $root = Get-NSArchiveRoot $Workspace
+    if ($null -eq $root -or -not (Test-Path -LiteralPath $root -PathType Container)) { return '' }
+    $names = @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+    foreach ($name in (Sort-NSOrdinal $names)) {
+        $dir = Join-Path $root $name
+        if ((Get-NSArchiveFolderOwner $dir) -ceq $ShiftId) { return $dir }
+    }
+    return ''
+}
+
+# Find-NSArchivedShiftPolicy <workspace> <shift-id> - the shift policy filed for that shift: in the
+# folder the ending marker names, then in any folder the shift claimed, at the path the policy has
+# live, then under the shift-policy-<id>.json name earlier versions filed it by, anywhere under the
+# archive root. '' when none is filed. Mirrors ns_archived_policy.
+function Find-NSArchivedShiftPolicy {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$ShiftId = '')
+    if ([string]::IsNullOrEmpty($ShiftId) -or $ShiftId -ceq 'unknown' -or $ShiftId -cnotmatch '^[0-9a-f-]+$') { return '' }
+    $root = $null
+    try { $root = Get-NSArchiveRoot $Workspace } catch { return '' }
+    if ([string]::IsNullOrEmpty($root) -or -not (Test-NSMigrationDirectory $root)) { return '' }
+    foreach ($folder in @((Get-NSArchiveGroupIfClaimed $Workspace $ShiftId), (Get-NSArchiveFolderOf $Workspace $ShiftId))) {
+        if ([string]::IsNullOrEmpty($folder)) { continue }
+        foreach ($rel in @('run/shift-policy.json', 'shift-policy.json', ('shift-policy-' + $ShiftId + '.json'))) {
+            $candidate = Join-NSPath $folder ($rel.Replace('/', [IO.Path]::DirectorySeparatorChar))
+            if (Test-NSMigrationFile $candidate) { return $candidate }
+        }
+    }
+    $name = 'shift-policy-' + $ShiftId + '.json'
+    $found = New-Object Collections.Generic.List[string]
+    $pending = New-Object Collections.Generic.Queue[string]
+    $pending.Enqueue($root)
+    while ($pending.Count -gt 0) {
+        $dir = $pending.Dequeue()
+        foreach ($entry in (Get-NSMigrationChildren $dir)) {
+            $path = Join-NSPath $dir $entry
+            if (Test-NSMigrationDirectory $path) { $pending.Enqueue($path); continue }
+            if ($entry -ceq $name -and (Test-NSMigrationFile $path)) { $found.Add($path) }
+        }
+    }
+    if ($found.Count -eq 0) { return '' }
+    return (Sort-NSOrdinal $found.ToArray())[0]
+}
+
+# Test-NSArchiveSame <source> <filed> - true when the filed copy is this record: the same bytes, or,
+# for a page whose links were repointed when it was filed, the original kept beside it.
+function Test-NSArchiveSame {
+    param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Filed)
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf) -or -not (Test-Path -LiteralPath $Filed -PathType Leaf)) { return $false }
+    if (Test-NSSameFileBytes $Source $Filed) { return $true }
+    if (-not $Filed.EndsWith('.md', [StringComparison]::Ordinal)) { return $false }
+    $original = $Filed.Substring(0, $Filed.Length - 3) + '.original.md'
+    if (-not (Test-Path -LiteralPath $original -PathType Leaf) -or (Test-NSReparsePoint $original)) { return $false }
+    return (Test-NSSameFileBytes $Source $original)
+}
+
+# Test-NSSameFileBytes <a> <b> - true when both files hold exactly the same bytes.
+function Test-NSSameFileBytes {
+    param([Parameter(Mandatory = $true)][string]$A, [Parameter(Mandatory = $true)][string]$B)
+    $left = [IO.File]::ReadAllBytes($A)
+    $right = [IO.File]::ReadAllBytes($B)
+    if ($left.Length -ne $right.Length) { return $false }
+    for ($i = 0; $i -lt $left.Length; $i++) {
+        if ($left[$i] -ne $right[$i]) { return $false }
+    }
+    return $true
+}
+
 # Save-NSArchivePunchList <workspace> <folder> <shift-id> <date> - file the ended shift's punch list
-# into its folder as punch-list.md, then take the ticked items out of the live list. The same
-# record the POSIX ns_archive_punch_list writes, byte for byte: a first line naming it the archived
-# record of that shift, then everything above `## Items` and every ticked item with its sub-bullets,
-# exactly as written and with the spacing between them. Open items never leave the live list.
-# Returns Status 0 (Path '' when no item was ticked), 2 when it could not write, or 3 when a
-# different record is already filed at that path and the live list was left as it is.
+# into its folder, at the path it has live, then take the ticked items out of the live list. The
+# record is the list exactly as it stood: the contract, the gates, every ticked and every open item.
+# Open items stay live, and so does everything above `## Items`. Returns Status 0 (Path '' when the
+# list holds no item), 2 when it could not write (Reason says why), or 3 when a different list is already filed there
+# while the live one still has ticked items to take out; the live list is then left as it is.
+# Mirrors ns_archive_punch_list.
 function Save-NSArchivePunchList {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Folder,
         [AllowEmptyString()][string]$ShiftId = '', [Parameter(Mandatory = $true)][string]$Date
     )
-    $live = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list'
-    $none = [pscustomobject]@{ Status = 0; Path = '' }
+    $ns = Join-Path $Workspace '.nightshift'
+    $live = Get-NSLayoutPath $ns 'punch-list'
+    $none = [pscustomobject]@{ Status = 0; Path = ''; Reason = '' }
     if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return $none }
-    if (@(Get-NSPunchItemsSection $live | Where-Object { $_ -cmatch '^- \[[xX]\]' }).Count -eq 0) { return $none }
-    $dest = Join-Path $Folder 'punch-list.md'
-    if (-not (Test-NSArchiveDest $dest)) { return [pscustomobject]@{ Status = 2; Path = '' } }
-    $utf8 = New-Object Text.UTF8Encoding($false)
-    $text = [IO.File]::ReadAllText($live)
-    # Each line as awk reads it: its text, with a CR it carries, and always written back with LF.
-    $lines = New-Object Collections.Generic.List[string]
-    foreach ($piece in [regex]::Split($text, '(?<=\n)')) {
-        if ($piece.Length -eq 0) { continue }
-        $lines.Add($piece.TrimEnd([char]"`n"))
-    }
-    $cr = $(if ($lines.Count -gt 0 -and $lines[0].EndsWith("`r")) { "`r" } else { '' })
-    $who = $(if ([string]::IsNullOrEmpty($ShiftId) -or $ShiftId -ceq 'unknown') { 'a shift' } else { 'shift ' + $ShiftId })
-    $record = New-Object Text.StringBuilder
-    $liveName = Get-NSLayoutName (Join-Path $Workspace '.nightshift') 'punch-list'
-    $null = $record.Append(('> Archived record of {0}, filed {1}. The items still open stayed in the live `{3}`.{2}' -f $who, $Date, $cr, $liveName) + "`n" + $cr + "`n")
-    $rest = New-Object Text.StringBuilder
-    $items = $false; $done = $false; $keep = $false; $drop = $false
-    $blanks = New-Object Text.StringBuilder
-    $restBlanks = New-Object Text.StringBuilder
-    foreach ($raw in $lines) {
-        $line = $raw.TrimEnd([char]"`r")
-        $out = $raw + "`n"
-        if (-not $items) {
-            $null = $record.Append($out)
-            $null = $rest.Append($out)
-            if ($line -cmatch '^## Items[ \t]*$') { $items = $true }
-            continue
-        }
-        if ($done) { $null = $rest.Append($out); continue }
-        if ($line -cmatch '^## ') {
-            $done = $true
-            $null = $rest.Append($restBlanks.ToString()).Append($out)
-            $null = $restBlanks.Clear()
-            continue
-        }
-        if ($line.Length -eq 0) {
-            $null = $blanks.Append($out)
-            $null = $restBlanks.Append($out)
-            continue
-        }
-        if ($line -cmatch '^- \[[xX]\]') {
-            $keep = $true
-            $null = $record.Append($blanks.ToString()).Append($out)
-            $drop = $true
-            $null = $blanks.Clear(); $null = $restBlanks.Clear()
-            continue
-        }
-        if ($line -cmatch '^[ \t]') {
-            if ($keep) { $null = $record.Append($blanks.ToString()).Append($out) }
-            if (-not $drop) { $null = $rest.Append($restBlanks.ToString()).Append($out) }
-            $null = $blanks.Clear(); $null = $restBlanks.Clear()
-            continue
-        }
-        $keep = $false
-        $drop = $false
-        $null = $rest.Append($restBlanks.ToString()).Append($out)
-        $null = $blanks.Clear(); $null = $restBlanks.Clear()
-    }
-    if (-not $drop) { $null = $rest.Append($restBlanks.ToString()) }
+    $section = @(Get-NSPunchItemsSection $live)
+    if (@($section | Where-Object { $_ -cmatch '^- \[[ xX]\]' }).Count -eq 0) { return $none }
+    $ticked = @($section | Where-Object { $_ -cmatch '^- \[[xX]\]' }).Count
+    $dest = Join-NSPath $Folder ((Get-NSLayoutRelativePath $ns 'punch-list').Replace('/', [IO.Path]::DirectorySeparatorChar))
+    if (-not (Test-NSArchiveDest $dest)) { return [pscustomobject]@{ Status = 2; Path = ''; Reason = 'a link or a directory is in the way' } }
     try {
-        $null = New-Item -ItemType Directory -Path $Folder -Force -ErrorAction Stop
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force -ErrorAction Stop
         if (Test-Path -LiteralPath $dest -PathType Leaf) {
-            if ([IO.File]::ReadAllText($dest) -cne $record.ToString()) { return [pscustomobject]@{ Status = 3; Path = '' } }
+            if (-not (Test-NSArchiveSame $live $dest)) {
+                # What stayed live after an earlier filing of this shift is not a new record.
+                if ($ticked -eq 0) { return $none }
+                return [pscustomobject]@{ Status = 3; Path = ''; Reason = '' }
+            }
         }
         else {
-            $tmp = $dest + '.tmp.' + [guid]::NewGuid().ToString('N')
-            [IO.File]::WriteAllText($tmp, $record.ToString(), $utf8)
-            Move-Item -LiteralPath $tmp -Destination $dest -Force
+            Copy-Item -LiteralPath $live -Destination $dest -Force -ErrorAction Stop
+            if (-not (Test-NSSameFileBytes $live $dest)) {
+                Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
+                return [pscustomobject]@{ Status = 2; Path = ''; Reason = 'the filed copy does not match the live list' }
+            }
         }
-        $tmpLive = $live + '.tmp.' + [guid]::NewGuid().ToString('N')
-        [IO.File]::WriteAllText($tmpLive, $rest.ToString(), $utf8)
-        Move-Item -LiteralPath $tmpLive -Destination $live -Force
+        if ($ticked -gt 0) {
+            $utf8 = New-Object Text.UTF8Encoding($false)
+            $text = [IO.File]::ReadAllText($live)
+            # Each line as awk reads it: its text, with a CR it carries, and always written back with LF.
+            $lines = New-Object Collections.Generic.List[string]
+            foreach ($piece in [regex]::Split($text, '(?<=\n)')) {
+                if ($piece.Length -eq 0) { continue }
+                $lines.Add($piece.TrimEnd([char]"`n"))
+            }
+            $rest = New-Object Text.StringBuilder
+            $items = $false; $done = $false; $drop = $false
+            $restBlanks = New-Object Text.StringBuilder
+            foreach ($raw in $lines) {
+                $line = $raw.TrimEnd([char]"`r")
+                $out = $raw + "`n"
+                if (-not $items) {
+                    $null = $rest.Append($out)
+                    if ($line -cmatch '^## Items[ \t]*$') { $items = $true }
+                    continue
+                }
+                if ($done) { $null = $rest.Append($out); continue }
+                if ($line -cmatch '^## ') {
+                    $done = $true
+                    $null = $rest.Append($restBlanks.ToString()).Append($out)
+                    $null = $restBlanks.Clear()
+                    continue
+                }
+                if ($line.Length -eq 0) { $null = $restBlanks.Append($out); continue }
+                if ($line -cmatch '^- \[[xX]\]') {
+                    $drop = $true
+                    $null = $restBlanks.Clear()
+                    continue
+                }
+                if ($line -cmatch '^[ \t]') {
+                    if (-not $drop) { $null = $rest.Append($restBlanks.ToString()).Append($out) }
+                    $null = $restBlanks.Clear()
+                    continue
+                }
+                $drop = $false
+                $null = $rest.Append($restBlanks.ToString()).Append($out)
+                $null = $restBlanks.Clear()
+            }
+            if (-not $drop) { $null = $rest.Append($restBlanks.ToString()) }
+            $tmpLive = $live + '.tmp.' + [guid]::NewGuid().ToString('N')
+            [IO.File]::WriteAllText($tmpLive, $rest.ToString(), $utf8)
+            Move-Item -LiteralPath $tmpLive -Destination $live -Force
+        }
     }
     catch {
-        return [pscustomobject]@{ Status = 2; Path = '' }
+        return [pscustomobject]@{ Status = 2; Path = ''; Reason = $_.Exception.Message }
     }
-    return [pscustomobject]@{ Status = 0; Path = $dest }
+    return [pscustomobject]@{ Status = 0; Path = $dest; Reason = '' }
+}
+
+# Save-NSArchiveJournal <workspace> <folder> - move the shift log into the folder at the path it has
+# live and start the live one again under the same heading. A journal already filed there keeps
+# every line and gains the ones written since, so a shift filed twice loses nothing. Returns the
+# filed path, or '' when the log holds no line past its heading. Throws when it cannot write.
+# Mirrors ns_archive_file_journal.
+function Save-NSArchiveJournal {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Folder)
+    $ns = Join-Path $Workspace '.nightshift'
+    $live = Get-NSLayoutPath $ns 'shift-log'
+    if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return '' }
+    $lines = @([IO.File]::ReadAllLines($live))
+    $head = '# Shift Log'
+    if ($lines.Count -gt 0 -and $lines[0].TrimEnd([char]"`r").StartsWith('# ', [StringComparison]::Ordinal)) {
+        $head = $lines[0].TrimEnd([char]"`r")
+    }
+    $body = New-Object Collections.Generic.List[string]
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($i -eq 0 -and $lines[0] -ceq $head) { continue }
+        $body.Add($lines[$i])
+    }
+    if (@($body | Where-Object { $_ -cmatch '[^ \t]' }).Count -eq 0) { return '' }
+    $dest = Join-NSPath $Folder ((Get-NSLayoutRelativePath $ns 'shift-log').Replace('/', [IO.Path]::DirectorySeparatorChar))
+    if (-not (Test-NSArchiveDest $dest)) { throw "refuse to write through $dest" }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force -ErrorAction Stop
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    if (Test-Path -LiteralPath $dest -PathType Leaf) {
+        [IO.File]::AppendAllText($dest, (($body -join "`n") + "`n"), $utf8)
+    }
+    else {
+        Copy-Item -LiteralPath $live -Destination $dest -Force -ErrorAction Stop
+    }
+    [IO.File]::WriteAllText($live, $head + "`n", $utf8)
+    return $dest
 }
 
 # Test-NSArchiveDest <path> - true when one file may be written at that exact path. A directory
@@ -6401,8 +6562,8 @@ function Get-NSInboxStrays {
 }
 
 # Get-NSArchiveReviewLabel <folder-name> <shift-id> <layout> - what a Filed pointer is labelled: the
-# shift id in the shift layout, the dated folder's own name (`2026-09-09`, `2026-09-09-shift-2`)
-# otherwise, so two shifts on one day are told apart.
+# shift id in the shift layout, the folder's own name otherwise (`2026-09-09`, `2026-09-09-shift-2`,
+# `2026-09-09-archive-follow-ups`), so two shifts on one day are told apart.
 function Get-NSArchiveReviewLabel {
     param([string]$Date, [AllowEmptyString()][string]$ShiftId, [AllowEmptyString()][string]$Layout)
     if ($Layout -ceq 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
@@ -6411,50 +6572,38 @@ function Get-NSArchiveReviewLabel {
     return $Date
 }
 
-function Get-NSArchiveReviewDest {
-    param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
-        [Parameter(Mandatory = $true)][string]$Date,
-        [AllowEmptyString()][string]$ShiftId,
-        [Parameter(Mandatory = $true)][string]$BaseName
-    )
-    $group = Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $ShiftId
-    if ($null -eq $group) { return $null }
-    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
-    if ($layout -cne 'shift' -and -not [string]::IsNullOrEmpty($ShiftId) -and $ShiftId -cne 'unknown') {
-        return (Join-Path (Join-Path $group $ShiftId) $BaseName)
-    }
-    return (Join-Path $group $BaseName)
-}
-
 function Get-NSArchivePointerLine {
     param([Parameter(Mandatory = $true)][string]$Label, [Parameter(Mandatory = $true)][string]$RelPath)
     return ('Filed: [' + $Label + '](' + $RelPath + ')')
 }
 
+# Save-NSArchiveReviewSource <workspace> <parking-lot|snag-log> <folder> <label> - file the live
+# review file whole into the shift's folder, at the path it has live, then take the handled entries
+# out of the live file and leave one pointer to the filed copy, written relative to the live file.
+# Entries still open stay live: they wait for the owner. A file with no entry files nothing.
+# Returns 0, or 3 when a different copy is already filed there and the live file still has handled
+# entries to take out; they then stay live, with their answers, for the next filing. Throws when
+# filing fails. Mirrors ns_archive_file_review_source.
 function Save-NSArchiveReviewSource {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
         [Parameter(Mandatory = $true)][string]$Key,
-        [Parameter(Mandatory = $true)][string]$Date,
-        [AllowEmptyString()][string]$ShiftId
+        [Parameter(Mandatory = $true)][string]$Folder,
+        [Parameter(Mandatory = $true)][string]$Label
     )
     $ns = Join-Path $Workspace '.nightshift'
     $live = Get-NSLayoutPath $ns $Key
-    $BaseName = Split-Path -Leaf $live
-    if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return }
-    $dest = Get-NSArchiveReviewDest $Workspace $Date $ShiftId $BaseName
-    if ([string]::IsNullOrEmpty($dest)) { throw 'archive.root must name a directory inside .nightshift/' }
-    $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
-    $label = Get-NSArchiveReviewLabel (Split-Path -Leaf (Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $ShiftId)) $ShiftId $layout
+    if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return 0 }
+    $lines = [IO.File]::ReadAllLines($live)
+    if (@($lines | Where-Object { $_.StartsWith('- ', [StringComparison]::Ordinal) -and -not $_.StartsWith('- Filed:', [StringComparison]::Ordinal) }).Count -eq 0) { return 0 }
+    $dest = Join-NSPath $Folder ((Get-NSLayoutRelativePath $ns $Key).Replace('/', [IO.Path]::DirectorySeparatorChar))
     if (-not $dest.StartsWith($ns.TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase)) {
         throw 'archive dest is outside .nightshift/'
     }
-    # The pointer is written relative to the file that carries it.
-    $rel = ConvertTo-NSRelativeLink (Split-Path -Parent $live) $dest
+    if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
     $keep = New-Object Collections.Generic.List[string]
     $filed = New-Object Collections.Generic.List[string]
-    foreach ($block in (Get-NSInboxBlocks ([IO.File]::ReadAllLines($live)))) {
+    foreach ($block in (Get-NSInboxBlocks $lines)) {
         if ($block.Kind -ceq 'entry' -and (Test-NSReviewHandled ($block.Lines -join "`n"))) {
             $filed.AddRange($block.Lines)
         }
@@ -6462,20 +6611,26 @@ function Save-NSArchiveReviewSource {
             $keep.AddRange($block.Lines)
         }
     }
-    if ($filed.Count -eq 0) { return }
-    if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
-    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
-    $utf8 = $script:NSUtf8NoBom
-    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
-    if ((Test-Path -LiteralPath $dest -PathType Leaf) -and -not (Test-NSReparsePoint $dest)) {
-        [IO.File]::AppendAllText($dest, ([Environment]::NewLine + ($filed -join [Environment]::NewLine) + [Environment]::NewLine), $utf8)
+    if (Test-Path -LiteralPath $dest -PathType Leaf) {
+        if (-not (Test-NSArchiveSame $live $dest)) {
+            if ($filed.Count -gt 0) { return 3 }
+            return 0
+        }
     }
     else {
-        $title = $(if ($Key -ceq 'snag-log') { '# Snag Log' } else { '# Parking Lot' })
-        $body = $title + [Environment]::NewLine + [Environment]::NewLine + ($filed -join [Environment]::NewLine) + [Environment]::NewLine
-        [IO.File]::WriteAllText($dest, $body, $utf8)
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
+        Copy-Item -LiteralPath $live -Destination $dest -Force
+        if (-not (Test-NSSameFileBytes $live $dest)) {
+            Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
+            throw 'the filed copy does not match the live file'
+        }
     }
-    $ptr = Get-NSArchivePointerLine $label $rel
+    if ($filed.Count -eq 0) { return 0 }
+    # The pointer is written relative to the file that carries it.
+    $rel = ConvertTo-NSRelativeLink (Split-Path -Parent $live) $dest
+    $utf8 = $script:NSUtf8NoBom
+    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
+    $ptr = Get-NSArchivePointerLine $Label $rel
     if (-not ($keep -contains $ptr)) {
         if ($keep.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($keep[$keep.Count - 1])) {
             $keep.Add('')
@@ -6483,6 +6638,7 @@ function Save-NSArchiveReviewSource {
         $keep.Add($ptr)
     }
     [IO.File]::WriteAllLines($live, $keep.ToArray(), $utf8)
+    return 0
 }
 
 function Add-NSArchiveBrokenPointers {
@@ -6528,15 +6684,20 @@ function Add-NSArchiveBrokenPointers {
     }
 }
 
+# Save-NSArchiveReviewRecords <workspace> <folder> <label> - both review files, then a check of every
+# pointer they carry. Returns 3 when either kept its handled entries live, 0 otherwise.
 function Save-NSArchiveReviewRecords {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
-        [Parameter(Mandatory = $true)][string]$Date,
-        [AllowEmptyString()][string]$ShiftId
+        [Parameter(Mandatory = $true)][string]$Folder,
+        [Parameter(Mandatory = $true)][string]$Label
     )
-    Save-NSArchiveReviewSource $Workspace 'snag-log' $Date $ShiftId
-    Save-NSArchiveReviewSource $Workspace 'parking-lot' $Date $ShiftId
+    $status = 0
+    foreach ($key in @('snag-log', 'parking-lot')) {
+        if ((Save-NSArchiveReviewSource $Workspace $key $Folder $Label) -eq 3) { $status = 3 }
+    }
     Add-NSArchiveBrokenPointers $Workspace
+    return $status
 }
 
 # Convert-NSReportLinks <text> <archived> <back> [dir] - one archived record's own links, repointed
@@ -7335,8 +7496,9 @@ function Get-NSTickedReceiptNames {
     return Get-NSReceiptNamesByState $Workspace 'ticked'
 }
 
-# Write-NSArchiveReceiptsIndex <directory> <date> - the index of the item receipts filed in that
-# directory, written only when at least one landed there. Links stay siblings, because the
+# Write-NSArchiveReceiptsIndex <directory> <date> [-OpenNames] - the index of the item receipts
+# filed in that directory, written only when at least one landed there. A receipt named in
+# -OpenNames belongs to an item still open and is listed as open. Links stay siblings, because the
 # receipts it lists are in that directory too.
 # Get-NSReceiptItemOrderKey <name> - the ordinal sort key that puts receipts in item order: numbered
 # items by value (1, 2, 10), then letter-and-number ids by letters and value (A1, A2, A10, B1), then
@@ -7363,7 +7525,8 @@ function Get-NSReceiptItemOrderKey {
 function Write-NSArchiveReceiptsIndex {
     param(
         [Parameter(Mandatory = $true)][string]$Directory,
-        [Parameter(Mandatory = $true)][string]$Date
+        [Parameter(Mandatory = $true)][string]$Date,
+        [string[]]$OpenNames = @()
     )
     if (-not (Test-Path -LiteralPath $Directory -PathType Container)) { return }
     if (Test-NSReparsePoint $Directory) { return }
@@ -7414,8 +7577,9 @@ function Write-NSArchiveReceiptsIndex {
         $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
         if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
         if ($cells['Time'] -ceq 'off') { $offTime = $true }
-        $rows.Add(('| {0} | ticked | **{1}** | **{2}** | [./{3}](./{3}) |' -f
-            $label, $cells['Tokens'], $cells['Time'], $name))
+        $state = $(if ($OpenNames -ccontains $name) { 'open' } else { 'ticked' })
+        $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [./{4}](./{4}) |' -f
+            $label, $state, $cells['Tokens'], $cells['Time'], $name))
     }
     if ($rows.Count -eq 0) { return }
     $utf8 = New-Object Text.UTF8Encoding($false)
@@ -8486,10 +8650,10 @@ function Invoke-NSShiftPolicyArchive {
         $shiftId = [string]$state['policy']['shiftId']
     }
     else {
-        Write-NSPolicyError ('shift-policy: ' + $state['error'] + '; archiving as shift-policy-unknown.json')
+        Write-NSPolicyError ('shift-policy: ' + $state['error'] + '; archiving it as the unknown shift')
     }
-    # The owner chooses where and how a shift is filed; the shift id names the file either way.
-    $directory = Get-NSArchiveDir -Workspace $Workspace -Date $Date -ShiftId $shiftId
+    # The shift's own folder, at the path the policy has live: the archive reads like the live site.
+    $directory = Get-NSArchiveGroup -Workspace $Workspace -Date $Date -ShiftId $shiftId
     if ($null -eq $directory) {
         Write-NSPolicyError 'shift-policy: archive.root must name a directory inside .nightshift/'
         return 2
@@ -8498,8 +8662,16 @@ function Invoke-NSShiftPolicyArchive {
         Write-NSPolicyError 'shift-policy: refuse to write through a symlink archive path'
         return 2
     }
-    $null = [IO.Directory]::CreateDirectory($directory)
-    $destination = Join-NSPath $directory ('shift-policy-' + $shiftId + '.json')
+    $destination = Join-NSPath $directory ((Get-NSLayoutRelativePath $paths['ns'] 'shift-policy').Replace('/', [IO.Path]::DirectorySeparatorChar))
+    if (-not (Test-NSArchiveDest $destination)) {
+        Write-NSPolicyError ('shift-policy: refuse to write through ' + $destination)
+        return 2
+    }
+    if ((Test-Path -LiteralPath $destination -PathType Leaf) -and -not (Test-NSSameFileBytes $paths['policy'] $destination)) {
+        Write-NSPolicyError ('shift-policy: a different shift policy is already filed at ' + $destination + '; the live one is unchanged')
+        return 2
+    }
+    $null = [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
     Write-NSEvidenceFileAtomic -Path $destination -Text ([IO.File]::ReadAllText($paths['policy'], $script:NSUtf8NoBom))
     Remove-Item -LiteralPath $paths['policy'] -Force
     Write-NSPolicyOut $destination

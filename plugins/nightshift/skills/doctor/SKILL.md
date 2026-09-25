@@ -64,8 +64,8 @@ if ticked items have no model text, warns
 receipts are a fact only: `completion record none; the owner disabled receipts`. When the path exists but is not a real
 directory, it warns `artifact receipts path is not a usable directory` and offers to replace it
 so receipts can land; it does not also warn empty ticks for that path.
-Copies from Archive live under the archive root, `$NS/archive/<YYYY-MM-DD>/receipts/` by default
-and do not replace the live files Doctor counts.
+Copies from Archive live in each shift's folder under the archive root,
+`$NS/archive/<YYYY-MM-DD>/receipts/` by default, and do not replace the live files Doctor counts.
 Missing or empty receipts create no dated receipts folder.
 
 **Every Warning is a real finding — relay it, do not soften it.** A path that is not a usable file

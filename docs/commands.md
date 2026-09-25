@@ -17,7 +17,7 @@ or [archive finished shifts](archive.md#archive-and-continue). The commands belo
 /nightshift:stop       # pause now; open boxes stay open; deadline is preserved
 /nightshift:reset      # drop runtime markers and the deadline; keep punch list and history
 /nightshift:purge      # delete this project's .nightshift/; does not uninstall the plugin
-/nightshift:archive    # file finished work under the archive root, .nightshift/archive/<YYYY-MM-DD>/ by default — shipped items, logs, handled snags; leftover contract stays
+/nightshift:archive    # file the shift into its own folder, .nightshift/archive/<YYYY-MM-DD>/ by default, laid out like the live site; open work and the contract stay live
 # you review the local commits or artifact receipts — push only in repository mode, or forbid pushing outright (one env line below)
 ```
 
@@ -132,8 +132,8 @@ Native Windows:
 ns.ps1 export-support --project .
 ```
 
-Copy live artifact receipts into today's dated archive folder. Name each ticked item's receipt
-with `--retire` so it leaves live storage; an open item's receipt stays.
+File the shift into its archive folder, laid out like the live site. Name each ticked item's
+receipt with `--retire` so it leaves live storage; an open item's receipt is copied and stays.
 Missing or empty receipts create no dated receipts folder.
 
 ```bash

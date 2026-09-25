@@ -333,8 +333,8 @@ stall a headless snapshot.
 
 The gate blocks every turn that ends with work still open, and the reason it returns is the owner's `clockOutMessage`. With `clockOutReminderMode` set to `changed-only` it sends that message when something actually moved and one short line when nothing did — and anything it cannot be sure about, including a compacted conversation, counts as moved. The block never becomes optional and its reason is never empty.
 
-Archiving moves finished work under the archive root — `.nightshift/archive/<YYYY-MM-DD>/` by default, or wherever `archive.root` and `archive.layout` say — while keeping the current working
-files small.
+Archiving files each shift into its own folder under the archive root — `.nightshift/archive/<YYYY-MM-DD>/` by default, named by `archive.layout` — laid out like the live site, while the
+current working files keep only open work.
 
 For the review workflow, see [Receipts and token usage](receipts.md#receipts-and-token-usage) and
 [Archive and continue](archive.md#archive-and-continue).
@@ -491,8 +491,8 @@ The stall guard treats a new receipt like a commit; Doctor reports `artifact rec
 `latest artifact receipt` with the filename only of the most recently written receipt;
 it warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land; Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts;
 Archive copies receipts with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
-into the dated folder. A ticked item's receipt leaves live storage once the shift has ended; an
-open item's receipt stays. Missing or empty receipts create no dated receipts folder.
+into the shift's folder. A ticked item's receipt leaves live storage once the shift has ended; an
+open item's receipt is copied and stays. Missing or empty receipts create no dated receipts folder.
 Repository mode follows the contract's commit policy: per-item commits, a coherent batch, or
 uncommitted work when requested.
 

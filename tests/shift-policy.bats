@@ -207,13 +207,13 @@ write_policy() { # <project> [extra JSON]
   printf '%s\n' "$output" | grep -qF hours
 }
 
-@test "archive files the snapshot under its date and shift id, and get goes quiet" {
+@test "archive files the snapshot into the shift's folder at its live path, and get goes quiet" {
   p="$(unarmed sp-archive)"
   policy_json >"$p/candidate.json"
   sp "$p" set --from-json "$p/candidate.json" >/dev/null
   run sp "$p" archive
   [ "$status" -eq 0 ]
-  dated="$(cd -P "$p" && pwd)/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy-9f2c40ab77e51d63.json"
+  dated="$(cd -P "$p" && pwd)/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy.json"
   [ "$output" = "$dated" ]
   [ -f "$dated" ]
   [ ! -e "$p/.nightshift/shift-policy.json" ]

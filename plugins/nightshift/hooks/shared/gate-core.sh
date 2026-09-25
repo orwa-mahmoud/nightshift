@@ -96,9 +96,13 @@ ns_gate_deadline_passed() {
 #
 # ns_gate_record_ending <nightshift-dir> <project-dir> <shift-id>
 ns_gate_record_ending() {
-  local ns="$1" project="$2" id="${3:-unknown}" pending
+  local ns="$1" project="$2" id="${3:-unknown}" pending name folder
+  # The shift's folder is claimed now, under its name when the owner gave it one, and the marker
+  # remembers it: every later filing of this shift, clock-out's own included, lands there.
+  name="$(ns_shift_name "$(ns_layout_path "$ns" punch-list)")"
+  folder="$(ns_archive_dir "$project" "$(date +%Y-%m-%d)" "$id" "$name" 2>/dev/null)" || folder=""
   ns_ended_record "$ns" "$id" \
-    "$(ns_archive "$project" root)" "$(ns_archive "$project" layout)"
+    "$(ns_archive "$project" root)" "$(ns_archive "$project" layout)" "$name" "${folder##*/}"
   [ -d "$ns" ] || return 0
   ns_archive_automatic "$project" || return 0
   ns_layout_set pending "$ns" pending-filing

@@ -254,7 +254,7 @@ SH
   [ ! -f "$p/.nightshift/STOP" ]
 }
 
-@test "clock-out archives tonight's shift policy under archive/<date>" {
+@test "clock-out files tonight's shift policy into the shift's folder at its live path" {
   p="$(new_project)"
   punch_done "$p"
   write_policy_with_deadline "$p" null
@@ -262,7 +262,7 @@ SH
   run gate "$p"
   is_release
   [ ! -e "$p/.nightshift/shift-policy.json" ]
-  [ -f "$p/.nightshift/archive/$today/shift-policy-9f2c40ab77e51d63.json" ]
+  [ -f "$p/.nightshift/archive/$today/shift-policy.json" ]
 }
 
 @test "clock-out archives non-empty findings and truncates the live ledger" {
@@ -275,7 +275,7 @@ SH
   today="$(date '+%Y-%m-%d')"
   run gate "$p"
   is_release
-  [ -f "$p/.nightshift/archive/$today/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$today/evidence/findings.jsonl" ]
   [ ! -s "$p/.nightshift/evidence/findings.jsonl" ]
 }
 
@@ -327,7 +327,7 @@ SH
   grep -qF -- "--out " "$out"
   grep -qF "morning-$today-9f2c40ab77e51d63.md" "$out"
   # The shiftId is read before anything moves, so the receipt is named for tonight either way.
-  [ -f "$p/.nightshift/archive/$today/shift-policy-9f2c40ab77e51d63.json" ]
+  [ -f "$p/.nightshift/archive/$today/shift-policy.json" ]
   if [ -f "$p/.nightshift/shift-log.md" ]; then
     if grep -qF 'morning receipt' "$p/.nightshift/shift-log.md"; then
       return 1
@@ -950,7 +950,7 @@ the_receipt() {
   grep -qF '| i1 |' "$out"
   grep -qF 'Summary:' "$out"
   # The archive copy is complete, and the live ledger starts the next shift lean.
-  arch="$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl"
+  arch="$p/.nightshift/archive/$(date '+%Y-%m-%d')/evidence/findings.jsonl"
   [ -f "$arch" ]
   [ "$(wc -l <"$arch")" -eq "$lines_before" ]
   [ ! -s "$p/.nightshift/evidence/findings.jsonl" ]
@@ -971,7 +971,7 @@ the_receipt() {
   [ -f "$out" ]
   grep -q '^## Baseline' "$out"
   grep -qF '| i1 |' "$out"
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/evidence/findings.jsonl" ]
 }
 
 @test "quitting time keeps the same evidence on its way out" {
@@ -988,7 +988,7 @@ the_receipt() {
   [ -f "$out" ]
   grep -q '^## Baseline' "$out"
   grep -qF '| i1 |' "$out"
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/evidence/findings.jsonl" ]
 }
 
 @test "a second stop event never overwrites a complete receipt with an empty one" {
@@ -1008,7 +1008,7 @@ the_receipt() {
   is_release
   [ "$(cat "$out")" = "$first" ]
   grep -q '^## Baseline' "$out"
-  [ "$(find "$p/.nightshift/archive" -name 'findings-*.jsonl' | wc -l | tr -d ' ')" -eq 1 ]
+  [ "$(find "$p/.nightshift/archive" -name 'findings.jsonl' | wc -l | tr -d ' ')" -eq 1 ]
 }
 
 @test "a renderer that fails still leaves the evidence archived" {
@@ -1023,7 +1023,7 @@ the_receipt() {
   is_release
   [ ! -f "$(the_receipt "$p")" ]
   grep -qF 'morning receipt render failed' "$p/.nightshift/shift-log.md"
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/evidence/findings.jsonl" ]
   [ -f "$p/.nightshift/.ended" ]
 }
 
@@ -1078,7 +1078,7 @@ handoff() {
     return 1
   fi
   # Dropping a section changes the page, never the evidence.
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/evidence/findings.jsonl" ]
 }
 
 @test "a page the owner turned off is not written, and nothing else is lost" {
@@ -1094,8 +1094,8 @@ handoff() {
   [ ! -f "$(the_receipt "$p")" ]
   grep -qF 'morning receipt disabled by the owner' "$p/.nightshift/shift-log.md"
   # Every factual record still stands.
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy-9f2c40ab77e51d63.json" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/evidence/findings.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy.json" ]
   [ -f "$p/.nightshift/.ended" ]
 }
 
@@ -1115,7 +1115,7 @@ handoff() {
   [ "$(cat "$out")" = "$before" ]
   grep -qF 'morning receipt kept:' "$p/.nightshift/shift-log.md"
   # The evidence is still archived around it.
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/findings-9f2c40ab77e51d63.jsonl" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/evidence/findings.jsonl" ]
 }
 
 @test "two shifts on one day get their own page, and a repeat event writes neither twice" {

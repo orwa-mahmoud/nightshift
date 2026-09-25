@@ -240,7 +240,7 @@ STUB
   [ -f "$p/.nightshift/.ended" ]
 
   day="$(date '+%Y-%m-%d')"
-  archived="$p/.nightshift/archive/$day/shift-policy-$sid.json"
+  archived="$p/.nightshift/archive/$day/shift-policy.json"
   if [ -f "$archived" ]; then
     [ ! -e "$p/.nightshift/shift-policy.json" ]
     jq -e --arg sid "$sid" '.shiftId == $sid' "$archived" >/dev/null

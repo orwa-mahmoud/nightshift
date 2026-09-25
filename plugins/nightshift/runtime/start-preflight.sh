@@ -30,6 +30,7 @@ PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
 HOST_NAME=""
 PHASE=preflight
 DRY_RUN=0
+ENDED_GROUP=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -94,7 +95,7 @@ if [ -e "$HOST_ROOT/.nightshift-link" ] || [ -L "$HOST_ROOT/.nightshift-link" ];
 fi
 
 NS="$WORKSPACE/.nightshift"
-declare PUNCH LOG DEADLINE WATCHMAN_PID STOP POLICY RULES PROVISION_TXN PENDING_FILING LEASE ENDED ARCHIVE WORK_ORDERS WORK_MODE_FILE DRAFTING_TABLE ARMED
+declare PUNCH LOG DEADLINE WATCHMAN_PID STOP POLICY RULES PROVISION_TXN PENDING_FILING LEASE ENDED WORK_ORDERS WORK_MODE_FILE DRAFTING_TABLE ARMED
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set LOG "$NS" shift-log
 ns_layout_set DEADLINE "$NS" deadline
@@ -106,7 +107,6 @@ ns_layout_set PROVISION_TXN "$NS" provision-transaction
 ns_layout_set PENDING_FILING "$NS" pending-filing
 ns_layout_set LEASE "$NS" lease
 ns_layout_set ENDED "$NS" ended
-ns_layout_set ARCHIVE "$NS" archive
 ns_layout_set WORK_ORDERS "$NS" work-orders
 ns_layout_set WORK_MODE_FILE "$NS" work-mode
 ns_layout_set DRAFTING_TABLE "$NS" drafting-table
@@ -364,6 +364,9 @@ if [ "$DRY_RUN" -eq 0 ]; then
     repair "pause the shift with ns stop-shift, then start again"
     exit 1
   fi
+  # The folder the last shift filed into, read before its ending marker is cleared: an oversized
+  # journal joins it below.
+  ENDED_GROUP="$(ns_archive_group_if_claimed "$WORKSPACE" "$(ns_ended_field "$WORKSPACE" shiftId)")"
   CLEARED=""
   for key in stop stall notified ended session-end pulse mint-failed session armed watchman-tick lock; do
     ns_layout_set marker "$NS" "$key"
@@ -565,17 +568,15 @@ if [ "$DRY_RUN" -eq 0 ] && [ -f "$LOG" ] && [ ! -L "$LOG" ]; then
   LOG_BYTES="$(wc -c <"$LOG" 2>/dev/null | tr -d '[:space:]')"
   case "$LOG_BYTES" in '' | *[!0-9]*) LOG_BYTES=0 ;; esac
   if [ "$LOG_BYTES" -gt 512000 ]; then
-    DAY="$(date +%Y-%m-%d)"
-    # A shift log Archive already filed that day keeps its name; the rotated journal takes the next.
-    ROTATED="shift-log.md"
-    ROTATE_N=1
-    while [ -e "$ARCHIVE/$DAY/$ROTATED" ] || [ -L "$ARCHIVE/$DAY/$ROTATED" ]; do
-      ROTATE_N=$((ROTATE_N + 1))
-      ROTATED="shift-log-$ROTATE_N.md"
-    done
-    if mkdir -p "$ARCHIVE/$DAY" 2>/dev/null && mv "$LOG" "$ARCHIVE/$DAY/$ROTATED" 2>/dev/null; then
-      printf '# Shift log\n' >"$LOG"
-      ok "journal rotated to archive/$DAY/$ROTATED"
+    # The journal joins the folder of the shift that ended last, beside anything Archive filed there
+    # already, or a folder claimed for today when no shift is on record.
+    ROTATE_GROUP="$ENDED_GROUP"
+    [ -n "$ROTATE_GROUP" ] || ROTATE_GROUP="$(ns_archive_dir "$WORKSPACE" "$(date +%Y-%m-%d)" unknown 2>/dev/null)" ||
+      ROTATE_GROUP=""
+    if [ -z "$ROTATE_GROUP" ] || ! ROTATED="$(ns_archive_file_journal "$WORKSPACE" "$ROTATE_GROUP")"; then
+      warn "journal could not be rotated into the archive; it stays at ${LOG#"$NS"/}"
+    elif [ -n "$ROTATED" ]; then
+      ok "journal rotated to ${ROTATED#"$NS"/}"
     fi
   fi
 fi

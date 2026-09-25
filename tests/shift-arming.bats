@@ -208,7 +208,7 @@ sp() {
   is_release
 
   day="$(date '+%Y-%m-%d')"
-  archived="$p/.nightshift/archive/$day/shift-policy-$sid.json"
+  archived="$p/.nightshift/archive/$day/shift-policy.json"
   if [ ! -f "$archived" ]; then
     echo "gate did not archive shift-policy.json (lane F)" >&2
     return 1

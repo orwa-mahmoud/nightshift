@@ -4,6 +4,10 @@ param(
     [string[]]$Retire = @()
 )
 
+# archive-receipts.ps1 - file a shift into its archive folder, laid out the way it was live. The
+# native twin of runtime/archive-receipts.sh, with the same records, the same paths and the same
+# rules: each record is filed as it stands, then the live side keeps only what is still open.
+
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
@@ -60,25 +64,55 @@ foreach ($name in $Retire) {
     }
 }
 
+# A closed record leaves live storage only when a shift has actually ended and the archived copy
+# has been read back and matches. While a shift is armed nothing is removed at all.
+$armed = Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed')
+$endedMarker = Get-NSLayoutPath $ns 'ended'
+$ended = (Test-Path -LiteralPath $endedMarker -PathType Leaf) -and
+    -not ((Get-Item -LiteralPath $endedMarker -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)
+$rotate = (-not $armed) -and $ended
+if (-not $rotate -and $Retire.Count -gt 0) {
+    if ($armed) {
+        Write-NSArchiveReceiptsError 'archive-receipts: refuse to retire anything while the shift is armed'
+    }
+    else {
+        Write-NSArchiveReceiptsError 'archive-receipts: refuse to retire anything before the shift has ended'
+    }
+    exit 2
+}
+
+function Get-NSArchiveRel {
+    param([string]$Key, [string]$Instance = '')
+    return (Get-NSLayoutRelativePath $ns $Key $Instance)
+}
+
+function Join-NSArchiveRel {
+    param([string]$Base, [string]$Rel)
+    return (Join-NSPath $Base ($Rel.Replace('/', [IO.Path]::DirectorySeparatorChar)))
+}
+
 $src = Get-NSReceiptsDir $workspace
-# The owner's archive.root and archive.layout decide where this lands, the same as on POSIX, and
-# the same containment refuses a root that would leave the state area.
-# Whose records these are. The live policy answers while it is still live; once clock-out has
-# archived it, the ending marker is what remembers, so a shift filed later lands under its own
-# name rather than a date bucket that could hold somebody else's night too.
-$shiftId = ''
+# Whose records these are. Once the shift has ended, the ending marker says which shift that was,
+# even when a policy for the next one is already live; before then the live policy answers.
+$policyId = ''
 $policyState = Get-NSShiftPolicyState $workspace
-if ($policyState['state'] -ceq 'valid') { $shiftId = [string]$policyState['policy']['shiftId'] }
-if ([string]::IsNullOrEmpty($shiftId) -or $shiftId -ceq 'unknown') {
-    $endedId = Get-NSEndedField $workspace 'shiftId'
+if ($policyState['state'] -ceq 'valid') { $policyId = [string]$policyState['policy']['shiftId'] }
+$endedId = [string](Get-NSEndedField $workspace 'shiftId')
+$shiftId = $policyId
+if ($rotate -and -not [string]::IsNullOrEmpty($endedId)) {
+    $shiftId = $endedId
+}
+elseif ([string]::IsNullOrEmpty($shiftId) -or $shiftId -ceq 'unknown') {
     if (-not [string]::IsNullOrEmpty($endedId)) { $shiftId = $endedId }
 }
-$group = Get-NSArchiveDir -Workspace $workspace -Date $Date -ShiftId $shiftId
-if ($null -eq $group) {
+$group = $null
+try { $group = Get-NSArchiveGroup -Workspace $workspace -Date $Date -ShiftId $shiftId } catch { $group = $null }
+if ([string]::IsNullOrEmpty($group)) {
     Write-NSArchiveReceiptsError 'archive-receipts: archive.root must name a directory inside .nightshift/ - an absolute path, a path with .., or a symlink is not supported'
     exit 2
 }
-$dest = Join-Path $group 'receipts'
+$receiptsRel = Get-NSArchiveRel 'receipts'
+$dest = Join-NSArchiveRel $group $receiptsRel
 if ((Test-Path -LiteralPath $src) -and (Test-NSReparsePoint $src)) {
     Write-NSArchiveReceiptsError 'archive-receipts: refuse to write through a symlink receipts path'
     exit 2
@@ -101,52 +135,33 @@ foreach ($p in @((Get-NSArchiveRoot $workspace), $group, $dest)) {
     }
 }
 
-# The archived copy is read back and compared, so a copy that silently truncated or landed on
-# another filesystem is never mistaken for a safe one.
-function Test-NSSameBytes {
-    param([string]$A, [string]$B)
-    if (-not (Test-Path -LiteralPath $A -PathType Leaf)) { return $false }
-    if (-not (Test-Path -LiteralPath $B -PathType Leaf)) { return $false }
-    $left = [IO.File]::ReadAllBytes($A)
-    $right = [IO.File]::ReadAllBytes($B)
-    if ($left.Length -ne $right.Length) { return $false }
-    for ($i = 0; $i -lt $left.Length; $i++) {
-        if ($left[$i] -ne $right[$i]) { return $false }
-    }
-    return $true
-}
-
-# A ticked item's receipt leaves live storage once the shift has ended. An open item's never
-# files. Other records leave only when the caller named them. While a shift is armed nothing
-# is removed at all: its receipts are what its own progress checks read.
-$armed = Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed')
-$endedMarker = Get-NSLayoutPath $ns 'ended'
-$ended = (Test-Path -LiteralPath $endedMarker -PathType Leaf) -and
-    -not ((Get-Item -LiteralPath $endedMarker -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)
-$rotate = (-not $armed) -and $ended
-if (-not $rotate -and $Retire.Count -gt 0) {
-    if ($armed) {
-        Write-NSArchiveReceiptsError 'archive-receipts: refuse to retire anything while the shift is armed'
-    }
-    else {
-        Write-NSArchiveReceiptsError 'archive-receipts: refuse to retire anything before the shift has ended'
-    }
-    exit 2
-}
-
 $utf8 = New-Object Text.UTF8Encoding($false)
-$copied = 0
-$removed = 0
+$script:copied = 0
+$script:removed = 0
 $kept = New-Object Collections.Generic.List[string]
 $filed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
-$archivedPaths = New-Object Collections.Generic.List[string]
+$filedLines = New-Object Collections.Generic.List[string]
 $script:tickedNames = @(Get-NSTickedReceiptNames $workspace)
 
-# Copy-NSArchiveRecord <source> <directory> - file one record, verify it, and retire the source
-# when the caller established it as closed. True when the record now has a verified archived copy.
+# New-NSArchiveFolder <dir> - create a folder inside the shift's folder, refusing one reached
+# through a reparse point.
+function New-NSArchiveFolder {
+    param([string]$Directory)
+    $null = New-Item -ItemType Directory -Path $Directory -Force
+    if ((Get-Item -LiteralPath $Directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        Write-NSArchiveReceiptsError 'archive-receipts: refuse to write through a symlink archive path'
+        exit 2
+    }
+}
+
+# Copy-NSArchiveRecord <source> <directory> <keep|closed|own> - file one record, verify it, and
+# retire the source when the shift has ended: closed when it was named or its item is ticked, own
+# always, keep never. True when the record now has a verified archived copy.
 function Copy-NSArchiveRecord {
-    param([string]$Source, [string]$Directory)
+    param([string]$Source, [string]$Directory, [string]$Rule)
     $base = [IO.Path]::GetFileName($Source)
+    if ($base.StartsWith('.', [StringComparison]::Ordinal) -or $base -ceq '') { return $false }
+    New-NSArchiveFolder $Directory
     $target = Join-Path $Directory $base
     # The leaf is checked too. A reparse point left where this record is about to land would carry
     # its bytes somewhere else and then read back as a faithful copy, so the source stays put.
@@ -155,7 +170,7 @@ function Copy-NSArchiveRecord {
         return $false
     }
     if (Test-Path -LiteralPath $target) {
-        if (-not (Test-NSSameBytes $Source $target)) {
+        if (-not (Test-NSArchiveSame $Source $target)) {
             # Two different records under one name. Neither is worth losing, so the one already
             # filed stands and the live one stays where it is.
             $kept.Add($base + ' (a different record is already filed under that name)')
@@ -165,54 +180,96 @@ function Copy-NSArchiveRecord {
     else {
         Copy-Item -LiteralPath $Source -Destination $target -Force
         $script:copied++
-    }
-    if (-not (Test-NSSameBytes $Source $target)) {
-        $kept.Add($base + ' (the archived copy does not match the source)')
-        return $false
+        if (-not (Test-NSSameFileBytes $Source $target)) {
+            $kept.Add($base + ' (the archived copy does not match the source)')
+            return $false
+        }
     }
     $null = $filed.Add($base)
-    $archivedPaths.Add($Source.Substring($ns.Length).TrimStart([char]'/', [char]'\').Replace('\', '/'))
-    if ($rotate -and (($Retire -ccontains $base) -or ($script:tickedNames -ccontains $base))) {
-        Remove-Item -LiteralPath $Source -Force -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $Source) {
-            $kept.Add($base + ' (could not be removed from live storage)')
-            return $true
-        }
-        $script:removed++
+    if (-not $rotate) { return $true }
+    if ($Rule -ceq 'keep') { return $true }
+    if ($Rule -ceq 'closed' -and -not (($Retire -ccontains $base) -or ($script:tickedNames -ccontains $base))) { return $true }
+    Remove-Item -LiteralPath $Source -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Source) {
+        $kept.Add($base + ' (could not be removed from live storage)')
+        return $true
     }
+    $script:removed++
     return $true
 }
 
+# Copy-NSArchiveFolder <live-dir> <archived-dir> <name> - one folder of readings, filed as one
+# record: under its own name, only when every record in it was, and removed from live storage only
+# then.
+function Copy-NSArchiveFolder {
+    param([string]$Live, [string]$To, [string]$Name)
+    $whole = $true
+    foreach ($entry in @(Get-ChildItem -LiteralPath $Live -Force -ErrorAction SilentlyContinue |
+            Where-Object { -not $_.Name.StartsWith('.') })) {
+        if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            $whole = $false
+            continue
+        }
+        if (-not (Copy-NSArchiveRecord $entry.FullName $To 'keep')) { $whole = $false }
+    }
+    if (-not $whole) {
+        $kept.Add($Name + ' (not every record in it could be filed)')
+        return
+    }
+    $null = $filed.Add($Name)
+    if (-not $rotate) { return }
+    Remove-Item -LiteralPath $Live -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Live) { $kept.Add($Name + ' (could not be removed from live storage)') }
+    else { $script:removed++ }
+}
+
+# The receipts of items nobody finished. They are filed as they stand and stay live, exactly as the
+# box stays in the punch list, so the next shift extends the same file rather than a copy of it.
+$openNames = @(Get-NSOpenReceiptNames $workspace)
 if (Test-Path -LiteralPath $src -PathType Container) {
     # The index is a view of a set of receipts, so each side of the move gets its own, written
-    # below from what is actually there. The live one is never filed as a record of its own, and
-    # the receipt of an item that is still open stays live with the box it belongs to.
-    $openNames = @(Get-NSOpenReceiptNames $workspace)
+    # below from what is actually there. The live one is never filed as a record of its own.
     $files = @(Get-ChildItem -LiteralPath $src -File -Force -ErrorAction SilentlyContinue |
         Where-Object {
             -not $_.Name.StartsWith('.') -and
             -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
-            $_.Name -cne 'README.md' -and
-            -not ($openNames -ccontains $_.Name)
+            $_.Name -cne 'README.md'
         })
-    if ($files.Count -gt 0) {
-        $null = New-Item -ItemType Directory -Path $dest -Force
-        $destItem = Get-Item -LiteralPath $dest -Force
-        if ($destItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-            Write-NSArchiveReceiptsError 'archive-receipts: refuse to write through a symlink archive path'
-            exit 2
-        }
-        foreach ($file in $files) {
-            $null = Copy-NSArchiveRecord $file.FullName $dest
-        }
+    foreach ($file in (Sort-NSOrdinal @($files | ForEach-Object { $_.Name }))) {
+        $rule = $(if ($openNames -ccontains $file) { 'keep' } else { 'closed' })
+        $null = Copy-NSArchiveRecord (Join-Path $src $file) $dest $rule
     }
 }
 
-# A retired shift's accounting travels too. `usage-<id>/` is what the Start preflight renamed when
-# it cleared the last shift's leftovers, so it is the closed shift's own readings - its offsets, its
-# marks, its totals. Filed under the group with everything else and retired from live storage on the
-# same rule, so the state directory does not accumulate one directory per night. The folder is one
-# record: filed, under its own name, only when every record in it was, and removed only then.
+# Once the shift has ended, its own records follow it: the usage readings, the policy when no
+# clock-out filed it, and the shift log.
+if ($rotate) {
+    $usageDir = Get-NSLayoutPath $ns 'usage'
+    if ((Test-Path -LiteralPath $usageDir -PathType Container) -and -not (Test-NSReparsePoint $usageDir)) {
+        Copy-NSArchiveFolder $usageDir (Join-NSArchiveRel $group (Get-NSArchiveRel 'usage')) (Split-Path -Leaf $usageDir)
+    }
+    $policyFile = Get-NSLayoutPath $ns 'shift-policy'
+    if ((Test-Path -LiteralPath $policyFile -PathType Leaf) -and -not (Test-NSReparsePoint $policyFile) -and
+        -not [string]::IsNullOrEmpty($policyId) -and $policyId -ceq $shiftId) {
+        $policyRel = Get-NSArchiveRel 'shift-policy'
+        $policyDir = $group
+        if ($policyRel.Contains('/')) { $policyDir = Join-NSArchiveRel $group $policyRel.Substring(0, $policyRel.LastIndexOf('/')) }
+        if (Copy-NSArchiveRecord $policyFile $policyDir 'own') {
+            $filedLines.Add('archive-receipts: filed the shift policy as ' + (Join-NSArchiveRel $group $policyRel))
+        }
+    }
+    try {
+        $journal = Save-NSArchiveJournal $workspace $group
+        if (-not [string]::IsNullOrEmpty($journal)) { $filedLines.Add('archive-receipts: filed the shift log as ' + $journal) }
+    }
+    catch {
+        $kept.Add((Split-Path -Leaf (Get-NSLayoutPath $ns 'shift-log')) + ' (the shift log could not be filed)')
+    }
+}
+
+# A usage-<id>/ folder is a closed shift's readings, set aside by the Start preflight. It goes to the
+# folder that shift claimed, at the path the readings have live, or into this shift's folder under
+# its own name when no folder is that shift's or its readings are already there.
 $usagePrefix = Get-NSLayoutPath $ns 'usage-shift' ''
 $usageParent = Split-Path -Parent $usagePrefix
 $usageLead = Split-Path -Leaf $usagePrefix
@@ -223,137 +280,111 @@ if ((Test-Path -LiteralPath $usageParent -PathType Container) -and -not (Test-NS
             -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)
         })
     foreach ($name in (Sort-NSOrdinal @($usageFolders | ForEach-Object { $_.Name }))) {
-        $folder = Join-Path $usageParent $name
-        $usageDest = Join-Path $group $name
-        $whole = $true
-        foreach ($entry in @(Get-ChildItem -LiteralPath $folder -Force -ErrorAction SilentlyContinue |
-                Where-Object { -not $_.Name.StartsWith('.') })) {
-            if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-                $whole = $false
-                continue
-            }
-            $null = New-Item -ItemType Directory -Path $usageDest -Force
-            if ((Get-Item -LiteralPath $usageDest -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                Write-NSArchiveReceiptsError 'archive-receipts: refuse to write through a symlink archive path'
-                exit 2
-            }
-            if (-not (Copy-NSArchiveRecord $entry.FullName $usageDest)) { $whole = $false }
+        $instance = $name.Substring($usageLead.Length)
+        $ownerDir = Get-NSArchiveFolderOf $workspace $instance
+        $usageRel = Get-NSArchiveRel 'usage'
+        if (-not [string]::IsNullOrEmpty($ownerDir) -and -not (Test-Path -LiteralPath (Join-NSArchiveRel $ownerDir $usageRel))) {
+            $to = Join-NSArchiveRel $ownerDir $usageRel
         }
-        if (-not $whole) {
-            $kept.Add($name + ' (not every record in it could be filed)')
-            continue
+        else {
+            $to = Join-NSArchiveRel $group (Get-NSArchiveRel 'usage-shift' $instance)
         }
-        $null = $filed.Add($name)
-        if ($rotate -and ($Retire -ccontains $name)) {
-            Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
-            if (Test-Path -LiteralPath $folder) { $kept.Add($name + ' (could not be removed from live storage)') }
-            else { $removed++ }
-        }
+        Copy-NSArchiveFolder (Join-Path $usageParent $name) $to $name
     }
 }
 
-# The shift report travels with the receipts it describes, and keeps working from where it lands.
+# A leftover shift-report.md (not yet migrated into receipts/) still travels.
 $report = Join-NSPath $ns (Get-NSLayoutRelativePathAt 0 'previous-report')
-$reportBase = ''
-$reportRelocated = $false
 if ((Test-Path -LiteralPath $report -PathType Leaf) -and -not (Test-NSReparsePoint $report)) {
-    $reportBase = [IO.Path]::GetFileName($report)
-    $reportOriginal = Join-Path $group ([IO.Path]::GetFileNameWithoutExtension($reportBase) + '.original.md')
-    if ((Test-Path -LiteralPath $reportOriginal -PathType Leaf) -and
-        -not (Test-NSReparsePoint $reportOriginal) -and
-        (Test-NSSameBytes $report $reportOriginal)) {
-        # Filed already, on a run that relocated its links. The archived page differs from the
-        # source by design, so the preserved original is what says whether this is the same report.
-        $null = $filed.Add($reportBase)
-        $reportRelocated = $true
-        if ($rotate -and ($Retire -ccontains $reportBase)) {
-            Remove-Item -LiteralPath $report -Force -ErrorAction SilentlyContinue
-            if (Test-Path -LiteralPath $report) {
-                $kept.Add($reportBase + ' (could not be removed from live storage)')
-            }
-            else { $removed++ }
-        }
+    $null = Copy-NSArchiveRecord $report $group 'closed'
+}
+
+# The parking lot and the snag log, whole, then only their open entries live.
+$label = Get-NSArchiveReviewLabel (Split-Path -Leaf $group) $shiftId ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
+foreach ($key in @('snag-log', 'parking-lot')) {
+    try {
+        $status = Save-NSArchiveReviewSource $workspace $key $group $label
+    }
+    catch {
+        Write-NSArchiveReceiptsError 'archive-receipts: could not file snag or parking records'
+        exit 2
+    }
+    if ($status -eq 3) {
+        $kept.Add((Get-NSArchiveRel $key) + " (this shift's copy is already filed; its handled entries stay live for the next filing)")
+    }
+}
+try {
+    Add-NSArchiveBrokenPointers $workspace
+}
+catch {
+    Write-NSArchiveReceiptsError 'archive-receipts: could not check the filed pointers'
+    exit 2
+}
+
+# The punch list, once the shift has ended: filed whole, then only the contract and the open items
+# live. While it is armed the list is its contract and nothing here touches it.
+if ($rotate) {
+    $punch = Save-NSArchivePunchList -Workspace $workspace -Folder $group -ShiftId $shiftId -Date $Date
+    if ($punch.Status -eq 0) {
+        if ($punch.Path -cne '') { $filedLines.Add('archive-receipts: filed the punch list as ' + $punch.Path) }
+    }
+    elseif ($punch.Status -eq 3) {
+        Write-NSArchiveReceiptsError ('archive-receipts: a different punch list is already filed at ' + (Join-NSArchiveRel $group (Get-NSArchiveRel 'punch-list')) + '; the live list is unchanged')
     }
     else {
-        $null = New-Item -ItemType Directory -Path $group -Force
-        $null = Copy-NSArchiveRecord $report $group
+        Write-NSArchiveReceiptsError ('archive-receipts: could not file the punch list into ' + $group + ': ' + $punch.Reason)
     }
 }
 
-# A record that travelled with this one is still a sibling; one that stayed live is now further
-# away and its link has to say so. Rewriting changes bytes, so the untouched original is kept
-# beside the relocated view rather than replaced by it.
-# Convert-NSArchivedPageLinks <page> <its directory before the move, relative to the state area>
-function Convert-NSArchivedPageLinks {
-    param([string]$Page, [AllowEmptyString()][string]$From)
-    if (-not (Test-Path -LiteralPath $Page -PathType Leaf)) { return }
-    if (Test-NSReparsePoint $Page) { return }
-    $base = [IO.Path]::GetFileName($Page)
-    if ($base.EndsWith('.original.md', [StringComparison]::Ordinal)) { return }
-    $relative = ([IO.Path]::GetDirectoryName($Page)).Substring($ns.Length).Trim([char]'/', [char]'\')
+# The archive gets the index of what landed in it, written before the link pass so a receipt that
+# links to its index has one to link to.
+if (Test-Path -LiteralPath $dest -PathType Container) {
+    Write-NSArchiveReceiptsIndex -Directory $dest -Date (Get-NSReceiptsShiftDate $workspace) -OpenNames $openNames
+}
+
+# Every filed page keeps working from where it now sits. A record filed beside it is reached
+# exactly as written; one that stayed live is further away and its link says so. Rewriting changes
+# bytes, so the untouched original is kept beside the repointed page, and a page repointed on an
+# earlier filing is left alone. The shift log is raw evidence and stays as written.
+$archivedPaths = New-Object Collections.Generic.List[string]
+$groupFull = (Get-Item -LiteralPath $group -Force).FullName.TrimEnd([char]'/', [char]'\')
+foreach ($file in @(Get-ChildItem -LiteralPath $group -File -Recurse -Force -ErrorAction SilentlyContinue)) {
+    if ($file.Name.StartsWith('.', [StringComparison]::Ordinal)) { continue }
+    if ($file.Name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
+    $archivedPaths.Add($file.FullName.Substring($groupFull.Length).TrimStart([char]'/', [char]'\').Replace('\', '/'))
+}
+$journalRel = Get-NSArchiveRel 'shift-log'
+foreach ($rel in (Sort-NSOrdinal $archivedPaths.ToArray())) {
+    if (-not $rel.EndsWith('.md', [StringComparison]::Ordinal)) { continue }
+    if ($rel -ceq $journalRel) { continue }
+    # The index is written into the folder it describes: its links are already siblings there.
+    if ($rel -ceq ($receiptsRel + '/README.md')) { continue }
+    $page = Join-NSArchiveRel $group $rel
+    if (Test-NSReparsePoint $page) { continue }
+    $original = $page.Substring(0, $page.Length - 3) + '.original.md'
+    if (Test-Path -LiteralPath $original) { continue }
+    $from = ''
+    if ($rel.Contains('/')) { $from = $rel.Substring(0, $rel.LastIndexOf('/')) }
+    $relative = ([IO.Path]::GetDirectoryName($page)).Substring($ns.Length).Trim([char]'/', [char]'\')
     $back = ''
     foreach ($component in ($relative -split '[\\/]')) {
         if (-not [string]::IsNullOrEmpty($component)) { $back = $back + '../' }
     }
-    $source = [IO.File]::ReadAllText($Page, $utf8)
-    $relocated = Convert-NSReportLinks -Text $source -Archived $archivedPaths.ToArray() -Back $back -Dir $From
-    if ($relocated -ceq $source) { return }
-    $original = Join-Path ([IO.Path]::GetDirectoryName($Page)) `
-        ([IO.Path]::GetFileNameWithoutExtension($base) + '.original.md')
+    $source = [IO.File]::ReadAllText($page, $utf8)
+    $relocated = Convert-NSReportLinks -Text $source -Archived $archivedPaths.ToArray() -Back $back -Dir $from
+    if ($relocated -ceq $source) { continue }
     if (Test-NSArchiveDest $original) {
         [IO.File]::WriteAllText($original, $source, $utf8)
-        [IO.File]::WriteAllText($Page, $relocated, $utf8)
+        [IO.File]::WriteAllText($page, $relocated, $utf8)
     }
     else {
-        $kept.Add($base + ' (its links were left as written: the original could not be preserved beside a relocated view)')
+        $kept.Add([IO.Path]::GetFileName($page) + ' (its links were left as written: the original could not be preserved beside a relocated view)')
     }
-}
-
-# The archive gets the index of what landed in it. Written before the relocation pass, so a receipt
-# that links to its index has an index to link to: the archived folder holds one of its own, and
-# that is the sibling the link still names.
-$receiptsRel = $src.Substring($ns.Length).Trim([char]'/', [char]'\').Replace('\', '/')
-Write-NSArchiveReceiptsIndex -Directory $dest -Date (Get-NSReceiptsShiftDate $workspace)
-if (Test-Path -LiteralPath (Join-Path $dest 'README.md') -PathType Leaf) {
-    $archivedPaths.Add($receiptsRel + '/README.md')
-}
-if (Test-Path -LiteralPath $dest -PathType Container) {
-    foreach ($page in @(Get-ChildItem -LiteralPath $dest -File -Force -Filter '*.md' -ErrorAction SilentlyContinue)) {
-        # The index is written into the folder it describes: its links are already siblings there.
-        if ($page.Name -ceq 'README.md') { continue }
-        Convert-NSArchivedPageLinks $page.FullName $receiptsRel
-    }
-}
-if ($reportBase -cne '' -and -not $reportRelocated) {
-    Convert-NSArchivedPageLinks (Join-Path $group $reportBase) ''
 }
 
 # The live folder lists the work still in hand - losing its index when there is nothing left
 # to list.
 Write-NSReceiptsIndex -Workspace $workspace -Remaining
-
-try {
-    Save-NSArchiveReviewRecords $workspace $Date $shiftId
-}
-catch {
-    Write-NSArchiveReceiptsError 'archive-receipts: could not file snag or parking records'
-    exit 2
-}
-
-# The punch list, once the shift has ended: its contract and its ticked items are filed in the
-# shift's own folder and the ticked items leave the live list. While it is armed the list is its
-# contract and nothing here touches it.
-$punchFiled = ''
-if ($rotate) {
-    $punch = Save-NSArchivePunchList -Workspace $workspace -Folder $group -ShiftId $shiftId -Date $Date
-    if ($punch.Status -eq 0) { $punchFiled = $punch.Path }
-    elseif ($punch.Status -eq 3) {
-        Write-NSArchiveReceiptsError ('archive-receipts: a different punch list is already filed at ' + (Join-Path $group 'punch-list.md') + '; the live list is unchanged')
-    }
-    else {
-        Write-NSArchiveReceiptsError ('archive-receipts: could not file the punch list into ' + $group)
-    }
-}
 
 $unmatched = @($Retire | Where-Object { -not $filed.Contains($_) })
 if ($unmatched.Count -gt 0) {
@@ -366,11 +397,11 @@ if ($kept.Count -gt 0) {
     foreach ($line in $kept) { Write-NSArchiveReceiptsError $line }
 }
 
-if ($copied -ne 0 -or $removed -ne 0) {
-    Write-Output $dest
-    if ($removed -gt 0) {
-        Write-NSArchiveReceiptsError ("archive-receipts: retired {0} closed record(s) from live storage" -f $removed)
+if ($script:copied -ne 0 -or $script:removed -ne 0 -or $filedLines.Count -gt 0) {
+    Write-Output $group
+    if ($script:removed -gt 0) {
+        Write-NSArchiveReceiptsError ("archive-receipts: retired {0} closed record(s) from live storage" -f $script:removed)
     }
 }
-if ($punchFiled -cne '') { Write-Output ('archive-receipts: filed the punch list as ' + $punchFiled) }
+foreach ($line in $filedLines) { Write-Output $line }
 exit 0

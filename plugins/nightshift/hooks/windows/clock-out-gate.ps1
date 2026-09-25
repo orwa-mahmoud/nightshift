@@ -102,9 +102,8 @@ function Release-NSLeaseWithRetry {
 }
 
 function Save-NSPolicyArchive {
-    # Best effort, never blocks the release: file tonight's shift-policy.json under
-    # archive/<YYYY-MM-DD>/shift-policy-<shiftId>.json via the same helper the owner runs by
-    # hand. A shift that armed with safe defaults and never wrote a policy leaves nothing to
+    # Best effort, never blocks the release: file tonight's shift-policy.json in the shift's
+    # archive folder, at the path it has live, via the same helper the owner runs by hand. A shift that armed with safe defaults and never wrote a policy leaves nothing to
     # archive. Invoke-NSShiftPolicyArchive writes its result straight to the console, which this
     # hook's stdout must carry nothing but the release/block JSON, so the console is swapped for
     # a throwaway writer for the length of the call.
@@ -277,9 +276,21 @@ function Complete-NSShift {
     $endedId = 'unknown'
     $endedState = Get-NSShiftPolicyState $workspace
     if ($endedState['state'] -ceq 'valid') { $endedId = [string]$endedState['policy']['shiftId'] }
+    # The shift's folder is claimed now, under its name when the owner gave it one, and the marker
+    # remembers it: every later filing of this shift, clock-out's own included, lands there.
+    $endedName = Get-NSShiftName (Get-NSLayoutPath $ns 'punch-list')
+    $endedFolder = ''
+    try {
+        $claimed = Get-NSArchiveDir -Workspace $workspace -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId $endedId -Name $endedName
+        if (-not [string]::IsNullOrEmpty($claimed)) { $endedFolder = Split-Path -Leaf $claimed }
+    }
+    catch {
+        Write-NSLogLine ('archive folder not claimed: ' + $_.Exception.Message)
+    }
     Write-NSEndedRecord -StateDir $ns -ShiftId $endedId `
         -ArchiveRoot ([string](Get-NSPolicyGroupSetting $workspace 'archive.root')['value']) `
-        -ArchiveLayout ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
+        -ArchiveLayout ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value']) `
+        -ShiftName $endedName -ArchiveFolder $endedFolder
     if (Test-NSArchiveAutomatic $workspace) {
         $pending = Get-NSLayoutPath $ns 'pending-filing'
         if (Test-NSReparsePoint $pending) { Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue }

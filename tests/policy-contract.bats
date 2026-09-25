@@ -118,7 +118,7 @@ expected() { printf '%s' "$FIX/$1/expected.json"; }
   jq -e '.properties.handoff.properties.sections.items.enum
          == ["shift", "usage", "items", "review", "interruptions", "parked", "snags",
              "baseline", "changed", "unsupported", "next"]' "$SCHEMA" >/dev/null
-  jq -e '.properties.archive.properties.layout.enum == ["date", "shift"]' "$SCHEMA" >/dev/null
+  jq -e '.properties.archive.properties.layout.enum == ["date", "shift", "name", "date-name"]' "$SCHEMA" >/dev/null
 }
 
 @test "the shipped defaults are the ones the contract documents" {

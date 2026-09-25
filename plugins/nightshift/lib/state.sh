@@ -892,11 +892,12 @@ _ns_archive_receipt_headings() {
   done
 }
 
-# ns_receipts_write_archive_index <dir> <date> — the index of the item receipts filed in <dir>,
-# written only when at least one landed there. Links stay siblings, because the receipts it lists
-# are in that directory too.
+# ns_receipts_write_archive_index <dir> <date> [<open-names>] — the index of the item receipts
+# filed in <dir>, written only when at least one landed there. A receipt named in the
+# newline-separated <open-names> belongs to an item still open and is listed as open. Links stay
+# siblings, because the receipts it lists are in that directory too.
 ns_receipts_write_archive_index() {
-  local dir="$1" date_s="$2" index rows f base label cells
+  local dir="$1" date_s="$2" open="${3:-}" index rows f base label cells state
   local in cw cr out rea work pause usage time _sum
   local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
   { [ -d "$dir" ] && [ ! -L "$dir" ]; } || return 0
@@ -915,8 +916,12 @@ EOF
     tout=$((tout + out)); trea=$((trea + rea)); twork=$((twork + work)); tpause=$((tpause + pause))
     [ "$usage" != off ] || offu=1
     [ "$time" != off ] || offt=1
-    printf '| %s | ticked | **%s** | **%s** | [./%s](./%s) |\n' \
-      "$label" "$usage" "$time" "$base" "$base" >>"$rows"
+    case $'\n'"$open"$'\n' in
+      *$'\n'"$base"$'\n'*) state=open ;;
+      *) state=ticked ;;
+    esac
+    printf '| %s | %s | **%s** | **%s** | [./%s](./%s) |\n' \
+      "$label" "$state" "$usage" "$time" "$base" "$base" >>"$rows"
   done <<FIND
 $(_ns_archive_receipt_headings "$dir" | ns_receipts_heading_order)
 FIND
@@ -1011,13 +1016,29 @@ ns_archive() {
 # destination. The marker that already says the shift ended says which shift, and where it files.
 # One line per field, `key=value`, and an empty marker stays a valid ending.
 #
-# ns_ended_record <state-dir> <shift-id> <archive-root-name> <archive-layout>
+# ns_ended_record <state-dir> <shift-id> <archive-root-name> <archive-layout> [<shift-name>
+# <archive-folder>] — the folder is the one clock-out claimed for the shift, by its name under the
+# archive root, so every later filing of that shift returns to it whatever day it runs.
 ns_ended_record() {
   local ns="$1" ended
   [ -d "$ns" ] || return 0
   ns_layout_set ended "$ns" ended
   [ -L "$ended" ] && rm -f "$ended"
-  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\n' "$2" "$3" "$4" >"$ended" 2>/dev/null || :
+  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\nshiftName=%s\narchiveFolder=%s\n' \
+    "$2" "$3" "$4" "${5-}" "${6-}" >"$ended" 2>/dev/null || :
+}
+
+# ns_shift_name <punch-list> — the name the owner gave the shift on the list's title line, as in
+# `# Punch List — Archive follow-ups`, with an em or en dash, a hyphen or a colon after the words.
+# Nothing when the title carries no name.
+ns_shift_name() {
+  local line="" re
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  IFS= read -r line <"$1" || [ -n "$line" ] || return 0
+  line="${line%$'\r'}"
+  re=$'^#[[:space:]]+Punch[[:space:]]+List[[:space:]]*(\xe2\x80\x94|\xe2\x80\x93|-|:)[[:space:]]*(.*[^[:space:]])[[:space:]]*$'
+  [[ $line =~ $re ]] || return 0
+  printf '%s' "${BASH_REMATCH[2]}"
 }
 
 # ns_ended_field <project-dir> <key> — one field of the ending marker, or empty.
@@ -1096,17 +1117,20 @@ ns_archive_dest() {
   [ ! -e "$1" ] || [ -f "$1" ] || return 2
 }
 
-# ns_archive_dir <project-dir> <date> <shift-id> — the directory one shift is filed into.
+# ns_archive_dir <project-dir> <date> <shift-id> [<shift-name>] — the directory one shift is filed
+# into.
 #
 # The shift layout gives each shift `shift-<id>/`. The date layout gives the first shift of a day
 # `<date>/` and each later one `<date>-shift-2/`, `<date>-shift-3/` and so on, so two shifts never
-# share a punch list, a log or a receipt name. A folder records the shift it belongs to in
+# share a punch list, a log or a receipt name. The name layout uses the shift's name instead of the
+# date, and date-name both, as in `2026-09-25-archive-follow-ups/`; a shift with no name falls back
+# to the date. A second shift under the same name takes `-shift-2` the same way. A folder records the shift it belongs to in
 # `.shift-id`, `unknown` for a shift that ended without an id, and a shift filed again that day
 # comes back to its own folder. An empty folder without that record is claimed; one that already
 # holds records without it belongs to nobody we can name and is never claimed. A candidate that is
 # a link or not a directory is returned as it is, for the caller to refuse.
 ns_archive_dir() {
-  local root layout base dir n=1 owner id
+  local root layout base dir n=1 owner id slug=""
   root="$(ns_archive_root "$1")" || return 2
   layout="$(ns_archive "$1" layout)"
   id="${3:-unknown}"
@@ -1114,7 +1138,14 @@ ns_archive_dir() {
     printf '%s/shift-%s' "$root" "$id"
     return 0
   fi
+  [ -z "${4-}" ] || slug="$(ns_receipt_slug "$4")"
   base="$root/$2"
+  if [ -n "$slug" ]; then
+    case "$layout" in
+      name) base="$root/$slug" ;;
+      date-name) base="$root/$2-$slug" ;;
+    esac
+  fi
   dir="$base"
   while :; do
     if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
@@ -1143,64 +1174,165 @@ ns_archive_dir() {
   done
 }
 
+# ns_archive_group <project-dir> <date> <shift-id> — the folder one shift files into. Once clock-out
+# has claimed it, the ending marker names it and every later filing of that shift returns there,
+# whatever day it runs; before that, or when the named folder is gone or is another shift's, it is
+# resolved from the date, the id and the shift's name.
+ns_archive_group() {
+  local project="$1" id="${3:-unknown}" root folder="" owner="" name=""
+  root="$(ns_archive_root "$project")" || return 2
+  if [ "$(ns_ended_field "$project" shiftId)" = "$id" ]; then
+    folder="$(ns_ended_field "$project" archiveFolder)"
+    name="$(ns_ended_field "$project" shiftName)"
+  fi
+  case "$folder" in '' | */* | .*) folder="" ;; esac
+  if [ -n "$folder" ] && [ -d "$root/$folder" ] && [ ! -L "$root/$folder" ] &&
+    [ -f "$root/$folder/.shift-id" ] && [ ! -L "$root/$folder/.shift-id" ]; then
+    IFS= read -r owner <"$root/$folder/.shift-id" || :
+    if [ "$owner" = "$id" ]; then
+      printf '%s/%s' "$root" "$folder"
+      return 0
+    fi
+  fi
+  [ -n "$name" ] || name="$(ns_shift_name "$(ns_layout_path "$project/.nightshift" punch-list)")"
+  ns_archive_dir "$project" "$2" "$id" "$name"
+}
+
+# ns_archive_folder_of <project-dir> <shift-id> — the archive folder a shift with that id claimed, or
+# nothing. A shift without an id owns no folder anyone can find by it.
+ns_archive_folder_of() {
+  local root d owner
+  case "$2" in '' | unknown | *[!A-Za-z0-9-]*) return 0 ;; esac
+  root="$(ns_archive_root "$1")" || return 0
+  for d in "$root"/*/; do
+    d="${d%/}"
+    { [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$d/.shift-id" ] && [ ! -L "$d/.shift-id" ]; } || continue
+    owner=""
+    IFS= read -r owner <"$d/.shift-id" || :
+    if [ "$owner" = "$2" ]; then
+      printf '%s' "$d"
+      return 0
+    fi
+  done
+}
+
+# ns_archived_policy <project-dir> <shift-id> — the shift policy filed for that shift: in the folder
+# the ending marker names, then in any folder the shift claimed, at the path the policy has live
+# (`run/shift-policy.json`, or `shift-policy.json` in the older layout), then under the
+# `shift-policy-<id>.json` name earlier versions filed it by. Nothing when none is filed.
+ns_archived_policy() {
+  local project="$1" id="$2" root folder f
+  case "$id" in '' | unknown | *[!0-9a-f-]*) return 0 ;; esac
+  root="$(ns_archive_root "$project")" || return 0
+  { [ -d "$root" ] && [ ! -L "$root" ]; } || return 0
+  for folder in "$(ns_archive_group_if_claimed "$project" "$id")" "$(ns_archive_folder_of "$project" "$id")"; do
+    [ -n "$folder" ] || continue
+    for f in "$folder/run/shift-policy.json" "$folder/shift-policy.json" "$folder/shift-policy-$id.json"; do
+      if [ -f "$f" ] && [ ! -L "$f" ]; then
+        printf '%s' "$f"
+        return 0
+      fi
+    done
+  done
+  f="$(find "$root" -type f -name "shift-policy-$id.json" -print 2>/dev/null | LC_ALL=C sort | head -n 1)"
+  [ -z "$f" ] || printf '%s' "$f"
+}
+
+# ns_archive_group_if_claimed <project-dir> <shift-id> — the folder the ending marker names for that
+# shift, only when it exists and that shift still owns it.
+ns_archive_group_if_claimed() {
+  local root folder owner=""
+  [ "$(ns_ended_field "$1" shiftId)" = "$2" ] || return 0
+  folder="$(ns_ended_field "$1" archiveFolder)"
+  case "$folder" in '' | */* | .*) return 0 ;; esac
+  root="$(ns_archive_root "$1")" || return 0
+  { [ -f "$root/$folder/.shift-id" ] && [ ! -L "$root/$folder/.shift-id" ] && [ ! -L "$root/$folder" ]; } || return 0
+  IFS= read -r owner <"$root/$folder/.shift-id" || :
+  [ "$owner" = "$2" ] && printf '%s/%s' "$root" "$folder"
+  return 0
+}
+
+# ns_archive_same <source> <filed> — status 0 when the filed copy is this record: the same bytes, or,
+# for a page whose links were repointed when it was filed, the original kept beside it.
+ns_archive_same() {
+  [ -f "$1" ] && [ -f "$2" ] || return 1
+  cmp -s "$1" "$2" && return 0
+  [ -f "${2%.md}.original.md" ] && [ ! -L "${2%.md}.original.md" ] && cmp -s "$1" "${2%.md}.original.md"
+}
+
 # ns_archive_punch_list <project-dir> <folder> <shift-id> <date> — file the ended shift's punch list
-# into its folder as punch-list.md, then take the ticked items out of the live list.
+# into its folder, at the path it has live, then take the ticked items out of the live list.
 #
-# The record is the file the owner knows, minus the open items: a first line naming it the archived
-# record of that shift, then everything above `## Items` (the contract and the gates) and every
-# ticked item with its sub-bullets, exactly as written and with the spacing between them. Open
-# items never leave the live list, and neither does anything else in it. Prints the filed path, or
-# nothing when no item was ticked. Status 3 when a different record is already filed at that path;
-# the live list is then left as it is.
+# The record is the list exactly as it stood: the contract, the gates, every ticked and every open
+# item. Open items stay live, and so does everything above `## Items`. Prints the filed path, or
+# nothing when the list holds no item. Status 3 when a different list is already filed there while
+# the live one still has ticked items to take out; the live list is then left as it is.
 ns_archive_punch_list() {
-  local live live_rel dir="$2" sid="$3" day="$4" dest tmp who cr=""
+  local live live_rel dir="$2" dest tmp ticked
   ns_layout_set live "$1/.nightshift" punch-list
   ns_layout_rel_set live_rel "$1/.nightshift" punch-list
   [ -f "$live" ] && [ ! -L "$live" ] || return 0
-  [ "$(ns_punch_items "$live" | grep -c '^- \[[xX]\]')" -gt 0 ] || return 0
-  dest="$dir/punch-list.md"
+  ns_punch_items "$live" | grep -q '^- \[[ xX]\]' || return 0
+  ticked="$(ns_punch_items "$live" | grep -c '^- \[[xX]\]')"
+  dest="$dir/$live_rel"
   ns_archive_dest "$dest" || return 2
-  mkdir -p "$dir" 2>/dev/null || return 2
-  [ "$(head -n1 "$live" | tr -d -c '\r')" = "" ] || cr=$'\r'
-  who="shift $sid"
-  case "$sid" in '' | unknown) who="a shift" ;; esac
-  tmp="$dest.tmp.$$"
-  {
-    printf '> Archived record of %s, filed %s. The items still open stayed in the live %s.%s\n%s\n' \
-      "$who" "$day" "\`.nightshift/$live_rel\`" "$cr" "$cr"
+  mkdir -p "${dest%/*}" 2>/dev/null || return 2
+  if [ -e "$dest" ]; then
+    if ! ns_archive_same "$live" "$dest"; then
+      # What stayed live after an earlier filing of this shift is not a new record.
+      [ "$ticked" -gt 0 ] || return 0
+      return 3
+    fi
+  else
+    if ! { cp "$live" "$dest" 2>/dev/null && cmp -s "$live" "$dest"; }; then
+      rm -f "$dest"
+      return 2
+    fi
+  fi
+  if [ "$ticked" -gt 0 ]; then
+    tmp="$live.tmp.$$"
     awk '
       { line = $0; sub(/\r$/, "", line) }
       !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
-      done { next }
-      line ~ /^## / { done = 1; next }
+      done { print; next }
+      line ~ /^## / { printf "%s", blanks; blanks = ""; done = 1; print; next }
       line == "" { blanks = blanks $0 "\n"; next }
-      line ~ /^- \[[xX]\]/ { keep = 1; printf "%s", blanks; blanks = ""; print; next }
-      line ~ /^[[:space:]]/ { if (keep) { printf "%s", blanks; print } blanks = ""; next }
-      { keep = 0; blanks = "" }
-    ' "$live"
-  } >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
-  if [ -e "$dest" ]; then
-    if ! cmp -s "$tmp" "$dest"; then
-      rm -f "$tmp"
-      return 3
-    fi
-    rm -f "$tmp"
-  else
-    mv "$tmp" "$dest" || { rm -f "$tmp"; return 2; }
+      line ~ /^- \[[xX]\]/ { drop = 1; blanks = ""; next }
+      line ~ /^[[:space:]]/ { if (!drop) { printf "%s", blanks; print } blanks = ""; next }
+      { drop = 0; printf "%s", blanks; blanks = ""; print }
+      END { if (!drop) printf "%s", blanks }
+    ' "$live" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
+    mv "$tmp" "$live" || { rm -f "$tmp"; return 2; }
   fi
-  tmp="$live.tmp.$$"
-  awk '
-    { line = $0; sub(/\r$/, "", line) }
-    !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
-    done { print; next }
-    line ~ /^## / { printf "%s", blanks; blanks = ""; done = 1; print; next }
-    line == "" { blanks = blanks $0 "\n"; next }
-    line ~ /^- \[[xX]\]/ { drop = 1; blanks = ""; next }
-    line ~ /^[[:space:]]/ { if (!drop) { printf "%s", blanks; print } blanks = ""; next }
-    { drop = 0; printf "%s", blanks; blanks = ""; print }
-    END { if (!drop) printf "%s", blanks }
-  ' "$live" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
-  mv "$tmp" "$live" || { rm -f "$tmp"; return 2; }
+  printf '%s' "$dest"
+}
+
+# ns_archive_file_journal <project-dir> <folder> — move the shift log into the folder at the path it
+# has live and start the live one again under the same heading. A journal already filed there keeps
+# every line and gains the ones written since, so a shift filed twice loses nothing. Prints the
+# filed path, or nothing when the log holds no line past its heading.
+ns_archive_file_journal() {
+  local live rel dest head tmp
+  ns_layout_set live "$1/.nightshift" shift-log
+  ns_layout_rel_set rel "$1/.nightshift" shift-log
+  [ -f "$live" ] && [ ! -L "$live" ] || return 0
+  head="# Shift Log"
+  IFS= read -r tmp <"$live" || :
+  tmp="${tmp%$'\r'}"
+  case "$tmp" in '# '*) head="$tmp" ;; esac
+  [ -n "$(awk -v head="$head" 'NR == 1 && $0 == head { next } /[^[:space:]]/ { print; exit }' "$live")" ] || return 0
+  dest="$2/$rel"
+  ns_archive_dest "$dest" || return 2
+  mkdir -p "${dest%/*}" 2>/dev/null || return 2
+  tmp="$dest.tmp.$$"
+  if [ -f "$dest" ]; then
+    { cat "$dest" && awk -v head="$head" 'NR == 1 && $0 == head { next } { print }' "$live"; } >"$tmp" 2>/dev/null ||
+      { rm -f "$tmp"; return 2; }
+  else
+    cp "$live" "$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
+  fi
+  mv "$tmp" "$dest" || { rm -f "$tmp"; return 2; }
+  printf '%s\n' "$head" >"$live" || return 2
   printf '%s' "$dest"
 }
 
@@ -1228,8 +1360,8 @@ ns_inbox_strays() {
 }
 
 # ns_archive_review_label <folder-name> <shift-id> <layout> — what a Filed pointer is labelled: the
-# shift id in the shift layout, the dated folder's own name (`2026-09-09`, `2026-09-09-shift-2`)
-# otherwise, so two shifts on one day are told apart.
+# shift id in the shift layout, the folder's own name otherwise (`2026-09-09`, `2026-09-09-shift-2`,
+# `2026-09-09-archive-follow-ups`), so two shifts on one day are told apart.
 ns_archive_review_label() {
   if [ "$3" = shift ] && [ -n "$2" ] && [ "$2" != unknown ]; then
     printf '%s' "$2"
@@ -1238,46 +1370,31 @@ ns_archive_review_label() {
   fi
 }
 
-# ns_archive_review_dest <project> <date> <shift-id> <basename>
-# Date layout names the file with the shift so two nights on one day stay distinct.
-ns_archive_review_dest() {
-  local group layout
-  group="$(ns_archive_dir "$1" "$2" "$3")" || return 2
-  layout="$(ns_archive "$1" layout)"
-  if [ "$layout" != shift ] && [ -n "$3" ] && [ "$3" != unknown ]; then
-    printf '%s/%s/%s' "$group" "$3" "$4"
-    return 0
-  fi
-  printf '%s/%s' "$group" "$4"
-}
-
 # ns_archive_pointer_line <label> <relpath>
 ns_archive_pointer_line() {
   printf 'Filed: [%s](%s)' "$1" "$2"
 }
 
-# ns_archive_file_review_source <project> <parking-lot|snag-log> <date> <shift-id>
-# Moves handled entries from the live review file into the archive dest and appends one pointer,
-# written relative to the live file that carries it.
+# ns_archive_file_review_source <project> <parking-lot|snag-log> <folder> <label> — file the live
+# review file whole into the shift's folder, at the path it has live, then take the handled entries
+# out of the live file and leave one pointer to the filed copy, written relative to the live file.
+# Entries still open stay live: they wait for the owner. A file with no entry files nothing.
+# Status 3 when a different copy is already filed there and the live file still has handled entries
+# to take out; they then stay live, with their answers, for the next filing.
 ns_archive_file_review_source() {
-  local project="$1" key="$2" date="$3" shift_id="$4"
-  local ns live base dest label rel layout tmp filed ptr title
+  local project="$1" key="$2" group="$3" label="$4"
+  local ns live rel dest tmp filed ptr prel
   ns="$project/.nightshift"
   ns_layout_set live "$ns" "$key" || return 2
-  base="${live##*/}"
+  ns_layout_rel_set rel "$ns" "$key" || return 2
   [ -f "$live" ] && [ ! -L "$live" ] || return 0
-  dest="$(ns_archive_review_dest "$project" "$date" "$shift_id" "$base")" || return 2
-  layout="$(ns_archive "$project" layout)"
-  label="$(ns_archive_dir "$project" "$date" "$shift_id")" || return 2
-  label="$(ns_archive_review_label "${label##*/}" "$shift_id" "$layout")"
+  grep -v '^- Filed:' "$live" | grep -q '^- ' || return 0
+  dest="$group/$rel"
   case "$dest" in
     "$ns"/*) ;;
     *) return 2 ;;
   esac
-  rel="$(ns_relative_path "${live%/*}" "$dest")"
-  case "$rel" in
-    '' | /*) return 2 ;;
-  esac
+  ns_archive_dest "$dest" || return 2
   tmp="$(mktemp)" || return 2
   filed="$(mktemp)" || {
     rm -f "$tmp"
@@ -1288,33 +1405,35 @@ ns_archive_file_review_source() {
     rm -f "$tmp" "$filed"
     return 2
   }
+  if [ -e "$dest" ]; then
+    if ! ns_archive_same "$live" "$dest"; then
+      if [ -s "$filed" ]; then
+        rm -f "$tmp" "$filed"
+        return 3
+      fi
+      rm -f "$tmp" "$filed"
+      return 0
+    fi
+  elif ! { mkdir -p "${dest%/*}" 2>/dev/null && cp "$live" "$dest" 2>/dev/null && cmp -s "$live" "$dest"; }; then
+    rm -f "$dest" "$tmp" "$filed"
+    return 2
+  fi
   if [ ! -s "$filed" ]; then
     rm -f "$tmp" "$filed"
     return 0
   fi
-  if ! ns_archive_dest "$dest"; then
-    rm -f "$tmp" "$filed"
-    return 2
-  fi
-  mkdir -p "${dest%/*}" || {
-    rm -f "$tmp" "$filed"
-    return 2
-  }
-  if [ -f "$dest" ] && [ ! -L "$dest" ]; then
-    printf '\n' >>"$dest"
-    cat "$filed" >>"$dest"
-  else
-    if [ "$key" = snag-log ]; then
-      title='# Snag Log'
-    else
-      title='# Parking Lot'
-    fi
-    printf '%s\n\n' "$title" >"$dest"
-    cat "$filed" >>"$dest"
-  fi
-  ptr="$(ns_archive_pointer_line "$label" "$rel")"
+  prel="$(ns_relative_path "${live%/*}" "$dest")"
+  case "$prel" in
+    '' | /*)
+      rm -f "$tmp" "$filed"
+      return 2
+      ;;
+  esac
+  ptr="$(ns_archive_pointer_line "$label" "$prel")"
   if ! grep -qxF "$ptr" "$tmp"; then
-    printf '\n%s\n' "$ptr" >>"$tmp"
+    # One blank line before the pointer, never two.
+    [ -z "$(tail -n 1 "$tmp" | tr -d '[:space:]')" ] || printf '\n' >>"$tmp"
+    printf '%s\n' "$ptr" >>"$tmp"
   fi
   mv "$tmp" "$live" || {
     rm -f "$tmp" "$filed"
@@ -1362,11 +1481,20 @@ ns_archive_check_review_pointers() {
   return 0
 }
 
-# ns_archive_file_review_records <project> <date> <shift-id>
+# ns_archive_file_review_records <project> <folder> <label> — both review files, then a check of every
+# pointer they carry. Status 3 when either kept its handled entries live; 2 when filing failed.
 ns_archive_file_review_records() {
-  ns_archive_file_review_source "$1" snag-log "$2" "$3" || return $?
-  ns_archive_file_review_source "$1" parking-lot "$2" "$3" || return $?
-  ns_archive_check_review_pointers "$1"
+  local rc=0 one
+  for one in snag-log parking-lot; do
+    ns_archive_file_review_source "$1" "$one" "$2" "$3"
+    case "$?" in
+      0) ;;
+      3) rc=3 ;;
+      *) return 2 ;;
+    esac
+  done
+  ns_archive_check_review_pointers "$1" || return 2
+  return "$rc"
 }
 
 # ns_handoff <project-dir> <field> — one field of the handoff block, or empty when the file says
@@ -1873,12 +2001,15 @@ ns_retention_days() {
   esac
 }
 
-# True when a dated archive still holds open punch-list work or an armed marker.
+# True when an archive folder still holds open punch-list work or an armed marker. A folder a shift
+# claimed holds a copy of its list as it ended, whose open items stayed live; only a page filed by
+# an older version, without that claim, can hold work nothing else has.
 ns_archive_has_open_work() {
   local dir="$1" f
   [ -d "$dir" ] || return 1
   [ ! -e "$dir/.shift-armed" ] || return 0
   [ ! -L "$dir/.shift-armed" ] || return 0
+  { [ -f "$dir/.shift-id" ] && [ ! -L "$dir/.shift-id" ]; } && return 1
   for f in "$dir"/*; do
     if [ ! -f "$f" ] || [ -L "$f" ]; then
       continue
@@ -1918,12 +2049,16 @@ ns_retention_eligible() {
     [ -e "$rel" ] || continue
     rel="${rel#"$ns/"}"
     rel="${rel%/}"
+    # A dated folder, the same with a shift number or a name after the date, or any folder a shift
+    # claimed, as the name layout files one.
     case "$rel" in
       "$archive"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
       "$archive"/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-shift-[1-9]*)
         case "${rel##*-shift-}" in *[!0-9]*) continue ;; esac
         ;;
-      *) continue ;;
+      *)
+        { [ -f "$ns/$rel/.shift-id" ] && [ ! -L "$ns/$rel/.shift-id" ]; } || continue
+        ;;
     esac
     if [ ! -d "$ns/$rel" ] || [ -L "$ns/$rel" ]; then
       continue

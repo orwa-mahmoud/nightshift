@@ -264,6 +264,30 @@ try {
     $punchApply = Invoke-RetainHistory $punchRoot -Apply
     Expect-True ($punchApply.ExitCode -eq 0) "archived punch apply exits 0 (got $($punchApply.ExitCode) $($punchApply.Stderr))"
     Expect-True (-not (Test-Path -LiteralPath $filedPunch)) 'apply prunes a folder holding an archived punch list'
+
+    # A folder a shift claimed is pruned by age whatever its name, and its open boxes are the live
+    # list's.
+    $claimRoot = Join-Path $root 'claimed'
+    $cns = Join-Path $claimRoot '.nightshift'
+    $null = New-Item -ItemType Directory -Path $cns -Force
+    Copy-Item -LiteralPath $template -Destination (Join-Path $cns 'rules.json')
+    Set-RetentionRules $cns 0 30
+    $named = Join-Path $cns 'archive/archive-follow-ups'
+    $dated = Join-Path $cns 'archive/2020-01-01-archive-follow-ups'
+    $notes = Join-Path $cns 'archive/notes'
+    foreach ($dir in @($named, $dated, $notes)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+    [IO.File]::WriteAllText((Join-Path $named '.shift-id'), "1111222233334444`n")
+    [IO.File]::WriteAllText((Join-Path $dated '.shift-id'), "5555666677778888`n")
+    [IO.File]::WriteAllText((Join-Path $named 'punch-list.md'), "## Items`n`n- [ ] **1. still open.**`n")
+    foreach ($dir in @($named, $dated, $notes)) { Age-Path $dir }
+    $claimPreview = Invoke-RetainHistory $claimRoot
+    Expect-True ($claimPreview.Stdout -match 'archive/archive-follow-ups' -and $claimPreview.Stdout -match 'archive/2020-01-01-archive-follow-ups') `
+        "preview lists old claimed folders whatever their names: $($claimPreview.Stdout)"
+    Expect-True ($claimPreview.Stdout -notmatch 'archive/notes') 'preview omits a folder no shift claimed'
+    $claimApply = Invoke-RetainHistory $claimRoot -Apply
+    Expect-True ($claimApply.ExitCode -eq 0) "claimed apply exits 0 (got $($claimApply.ExitCode) $($claimApply.Stderr))"
+    Expect-True (-not (Test-Path -LiteralPath $named) -and -not (Test-Path -LiteralPath $dated) -and (Test-Path -LiteralPath $notes)) `
+        'apply prunes the claimed folders and keeps the rest'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

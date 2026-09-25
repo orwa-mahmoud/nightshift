@@ -317,12 +317,16 @@ if (-not [string]::IsNullOrEmpty((Get-NSControlStartRefuseReason $ns))) {
     exit 1
 }
 
+$endedGroup = ''
 if (-not $DryRun) {
     if ((Stop-NSWatchman $ns) -eq 'unverified') {
         Write-Refuse 'watchman a recorded watchman pid could not be verified, so it was left running'
         Write-Repair "pause the shift with ns stop-shift, then start again"
         exit 1
     }
+    # The folder the last shift filed into, read before its ending marker is cleared: an oversized
+    # journal joins it below.
+    $endedGroup = Get-NSArchiveGroupIfClaimed $workspace (Get-NSEndedField $workspace 'shiftId')
     $cleared = New-Object 'System.Collections.Generic.List[string]'
     foreach ($key in @('stop', 'stall', 'notified', 'ended', 'session-end', 'pulse',
             'mint-failed', 'session', 'armed', 'watchman-tick', 'lock')) {
@@ -538,22 +542,21 @@ else {
 $logPath = Get-NSLayoutPath $ns 'shift-log'
 if (-not $DryRun -and (Test-Path -LiteralPath $logPath -PathType Leaf) -and -not (Test-NSReparsePoint $logPath)) {
     if ((Get-Item -LiteralPath $logPath).Length -gt 512000) {
-        $day = (Get-Date -Format 'yyyy-MM-dd')
+        # The journal joins the folder of the shift that ended last, beside anything Archive filed
+        # there already, or a folder claimed for today when no shift is on record.
         try {
-            $archive = Join-Path (Get-NSLayoutPath $ns 'archive') $day
-            $null = New-Item -ItemType Directory -Force -Path $archive
-            # A shift log Archive already filed that day keeps its name; the rotated journal takes the next.
-            $rotated = 'shift-log.md'
-            $rotateN = 1
-            while (Test-Path -LiteralPath (Join-Path $archive $rotated)) {
-                $rotateN++
-                $rotated = 'shift-log-' + $rotateN + '.md'
+            $rotateGroup = $endedGroup
+            if ([string]::IsNullOrEmpty($rotateGroup)) {
+                $rotateGroup = Get-NSArchiveDir -Workspace $workspace -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId 'unknown'
             }
-            Move-Item -LiteralPath $logPath -Destination (Join-Path $archive $rotated)
-            [IO.File]::WriteAllText($logPath, "# Shift log`n")
-            Write-Ok "journal rotated to archive/$day/$rotated"
+            $rotated = ''
+            if (-not [string]::IsNullOrEmpty($rotateGroup)) { $rotated = Save-NSArchiveJournal $workspace $rotateGroup }
+            if (-not [string]::IsNullOrEmpty($rotated)) {
+                Write-Ok ('journal rotated to ' + $rotated.Substring($ns.Length).TrimStart([char]'/', [char]'\').Replace('\', '/'))
+            }
         }
         catch {
+            Write-Warn ('journal could not be rotated: ' + $_.Exception.Message)
         }
     }
 }

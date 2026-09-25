@@ -57,7 +57,7 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF "'commands', 'workTarget', 'digest', 'expiry'" "$MODULE"
   grep -qF 'plan.expiry is checked before the digest, never inside it' "$MODULE"
   grep -qF 'set is refused while the shift is armed' "$LOGIC"
-  grep -qF 'archive names the file after the shift identity' "$LOGIC"
+  grep -qF 'archive files the policy at its live path in the shift folder' "$LOGIC"
 }
 
 @test "Windows shift-policy logic checks exact byte formatting" {

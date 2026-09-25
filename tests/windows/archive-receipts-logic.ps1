@@ -89,9 +89,10 @@ try {
 
     $ok = Invoke-ArchiveReceipts $artifact @('-Date', '2026-08-28')
     Expect-True ($ok.ExitCode -eq 0) "copy exits 0 (got $($ok.ExitCode) $($ok.Stderr))"
-    $dest = $ok.Stdout.Trim()
-    Expect-True ($dest -match [regex]::Escape((Join-Path $ns 'archive/2026-08-28/receipts'))) `
-        'prints the dated archive receipts path'
+    $folder = ($ok.Stdout -split "`n")[0].Trim()
+    Expect-True ($folder -match ([regex]::Escape((Join-Path $ns 'archive/2026-08-28')) + '$')) `
+        "prints the shift's archive folder"
+    $dest = Join-Path $folder 'receipts'
     Expect-True (Test-Path -LiteralPath (Join-Path $recv '20260101T000000Z-one.md') -PathType Leaf) `
         'leaves the first live receipt'
     Expect-True (Test-Path -LiteralPath (Join-Path $recv '20260101T000001Z-two.md') -PathType Leaf) `
@@ -128,7 +129,7 @@ try {
     if ($fileLinkCreated) {
         $skipLink = Invoke-ArchiveReceipts $symlinkNotes @('-Date', '2026-08-28')
         Expect-True ($skipLink.ExitCode -eq 0) "symlink receipt copy exits 0 (got $($skipLink.ExitCode) $($skipLink.Stderr))"
-        $skipDest = $skipLink.Stdout.Trim()
+        $skipDest = Join-Path (($skipLink.Stdout -split "`n")[0].Trim()) 'receipts'
         Expect-True (Test-Path -LiteralPath (Join-Path $skipDest '20260101T000000Z-real.md') -PathType Leaf) `
             'copies the regular receipt beside a symlink'
         Expect-True (-not (Test-Path -LiteralPath (Join-Path $skipDest '20260101T000000Z-link.md'))) `
@@ -272,12 +273,16 @@ try {
     [IO.File]::WriteAllText((Join-Path $ns 'parking-lot.md'), "# Parking Lot`n`n- wait for the owner`n")
     $one = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
     Expect-True ($one.ExitCode -eq 0) "review file exits 0 (got $($one.ExitCode) $($one.Stderr))"
-    $snagDest = Join-Path $ns 'archive/2026-09-09/aaaa1111bbbb2222/snag-log.md'
-    Expect-True (Test-Path -LiteralPath $snagDest -PathType Leaf) 'handled snag is filed'
-    Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-09/aaaa1111bbbb2222/parking-lot.md'))) `
-        'unanswered parking is not filed'
+    $snagDest = Join-Path $ns 'archive/2026-09-09/snag-log.md'
+    Expect-True ((Test-Path -LiteralPath $snagDest -PathType Leaf) -and
+        [IO.File]::ReadAllText($snagDest) -ceq "# Snag Log`n`n- leak $dot tests/x.bats $dot fixed $dot 2026-09-09`n- still open $dot looking`n") `
+        'the snag log is filed whole, where it sits live'
+    $lotDest = Join-Path $ns 'archive/2026-09-09/parking-lot.md'
+    Expect-True ((Test-Path -LiteralPath $lotDest -PathType Leaf) -and
+        [IO.File]::ReadAllText($lotDest) -ceq "# Parking Lot`n`n- wait for the owner`n") 'an unanswered parking lot is filed as it stands'
+    Expect-True (-not [IO.File]::ReadAllText((Join-Path $ns 'parking-lot.md')).Contains('Filed:')) 'with nothing answered it gets no pointer'
     $liveSnag = [IO.File]::ReadAllText((Join-Path $ns 'snag-log.md'))
-    Expect-True ($liveSnag.Contains('Filed: [2026-09-09](archive/2026-09-09/aaaa1111bbbb2222/snag-log.md)')) `
+    Expect-True ($liveSnag.Contains('Filed: [2026-09-09](archive/2026-09-09/snag-log.md)')) `
         'one pointer names the dest relative to the live file'
     Expect-True ($liveSnag.Contains('still open ' + $dot + ' looking')) 'unresolved snag stays live'
     Expect-True (-not $liveSnag.Contains('leak ' + $dot)) 'filed snag leaves the live file'
@@ -292,9 +297,9 @@ try {
     [IO.File]::AppendAllText((Join-Path $ns 'snag-log.md'), "- second $dot y $dot answered $dot 2026-09-09`n")
     $two = Invoke-ArchiveReceipts $review @('-Date', '2026-09-09')
     Expect-True ($two.ExitCode -eq 0) "second shift exits 0 (got $($two.ExitCode) $($two.Stderr))"
-    Expect-True (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md') -PathType Leaf) `
+    Expect-True (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-09-shift-2/snag-log.md') -PathType Leaf) `
         "the second shift files into its own folder"
-    Expect-True ([IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')).Contains('Filed: [2026-09-09-shift-2](archive/2026-09-09-shift-2/cccc3333dddd4444/snag-log.md)')) `
+    Expect-True ([IO.File]::ReadAllText((Join-Path $ns 'snag-log.md')).Contains('Filed: [2026-09-09-shift-2](archive/2026-09-09-shift-2/snag-log.md)')) `
         'the second pointer names its folder'
     [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=aaaa1111bbbb2222`narchiveRoot=archive`narchiveLayout=date`n")
 
@@ -304,7 +309,7 @@ try {
          " join must see the disposition`n  $dot 2026-09-13`n- still open $dot looking`n"))
     $wrapped = Invoke-ArchiveReceipts $review @('-Date', '2026-09-13')
     Expect-True ($wrapped.ExitCode -eq 0) "wrapped review file exits 0 (got $($wrapped.ExitCode) $($wrapped.Stderr))"
-    $wrapDest = Join-Path $ns 'archive/2026-09-13/aaaa1111bbbb2222/snag-log.md'
+    $wrapDest = Join-Path $ns 'archive/2026-09-13/snag-log.md'
     Expect-True (Test-Path -LiteralPath $wrapDest -PathType Leaf) 'wrapped handled snag is filed'
     if (Test-Path -LiteralPath $wrapDest -PathType Leaf) {
         Expect-True ([IO.File]::ReadAllText($wrapDest).Contains('fixed ' + $dash + ' join must see the disposition')) `
@@ -316,25 +321,22 @@ try {
 
     # An entry ends where the morning receipt ends it: a heading straight after a bullet and a
     # paragraph after a blank line stay live, and Default and Rollback lines travel with it.
-    [IO.File]::WriteAllText((Join-Path $ns 'parking-lot.md'), ((@(
+    $boundsText = ((@(
         '# Parking Lot', '', '---', '',
         "- Ship the flag on? $dot answered: yes, behind the setting",
         '- **Default:** kept off', '', '  - Rollback: turn it off again',
         '## Tomorrow',
         "- Rename the flag? $dot answered: keep the name", '',
         "A note the owner wrote as a paragraph $dot answered: later",
-        '- still open') -join "`n") + "`n"))
+        '- still open') -join "`n") + "`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'parking-lot.md'), $boundsText)
     $bounds = Invoke-ArchiveReceipts $review @('-Date', '2026-09-24')
     Expect-True ($bounds.ExitCode -eq 0) "entry-bounds review file exits 0 (got $($bounds.ExitCode) $($bounds.Stderr))"
-    $boundsDest = Join-Path $ns 'archive/2026-09-24/aaaa1111bbbb2222/parking-lot.md'
-    # Archive writes the host's line ending; the assertions read LF.
-    $boundsFiled = $(if (Test-Path -LiteralPath $boundsDest -PathType Leaf) { [IO.File]::ReadAllText($boundsDest) } else { '' }).Replace("`r`n", "`n")
+    $boundsDest = Join-Path $ns 'archive/2026-09-24/parking-lot.md'
+    $boundsFiled = $(if (Test-Path -LiteralPath $boundsDest -PathType Leaf) { [IO.File]::ReadAllText($boundsDest) } else { '' })
+    # Archive writes the host's line ending on the live side; the assertions read LF.
     $boundsLive = [IO.File]::ReadAllText((Join-Path $ns 'parking-lot.md')).Replace("`r`n", "`n")
-    Expect-True ($boundsFiled.Contains('Ship the flag on?') -and $boundsFiled.Contains("`n- **Default:** kept off`n") -and
-        $boundsFiled.Contains("`n  - Rollback: turn it off again`n") -and $boundsFiled.Contains('Rename the flag?')) `
-        'an answered entry is filed with its Default and Rollback lines'
-    Expect-True (-not $boundsFiled.Contains('Tomorrow') -and -not $boundsFiled.Contains('A note the owner wrote') -and
-        -not $boundsFiled.Contains('still open')) 'a heading or paragraph is never filed with the entry above it'
+    Expect-True ($boundsFiled -ceq $boundsText) 'the parking lot is filed whole, as it stood'
     Expect-True ($boundsLive.Contains("`n## Tomorrow`n") -and
         $boundsLive.Contains("`nA note the owner wrote as a paragraph $dot answered: later`n") -and
         $boundsLive.Contains("`n- still open`n")) 'the heading, the paragraph and the open entry stay live'
@@ -353,8 +355,8 @@ finally {
     Remove-Item -LiteralPath $review -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# A retired shift's usage folder is one record: filed whole, retired only when named, and refused
-# by name only when it was not filed.
+# A retired shift's usage folder is one record: filed whole, retired once filed, and refused by name
+# only when it was not filed.
 function Get-TextOrEmpty {
     param([Parameter(Mandatory = $true)][string]$Path)
     if (Test-Path -LiteralPath $Path -PathType Leaf) { return [IO.File]::ReadAllText($Path) }
@@ -377,7 +379,7 @@ try {
     Expect-True ((Get-TextOrEmpty (Join-Path $usageDest 'usage-aaaa/marks.tsv')) -ceq "marks a`n") 'every record in it is filed'
     Expect-True ((Get-TextOrEmpty (Join-Path $usageDest 'usage-bbbb/segments.tsv')) -ceq "seg b`n") 'an unnamed usage folder is filed too'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns 'usage-aaaa'))) 'the named folder leaves live storage'
-    Expect-True (Test-Path -LiteralPath (Join-Path $ns 'usage-bbbb/segments.tsv') -PathType Leaf) 'the unnamed folder stays live'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns 'usage-bbbb'))) 'a closed shift folder leaves live storage once filed, named or not'
     Expect-True (-not $usageRun.Stderr.Contains('this run filed no such record')) "a filed folder is not refused ($($usageRun.Stderr))"
 
     # A folder holding a record that cannot be filed stays live, whole, and naming it is refused.
@@ -397,7 +399,8 @@ finally {
 }
 
 # A shift that ended with work still open. The receipt of a ticked item is filed and retired; the
-# receipt of an item nobody finished stays live, and each index lists only what its folder holds.
+# receipt of an item nobody finished is filed as it stands and stays live, and each index lists what
+# its folder holds.
 $openWork = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-open-" + [guid]::NewGuid().ToString('N'))
 try {
     $ns = Join-Path $openWork '.nightshift'
@@ -439,8 +442,9 @@ try {
         Expect-True (Test-Path -LiteralPath (Join-Path $dest $name) -PathType Leaf) "files the closed record $name"
         Expect-True (-not (Test-Path -LiteralPath (Join-Path $recv $name))) "retires the closed record $name"
     }
-    Expect-True (-not (Test-Path -LiteralPath (Join-Path $dest '3-trim-the-bundle.md'))) `
-        'does not file the receipt of an open item'
+    Expect-True ((Test-Path -LiteralPath (Join-Path $dest '3-trim-the-bundle.md') -PathType Leaf) -and
+        $openBefore -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $dest '3-trim-the-bundle.md')))) `
+        'files the receipt of an open item as it stands'
     Expect-True (Test-Path -LiteralPath $liveOpen -PathType Leaf) 'leaves the open item receipt live'
     Expect-True ($openBefore -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes($liveOpen))) `
         'the open item receipt is byte-identical'
@@ -454,7 +458,7 @@ try {
         'the archived index carries the first receipt with its measurements'
     Expect-True ($archivedIndex.Contains('| 2. Cover the parser. | ticked |')) `
         'the archived index carries the second receipt'
-    Expect-True (-not $archivedIndex.Contains('Trim the bundle')) 'the archived index omits the open item'
+    Expect-True ($archivedIndex.Contains('| 3. Trim the bundle. | open |')) 'the archived index lists the open item as open'
     $summaryAt = $archivedIndex.IndexOf('Shift summary: [morning-2026-09-05-abc.md](./morning-2026-09-05-abc.md)')
     Expect-True ($summaryAt -gt 0 -and $summaryAt -lt $archivedIndex.IndexOf('| Item | State |')) `
         'the archived index links the morning receipt above the item table'
@@ -466,9 +470,9 @@ finally {
     Remove-Item -LiteralPath $openWork -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Receipts link to each other by bare name, because they were written side by side. Filed, the ones
-# that travelled together are still side by side; the receipt of an item nobody finished stayed
-# behind and has to be reached back through the archive.
+# Receipts link to each other by bare name, because they were written side by side. Filed, they are
+# still side by side, the open item's copy included; a record that was not filed has to be reached
+# back through the archive.
 $siblings = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-siblings-" + [guid]::NewGuid().ToString('N'))
 try {
     $ns = Join-Path $siblings '.nightshift'
@@ -508,11 +512,10 @@ try {
         'the filed neighbour is where the link says'
     Expect-True ($second.Contains('(1-fix-the-resolver.md)')) 'a bare sibling name is left as written'
 
-    # The open item's receipt stayed live, so the link reaches back out of the archive to it.
-    Expect-True ($first.Contains('(../../../receipts/3-trim-the-bundle.md)')) `
-        'the open item receipt is reached back through the archive'
-    Expect-True (Test-Path -LiteralPath (Join-Path $dest '../../../receipts/3-trim-the-bundle.md') -PathType Leaf) `
-        'the live open item receipt resolves from the archived receipt'
+    # The open item's receipt was filed as it stood, so the link names its filed copy.
+    Expect-True ($first.Contains('(./3-trim-the-bundle.md)')) 'the open item receipt is reached as a filed sibling'
+    Expect-True (Test-Path -LiteralPath (Join-Path $dest '3-trim-the-bundle.md') -PathType Leaf) `
+        'the filed open item receipt resolves from the archived receipt'
     # And a link that already climbed out of receipts/ climbed from there, not from the archive.
     Expect-True ($first.Contains('(../../../parking-lot.md)')) 'a climbing link climbed from receipts/'
     Expect-True (Test-Path -LiteralPath (Join-Path $dest '../../../parking-lot.md') -PathType Leaf) `
@@ -547,9 +550,9 @@ finally {
     Remove-Item -LiteralPath $ordered -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# An ended shift's punch list is filed into its folder: the contract, the gates and the ticked items
-# under the archived-record note. Open items stay live; nothing ticked files nothing; an armed shift's
-# list is never touched; a different record already filed is refused.
+# An ended shift's punch list is filed into its folder whole, as it stood. The contract and the open
+# items stay live; an armed shift's list is never touched; a different record already filed is
+# refused.
 $punchRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-punch-filing-' + [guid]::NewGuid().ToString('N'))
 try {
     $utf8 = New-Object Text.UTF8Encoding($false)
@@ -571,10 +574,8 @@ try {
     $run = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
     Expect-True ($run.ExitCode -eq 0) "punch filing exits 0 (got $($run.ExitCode) $($run.Stderr))"
     $filedPath = Join-Path $site '.nightshift/archive/2026-09-05/punch-list.md'
-    Expect-True ($run.Stdout.Contains('filed the punch list as ')) "the helper says where the punch list went: $($run.Stdout)"
-    $want = '> Archived record of shift 9f2c40ab77e51d63, filed 2026-09-05. The items still open stayed in the live `.nightshift/punch-list.md`.' +
-        "`n`n# Punch list`n`n## Shift`n`nThe contract.`n`n## Gates`n`n- run checks`n`n## Items`n`n- [x] **1. done.**`n  - its bullet`n"
-    Expect-True ((Test-Path -LiteralPath $filedPath) -and [IO.File]::ReadAllText($filedPath) -ceq $want) 'the record is the contract, gates and ticked items under the note'
+    Expect-True ($run.Stdout.Contains('filed the punch list as ')) "the helper says where the punch list went: $($run.Stdout) $($run.Stderr)"
+    Expect-True ((Test-Path -LiteralPath $filedPath) -and [IO.File]::ReadAllText($filedPath) -ceq $body) 'the record is the whole list as it stood'
     Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/punch-list.md')) -ceq "# Punch list`n`n## Shift`n`nThe contract.`n`n## Gates`n`n- run checks`n`n## Items`n`n- [ ] **2. open.**`n") `
         'the open item and the contract stay live'
 
@@ -588,7 +589,9 @@ try {
 
     $site = New-EndedSite 'none' '9f2c40ab77e51d63' "## Items`n- [ ] **1. open.**`n"
     $null = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
-    Expect-True (-not (Test-Path -LiteralPath (Join-Path $site '.nightshift/archive/2026-09-05/punch-list.md'))) 'nothing ticked files nothing'
+    $noneFiled = Join-Path $site '.nightshift/archive/2026-09-05/punch-list.md'
+    Expect-True ((Test-Path -LiteralPath $noneFiled) -and [IO.File]::ReadAllText($noneFiled) -ceq "## Items`n- [ ] **1. open.**`n") 'a list with only open items is filed as it stood'
+    Expect-True ([IO.File]::ReadAllText((Join-Path $site '.nightshift/punch-list.md')) -ceq "## Items`n- [ ] **1. open.**`n") 'and stays live whole'
 
     $site = New-EndedSite 'armed' '9f2c40ab77e51d63' $body -Armed
     $null = Invoke-ArchiveReceipts $site @('-Date', '2026-09-05')
@@ -656,11 +659,157 @@ try {
     }
     $todayFirst = Join-Path $archiveBase $today
     $todaySecond = Join-Path $archiveBase ($today + '-shift-2')
-    Expect-True (Test-Path -LiteralPath (Join-Path $todayFirst 'shift-policy-4444444444444444.json')) 'the first policy files into the date folder'
-    Expect-True (Test-Path -LiteralPath (Join-Path $todaySecond 'shift-policy-5555555555555555.json')) 'the second policy files into -shift-2'
+    Expect-True (Test-Path -LiteralPath (Join-Path $todayFirst 'shift-policy.json')) 'the first policy files into the date folder'
+    Expect-True (Test-Path -LiteralPath (Join-Path $todaySecond 'shift-policy.json')) 'the second policy files into -shift-2'
 }
 finally {
     Remove-Item -LiteralPath $sameDay -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# A shift in the current layout is filed into its own folder laid out like the live site, the same
+# way the POSIX helper files it.
+$mirror = Join-Path ([IO.Path]::GetTempPath()) ('ns-archive-mirror-' + [guid]::NewGuid().ToString('N'))
+try {
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $dash = [string][char]0x2014
+    $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    function Set-EndedShift {
+        param([string]$Site, [string]$ShiftId)
+        $siteNs = Join-Path $Site '.nightshift'
+        $name = Get-NSShiftName (Get-NSLayoutPath $siteNs 'punch-list')
+        $claimed = Get-NSArchiveDir -Workspace $Site -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId $ShiftId -Name $name
+        Write-NSEndedRecord -StateDir $siteNs -ShiftId $ShiftId `
+            -ArchiveRoot ([string](Get-NSPolicyGroupSetting $Site 'archive.root')['value']) `
+            -ArchiveLayout ([string](Get-NSPolicyGroupSetting $Site 'archive.layout')['value']) `
+            -ShiftName $name -ArchiveFolder (Split-Path -Leaf $claimed)
+    }
+    function New-CurrentSite {
+        param([string]$Name, [string]$Layout = 'date')
+        $site = Join-Path $mirror $Name
+        $siteNs = Join-Path $site '.nightshift'
+        foreach ($dir in @('receipts', 'inbox', 'run/usage', 'staging')) { $null = New-Item -ItemType Directory -Path (Join-Path $siteNs $dir) -Force }
+        [IO.File]::WriteAllText((Join-Path $siteNs 'state-version'), "2`n", $utf8)
+        $rules = [IO.File]::ReadAllText($rulesTemplate) -replace '"layout": "date"', ('"layout": "' + $Layout + '"')
+        [IO.File]::WriteAllText((Join-Path $siteNs 'rules.json'), $rules, $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'punch-list.md'), ("# Punch List $dash Archive follow-ups`n`n> contract`n`n## Items`n`n" +
+            "- [x] **1. Done.** <!-- id: ab12 -->`n  - Verify: x`n- [ ] **2. Open.** <!-- id: cd34 -->`n"), $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'receipts/01-done-ab12.md'),
+            "# 1. Done.`n`nSee [snags](../inbox/snag-log.md) and [drafts](../staging/drafting-table.md).`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'receipts/02-open-cd34.md'), "# 2. Open.`n`nhalf way`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'inbox/snag-log.md'),
+            "# Snag Log`n`n---`n`n- a bug $dot evidence $dot fixed in abc $dot 2026-09-25`n- an open one $dot evidence $dot 2026-09-25`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'inbox/parking-lot.md'),
+            "# Parking Lot`n`n---`n`n- a question $dot default $dot answered: yes $dot 2026-09-25`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'staging/drafting-table.md'), "# Drafting Table`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'run/shift-log.md'), "# Shift Log`n2026-09-25 a line`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $siteNs 'run/usage/marks.tsv'), "arm`tP01`n", $utf8)
+        Set-EndedShift $site '1111222233334444'
+        return $site
+    }
+    function Get-FolderListing {
+        param([string]$Directory)
+        $full = (Get-Item -LiteralPath $Directory -Force).FullName.TrimEnd([char]'/', [char]'\')
+        $names = @(Get-ChildItem -LiteralPath $Directory -File -Recurse -Force |
+            Where-Object { -not $_.Name.EndsWith('.original.md') } |
+            ForEach-Object { $_.FullName.Substring($full.Length).TrimStart([char]'/', [char]'\').Replace('\', '/') })
+        return ((Sort-NSOrdinal $names) -join ' ')
+    }
+
+    $site = New-CurrentSite 'mirror'
+    $siteNs = Join-Path $site '.nightshift'
+    $claimed = Join-Path $siteNs ('archive/' + (Get-NSEndedField $site 'archiveFolder'))
+    Expect-True ((Get-NSEndedField $site 'shiftName') -ceq 'Archive follow-ups') 'the ending marker records the shift name'
+    $run = Invoke-ArchiveReceipts $site
+    Expect-True ($run.ExitCode -eq 0) "mirror filing exits 0 (got $($run.ExitCode) $($run.Stderr))"
+    Expect-True ((($run.Stdout -split "`n")[0].Trim()) -ceq $claimed) "prints the claimed folder: $($run.Stdout)"
+    Expect-True ((Get-FolderListing $claimed) -ceq '.shift-id inbox/parking-lot.md inbox/snag-log.md punch-list.md receipts/01-done-ab12.md receipts/02-open-cd34.md receipts/README.md run/shift-log.md run/usage/marks.tsv') `
+        "every record is filed at its live path (got $(Get-FolderListing $claimed))"
+    $filedReceipt = [IO.File]::ReadAllText((Join-Path $claimed 'receipts/01-done-ab12.md'))
+    Expect-True ($filedReceipt.Contains('[snags](../inbox/snag-log.md)') -and $filedReceipt.Contains('[drafts](../../../staging/drafting-table.md)')) `
+        'a filed link reads as written and a live one reaches back'
+    Expect-True ((Sort-NSOrdinal @(Get-ChildItem -LiteralPath (Join-Path $siteNs 'receipts') -File | ForEach-Object { $_.Name })) -join ' ' -ceq '02-open-cd34.md README.md') `
+        'live receipts keep only the open item'
+    $liveSnag = [IO.File]::ReadAllText((Join-Path $siteNs 'inbox/snag-log.md'))
+    Expect-True ($liveSnag.Contains(('Filed: [' + (Split-Path -Leaf $claimed) + '](../archive/' + (Split-Path -Leaf $claimed) + '/inbox/snag-log.md)')) -and
+        -not $liveSnag.Contains('a bug')) 'the live snag log keeps the open entry and points at the copy'
+    Expect-True ([IO.File]::ReadAllText((Join-Path $siteNs 'run/shift-log.md')) -ceq "# Shift Log`n") 'the live shift log starts again'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $siteNs 'run/usage'))) 'the usage readings leave live storage'
+
+    # Filing again changes nothing and repoints no link twice.
+    $before = Get-FolderListing $claimed
+    $beforeReceipt = [IO.File]::ReadAllText((Join-Path $claimed 'receipts/01-done-ab12.md'))
+    $again = Invoke-ArchiveReceipts $site
+    Expect-True ($again.ExitCode -eq 0 -and -not $again.Stderr.Contains('kept in live storage')) "a second filing is quiet: $($again.Stderr)"
+    Expect-True ((Get-FolderListing $claimed) -ceq $before -and
+        [IO.File]::ReadAllText((Join-Path $claimed 'receipts/01-done-ab12.md')) -ceq $beforeReceipt) 'a second filing changes nothing'
+
+    # A later Archive returns to the claimed folder, whatever the date.
+    $later = New-CurrentSite 'later'
+    $laterClaimed = Join-Path $later ('.nightshift/archive/' + (Get-NSEndedField $later 'archiveFolder'))
+    $laterRun = Invoke-ArchiveReceipts $later @('-Date', '2031-01-01')
+    Expect-True ((($laterRun.Stdout -split "`n")[0].Trim()) -ceq $laterClaimed -and
+        -not (Test-Path -LiteralPath (Join-Path $later '.nightshift/archive/2031-01-01'))) 'a later filing returns to the claimed folder'
+
+    # Named layouts, a second shift under the same name, and a shift with no name.
+    foreach ($layout in @('name', 'date-name')) {
+        $named = New-CurrentSite ('named-' + $layout) $layout
+        $first = Get-NSEndedField $named 'archiveFolder'
+        $want = $(if ($layout -ceq 'name') { 'archive-follow-ups' } else { (Get-Date -Format 'yyyy-MM-dd') + '-archive-follow-ups' })
+        Expect-True ($first -ceq $want) "the $layout layout names the folder (got $first)"
+        Set-EndedShift $named '5555666677778888'
+        Expect-True ((Get-NSEndedField $named 'archiveFolder') -ceq ($first + '-shift-2')) "a second shift under the same name takes -shift-2 ($layout)"
+    }
+    $unnamed = New-CurrentSite 'named-none' 'date-name'
+    [IO.File]::WriteAllText((Join-Path $unnamed '.nightshift/punch-list.md'), "# Punch List`n`n## Items`n", $utf8)
+    Set-EndedShift $unnamed '9999000011112222'
+    Expect-True ((Get-NSEndedField $unnamed 'archiveFolder') -ceq (Get-Date -Format 'yyyy-MM-dd')) 'a shift with no name files by date'
+
+    # A usage folder a Start set aside goes to the folder of the shift it belongs to.
+    $usageSite = New-CurrentSite 'usage'
+    $usageNs = Join-Path $usageSite '.nightshift'
+    foreach ($dir in @('archive/2026-09-20', 'run/usage-4444555566667777', 'run/usage-unknown')) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $usageNs $dir) -Force
+    }
+    [IO.File]::WriteAllText((Join-Path $usageNs 'archive/2026-09-20/.shift-id'), "4444555566667777`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $usageNs 'run/usage-4444555566667777/marks.tsv'), "theirs`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $usageNs 'run/usage-unknown/marks.tsv'), "nobody knows`n", $utf8)
+    $usageRun = Invoke-ArchiveReceipts $usageSite
+    $usageClaimed = ($usageRun.Stdout -split "`n")[0].Trim()
+    Expect-True ((Get-TextOrEmpty (Join-Path $usageNs 'archive/2026-09-20/run/usage/marks.tsv')) -ceq "theirs`n") 'a set-aside folder joins its own shift'
+    Expect-True ((Get-TextOrEmpty (Join-Path $usageClaimed 'run/usage-unknown/marks.tsv')) -ceq "nobody knows`n") 'one nobody can place stays with this shift'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $usageNs 'run/usage-4444555566667777')) -and
+        -not (Test-Path -LiteralPath (Join-Path $usageNs 'run/usage-unknown'))) 'both leave live storage'
+
+    # The ended shift's policy still live is filed; the next shift's is left where it is.
+    $policySite = New-CurrentSite 'policy'
+    [IO.File]::WriteAllText((Join-Path $policySite '.nightshift/run/shift-policy.json'),
+        '{"schemaVersion":1,"shiftId":"1111222233334444","createdAt":"2026-09-25T00:00:00Z","source":"composition","verificationLevel":"none","toolingPolicy":"existing-tools"}', $utf8)
+    $policyRun = Invoke-ArchiveReceipts $policySite
+    $policyClaimed = ($policyRun.Stdout -split "`n")[0].Trim()
+    Expect-True ((Test-Path -LiteralPath (Join-Path $policyClaimed 'run/shift-policy.json')) -and
+        -not (Test-Path -LiteralPath (Join-Path $policySite '.nightshift/run/shift-policy.json'))) "the ended shift's live policy is filed"
+    $nextSite = New-CurrentSite 'next'
+    [IO.File]::WriteAllText((Join-Path $nextSite '.nightshift/run/shift-policy.json'),
+        '{"schemaVersion":1,"shiftId":"aaaabbbbccccdddd","createdAt":"2026-09-26T00:00:00Z","source":"composition","verificationLevel":"none","toolingPolicy":"existing-tools"}', $utf8)
+    $nextRun = Invoke-ArchiveReceipts $nextSite
+    $nextClaimed = ($nextRun.Stdout -split "`n")[0].Trim()
+    Expect-True ((Test-Path -LiteralPath (Join-Path $nextSite '.nightshift/run/shift-policy.json')) -and
+        -not (Test-Path -LiteralPath (Join-Path $nextClaimed 'run/shift-policy.json')) -and
+        ([IO.File]::ReadAllText((Join-Path $nextClaimed '.shift-id'))).Trim() -ceq '1111222233334444') "the next shift's policy stays live"
+
+    # A second clock-out of a shift appends its findings to the ones already filed.
+    $findingsSite = New-CurrentSite 'findings'
+    $null = New-Item -ItemType Directory -Path (Join-Path $findingsSite '.nightshift/run/evidence') -Force
+    foreach ($record in @('one', 'two')) {
+        [IO.File]::WriteAllText((Join-Path $findingsSite '.nightshift/run/evidence/findings.jsonl'), ('{"record":"' + $record + '"}' + "`n"), $utf8)
+        $null = Invoke-NSEvidenceArchive -Workspace $findingsSite -ShiftId '1111222233334444'
+    }
+    $findingsClaimed = Join-Path $findingsSite ('.nightshift/archive/' + (Get-NSEndedField $findingsSite 'archiveFolder'))
+    Expect-True ((Get-TextOrEmpty (Join-Path $findingsClaimed 'run/evidence/findings.jsonl')) -ceq ('{"record":"one"}' + "`n" + '{"record":"two"}' + "`n")) `
+        'findings filed twice keep both records'
+}
+finally {
+    Remove-Item -LiteralPath $mirror -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 if ($failures.Count -gt 0) {

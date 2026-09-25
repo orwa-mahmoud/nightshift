@@ -502,7 +502,7 @@ work_through() {
   [ -z "$(ls -A "$p/.nightshift/receipts" 2>/dev/null)" ]
   grep -qF 'morning receipt disabled by the owner (handoff.enabled)' "$p/.nightshift/shift-log.md"
   [ -f "$p/.nightshift/.ended" ]
-  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy-9f2c40ab77e51d63.json" ]
+  [ -f "$p/.nightshift/archive/$(date '+%Y-%m-%d')/shift-policy.json" ]
 }
 
 @test "the reviewer and release views carry only their own sections" {

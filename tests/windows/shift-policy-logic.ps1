@@ -547,8 +547,10 @@ try {
 
     $archiveRun = Invoke-Helper @('-Project', $setProject, '-Command', 'archive', '-Date', '2026-09-02')
     Expect-Equal 0 $archiveRun.ExitCode "archive exits 0 ($($archiveRun.StderrText))"
-    $archived = Join-Path $setNs 'archive/2026-09-02/shift-policy-0123456789abcdef.json'
-    Expect-True (Test-Path -LiteralPath $archived -PathType Leaf) 'archive names the file after the shift identity'
+    $archived = Join-Path $setNs 'archive/2026-09-02/shift-policy.json'
+    Expect-True (Test-Path -LiteralPath $archived -PathType Leaf) 'archive files the policy at its live path in the shift folder'
+    Expect-Equal '0123456789abcdef' ([IO.File]::ReadAllText((Join-Path $setNs 'archive/2026-09-02/.shift-id')).Trim()) `
+        'the shift folder is claimed by the policy identity'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $setNs 'shift-policy.json') -PathType Leaf)) `
         'archive removes the live policy'
     Expect-Equal 3 (Invoke-Helper @('-Project', $setProject, '-Command', 'archive', '-Date', '2026-09-02')).ExitCode `
