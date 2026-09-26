@@ -149,7 +149,7 @@ try {
     $defaultSetup = Invoke-Setup $unsetNotes
     Expect-True ($defaultSetup.ExitCode -ne 0) `
         "default setup on a notes folder exits non-zero (got $($defaultSetup.ExitCode))"
-    Expect-True (($defaultSetup.Stderr + $defaultSetup.Stdout) -match 'pass -Mode artifact for a notes folder') `
+    Expect-True (($defaultSetup.Stderr + $defaultSetup.Stdout) -match 'use -Mode artifact for a notes folder') `
         "default setup names -Mode artifact (got $($defaultSetup.Stderr) $($defaultSetup.Stdout))"
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $unsetNotes '.nightshift'))) `
         'failed default setup creates no Nightshift directory'

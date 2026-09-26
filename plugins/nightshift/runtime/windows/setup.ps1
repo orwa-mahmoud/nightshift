@@ -33,7 +33,7 @@ if ($Mode -eq 'repository' -and [string]::IsNullOrEmpty($WorkTarget) `
     catch {
     }
     if ($proposed -eq 'artifact') {
-        throw 'setup: pass -Mode artifact for a notes folder that is not a Git repository'
+        throw 'setup: use -Mode artifact for a notes folder that is not a Git repository'
     }
 }
 
@@ -102,7 +102,7 @@ else {
         catch {
         }
         if ($proposed -eq 'artifact') {
-            throw 'setup: pass -Mode artifact for a notes folder that is not a Git repository'
+            throw 'setup: use -Mode artifact for a notes folder that is not a Git repository'
         }
     }
 }

@@ -43,7 +43,7 @@ PY
 
 # ns_evidence_counts <workspace> — one line: findings=N open=O baseline=B checkpoint=C
 ns_evidence_counts() {
-  local ws="${1:?}" jsonl f=0 o=0 b=0 c=0
+  local ws="${1:?}" jsonl counts f=0 o=0 b=0 c=0
   jsonl="$(ns_evidence_jsonl "$ws")"
   if [ ! -f "$jsonl" ] || [ -L "$jsonl" ]; then
     printf 'findings=0 open=0 baseline=0 checkpoint=0'
@@ -62,7 +62,7 @@ ns_evidence_counts() {
       esac
     done <"$jsonl"
   elif command -v python3 >/dev/null 2>&1; then
-    eval "$(python3 - "$jsonl" <<'PY'
+    counts="$(python3 - "$jsonl" <<'PY'
 import json, sys
 f = o = b = c = 0
 with open(sys.argv[1], encoding="utf-8") as fh:
@@ -81,9 +81,13 @@ with open(sys.argv[1], encoding="utf-8") as fh:
             c += 1
         if rec.get("status") == "open":
             o += 1
-print(f"f={f} o={o} b={b} c={c}")
+print(f"{f} {o} {b} {c}")
 PY
 )"
+    read -r f o b c <<COUNTS
+$counts
+COUNTS
+    f="${f:-0}" o="${o:-0}" b="${b:-0}" c="${c:-0}"
   fi
   printf 'findings=%s open=%s baseline=%s checkpoint=%s' "$f" "$o" "$b" "$c"
 }

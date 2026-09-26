@@ -25,7 +25,7 @@ Once the workspace and work target are resolved, the bundled mechanical scaffold
 on every other host this skill writes the same templates itself, as below.
 It copies only absent files, writes state version 2 for a new site, persists the work target and
 work mode (`-Mode repository` or `-Mode artifact`), and keeps `$NS/` private. It refuses a notes
-folder under default repository mode: `pass -Mode artifact for a notes folder that is not a Git repository`.
+folder under default repository mode: `use -Mode artifact for a notes folder that is not a Git repository`.
 On an existing site at an older state-version its `migration` field describes the move into the
 current layout, exactly as the preview below would. Read its output back rather than restating it.
 The skill still owns every owner choice below; the

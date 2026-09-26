@@ -1026,7 +1026,7 @@ try {
                     $oldSummary = $env:NIGHTSHIFT_SUMMARY
                     try {
                         $env:NIGHTSHIFT_SUMMARY = $summary
-                        $null = Invoke-Expression $notify 2>$null
+                        $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $notify 2>$null
                     }
                     catch {
                     }
