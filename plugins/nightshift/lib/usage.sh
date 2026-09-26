@@ -167,10 +167,10 @@ ns_file_size() {
 # ns_usage_read_codex <rollout> — the cumulative counter from a Codex rollout.
 #
 # Codex keeps a running total for the session, so reading it is one tail for the last
-# `token_count` line rather than a walk over every message. The overlap is Codex's own and is
-# preserved rather than corrected: `cached_input_tokens` sits inside `input_tokens`, and
-# `reasoning_output_tokens` inside `output_tokens` — on a real rollout, input + output equalled
-# total_tokens exactly, which only holds if the cache and reasoning figures are already counted.
+# `token_count` line rather than a walk over every message. Codex counts `cached_input_tokens`
+# inside `input_tokens` (on a real rollout, input + output equalled total_tokens exactly), and the
+# reader takes it out so `input` is fresh input, as on every other host. `reasoning_output_tokens`
+# stays inside `output_tokens`.
 #
 # The rollout format is documented as not stable for hooks, so a line that is not the expected
 # shape yields nothing and the caller reports `unavailable` with the reason. A partial sum is
@@ -588,11 +588,11 @@ _ns_usage_resumed_at() {
 }
 
 # ns_usage_overlap <host> — the one sentence that says what is already counted inside what, so a
-# reader never adds the same tokens twice. Each host's own arrangement, not a normalised one.
+# reader never adds the same tokens twice.
 ns_usage_overlap() {
   case "$1" in
     claude) printf 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' ;;
-    codex) printf 'Cached input is already inside the input figure, and reasoning is already inside output.' ;;
+    codex) printf 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' ;;
     cursor) printf 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' ;;
     *) printf 'Overlap between the dimensions is unknown for this host.' ;;
   esac

@@ -57,15 +57,14 @@ core() { bash -c '. "$1"; . "$2"; shift 2; "$@"' _ "$LIB" "$CORE" "$@"; }
   [ "$(printf '%s' "$output" | cut -f1)" = 'input=0,cache_write=0,cache_read=0,output=0,reasoning=0' ]
 }
 
-@test "Codex is read from its running total, with its own overlap kept" {
+@test "Codex is read from its running total, with input meaning fresh input as on every host" {
   run lib ns_usage_read_codex "$FIX/codex-rollout.jsonl"
   [ "$status" -eq 0 ]
-  # The last token_count line, not the first, and not a sum of them.
-  [ "$(printf '%s' "$output" | cut -f1)" = 'input=1300,cache_write=0,cache_read=900,output=80,reasoning=18' ]
-  # Codex counts cache inside input and reasoning inside output; the report says so rather than
-  # rearranging the numbers.
+  # The last token_count line, not the first, and not a sum of them. Codex's 1300 input counts its
+  # 900 cached tokens inside; the reading takes them out, so input sits beside cache_read.
+  [ "$(printf '%s' "$output" | cut -f1)" = 'input=400,cache_write=0,cache_read=900,output=80,reasoning=18' ]
   run lib ns_usage_overlap codex
-  printf '%s' "$output" | grep -qF 'already inside the input figure'
+  [ "$output" = "$(lib ns_usage_overlap claude)" ]
 }
 
 @test "a Codex line that is not the documented shape is refused, not guessed at" {

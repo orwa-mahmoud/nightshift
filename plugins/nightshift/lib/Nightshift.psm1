@@ -6162,19 +6162,22 @@ function Read-NSUsageCodex {
     if ($cachew -ge 0) { $fields += ",cache_write=$cachew" }
     $cacher = Get-NSUsageNumber $block 'cached_input_tokens'
     if ($cacher -ge 0) { $fields += ",cache_read=$cacher" }
+    # Codex counts cached input inside input_tokens; every other host reports input without it.
+    # Taking it out makes `input` fresh input on every host. Mirrors usage-codex.awk.
+    if ($cacher -ge 0 -and $cacher -le $input) { $fields = $fields -replace '^input=[0-9]+', ('input=' + ($input - $cacher)) }
     $fields += ",output=$output"
     $reason = Get-NSUsageNumber $block 'reasoning_output_tokens'
     if ($reason -ge 0) { $fields += ",reasoning=$reason" }
     return ($fields + "`t0`t" + (Get-NSUsageString $last 'model') + "`t0")
 }
 
-# Get-NSUsageOverlap <host> - the one sentence saying what is already counted inside what, in that
-# host's own arrangement. Byte-identical to ns_usage_overlap.
+# Get-NSUsageOverlap <host> - the one sentence saying what is already counted inside what.
+# Byte-identical to ns_usage_overlap.
 function Get-NSUsageOverlap {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName)
     switch ($HostName) {
         'claude' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
-        'codex' { return 'Cached input is already inside the input figure, and reasoning is already inside output.' }
+        'codex' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
         'cursor' { return 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' }
     }
     return 'Overlap between the dimensions is unknown for this host.'
@@ -12660,13 +12663,13 @@ function Get-NSUsageHosts {
     return ($sorted -join '; ')
 }
 
-# What each host's figures overlap. Stated rather than corrected: a total that quietly reconciled
-# three different accounting conventions would be a number nobody could check against their bill.
+# What each host's figures overlap. Input is fresh input on every host; what is still counted
+# inside what is stated, so a total can be checked against the host's own figures.
 function Get-NSUsageOverlapText {
     param([AllowEmptyString()][string]$HostName)
     switch ($HostName) {
         'claude' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
-        'codex' { return 'Cached input is already inside the input figure, and reasoning is already inside output.' }
+        'codex' { return 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' }
         'cursor' { return 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' }
         default { return 'Overlap between the dimensions is unknown for this host.' }
     }
