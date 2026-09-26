@@ -103,6 +103,8 @@ watchman	0	.watchman	file
 watchman	2	run/.watchman	file
 watchman-tick	0	.watchman-tick	file
 watchman-tick	2	run/.watchman-tick	file
+watchman-log	0	watchman.log	file
+watchman-log	2	run/watchman.log	file
 watch-reason	0	.watch-reason	file
 watch-reason	2	run/.watch-reason	file
 mint-failed	0	.mint-failed	file

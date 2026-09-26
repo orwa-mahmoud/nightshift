@@ -289,10 +289,16 @@ another project will append to the wrong conversation.
 
 ```sh
 tail -n 40 .nightshift/run/shift-log.md
+tail -n 20 .nightshift/run/watchman.log
 ls -l .nightshift/run/.watchman .nightshift/run/.watchman-tick 2>/dev/null
 ```
 
 Native Windows: `Get-Content -Tail 40 .nightshift\run\shift-log.md`
+
+Start launches the watchman with `ns start-watchman`, which waits for the pid file and the
+`watchman armed` line and refuses to let work begin without them. A watchman that never armed
+leaves its reason in `run/watchman.log`, and Doctor and Status flag an armed shift that nothing is
+watching.
 
 Stand-down is success when the night already reached a declared ending. Matching log lines:
 

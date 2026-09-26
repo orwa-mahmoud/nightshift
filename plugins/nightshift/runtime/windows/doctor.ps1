@@ -612,6 +612,7 @@ elseif ($armed -eq 1 -and -not [string]::IsNullOrEmpty($sid)) {
 $wpid = ''
 $wstart = ''
 $watchmanUnusable = $false
+$watchmanAlive = $false
 $watchmanPath = Get-NSLayoutPath $ns 'watchman'
 if (Test-NSReparsePoint $watchmanPath) {
     Add-NSWarn 'watchman pidfile path is not a usable file'
@@ -632,14 +633,12 @@ if ($wpid -match '^[0-9]+$') {
     $watchLive = Test-NSRecordedProcess $wpid $wstart
     if ($watchLive -eq 'Alive') {
         Add-NSFact "watchman pid $wpid is alive"
+        $watchmanAlive = $true
     }
     else {
         Add-NSFact "watchman pid $wpid is stale"
         if ($armed -eq 0) {
             Add-NSAct safe 'remove leftover .watchman - the recorded process is gone and no shift is armed'
-        }
-        else {
-            Add-NSAct confirm 're-run start so the host watchman is armed; do not launch a second copy by hand beside a living one'
         }
     }
 }
@@ -654,9 +653,14 @@ if (-not [string]::IsNullOrEmpty($rcode)) {
     Add-NSFact "watchman reason $rcode ($(Get-NSReasonLabel $rcode))"
 }
 
-if ($armed -eq 1 -and $open -gt 0 -and [string]::IsNullOrEmpty($wpid) -and -not $watchmanUnusable) {
-    Add-NSWarn 'shift is armed with open boxes and no watchman'
-    Add-NSAct confirm 're-run start so the host watchman is armed, or work the list in the live session'
+# An armed shift with work left and nothing watching it is not revived after a crash or a usage
+# limit. Only watchMinutes 0 means that on purpose; a missing or unreadable value stops the watchman
+# arming too, so it is flagged the same way.
+$watchMinutes = [string](Get-NSRule $workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH))
+if ($armed -eq 1 -and $open -gt 0 -and -not $watchmanAlive -and -not $watchmanUnusable -and $watchMinutes -cne '0') {
+    Add-NSWarn 'shift is armed with open boxes and no watchman - a crash or usage limit will not be revived'
+    Add-NSAct confirm ("re-run start so the host watchman is armed (ns start-watchman reports why it did not arm; its output is in " +
+        (Get-NSLayoutName $ns 'watchman-log') + '), or work the list in the live session')
 }
 
 if (-not [string]::IsNullOrEmpty($tpath) -and -not (Test-Path -LiteralPath $tpath -PathType Leaf)) {

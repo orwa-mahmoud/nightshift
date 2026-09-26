@@ -51,6 +51,7 @@ ns_layout_set MAP "$NS" opportunity-map
 ns_layout_set STOP_FILE "$NS" stop
 ns_layout_set SESSION_FILE "$NS" session
 ns_layout_set WATCH_REASON "$NS" watch-reason
+ns_layout_set WATCHMAN_FILE "$NS" watchman
 ns_layout_set LOG "$NS" shift-log
 
 emit() { printf '%s\n' "$1"; }
@@ -139,6 +140,28 @@ if [ -f "$WATCH_REASON" ]; then
 else
   fact "watch reason" "none"
 fi
+
+# Whether anything is watching the shift. An armed shift with work left and no live watchman is
+# not revived after a crash or a usage limit; only watchMinutes 0 means that on purpose.
+WATCHMAN_STATE=none
+if [ -L "$WATCHMAN_FILE" ]; then
+  WATCHMAN_STATE="not a usable file"
+elif [ -f "$WATCHMAN_FILE" ]; then
+  WPID="$(sed -n 1p "$WATCHMAN_FILE" 2>/dev/null | tr -d '[:space:]')"
+  case "$WPID" in
+    '' | *[!0-9]*) ;;
+    *) if kill -0 "$WPID" 2>/dev/null; then WATCHMAN_STATE="alive (pid $WPID)"; else WATCHMAN_STATE="stale (pid $WPID)"; fi ;;
+  esac
+fi
+fact "watchman" "$WATCHMAN_STATE"
+case "$WATCHMAN_STATE" in
+  alive* | "not a usable file") ;;
+  *)
+    if [ "$ARMED" -eq 1 ] && [ "$OPEN" -gt 0 ] && [ "$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")" != 0 ]; then
+      fact "watchman warning" "the shift is armed with open items and nothing is watching it; a crash or usage limit will not be revived until Start runs again"
+    fi
+    ;;
+esac
 
 fact "work mode" "$(ns_work_mode "$WORKSPACE" 2>/dev/null)"
 fact "work target" "$(ns_work_target "$WORKSPACE" 2>/dev/null)"

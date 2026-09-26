@@ -60,6 +60,31 @@ ns_native_display_path() {
   esac
 }
 
+# ns_state_dir_owner <dir>
+#
+# The folder a working directory stands for. A directory inside a `.nightshift/` state folder is
+# that folder's owner, the directory above it: a shell left in `.nightshift/` or `.nightshift/run/`
+# still means the workspace, never a nested `.nightshift/.nightshift`. A `.nightshift` folder that
+# holds its own `.nightshift/` is a workspace in its own right and is kept. Anything else, and a
+# path that does not resolve, is printed as given.
+ns_state_dir_owner() {
+  local dir probe
+  dir="$(cd -P "$1" 2>/dev/null && pwd)" || {
+    printf '%s' "$1"
+    return 0
+  }
+  probe="$dir"
+  while [ -n "$probe" ] && [ "$probe" != / ]; do
+    if [ "${probe##*/}" = .nightshift ] && [ ! -d "$probe/.nightshift" ]; then
+      probe="${probe%/*}"
+      printf '%s' "${probe:-/}"
+      return 0
+    fi
+    probe="${probe%/*}"
+  done
+  printf '%s' "$dir"
+}
+
 # ns_workspace_root <host-root>
 #
 # Resolve the one workspace that owns Nightshift state. Normally that is the task root itself.

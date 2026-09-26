@@ -91,6 +91,19 @@ try {
     Expect-True ($invalid.Text -match 'refuse workspace invalid .nightshift-link at') `
         'an invalid bound link refuses the way an unreadable link always has'
 
+    # A shell standing inside the state folder means the workspace that owns it; a folder named
+    # .nightshift that holds its own state is a workspace in its own right.
+    $null = New-Item -ItemType Directory -Path (Join-Path $here '.nightshift/run') -Force
+    foreach ($inside in @('.nightshift', '.nightshift/run')) {
+        $fromState = Invoke-Dispatcher (Join-Path $here $inside) '' @('bind')
+        Expect-True ($fromState.ExitCode -eq 0 -and $fromState.Text -match ('(?m)^NIGHTSHIFT_WORKSPACE\t' + [regex]::Escape($here) + '\r?$')) `
+            "a shell inside $inside resolves to the workspace that owns it (got $($fromState.Text))"
+    }
+    $nested = New-Workspace (Join-Path $root 'outer/.nightshift')
+    $fromNested = Invoke-Dispatcher $nested '' @('bind')
+    Expect-True ($fromNested.Text -match ('(?m)^NIGHTSHIFT_WORKSPACE\t' + [regex]::Escape($nested) + '\r?$')) `
+        "a .nightshift folder with its own state stays the workspace (got $($fromNested.Text))"
+
     $writing = Invoke-Dispatcher $here '' @('scaffold')
     Expect-True (($writing.Text -split "`r?`n")[0] -ceq ('workspace ' + $here)) `
         "a verb that writes says where first (got $(($writing.Text -split [char]10)[0]))"

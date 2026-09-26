@@ -109,6 +109,42 @@ finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# The report says whether a watchman is alive, and warns when an armed shift with open work has
+# none, unless the owner switched it off with watchMinutes 0.
+$statusHelper = Join-Path $repository 'plugins/nightshift/runtime/windows/status.ps1'
+$rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+$watched = Join-Path ([IO.Path]::GetTempPath()) ("ns-status-watchman-" + [guid]::NewGuid().ToString('N'))
+function Get-NSStatusLine {
+    param([string]$Label)
+    $text = (& (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $statusHelper -Project $watched 2>&1) -join "`n"
+    $match = [regex]::Match($text, '(?m)^' + [regex]::Escape($Label) + ' (.*?)\r?$')
+    if ($match.Success) { return $match.Groups[1].Value }
+    return ''
+}
+try {
+    $watchedNs = Join-Path $watched '.nightshift'
+    $null = New-Item -ItemType Directory -Path $watchedNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $watchedNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $watchedNs 'punch-list.md'), "## Items`n- [ ] **1. open.**`n")
+    [IO.File]::WriteAllText((Get-NSLayoutPath $watchedNs 'armed'), '')
+    Expect-True ((Get-NSStatusLine 'watchman') -ceq 'none') "no pid file reads as none (got '$(Get-NSStatusLine 'watchman')')"
+    Expect-True ((Get-NSStatusLine 'watchman warning') -match 'nothing is watching it') 'an unwatched armed shift is warned about'
+    [IO.File]::WriteAllText((Get-NSLayoutPath $watchedNs 'watchman'), "99999`n")
+    Expect-True ((Get-NSStatusLine 'watchman') -ceq 'stale (pid 99999)') "a dead pid reads as stale (got '$(Get-NSStatusLine 'watchman')')"
+    Expect-True ((Get-NSStatusLine 'watchman warning') -match 'nothing is watching it') 'a stale watchman is the same gap'
+    [IO.File]::WriteAllText((Get-NSLayoutPath $watchedNs 'watchman'), "$PID`n$(Get-NSProcessStart $PID)`n")
+    Expect-True ((Get-NSStatusLine 'watchman') -ceq "alive (pid $PID)") "a live pid reads as alive (got '$(Get-NSStatusLine 'watchman')')"
+    Expect-True ([string]::IsNullOrEmpty((Get-NSStatusLine 'watchman warning'))) 'a live watchman is not warned about'
+    Remove-Item -LiteralPath (Get-NSLayoutPath $watchedNs 'watchman') -Force
+    $rules = Get-Content -LiteralPath (Join-Path $watchedNs 'rules.json') -Raw | ConvertFrom-Json
+    $rules.watchMinutes = 0
+    [IO.File]::WriteAllText((Join-Path $watchedNs 'rules.json'), ($rules | ConvertTo-Json -Depth 20))
+    Expect-True ([string]::IsNullOrEmpty((Get-NSStatusLine 'watchman warning'))) 'watchMinutes 0 is not warned about'
+}
+finally {
+    Remove-Item -LiteralPath $watched -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "status-facts-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

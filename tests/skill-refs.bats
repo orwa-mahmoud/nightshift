@@ -369,7 +369,7 @@ documented_pages() {
 @test "every fact Status renders is one the helper prints" {
   helper="$PLUGIN/runtime/status.sh"
   for label in 'open item' 'parked' 'staged' 'snag' 'opportunities' 'deadline' 'stop' \
-    'session' 'lease' 'watch reason' 'work mode' 'work target' 'artifact receipts' 'transition'; do
+    'session' 'lease' 'watch reason' 'watchman' 'work mode' 'work target' 'artifact receipts' 'transition'; do
     grep -qF "fact \"$label\"" "$helper" || grep -qF "fact \"$label " "$helper" \
       || { echo "the helper prints no '$label' fact"; return 1; }
   done

@@ -393,6 +393,30 @@ function Get-NSProposedWorkMode {
     return 'artifact'
 }
 
+# Get-NSStateDirOwner <dir> - the folder a working directory stands for. A directory inside a
+# `.nightshift/` state folder is that folder's owner, the directory above it: a shell left in
+# `.nightshift/` or `.nightshift/run/` still means the workspace, never a nested
+# `.nightshift/.nightshift`. A `.nightshift` folder that holds its own `.nightshift/` is a
+# workspace in its own right and is kept. Anything else, and a path that does not resolve, is
+# returned as given. Mirrors ns_state_dir_owner.
+function Get-NSStateDirOwner {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+    try { $dir = (Resolve-Path -LiteralPath $Directory -ErrorAction Stop).ProviderPath }
+    catch { return $Directory }
+    $probe = $dir.TrimEnd([char]'/', [char]'\')
+    while (-not [string]::IsNullOrEmpty($probe)) {
+        $parent = [IO.Path]::GetDirectoryName($probe)
+        if ([IO.Path]::GetFileName($probe) -ceq '.nightshift' -and
+            -not (Test-Path -LiteralPath (Join-Path $probe '.nightshift') -PathType Container)) {
+            if ([string]::IsNullOrEmpty($parent)) { return $probe }
+            return $parent
+        }
+        if ([string]::IsNullOrEmpty($parent) -or $parent -ceq $probe) { break }
+        $probe = $parent
+    }
+    return $dir
+}
+
 function Resolve-NSWorkspaceRoot {
     param([Parameter(Mandatory = $true)][string]$HostRoot)
 
@@ -12091,6 +12115,31 @@ function Write-NSStatusReport {
     }
     else {
         Fact 'watch reason' 'none'
+    }
+
+    # Whether anything is watching the shift. An armed shift with work left and no live watchman
+    # is not revived after a crash or a usage limit; only watchMinutes 0 means that on purpose.
+    $watchmanPath = Get-NSLayoutPath $ns 'watchman'
+    $watchmanState = 'none'
+    if (Test-NSReparsePoint $watchmanPath) {
+        $watchmanState = 'not a usable file'
+    }
+    elseif (Test-Path -LiteralPath $watchmanPath -PathType Leaf) {
+        $watchmanLines = @()
+        try { $watchmanLines = @([IO.File]::ReadAllLines($watchmanPath)) } catch { $watchmanLines = @() }
+        $watchmanPid = if ($watchmanLines.Count -gt 0) { ([string]$watchmanLines[0]) -replace '\s', '' } else { '' }
+        $watchmanStart = if ($watchmanLines.Count -gt 1) { [string]$watchmanLines[1] } else { '' }
+        if ($watchmanPid -match '^[0-9]+$') {
+            if ((Test-NSRecordedProcess $watchmanPid $watchmanStart) -eq 'Alive') { $watchmanState = "alive (pid $watchmanPid)" }
+            else { $watchmanState = "stale (pid $watchmanPid)" }
+        }
+    }
+    Fact 'watchman' $watchmanState
+    $watchMinutesRaw = ''
+    try { $watchMinutesRaw = [string](Get-NSRule $Workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH)) } catch { $watchMinutesRaw = '' }
+    if ($armed -and $open -gt 0 -and $watchMinutesRaw -cne '0' -and
+        -not ($watchmanState.StartsWith('alive', [StringComparison]::Ordinal) -or $watchmanState -ceq 'not a usable file')) {
+        Fact 'watchman warning' 'the shift is armed with open items and nothing is watching it; a crash or usage limit will not be revived until Start runs again'
     }
 
     $mode = ''
