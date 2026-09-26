@@ -3,6 +3,16 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.25.2](https://github.com/orwa-mahmoud/nightshift/compare/v0.25.1...v0.25.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* arm the watchman for the right workspace and confirm it armed ([eb13766](https://github.com/orwa-mahmoud/nightshift/commit/eb13766993165fcf61351e5208e26fcc849a59f6))
+* report Codex input without the cached tokens it already counts ([16646e7](https://github.com/orwa-mahmoud/nightshift/commit/16646e7ca03ab36eb21a140db69df3e7db4274bf))
+* resolve Codex Windows hook paths inside PowerShell ([e354be1](https://github.com/orwa-mahmoud/nightshift/commit/e354be105682f0fb2153a608c8abf64938cbd606))
+* revive a Codex turn that ended on an API error and keep an interrupted shift's accounting ([6ea1660](https://github.com/orwa-mahmoud/nightshift/commit/6ea1660f460f5d79e40a904fa0318c56c27d1f52))
+
 ## [0.25.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.25.0...v0.25.1) (2026-09-25)
 
 
