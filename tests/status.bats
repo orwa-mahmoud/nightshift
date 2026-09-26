@@ -223,11 +223,31 @@ MAP
   [ "$(fact_of "$p" 'stop')" = 'present (owner asked for the night to end)' ]
 }
 
+@test "status says whether a watchman is alive, and warns when an armed shift with work has none" {
+  p="$(new_project status-watchman)"
+  printf '## Items\n- [ ] **1. open.**\n' >"$p/.nightshift/punch-list.md"
+  [ "$(fact_of "$p" 'watchman')" = 'none' ]
+  fact_of "$p" 'watchman warning' | grep -qF 'nothing is watching it'
+  printf '99999\n' >"$p/.nightshift/.watchman"
+  [ "$(fact_of "$p" 'watchman')" = 'stale (pid 99999)' ]
+  fact_of "$p" 'watchman warning' | grep -qF 'nothing is watching it'
+  printf '%s\n' "$$" >"$p/.nightshift/.watchman"
+  [ "$(fact_of "$p" 'watchman')" = "alive (pid $$)" ]
+  [ -z "$(fact_of "$p" 'watchman warning')" ]
+  # watchMinutes 0 is the owner saying no watchman, and a shift with nothing open needs none.
+  rm "$p/.nightshift/.watchman"
+  jq '.watchMinutes = 0' "$p/.nightshift/rules.json" >"$p/.nightshift/r.json"
+  mv "$p/.nightshift/r.json" "$p/.nightshift/rules.json"
+  [ -z "$(fact_of "$p" 'watchman warning')" ]
+}
+
 @test "the watch reason carries its code and the label Doctor prints" {
   p="$(new_project status-watch-reason)"
   [ "$(fact_of "$p" 'watch reason')" = 'none' ]
   printf 'session-died\nnon-sensitive detail\n' >"$p/.nightshift/.watch-reason"
   fact_of "$p" 'watch reason' | grep -qE '^session-died \(.+\)$'
+  # With no watchman running, the reason is what the last one said, and reads that way.
+  fact_of "$p" 'watch reason' | grep -qF 'the watchman that recorded it is not running'
 }
 
 @test "a transition is a line whose subject is the shift changing hands" {

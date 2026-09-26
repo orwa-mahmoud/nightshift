@@ -115,12 +115,14 @@ function Resolve-NSFlagName {
 
 $hostName = Get-NSDispatchHost
 
-# The workspace, by the one rule the skills already state. An invalid link refuses in the Start
-# preflight's format rather than guessing a workspace.
+# The workspace, by the one rule the skills already state. A shell standing inside the state
+# folder means the workspace that owns it. An invalid link refuses in the Start preflight's format
+# rather than guessing a workspace.
 $taskRoot = $env:CLAUDE_PROJECT_DIR
 if ([string]::IsNullOrEmpty($taskRoot)) { $taskRoot = $env:CODEX_PROJECT_DIR }
 if ([string]::IsNullOrEmpty($taskRoot)) { $taskRoot = $env:CURSOR_PROJECT_DIR }
 if ([string]::IsNullOrEmpty($taskRoot)) { $taskRoot = (Get-Location).ProviderPath }
+$taskRoot = Get-NSStateDirOwner $taskRoot
 # The resolver throws on a link it cannot trust, and a terminating error here would replace the
 # refusal with a stack trace.
 try { $derived = Resolve-NSWorkspaceRoot $taskRoot } catch { $derived = '' }
@@ -141,7 +143,7 @@ function Get-NSCanonicalPath {
     catch { return $Path }
 }
 if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_WORKSPACE)) {
-    try { $bound = Resolve-NSWorkspaceRoot $env:NIGHTSHIFT_WORKSPACE } catch { $bound = '' }
+    try { $bound = Resolve-NSWorkspaceRoot (Get-NSStateDirOwner $env:NIGHTSHIFT_WORKSPACE) } catch { $bound = '' }
     if ([string]::IsNullOrEmpty($bound)) {
         [Console]::Out.WriteLine('refuse workspace invalid .nightshift-link at ' + $env:NIGHTSHIFT_WORKSPACE)
         [Console]::Out.WriteLine('repair Fix or remove .nightshift-link so it holds one absolute path to a folder containing .nightshift/, then run the command again.')

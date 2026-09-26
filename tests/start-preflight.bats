@@ -178,13 +178,53 @@ setup_site() { # <name> [punch-body]
 }
 
 @test "Start after a finished shift retires usage" {
-  p="$(setup_site preflight-retire-usage)"
+  p="$(setup_site preflight-retire-usage '## Items
+- [x] **1. work.**
+')"
   : >"$p/.nightshift/.ended"
   mkdir -p "$p/.nightshift/usage"
   printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
   run bash "$PREFLIGHT" --project "$p" --host claude
   [ "$status" -eq 0 ]
   [ ! -e "$p/.nightshift/usage" ]
+}
+
+# Accounting follows the work: a shift that ended with items open is continued, and the open item
+# keeps what was already spent on it. The ended shift still gets its own copy.
+@test "Start after a shift that ended with items open keeps the readings and copies them for its archive" {
+  p="$(setup_site preflight-continue-ended)"
+  printf 'shiftId=1111222233334444\n' >"$p/.nightshift/.ended"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/usage/marks.tsv" ]
+  [ -f "$p/.nightshift/usage-1111222233334444/marks.tsv" ]
+}
+
+# A shift that died while armed, with no stop and no ending, resumes with its readings, and the gap
+# from its last sign of work is on the timeline.
+@test "Start after an interrupted shift keeps the readings and records the gap from its last work" {
+  p="$(setup_site preflight-interrupted)"
+  : >"$p/.nightshift/.shift-armed"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  printf '1790380000 sid\n' >"$p/.nightshift/.shift-pulse"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/usage/marks.tsv" ]
+  grep -qxF "$(printf '1790380000\tthe shift broke off here and Start resumed it')" "$p/.nightshift/usage/pauses.tsv"
+}
+
+@test "a pause already recorded after the last work is not recorded twice" {
+  p="$(setup_site preflight-paused-once)"
+  : >"$p/.nightshift/STOP"
+  mkdir -p "$p/.nightshift/usage"
+  printf '1790380500\towner stop-work\n' >"$p/.nightshift/usage/pauses.tsv"
+  printf '1790380000 sid\n' >"$p/.nightshift/.shift-pulse"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ "$(wc -l <"$p/.nightshift/usage/pauses.tsv" | tr -d ' ')" -eq 1 ]
 }
 
 @test "a stopped shift with a live leftover pid is not a second agent" {

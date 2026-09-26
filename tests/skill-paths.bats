@@ -151,7 +151,9 @@ PY
 # whose accidental removal would leave a scheduled or headless shift unarmed or unstoppable.
 @test "start explicitly arms the shift and both host watchmen" {
   grep -qF 'ns" path armed' "$START"
-  grep -qF 'ns" watchman' "$START"
+  grep -qF 'ns" start-watchman --host' "$START"
+  grep -qF 'ns.ps1" start-watchman -HostName' "$START"
+  grep -qF 'Do not begin item work' "$START"
   grep -qF '### Bind this session' "$START"
   grep -qF '$NS/run/.shift-lease' "$START"
   grep -qF 'ns_lease_reset_stale' "$START"
@@ -282,7 +284,7 @@ PY
       || { echo "missing POSIX arm: $f"; return 1; }
     grep -qF 'New-Item -ItemType File -Force (& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" path armed)' "$f" \
       || { echo "missing Windows arm: $f"; return 1; }
-    grep -qF 'ns" watchman' "$f" || grep -qF '`ns watchman`' "$f" \
+    grep -qF 'ns" start-watchman' "$f" || grep -qF '`ns start-watchman`' "$f" \
       || { echo "does not arm the watchman through the dispatcher: $f"; return 1; }
   done
 }

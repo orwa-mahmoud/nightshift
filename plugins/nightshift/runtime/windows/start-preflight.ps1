@@ -327,6 +327,9 @@ if (-not $DryRun) {
     # The folder the last shift filed into, read before its ending marker is cleared: an oversized
     # journal joins it below.
     $endedGroup = Get-NSArchiveGroupIfClaimed $workspace (Get-NSEndedField $workspace 'shiftId')
+    # The last sign of work, read before its marker is cleared: where an interrupted shift's gap began.
+    $lastActivity = Get-NSPulseEpoch $ns
+    $wasArmed = Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf
     $cleared = New-Object 'System.Collections.Generic.List[string]'
     foreach ($key in @('stop', 'stall', 'notified', 'ended', 'session-end', 'pulse',
             'mint-failed', 'session', 'armed', 'watchman-tick', 'lock')) {
@@ -337,9 +340,34 @@ if (-not $DryRun) {
     $stopPath = Get-NSLayoutPath $ns 'stop'
     $ended = ((Test-Path -LiteralPath $endedPath -PathType Leaf) -and -not (Test-NSReparsePoint $endedPath))
     $stopped = ((Test-Path -LiteralPath $stopPath -PathType Leaf) -and -not (Test-NSReparsePoint $stopPath))
-    if ($ended -or -not $stopped) {
+    # Accounting follows the work. A shift that finished its list has its readings set aside, so the
+    # next list starts clean. One that stopped, reached quitting time or died with items still open
+    # is continued, and an open item keeps the time and tokens already spent on it: the readings
+    # stay live, and an ended shift gets its own copy for its archive. The gap since its last work
+    # is recorded as a pause unless one already covers it. Mirrors start-preflight.sh.
+    $openNow = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'punch-list')
+    $continued = $false
+    if ($ended) {
+        if ($openNow -gt 0) {
+            $continued = $true
+            $keptUsage = Copy-NSUsageSnapshot $ns (Get-NSEndedField $workspace 'shiftId')
+            if (-not [string]::IsNullOrEmpty($keptUsage)) { $null = $cleared.Add('usage=>' + (Split-Path -Leaf $keptUsage)) }
+        }
+        else {
+            $retiredUsage = Move-NSUsageRetire $ns (Get-NSEndedField $workspace 'shiftId')
+            if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
+        }
+    }
+    elseif ($stopped -or $wasArmed) {
+        $continued = $true
+    }
+    else {
         $retiredUsage = Move-NSUsageRetire $ns (Get-NSEndedField $workspace 'shiftId')
         if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
+    }
+    if ($continued -and $null -ne $lastActivity -and (Test-Path -LiteralPath (Get-NSUsageDir $ns) -PathType Container) -and
+        [long]$lastActivity -gt (Get-NSUsageLastPause $ns)) {
+        $null = Write-NSUsagePause $ns 'the shift broke off here and Start resumed it' ([long]$lastActivity)
     }
     Remove-NSPath (Get-NSLayoutPath $ns 'stop')
     $deadlinePath = Get-NSLayoutPath $ns 'deadline'

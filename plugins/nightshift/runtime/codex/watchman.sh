@@ -51,9 +51,10 @@
 #     · any process whose executable is exactly `codex` has this project as its cwd
 #     · the recorded rollout (line 2) grew since the last wake
 #   DEAD (revive): pulse stale, no rollout growth, no .session-end, boxes open, site armed.
-# Missing process evidence stands by. The 500-wedge signature (an API error as the rollout's
-# last word) has not been observed on Codex and is deliberately not guessed at; a
-# live-but-erroring session reads as alive and is left alone.
+# Missing process evidence stands by. One signature overrides it: a turn that ended on an API
+# error. Codex closes that turn with `task_complete` carrying an `error` object and leaves the
+# session open and quiet, so a live process there is a wedge, not work. It is revived at once,
+# except a usage limit, which waits for the reset time Codex reported.
 #
 # Stand-down order, checked at every wake — never override a declared ending:
 #   0. the armed marker is gone (.shift-armed)        -> down (a disarmed site has no shift)
@@ -326,6 +327,7 @@ rung_name() { if [ "$1" -eq 1 ] && [ -n "$(sid)" ]; then printf 'resuming the re
 log_line "watchman (codex) armed · every ${INTERVAL_MIN}m"
 BASE_SLEEP="${NIGHTSHIFT_WATCH_SLEEP:-$((INTERVAL_MIN * 60))}"
 wake=0
+WEDGE_SEEN=""
 baseline_rollout
 : >"$TICK" 2>/dev/null || true
 
@@ -382,10 +384,36 @@ while :; do
     fi
   fi
 
+  # A turn that ended on an API error is a wedge whatever the process evidence says, until the
+  # rollout moves again. The gap is recorded once, from the moment the turn failed.
+  WEDGED=0
+  turn_error="$(ns_codex_turn_error "$(rollout)")"
+  if [ -n "$turn_error" ] && ! rollout_grew; then
+    failed_at="$(ns_codex_turn_error_at "$(rollout)")"
+    if [ "$failed_at" != "$WEDGE_SEEN" ]; then
+      WEDGE_SEEN="$failed_at"
+      ns_usage_pause "$NS" "the session stopped on an API error ($turn_error)" "$failed_at" || true
+      log_line "watchman: the last turn ended on an API error ($turn_error) — the session is wedged, not working"
+    fi
+    reset_at="$(ns_codex_limit_reset "$(rollout)")"
+    # A usage limit is revived once it resets, unless the owner turned that off
+    # (watchAfterUsageLimit false): then the limit is recorded and the shift waits for them.
+    if [ "$turn_error" = usage_limit_exceeded ] &&
+      { [ "$(rule "$PROJECT" watchAfterUsageLimit "${NIGHTSHIFT_WATCH_AFTER_USAGE_LIMIT:-}")" = false ] ||
+        { [ -n "$reset_at" ] && [ "$(date +%s)" -lt "$reset_at" ]; }; }; then
+      note usage-limit "$reset_at"
+      : >"$TICK" 2>/dev/null || true
+      if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+      continue
+    fi
+    note api-error "$turn_error"
+    WEDGED=1
+  fi
+
   # Life, in evidence order: the recorded process, any codex in the project, the rollout pulse.
   # Missing optional tools are not death — stand down rather than revive beside a living session.
   rec_rc=1
-  if [ -n "$(rec_pid)" ]; then
+  if [ "$WEDGED" -eq 0 ] && [ -n "$(rec_pid)" ]; then
     recorded_process_alive
     rec_rc=$?
     if [ "$rec_rc" -eq 0 ]; then
@@ -396,23 +424,23 @@ while :; do
       continue
     fi
   fi
-  codex_in_project
-  in_rc=$?
-  if [ "$in_rc" -eq 0 ] || rollout_grew; then
+  in_rc=1
+  [ "$WEDGED" -eq 1 ] || { codex_in_project; in_rc=$?; }
+  if [ "$WEDGED" -eq 0 ] && { [ "$in_rc" -eq 0 ] || rollout_grew; }; then
     note silent-standby
     baseline_rollout
     : >"$TICK" 2>/dev/null || true
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
     continue
   fi
-  if pulse_alive; then
+  if [ "$WEDGED" -eq 0 ] && pulse_alive; then
     note silent-standby
     baseline_rollout
     : >"$TICK" 2>/dev/null || true
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
     continue
   fi
-  if [ "$rec_rc" -eq 3 ] || { [ "$in_rc" -eq 2 ] && [ "$rec_rc" -ne 1 ]; }; then
+  if [ "$WEDGED" -eq 0 ] && { [ "$rec_rc" -eq 3 ] || { [ "$in_rc" -eq 2 ] && [ "$rec_rc" -ne 1 ]; }; }; then
     note process-evidence-unavailable
     log_line "watchman: process evidence unavailable — standing down, not reviving"
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
@@ -440,7 +468,7 @@ while :; do
   total=$(( $# + 1 ))
   for gap in 0 $RETRY_SPACING; do
     [ "$gap" -gt 0 ] && sleep "$gap"
-    if recorded_process_alive || codex_in_project || rollout_grew || pulse_alive; then
+    if rollout_grew || { [ "$WEDGED" -eq 0 ] && { recorded_process_alive || codex_in_project || pulse_alive; }; }; then
       note silent-standby
       log_line "watchman: session activity during retries — holding the remaining attempts"
       break

@@ -141,6 +141,23 @@ function Test-NSErroredTail {
     return $last -match '[^\\]"isApiErrorMessage"\s*:\s*true'
 }
 
+# Test-NSUsageLimitRevivalOff - true when the owner set watchAfterUsageLimit to false.
+function Test-NSUsageLimitRevivalOff {
+    return ([string](Get-NSRule $workspace 'watchAfterUsageLimit' ([string]$env:NIGHTSHIFT_WATCH_AFTER_USAGE_LIMIT))) -ceq 'false'
+}
+
+# Test-NSUsageLimitedTail - the errored Claude tail names a usage limit, not a transient failure.
+function Test-NSUsageLimitedTail {
+    $transcript = Get-NSTranscript
+    if ([string]::IsNullOrEmpty($transcript)) { return $false }
+    try { $lines = @(Get-Content -LiteralPath $transcript -Tail 400 -ErrorAction Stop) } catch { return $false }
+    $last = ''
+    foreach ($line in $lines) {
+        if ($line -match '[^\\]"isApiErrorMessage"\s*:\s*true') { $last = $line }
+    }
+    return $last -match '(?i)usage[ _-]?limit'
+}
+
 # Host-general evidence for the watchman's own backoff, distinct from Test-NSErroredTail
 # (which only reads Claude's structured transcript field). Looks for the same signal words
 # the POSIX watchman keys its backoff on: a rate limit, a usage limit, HTTP 429/529, or a
@@ -161,6 +178,7 @@ function Test-NSApiFailureEvidence {
 }
 
 $script:TranscriptStamp = ''
+$script:WedgeSeen = [long]-1
 function Set-NSTranscriptBaseline {
     $transcript = Get-NSTranscript
     if ([string]::IsNullOrEmpty($transcript)) {
@@ -345,6 +363,28 @@ function Get-NSSiteVerdict {
 
     if ($HostName -eq 'codex') {
         $session = Read-NSSession $ns
+        # A turn that ended on an API error is a wedge whatever the process evidence says, until the
+        # rollout moves again. The gap is recorded once, from the moment the turn failed; a usage
+        # limit waits for the reset time Codex reported.
+        $rollout = Get-NSTranscript
+        $turnError = Get-NSCodexTurnError $rollout
+        if (-not [string]::IsNullOrEmpty($turnError) -and -not (Test-NSTranscriptPulse)) {
+            $failedAt = Get-NSCodexTurnErrorAt $rollout
+            if ($failedAt -ne $script:WedgeSeen) {
+                $script:WedgeSeen = $failedAt
+                $null = Write-NSUsagePause $ns "the session stopped on an API error ($turnError)" $failedAt
+                Write-NSLogLine "watchman: the last turn ended on an API error ($turnError) - the session is wedged, not working"
+            }
+            $resetAt = Get-NSCodexLimitReset $rollout
+            # A usage limit is revived once it resets, unless the owner turned that off
+            # (watchAfterUsageLimit false): then the limit is recorded and the shift waits for them.
+            if ($turnError -ceq 'usage_limit_exceeded' -and ((Test-NSUsageLimitRevivalOff) -or $resetAt -gt (Get-NSUnixTime))) {
+                Write-NSReason $ns 'usage-limit' ([string]$resetAt)
+                return 'usage-limit'
+            }
+            Write-NSReason $ns 'api-error' $turnError
+            return 'wedge'
+        }
         $processState = 'Absent'
         if ($null -ne $session -and -not [string]::IsNullOrEmpty($session.ProcessId)) {
             $processState = Test-NSRecordedProcess $session.ProcessId $session.Start
@@ -830,6 +870,14 @@ try {
         }
 
         $verdict = Get-NSSiteVerdict
+        if ($verdict -eq 'wedge' -and $HostName -eq 'claude' -and (Test-NSUsageLimitedTail) -and (Test-NSUsageLimitRevivalOff)) {
+            Write-NSReason $ns 'usage-limit' 'revival after a usage limit is off'
+            if ($previousStandby -ne 'usage-limit') {
+                $null = Write-NSUsagePause $ns 'usage limit'
+                Write-NSLogLine 'watchman: the session stopped on a usage limit and revival after a usage limit is off (watchAfterUsageLimit) - standing by for the owner'
+            }
+            $verdict = 'usage-limit'
+        }
         if ($verdict -eq 'silent') {
             $silentWakes++
             if ($silentWakes -ge 2 -and (Test-NSPulseStale $ns $IntervalMinutes)) {
@@ -852,6 +900,9 @@ try {
                 Write-NSLogLine 'watchman: owner pressed Esc - standing by, not resuming'
             }
             $previousStandby = 'esc'
+        }
+        elseif ($verdict -eq 'usage-limit') {
+            $previousStandby = 'usage-limit'
         }
         elseif ($verdict -eq 'silent' -or $verdict -eq 'tabs') {
             Write-NSReason $ns 'silent-standby' $verdict

@@ -431,3 +431,69 @@ STUB
   [ "$(sed -n 1p "$P/.nightshift/.shift-lease")" = "dead-sid" ]
   [ -z "$(sed -n 4p "$P/.nightshift/.shift-lease")" ]
 }
+
+# A failed model request closes the turn with task_complete carrying an error and leaves the
+# session open and quiet: the live process is a wedge, not work. These lines are the shape of a
+# real 401 outage recorded by Codex.
+errored_turn() { # <codex_error_info> [resets_at]
+  printf '{"timestamp":"t","type":"event_msg","payload":{"type":"task_started"}}\n' >>"$ROLLOUT"
+  printf '{"timestamp":"t","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":96.0,"resets_at":%s}}}}\n' \
+    "${2:-1}" >>"$ROLLOUT"
+  printf '{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","turn_id":"x","completed_at":1790378886,"error":{"message":"unexpected status 401 Unauthorized","codex_error_info":"%s"}}}\n' \
+    "$1" >>"$ROLLOUT"
+}
+
+@test "a live session whose last turn ended on an API error is revived, and the gap is recorded" {
+  errored_turn other
+  start="$(ps -o lstart= -p $$ | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  printf 'sid\n%s\n%s\n%s\ncodex\n' "$ROLLOUT" "$$" "$start" >"$P/.nightshift/.shift-session"
+  printf '%s sid\n' "$(date +%s)" >"$P/.nightshift/.shift-pulse"
+  run watch --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -ge 1 ]
+  grep -qF 'the last turn ended on an API error (other)' "$P/.nightshift/shift-log.md"
+  grep -qxF "$(printf '1790378886\tthe session stopped on an API error (other)')" "$P/.nightshift/usage/pauses.tsv"
+}
+
+@test "a usage limit waits for its reset instead of reviving" {
+  errored_turn usage_limit_exceeded "$(($(date +%s) + 86400))"
+  run watch --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 0 ]
+  [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = usage-limit ]
+}
+
+@test "a clean last turn is not a wedge" {
+  printf '{"type":"event_msg","payload":{"type":"task_complete","completed_at":1,"error":null}}\n' >>"$ROLLOUT"
+  start="$(ps -o lstart= -p $$ | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  printf 'sid\n%s\n%s\n%s\ncodex\n' "$ROLLOUT" "$$" "$start" >"$P/.nightshift/.shift-session"
+  run watch --max-wakes 1
+  [ "$(calls)" -eq 0 ]
+  ! grep -qF 'API error' "$P/.nightshift/shift-log.md" || false
+}
+
+@test "both runtimes read an errored Codex turn the same way" {
+  command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"
+  errored_turn usage_limit_exceeded 1790869781
+  lib="$BATS_TEST_DIRNAME/../../plugins/nightshift/lib"
+  posix="$(bash -c '. "$1/lib.sh"; printf "%s %s %s" "$(ns_codex_turn_error "$2")" "$(ns_codex_turn_error_at "$2")" "$(ns_codex_limit_reset "$2")"' _ "$lib" "$ROLLOUT")"
+  windows="$(pwsh -NoProfile -NonInteractive -Command "Import-Module '$lib/Nightshift.psm1' -DisableNameChecking; '{0} {1} {2}' -f (Get-NSCodexTurnError '$ROLLOUT'), (Get-NSCodexTurnErrorAt '$ROLLOUT'), (Get-NSCodexLimitReset '$ROLLOUT')")"
+  [ "$posix" = "usage_limit_exceeded 1790378886 1790869781" ]
+  [ "$windows" = "$posix" ]
+  printf '{"type":"event_msg","payload":{"type":"task_started"}}\n' >>"$ROLLOUT"
+  [ -z "$(bash -c '. "$1/lib.sh"; ns_codex_turn_error "$2"' _ "$lib" "$ROLLOUT")" ]
+}
+
+@test "a usage limit that has reset is revived, unless watchAfterUsageLimit is false" {
+  errored_turn usage_limit_exceeded 1
+  run watch --max-wakes 1
+  [ "$(calls)" -ge 1 ]
+  rm -f "$P/.nightshift/agent-calls" "$P/.nightshift/.watch-reason" "$P/.nightshift/.ended"
+  printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+  jq '.watchAfterUsageLimit = false' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  errored_turn usage_limit_exceeded 1
+  run watch --max-wakes 1
+  [ "$(calls)" -eq 0 ]
+  [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = usage-limit ]
+}

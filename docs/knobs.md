@@ -233,6 +233,12 @@ default — set it positive to have the shift log warn that a live unit has run 
 with no durable checkpoint. It never resets or replaces the stall counter. Edit both in
 `rules.json` between shifts.
 
+**Revival after a usage limit.** `watchAfterUsageLimit` (shipped `true`) lets the watchman revive a
+shift that stopped on a usage limit: on Codex it waits for the reset time Codex reported, then
+resumes the thread; on Claude Code it retries as for any other API error. Set it to `false` and the
+watchman records the limit, logs it once and stands by for you instead. A missing key reads as
+`true`; `NIGHTSHIFT_WATCH_AFTER_USAGE_LIMIT` overrides it for a session.
+
 **Retention** lives in the same rules file under `retention`, and is not shift-scoped: it is
 read only by Nightshift Archive. Both `runtimeLogDays` and `archiveDays` default to `0`
 (keep forever). A positive integer is an opt-in age in days. Archive prints the exact

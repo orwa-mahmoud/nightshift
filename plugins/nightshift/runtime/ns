@@ -101,9 +101,10 @@ HOST="$(ns_dispatch_host)"
 VERB="$1"
 shift
 
-# The workspace, by the one rule the skills already state. An invalid link refuses in the Start
-# preflight's format rather than guessing a workspace.
-TASK_ROOT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-${CURSOR_PROJECT_DIR:-$PWD}}}"
+# The workspace, by the one rule the skills already state. A shell standing inside the state
+# folder means the workspace that owns it. An invalid link refuses in the Start preflight's format
+# rather than guessing a workspace.
+TASK_ROOT="$(ns_state_dir_owner "${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-${CURSOR_PROJECT_DIR:-$PWD}}}")"
 if ! DERIVED="$(ns_workspace_root "$TASK_ROOT" 2>/dev/null)"; then
   printf 'refuse workspace invalid .nightshift-link at %s\n' "$TASK_ROOT"
   printf 'repair Fix or remove .nightshift-link so it holds one absolute path to a folder containing .nightshift/, then run the command again.\n'
@@ -117,7 +118,7 @@ SOURCE=derived
 # wins where it is the only one that resolves, and a disagreement refuses before any verb runs.
 ns_canonical() { (cd -P -- "$1" 2>/dev/null && pwd) || printf '%s' "$1"; }
 if [ -n "${NIGHTSHIFT_WORKSPACE:-}" ]; then
-  if ! BOUND="$(ns_workspace_root "$NIGHTSHIFT_WORKSPACE" 2>/dev/null)"; then
+  if ! BOUND="$(ns_workspace_root "$(ns_state_dir_owner "$NIGHTSHIFT_WORKSPACE")" 2>/dev/null)"; then
     printf 'refuse workspace invalid .nightshift-link at %s\n' "$NIGHTSHIFT_WORKSPACE"
     printf 'repair Fix or remove .nightshift-link so it holds one absolute path to a folder containing .nightshift/, then run the command again.\n'
     exit 2

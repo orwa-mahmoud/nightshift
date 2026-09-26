@@ -360,6 +360,32 @@ finally {
     }
 }
 
+# An armed shift with open work whose watchman is gone or stale is a warning, unless the owner
+# switched the watchman off with watchMinutes 0.
+$unwatched = Join-Path ([IO.Path]::GetTempPath()) ("ns-doctor-unwatched-" + [guid]::NewGuid().ToString('N'))
+try {
+    $unwatchedNs = Join-Path $unwatched '.nightshift'
+    $null = New-Item -ItemType Directory -Path $unwatchedNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $unwatchedNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $unwatchedNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
+    [IO.File]::WriteAllText((Join-Path $unwatchedNs '.shift-armed'), '')
+    $none = Invoke-Doctor $unwatched
+    Expect-True ($none.Stdout.Contains('shift is armed with open boxes and no watchman') -and $none.Stdout.Contains('watchman.log')) `
+        "an armed shift with no watchman is flagged, pointing at the watchman output: $($none.Stdout)"
+    [IO.File]::WriteAllText((Join-Path $unwatchedNs '.watchman'), "99999`n")
+    $stale = Invoke-Doctor $unwatched
+    Expect-True ($stale.Stdout.Contains('watchman pid 99999 is stale') -and $stale.Stdout.Contains('shift is armed with open boxes and no watchman')) `
+        "a stale watchman pid is the same gap: $($stale.Stdout)"
+    $rules = Get-Content -LiteralPath (Join-Path $unwatchedNs 'rules.json') -Raw | ConvertFrom-Json
+    $rules.watchMinutes = 0
+    [IO.File]::WriteAllText((Join-Path $unwatchedNs 'rules.json'), ($rules | ConvertTo-Json -Depth 20))
+    $off = Invoke-Doctor $unwatched
+    Expect-True (-not $off.Stdout.Contains('no watchman')) "watchMinutes 0 flags nothing: $($off.Stdout)"
+}
+finally {
+    Remove-Item -LiteralPath $unwatched -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "doctor-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

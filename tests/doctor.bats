@@ -205,6 +205,24 @@ with open(p,"w") as f: json.dump(d,f)
   [ -f "$p/.nightshift/.watchman" ]
 }
 
+@test "an armed shift with open work whose watchman is gone or stale is a warning, unless it was switched off" {
+  p="$(new_project)"
+  punch_open "$p"
+  run doctor "$p"
+  printf '%s' "$output" | grep -qF 'shift is armed with open boxes and no watchman'
+  printf '%s' "$output" | grep -qF 'watchman.log'
+  # A dead watchman leaves its pid file behind; that is the same gap, not a fact to read past.
+  printf '99999\n' >"$p/.nightshift/.watchman"
+  run doctor "$p"
+  printf '%s' "$output" | grep -q 'watchman pid 99999 is stale'
+  printf '%s' "$output" | grep -qF 'shift is armed with open boxes and no watchman'
+  # watchMinutes 0 is the owner saying no watchman; nothing is missing.
+  jq '.watchMinutes = 0' "$p/.nightshift/rules.json" >"$p/.nightshift/r.json"
+  mv "$p/.nightshift/r.json" "$p/.nightshift/rules.json"
+  run doctor "$p"
+  ! printf '%s' "$output" | grep -qF 'no watchman' || false
+}
+
 @test "empty punch list reports leftover contract without rewriting it" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"

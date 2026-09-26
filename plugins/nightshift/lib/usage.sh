@@ -51,6 +51,21 @@ ns_usage_retire() {
   printf '%s' "$dest"
 }
 
+# ns_usage_snapshot <nightshift-dir> <shift-id> — copy the live readings to the ended shift's own
+# folder, the one ns_usage_retire would have moved them to, and leave the live readings in place
+# for the shift that continues the same items. Prints the copy's path.
+ns_usage_snapshot() {
+  local ns="$1" id="$2" dir dest
+  dir="$(ns_usage_dir "$ns")"
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
+  case "$id" in '' | */* | .*) id="" ;; esac
+  [ -n "$id" ] || id="$(date +%Y%m%dT%H%M%SZ)"
+  ns_layout_set dest "$ns" usage-shift "$id"
+  [ ! -e "$dest" ] || ns_layout_set dest "$ns" usage-shift "$id-$(date +%s)"
+  cp -Rp "$dir" "$dest" 2>/dev/null || return 1
+  printf '%s' "$dest"
+}
+
 # ns_usage_dir <nightshift-dir> — where snapshots live. Created on demand.
 ns_usage_dir() { ns_layout_path "$1" usage; }
 
@@ -152,10 +167,10 @@ ns_file_size() {
 # ns_usage_read_codex <rollout> — the cumulative counter from a Codex rollout.
 #
 # Codex keeps a running total for the session, so reading it is one tail for the last
-# `token_count` line rather than a walk over every message. The overlap is Codex's own and is
-# preserved rather than corrected: `cached_input_tokens` sits inside `input_tokens`, and
-# `reasoning_output_tokens` inside `output_tokens` — on a real rollout, input + output equalled
-# total_tokens exactly, which only holds if the cache and reasoning figures are already counted.
+# `token_count` line rather than a walk over every message. Codex counts `cached_input_tokens`
+# inside `input_tokens` (on a real rollout, input + output equalled total_tokens exactly), and the
+# reader takes it out so `input` is fresh input, as on every other host. `reasoning_output_tokens`
+# stays inside `output_tokens`.
 #
 # The rollout format is documented as not stable for hooks, so a line that is not the expected
 # shape yields nothing and the caller reports `unavailable` with the reason. A partial sum is
@@ -496,17 +511,27 @@ ns_usage_last_item() {
     "$(printf '%s' "$last" | cut -f2)"
 }
 
-# ns_usage_pause <nightshift-dir> <reason> — a gap the runtime knows was not work.
+# ns_usage_pause <nightshift-dir> <reason> [<epoch>] — a gap the runtime knows was not work,
+# starting now or at <epoch> when the gap is found after it began.
 #
 # A session that ended and was revived, or a shift held at STOP, is wall-clock time nobody spent.
 # It is recorded so the duration line can list it, and never subtracted silently: a figure that
 # quietly excludes time is a figure nobody can check.
 ns_usage_pause() {
-  local dir file
+  local dir file at="${3:-}"
+  case "$at" in '' | *[!0-9]*) at="$(date +%s)" ;; esac
   dir="$(ns_usage_dir "$1")"
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$dir/pauses.tsv"
-  printf '%s\t%s\n' "$(date +%s)" "${2:-paused}" >>"$file" 2>/dev/null || return 1
+  printf '%s\t%s\n' "$at" "${2:-paused}" >>"$file" 2>/dev/null || return 1
+}
+
+# ns_usage_last_pause <nightshift-dir> — the epoch of the most recent recorded pause, or nothing.
+ns_usage_last_pause() {
+  local file
+  file="$(ns_usage_dir "$1")/pauses.tsv"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  awk -F '\t' '$1 ~ /^[0-9]+$/ && $1 > m { m = $1 } END { if (m) print m }' "$file"
 }
 
 # ns_usage_paused_between <nightshift-dir> <from> <to> — how long was recorded as not-work inside
@@ -563,11 +588,11 @@ _ns_usage_resumed_at() {
 }
 
 # ns_usage_overlap <host> — the one sentence that says what is already counted inside what, so a
-# reader never adds the same tokens twice. Each host's own arrangement, not a normalised one.
+# reader never adds the same tokens twice.
 ns_usage_overlap() {
   case "$1" in
     claude) printf 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' ;;
-    codex) printf 'Cached input is already inside the input figure, and reasoning is already inside output.' ;;
+    codex) printf 'Cache reads and cache writes are separate from the input figure; reasoning is inside output.' ;;
     cursor) printf 'The input figure overlaps the cache figures; Cursor reports no reasoning or subagent tokens.' ;;
     *) printf 'Overlap between the dimensions is unknown for this host.' ;;
   esac

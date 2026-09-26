@@ -12,7 +12,7 @@ $codes = @(
     'unknown-wedge', 'revived', 'stand-down', 'wrong-host', 'deadline',
     'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
     'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
-    'clock-out-failed', 'recovery-scope-unavailable'
+    'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit'
 )
 
 foreach ($code in $codes) {

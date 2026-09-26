@@ -1365,9 +1365,13 @@ exit /b 0
         Assert-Equal 0 $launched.ExitCode "watchman launcher exits cleanly: $($launched.Stderr)"
         Assert-True ($launched.Stdout -match 'watchman started \(pid [1-9][0-9]*\)') `
             'watchman launcher returns detached process identity'
+        Assert-True ([IO.File]::ReadAllText((Get-NSLayoutPath (Join-Path $launcherWorkspace '.nightshift') 'shift-log')) -match 'watchman \(claude, Windows\) armed') `
+            'the launcher returns only once the shift log shows the watchman armed'
         $duplicateLaunch = Invoke-TestScript $startWatchman `
             @('-Project', $launcherWorkspace, '-HostName', 'claude') '' @{ NIGHTSHIFT_WATCH_SLEEP = '1' }
-        Assert-True ($duplicateLaunch.ExitCode -ne 0) 'a second watchman launcher reports singleton refusal'
+        $launchedPid = [regex]::Match($launched.Stdout, 'pid ([1-9][0-9]*)').Groups[1].Value
+        Assert-True ($duplicateLaunch.ExitCode -eq 0 -and $duplicateLaunch.Stdout -match "watchman already watching \(pid $launchedPid\)") `
+            "a second launch names the live watchman instead of starting another: $($duplicateLaunch.Stdout) $($duplicateLaunch.Stderr)"
         [IO.File]::WriteAllText((Join-Path $launcherWorkspace '.nightshift/STOP'), '')
         $launcherReason = Get-NSLayoutPath (Join-Path $launcherWorkspace '.nightshift') 'watch-reason'
         $launcherMarker = Get-NSLayoutPath (Join-Path $launcherWorkspace '.nightshift') 'watchman'
@@ -1489,6 +1493,12 @@ exit 0
         $brokenLaunch = Invoke-TestScript $startWatchman `
             @('-Project', $brokenLauncherWorkspace, '-HostName', 'claude') '' @{ NIGHTSHIFT_WATCH_SLEEP = '0' }
         Assert-True ($brokenLaunch.ExitCode -ne 0) 'watchman launcher reports a child that fails before publishing ownership'
+        Assert-True ($brokenLaunch.Stderr.Contains('the watchman exited before it armed') -and
+            $brokenLaunch.Stderr.Contains('watchman.log')) `
+            "the launcher quotes why the watchman did not arm: $($brokenLaunch.Stderr)"
+        $brokenOutput = Get-NSLayoutPath (Join-Path $brokenLauncherWorkspace '.nightshift') 'watchman-log'
+        Assert-True ((Test-Path -LiteralPath $brokenOutput -PathType Leaf) -and
+            ([IO.File]::ReadAllText($brokenOutput) -match 'watchman:')) 'the watchman error stays readable in its output file'
     }
     else {
         Skip-WindowsOnly 'bounded clock-out and launcher refusal, whose children run powershell.exe'

@@ -447,6 +447,16 @@ errored_tail() {
 # quoted back inside a tool result, are text about a failure and not a failure: without that
 # marker the watchman keeps its ordinary interval rather than standing down for an hour on
 # something it read in a message.
+# The errored tail names a usage limit, not a transient failure.
+usage_limited_tail() {
+  local t
+  t="$(resolve_transcript)"
+  [ -n "$t" ] || return 1
+  tail -n 400 "$t" 2>/dev/null | awk '
+    /[^\\]"isApiErrorMessage"[[:space:]]*:[[:space:]]*true/ { last = tolower($0) }
+    END { exit (last ~ /usage[ _-]?limit/) ? 0 : 1 }'
+}
+
 api_limited_tail() {
   local t
   t="$(resolve_transcript)"
@@ -647,6 +657,12 @@ while :; do
   # uncertain reading stands by. Esc is read before everything else: if the owner resumes and a
   # 500 kills it later, the next wake finds an errored tail, not an interrupt, and revives.
   verdict="$(site_verdict)"
+  # A usage limit is revived like any wedge unless the owner turned that off
+  # (watchAfterUsageLimit false): then the limit is recorded and the shift waits for them.
+  if [ "$verdict" = wedge ] && usage_limited_tail &&
+    [ "$(rule "$PROJECT" watchAfterUsageLimit "${NIGHTSHIFT_WATCH_AFTER_USAGE_LIMIT:-}")" = false ]; then
+    verdict="usage-limit"
+  fi
   case "$verdict" in
     silent)
       silent_wakes=$((silent_wakes + 1))
@@ -683,6 +699,15 @@ while :; do
         note silent-standby "live claude in project"
         [ "$standby_prev" = "tabs" ] || log_line "watchman: a claude session is live in this project — standing by"
         standby_prev="tabs"
+        down_notified=0
+        ;;
+      usage-limit)
+        note usage-limit "revival after a usage limit is off"
+        if [ "$standby_prev" != "usage-limit" ]; then
+          ns_usage_pause "$NS" "usage limit" || true
+          log_line "watchman: the session stopped on a usage limit and revival after a usage limit is off (watchAfterUsageLimit) — standing by for the owner"
+        fi
+        standby_prev="usage-limit"
         down_notified=0
         ;;
       unavailable)

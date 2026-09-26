@@ -1617,3 +1617,22 @@ STUB
       }"' _ "$T/shift.jsonl"
   [ "$status" -eq 0 ]
 }
+
+# A usage limit is a wedge like any other and is revived, unless the owner turned that off: then
+# the limit is recorded and the shift waits for them.
+@test "watchAfterUsageLimit false holds a usage-limit wedge for the owner" {
+  T="$BATS_TEST_TMPDIR/transcripts"
+  mkdir -p "$T"
+  printf '%s\n' \
+    '{"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"Claude AI usage limit reached"}]},"error":"rate_limit","isApiErrorMessage":true}' \
+    >"$T/shift.jsonl"
+  start="$(ps -o lstart= -p $$ | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  printf 'sid-shift\n%s\n%s\n%s\n' "$T/shift.jsonl" "$$" "$start" >"$P/.nightshift/.shift-session"
+  jq '.watchAfterUsageLimit = false' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" NIGHTSHIFT_WATCH_TRANSCRIPTS="$T" \
+    "$WATCHMAN" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 2
+  [ "$(calls)" -eq 0 ]
+  [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = usage-limit ]
+  [ "$(grep -c 'revival after a usage limit is off' "$P/.nightshift/shift-log.md")" -eq 1 ]
+}

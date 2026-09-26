@@ -537,6 +537,7 @@ fi
 
 WPID=""
 WATCHMAN_UNUSABLE=0
+WATCHMAN_ALIVE=0
 if [ -L "$WATCHMAN_FILE" ]; then
   warn "watchman pidfile path is not a usable file"
   WATCHMAN_UNUSABLE=1
@@ -546,12 +547,11 @@ fi
 if [ -n "$WPID" ] && printf '%s' "$WPID" | grep -qE '^[0-9]+$'; then
   if kill -0 "$WPID" 2>/dev/null; then
     fact "watchman pid $WPID is alive"
+    WATCHMAN_ALIVE=1
   else
     fact "watchman pid $WPID is stale"
     if [ "$ARMED" -eq 0 ]; then
       act safe "remove leftover .watchman — the recorded process is gone and no shift is armed"
-    else
-      act confirm "re-run start so the host watchman is armed; do not launch a second copy by hand beside a living one"
     fi
   fi
 elif [ "$WATCHMAN_UNUSABLE" -eq 0 ]; then
@@ -563,9 +563,14 @@ if [ -n "$RCODE" ]; then
   fact "watchman reason $RCODE ($(ns_reason_label "$RCODE"))"
 fi
 
-if [ "$ARMED" -eq 1 ] && [ "$OPEN" -gt 0 ] && [ -z "$WPID" ] && [ "$WATCHMAN_UNUSABLE" -eq 0 ]; then
-  warn "shift is armed with open boxes and no watchman"
-  act confirm "re-run start so the host watchman is armed, or work the list in the live session"
+# An armed shift with work left and nothing watching it is not revived after a crash or a usage
+# limit. Only watchMinutes 0 means that on purpose; a missing or unreadable value stops the watchman
+# arming too, so it is flagged the same way.
+WATCH_MINUTES="$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")"
+if [ "$ARMED" -eq 1 ] && [ "$OPEN" -gt 0 ] && [ "$WATCHMAN_ALIVE" -eq 0 ] &&
+  [ "$WATCHMAN_UNUSABLE" -eq 0 ] && [ "$WATCH_MINUTES" != 0 ]; then
+  warn "shift is armed with open boxes and no watchman — a crash or usage limit will not be revived"
+  act confirm "arm it again with ns start-watchman --host <this host>: it changes nothing else about the shift, and says why if it cannot arm (its output is in $(ns_layout_name "$NS" watchman-log)); or work the list in the live session"
 fi
 
 fact "evidence $(ns_evidence_counts "$WORKSPACE")"

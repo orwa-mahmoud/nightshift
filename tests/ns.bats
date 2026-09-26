@@ -147,6 +147,24 @@ on() {
   diff -u "$p/posix.txt" "$p/windows.txt"
 }
 
+@test "a shell inside the state folder resolves to the workspace that owns it" {
+  p="$(canon "$(new_project ns-inside-state)")"
+  mkdir -p "$p/.nightshift/run"
+  for inside in .nightshift .nightshift/run; do
+    run on claude "$p/$inside" bind
+    [ "$status" -eq 0 ]
+    printf '%s\n' "$output" | grep -qx "NIGHTSHIFT_WORKSPACE	$p"
+    # Without a host project directory the working directory decides, and gets the same answer.
+    run bash -c 'cd "$1" && env -u CLAUDE_PROJECT_DIR -u CODEX_PROJECT_DIR -u CURSOR_PROJECT_DIR \
+      -u NIGHTSHIFT_WORKSPACE NIGHTSHIFT_HOST=claude "$2" bind' _ "$p/$inside" "$NS"
+    printf '%s\n' "$output" | grep -qx "NIGHTSHIFT_WORKSPACE	$p"
+  done
+  # A .nightshift folder that holds its own state is a workspace in its own right.
+  mkdir -p "$p/outer/.nightshift/.nightshift"
+  run on claude "$p/outer/.nightshift" bind
+  printf '%s\n' "$output" | grep -qx "NIGHTSHIFT_WORKSPACE	$p/outer/.nightshift"
+}
+
 @test "a POSIX flag reaches the PowerShell parameter that answers to it" {
   ps_ready
   p="$(new_project ns-twin-flags)"
@@ -172,7 +190,7 @@ on() {
 }
 
 @test "the twin exceptions are named, so the list cannot grow unnoticed" {
-  # The skills say the verbs are the same on both hosts. These four are where that is not true,
+  # The skills say the verbs are the same on both hosts. These three are where that is not true,
   # and a fifth appearing should fail here rather than in front of an owner.
   posix_only=""
   for f in "$RT"/*.sh; do
@@ -187,7 +205,7 @@ on() {
     [ "$b" = ns ] && continue
     [ -f "$RT/$b.sh" ] || windows_only="$windows_only $b"
   done
-  [ "$windows_only" = " setup start-watchman watchman" ]
+  [ "$windows_only" = " setup watchman" ]
 }
 
 @test "every runtime helper is executable, because the dispatcher execs it" {

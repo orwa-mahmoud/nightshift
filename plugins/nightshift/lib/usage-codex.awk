@@ -1,8 +1,9 @@
 # One cumulative usage reading from a Codex rollout's last `token_count` line.
 #
-# The overlap is Codex's own and is carried through rather than corrected: cached_input_tokens is
-# inside input_tokens, reasoning_output_tokens is inside output_tokens. The report states that
-# once so nothing is counted twice downstream.
+# Codex counts cached input inside input_tokens; every other host reports input without it. The
+# cached part is taken out here, so `input` means fresh input on every host and sits beside
+# cache_read the same way. reasoning_output_tokens stays inside output_tokens, as on every host,
+# and the report says so once.
 #
 # The format is documented as not stable for hooks, so a line missing total_token_usage prints
 # nothing at all — the caller then reports unavailable with the reason, rather than a partial sum
@@ -49,6 +50,7 @@ function str(line, key,   pos, rest, stop) {
 
 END {
   if (!found) exit 1
+  if (cacher >= 0 && cacher <= input) input -= cacher
   printf "input=%d", input
   if (cachew >= 0) printf ",cache_write=%d", cachew
   if (cacher >= 0) printf ",cache_read=%d", cacher
