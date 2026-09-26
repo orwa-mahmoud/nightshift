@@ -88,14 +88,22 @@ load helpers
   jq -e '.hooks.PostToolUse[0].hooks[0].command | test("codex/pulse")' "$f" >/dev/null
   jq -e '.hooks.SessionEnd[0].hooks[0].command | test("codex/session-end")' "$f" >/dev/null
   jq -e '.hooks.Stop[0].hooks[0].command | test("codex/clock-out-gate")' "$f" >/dev/null
-  jq -e '.hooks.PreToolUse[0].hooks[0].commandWindows | test("windows\\\\hardhat.ps1")' "$f" >/dev/null
-  jq -e '.hooks.PostToolUse[0].hooks[0].commandWindows | test("windows\\\\pulse.ps1")' "$f" >/dev/null
-  jq -e '.hooks.SessionEnd[0].hooks[0].commandWindows | test("windows\\\\session-end.ps1")' "$f" >/dev/null
-  jq -e '.hooks.Stop[0].hooks[0].commandWindows | test("windows\\\\clock-out-gate.ps1")' "$f" >/dev/null
-  jq -e '.hooks.SessionEnd[0].hooks[0].commandWindows | test("-HostName codex")' "$f" >/dev/null
   jq -e '[.. | .commandWindows? // empty]
-    | all(contains("powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File"))
-    and all(contains("%PLUGIN_ROOT%"))' "$f" >/dev/null
+    | all(test("^powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand [A-Za-z0-9+/]+={0,2}$"))' "$f" >/dev/null
+  while IFS="$(printf '\t')" read -r event cmd; do
+    case "$event" in
+      PreToolUse) script_name=hardhat.ps1 ;;
+      PostToolUse) script_name=pulse.ps1 ;;
+      SessionEnd) script_name=session-end.ps1 ;;
+      Stop) script_name=clock-out-gate.ps1 ;;
+      *) echo "unexpected Codex Windows hook event: $event"; return 1 ;;
+    esac
+    # PowerShell encodes the payload as UTF-16LE, not the UTF-8 that jq decodes.
+    script="$(printf '%s' "${cmd##* }" | openssl base64 -d -A | iconv -f UTF-16LE -t UTF-8)"
+    expected="\$ErrorActionPreference = 'Stop'; \$ProgressPreference = 'SilentlyContinue'; \$input | & (Join-Path -Path \$env:PLUGIN_ROOT -ChildPath 'hooks/windows/$script_name') -HostName codex; exit \$LASTEXITCODE"
+    [ "$script" = "$expected" ] || { echo "unexpected Codex Windows payload for $event: $script"; return 1; }
+    [ -f "$root/hooks/windows/$script_name" ] || { echo "Codex Windows hook names a missing file: $script_name"; return 1; }
+  done < <(jq -r '.hooks | to_entries[] | [.key, .value[0].hooks[0].commandWindows] | @tsv' "$f")
   while IFS= read -r cmd; do
     path="${cmd%\"}"
     path="${path#\"}"

@@ -953,57 +953,90 @@ try {
         Skip-WindowsOnly 'the Claude dispatchers, which run powershell.exe'
     }
 
-    Write-Host 'Checking Codex commandWindows entrypoints through cmd.exe'
+    Write-Host 'Checking Codex commandWindows entrypoints through the PowerShell host and cmd.exe'
     if (Test-NSWindows) {
+        $commandLogic = Invoke-TestScript (Join-Path $PSScriptRoot 'codex-hook-commands.ps1')
+        Assert-Equal 0 $commandLogic.ExitCode "Codex manifest commands: $($commandLogic.Stdout) $($commandLogic.Stderr)"
         $codexHooks = Get-Content -LiteralPath $codexHooksManifest -Raw | ConvertFrom-Json
         $codexHardhatCommand = [string]$codexHooks.hooks.PreToolUse[0].hooks[0].commandWindows
         $codexGateCommand = [string]$codexHooks.hooks.Stop[0].hooks[0].commandWindows
-        Assert-True ($codexHardhatCommand.Contains('%PLUGIN_ROOT%')) 'Codex hardhat uses cmd.exe environment syntax'
+        Assert-True ($codexHardhatCommand.Contains('-EncodedCommand')) 'Codex hardhat isolates shell-specific environment syntax'
         Assert-True ($codexGateCommand.Contains('-ExecutionPolicy Bypass')) 'Codex gate bypasses script policy explicitly'
-        $codexHardhatCommandFile = Join-Path $root 'codex hardhat.cmd'
-        $codexGateCommandFile = Join-Path $root 'codex gate.cmd'
-        [IO.File]::WriteAllText($codexHardhatCommandFile, "@echo off`r`n$codexHardhatCommand`r`n", [Text.Encoding]::ASCII)
-        [IO.File]::WriteAllText($codexGateCommandFile, "@echo off`r`n$codexGateCommand`r`n", [Text.Encoding]::ASCII)
+        $previousCodexOutput = $OutputEncoding
+        try {
+            $OutputEncoding = New-Object Text.UTF8Encoding $false
+            foreach ($commandShell in @('cmd', 'powershell')) {
+                $codexHardhatCommandFile = Join-Path $root "codex hardhat.$commandShell"
+                $codexGateCommandFile = Join-Path $root "codex gate.$commandShell"
+                if ($commandShell -eq 'cmd') {
+                    $invokeCodexCommand = 'Invoke-TestCommandFile'
+                    [IO.File]::WriteAllText($codexHardhatCommandFile, "@echo off`r`n$codexHardhatCommand`r`n", [Text.Encoding]::ASCII)
+                    [IO.File]::WriteAllText($codexGateCommandFile, "@echo off`r`n$codexGateCommand`r`n", [Text.Encoding]::ASCII)
+                }
+                else {
+                    $invokeCodexCommand = 'Invoke-TestScript'
+                    $codexHardhatCommandFile += '.ps1'
+                    $codexGateCommandFile += '.ps1'
+                    [IO.File]::WriteAllText($codexHardhatCommandFile, $codexHardhatCommand + '; exit $LASTEXITCODE')
+                    [IO.File]::WriteAllText($codexGateCommandFile, $codexGateCommand + '; exit $LASTEXITCODE')
+                }
 
-        $codexCommandWorkspace = Join-Path $root 'codex command workspace'
-        $null = Initialize-TestWorkspace $codexCommandWorkspace
-        Set-TestPunch $codexCommandWorkspace $true
-        [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $codexCommandWorkspace '.nightshift') 'armed'), '')
-        $codexCommandSession = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
-        $codexCommandEnvironment = @{
-            PLUGIN_ROOT = $plugin
-            CODEX_PROJECT_DIR = $codexCommandWorkspace
+                $codexCommandWorkspace = Join-Path $root "codex $commandShell command workspace"
+                $null = Initialize-TestWorkspace $codexCommandWorkspace
+                Set-TestPunch $codexCommandWorkspace $true
+                [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $codexCommandWorkspace '.nightshift') 'armed'), '')
+                $codexCommandSession = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+                $codexCommandEnvironment = @{
+                    PLUGIN_ROOT = $plugin
+                    CODEX_PROJECT_DIR = $codexCommandWorkspace
+                }
+                $codexCommandProbePayload = @{
+                    session_id = $codexCommandSession
+                    transcript_path = ''
+                    cwd = $codexCommandWorkspace
+                    tool_name = 'Bash'
+                    tool_input = @{ command = "`$null = 'nightshift-binding-probe'" }
+                } | ConvertTo-Json -Compress -Depth 10
+                $codexCommandProbe = & $invokeCodexCommand $codexHardhatCommandFile `
+                    -InputText $codexCommandProbePayload -Environment $codexCommandEnvironment
+                Assert-Equal 0 $codexCommandProbe.ExitCode "Codex hardhat commandWindows exits cleanly: $($codexCommandProbe.Stdout)"
+                Assert-True ([string]::IsNullOrWhiteSpace($codexCommandProbe.Stdout)) `
+                    "Codex hardhat commandWindows allows the winning probe ($(Format-HookResult $codexCommandProbe))"
+                Assert-Equal 'codex' (Read-NSSession (Join-Path $codexCommandWorkspace '.nightshift')).HostName `
+                    'Codex commandWindows reaches the native hardhat'
+
+                $codexCommandDenyPayload = @{
+                    session_id = $codexCommandSession
+                    transcript_path = ''
+                    cwd = $codexCommandWorkspace
+                    tool_name = 'Bash'
+                    tool_input = @{ command = 'Remove-Item -Force .nightshift/punch-list.md' }
+                } | ConvertTo-Json -Compress -Depth 10
+                $codexCommandDeny = & $invokeCodexCommand $codexHardhatCommandFile `
+                    -InputText $codexCommandDenyPayload -Environment $codexCommandEnvironment
+                Assert-True ($codexCommandDeny.Stdout -match '"permissionDecision":"deny"') `
+                    "Codex hardhat commandWindows still denies protected-state edits through $commandShell"
+
+                $codexCommandGatePayload = @{
+                    session_id = $codexCommandSession
+                    transcript_path = ''
+                    cwd = $codexCommandWorkspace
+                    stop_hook_active = $true
+                } | ConvertTo-Json -Compress
+                $codexCommandGate = & $invokeCodexCommand $codexGateCommandFile `
+                    -InputText $codexCommandGatePayload -Environment $codexCommandEnvironment
+                Assert-True ($codexCommandGate.Stdout -match '"decision":"block"') `
+                    'Codex gate commandWindows continues an open shift'
+                [IO.File]::WriteAllText((Join-Path $codexCommandWorkspace '.nightshift/STOP'), '')
+                $codexCommandRelease = & $invokeCodexCommand $codexGateCommandFile `
+                    -InputText $codexCommandGatePayload -Environment $codexCommandEnvironment
+                Assert-True ($codexCommandRelease.Stdout -match '"continue":true') `
+                    'Codex gate commandWindows releases STOP'
+            }
         }
-        $codexCommandProbePayload = @{
-            session_id = $codexCommandSession
-            transcript_path = ''
-            cwd = $codexCommandWorkspace
-            tool_name = 'Bash'
-            tool_input = @{ command = "`$null = 'nightshift-binding-probe'" }
-        } | ConvertTo-Json -Compress -Depth 10
-        $codexCommandProbe = Invoke-TestCommandFile $codexHardhatCommandFile `
-            $codexCommandProbePayload $codexCommandEnvironment
-        Assert-Equal 0 $codexCommandProbe.ExitCode "Codex hardhat commandWindows exits cleanly: $($codexCommandProbe.Stdout)"
-        Assert-True ([string]::IsNullOrWhiteSpace($codexCommandProbe.Stdout)) `
-            "Codex hardhat commandWindows allows the winning probe ($(Format-HookResult $codexCommandProbe))"
-        Assert-Equal 'codex' (Read-NSSession (Join-Path $codexCommandWorkspace '.nightshift')).HostName `
-            'Codex commandWindows reaches the native hardhat'
-
-        $codexCommandGatePayload = @{
-            session_id = $codexCommandSession
-            transcript_path = ''
-            cwd = $codexCommandWorkspace
-            stop_hook_active = $true
-        } | ConvertTo-Json -Compress
-        $codexCommandGate = Invoke-TestCommandFile $codexGateCommandFile `
-            $codexCommandGatePayload $codexCommandEnvironment
-        Assert-True ($codexCommandGate.Stdout -match '"decision":"block"') `
-            'Codex gate commandWindows continues an open shift'
-        [IO.File]::WriteAllText((Join-Path $codexCommandWorkspace '.nightshift/STOP'), '')
-        $codexCommandRelease = Invoke-TestCommandFile $codexGateCommandFile `
-            $codexCommandGatePayload $codexCommandEnvironment
-        Assert-True ($codexCommandRelease.Stdout -match '"continue":true') `
-            'Codex gate commandWindows releases STOP'
+        finally {
+            $OutputEncoding = $previousCodexOutput
+        }
     }
     else {
         Skip-WindowsOnly 'the commandWindows entrypoints, which run through cmd.exe'
