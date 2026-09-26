@@ -18,7 +18,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
-PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
+PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$(pwd)}}"
 MODE=""
 REPO=""
 ALLOW_CLOSED=0

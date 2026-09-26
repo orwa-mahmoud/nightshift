@@ -29,7 +29,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
-PROJECT="$PWD"
+PROJECT="$(pwd)"
 AT=""
 AGENT="claude -p"
 MODE="generate"

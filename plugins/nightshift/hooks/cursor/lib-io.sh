@@ -3,7 +3,7 @@
 # nowhere else: stdin fields, stop follow-ups, and preToolUse denials. Decision hooks never
 # parse or print protocol themselves.
 #
-# Contract: https://cursor.com/docs/hooks
+# Contract: the Cursor hooks reference.
 #   common: conversation_id, session_id, transcript_path, cwd, workspace_roots, ...
 #   stop input: status completed|aborted|error, loop_count
 #   stop output: {"followup_message":"..."} to continue; empty stdout to allow stop

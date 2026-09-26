@@ -10,6 +10,5 @@ case "${OS:-}:$(uname -s 2>/dev/null)" in
 esac
 exec "$CLAUDE_PLUGIN_ROOT/hooks/clock-out-gate.sh"
 exit #>
-& powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `
-    "$env:CLAUDE_PLUGIN_ROOT\hooks\windows\clock-out-gate.ps1" -HostName claude
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$env:CLAUDE_PLUGIN_ROOT\hooks\windows\clock-out-gate.ps1" -HostName claude
 exit $LASTEXITCODE

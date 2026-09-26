@@ -20,10 +20,10 @@ KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"
   grep -qF 'native Windows .NET regular expressions, case-insensitive' "$KNOBS"
 }
 
-@test "notification command names Windows Invoke-Expression" {
+@test "notification command names the Windows child PowerShell" {
   grep -qF 'unrestricted owner-provided shell' "$KNOBS"
   grep -qF 'POSIX uses `sh -c`' "$KNOBS"
-  grep -qF 'native Windows uses PowerShell `Invoke-Expression`' "$KNOBS"
+  grep -qF 'native Windows runs it with `-Command` in a child PowerShell' "$KNOBS"
 }
 
 @test "expected-email guard names git config user.email" {

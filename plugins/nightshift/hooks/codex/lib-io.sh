@@ -4,7 +4,7 @@
 # a hook finds the project. The decision hooks beside this file never parse or print protocol
 # themselves, so a change in Codex's contract lands here and the decisions do not move.
 #
-# Contract: https://developers.openai.com/codex/hooks. Every hook receives one JSON object on
+# Contract: the Codex hooks reference. Every hook receives one JSON object on
 # stdin (session_id, transcript_path as string|null, cwd, tool_name, tool_input, ...). A Stop
 # hook forces continuation with {"decision":"block","reason":...} — the reason becomes an
 # automatic continuation prompt. Stop expects JSON on stdout whenever it exits 0 — the docs

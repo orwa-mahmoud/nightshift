@@ -236,12 +236,12 @@ planted_repo() {
   awk '/function Get-NSWorkMode/,/^function Write-NSWorkMode/' "$PSM1" | grep -qF 'Test-NSReparsePoint'
   grep -qF 'symlink work-mode is malformed' "$LOGIC"
   grep -qF 'symlink work-target is unreadable' "$LOGIC"
-  grep -qF 'pass -Mode artifact for a notes folder that is not a Git repository' \
+  grep -qF 'use -Mode artifact for a notes folder that is not a Git repository' \
     "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/setup.ps1"
-  grep -qF 'pass -Mode artifact for a notes folder that is not a Git repository' "$SETUP"
+  grep -qF 'use -Mode artifact for a notes folder that is not a Git repository' "$SETUP"
   grep -qF 'failed default setup creates no Nightshift directory' "$LOGIC"
   awk '
-    /pass -Mode artifact for a notes folder that is not a Git repository/ {
+    /use -Mode artifact for a notes folder that is not a Git repository/ {
       if (!scaffold) refuse_first = 1
     }
     /Invoke-NSScaffold/ { scaffold = 1 }
