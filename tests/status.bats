@@ -246,6 +246,8 @@ MAP
   [ "$(fact_of "$p" 'watch reason')" = 'none' ]
   printf 'session-died\nnon-sensitive detail\n' >"$p/.nightshift/.watch-reason"
   fact_of "$p" 'watch reason' | grep -qE '^session-died \(.+\)$'
+  # With no watchman running, the reason is what the last one said, and reads that way.
+  fact_of "$p" 'watch reason' | grep -qF 'the watchman that recorded it is not running'
 }
 
 @test "a transition is a line whose subject is the shift changing hands" {

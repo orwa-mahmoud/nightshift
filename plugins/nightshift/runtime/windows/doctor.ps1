@@ -659,8 +659,8 @@ if (-not [string]::IsNullOrEmpty($rcode)) {
 $watchMinutes = [string](Get-NSRule $workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH))
 if ($armed -eq 1 -and $open -gt 0 -and -not $watchmanAlive -and -not $watchmanUnusable -and $watchMinutes -cne '0') {
     Add-NSWarn 'shift is armed with open boxes and no watchman - a crash or usage limit will not be revived'
-    Add-NSAct confirm ("re-run start so the host watchman is armed (ns start-watchman reports why it did not arm; its output is in " +
-        (Get-NSLayoutName $ns 'watchman-log') + '), or work the list in the live session')
+    Add-NSAct confirm ("arm it again with ns start-watchman -HostName <this host>: it changes nothing else about the shift, and says why if it cannot arm (its output is in " +
+        (Get-NSLayoutName $ns 'watchman-log') + '); or work the list in the live session')
 }
 
 if (-not [string]::IsNullOrEmpty($tpath) -and -not (Test-Path -LiteralPath $tpath -PathType Leaf)) {

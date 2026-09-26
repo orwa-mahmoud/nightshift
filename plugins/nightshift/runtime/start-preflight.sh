@@ -367,6 +367,10 @@ if [ "$DRY_RUN" -eq 0 ]; then
   # The folder the last shift filed into, read before its ending marker is cleared: an oversized
   # journal joins it below.
   ENDED_GROUP="$(ns_archive_group_if_claimed "$WORKSPACE" "$(ns_ended_field "$WORKSPACE" shiftId)")"
+  # The last sign of work, read before its marker is cleared: where an interrupted shift's gap began.
+  LAST_ACTIVITY="$(ns_pulse_epoch "$NS")"
+  WAS_ARMED=0
+  [ -f "$ARMED" ] && WAS_ARMED=1
   CLEARED=""
   for key in stop stall notified ended session-end pulse mint-failed session armed watchman-tick lock; do
     ns_layout_set marker "$NS" "$key"
@@ -374,16 +378,33 @@ if [ "$DRY_RUN" -eq 0 ]; then
       CLEARED="${CLEARED}${CLEARED:+ }${marker##*/}"
     fi
   done
-  # A finished shift's accounting is set aside so the next night starts clean. A stop-work
-  # resume keeps the same marks: retiring them is what made stop-then-start lose the item's cost.
+  # Accounting follows the work. A shift that finished its list has its readings set aside, so the
+  # next list starts clean. One that stopped, reached quitting time or died with items still open
+  # is continued, and an open item keeps the time and tokens already spent on it: the readings
+  # stay live, and an ended shift gets its own copy for its archive. The gap since its last work is
+  # recorded as a pause unless one already covers it, so the timeline shows where it broke off.
+  OPEN_NOW=0
+  [ -f "$PUNCH" ] && OPEN_NOW="$(ns_open_boxes "$PUNCH")"
+  CONTINUED=0
   if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then
-    RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
-    [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
-  elif [ -f "$STOP" ] && [ ! -L "$STOP" ]; then
-    :
+    if [ "${OPEN_NOW:-0}" -gt 0 ]; then
+      CONTINUED=1
+      KEPT_USAGE="$(ns_usage_snapshot "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || KEPT_USAGE=""
+      [ -z "$KEPT_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage=>${KEPT_USAGE##*/}"
+    else
+      RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
+      [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
+    fi
+  elif { [ -f "$STOP" ] && [ ! -L "$STOP" ]; } || [ "$WAS_ARMED" -eq 1 ]; then
+    CONTINUED=1
   else
     RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
     [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
+  fi
+  LAST_PAUSE="$(ns_usage_last_pause "$NS")"
+  if [ "$CONTINUED" -eq 1 ] && [ -d "$(ns_usage_dir "$NS")" ] && [ -n "$LAST_ACTIVITY" ] &&
+    [ "$LAST_ACTIVITY" -gt "${LAST_PAUSE:-0}" ]; then
+    ns_usage_pause "$NS" "the shift broke off here and Start resumed it" "$LAST_ACTIVITY" || :
   fi
   ns_control_drop "$STOP"
   ns_control_drop_runtime_markers "$NS"

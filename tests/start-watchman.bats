@@ -37,6 +37,9 @@ launch_from() {
   pid="$(sed -n 1p "$P/.nightshift/.watchman")"
   [ "$output" = "watchman started (pid $pid)" ]
   kill -0 "$pid"
+  # Its own session and process group: a host tearing down the launching session's group
+  # cannot end it.
+  [ "$(ps -o pgid= -p "$pid" | tr -d ' ')" = "$pid" ]
   grep -qE 'watchman armed' "$P/.nightshift/shift-log.md"
   grep -qF "start-watchman: launching the claude watchman for $P" "$P/.nightshift/watchman.log"
   [ ! -e "$P/.nightshift/.nightshift" ]

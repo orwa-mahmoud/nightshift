@@ -570,7 +570,7 @@ WATCH_MINUTES="$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")"
 if [ "$ARMED" -eq 1 ] && [ "$OPEN" -gt 0 ] && [ "$WATCHMAN_ALIVE" -eq 0 ] &&
   [ "$WATCHMAN_UNUSABLE" -eq 0 ] && [ "$WATCH_MINUTES" != 0 ]; then
   warn "shift is armed with open boxes and no watchman — a crash or usage limit will not be revived"
-  act confirm "re-run start so the host watchman is armed (ns start-watchman reports why it did not arm; its output is in $(ns_layout_name "$NS" watchman-log)), or work the list in the live session"
+  act confirm "arm it again with ns start-watchman --host <this host>: it changes nothing else about the shift, and says why if it cannot arm (its output is in $(ns_layout_name "$NS" watchman-log)); or work the list in the live session"
 fi
 
 fact "evidence $(ns_evidence_counts "$WORKSPACE")"

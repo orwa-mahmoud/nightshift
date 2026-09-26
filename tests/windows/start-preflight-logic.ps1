@@ -120,7 +120,7 @@ try {
     Expect-True ($keepRun.ExitCode -eq 0) "stop-work resume keeps going: $($keepRun.Stdout)"
     Expect-True (Test-Path -LiteralPath (Join-Path $keepUsage '.nightshift/usage/marks.tsv') -PathType Leaf) `
         'stop-work resume keeps the live usage folder'
-    $retireUsage = New-Site (Join-Path $root 'retire-usage')
+    $retireUsage = New-Site (Join-Path $root 'retire-usage') "## Items`n- [x] **1. work.**`n"
     [IO.File]::WriteAllText((Join-Path $retireUsage '.nightshift/.ended'), '')
     $null = New-Item -ItemType Directory -Force -Path (Join-Path $retireUsage '.nightshift/usage')
     [IO.File]::WriteAllText((Join-Path $retireUsage '.nightshift/usage/marks.tsv'), "arm`n")
@@ -128,6 +128,28 @@ try {
     Expect-True ($retireRun.ExitCode -eq 0) "a finished shift still starts: $($retireRun.Stdout)"
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $retireUsage '.nightshift/usage'))) `
         'a finished shift retires usage'
+
+    # A shift that ended with items open is continued: its readings stay live and the ended shift
+    # gets its own copy. A shift that died armed keeps them too, and the gap from its last work is
+    # recorded once.
+    $continueEnded = New-Site (Join-Path $root 'continue-ended')
+    [IO.File]::WriteAllText((Join-Path $continueEnded '.nightshift/.ended'), "shiftId=1111222233334444`n")
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $continueEnded '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $continueEnded '.nightshift/usage/marks.tsv'), "arm`n")
+    $null = Invoke-Preflight $continueEnded
+    Expect-True ((Test-Path -LiteralPath (Join-Path $continueEnded '.nightshift/usage/marks.tsv') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $continueEnded '.nightshift/usage-1111222233334444/marks.tsv') -PathType Leaf)) `
+        'a shift that ended with items open keeps its readings and copies them for its archive'
+    $interrupted = New-Site (Join-Path $root 'interrupted')
+    [IO.File]::WriteAllText((Join-Path $interrupted '.nightshift/.shift-armed'), '')
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $interrupted '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $interrupted '.nightshift/usage/marks.tsv'), "arm`n")
+    [IO.File]::WriteAllText((Join-Path $interrupted '.nightshift/.shift-pulse'), "1790380000 sid`n")
+    $null = Invoke-Preflight $interrupted
+    $pauses = Join-Path $interrupted '.nightshift/usage/pauses.tsv'
+    Expect-True ((Test-Path -LiteralPath $pauses -PathType Leaf) -and
+        ([IO.File]::ReadAllText($pauses) -ceq "1790380000`tthe shift broke off here and Start resumed it`n")) `
+        'an interrupted shift keeps its readings and records the gap from its last work once'
 
     # An open-ended item with no clock refuses instead of inventing hours.
     $walk = New-Site (Join-Path $root 'walkthrough') "## Items`n- [ ] **1. walkthrough.** Ending: open-ended`n"

@@ -1110,6 +1110,68 @@ function Get-NSOpenDrafts {
     return $open
 }
 
+# Get-NSCodexTail <rollout> - the last megabyte of a rollout as text; one event can be large, and a
+# rollout can run to hundreds of megabytes. Empty when the file cannot be read.
+function Get-NSCodexTail {
+    param([AllowEmptyString()][string]$Rollout)
+    if ([string]::IsNullOrEmpty($Rollout) -or -not (Test-Path -LiteralPath $Rollout -PathType Leaf) -or (Test-NSReparsePoint $Rollout)) { return '' }
+    try {
+        $stream = [IO.File]::Open($Rollout, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        try {
+            $take = [long][Math]::Min($stream.Length, 1048576)
+            $null = $stream.Seek(-$take, [IO.SeekOrigin]::End)
+            $buffer = New-Object byte[] $take
+            $read = $stream.Read($buffer, 0, [int]$take)
+            $text = (New-Object Text.UTF8Encoding($false)).GetString($buffer, 0, $read)
+        }
+        finally { $stream.Dispose() }
+    }
+    catch { return '' }
+    return $text
+}
+
+# Get-NSCodexTurnLine <rollout> - the rollout's last turn boundary (task_started or task_complete).
+function Get-NSCodexTurnLine {
+    param([AllowEmptyString()][string]$Rollout)
+    $last = ''
+    foreach ($line in ((Get-NSCodexTail $Rollout) -split "`n")) {
+        if ($line -cmatch '"payload":\{"type":"task_(started|complete)"') { $last = $line }
+    }
+    return $last
+}
+
+# Get-NSCodexTurnError <rollout> - how the thread's last turn ended, when it ended on an error.
+# Codex records a failed model request on the turn's closing event: task_complete carries an error
+# object with a codex_error_info kind (usage_limit_exceeded, other, ...) and the session stays open
+# and quiet. Returns that kind, 'error' when the object names none, and '' otherwise.
+# Mirrors ns_codex_turn_error.
+function Get-NSCodexTurnError {
+    param([AllowEmptyString()][string]$Rollout)
+    $last = Get-NSCodexTurnLine $Rollout
+    if (-not $last.Contains('"payload":{"type":"task_complete"')) { return '' }
+    if ($last -notmatch '[^\\]"error":\{') { return '' }
+    $kind = [regex]::Matches($last, '"codex_error_info":"([a-z_]+)"')
+    if ($kind.Count -gt 0) { return $kind[$kind.Count - 1].Groups[1].Value }
+    return 'error'
+}
+
+# Get-NSCodexTurnErrorAt <rollout> - the epoch that errored turn completed, or 0.
+function Get-NSCodexTurnErrorAt {
+    param([AllowEmptyString()][string]$Rollout)
+    if ([string]::IsNullOrEmpty((Get-NSCodexTurnError $Rollout))) { return [long]0 }
+    $at = [regex]::Match((Get-NSCodexTurnLine $Rollout), '"completed_at":([0-9]+)')
+    if ($at.Success) { return [long]$at.Groups[1].Value }
+    return [long]0
+}
+
+# Get-NSCodexLimitReset <rollout> - the epoch Codex last reported the usage window resets, or 0.
+function Get-NSCodexLimitReset {
+    param([AllowEmptyString()][string]$Rollout)
+    $reset = [long]0
+    foreach ($m in [regex]::Matches((Get-NSCodexTail $Rollout), '"resets_at":([0-9]+)')) { $reset = [long]$m.Groups[1].Value }
+    return $reset
+}
+
 function Get-NSCodexIdentityKind {
     param([AllowEmptyString()][string]$SessionId)
     if ([string]::IsNullOrEmpty($SessionId)) {
@@ -2600,7 +2662,7 @@ function Write-NSReason {
         'unknown-wedge', 'revived', 'stand-down', 'wrong-host', 'deadline',
         'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
         'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
-        'clock-out-failed', 'recovery-scope-unavailable'
+        'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit'
     )
     if ($Code -notin $allowed) {
         $Code = 'stand-down'
@@ -3840,6 +3902,8 @@ function Get-NSReasonLabel {
         'clean-session-end' { return 'owner closed the session' }
         'esc-standby' { return 'standing by - owner interrupt in the transcript' }
         'silent-standby' { return 'standing by - session alive and quiet' }
+        'api-error' { return 'session stopped on an API error - reviving' }
+        'usage-limit' { return 'waiting for the usage limit to reset' }
         'non-resumable-session' { return 'recorded Codex identity cannot be resumed' }
         'unreadable-rules' { return 'rules file missing or incomplete' }
         'fresh-fallback' { return 'fresh session - punch list is the handover' }
@@ -12107,16 +12171,6 @@ function Write-NSStatusReport {
     try { if ($null -ne (Read-NSLease $ns)) { $lease = 'held' } } catch { $lease = 'absent or unowned' }
     Fact 'lease' $lease
 
-    if (Test-NSPathEntry (Get-NSLayoutPath $ns 'watch-reason')) {
-        $code = ''
-        try { $code = [string](Get-NSReasonCode $ns) } catch { $code = '' }
-        if ([string]::IsNullOrEmpty($code)) { Fact 'watch reason' 'none' }
-        else { Fact 'watch reason' ($code + ' (' + (Get-NSReasonLabel $code) + ')') }
-    }
-    else {
-        Fact 'watch reason' 'none'
-    }
-
     # Whether anything is watching the shift. An armed shift with work left and no live watchman
     # is not revived after a crash or a usage limit; only watchMinutes 0 means that on purpose.
     $watchmanPath = Get-NSLayoutPath $ns 'watchman'
@@ -12134,12 +12188,24 @@ function Write-NSStatusReport {
             else { $watchmanState = "stale (pid $watchmanPid)" }
         }
     }
+    # A reason is the last thing a watchman recorded; once that watchman is gone it describes the past.
+    $reasonNote = $(if ($watchmanState.StartsWith('alive', [StringComparison]::Ordinal)) { '' } else { '; the watchman that recorded it is not running' })
+    if (Test-NSPathEntry (Get-NSLayoutPath $ns 'watch-reason')) {
+        $code = ''
+        try { $code = [string](Get-NSReasonCode $ns) } catch { $code = '' }
+        if ([string]::IsNullOrEmpty($code)) { Fact 'watch reason' 'none' }
+        else { Fact 'watch reason' ($code + ' (' + (Get-NSReasonLabel $code) + $reasonNote + ')') }
+    }
+    else {
+        Fact 'watch reason' 'none'
+    }
+
     Fact 'watchman' $watchmanState
     $watchMinutesRaw = ''
     try { $watchMinutesRaw = [string](Get-NSRule $Workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH)) } catch { $watchMinutesRaw = '' }
     if ($armed -and $open -gt 0 -and $watchMinutesRaw -cne '0' -and
         -not ($watchmanState.StartsWith('alive', [StringComparison]::Ordinal) -or $watchmanState -ceq 'not a usable file')) {
-        Fact 'watchman warning' 'the shift is armed with open items and nothing is watching it; a crash or usage limit will not be revived until Start runs again'
+        Fact 'watchman warning' 'the shift is armed with open items and nothing is watching it; a crash or usage limit will not be revived until ns start-watchman arms one again'
     }
 
     $mode = ''
@@ -12719,7 +12785,8 @@ function Get-NSGateUnchargedLabels {
 # A session that ended and was revived, Esc, a usage-limit wait, or a shift held at STOP is
 # wall-clock time nobody spent. The duration line lists it and subtracts it from working time.
 function Write-NSUsagePause {
-    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Reason = '')
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Reason = '',
+        [long]$At = 0)
     $dir = Get-NSUsageDir $NightshiftDir
     if (Test-NSReparsePoint $dir) { return $false }
     try { $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop } catch { return $false }
@@ -12728,9 +12795,24 @@ function Write-NSUsagePause {
     $file = Join-Path $dir 'pauses.tsv'
     if (Test-NSReparsePoint $file) { return $false }
     $utf8 = New-Object Text.UTF8Encoding($false)
-    try { [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`t" + $why + "`n"), $utf8) }
+    $when = $(if ($At -gt 0) { $At } else { Get-NSUnixTime })
+    try { [IO.File]::AppendAllText($file, ($when.ToString() + "`t" + $why + "`n"), $utf8) }
     catch { return $false }
     return $true
+}
+
+# Get-NSUsageLastPause <nightshift-dir> - the epoch of the most recent recorded pause, or 0.
+# Mirrors ns_usage_last_pause.
+function Get-NSUsageLastPause {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'pauses.tsv'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return [long]0 }
+    $last = [long]0
+    foreach ($line in [IO.File]::ReadAllLines($file)) {
+        $field = ($line -split "`t")[0]
+        if ($field -match '^[0-9]+$' -and [long]$field -gt $last) { $last = [long]$field }
+    }
+    return $last
 }
 
 # Get-NSUsageResumedAt <nightshift-dir> <epoch> - when work was next seen after a pause, from the
@@ -13501,6 +13583,24 @@ function Write-NSPulseContext {
         }
     }
     Write-Output (ConvertTo-Json -Compress $hook)
+}
+
+# Copy-NSUsageSnapshot - copy the live readings to the ended shift's own folder, the one
+# Move-NSUsageRetire would have moved them to, and leave the live readings in place for the shift
+# that continues the same items. Returns the copy's path. Mirrors ns_usage_snapshot.
+function Copy-NSUsageSnapshot {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$ShiftId)
+    $dir = Get-NSUsageDir $NightshiftDir
+    if (Test-NSReparsePoint $dir) { return '' }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { return '' }
+    $id = $ShiftId
+    if ([string]::IsNullOrEmpty($id) -or $id -match '[\\/]' -or $id.StartsWith('.')) {
+        $id = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+    }
+    $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' $id
+    if (Test-Path -LiteralPath $dest) { $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' ($id + '-' + (Get-NSUnixTime)) }
+    try { Copy-Item -LiteralPath $dir -Destination $dest -Recurse -Force } catch { return '' }
+    return $dest
 }
 
 # Move-NSUsageRetire - a finished shift's accounting, set aside so the next shift starts clean.

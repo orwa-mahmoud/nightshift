@@ -3,8 +3,9 @@
 #
 #   start-watchman.sh --project DIR --host claude|codex|cursor [-- WATCHMAN-ARGS…]
 #
-# The watchman is given the workspace explicitly, never the working directory. Its own output is
-# appended to run/watchman.log. Success means the watchman's pid file names the launched process
+# The watchman is given the workspace explicitly, never the working directory, and runs in a
+# session of its own so the host's process cleanup cannot end it. Its own output is appended to
+# run/watchman.log. Success means the watchman's pid file names the launched process
 # and the shift log gained its `armed` line; anything short of that is reported with the
 # watchman's own words, and a launched process that did not arm is stopped.
 #
@@ -84,7 +85,18 @@ printf '%s · start-watchman: launching the %s watchman for %s\n' \
   "$(date '+%Y-%m-%d %H:%M:%S')" "$HOST_NAME" "$WORKSPACE" >>"$OUTPUT"
 output_from="$(wc -l <"$OUTPUT" | tr -d '[:space:]')"
 
-nohup "$WATCHMAN" --project "$WORKSPACE" "$@" >>"$OUTPUT" 2>&1 </dev/null &
+# The watchman runs in a session of its own. A host that tears down the process group of the
+# session that started it (Codex does, when its app restarts or reloads) must not take the
+# watchman with it; nohup alone only survives a hangup. setsid where the system has it, perl's
+# setsid on macOS, which ships perl and no setsid; both exec, so the pid stays the watchman's.
+if command -v setsid >/dev/null 2>&1; then
+  set -- setsid "$WATCHMAN" --project "$WORKSPACE" "$@"
+elif command -v perl >/dev/null 2>&1; then
+  set -- perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec: $!\n"' "$WATCHMAN" --project "$WORKSPACE" "$@"
+else
+  set -- "$WATCHMAN" --project "$WORKSPACE" "$@"
+fi
+nohup "$@" >>"$OUTPUT" 2>&1 </dev/null &
 child=$!
 
 # Everything the watchman said since this launch, for a refusal to quote.

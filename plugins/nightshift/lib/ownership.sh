@@ -797,6 +797,39 @@ ns_codex_identity_kind() {
   return 1
 }
 
+# ns_codex_turn_error <rollout> — how the thread's last turn ended, when it ended on an error.
+#
+# Codex records a failed model request on the turn's closing event: `task_complete` carries an
+# `error` object with a `codex_error_info` kind (`usage_limit_exceeded`, `other`, …) and the
+# session stays open and quiet. Prints that kind, `error` when the object names none, and nothing
+# when the last turn boundary is a start or a clean completion, or the rollout cannot be read. The
+# tail is bounded, since one rollout event can be large.
+ns_codex_turn_error() {
+  local rollout="$1" last kind
+  [ -n "$rollout" ] && [ -f "$rollout" ] && [ ! -L "$rollout" ] || return 0
+  last="$(tail -c 1048576 "$rollout" 2>/dev/null |
+    grep -E '"payload":\{"type":"task_(started|complete)"' | tail -n 1)"
+  case "$last" in *'"payload":{"type":"task_complete"'*) ;; *) return 0 ;; esac
+  printf '%s' "$last" | grep -qE '[^\\]"error":\{' || return 0
+  kind="$(printf '%s' "$last" | grep -oE '"codex_error_info":"[a-z_]+"' | tail -n 1 | cut -d'"' -f4)"
+  printf '%s' "${kind:-error}"
+}
+
+# ns_codex_turn_error_at <rollout> — the epoch that errored turn completed, or nothing.
+ns_codex_turn_error_at() {
+  [ -n "$(ns_codex_turn_error "$1")" ] || return 0
+  tail -c 1048576 "$1" 2>/dev/null | grep -E '"payload":\{"type":"task_complete"' | tail -n 1 |
+    grep -oE '"completed_at":[0-9]+' | cut -d: -f2
+}
+
+# ns_codex_limit_reset <rollout> — the epoch Codex last reported the usage window resets, or
+# nothing when the rollout names none.
+ns_codex_limit_reset() {
+  local rollout="$1"
+  [ -n "$rollout" ] && [ -f "$rollout" ] && [ ! -L "$rollout" ] || return 0
+  tail -c 1048576 "$rollout" 2>/dev/null | grep -oE '"resets_at":[0-9]+' | tail -n 1 | cut -d: -f2
+}
+
 # Cursor CLI worker — the resumable id in ~/.cursor/chats. The origin IDE conversation
 # stays on .shift-session; this file is the id agent --resume may legally receive.
 ns_cursor_worker_present() { # <ns>

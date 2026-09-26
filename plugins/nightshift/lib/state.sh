@@ -1808,6 +1808,8 @@ ns_reason_label() {
     clean-session-end) printf 'owner closed the session' ;;
     esc-standby) printf 'standing by - owner interrupt in the transcript' ;;
     silent-standby) printf 'standing by - session alive and quiet' ;;
+    api-error) printf 'session stopped on an API error - reviving' ;;
+    usage-limit) printf 'waiting for the usage limit to reset' ;;
     non-resumable-session) printf 'recorded Codex identity cannot be resumed' ;;
     unreadable-rules) printf 'rules file missing or incomplete' ;;
     fresh-fallback) printf 'fresh session - punch list is the handover' ;;
@@ -1823,7 +1825,7 @@ ns_record_reason() { # <nightshift-dir> <code> [detail]
   local dir="$1" code="$2" detail="${3:-}"
   [ -d "$dir" ] || return 1
   case "$code" in
-    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable) ;;
+    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable|api-error|usage-limit) ;;
     *) code="stand-down" ;;
   esac
   detail="$(printf '%s' "$detail" | tr -d '\000-\037' | sed 's/[[:space:]]*$//')"
