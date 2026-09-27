@@ -52,8 +52,8 @@ Without recovery, the owner's night becomes one eye on the host status page, wai
 the second the service returns. So much for sleeping.
 
 Nightshift records the active session and keeps the work contract on disk. A separate watchman
-requires positive failure evidence before attempting recovery. Claude Code can also recover a
-classified live API-error session; a live Codex error remains outside that recovery path.
+requires positive failure evidence before attempting recovery. Claude Code and Codex can also
+recover a live session whose last turn ended on an API error; a usage limit waits for its reset.
 Stop-work orders, completed shifts, and deadlines stand the watchman down.
 
 The host-specific signals, session-end behavior, and fallbacks are documented in
@@ -78,6 +78,16 @@ These failures need different mechanisms:
 That is Nightshift's scope. It does not make generated code inherently correct, replace review, or
 repair a host's internal context engine. It keeps the working contract available until the list is
 done, the deadline arrives, or the owner stops the shift.
+
+## What a finished shift looks like
+
+![Receipts index of a finished shift: nine items ticked, each with its token usage, working time,
+and receipt](assets/finished-shift-receipts.png)
+
+This is the receipts index from a real nine-item shift on this repository. Every item is ticked
+and links to its own receipt; each row carries the tokens the host reported and the time the item
+was worked, 6h 12m in total. The index is the first thing to read in the morning, and each receipt
+holds what was delivered and how it was verified.
 
 ## What it costs
 

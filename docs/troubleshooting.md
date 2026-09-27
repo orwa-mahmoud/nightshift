@@ -8,8 +8,9 @@ nothing. For a failed night you want to report, use the
 form — not a paste of the transcript.
 
 Host differences that matter here: both Stop hooks refuse an early clock-out. Claude Code's
-watchman can revive a live session sitting on a host API-error event. A Codex session that is
-**alive but errored is stood by**, not revived, until that signature is captured. Codex SessionEnd
+watchman can revive a live session sitting on a host API-error event. A Codex session whose last
+turn ended on an API error is revived the same way; a usage limit waits for the reset time Codex
+reported, or stands by when `watchAfterUsageLimit` is `false`. Codex SessionEnd
 (reason `other`) stands the watchman down — close, archive, or idle unload is pause-recovery;
 Start re-arms. A crash with no SessionEnd still revives. Cursor liveness is pulse + pid +
 transcript + lease pid; empty pid is not death. `touch .nightshift/STOP` is the POSIX panic stop-work order;
