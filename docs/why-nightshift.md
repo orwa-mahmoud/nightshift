@@ -79,6 +79,16 @@ That is Nightshift's scope. It does not make generated code inherently correct, 
 repair a host's internal context engine. It keeps the working contract available until the list is
 done, the deadline arrives, or the owner stops the shift.
 
+## What a finished shift looks like
+
+![Receipts index of a finished shift: nine items ticked, each with its token usage, working time,
+and receipt](assets/finished-shift-receipts.png)
+
+This is the receipts index from a real nine-item shift on this repository. Every item is ticked
+and links to its own receipt; each row carries the tokens the host reported and the time the item
+was worked, 6h 12m in total. The index is the first thing to read in the morning, and each receipt
+holds what was delivered and how it was verified.
+
 ## What it costs
 
 Nightshift adds work rather than removing it: a contract to read, gates to run, receipts to write,

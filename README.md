@@ -19,6 +19,8 @@ then archive the shift with its evidence intact.
 [Why it exists](docs/why-nightshift.md#why-nightshift-exists) · [Documentation](docs/README.md#documentation) ·
 [Website](https://nightshift.orwamahmoud.com/)
 
+[![Why Nightshift exists: without Nightshift the agent promises to continue, then stops; with Nightshift the shift completes with per-item receipts](docs/assets/nightshift-before-after.png)](docs/why-nightshift.md#why-nightshift-exists)
+
 | What you want | What Nightshift provides |
 | --- | --- |
 | **Finish the work you already planned** | A persistent punch list, item-by-item verification, and a gate that rejects premature clock-out. |
