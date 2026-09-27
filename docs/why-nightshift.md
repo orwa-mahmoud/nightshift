@@ -52,8 +52,8 @@ Without recovery, the owner's night becomes one eye on the host status page, wai
 the second the service returns. So much for sleeping.
 
 Nightshift records the active session and keeps the work contract on disk. A separate watchman
-requires positive failure evidence before attempting recovery. Claude Code can also recover a
-classified live API-error session; a live Codex error remains outside that recovery path.
+requires positive failure evidence before attempting recovery. Claude Code and Codex can also
+recover a live session whose last turn ended on an API error; a usage limit waits for its reset.
 Stop-work orders, completed shifts, and deadlines stand the watchman down.
 
 The host-specific signals, session-end behavior, and fallbacks are documented in
