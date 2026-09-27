@@ -236,10 +236,15 @@ acting.
 Codex SessionEnd stands the watchman down: closing, archiving, or an idle unload (about 30
 minutes with no client) is pause-recovery. The punch list stays; Start re-arms. A crash that
 never fires SessionEnd still revives. A fresh `.shift-pulse`, a live recorded process, or a
-growing rollout keeps the watchman standing by. Empty pid alone is not death. A live session
-that appears wedged on an API error is also left alone until a stable rollout signature has
-been captured and classified; see
-[#41](https://github.com/orwa-mahmoud/nightshift/issues/41).
+growing rollout keeps the watchman standing by. Empty pid alone is not death.
+
+A Codex turn that ends on an API error closes with `task_complete` carrying an `error` object and
+leaves the session open and quiet. Until the rollout moves again, the watchman treats that
+signature as a wedge whatever the process evidence says, records the gap once from the moment the
+turn failed, and resumes the conversation. A usage limit (`usage_limit_exceeded`) waits for the
+reset time Codex reported, then resumes. With `watchAfterUsageLimit` set to `false`, the watchman
+records the limit and stands by for the owner instead; see
+[Owner knobs](knobs.md#owner-knobs).
 
 With the shipped rules, each Claude watchman wake makes up to three attempts when it has a session
 ID: `claude --resume <id>`, then `claude --continue`, then a fresh `claude -p`. Without a recorded
@@ -374,8 +379,8 @@ not a Nightshift skip.
 
 The differences among the hosts are in recovery evidence. Claude Code exposes Escape,
 clean session-end, process, transcript, pulse, and API-error signals. Codex exposes SessionEnd
-(reason `other`), pulse, process, and rollout activity, but not Escape or a verified API-wedge
-signature. Cursor liveness is pulse plus recorded pid plus transcript growth plus lease pid;
+(reason `other`), pulse, process, rollout activity, and the API-error turn signature with its
+usage-limit reset time, but not Escape. Cursor liveness is pulse plus recorded pid plus transcript growth plus lease pid;
 an empty pid is never death by itself.
 Same-conversation Codex recovery also depends on a resumable identity recorded before the original
 process disappears.
