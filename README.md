@@ -1,10 +1,14 @@
-# nightshift
+<div align="center">
+
+# <img src="plugins/nightshift/assets/nightshift-logo.png" alt="" width="56" align="absmiddle"> nightshift
 
 [![OpenAI Plugin Directory](https://img.shields.io/badge/OpenAI-Plugin_Directory-111111)](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
 [![Website](https://img.shields.io/badge/Website-nightshift-2563eb)](https://nightshift.orwamahmoud.com/)
 [![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dorwa-mahmoud%252Fnightshift%26metric%3Dtrust)](https://hol.org/registry/plugins/orwa-mahmoud%2Fnightshift)
 
 **Give the agent a shift. Come back to work you can review.**
+
+</div>
 
 Nightshift gives [Claude Code](https://claude.com/claude-code),
 [OpenAI Codex](https://openai.com/codex/), and [Cursor](https://cursor.com) a durable work contract
@@ -13,6 +17,8 @@ and hours to work. A clock-out gate holds unfinished work, progress survives on 
 can recover failed sessions. Review the results, per-item token usage and time where available,
 then archive the shift with its evidence intact.
 
+<div align="center">
+
 **MIT licensed · macOS, Linux, Windows · No separate service or API key**
 
 [Install](#install) · [First shift](#your-first-shift) · [Real runs](#the-morning) ·
@@ -20,6 +26,8 @@ then archive the shift with its evidence intact.
 [Website](https://nightshift.orwamahmoud.com/)
 
 [![Why Nightshift exists: without Nightshift the agent promises to continue, then stops; with Nightshift the shift completes with per-item receipts](docs/assets/nightshift-before-after.png)](docs/why-nightshift.md#why-nightshift-exists)
+
+</div>
 
 | What you want | What Nightshift provides |
 | --- | --- |
