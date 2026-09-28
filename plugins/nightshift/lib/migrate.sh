@@ -134,7 +134,6 @@ EOF
 #   drop <file> <from> <to>          an earlier block whose value is already under its current name
 #   retire <file> <path>             a setting no version reads any more
 #   link <file> <old> <new>          a relative link written again so it resolves
-#   original <file>                  the archived file, kept as it was beside the rewritten one
 #   ignore <file> <line>             a line the receipts repository needs to leave run/ out
 #   unknown <path>                   something that is not a Nightshift file, left in place
 #   stray <path>                     a file an earlier plugin wrote by mistake, left in place
@@ -395,14 +394,12 @@ EOF
 }
 
 # _ns_migrate_links <workspace> <moves> <plan|apply> — the Markdown files under the state directory
-# with a link that would not resolve once the moves are made. `plan` prints link and original
-# records; `apply` rewrites each file in place, keeping an archived file's original beside it.
+# with a link that would not resolve once the moves are made. `plan` prints link records; `apply`
+# rewrites each file in place.
 _ns_migrate_links() {
-  local ws="$1" moves="$2" mode="$3" ns exists f rel now dir olddirs key cur p out base orig
-  local archive_root tmp carry
+  local ws="$1" moves="$2" mode="$3" ns exists f rel now dir olddirs key cur p out base
+  local tmp carry
   ns="$ws/.nightshift"
-  archive_root="$(ns_archive "$ws" root)"
-  [ -n "$archive_root" ] || ns_layout_rel_at archive_root "$NS_LAYOUT_VERSION" archive
   # A link is carried by the table, not by this run's moves: every earlier path of a key reaches
   # its current one, so a run that finishes an interrupted one repoints what the first one moved.
   carry="$(_ns_migrate_carry)"
@@ -463,19 +460,11 @@ KEYS
       awk -v dir="$dir" -v olddirs="$olddirs" -v mode=plan -f "$NS_MIGRATE_LINKS_AWK" <"$f")"
     [ -n "$out" ] || continue
     base="${now##*/}"
-    orig=""
-    case "$now" in "$archive_root"/*) orig="${now%.md}.original.md" ;; esac
     if [ "$mode" = plan ]; then
       printf '%s\n' "$out" | while IFS="$_NS_MIG_TAB" read -r p cur; do
         printf 'link\t%s\t%s\t%s\n' "$now" "$p" "$cur"
       done
-      if [ -n "$orig" ] && ! _ns_migrate_entry "$ns" "$orig"; then
-        printf 'original\t%s\n' "$orig"
-      fi
       continue
-    fi
-    if [ -n "$orig" ] && ! _ns_migrate_entry "$ns" "$orig"; then
-      cp -p "$f" "$ns/$orig" || return 3
     fi
     tmp="${f%/*}/.$base.migrate.$$"
     if ! NS_MIG_EXISTS="$exists" NS_MIG_MOVES="$carry" NS_MIG_ROOT="$ns" \
@@ -501,7 +490,6 @@ ns_migrate_render() {
     $1 == "drop" { printf "  drop      %s: %s (the same value is already under %s)\n", $2, $3, $4; n++; next }
     $1 == "retire" { printf "  retire    %s: %s (no version reads it)\n", $2, $3; n++; next }
     $1 == "link" { printf "  link      %s: %s -> %s\n", $2, $3, $4; n++; next }
-    $1 == "original" { printf "  original  %s keeps the archived file as it was\n", $2; next }
     $1 == "ignore" { printf "  ignore    %s: add %s\n", $2, $3; n++; next }
     $1 == "unknown" { printf "  unknown   %s (no Nightshift file has this name; left in place)\n", $2; next }
     $1 == "stray" { printf "  stray     %s (an earlier Setup copied a template here and nothing reads it; left in place, safe to delete)\n", $2; next }

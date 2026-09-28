@@ -143,7 +143,7 @@ look at `.nightshift/receipts/` — Doctor reports `artifact receipts N` and, wh
 exist, `latest artifact receipt` with the filename of the most recently written receipt. Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive
 copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
 into the shift's folder. A ticked item's receipt leaves live storage once the shift has ended; an
-open item's receipt is copied and stays. Missing or empty receipts create no dated receipts folder. A failing `git -C … rev-parse` here is
+open item's receipt stays live and is not filed. Missing or empty receipts create no dated receipts folder. A failing `git -C … rev-parse` here is
 expected, not a broken site.
 
 ```sh

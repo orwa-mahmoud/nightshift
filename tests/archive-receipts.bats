@@ -494,16 +494,15 @@ closed() { # <project> — the shift ended
   [ "$status" -eq 0 ]
   [ ! -f "$r/1-fix-the-resolver.md" ]
   [ -f "$p/.nightshift/archive/2026-09-05/receipts/1-fix-the-resolver.md" ]
-  # The open item's receipt is filed as it stands and stays live with its box.
-  [ -f "$r/2-trim-the-bundle.md" ]
-  [ "$(cat "$p/.nightshift/archive/2026-09-05/receipts/2-trim-the-bundle.md")" = "$(cat "$r/2-trim-the-bundle.md")" ]
+  # The open item's receipt stays live with its box, and only there.
+  [ "$(cat "$r/2-trim-the-bundle.md")" = "$(printf '# 2. Trim the bundle.\n\nStill open.')" ]
+  [ ! -e "$p/.nightshift/archive/2026-09-05/receipts/2-trim-the-bundle.md" ]
   [ -f "$r/morning-2026-09-05-abc.md" ]
 }
 
-@test "a ticked item's receipt leaves and an open item's is filed and stays live, and each index says so" {
+@test "a ticked item's receipt leaves, an open item's stays live only, and each index says so" {
   # A shift that ended with work still open: items 1 and 2 are done, item 3 is not. The receipt of
-  # an open item is filed as it stood, and the live one stays exactly where the next shift will keep
-  # writing it.
+  # an open item is not filed: it stays exactly where the next shift will keep writing it.
   p="$(new_project rot-open-receipt)"
   r="$p/.nightshift/receipts"
   mkdir -p "$r"
@@ -530,9 +529,9 @@ closed() { # <project> — the shift ended
   [ -f "$d/morning-2026-09-05-abc.md" ]
   [ ! -f "$r/1-fix-the-resolver.md" ]
   [ ! -f "$r/2-cover-the-parser.md" ]
-  # The open item's live receipt is untouched, and its filed copy is what it said when the shift ended.
+  # The open item's live receipt is untouched and has no filed copy.
   [ "$(cksum <"$r/3-trim-the-bundle.md")" = "$open_before" ]
-  [ "$(cksum <"$d/3-trim-the-bundle.md")" = "$open_before" ]
+  [ ! -e "$d/3-trim-the-bundle.md" ]
 
   # Each index lists what its own folder holds, and the archived one carries the measurements.
   grep -qF '| 3. Trim the bundle. | open |' "$r/README.md"
@@ -542,7 +541,7 @@ closed() { # <project> — the shift ended
   grep -qF '| 1. Fix the resolver. | ticked | **input 100 · cache_write 0 · cache_read 0 · output 20 · reasoning 0** | **10m 0s working** | [./1-fix-the-resolver.md](./1-fix-the-resolver.md) |' \
     "$d/README.md"
   grep -qF '| 2. Cover the parser. | ticked |' "$d/README.md"
-  grep -qF '| 3. Trim the bundle. | open |' "$d/README.md"
+  ! grep -qF 'Trim the bundle' "$d/README.md" || false
   # The shift summary is linked above the table, never listed as an item, and only from the folder
   # that holds it.
   grep -qF 'Shift summary: [morning-2026-09-05-abc.md](./morning-2026-09-05-abc.md)' "$d/README.md"
@@ -688,16 +687,15 @@ REPORT
   grep -qF ': ../../../claude-nightshift/README.md "the same deliverable, by reference"' "$d/shift-report.md"
   grep -qF '(../../../out/build.log)' "$d/shift-report.md"
 
-  # Rewriting changed bytes, so the untouched original is preserved beside the relocated page.
-  [ -f "$d/shift-report.original.md" ]
-  cmp -s "$d/shift-report.original.md" <(sed 's/^$//' "$d/shift-report.original.md")
-  grep -qF '(parking-lot.md#a-live-decision)' "$d/shift-report.original.md"
+  # The repointed page is the only copy filed.
+  [ ! -e "$d/shift-report.original.md" ]
+  [ "$(find "$p/.nightshift/archive" -name '*.original.md' | wc -l | tr -d ' ')" -eq 0 ]
 }
 
 @test "a filed receipt reaches its index, its filed neighbours and what stayed live" {
   # Receipts link to each other by bare name, because they were written side by side. Filed, they
-  # are still side by side, the open item's copy included; a record that was not filed has to be
-  # reached back through the archive.
+  # are still side by side; a record that was not filed, the open item's receipt included, has to
+  # be reached back through the archive.
   p="$(new_project rot-sibling-links)"
   r="$p/.nightshift/receipts"
   mkdir -p "$r"
@@ -727,9 +725,10 @@ REPORT
   ( cd "$d" && [ -f ./2-cover-the-parser.md ] ) || { echo "a filed neighbour is unreachable"; return 1; }
   grep -qF '(1-fix-the-resolver.md)' "$d/2-cover-the-parser.md"
 
-  # The open item's receipt was filed as it stood, so the link names its filed copy.
-  grep -qF '(./3-trim-the-bundle.md)' "$d/1-fix-the-resolver.md"
-  ( cd "$d" && [ -f ./3-trim-the-bundle.md ] ) || { echo "the filed open receipt is unreachable"; return 1; }
+  # The open item's receipt stayed live, so the link climbs back to it.
+  grep -qF '(../../../receipts/3-trim-the-bundle.md)' "$d/1-fix-the-resolver.md"
+  ( cd "$d" && [ -f ../../../receipts/3-trim-the-bundle.md ] ) || { echo "the live open receipt is unreachable"; return 1; }
+  [ ! -e "$d/3-trim-the-bundle.md" ]
   # And a link that already climbed out of receipts/ climbed from there, not from the archive.
   grep -qF '(../../../parking-lot.md)' "$d/1-fix-the-resolver.md"
   ( cd "$d" && [ -f ../../../parking-lot.md ] ) || { echo "the live parking lot is unreachable"; return 1; }
@@ -769,12 +768,13 @@ REPORT
   [ "$(cksum <"$d/shift-report.md")" = "$relocated" ]
   [ -f "$p/.nightshift/shift-report.md" ]
 
-  # And it is the preserved original that establishes the report is the same one, so naming it
-  # closed still retires the live copy.
+  # The live report, repointed for the archive, reads as the filed one, so naming it closed still
+  # retires the live copy, and no second copy is ever written.
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05 --retire shift-report.md
   [ "$status" -eq 0 ]
   [ ! -f "$p/.nightshift/shift-report.md" ]
   [ "$(cksum <"$d/shift-report.md")" = "$relocated" ]
+  [ ! -e "$d/shift-report.original.md" ]
 }
 
 @test "Windows files to the same place, retires the same record and relocates the same links" {
@@ -1030,7 +1030,7 @@ ended_with() {
   [ -f "$1/.nightshift/.ended" ]
 }
 
-@test "an ended shift's whole punch list is filed, and only its contract and open items stay live" {
+@test "an ended shift's contract and ticked items are filed, and only its contract and open items stay live" {
   p="$(new_project punch-filed)"
   ended_with "$p" 9f2c40ab77e51d63 "$PUNCH_BODY"
   d="$(ended_folder "$p")"
@@ -1038,9 +1038,40 @@ ended_with() {
   [ "$status" -eq 0 ]
   f="$p/.nightshift/archive/$d/punch-list.md"
   [[ "$output" == *"filed the punch list as "*"/archive/$d/punch-list.md"* ]] || false
-  # The list exactly as the shift ended: contract, gates, ticked and open items.
-  [ "$(cat "$f")" = "$(printf '%s' "$PUNCH_BODY")" ]
+  # The contract, the gates and the ticked item; the open item is not filed.
+  [ "$(cat "$f")" = "$(printf '# Punch list\n\n## Shift\n\nThe contract.\n\n## Gates\n\n- run checks\n\n## Items\n\n- [x] **1. done.**\n  - its bullet')" ]
   [ "$(cat "$p/.nightshift/punch-list.md")" = "$(printf '# Punch list\n\n## Shift\n\nThe contract.\n\n## Gates\n\n- run checks\n\n## Items\n\n- [ ] **2. open.**')" ]
+}
+
+@test "an item ticked after the shift was filed joins that shift's filed list once, with its receipt" {
+  p="$(new_project punch-later)"
+  ended_with "$p" 9f2c40ab77e51d63 '## Items
+- [x] **1. done.**
+- [ ] **2. open.**
+- [ ] **3. open too.**
+'
+  d="$p/.nightshift/archive/$(ended_folder "$p")"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  printf '# 2. open.\n\nHalf way.\n' >"$r/2-open.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^- \[' "$d/punch-list.md")" -eq 1 ]
+  [ ! -e "$d/receipts/2-open.md" ]
+
+  # Item 2 is finished later: its tick and its receipt are filed into the same shift, once.
+  sed -i.bak 's/^- \[ \] \*\*2\. open\.\*\*$/- [x] **2. open.**/' "$p/.nightshift/punch-list.md"
+  rm -f "$p/.nightshift/punch-list.md.bak"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ "$(grep '^- \[' "$d/punch-list.md")" = "$(printf '%s\n' '- [x] **1. done.**' '- [x] **2. open.**')" ]
+  [ -f "$d/receipts/2-open.md" ]
+  [ ! -e "$r/2-open.md" ]
+  [ "$(grep '^- \[' "$p/.nightshift/punch-list.md")" = '- [ ] **3. open too.**' ]
+  before="$(cksum <"$d/punch-list.md")"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  [ "$(cksum <"$d/punch-list.md")" = "$before" ]
 }
 
 @test "a second shift the same day files its own punch list in its own folder" {
@@ -1064,7 +1095,7 @@ ended_with() {
   [ "$(cat "$p/.nightshift/archive/$second/.shift-id")" = 2222222222222222 ]
 }
 
-@test "a list with only open items is filed as it stood and stays live, and an armed shift's list is never touched" {
+@test "a list with only open items files nothing and stays live, and an armed shift's list is never touched" {
   p="$(new_project punch-none)"
   ended_with "$p" 9f2c40ab77e51d63 '## Items
 - [ ] **1. open.**
@@ -1072,7 +1103,7 @@ ended_with() {
   d="$(ended_folder "$p")"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
   [ "$status" -eq 0 ]
-  [ "$(cat "$p/.nightshift/archive/$d/punch-list.md")" = "$(printf '## Items\n- [ ] **1. open.**')" ]
+  [ ! -e "$p/.nightshift/archive/$d/punch-list.md" ]
   [ "$(cat "$p/.nightshift/punch-list.md")" = "$(printf '## Items\n- [ ] **1. open.**')" ]
 
   q="$(new_project punch-armed)"
@@ -1164,7 +1195,7 @@ review_ended() { # <project> <shift-id> <layout>
   printf 'shiftId=%s\narchiveRoot=archive\narchiveLayout=%s\n' "$2" "$3" >"$1/.nightshift/.ended"
 }
 
-@test "archive files the snag log whole, keeps only its open entries live, and writes one pointer" {
+@test "archive files the snag log's handled entries, keeps only its open entries live, and writes one pointer" {
   p="$(new_project review-snag-only)"
   review_ended "$p" aaaa1111bbbb2222 date
   printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n- still open · looking\n' \
@@ -1172,11 +1203,11 @@ review_ended() { # <project> <shift-id> <layout>
   printf '# Parking Lot\n\n- wait for the owner\n' >"$p/.nightshift/parking-lot.md"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
   [ "$status" -eq 0 ]
-  # Filed where it sits live, as it stood.
+  # Filed where it sits live: its heading and the handled entry, never the open one.
   dest="$p/.nightshift/archive/2026-09-09/snag-log.md"
-  [ "$(cat "$dest")" = "$(printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09\n- still open · looking')" ]
-  # The parking lot's open entry is filed as it stands; with nothing handled it gets no pointer.
-  [ "$(cat "$p/.nightshift/archive/2026-09-09/parking-lot.md")" = "$(printf '# Parking Lot\n\n- wait for the owner')" ]
+  [ "$(cat "$dest")" = "$(printf '# Snag Log\n\n- leak · tests/x.bats · fixed · 2026-09-09')" ]
+  # The parking lot has nothing handled: it files nothing and gets no pointer.
+  [ ! -e "$p/.nightshift/archive/2026-09-09/parking-lot.md" ]
   grep -qF 'Filed: [2026-09-09](archive/2026-09-09/snag-log.md)' \
     "$p/.nightshift/snag-log.md"
   grep -qF 'still open · looking' "$p/.nightshift/snag-log.md"
@@ -1234,8 +1265,11 @@ inbox_bounds() { # <file>
   inbox_bounds "$BATS_TEST_TMPDIR/as-it-stood.md"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-24
   [ "$status" -eq 0 ]
-  # The whole file is filed as it stood; only the answered entries leave the live one.
-  cmp "$BATS_TEST_TMPDIR/as-it-stood.md" "$p/.nightshift/archive/2026-09-24/parking-lot.md"
+  # Only the answered entries are filed, each whole, under the file's heading; they leave the live one.
+  [ "$(cat "$p/.nightshift/archive/2026-09-24/parking-lot.md")" = "$(printf '%s\n' \
+    '# Parking Lot' '' '---' '' \
+    '- Ship the flag on? · answered: yes, behind the setting' '- **Default:** kept off' '' \
+    '  - Rollback: turn it off again' '- Rename the flag? · answered: keep the name')" ]
   grep -qxF '## Tomorrow' "$lot"
   grep -qxF 'A note the owner wrote as a paragraph · answered: later' "$lot"
   grep -qxF -- '- still open' "$lot"
@@ -1277,17 +1311,52 @@ PS
   [ "$(printf '%s\n' "$posix" | sed -n '/^--- strays$/,$p' | grep -c .)" -eq 4 ]
 }
 
-@test "an inbox with only open entries is filed whole without a pointer, and one with none files nothing" {
+@test "an inbox with only open entries files nothing and gets no pointer, and one with none files nothing" {
   p="$(new_project review-noop)"
   review_ended "$p" aaaa1111bbbb2222 date
   printf '# Snag Log\n\n- still open · looking\n' >"$p/.nightshift/snag-log.md"
   printf '# Parking Lot\n\n---\n\n(empty)\n' >"$p/.nightshift/parking-lot.md"
   run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-09
   [ "$status" -eq 0 ]
-  [ "$(cat "$p/.nightshift/archive/2026-09-09/snag-log.md")" = "$(printf '# Snag Log\n\n- still open · looking')" ]
+  [ ! -e "$p/.nightshift/archive/2026-09-09/snag-log.md" ]
   grep -qxF -- '- still open · looking' "$p/.nightshift/snag-log.md"
   ! grep -qF 'Filed:' "$p/.nightshift/snag-log.md" || false
   [ ! -e "$p/.nightshift/archive/2026-09-09/parking-lot.md" ]
+}
+
+@test "an entry answered after the shift was filed joins that shift's filed copy once" {
+  p="$(new_project review-later)"
+  review_ended "$p" aaaa1111bbbb2222 date
+  printf '%s\n' '# Parking Lot' '' '---' '' \
+    '- Q1 · answered: yes' '- Q2 · answered: no' '- Q3 [snags](snag-log.md) · answered: later' \
+    '- Q4 still open' '- Q5 [snags](snag-log.md)' >"$p/.nightshift/parking-lot.md"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-28
+  [ "$status" -eq 0 ]
+  dest="$p/.nightshift/archive/2026-09-28/parking-lot.md"
+  live="$p/.nightshift/parking-lot.md"
+  # The three answered entries are filed with their links repointed; the two open ones stay live only.
+  [ "$(cat "$dest")" = "$(printf '%s\n' '# Parking Lot' '' '---' '' \
+    '- Q1 · answered: yes' '- Q2 · answered: no' '- Q3 [snags](../../snag-log.md) · answered: later')" ]
+  ! grep -qF 'Q4' "$dest" || false
+  grep -qxF -- '- Q4 still open' "$live"
+  grep -qxF -- '- Q5 [snags](snag-log.md)' "$live"
+  [ "$(find "$p/.nightshift/archive" -name '*.original.md' | wc -l | tr -d ' ')" -eq 0 ]
+
+  # Q4 is answered afterwards: it joins the same filed copy and leaves the live file.
+  sed -i.bak 's/^- Q4 still open$/- Q4 still open · answered: rename it/' "$live" && rm -f "$live.bak"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-28
+  [ "$status" -eq 0 ]
+  [ "$(tail -n 1 "$dest")" = '- Q4 still open · answered: rename it' ]
+  [ "$(grep -c '^- Q' "$dest")" -eq 4 ]
+  ! grep -qF 'Q4' "$live" || false
+  grep -qxF -- '- Q5 [snags](snag-log.md)' "$live"
+  [ "$(grep -c '^Filed:' "$live")" -eq 1 ]
+
+  # Nothing new: a further run changes neither side.
+  before="$(cksum <"$dest") $(cksum <"$live")"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-28
+  [ "$status" -eq 0 ]
+  [ "$(cksum <"$dest") $(cksum <"$live")" = "$before" ]
 }
 
 @test "a second archive run does not duplicate the pointer or the filed entry" {
@@ -1349,9 +1418,8 @@ PS
   [ "$(grep -c '^Filed:' "$p/.nightshift/snag-log.md")" -eq 2 ]
   grep -qF 'Filed: [2026-09-09-shift-2](archive/2026-09-09-shift-2/snag-log.md)' \
     "$p/.nightshift/snag-log.md"
-  # The earlier pointer, filed inside the second copy, still reaches the first copy from there.
-  grep -qF 'Filed: [2026-09-09](../../archive/2026-09-09/snag-log.md)' "$p/.nightshift/archive/2026-09-09-shift-2/snag-log.md"
-  ( cd "$p/.nightshift/archive/2026-09-09-shift-2" && [ -f ../../archive/2026-09-09/snag-log.md ] )
+  # Each folder holds its own shift's handled entries and nothing else: no pointer is filed.
+  [ "$(cat "$p/.nightshift/archive/2026-09-09-shift-2/snag-log.md")" = "$(printf '# Snag Log\n\n- second · y · answered · 2026-09-09')" ]
 }
 
 @test "a broken Filed pointer is reported in the snag log" {
@@ -1415,10 +1483,12 @@ current_site() {
   [ "$status" -eq 0 ]
   [ "$(cd -P "${lines[0]}" && pwd)" = "$(cd -P "$d" && pwd)" ]
   # Every record at the path it has live.
-  [ "$(cd "$d" && find . -type f ! -name '*.original.md' | LC_ALL=C sort | paste -sd' ' -)" = \
-    './.shift-id ./inbox/parking-lot.md ./inbox/snag-log.md ./punch-list.md ./receipts/01-done-ab12.md ./receipts/02-open-cd34.md ./receipts/README.md ./run/shift-log.md ./run/usage/marks.tsv' ]
-  grep -qxF -- '- an open one · evidence · 2026-09-25' "$d/inbox/snag-log.md"
-  grep -qxF -- '- [ ] **2. Open.** <!-- id: cd34 -->' "$d/punch-list.md"
+  # Only what is closed, once: no open item's receipt and no second copy of any page.
+  [ "$(cd "$d" && find . -type f | LC_ALL=C sort | paste -sd' ' -)" = \
+    './.shift-id ./inbox/parking-lot.md ./inbox/snag-log.md ./punch-list.md ./receipts/01-done-ab12.md ./receipts/README.md ./run/shift-log.md ./run/usage/marks.tsv' ]
+  ! grep -qF 'an open one' "$d/inbox/snag-log.md" || false
+  ! grep -qF '2. Open.' "$d/punch-list.md" || false
+  grep -qF '1. Done.' "$d/punch-list.md"
   grep -qxF '2026-09-25 a line' "$d/run/shift-log.md"
   # A link to a filed record reads as written; one to a record that stayed live reaches back to it.
   grep -qF '[snags](../inbox/snag-log.md)' "$d/receipts/01-done-ab12.md"

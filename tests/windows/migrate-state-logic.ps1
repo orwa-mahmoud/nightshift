@@ -190,7 +190,6 @@ try {
             'link      punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top',
             'link      staging/drafting-table.md: shift-log.md -> ../run/shift-log.md',
             'link      receipts/a1b2-done.md: ../shift-report.md -> previous-report.md',
-            'original  archive/2026-09-24/drafting-table.original.md keeps the archived file as it was',
             'unknown   owner-notes.txt (no Nightshift file has this name; left in place)',
             'stray     receipt-item.md',
             'marker    state-version 1 -> 2',
@@ -220,7 +219,8 @@ try {
     $rules = Read-Text (Join-Path $ns 'rules.json')
     Expect-True ($rules.Contains('"receipts"') -and -not $rules.Contains('"report"') -and -not $rules.Contains('legacyItemReceipts')) `
         'the settings block has its current name and no retired setting'
-    Expect-True ((Read-Text (Join-Path $ns 'archive/2026-09-24/drafting-table.original.md')) -ceq $archived) 'the archived original is kept as it was'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns 'archive/2026-09-24/drafting-table.original.md'))) 'no second copy is written beside the archived file'
+    Expect-True ((Read-Text (Join-Path $ns 'archive/2026-09-24/drafting-table.md')) -cne $archived) 'the archived file is repointed in place'
     Expect-True ((Read-Text (Join-Path $ns 'staging/drafting-table.md')).Contains('[not a link](parking-lot.md)')) 'fenced text is left as written'
     Expect-True ((Test-Path -LiteralPath (Join-Path $ns 'owner-notes.txt')) -and (Test-Path -LiteralPath (Join-Path $ns 'receipt-item.md'))) `
         'what no layout names stays where it was'

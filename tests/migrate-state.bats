@@ -104,7 +104,6 @@ links_resolve() {
     'link      staging/drafting-table.md: shift-log.md -> ../run/shift-log.md' \
     'link      receipts/a1b2-done.md: ../shift-report.md -> previous-report.md' \
     'link      archive/2026-09-24/drafting-table.md: ../../parking-lot.md -> ../../inbox/parking-lot.md' \
-    'original  archive/2026-09-24/drafting-table.original.md keeps the archived file as it was' \
     'unknown   owner-notes.txt (no Nightshift file has this name; left in place)' \
     'stray     receipt-item.md' \
     'note      a schedule registered before this move still appends to scheduled.log' \
@@ -112,8 +111,9 @@ links_resolve() {
     'Preview only - nothing was changed. Run it again with --apply'; do
     printf '%s\n' "$output" | grep -qF -- "$line" || { echo "missing: $line"; echo "$output"; return 1; }
   done
-  # Text inside a fence or a code span is not a link.
+  # Text inside a fence or a code span is not a link, and an archived file is never copied aside.
   if printf '%s\n' "$output" | grep -q 'not a link\|code\]'; then return 1; fi
+  if printf '%s\n' "$output" | grep -q '^ *original '; then return 1; fi
   [ "$(fingerprint "$ws")" = "$before" ]
 }
 
@@ -147,7 +147,10 @@ links_resolve() {
   done <"$BATS_TEST_TMPDIR/plan"
   [ "$(cat "$ns/state-version")" = 2 ]
   jq -e '.receipts.enabled == true and (has("report") | not) and (.receipts | has("legacyItemReceipts") | not) and .watchMinutes == 10' "$ns/rules.json"
-  cmp -s "$ns/archive/2026-09-24/drafting-table.original.md" "$BATS_TEST_TMPDIR/archived"
+  # The archived file is repointed in place; no second copy is written beside it.
+  [ ! -e "$ns/archive/2026-09-24/drafting-table.original.md" ]
+  ! cmp -s "$ns/archive/2026-09-24/drafting-table.md" "$BATS_TEST_TMPDIR/archived" || false
+  grep -qF '../../inbox/parking-lot.md' "$ns/archive/2026-09-24/drafting-table.md"
   # Fenced text and code spans are left exactly as written.
   grep -qF '[not a link](parking-lot.md)' "$ns/staging/drafting-table.md"
   grep -qF '`[code](snag-log.md)`' "$ns/staging/drafting-table.md"
