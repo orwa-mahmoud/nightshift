@@ -3386,9 +3386,8 @@ function Get-NSMigrationArchiveName {
 }
 
 # Invoke-NSMigrationLinks <workspace> <moves> <plan|apply> - the Markdown files under the state
-# directory with a link that would not resolve once the moves are made. `plan` returns link and
-# original records; `apply` rewrites each file in place, keeping an archived file's original beside
-# it, and throws when a write fails.
+# directory with a link that would not resolve once the moves are made. `plan` returns link
+# records; `apply` rewrites each file in place, and throws when a write fails.
 function Invoke-NSMigrationLinks {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -3397,7 +3396,6 @@ function Invoke-NSMigrationLinks {
     )
     $ns = Join-Path $Workspace '.nightshift'
     $records = New-Object Collections.Generic.List[string]
-    $archiveRoot = Get-NSMigrationArchiveName $Workspace
     $keys = Get-NSMigrationKeys
     # A link is carried by the table, not by this run's moves: every earlier path of a key reaches
     # its current one, so a run that finishes an interrupted one repoints what the first one moved.
@@ -3453,19 +3451,9 @@ function Invoke-NSMigrationLinks {
         }
         $rewritten = Convert-NSMigrationLinks $context (Read-NSMigrationLines $native)
         if ($context.Changes.Count -eq 0) { continue }
-        $orig = ''
-        if ($now.StartsWith($archiveRoot + '/', [StringComparison]::Ordinal)) {
-            $orig = $now.Substring(0, $now.Length - 3) + '.original.md'
-        }
         if ($Mode -ceq 'plan') {
             foreach ($change in $context.Changes) { $records.Add("link`t$now`t$change") }
-            if ($orig.Length -gt 0 -and -not (Test-NSPathEntry (Get-NSMigrationNative $ns $orig))) {
-                $records.Add("original`t$orig")
-            }
             continue
-        }
-        if ($orig.Length -gt 0 -and -not (Test-NSPathEntry (Get-NSMigrationNative $ns $orig))) {
-            Copy-Item -LiteralPath $native -Destination (Get-NSMigrationNative $ns $orig) -ErrorAction Stop
         }
         $null = Write-NSAtomicLines -Path $native -Lines $rewritten
     }
@@ -3502,7 +3490,6 @@ function Test-NSMigrationKnown {
 #   drop <file> <from> <to>          an earlier block whose value is already under its current name
 #   retire <file> <path>             a setting no version reads any more
 #   link <file> <old> <new>          a relative link written again so it resolves
-#   original <file>                  the archived file, kept as it was beside the rewritten one
 #   ignore <file> <line>             a line the receipts repository needs to leave run/ out
 #   unknown <path>                   something that is not a Nightshift file, left in place
 #   stray <path>                     a file an earlier plugin wrote by mistake, left in place
@@ -3747,7 +3734,6 @@ function Format-NSMigrationPlan {
             'drop' { $lines.Add("  drop      ${a}: $b (the same value is already under $c)"); $n++ }
             'retire' { $lines.Add("  retire    ${a}: $b (no version reads it)"); $n++ }
             'link' { $lines.Add("  link      ${a}: $b -> $c"); $n++ }
-            'original' { $lines.Add("  original  $a keeps the archived file as it was") }
             'ignore' { $lines.Add("  ignore    ${a}: add $b"); $n++ }
             'unknown' { $lines.Add("  unknown   $a (no Nightshift file has this name; left in place)") }
             'stray' { $lines.Add("  stray     $a (an earlier Setup copied a template here and nothing reads it; left in place, safe to delete)") }
@@ -6410,16 +6396,189 @@ function Find-NSArchivedShiftPolicy {
     return (Sort-NSOrdinal $found.ToArray())[0]
 }
 
-# Test-NSArchiveSame <source> <filed> - true when the filed copy is this record: the same bytes, or,
-# for a page whose links were repointed when it was filed, the original kept beside it.
+# Split-NSArchiveRecords <text> - the text as awk reads it: one record per line, a CR it carries
+# kept, and a final line with no newline still a record.
+function Split-NSArchiveRecords {
+    param([AllowEmptyString()][string]$Text)
+    if ($Text.Length -eq 0) { return , @() }
+    $parts = $Text.Split([char]"`n")
+    if ($Text.EndsWith("`n", [StringComparison]::Ordinal)) { $parts = $parts[0..($parts.Length - 2)] }
+    return , $parts
+}
+
+# Get-NSArchiveRelocated <text> <filed> <group> <ns> - the text with its relative links repointed
+# for where <filed> sits inside the archive folder <group>: a link to a record filed in <group>
+# stays a sibling link, one to a record that stayed live climbs back to it. Mirrors
+# ns_archive_relocate.
+function Get-NSArchiveRelocated {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Filed,
+        [Parameter(Mandatory = $true)][string]$Group,
+        [Parameter(Mandatory = $true)][string]$Ns
+    )
+    $seps = [char[]]@('/', '\')
+    $groupPath = $Group.TrimEnd($seps)
+    $nsPath = $Ns.TrimEnd($seps)
+    if (-not ($Filed.StartsWith($groupPath + '/', [StringComparison]::Ordinal) -or
+            $Filed.StartsWith($groupPath + '\', [StringComparison]::Ordinal))) {
+        throw 'the filed path is outside its archive folder'
+    }
+    $rel = $Filed.Substring($groupPath.Length).TrimStart($seps).Replace('\', '/')
+    $from = ''
+    if ($rel.Contains('/')) { $from = $rel.Substring(0, $rel.LastIndexOf('/')) }
+    $relative = ([IO.Path]::GetDirectoryName($Filed)).Substring($nsPath.Length).Trim($seps)
+    $back = ''
+    foreach ($component in ($relative -split '[\\/]')) {
+        if (-not [string]::IsNullOrEmpty($component)) { $back = $back + '../' }
+    }
+    $archived = New-Object Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $groupPath -PathType Container) {
+        $groupFull = (Get-Item -LiteralPath $groupPath -Force).FullName.TrimEnd($seps)
+        foreach ($file in @(Get-ChildItem -LiteralPath $groupPath -File -Recurse -Force -ErrorAction SilentlyContinue)) {
+            if ($file.Name.StartsWith('.', [StringComparison]::Ordinal)) { continue }
+            if ($file.Name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
+            $archived.Add($file.FullName.Substring($groupFull.Length).TrimStart($seps).Replace('\', '/'))
+        }
+    }
+    return (Convert-NSReportLinks -Text $Text -Archived $archived.ToArray() -Back $back -Dir $from)
+}
+
+# Get-NSArchiveMissingBlocks <filed> <chunk> - each entry of <chunk> that <filed> does not already
+# hold, as whole lines, each followed by a newline. An entry is a top-level `- ` line with the lines
+# under it, its `Default:` and `Rollback:` lines included; trailing blank lines are not part of it.
+# '' when every entry is already filed; given '', every entry. Mirrors _ns_archive_missing_blocks.
+function Get-NSArchiveMissingBlocks {
+    param([AllowEmptyString()][string]$Filed, [AllowEmptyString()][string]$Chunk)
+    $have = New-Object Text.StringBuilder
+    $null = $have.Append("`n")
+    foreach ($line in (Split-NSArchiveRecords $Filed)) { $null = $have.Append($line.TrimEnd([char]"`r")).Append("`n") }
+    $haveText = $have.ToString()
+    $out = New-Object Text.StringBuilder
+    $buf = ''
+    $flush = {
+        if ($buf -ne '') {
+            $block = $buf.TrimEnd([char]"`n")
+            if (-not $haveText.Contains("`n" + $block + "`n")) { $null = $out.Append($block).Append("`n") }
+        }
+    }
+    foreach ($raw in (Split-NSArchiveRecords $Chunk)) {
+        $line = $raw.TrimEnd([char]"`r")
+        if ($buf -ne '' -and $line -cmatch '^ *(- )?(\*\*)?(Default|Rollback):') { $buf = $buf + $line + "`n"; continue }
+        if ($line.StartsWith('- ', [StringComparison]::Ordinal)) { . $flush; $buf = $line + "`n"; continue }
+        if ($buf -ne '') { $buf = $buf + $line + "`n" }
+    }
+    . $flush
+    return $out.ToString()
+}
+
+# Get-NSArchivePunchItems <closed|ticked> <text> - the punch list read by item: `closed` is the list
+# less its open items, `ticked` only the ticked items, each with the lines under it. Mirrors
+# _ns_archive_items.
+function Get-NSArchivePunchItems {
+    param([Parameter(Mandatory = $true)][string]$Mode, [AllowEmptyString()][string]$Text)
+    $closed = ($Mode -ceq 'closed')
+    $out = New-Object Text.StringBuilder
+    $items = $false; $done = $false; $take = $false; $blanks = ''
+    foreach ($raw in (Split-NSArchiveRecords $Text)) {
+        $line = $raw.TrimEnd([char]"`r")
+        $record = $raw + "`n"
+        if (-not $items) {
+            if ($closed) { $null = $out.Append($record) }
+            if ($line -cmatch '^## Items\s*$') { $items = $true }
+            continue
+        }
+        if ($done) { if ($closed) { $null = $out.Append($record) }; continue }
+        if ($line -cmatch '^## ') {
+            if ($closed) { $null = $out.Append($blanks).Append($record) }
+            $blanks = ''; $done = $true; continue
+        }
+        if ($line -ceq '') { $blanks = $blanks + $record; continue }
+        if ($line -cmatch '^- \[[ xX]\]') {
+            $take = ($line -cmatch '^- \[[xX]\]')
+            if ($take) { if ($closed) { $null = $out.Append($blanks) }; $null = $out.Append($record) }
+            $blanks = ''; continue
+        }
+        if ($line -cmatch '^\s') {
+            if ($take) { $null = $out.Append($blanks).Append($record) }
+            $blanks = ''; continue
+        }
+        $take = $false
+        if ($closed) { $null = $out.Append($blanks).Append($record) }
+        $blanks = ''
+    }
+    if ($closed) { $null = $out.Append($blanks) }
+    return $out.ToString()
+}
+
+# Add-NSArchivePunchItems <filed> <items> - <filed> with <items> added at the end of its `## Items`
+# section. Mirrors _ns_archive_insert_items.
+function Add-NSArchivePunchItems {
+    param([AllowEmptyString()][string]$Filed, [AllowEmptyString()][string]$Items)
+    $out = New-Object Text.StringBuilder
+    $inItems = $false; $added = $false; $blanks = ''
+    foreach ($raw in (Split-NSArchiveRecords $Filed)) {
+        $line = $raw.TrimEnd([char]"`r")
+        $record = $raw + "`n"
+        if (-not $inItems) {
+            $null = $out.Append($record)
+            if ($line -cmatch '^## Items\s*$') { $inItems = $true }
+            continue
+        }
+        if ($added) { $null = $out.Append($record); continue }
+        if ($line -cmatch '^## ') {
+            $null = $out.Append($Items); $added = $true
+            $null = $out.Append($blanks).Append($record); $blanks = ''; continue
+        }
+        if ($line -ceq '') { $blanks = $blanks + $record; continue }
+        $null = $out.Append($blanks).Append($record); $blanks = ''
+    }
+    if (-not $added) { $null = $out.Append($Items) }
+    $null = $out.Append($blanks)
+    return $out.ToString()
+}
+
+# Get-NSArchiveContract <text> - the text down to and including its `## Items` heading.
+function Get-NSArchiveContract {
+    param([AllowEmptyString()][string]$Text)
+    $lines = New-Object Collections.Generic.List[string]
+    foreach ($raw in (Split-NSArchiveRecords $Text)) {
+        $lines.Add($raw)
+        if ($raw -cmatch '^## Items\s*\r?$') { break }
+    }
+    return (($lines.ToArray() -join "`n").TrimEnd([char]"`n"))
+}
+
+# Get-NSArchiveReviewHeading <text> - a review file's heading, down to its `---` rule, or down to its
+# first entry when it has none, without the blank lines that follow it.
+function Get-NSArchiveReviewHeading {
+    param([AllowEmptyString()][string]$Text)
+    $head = ''; $blanks = ''
+    foreach ($raw in (Split-NSArchiveRecords $Text)) {
+        $line = $raw.TrimEnd([char]"`r")
+        if ($line -cmatch '^--- *$') { return ($head + $blanks + $raw + "`n") }
+        if ($line.StartsWith('- ', [StringComparison]::Ordinal)) { break }
+        if ($line -ceq '') { $blanks = $blanks + $raw + "`n"; continue }
+        $head = $head + $blanks + $raw + "`n"; $blanks = ''
+    }
+    return $head
+}
+
+# Test-NSArchiveSame <source> <filed> [<group> <ns>] - true when the filed copy is this record: the
+# same bytes, or, given its archive folder, the source with its links repointed for the archive.
 function Test-NSArchiveSame {
-    param([Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Filed)
+    param(
+        [Parameter(Mandatory = $true)][string]$Source, [Parameter(Mandatory = $true)][string]$Filed,
+        [string]$Group = '', [string]$Ns = ''
+    )
     if (-not (Test-Path -LiteralPath $Source -PathType Leaf) -or -not (Test-Path -LiteralPath $Filed -PathType Leaf)) { return $false }
     if (Test-NSSameFileBytes $Source $Filed) { return $true }
-    if (-not $Filed.EndsWith('.md', [StringComparison]::Ordinal)) { return $false }
-    $original = $Filed.Substring(0, $Filed.Length - 3) + '.original.md'
-    if (-not (Test-Path -LiteralPath $original -PathType Leaf) -or (Test-NSReparsePoint $original)) { return $false }
-    return (Test-NSSameFileBytes $Source $original)
+    if ([string]::IsNullOrEmpty($Group) -or [string]::IsNullOrEmpty($Ns)) { return $false }
+    try {
+        $view = Get-NSArchiveRelocated ([IO.File]::ReadAllText($Source)) $Filed $Group $Ns
+    }
+    catch { return $false }
+    return ($view -ceq [IO.File]::ReadAllText($Filed))
 }
 
 # Test-NSSameFileBytes <a> <b> - true when both files hold exactly the same bytes.
@@ -6434,13 +6593,12 @@ function Test-NSSameFileBytes {
     return $true
 }
 
-# Save-NSArchivePunchList <workspace> <folder> <shift-id> <date> - file the ended shift's punch list
-# into its folder, at the path it has live, then take the ticked items out of the live list. The
-# record is the list exactly as it stood: the contract, the gates, every ticked and every open item.
-# Open items stay live, and so does everything above `## Items`. Returns Status 0 (Path '' when the
-# list holds no item), 2 when it could not write (Reason says why), or 3 when a different list is already filed there
-# while the live one still has ticked items to take out; the live list is then left as it is.
-# Mirrors ns_archive_punch_list.
+# Save-NSArchivePunchList <workspace> <folder> <shift-id> <date> - file the ended shift's ticked
+# items into its folder, at the path the list has live, then take them out of the live list. The
+# filed list is the contract and the ticked items; open items stay live, and only there. A later
+# filing of the same shift adds the items ticked since. Returns Status 0 (Path '' when no item is
+# ticked), 2 when it could not write (Reason says why), or 3 when a list with a different contract
+# is already filed there; the live list is then left as it is. Mirrors ns_archive_punch_list.
 function Save-NSArchivePunchList {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Folder,
@@ -6451,28 +6609,34 @@ function Save-NSArchivePunchList {
     $none = [pscustomobject]@{ Status = 0; Path = ''; Reason = '' }
     if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { return $none }
     $section = @(Get-NSPunchItemsSection $live)
-    if (@($section | Where-Object { $_ -cmatch '^- \[[ xX]\]' }).Count -eq 0) { return $none }
     $ticked = @($section | Where-Object { $_ -cmatch '^- \[[xX]\]' }).Count
+    if ($ticked -eq 0) { return $none }
     $dest = Join-NSPath $Folder ((Get-NSLayoutRelativePath $ns 'punch-list').Replace('/', [IO.Path]::DirectorySeparatorChar))
     if (-not (Test-NSArchiveDest $dest)) { return [pscustomobject]@{ Status = 2; Path = ''; Reason = 'a link or a directory is in the way' } }
     try {
         $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force -ErrorAction Stop
+        $utf8 = New-Object Text.UTF8Encoding($false)
+        $liveText = [IO.File]::ReadAllText($live)
+        # The ticked items as they read from where they are filed: the check that they all landed.
+        $chunk = Get-NSArchiveRelocated (Get-NSArchivePunchItems 'ticked' $liveText) $dest $Folder $ns
+        $view = Get-NSArchiveRelocated (Get-NSArchivePunchItems 'closed' $liveText) $dest $Folder $ns
         if (Test-Path -LiteralPath $dest -PathType Leaf) {
-            if (-not (Test-NSArchiveSame $live $dest)) {
-                # What stayed live after an earlier filing of this shift is not a new record.
-                if ($ticked -eq 0) { return $none }
+            $filedText = [IO.File]::ReadAllText($dest)
+            # Only this shift's list takes more items: the contract filed there must be the live one.
+            if ((Get-NSArchiveContract $view) -cne (Get-NSArchiveContract $filedText)) {
                 return [pscustomobject]@{ Status = 3; Path = ''; Reason = '' }
             }
+            $missing = Get-NSArchiveMissingBlocks $filedText $chunk
+            if ($missing -ne '') { [IO.File]::WriteAllText($dest, (Add-NSArchivePunchItems $filedText $missing), $utf8) }
         }
         else {
-            Copy-Item -LiteralPath $live -Destination $dest -Force -ErrorAction Stop
-            if (-not (Test-NSSameFileBytes $live $dest)) {
-                Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
-                return [pscustomobject]@{ Status = 2; Path = ''; Reason = 'the filed copy does not match the live list' }
-            }
+            [IO.File]::WriteAllText($dest, $view, $utf8)
+        }
+        # Nothing leaves the live list until every ticked item reads back from the filed one.
+        if ((Get-NSArchiveMissingBlocks ([IO.File]::ReadAllText($dest)) $chunk) -ne '') {
+            return [pscustomobject]@{ Status = 2; Path = ''; Reason = 'the filed list does not hold every ticked item' }
         }
         if ($ticked -gt 0) {
-            $utf8 = New-Object Text.UTF8Encoding($false)
             $text = [IO.File]::ReadAllText($live)
             # Each line as awk reads it: its text, with a CR it carries, and always written back with LF.
             $lines = New-Object Collections.Generic.List[string]
@@ -6685,13 +6849,12 @@ function Get-NSArchivePointerLine {
     return ('Filed: [' + $Label + '](' + $RelPath + ')')
 }
 
-# Save-NSArchiveReviewSource <workspace> <parking-lot|snag-log> <folder> <label> - file the live
-# review file whole into the shift's folder, at the path it has live, then take the handled entries
+# Save-NSArchiveReviewSource <workspace> <parking-lot|snag-log> <folder> <label> - file the handled
+# entries of the live review file into the shift's folder, at the path it has live, then take them
 # out of the live file and leave one pointer to the filed copy, written relative to the live file.
-# Entries still open stay live: they wait for the owner. A file with no entry files nothing.
-# Returns 0, or 3 when a different copy is already filed there and the live file still has handled
-# entries to take out; they then stay live, with their answers, for the next filing. Throws when
-# filing fails. Mirrors ns_archive_file_review_source.
+# Entries still open stay live, and only there: they wait for the owner. A file with no handled
+# entry files nothing. A later filing of the same shift adds the entries handled since. Returns 0;
+# throws when filing fails. Mirrors ns_archive_file_review_source.
 function Save-NSArchiveReviewSource {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -6719,25 +6882,32 @@ function Save-NSArchiveReviewSource {
             $keep.AddRange($block.Lines)
         }
     }
+    if ($filed.Count -eq 0) { return 0 }
+    $utf8 = $script:NSUtf8NoBom
+    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
+    $filedText = ($filed.ToArray() -join "`n") + "`n"
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
+    # The handled entries as they read from where they are filed: the check that they all landed.
+    $chunk = Get-NSArchiveRelocated $filedText $dest $Folder $ns
     if (Test-Path -LiteralPath $dest -PathType Leaf) {
-        if (-not (Test-NSArchiveSame $live $dest)) {
-            if ($filed.Count -gt 0) { return 3 }
-            return 0
+        $destText = [IO.File]::ReadAllText($dest)
+        $missing = Get-NSArchiveMissingBlocks $destText $chunk
+        if ($missing -ne '') {
+            if ($destText.Length -gt 0 -and -not $destText.EndsWith("`n", [StringComparison]::Ordinal)) { $destText = $destText + "`n" }
+            [IO.File]::WriteAllText($dest, $destText + $missing, $utf8)
         }
     }
     else {
-        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force
-        Copy-Item -LiteralPath $live -Destination $dest -Force
-        if (-not (Test-NSSameFileBytes $live $dest)) {
-            Remove-Item -LiteralPath $dest -Force -ErrorAction SilentlyContinue
-            throw 'the filed copy does not match the live file'
-        }
+        # A first filing carries the file's heading, down to its `---` rule, above the entries.
+        $first = (Get-NSArchiveReviewHeading ([IO.File]::ReadAllText($live))) + "`n" + (Get-NSArchiveMissingBlocks '' $filedText)
+        [IO.File]::WriteAllText($dest, (Get-NSArchiveRelocated $first $dest $Folder $ns), $utf8)
     }
-    if ($filed.Count -eq 0) { return 0 }
+    # Nothing leaves the live file until every handled entry reads back from the filed one.
+    if ((Get-NSArchiveMissingBlocks ([IO.File]::ReadAllText($dest)) $chunk) -ne '') {
+        throw 'the filed copy does not hold every handled entry'
+    }
     # The pointer is written relative to the file that carries it.
     $rel = ConvertTo-NSRelativeLink (Split-Path -Parent $live) $dest
-    $utf8 = $script:NSUtf8NoBom
-    if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
     $ptr = Get-NSArchivePointerLine $Label $rel
     if (-not ($keep -contains $ptr)) {
         if ($keep.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($keep[$keep.Count - 1])) {

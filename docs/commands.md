@@ -133,7 +133,7 @@ ns.ps1 export-support --project .
 ```
 
 File the shift into its archive folder, laid out like the live site. Name each ticked item's
-receipt with `--retire` so it leaves live storage; an open item's receipt is copied and stays.
+receipt with `--retire` so it leaves live storage; an open item's receipt stays live and is not filed.
 Missing or empty receipts create no dated receipts folder.
 
 ```bash

@@ -1252,58 +1252,190 @@ ns_archive_group_if_claimed() {
   return 0
 }
 
-# ns_archive_same <source> <filed> — status 0 when the filed copy is this record: the same bytes, or,
-# for a page whose links were repointed when it was filed, the original kept beside it.
-ns_archive_same() {
-  [ -f "$1" ] && [ -f "$2" ] || return 1
-  cmp -s "$1" "$2" && return 0
-  [ -f "${2%.md}.original.md" ] && [ ! -L "${2%.md}.original.md" ] && cmp -s "$1" "${2%.md}.original.md"
+# The link-repointing script the archive shares, resolved without dirname.
+_NS_ARCHIVE_LINKS_AWK="${BASH_SOURCE[0]%/*}"
+[ "$_NS_ARCHIVE_LINKS_AWK" != "${BASH_SOURCE[0]}" ] || _NS_ARCHIVE_LINKS_AWK=.
+_NS_ARCHIVE_LINKS_AWK="$_NS_ARCHIVE_LINKS_AWK/../runtime/archive-links.awk"
+
+# ns_archive_relocate <record> <filed> <group> <ns> — print <record> with its relative links
+# repointed for where <filed> sits inside the archive folder <group>. A link to a record filed in
+# <group> stays a sibling link; one to a record that stayed live climbs back to it.
+ns_archive_relocate() {
+  local record="$1" filed="$2" group="$3" ns="$4" rel from back="" archived awk_bin saved_ifs
+  [ -f "$record" ] || return 1
+  case "$filed" in "$group"/*) ;; *) return 1 ;; esac
+  case "$group" in "$ns"/*) ;; *) return 1 ;; esac
+  from="${filed#"$group"/}"
+  case "$from" in */*) from="${from%/*}" ;; *) from="" ;; esac
+  rel="${filed#"$ns"/}"
+  rel="${rel%/*}"
+  saved_ifs="$IFS"
+  IFS=/
+  # shellcheck disable=SC2086
+  set -- $rel
+  IFS="$saved_ifs"
+  for _ in "$@"; do back="../$back"; done
+  archived="$(cd "$group" 2>/dev/null && find . -type f ! -name '.*' ! -name '*.original.md' 2>/dev/null |
+    sed 's#^\./##')"
+  awk_bin="$(ns_rules_awk_bin)" || awk_bin="awk"
+  NS_ARCHIVED_PATHS="$archived" "$awk_bin" -v back="$back" -v dir="$from" \
+    -f "$_NS_ARCHIVE_LINKS_AWK" <"$record"
 }
 
-# ns_archive_punch_list <project-dir> <folder> <shift-id> <date> — file the ended shift's punch list
-# into its folder, at the path it has live, then take the ticked items out of the live list.
+# ns_archive_same <source> <filed> [<group> <ns>] — status 0 when the filed copy is this record: the
+# same bytes, or, given its archive folder, the source with its links repointed for the archive.
+ns_archive_same() {
+  local view
+  [ -f "$1" ] && [ -f "$2" ] || return 1
+  cmp -s "$1" "$2" && return 0
+  [ $# -ge 4 ] || return 1
+  view="$(mktemp)" || return 1
+  if ns_archive_relocate "$1" "$2" "$3" "$4" >"$view" 2>/dev/null && cmp -s "$view" "$2"; then
+    rm -f "$view"
+    return 0
+  fi
+  rm -f "$view"
+  return 1
+}
+
+# _ns_archive_missing_blocks <filed> <chunk> — print each entry of <chunk> that <filed> does not
+# already hold, as whole lines. An entry is a top-level `- ` line with the lines under it, its
+# `Default:` and `Rollback:` lines included; trailing blank lines are not part of it. Prints
+# nothing when every entry is already filed; given /dev/null, prints every entry.
+_ns_archive_missing_blocks() {
+  awk -v filed="$1" '
+    BEGIN {
+      have = "\n"
+      while ((getline l <filed) > 0) { sub(/\r$/, "", l); have = have l "\n" }
+      close(filed)
+    }
+    function flush(   b) {
+      if (buf == "") return
+      b = buf
+      sub(/\n+$/, "", b)
+      if (index(have, "\n" b "\n") == 0) printf "%s\n", b
+      buf = ""
+    }
+    { l = $0; sub(/\r$/, "", l) }
+    buf != "" && l ~ /^ *(- )?(\*\*)?(Default|Rollback):/ { buf = buf l "\n"; next }
+    l ~ /^- / { flush(); buf = l "\n"; next }
+    buf != "" { buf = buf l "\n"; next }
+    END { flush() }
+  ' "$2"
+}
+
+# _ns_archive_items <mode> <list> — the punch list, read by item. `closed` prints the list less its
+# open items; `ticked` prints only the ticked items, each with the lines under it.
+_ns_archive_items() {
+  awk -v mode="$1" '
+    { line = $0; sub(/\r$/, "", line) }
+    !items { if (mode == "closed") print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
+    done { if (mode == "closed") print; next }
+    line ~ /^## / { if (mode == "closed") { printf "%s", blanks; print } blanks = ""; done = 1; next }
+    line == "" { blanks = blanks $0 "\n"; next }
+    line ~ /^- \[[ xX]\]/ {
+      take = (line ~ /^- \[[xX]\]/)
+      if (take) { if (mode == "closed") printf "%s", blanks; print }
+      blanks = ""
+      next
+    }
+    line ~ /^[[:space:]]/ { if (take) { printf "%s", blanks; print } blanks = ""; next }
+    { take = 0; if (mode == "closed") { printf "%s", blanks; print } blanks = "" }
+    END { if (mode == "closed") printf "%s", blanks }
+  ' "$2"
+}
+
+# _ns_archive_insert_items <filed> <items> — <filed> with <items> added at the end of its
+# `## Items` section.
+_ns_archive_insert_items() {
+  awk -v add="$2" '
+    function put(   l) { while ((getline l <add) > 0) print l; close(add); added = 1 }
+    { line = $0; sub(/\r$/, "", line) }
+    !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
+    added { print; next }
+    line ~ /^## / { put(); printf "%s", blanks; blanks = ""; print; next }
+    line == "" { blanks = blanks $0 "\n"; next }
+    { printf "%s", blanks; blanks = ""; print }
+    END { if (!added) put(); printf "%s", blanks }
+  ' "$1"
+}
+
+# ns_archive_punch_list <project-dir> <folder> <shift-id> <date> — file the ended shift's ticked
+# items into its folder, at the path the list has live, then take them out of the live list.
 #
-# The record is the list exactly as it stood: the contract, the gates, every ticked and every open
-# item. Open items stay live, and so does everything above `## Items`. Prints the filed path, or
-# nothing when the list holds no item. Status 3 when a different list is already filed there while
-# the live one still has ticked items to take out; the live list is then left as it is.
+# The filed list is the contract and the ticked items; open items stay live, and only there. A
+# later filing of the same shift adds the items ticked since. Prints the filed path, or nothing
+# when no item is ticked. Status 3 when a list with a different contract is already filed there;
+# the live list is then left as it is.
 ns_archive_punch_list() {
-  local live live_rel dir="$2" dest tmp ticked
-  ns_layout_set live "$1/.nightshift" punch-list
-  ns_layout_rel_set live_rel "$1/.nightshift" punch-list
+  local live live_rel dir="$2" ns="$1/.nightshift" dest tmp ticked view chunk missing
+  ns_layout_set live "$ns" punch-list
+  ns_layout_rel_set live_rel "$ns" punch-list
   [ -f "$live" ] && [ ! -L "$live" ] || return 0
-  ns_punch_items "$live" | grep -q '^- \[[ xX]\]' || return 0
   ticked="$(ns_punch_items "$live" | grep -c '^- \[[xX]\]')"
+  [ "$ticked" -gt 0 ] || return 0
   dest="$dir/$live_rel"
   ns_archive_dest "$dest" || return 2
   mkdir -p "${dest%/*}" 2>/dev/null || return 2
+  view="$(mktemp)" || return 2
+  chunk="$(mktemp)" || { rm -f "$view"; return 2; }
+  missing="$(mktemp)" || { rm -f "$view" "$chunk"; return 2; }
+  # The ticked items as they read from where they are filed: the check that they all landed.
+  if ! { _ns_archive_items ticked "$live" >"$view" &&
+    ns_archive_relocate "$view" "$dest" "$dir" "$ns" >"$chunk" 2>/dev/null; }; then
+    rm -f "$view" "$chunk" "$missing"
+    return 2
+  fi
   if [ -e "$dest" ]; then
-    if ! ns_archive_same "$live" "$dest"; then
-      # What stayed live after an earlier filing of this shift is not a new record.
-      [ "$ticked" -gt 0 ] || return 0
-      return 3
-    fi
-  else
-    if ! { cp "$live" "$dest" 2>/dev/null && cmp -s "$live" "$dest"; }; then
-      rm -f "$dest"
+    # Only this shift's list takes more items: the contract filed there must be the live one.
+    tmp="$(mktemp)" || { rm -f "$view" "$chunk" "$missing"; return 2; }
+    if ! { _ns_archive_items closed "$live" >"$tmp" &&
+      ns_archive_relocate "$tmp" "$dest" "$dir" "$ns" >"$view" 2>/dev/null; }; then
+      rm -f "$tmp" "$view" "$chunk" "$missing"
       return 2
     fi
+    rm -f "$tmp"
+    if [ "$(awk '{ print } /^## Items[[:space:]]*\r?$/ { exit }' "$view")" != \
+      "$(awk '{ print } /^## Items[[:space:]]*\r?$/ { exit }' "$dest")" ]; then
+      rm -f "$view" "$chunk" "$missing"
+      return 3
+    fi
+    _ns_archive_missing_blocks "$dest" "$chunk" >"$missing"
+    if [ -s "$missing" ]; then
+      if ! { _ns_archive_insert_items "$dest" "$missing" >"$view" && mv "$view" "$dest"; }; then
+        rm -f "$view" "$chunk" "$missing"
+        return 2
+      fi
+    fi
+  else
+    tmp="$(mktemp)" || { rm -f "$view" "$chunk" "$missing"; return 2; }
+    if ! { _ns_archive_items closed "$live" >"$tmp" &&
+      ns_archive_relocate "$tmp" "$dest" "$dir" "$ns" >"$view" 2>/dev/null && mv "$view" "$dest"; }; then
+      rm -f "$tmp" "$view" "$chunk" "$missing" "$dest"
+      return 2
+    fi
+    rm -f "$tmp"
   fi
-  if [ "$ticked" -gt 0 ]; then
-    tmp="$live.tmp.$$"
-    awk '
-      { line = $0; sub(/\r$/, "", line) }
-      !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
-      done { print; next }
-      line ~ /^## / { printf "%s", blanks; blanks = ""; done = 1; print; next }
-      line == "" { blanks = blanks $0 "\n"; next }
-      line ~ /^- \[[xX]\]/ { drop = 1; blanks = ""; next }
-      line ~ /^[[:space:]]/ { if (!drop) { printf "%s", blanks; print } blanks = ""; next }
-      { drop = 0; printf "%s", blanks; blanks = ""; print }
-      END { if (!drop) printf "%s", blanks }
-    ' "$live" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
-    mv "$tmp" "$live" || { rm -f "$tmp"; return 2; }
+  # Nothing leaves the live list until every ticked item reads back from the filed one.
+  _ns_archive_missing_blocks "$dest" "$chunk" >"$missing"
+  if [ -s "$missing" ]; then
+    rm -f "$view" "$chunk" "$missing"
+    return 2
   fi
+  rm -f "$view" "$chunk" "$missing"
+  tmp="$live.tmp.$$"
+  awk '
+    { line = $0; sub(/\r$/, "", line) }
+    !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
+    done { print; next }
+    line ~ /^## / { printf "%s", blanks; blanks = ""; done = 1; print; next }
+    line == "" { blanks = blanks $0 "\n"; next }
+    line ~ /^- \[[xX]\]/ { drop = 1; blanks = ""; next }
+    line ~ /^[[:space:]]/ { if (!drop) { printf "%s", blanks; print } blanks = ""; next }
+    { drop = 0; printf "%s", blanks; blanks = ""; print }
+    END { if (!drop) printf "%s", blanks }
+  ' "$live" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
+  mv "$tmp" "$live" || { rm -f "$tmp"; return 2; }
   printf '%s' "$dest"
 }
 
@@ -1375,15 +1507,14 @@ ns_archive_pointer_line() {
   printf 'Filed: [%s](%s)' "$1" "$2"
 }
 
-# ns_archive_file_review_source <project> <parking-lot|snag-log> <folder> <label> — file the live
-# review file whole into the shift's folder, at the path it has live, then take the handled entries
+# ns_archive_file_review_source <project> <parking-lot|snag-log> <folder> <label> — file the handled
+# entries of the live review file into the shift's folder, at the path it has live, then take them
 # out of the live file and leave one pointer to the filed copy, written relative to the live file.
-# Entries still open stay live: they wait for the owner. A file with no entry files nothing.
-# Status 3 when a different copy is already filed there and the live file still has handled entries
-# to take out; they then stay live, with their answers, for the next filing.
+# Entries still open stay live, and only there: they wait for the owner. A file with no handled
+# entry files nothing. A later filing of the same shift adds the entries handled since.
 ns_archive_file_review_source() {
   local project="$1" key="$2" group="$3" label="$4"
-  local ns live rel dest tmp filed ptr prel
+  local ns live rel dest tmp filed chunk view missing ptr prel
   ns="$project/.nightshift"
   ns_layout_set live "$ns" "$key" || return 2
   ns_layout_rel_set rel "$ns" "$key" || return 2
@@ -1396,36 +1527,64 @@ ns_archive_file_review_source() {
   esac
   ns_archive_dest "$dest" || return 2
   tmp="$(mktemp)" || return 2
-  filed="$(mktemp)" || {
-    rm -f "$tmp"
-    return 2
-  }
+  filed="$(mktemp)" || { rm -f "$tmp"; return 2; }
   awk -v op=file -v filed="$filed" -v dispositions="$NS_REVIEW_DISPOSITIONS" -f "$_NS_INBOX_AWK" \
     "$live" >"$tmp" || {
     rm -f "$tmp" "$filed"
     return 2
   }
-  if [ -e "$dest" ]; then
-    if ! ns_archive_same "$live" "$dest"; then
-      if [ -s "$filed" ]; then
-        rm -f "$tmp" "$filed"
-        return 3
-      fi
-      rm -f "$tmp" "$filed"
-      return 0
-    fi
-  elif ! { mkdir -p "${dest%/*}" 2>/dev/null && cp "$live" "$dest" 2>/dev/null && cmp -s "$live" "$dest"; }; then
-    rm -f "$dest" "$tmp" "$filed"
-    return 2
-  fi
   if [ ! -s "$filed" ]; then
     rm -f "$tmp" "$filed"
     return 0
   fi
+  chunk="$(mktemp)" || { rm -f "$tmp" "$filed"; return 2; }
+  view="$(mktemp)" || { rm -f "$tmp" "$filed" "$chunk"; return 2; }
+  missing="$(mktemp)" || { rm -f "$tmp" "$filed" "$chunk" "$view"; return 2; }
+  # The handled entries as they read from where they are filed: the check that they all landed.
+  if ! ns_archive_relocate "$filed" "$dest" "$group" "$ns" >"$chunk" 2>/dev/null ||
+    ! mkdir -p "${dest%/*}" 2>/dev/null; then
+    rm -f "$tmp" "$filed" "$chunk" "$view" "$missing"
+    return 2
+  fi
+  if [ -e "$dest" ]; then
+    _ns_archive_missing_blocks "$dest" "$chunk" >"$missing"
+    if [ -s "$missing" ]; then
+      if ! { { cat "$dest"; [ -z "$(tail -c 1 "$dest")" ] || printf '\n'; cat "$missing"; } >"$view" &&
+        mv "$view" "$dest"; }; then
+        rm -f "$tmp" "$filed" "$chunk" "$view" "$missing"
+        return 2
+      fi
+    fi
+  else
+    # A first filing carries the file's heading, down to its `---` rule, above the entries.
+    if ! { {
+      awk '
+        { l = $0; sub(/\r$/, "", l) }
+        l ~ /^--- *$/ { printf "%s%s", head, blanks; print; done = 1; exit }
+        l ~ /^- / { exit }
+        l == "" { blanks = blanks $0 "\n"; next }
+        { head = head blanks $0 "\n"; blanks = "" }
+        END { if (!done) printf "%s", head }
+      ' "$live"
+      printf '\n'
+      _ns_archive_missing_blocks /dev/null "$filed"
+    } >"$view" && ns_archive_relocate "$view" "$dest" "$group" "$ns" >"$missing" 2>/dev/null &&
+      mv "$missing" "$dest"; }; then
+      rm -f "$tmp" "$filed" "$chunk" "$view" "$missing" "$dest"
+      return 2
+    fi
+  fi
+  # Nothing leaves the live file until every handled entry reads back from the filed one.
+  _ns_archive_missing_blocks "$dest" "$chunk" >"$missing"
+  if [ -s "$missing" ]; then
+    rm -f "$tmp" "$filed" "$chunk" "$view" "$missing"
+    return 2
+  fi
+  rm -f "$filed" "$chunk" "$view" "$missing"
   prel="$(ns_relative_path "${live%/*}" "$dest")"
   case "$prel" in
     '' | /*)
-      rm -f "$tmp" "$filed"
+      rm -f "$tmp"
       return 2
       ;;
   esac
@@ -1436,10 +1595,9 @@ ns_archive_file_review_source() {
     printf '%s\n' "$ptr" >>"$tmp"
   fi
   mv "$tmp" "$live" || {
-    rm -f "$tmp" "$filed"
+    rm -f "$tmp"
     return 2
   }
-  rm -f "$filed"
   return 0
 }
 

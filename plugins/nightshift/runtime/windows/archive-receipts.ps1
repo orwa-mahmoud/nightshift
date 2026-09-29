@@ -6,7 +6,7 @@ param(
 
 # archive-receipts.ps1 - file a shift into its archive folder, laid out the way it was live. The
 # native twin of runtime/archive-receipts.sh, with the same records, the same paths and the same
-# rules: each record is filed as it stands, then the live side keeps only what is still open.
+# rules: only what is closed is filed, once, and the live side keeps only what is still open.
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -142,6 +142,15 @@ $kept = New-Object Collections.Generic.List[string]
 $filed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
 $filedLines = New-Object Collections.Generic.List[string]
 $script:tickedNames = @(Get-NSTickedReceiptNames $workspace)
+# The pages this folder already held before this run. They were repointed when they were filed.
+$preFiled = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+if (Test-Path -LiteralPath $group -PathType Container) {
+    $groupStart = (Get-Item -LiteralPath $group -Force).FullName.TrimEnd([char]'/', [char]'\')
+    foreach ($file in @(Get-ChildItem -LiteralPath $group -File -Recurse -Force -Filter '*.md' -ErrorAction SilentlyContinue)) {
+        if ($file.Name.StartsWith('.', [StringComparison]::Ordinal)) { continue }
+        $null = $preFiled.Add($file.FullName.Substring($groupStart.Length).TrimStart([char]'/', [char]'\').Replace('\', '/'))
+    }
+}
 
 # New-NSArchiveFolder <dir> - create a folder inside the shift's folder, refusing one reached
 # through a reparse point.
@@ -170,7 +179,7 @@ function Copy-NSArchiveRecord {
         return $false
     }
     if (Test-Path -LiteralPath $target) {
-        if (-not (Test-NSArchiveSame $Source $target)) {
+        if (-not (Test-NSArchiveSame $Source $target $group $ns)) {
             # Two different records under one name. Neither is worth losing, so the one already
             # filed stands and the live one stays where it is.
             $kept.Add($base + ' (a different record is already filed under that name)')
@@ -223,8 +232,9 @@ function Copy-NSArchiveFolder {
     else { $script:removed++ }
 }
 
-# The receipts of items nobody finished. They are filed as they stand and stay live, exactly as the
-# box stays in the punch list, so the next shift extends the same file rather than a copy of it.
+# The receipts of items nobody finished. They stay live and are not filed, exactly as the box stays
+# in the punch list, so the next shift extends the same file; they are filed once their item is
+# ticked.
 $openNames = @(Get-NSOpenReceiptNames $workspace)
 if (Test-Path -LiteralPath $src -PathType Container) {
     # The index is a view of a set of receipts, so each side of the move gets its own, written
@@ -236,8 +246,9 @@ if (Test-Path -LiteralPath $src -PathType Container) {
             $_.Name -cne 'README.md'
         })
     foreach ($file in (Sort-NSOrdinal @($files | ForEach-Object { $_.Name }))) {
-        $rule = $(if ($openNames -ccontains $file) { 'keep' } else { 'closed' })
-        $null = Copy-NSArchiveRecord (Join-Path $src $file) $dest $rule
+        # An open item's receipt stays live only, until its item is ticked.
+        if ($openNames -ccontains $file) { continue }
+        $null = Copy-NSArchiveRecord (Join-Path $src $file) $dest 'closed'
     }
 }
 
@@ -299,18 +310,19 @@ if ((Test-Path -LiteralPath $report -PathType Leaf) -and -not (Test-NSReparsePoi
     $null = Copy-NSArchiveRecord $report $group 'closed'
 }
 
-# The parking lot and the snag log, whole, then only their open entries live.
+# The parking lot and the snag log: their handled entries are filed, their open entries stay live.
+# They are written with their links already repointed, so the link pass below leaves them alone.
 $label = Get-NSArchiveReviewLabel (Split-Path -Leaf $group) $shiftId ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
+$repointed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+$null = $repointed.Add((Get-NSArchiveRel 'punch-list'))
 foreach ($key in @('snag-log', 'parking-lot')) {
+    $null = $repointed.Add((Get-NSArchiveRel $key))
     try {
-        $status = Save-NSArchiveReviewSource $workspace $key $group $label
+        $null = Save-NSArchiveReviewSource $workspace $key $group $label
     }
     catch {
         Write-NSArchiveReceiptsError 'archive-receipts: could not file snag or parking records'
         exit 2
-    }
-    if ($status -eq 3) {
-        $kept.Add((Get-NSArchiveRel $key) + " (this shift's copy is already filed; its handled entries stay live for the next filing)")
     }
 }
 try {
@@ -342,10 +354,10 @@ if (Test-Path -LiteralPath $dest -PathType Container) {
     Write-NSArchiveReceiptsIndex -Directory $dest -Date (Get-NSReceiptsShiftDate $workspace) -OpenNames $openNames
 }
 
-# Every filed page keeps working from where it now sits. A record filed beside it is reached
-# exactly as written; one that stayed live is further away and its link says so. Rewriting changes
-# bytes, so the untouched original is kept beside the repointed page, and a page repointed on an
-# earlier filing is left alone. The shift log is raw evidence and stays as written.
+# Every page filed by this run keeps working from where it now sits. A record filed beside it is
+# reached exactly as written; one that stayed live is further away and its link says so. A page
+# filed on an earlier run was repointed then and is left alone. The shift log is raw evidence and
+# stays as written.
 $archivedPaths = New-Object Collections.Generic.List[string]
 $groupFull = (Get-Item -LiteralPath $group -Force).FullName.TrimEnd([char]'/', [char]'\')
 foreach ($file in @(Get-ChildItem -LiteralPath $group -File -Recurse -Force -ErrorAction SilentlyContinue)) {
@@ -359,27 +371,13 @@ foreach ($rel in (Sort-NSOrdinal $archivedPaths.ToArray())) {
     if ($rel -ceq $journalRel) { continue }
     # The index is written into the folder it describes: its links are already siblings there.
     if ($rel -ceq ($receiptsRel + '/README.md')) { continue }
+    if ($preFiled.Contains($rel) -or $repointed.Contains($rel)) { continue }
     $page = Join-NSArchiveRel $group $rel
     if (Test-NSReparsePoint $page) { continue }
-    $original = $page.Substring(0, $page.Length - 3) + '.original.md'
-    if (Test-Path -LiteralPath $original) { continue }
-    $from = ''
-    if ($rel.Contains('/')) { $from = $rel.Substring(0, $rel.LastIndexOf('/')) }
-    $relative = ([IO.Path]::GetDirectoryName($page)).Substring($ns.Length).Trim([char]'/', [char]'\')
-    $back = ''
-    foreach ($component in ($relative -split '[\\/]')) {
-        if (-not [string]::IsNullOrEmpty($component)) { $back = $back + '../' }
-    }
     $source = [IO.File]::ReadAllText($page, $utf8)
-    $relocated = Convert-NSReportLinks -Text $source -Archived $archivedPaths.ToArray() -Back $back -Dir $from
+    $relocated = Get-NSArchiveRelocated $source $page $group $ns
     if ($relocated -ceq $source) { continue }
-    if (Test-NSArchiveDest $original) {
-        [IO.File]::WriteAllText($original, $source, $utf8)
-        [IO.File]::WriteAllText($page, $relocated, $utf8)
-    }
-    else {
-        $kept.Add([IO.Path]::GetFileName($page) + ' (its links were left as written: the original could not be preserved beside a relocated view)')
-    }
+    [IO.File]::WriteAllText($page, $relocated, $utf8)
 }
 
 # The live folder lists the work still in hand - losing its index when there is nothing left

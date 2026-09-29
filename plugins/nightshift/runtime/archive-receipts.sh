@@ -5,13 +5,13 @@
 # receipts/ with its index and the morning page, the parking lot and the snag log where the
 # workspace keeps them (inbox/), and the shift log, the usage readings and the policy where the
 # runtime keeps them (run/). Links between those records keep working as written. A link to one
-# that stays live is repointed back to it, and the untouched original is kept beside the repointed
-# page as <name>.original.md.
+# that stays live is repointed back to it in the filed page, which is the only copy filed.
 #
-# Filing is a copy: each record is filed as it stands, and then the live side keeps only what is
-# still open. The punch list keeps its contract and its open items, receipts/ keeps the receipts of
-# open items, and the parking lot and snag log keep the entries with no disposition, plus one
-# Filed: pointer to the filed copy. Once the shift has ended, its shift log moves and starts again,
+# Only what is closed is filed, and each record lives in one place: the punch list's ticked items
+# with its contract, the receipts of ticked items, and the parking lot's and snag log's entries
+# that carry a disposition. The live side keeps what is still open: the contract and the open
+# items, their receipts, and the entries with no disposition, plus one Filed: pointer to the filed
+# copy. A record leaves live storage only once its filed copy reads back. Once the shift has ended, its shift log moves and starts again,
 # its usage readings and a policy of that shift still live move too, and a usage-<id>/ folder the
 # Start preflight retired moves into the folder of the shift it belongs to. While a shift is armed,
 # or before it has ended, nothing leaves live storage. A leftover shift report leaves only when
@@ -173,8 +173,9 @@ if { [ -e "$root" ] && [ ! -d "$root" ]; } \
   exit 2
 fi
 
-# The receipts of items nobody finished. They are filed as they stand and stay live, exactly as the
-# box stays in the punch list, so the next shift extends the same file rather than a copy of it.
+# The receipts of items nobody finished. They stay live and are not filed, exactly as the box stays
+# in the punch list, so the next shift extends the same file; they are filed once their item is
+# ticked.
 OPEN_NAMES="$(ns_receipts_open_names "$WORKSPACE")
 "
 TICKED_NAMES="$(ns_receipts_ticked_names "$WORKSPACE")
@@ -197,6 +198,9 @@ copied=0
 removed=0
 kept=""
 filed_lines=""
+# The pages this folder already held before this run. They were repointed when they were filed.
+PREFILED="$(cd "$group" 2>/dev/null && find . -type f -name '*.md' ! -name '.*' 2>/dev/null | sed 's#^\./##')
+"
 
 # ensure_dir <dir> — create a folder inside the shift's folder, refusing one reached through a link.
 ensure_dir() {
@@ -230,7 +234,7 @@ file_one() {
     return 0
   fi
   if [ -e "$dir/$base" ]; then
-    if ! ns_archive_same "$f" "$dir/$base"; then
+    if ! ns_archive_same "$f" "$dir/$base" "$group" "$NS"; then
       # Two different records under one name. Neither is worth losing, so the one already filed
       # stands and the live one stays exactly where it is.
       kept="$kept$base (a different record is already filed under that name)
@@ -306,11 +310,9 @@ if [ -d "$src" ]; then
     # The index is a view of a set of receipts, so each side of the move gets its own, written
     # below from what is actually there. The live one is never filed as a record of its own.
     [ "$base" = README.md ] && continue
-    if in_list "$base" "$OPEN_NAMES"; then
-      file_one "$f" "$dest" keep
-    else
-      file_one "$f" "$dest" closed
-    fi
+    # An open item's receipt stays live only, until its item is ticked.
+    in_list "$base" "$OPEN_NAMES" && continue
+    file_one "$f" "$dest" closed
   done <<FIND
 $(find "$src" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
 FIND
@@ -362,30 +364,28 @@ if [ -f "$report" ] && [ ! -L "$report" ]; then
   file_one "$report" "$group" closed
 fi
 
-# The parking lot and the snag log, whole, then only their open entries live.
+# The parking lot and the snag log: their handled entries are filed, their open entries stay live.
+# They are written with their links already repointed, so the link pass below leaves them alone.
 label="$(ns_archive_review_label "${group##*/}" "$shift_id" "$(ns_archive "$WORKSPACE" layout)")"
-for key in snag-log parking-lot; do
-  ns_archive_file_review_source "$WORKSPACE" "$key" "$group" "$label"
-  case "$?" in
-    0) ;;
-    3)
-      ns_layout_rel_set krel "$NS" "$key"
-      kept="$kept$krel (this shift's copy is already filed; its handled entries stay live for the next filing)
+REPOINTED="$PUNCH_REL
 "
-      ;;
-    *)
-      printf 'archive-receipts: could not file snag or parking records\n' >&2
-      exit 2
-      ;;
-  esac
+for key in snag-log parking-lot; do
+  ns_layout_rel_set krel "$NS" "$key"
+  REPOINTED="$REPOINTED$krel
+"
+  ns_archive_file_review_source "$WORKSPACE" "$key" "$group" "$label" || {
+    printf 'archive-receipts: could not file snag or parking records\n' >&2
+    exit 2
+  }
 done
 ns_archive_check_review_pointers "$WORKSPACE" || {
   printf 'archive-receipts: could not check the filed pointers\n' >&2
   exit 2
 }
 
-# The punch list, once the shift has ended: filed whole, then only the contract and the open items
-# live. While it is armed the list is its contract and nothing here touches it.
+# The punch list, once the shift has ended: its contract and ticked items are filed, and the
+# contract and the open items stay live. While it is armed the list is its contract and nothing here
+# touches it.
 if [ "$ROTATE" -eq 1 ]; then
   punch_filed="$(ns_archive_punch_list "$WORKSPACE" "$group" "$shift_id" "$DATE")"
   case "$?" in
@@ -403,40 +403,22 @@ if [ -d "$dest" ]; then
   ns_receipts_write_archive_index "$dest" "$(ns_receipts_shift_date "$WORKSPACE")" "$OPEN_NAMES"
 fi
 
-# Every filed page keeps working from where it now sits. A record filed beside it is reached
-# exactly as written; one that stayed live is further away and its link says so. Rewriting changes
-# bytes, so the untouched original is kept beside the repointed page as <name>.original.md, and a
-# page repointed on an earlier filing is left alone. The shift log is raw evidence and stays as
-# written.
+# Every page filed by this run keeps working from where it now sits. A record filed beside it is
+# reached exactly as written; one that stayed live is further away and its link says so. A page
+# filed on an earlier run was repointed then and is left alone. The shift log is raw evidence and
+# stays as written.
 ARCHIVED_PATHS="$(cd "$group" 2>/dev/null && find . -type f ! -name '.*' ! -name '*.original.md' 2>/dev/null |
   sed 's#^\./##')"
-# rewrite_moved <filed page> <its directory before the move, relative to the state directory>
+# rewrite_moved <filed page>
 rewrite_moved() {
-  local page="$1" from="$2" base original back rel saved_ifs awk_bin
+  local page="$1" base
   [ -f "$page" ] && [ ! -L "$page" ] || return 0
   base="${page##*/}"
-  original="${page%.md}.original.md"
-  [ ! -e "$original" ] || return 0
-  back=""
-  rel="${page#"$NS"/}"
-  rel="${rel%/*}"
-  saved_ifs="$IFS"
-  IFS=/
-  # shellcheck disable=SC2086
-  set -- $rel
-  IFS="$saved_ifs"
-  for _ in "$@"; do back="../$back"; done
-  awk_bin="$(ns_rules_awk_bin)" || awk_bin="awk"
-  if NS_ARCHIVED_PATHS="$ARCHIVED_PATHS" "$awk_bin" -v back="$back" -v dir="$from" \
-    -f "$_here/archive-links.awk" <"$page" >"${page%/*}/.$base.relocated" 2>/dev/null; then
+  if ns_archive_relocate "$page" "$page" "$group" "$NS" >"${page%/*}/.$base.relocated" 2>/dev/null; then
     if cmp -s "$page" "${page%/*}/.$base.relocated"; then
       rm -f "${page%/*}/.$base.relocated"
-    elif ns_archive_dest "$original" && cp "$page" "$original"; then
-      mv "${page%/*}/.$base.relocated" "$page" || rm -f "${page%/*}/.$base.relocated"
     else
-      rm -f "${page%/*}/.$base.relocated"
-      kept="$kept$base (its links were left as written: the original could not be preserved beside a relocated view)
-"
+      mv "${page%/*}/.$base.relocated" "$page" || rm -f "${page%/*}/.$base.relocated"
     fi
   else
     rm -f "${page%/*}/.$base.relocated"
@@ -453,10 +435,9 @@ while IFS= read -r rel; do
   [ "$rel" != "$JOURNAL_REL" ] || continue
   # The index is written into the folder it describes, so its links are already siblings there.
   [ "$rel" != "$RECEIPTS_REL/README.md" ] || continue
-  case "$rel" in
-    */*) rewrite_moved "$group/$rel" "${rel%/*}" ;;
-    *) rewrite_moved "$group/$rel" "" ;;
-  esac
+  in_list "$rel" "$PREFILED" && continue
+  in_list "$rel" "$REPOINTED" && continue
+  rewrite_moved "$group/$rel"
 done <<PAGES
 $ARCHIVED_PATHS
 PAGES
