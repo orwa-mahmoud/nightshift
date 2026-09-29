@@ -436,15 +436,15 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
 }
 
 @test "Windows helpers pair the same receipt and stall token" {
-  grep -qF 'function Get-NSReceiptsDir' "$PSM1"
-  grep -qF 'function Test-NSUsableReceiptsDir' "$PSM1"
+  windows_module_source | grep -qF 'function Get-NSReceiptsDir'
+  windows_module_source | grep -qF 'function Test-NSUsableReceiptsDir'
   grep -qF 'ns_receipts_usable_dir' "$STATE"
-  grep -qF 'function Get-NSReceiptsCount' "$PSM1"
-  grep -qF 'function Get-NSLatestReceipt' "$PSM1"
-  grep -qF 'LastWriteTimeUtc.Ticks' "$PSM1"
+  windows_module_source | grep -qF 'function Get-NSReceiptsCount'
+  windows_module_source | grep -qF 'function Get-NSLatestReceipt'
+  windows_module_source | grep -qF 'LastWriteTimeUtc.Ticks'
   grep -qF '${path%.md}-0.md' "$STATE"
-  grep -qF 'function Get-NSReceiptsFingerprint' "$PSM1"
-  grep -qF 'function Get-NSProgressToken' "$PSM1"
+  windows_module_source | grep -qF 'function Get-NSReceiptsFingerprint'
+  windows_module_source | grep -qF 'function Get-NSProgressToken'
   grep -qF 'Get-NSReceiptsCount' "$DOCTOR_PS1"
   grep -qF 'Get-NSLatestReceipt' "$DOCTOR_PS1"
   grep -qF 'artifact receipts' "$DOCTOR_PS1"

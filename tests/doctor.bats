@@ -713,8 +713,7 @@ RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
   grep -qF 'codex-identity-logic.ps1' "$RUN"
   grep -qF 'Get-NSCodexIdentityKind' "$LOGIC"
   grep -qF 'thread_abc' "$LOGIC"
-  grep -qF 'function Get-NSCodexIdentityKind' \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  windows_module_source | grep -qF 'function Get-NSCodexIdentityKind'
 }
 
 @test "Windows Codex identity kinds match POSIX when pwsh is present" {

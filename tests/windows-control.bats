@@ -7,11 +7,11 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 @test "Windows CI runs the portable Stop/Reset/Purge suite" {
   [ -f "$LOGIC" ]
   grep -qF 'control-logic.ps1' "$RUN"
-  grep -qF 'function Stop-NSShift' "$PSM1"
-  grep -qF 'function Reset-NSShift' "$PSM1"
-  grep -qF 'function Remove-NSNightshiftWorkspace' "$PSM1"
-  grep -qF 'function Test-NSTrustedShiftControl' "$PSM1"
-  grep -qF 'function Get-NSControlStartRefuseReason' "$PSM1"
+  windows_module_source | grep -qF 'function Stop-NSShift'
+  windows_module_source | grep -qF 'function Reset-NSShift'
+  windows_module_source | grep -qF 'function Remove-NSNightshiftWorkspace'
+  windows_module_source | grep -qF 'function Test-NSTrustedShiftControl'
+  windows_module_source | grep -qF 'function Get-NSControlStartRefuseReason'
 }
 
 @test "Windows control logic passes when pwsh is present" {

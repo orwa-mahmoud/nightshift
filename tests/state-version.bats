@@ -274,8 +274,7 @@ RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
   grep -qF 'migrate-state-logic.ps1' "$RUN"
   grep -qF 'refuse    the shift is armed (.shift-armed)' "$LOGIC"
   grep -qF 'marker    state-version 1 -> 2' "$LOGIC"
-  grep -qF 'function Get-NSMigrationPlan' \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  windows_module_source | grep -qF 'function Get-NSMigrationPlan'
 }
 
 @test "Windows migrate-state logic passes when pwsh is present" {

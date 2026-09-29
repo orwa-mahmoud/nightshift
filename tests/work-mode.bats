@@ -171,9 +171,9 @@ call_lib() {
 }
 
 @test "Windows helpers persist and resolve the same two modes" {
-  grep -qF 'function Get-NSWorkMode' "$PSM1"
-  grep -qF 'function Get-NSProposedWorkMode' "$PSM1"
-  grep -qF "ValidateSet('repository', 'artifact')" "$PSM1"
+  windows_module_source | grep -qF 'function Get-NSWorkMode'
+  windows_module_source | grep -qF 'function Get-NSProposedWorkMode'
+  windows_module_source | grep -qF "ValidateSet('repository', 'artifact')"
   # One spelling of the flag; `ns.ps1` translates it.
   grep -qF -- '--mode "$WORK_MODE"' "$SETUP"
 }
@@ -229,11 +229,11 @@ planted_repo() {
   if awk '/^repo_root\(\)/,/^ns_work_target\(\)/' "$GITLIB" | grep -qF '[ -L "${child%/}" ]'; then
     return 1
   fi
-  awk '/function Get-NSProposedWorkMode/,/^function Resolve-NSWorkspaceRoot/' "$PSM1" | grep -qF 'ReparsePoint'
-  awk '/function Resolve-NSWorkTarget/,/^function Write-NSWorkTarget/' "$PSM1" | grep -qF 'ReparsePoint'
-  awk '/function Resolve-NSWorkTarget/,/^function Write-NSWorkTarget/' "$PSM1" | grep -qF 'Test-NSReparsePoint $record'
+  windows_module_source | awk '/function Get-NSProposedWorkMode/,/^function Resolve-NSWorkspaceRoot/' | grep -qF 'ReparsePoint'
+  windows_module_source | awk '/function Resolve-NSWorkTarget/,/^function Write-NSWorkTarget/' | grep -qF 'ReparsePoint'
+  windows_module_source | awk '/function Resolve-NSWorkTarget/,/^function Write-NSWorkTarget/' | grep -qF 'Test-NSReparsePoint $record'
   awk '/^ns_work_mode\(\)/,/^ns_record_work_mode\(\)/' "$PATHS" | grep -qF '[ -L "$record" ]'
-  awk '/function Get-NSWorkMode/,/^function Write-NSWorkMode/' "$PSM1" | grep -qF 'Test-NSReparsePoint'
+  windows_module_source | awk '/function Get-NSWorkMode/,/^function Write-NSWorkMode/' | grep -qF 'Test-NSReparsePoint'
   grep -qF 'symlink work-mode is malformed' "$LOGIC"
   grep -qF 'symlink work-target is unreadable' "$LOGIC"
   grep -qF 'use -Mode artifact for a notes folder that is not a Git repository' \

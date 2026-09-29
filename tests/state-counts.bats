@@ -64,8 +64,8 @@ EOF
 @test "Doctor and Schedule count drafts and orders through the shared helpers" {
   grep -qF 'ns_open_boxes_file' "$STATE"
   grep -qF 'ns_open_drafts' "$STATE"
-  grep -qF 'Get-NSOpenBoxesInFile' "$PSM1"
-  grep -qF 'Get-NSOpenDrafts' "$PSM1"
+  windows_module_source | grep -qF 'Get-NSOpenBoxesInFile'
+  windows_module_source | grep -qF 'Get-NSOpenDrafts'
   for f in "$DOCTOR_SH" "$SCHED_SH"; do
     grep -qF 'ns_open_boxes_file' "$f"
     grep -qF 'ns_open_drafts' "$f"
@@ -89,7 +89,7 @@ RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
   grep -qF 'this is prose, not work' "$LOGIC"
   grep -qF 'Get-NSBoxCounts' "$LOGIC"
   grep -qF 'Get-NSOpenDrafts' "$LOGIC"
-  grep -qF 'function Get-NSBoxCounts' "$PSM1"
+  windows_module_source | grep -qF 'function Get-NSBoxCounts'
   grep -qF 'an unreadable punch list is not counted as zero open' "$LOGIC"
 }
 

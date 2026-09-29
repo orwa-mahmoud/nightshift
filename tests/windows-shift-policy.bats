@@ -3,7 +3,6 @@ load helpers
 LOGIC="$BATS_TEST_DIRNAME/windows/shift-policy-logic.ps1"
 RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
 WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
-MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 
 @test "Windows shift-policy logic suite is registered with run.ps1" {
   [ -f "$LOGIC" ]
@@ -24,12 +23,12 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 @test "the resolver reports every frozen setting with source and expiry" {
   for name in verificationLevel toolingPolicy deadlineEpoch forbiddenCommands \
     protectedDirs neverCommitPatterns expectedEmail stallMax watchMinutes; do
-    grep -qF "'$name'" "$MODULE"
+    windows_module_source | grep -qF "'$name'"
   done
-  grep -qF "'elevation.' + \$category" "$MODULE"
-  grep -qF "\$document['schemaVersion'] = 1" "$MODULE"
-  grep -qF "\$document['settings'] = \$resolution['settings']" "$MODULE"
-  grep -qF "'{0}={1} ({2}, {3})'" "$MODULE"
+  windows_module_source | grep -qF "'elevation.' + \$category"
+  windows_module_source | grep -qF "\$document['schemaVersion'] = 1"
+  windows_module_source | grep -qF "\$document['settings'] = \$resolution['settings']"
+  windows_module_source | grep -qF "'{0}={1} ({2}, {3})'"
 }
 
 @test "Windows shift-policy logic covers every precedence row" {
@@ -54,8 +53,8 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'a plan whose expiry has passed does not bind' "$LOGIC"
   grep -qF 'a null expiry defers to the shift deadline and binds' "$LOGIC"
   grep -qF 'plan.expiry is outside the digest preimage' "$LOGIC"
-  grep -qF "'commands', 'workTarget', 'digest', 'expiry'" "$MODULE"
-  grep -qF 'plan.expiry is checked before the digest, never inside it' "$MODULE"
+  windows_module_source | grep -qF "'commands', 'workTarget', 'digest', 'expiry'"
+  windows_module_source | grep -qF 'plan.expiry is checked before the digest, never inside it'
   grep -qF 'set is refused while the shift is armed' "$LOGIC"
   grep -qF 'archive files the policy at its live path in the shift folder' "$LOGIC"
 }

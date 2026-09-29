@@ -84,7 +84,10 @@ table is the owner's: write it only when the owner asks for it" "$ROOT/nightshif
   plugin="$BATS_TEST_DIRNAME/../plugins/nightshift"
   list="$(bash -c '. "$1"; printf %s "$NS_REVIEW_DISPOSITIONS"' _ "$plugin/lib/lib.sh")"
   [ -n "$list" ]
-  [ "$(sed -n "s/^\$script:NSReviewDispositions = '\(.*\)'\$/\1/p" "$plugin/lib/Nightshift.psm1")" = "$list" ]
+  # The Windows module defines it in one of its parts.
+  module_part="$(grep -l '^\$script:NSReviewDispositions = ' "$plugin"/lib/Nightshift.[0-9][0-9].ps1)"
+  [ "$(printf '%s\n' "$module_part" | wc -l | tr -d ' ')" -eq 1 ]
+  [ "$(sed -n "s/^\$script:NSReviewDispositions = '\(.*\)'\$/\1/p" "$module_part")" = "$list" ]
   want="$(printf '%s\n' "$list" | tr '|' '\n' | sort)"
   for t in parking-lot snag-log; do
     got="$(grep '^\*\*Dispositions:\*\*' "$REF/templates/$t.md" | grep -o '`[^`]*`' | tr -d '`' | sort)"
@@ -97,9 +100,9 @@ table is the owner's: write it only when the owner asks for it" "$ROOT/nightshif
   # The list is written once per runtime; every reader takes it from there.
   run grep -rlF 'rejected-because|accepted-tradeoff' "$plugin"
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | sort)" = "$(printf '%s\n' "$plugin/lib/Nightshift.psm1" "$plugin/lib/state.sh")" ]
+  [ "$(printf '%s\n' "$output" | sort)" = "$(printf '%s\n' "$module_part" "$plugin/lib/state.sh" | sort)" ]
   [ "$(grep -cF 'rejected-because|accepted-tradeoff' "$plugin/lib/state.sh")" -eq 1 ]
-  [ "$(grep -cF 'rejected-because|accepted-tradeoff' "$plugin/lib/Nightshift.psm1")" -eq 1 ]
+  [ "$(grep -cF 'rejected-because|accepted-tradeoff' "$module_part")" -eq 1 ]
 }
 
 @test "an inbox entry is a bullet, an open one waits for the owner, and an answer is appended, never deleted" {

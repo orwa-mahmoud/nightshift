@@ -3,7 +3,6 @@ load helpers
 LOGIC="$BATS_TEST_DIRNAME/windows/provision-recover-logic.ps1"
 RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
 WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
-MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 POSIX="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/provision.sh"
 
 @test "Windows provisioning recovery suite is registered with run.ps1" {
@@ -33,24 +32,24 @@ POSIX="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/provision.sh"
 }
 
 @test "native recovery prints the frozen objects and exit codes" {
-  grep -qF "\$document['detail'] = 'no transaction'" "$MODULE"
-  grep -qF "\$document['rolledBack'] = \$true" "$MODULE"
-  grep -qF "\$document['proven'] = \$true" "$MODULE"
-  grep -qF "\$document['finished'] = \$true" "$MODULE"
-  grep -qF "\$document['malformed'] = \$true" "$MODULE"
-  grep -qF "'malformed transaction: ' + \$field" "$MODULE"
-  grep -qF 'ConvertTo-NSCanonicalJson $Document -Compact' "$MODULE"
+  windows_module_source | grep -qF "\$document['detail'] = 'no transaction'"
+  windows_module_source | grep -qF "\$document['rolledBack'] = \$true"
+  windows_module_source | grep -qF "\$document['proven'] = \$true"
+  windows_module_source | grep -qF "\$document['finished'] = \$true"
+  windows_module_source | grep -qF "\$document['malformed'] = \$true"
+  windows_module_source | grep -qF "'malformed transaction: ' + \$field"
+  windows_module_source | grep -qF 'ConvertTo-NSCanonicalJson $Document -Compact'
 }
 
 @test "the proof details and malformed field names are the frozen strings" {
-  grep -qF "'restored bytes do not match baseline digest: '" "$MODULE"
-  grep -qF "'baseline file missing after restore: '" "$MODULE"
-  grep -qF "'a directory blocks the baseline path: '" "$MODULE"
-  grep -qF "'created path still present: '" "$MODULE"
-  grep -qF "'baseline[\"' + [string]\$rel + '\"]'" "$MODULE"
-  grep -qF "(\$label + '.existed')" "$MODULE"
-  grep -qF "(\$label + '.digest')" "$MODULE"
-  grep -qF "(\$label + '.blob')" "$MODULE"
+  windows_module_source | grep -qF "'restored bytes do not match baseline digest: '"
+  windows_module_source | grep -qF "'baseline file missing after restore: '"
+  windows_module_source | grep -qF "'a directory blocks the baseline path: '"
+  windows_module_source | grep -qF "'created path still present: '"
+  windows_module_source | grep -qF "'baseline[\"' + [string]\$rel + '\"]'"
+  windows_module_source | grep -qF "(\$label + '.existed')"
+  windows_module_source | grep -qF "(\$label + '.digest')"
+  windows_module_source | grep -qF "(\$label + '.blob')"
 }
 
 @test "Windows provisioning logic covers rollback, the proof and the late stages" {
@@ -104,14 +103,14 @@ POSIX="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/provision.sh"
 @test "the Windows seatbelt takes the four verbs and no plan or apply" {
   grep -qF "@('baseline', 'diff', 'rollback', 'recover')" "$WIN/provision.ps1"
   for fn in Invoke-NSProvisionPlan Invoke-NSProvisionApply Get-NSProvisionSkipReasons; do
-    if grep -qF -- "$fn" "$MODULE"; then
+    if windows_module_source | grep -qF -- "$fn"; then
       echo "module still carries $fn"
       return 1
     fi
   done
   # The seatbelt dispatch takes recover and rollback and nothing else.
   for verb in "'plan'" "'apply'"; do
-    if sed -n '/^function Invoke-NSProvisionCommand/,/^}/p' "$MODULE" | grep -qF -- "$verb"; then
+    if windows_module_source | sed -n '/^function Invoke-NSProvisionCommand/,/^}/p' | grep -qF -- "$verb"; then
       echo "the dispatch still branches on $verb"
       return 1
     fi
@@ -124,8 +123,8 @@ POSIX="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/provision.sh"
   grep -qF 'provision-transaction.json cannot be read; Start will refuse to arm' "$WIN/doctor.ps1"
   grep -qF "inspect \$(Get-NSLayoutName \$ns 'provision-transaction') and \$(Get-NSLayoutName \$ns 'provision-baseline')/" "$WIN/doctor.ps1"
   grep -qF 'Doctor never recovers' "$WIN/doctor.ps1"
-  grep -qF "'provision transaction stage='" "$MODULE"
-  grep -qF "'provision-transaction.json is malformed ('" "$MODULE"
+  windows_module_source | grep -qF "'provision transaction stage='"
+  windows_module_source | grep -qF "'provision-transaction.json is malformed ('"
   grep -qF 'Doctor names the stage, the capability and a provable baseline' "$LOGIC"
   grep -qF 'Doctor names a baseline that would not prove' "$LOGIC"
   grep -qF 'Doctor names the malformed field' "$LOGIC"

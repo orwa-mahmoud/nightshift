@@ -85,10 +85,10 @@ WRAPPER="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hardhat.sh"
 }
 
 @test "Windows fence wording is unchanged and the dead-holder reclaim is wired" {
-  grep -qF 'BLOCKED: this shift is being recovered in another process. Wait or issue STOP from a separate session; reopening the recorded conversation stays blocked while that worker holds the lease.' "$PSM1"
-  grep -qF 'BLOCKED: this shift continued in a recovered process. Reopen the recorded conversation before using tools here.' "$PSM1"
-  grep -qF 'function Reclaim-NSLeaseRecorded' "$PSM1"
-  grep -qF 'lease reclaimed by the recorded conversation after a dead recovery attempt' "$PSM1"
+  windows_module_source | grep -qF 'BLOCKED: this shift is being recovered in another process. Wait or issue STOP from a separate session; reopening the recorded conversation stays blocked while that worker holds the lease.'
+  windows_module_source | grep -qF 'BLOCKED: this shift continued in a recovered process. Reopen the recorded conversation before using tools here.'
+  windows_module_source | grep -qF 'function Reclaim-NSLeaseRecorded'
+  windows_module_source | grep -qF 'lease reclaimed by the recorded conversation after a dead recovery attempt'
   grep -qF 'Test-NSTrustedShiftControl' "$HELPER"
   grep -qF 'lease reclaimed by the recorded conversation after a dead recovery attempt' "$LOGIC"
   grep -qF 'a live recovery worker still fences the recorded conversation' "$LOGIC"

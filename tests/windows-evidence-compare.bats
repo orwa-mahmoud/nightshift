@@ -3,7 +3,6 @@ load helpers
 LOGIC="$BATS_TEST_DIRNAME/windows/evidence-compare-logic.ps1"
 RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
 WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
-MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 
 @test "Windows comparison logic suite is registered with run.ps1" {
   [ -f "$LOGIC" ]
@@ -27,7 +26,7 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
     [ ! -e "$WIN/$helper" ]
   done
   for fn in Write-NSEvidenceBaseline Write-NSEvidenceCheckpoint New-NSLifecycleRecord; do
-    if grep -qF "function $fn" "$MODULE"; then
+    if windows_module_source | grep -qF "function $fn"; then
       echo "module still carries $fn"
       return 1
     fi
@@ -36,35 +35,35 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 
 @test "the comparison carries every frozen class and JSON key" {
   for class in new cleared unchanged regressed unavailable rejected-duplicate parked human-only; do
-    grep -qF "'$class'" "$MODULE"
+    windows_module_source | grep -qF "'$class'"
   done
-  grep -qF "\$document['baseline'] = \$Baseline" "$MODULE"
-  grep -qF "\$document['mode'] = \$mode" "$MODULE"
-  grep -qF "\$document['pass'] = \$pass" "$MODULE"
-  grep -qF "\$document['rows'] = \$rows.ToArray()" "$MODULE"
-  grep -qF "\$document['schemaVersion'] = 1" "$MODULE"
-  grep -qF "\$document['summary'] = \$summary" "$MODULE"
-  grep -qF "\$row['id']" "$MODULE"
-  grep -qF "\$row['class']" "$MODULE"
-  grep -qF "\$row['digest']" "$MODULE"
-  grep -qF "\$row['sources']" "$MODULE"
-  grep -qF "\$row['locator']" "$MODULE"
-  grep -qF '| ID | Class | Digest | Sources | Locator |' "$MODULE"
+  windows_module_source | grep -qF "\$document['baseline'] = \$Baseline"
+  windows_module_source | grep -qF "\$document['mode'] = \$mode"
+  windows_module_source | grep -qF "\$document['pass'] = \$pass"
+  windows_module_source | grep -qF "\$document['rows'] = \$rows.ToArray()"
+  windows_module_source | grep -qF "\$document['schemaVersion'] = 1"
+  windows_module_source | grep -qF "\$document['summary'] = \$summary"
+  windows_module_source | grep -qF "\$row['id']"
+  windows_module_source | grep -qF "\$row['class']"
+  windows_module_source | grep -qF "\$row['digest']"
+  windows_module_source | grep -qF "\$row['sources']"
+  windows_module_source | grep -qF "\$row['locator']"
+  windows_module_source | grep -qF '| ID | Class | Digest | Sources | Locator |'
 }
 
 @test "the comparison reads the baseline details it was frozen against" {
-  grep -qF "Get-NSMapValue \$details 'seen'" "$MODULE"
-  grep -qF "Get-NSRecordText \$details 'environmentDigest'" "$MODULE"
-  grep -qF "@('baseline', 'checkpoint')" "$MODULE"
+  windows_module_source | grep -qF "Get-NSMapValue \$details 'seen'"
+  windows_module_source | grep -qF "Get-NSRecordText \$details 'environmentDigest'"
+  windows_module_source | grep -qF "@('baseline', 'checkpoint')"
   grep -qF "the comparison reads the environment digest off the record" "$LOGIC"
   grep -qF "the baseline record carries the baseline domain" "$LOGIC"
 }
 
 @test "the shift policy accepts completionMode and selectedDebt without resolving them" {
-  grep -qF "'completionMode', 'selectedDebt'" "$MODULE"
-  grep -qF "\$script:NSPolicyCompletionModes = @('clear-all', 'no-regression-plus-selected-debt')" "$MODULE"
-  grep -qF 'completionMode: must be one of ' "$MODULE"
-  grep -qF 'selectedDebt: must be an array of finding ids' "$MODULE"
+  windows_module_source | grep -qF "'completionMode', 'selectedDebt'"
+  windows_module_source | grep -qF "\$script:NSPolicyCompletionModes = @('clear-all', 'no-regression-plus-selected-debt')"
+  windows_module_source | grep -qF 'completionMode: must be one of '
+  windows_module_source | grep -qF 'selectedDebt: must be an array of finding ids'
   grep -qF 'resolve does not report completionMode' "$LOGIC"
   grep -qF 'resolve does not report selectedDebt' "$LOGIC"
 }

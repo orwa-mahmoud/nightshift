@@ -3,7 +3,6 @@ load helpers
 LOGIC="$BATS_TEST_DIRNAME/windows/preflight-needs-logic.ps1"
 RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
 WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
-MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 
 @test "Windows preflight-needs logic suite is registered with run.ps1" {
   [ -f "$LOGIC" ]
@@ -19,17 +18,17 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 }
 
 @test "preflight and the guard read the same elevation patterns" {
-  grep -qF 'Get-NSElevationPattern' "$MODULE"
-  grep -qF "NSPolicyElevationPattern['sudo']" "$MODULE"
-  grep -qF "NSPolicyElevationPattern['containers']" "$MODULE"
-  grep -qF "NSPolicyElevationPattern['global-packages']" "$MODULE"
-  grep -qF "NSPolicyElevationPattern['daemons']" "$MODULE"
-  grep -qF "NSPolicyElevationPattern['external-services']" "$MODULE"
-  grep -qF 'sudo|d[o]as' "$MODULE"
-  grep -qF '(docker-compose)[[:space:]]+(up|run|start|build|down|create)' "$MODULE"
-  grep -qF '(docker|podman|nerdctl|colima)[[:space:]]+(run|create|start|build' "$MODULE"
-  grep -qF 'gh[[:space:]]+auth[[:space:]]+login' "$MODULE"
-  grep -qF 'Convert-NSPolicyErePattern' "$MODULE"
+  windows_module_source | grep -qF 'Get-NSElevationPattern'
+  windows_module_source | grep -qF "NSPolicyElevationPattern['sudo']"
+  windows_module_source | grep -qF "NSPolicyElevationPattern['containers']"
+  windows_module_source | grep -qF "NSPolicyElevationPattern['global-packages']"
+  windows_module_source | grep -qF "NSPolicyElevationPattern['daemons']"
+  windows_module_source | grep -qF "NSPolicyElevationPattern['external-services']"
+  windows_module_source | grep -qF 'sudo|d[o]as'
+  windows_module_source | grep -qF '(docker-compose)[[:space:]]+(up|run|start|build|down|create)'
+  windows_module_source | grep -qF '(docker|podman|nerdctl|colima)[[:space:]]+(run|create|start|build'
+  windows_module_source | grep -qF 'gh[[:space:]]+auth[[:space:]]+login'
+  windows_module_source | grep -qF 'Convert-NSPolicyErePattern'
 }
 
 @test "Windows preflight logic covers every shipped signal" {
@@ -60,8 +59,8 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 }
 
 @test "Windows park-needs writes one idempotent entry per gap" {
-  grep -qF 'needs allowance: ' "$MODULE"
-  grep -qF 'worked last if the owner allows it before then' "$MODULE"
+  windows_module_source | grep -qF 'needs allowance: '
+  windows_module_source | grep -qF 'worked last if the owner allows it before then'
   grep -qF 'a second run adds nothing' "$LOGIC"
   grep -qF 'a second run leaves the file byte-identical' "$LOGIC"
   grep -qF 'the file carries exactly one entry per gap' "$LOGIC"
