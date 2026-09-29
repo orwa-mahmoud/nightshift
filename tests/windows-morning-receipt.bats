@@ -4,7 +4,6 @@ LOGIC="$BATS_TEST_DIRNAME/windows/morning-receipt-logic.ps1"
 RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
 WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
 HOOK="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/clock-out-gate.ps1"
-MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 
 @test "Windows morning-receipt logic suite is registered with run.ps1" {
   [ -f "$LOGIC" ]
@@ -20,39 +19,39 @@ MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 }
 
 @test "the receipt renders the eleven sections and the four views" {
-  grep -qF "\$script:NSReceiptSectionTitle['shift'] = '## How it ended'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['usage'] = '## Time and tokens'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['items'] = '## Items'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['review'] = '## Review first'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['interruptions'] = '## Interruptions'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['parked'] = '## Decisions for you'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['snags'] = '## Found but not fixed'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['baseline'] = '## Baseline'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['changed'] = '## What changed'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['unsupported'] = '## Unsupported / unmeasured'" "$MODULE"
-  grep -qF "\$script:NSReceiptSectionTitle['next'] = '## Next step'" "$MODULE"
-  grep -qF "\$script:NSReceiptViewSections['owner'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'baseline', 'changed', 'unsupported', 'next')" "$MODULE"
-  grep -qF "\$script:NSReceiptViewSections['reviewer'] = @('review', 'baseline', 'changed')" "$MODULE"
-  grep -qF "\$script:NSReceiptViewSections['release'] = @('shift', 'changed')" "$MODULE"
-  grep -qF "\$script:NSReceiptViewSections['artifact'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'unsupported', 'next')" "$MODULE"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['shift'] = '## How it ended'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['usage'] = '## Time and tokens'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['items'] = '## Items'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['review'] = '## Review first'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['interruptions'] = '## Interruptions'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['parked'] = '## Decisions for you'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['snags'] = '## Found but not fixed'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['baseline'] = '## Baseline'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['changed'] = '## What changed'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['unsupported'] = '## Unsupported / unmeasured'"
+  windows_module_source | grep -qF "\$script:NSReceiptSectionTitle['next'] = '## Next step'"
+  windows_module_source | grep -qF "\$script:NSReceiptViewSections['owner'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'baseline', 'changed', 'unsupported', 'next')"
+  windows_module_source | grep -qF "\$script:NSReceiptViewSections['reviewer'] = @('review', 'baseline', 'changed')"
+  windows_module_source | grep -qF "\$script:NSReceiptViewSections['release'] = @('shift', 'changed')"
+  windows_module_source | grep -qF "\$script:NSReceiptViewSections['artifact'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'unsupported', 'next')"
 }
 
 @test "section 1 always carries the three honesty lines" {
-  grep -qF "\$script:NSReceiptLabels['verified'] = 'Verified'" "$MODULE"
-  grep -qF "\$script:NSReceiptLabels['disabled'] = 'Disabled by owner'" "$MODULE"
-  grep -qF "\$script:NSReceiptLabels['unavailable'] = 'Unavailable'" "$MODULE"
-  grep -qF "\$script:NSReceiptVerifiedNoneFormat = 'none {0} verification level {1} (owner)'" "$MODULE"
-  grep -qF "\$script:NSReceiptVerifiedMalformedFormat" "$MODULE"
-  grep -qF 'Get-NSMorningReceiptsLine' "$MODULE"
-  grep -qF '[index](./README.md)' "$MODULE"
+  windows_module_source | grep -qF "\$script:NSReceiptLabels['verified'] = 'Verified'"
+  windows_module_source | grep -qF "\$script:NSReceiptLabels['disabled'] = 'Disabled by owner'"
+  windows_module_source | grep -qF "\$script:NSReceiptLabels['unavailable'] = 'Unavailable'"
+  windows_module_source | grep -qF "\$script:NSReceiptVerifiedNoneFormat = 'none {0} verification level {1} (owner)'"
+  windows_module_source | grep -qF "\$script:NSReceiptVerifiedMalformedFormat"
+  windows_module_source | grep -qF 'Get-NSMorningReceiptsLine'
+  windows_module_source | grep -qF '[index](./README.md)'
 }
 
 @test "the clock-out gate writes the receipt at the end, best effort" {
   grep -qF 'Save-NSMorningReceipt' "$HOOK"
   grep -qF 'Write-NSMorningReceiptFile' "$HOOK"
   grep -qF 'never blocks the release' "$HOOK"
-  grep -qF "\$script:NSReceiptFileFormat = 'morning-{0}-{1}.md'" "$MODULE"
-  grep -qF 'Get-NSMorningReceiptPath' "$MODULE"
+  windows_module_source | grep -qF "\$script:NSReceiptFileFormat = 'morning-{0}-{1}.md'"
+  windows_module_source | grep -qF 'Get-NSMorningReceiptPath'
 }
 
 # A record leaves live storage because the shift is closed and its archived copy verified, never

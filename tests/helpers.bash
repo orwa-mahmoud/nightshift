@@ -4,6 +4,13 @@ _TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOKS="$_TEST_ROOT/../plugins/nightshift/hooks"
 RULES_TEMPLATE="$_TEST_ROOT/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
 
+# windows_module_source — the native Windows module as source text: its root and the parts it
+# loads, in load order.
+windows_module_source() {
+  cat "$_TEST_ROOT/../plugins/nightshift/lib/Nightshift.psm1" \
+    "$_TEST_ROOT"/../plugins/nightshift/lib/Nightshift.[0-9][0-9].ps1
+}
+
 # Create an isolated project with its own git repo and a .nightshift dir. Echoes the path.
 # The suite must see only the env a test passes explicitly — a developer's own shell (or a
 # host that feeds settings env into commands) must never leak NIGHTSHIFT_* into fixtures.

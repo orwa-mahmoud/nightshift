@@ -293,8 +293,8 @@ RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
   grep -qF 'symlink punch-list is not open work' "$LOGIC"
   grep -qF 'refuse to delete while the shift is armed' "$LOGIC"
   grep -qF 'if [ ! -d "$ns/$rel" ] || [ -L "$ns/$rel" ]; then' "$ROOT/lib/state.sh"
-  awk '/function Get-NSRetentionEligible/,/^function Invoke-NSRetentionApply/' \
-    "$ROOT/lib/Nightshift.psm1" | grep -qF 'ReparsePoint'
+  windows_module_source | awk '/function Get-NSRetentionEligible/,/^function Invoke-NSRetentionApply/' |
+    grep -qF 'ReparsePoint'
 }
 
 @test "Windows retain-history apply logic passes when pwsh is present" {

@@ -120,9 +120,8 @@ sp() {
 @test "stand-down matches Windows watchman start before kill" {
   # This stopped being documentation when the preflight took it over: a page describing what the
   # helper does can drift from it, and the behaviour is what has to hold.
-  m="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
-  grep -qF 'Test-NSRecordedProcess' "$m"
-  grep -qF 'Stop-Process -Id' "$m"
+  windows_module_source | grep -qF 'Test-NSRecordedProcess'
+  windows_module_source | grep -qF 'Stop-Process -Id'
   # A pid is only killed once it has been matched to the recorded start time: a reused pid is a
   # different process.
   grep -qF 'Test-NSRecordedProcess' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"

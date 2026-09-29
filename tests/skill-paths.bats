@@ -426,9 +426,9 @@ PY
 
   # Status computes none of this any more: the clock and the label are the helper's, and what the
   # skill still holds is the rule that it may not go and derive them itself.
-  module="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
-  grep -qF 'Get-NSUnixTime' "$module"
-  grep -qF 'Get-NSReasonLabel' "$module"
+  lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib"
+  cat "$lib/Nightshift.psm1" "$lib"/Nightshift.[0-9][0-9].ps1 | grep -qF 'Get-NSUnixTime'
+  cat "$lib/Nightshift.psm1" "$lib"/Nightshift.[0-9][0-9].ps1 | grep -qF 'Get-NSReasonLabel'
   grep -qF 'recorded pid' "$SKILLS/status/SKILL.md"
   grep -qF 'watchman pid' "$SKILLS/status/SKILL.md"
   grep -qF 'reimplement liveness' "$SKILLS/status/SKILL.md"

@@ -450,7 +450,9 @@ try {
         'receipt protection removes the mutex identity from the index'
     Assert-True (([IO.File]::ReadAllLines((Join-Path $workspaceNightshift '.git/info/exclude'))) -contains $scopeName) `
         'receipt protection excludes the mutex identity before use'
-    $moduleSource = [IO.File]::ReadAllText($module)
+    # The module's source is its root and the parts it loads, in load order.
+    $moduleSource = [IO.File]::ReadAllText($module) + (@(Get-ChildItem -LiteralPath (Split-Path -Parent $module) -Filter 'Nightshift.??.ps1' |
+        Sort-Object Name | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join '')
     Assert-True ($moduleSource.Contains('"Global\Nightshift-$suffix"')) `
         'named mutexes use the machine-wide Windows namespace'
     Assert-True ($moduleSource.Contains('[Threading.MutexAcl]::Create')) `

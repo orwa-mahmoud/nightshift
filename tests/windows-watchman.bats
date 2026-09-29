@@ -47,9 +47,9 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'ns_session_present' "$OWNERSHIP"
   grep -qF '[ ! -L "$rec" ]' "$OWNERSHIP"
   grep -qF '[ -L "$rec" ] && rm -f "$rec"' "$OWNERSHIP"
-  awk '/function Read-NSSession/,/^function Write-NSSession/' "$PSM1" | grep -qF 'Test-NSReparsePoint $path'
-  awk '/function Claim-NSSession/,/^function Read-NSSession/' "$PSM1" | grep -qF 'Test-NSReparsePoint $path'
-  awk '/function Write-NSSession/,/^function Read-NSLease/' "$PSM1" | grep -qF 'Test-NSReparsePoint $path'
+  windows_module_source | awk '/function Read-NSSession/,/^function Write-NSSession/' | grep -qF 'Test-NSReparsePoint $path'
+  windows_module_source | awk '/function Claim-NSSession/,/^function Read-NSSession/' | grep -qF 'Test-NSReparsePoint $path'
+  windows_module_source | awk '/function Write-NSSession/,/^function Read-NSLease/' | grep -qF 'Test-NSReparsePoint $path'
 }
 
 @test "watchmen skip a symlink watchman pidfile" {
@@ -66,7 +66,7 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   grep -qF 'note clock-out-failed' "$CODEX"
   grep -qF "Write-NSReason \$ns 'clock-out-failed'" "$HELPER"
   grep -qF 'ns_lease_restore_interactive' "$OWNERSHIP"
-  grep -qF 'function Restore-NSLeaseInteractive' "$PSM1"
+  windows_module_source | grep -qF 'function Restore-NSLeaseInteractive'
   grep -qF 'Restore-NSLeaseInteractive $ns' "$HELPER"
   grep -qF 'Release-NSLease $ns' "$HELPER"
   grep -qF 'ns_lease_release' "$OWNERSHIP"

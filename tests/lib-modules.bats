@@ -78,9 +78,10 @@ runtime/evidence.sh" ]
 # never reaches the caller — the command still exits 0, so nothing looks wrong. Two shipped helpers
 # were written that way; the fix in both was to write to the console and return only the code.
 @test "no Windows helper swallows its own output in an exit expression" {
-  local module="$LIB_DIR/Nightshift.psm1"
   local root="$BATS_TEST_DIRNAME/../plugins/nightshift"
   local f last fn hits
+  # The module's functions are defined across its parts; the check reads every one of them.
+  [ "$(cat "$LIB_DIR"/Nightshift.[0-9][0-9].ps1 | grep -c '^function ')" -gt 500 ]
   for f in "$root"/runtime/windows/*.ps1 "$root"/hooks/windows/*.ps1; do
     [ -f "$f" ] || continue
     last="$(grep -vE '^[[:space:]]*($|#)' "$f" | tail -1)"
@@ -90,11 +91,11 @@ runtime/evidence.sh" ]
     esac
     fn="$(printf '%s' "$last" | sed -n 's/^exit (\([A-Za-z][A-Za-z]*-[A-Za-z][A-Za-z]*\).*/\1/p')"
     [ -n "$fn" ] || continue
-    hits="$(awk -v want="function $fn" '
+    hits="$(cat "$LIB_DIR/Nightshift.psm1" "$LIB_DIR"/Nightshift.[0-9][0-9].ps1 | awk -v want="function $fn" '
       $0 ~ "^" want "([[:space:]]|$)" { inside = 1; next }
       inside && /^function / { inside = 0 }
       inside && /Write-Output|Write-Host/ { n++ }
-      END { print n + 0 }' "$module")"
+      END { print n + 0 }')"
     [ "$hits" -eq 0 ] || {
       echo "$(basename "$f") exits on $fn, which writes $hits line(s) to the pipeline"
       return 1

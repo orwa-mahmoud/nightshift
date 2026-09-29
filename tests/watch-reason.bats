@@ -16,8 +16,7 @@ CODES="completed owner-stop owner-disarm stale-pid invalid-session exhausted-ret
 @test "status and Doctor render the same shared reason file" {
   grep -qF 'ns_layout_set WATCH_REASON "$NS" watch-reason' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
   grep -qF 'ns_reason_label' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/status.sh"
-  grep -qF 'Get-NSReasonLabel' \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  cat "$BATS_TEST_DIRNAME/../plugins/nightshift/lib"/Nightshift.[0-9][0-9].ps1 | grep -qF 'Get-NSReasonLabel'
   grep -qF 'ns_reason_code' "$DOCTOR"
   grep -qF 'ns_reason_label' "$DOCTOR"
   grep -qF '.watch-reason' "$DOCTOR_SKILL" || grep -qF 'watchman reason' "$DOCTOR"
@@ -32,10 +31,10 @@ CODES="completed owner-stop owner-disarm stale-pid invalid-session exhausted-ret
 }
 
 @test "Windows reason allow-list matches the shared codes" {
-  psm1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
-  grep -qF 'function Write-NSReason' "$psm1"
+  src="$(cat "$BATS_TEST_DIRNAME/../plugins/nightshift/lib"/Nightshift.[0-9][0-9].ps1)"
+  printf '%s\n' "$src" | grep -qF 'function Write-NSReason'
   for c in $CODES; do
-    grep -qF "'$c'" "$psm1" || { echo "missing in Write-NSReason: $c"; return 1; }
+    printf '%s\n' "$src" | grep -qF "'$c'" || { echo "missing in Write-NSReason: $c"; return 1; }
   done
 }
 
