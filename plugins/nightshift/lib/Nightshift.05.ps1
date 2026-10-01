@@ -133,29 +133,14 @@ function Test-NSLaunchScopeSupported {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope
     )
     if ($HostName -ceq 'codex') {
-        return @('read-only', 'workspace-write', 'danger-full-access') -ccontains $Scope
-    }
-    if ($HostName -ceq 'claude') {
-        return @('dangerously-skip-permissions', 'bypass-permissions') -ccontains $Scope
+        return @('read-only', 'workspace-write') -ccontains $Scope
     }
     return $false
 }
 
-function Test-NSLaunchScopeElevated {
-    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope)
-    return @(
-        'danger-full-access',
-        'workspace-write',
-        'dangerously-skip-permissions',
-        'bypass-permissions',
-        'bypassPermissions'
-    ) -ccontains $Scope
-}
-
 # Get-NSLaunchObserved <host> - the scope this session runs under in the host's own words, and
-# whether the host actually said so, joined by a tab. Only Codex names a session's sandbox.
-# Claude Code and Cursor expose no name for one anywhere a hook can read it, so there is nothing
-# to observe and this reports that rather than inventing a label for it.
+# whether the host actually said so, joined by a tab. This reader observes Codex's sandbox
+# environment and explicit ancestor bypass flags, not effective host permission rules.
 function Get-NSLaunchObserved {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName)
     if ($HostName -ceq 'codex') {
@@ -194,38 +179,16 @@ function Get-NSLaunchObserved {
     return "unknown`tunavailable"
 }
 
-# Get-NSRecoveryEffectiveScope <workspace> <host> - what a revival may actually ask for. The same
-# four answers as the POSIX resolver, decided the same way:
-#
-#   host-default             the owner asked for it by name. No permission argument is passed.
-#   host-grant               the owner wrote it by name.
-#   recorded:<scope>         a scope the host observed and can be asked for again.
-#   unavailable:unrecorded   nothing was recorded to inherit.
-#   unavailable:unreadable   the policy that would have recorded it cannot be read.
-#   unavailable:unsupported:<scope>
-#                            a recorded scope this host has no way to request.
-#
-# The three unavailable answers are refusals. Inheriting means reproducing what the session had;
-# where that cannot be established, falling back to the host's default is a guess about
-# permissions rather than a narrowing, so the caller refuses and says what the owner can do.
+# Get-NSRecoveryEffectiveScope <workspace> <host> - restore a recorded restricted sandbox or
+# use independently configured host defaults. Unknown scopes and legacy broad grants refuse.
 function Get-NSRecoveryEffectiveScope {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
     )
     $configured = Get-NSRecoveryLaunchScope $Workspace
-    if ($configured -ceq 'host-grant') { return 'host-grant' }
-    if ($configured -ceq 'host-default') {
-        $policyState = (Get-NSShiftPolicyState $Workspace)['state']
-        if ($policyState -ceq 'valid') {
-            $recorded = Get-NSPolicyLaunch -Workspace $Workspace -Field 'scope'
-            $provenance = Get-NSPolicyLaunch -Workspace $Workspace -Field 'provenance'
-            if ($provenance -ceq 'observed' -and (Test-NSLaunchScopeElevated $recorded)) {
-                return ('unavailable:narrower:' + $recorded)
-            }
-        }
-        return 'host-default'
-    }
+    if ($configured -ceq 'host-grant') { return 'unavailable:host-grant' }
+    if ($configured -ceq 'host-default') { return 'host-default' }
     $policyState = (Get-NSShiftPolicyState $Workspace)['state']
     if ($policyState -ceq 'absent') { return 'unavailable:unrecorded' }
     if ($policyState -cne 'valid') { return 'unavailable:unreadable' }
@@ -242,6 +205,9 @@ function Get-NSRecoveryEffectiveScope {
 # Empty for a scope that is not a refusal.
 function Get-NSRecoveryRefusal {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope)
+    if ($Scope -ceq 'unavailable:host-grant') {
+        return 'host-grant is no longer supported; configure permissions directly in the host and choose host-default for recovery'
+    }
     if ($Scope -ceq 'unavailable:unrecorded') {
         return 'the host named no scope for the session this shift was started in, so there is nothing to inherit and no way to show a revival would be no broader'
     }
@@ -249,10 +215,7 @@ function Get-NSRecoveryRefusal {
         return 'the policy that records the launch scope cannot be read, so what this shift was started under is unknown'
     }
     if ($Scope -clike 'unavailable:unsupported:*') {
-        return ("the shift was started under '" + $Scope.Substring('unavailable:unsupported:'.Length) + "', which this host has no way to be asked for again")
-    }
-    if ($Scope -clike 'unavailable:narrower:*') {
-        return ("the shift was started under '" + $Scope.Substring('unavailable:narrower:'.Length) + "', so a host-default revival would be too narrow")
+        return ("the shift was started under '" + $Scope.Substring('unavailable:unsupported:'.Length) + "', which Nightshift does not restore automatically")
     }
     return ''
 }

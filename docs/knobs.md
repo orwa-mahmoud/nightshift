@@ -356,25 +356,20 @@ why it exists.
 | `clockOutReminder` | a one-line reminder | The short line. `{item}`, `{open}`, `{ticked}` and `{total}` are filled in; drop any of them and your sentence stands. |
 | `clockOutReminderLimit` | `10` | How many short lines may follow one another before the whole message is sent again regardless. |
 
-`recovery` decides what a session the watchman revives is allowed to do. It never widens what your
-host permits, and it never lifts a rule in this file.
+`recovery` chooses how the watchman launches a replacement session. Nightshift never changes
+host permission settings or adds bypass flags.
 
 | Key | Default | Values |
 |---|---|---|
-| `launchScope` | `inherit-recorded-scope` | Revive with the permissions the shift was started under, as recorded when it armed. `host-grant` starts a revived session with the broad grant documented on that host's page under `references/hosts/`. `host-default` passes no permission argument at all |
+| `launchScope` | `inherit-recorded-scope` | Restore a recorded `read-only` or `workspace-write` Codex sandbox. Missing or unsupported scopes refuse recovery. `host-default` adds no permission arguments and uses the owner's independently configured host permissions. The legacy `host-grant` value refuses recovery |
 
-**A revival never gets more than the session it is replacing had.** The shipped choice reads what
-the shift recorded about itself when it armed and asks for exactly that. Where the host reported no
-scope — or the shift predates the recording — it falls back to the host's own default and says so
-in `shift-log.md`, rather than reaching for the broader grant. A revived Codex session under
-`workspace-write` can edit but not commit, and it reports that rather than widening to make a
-commit possible.
+`host-default` does not promise the original session's permissions: the host applies its current
+configuration. Configure that directly in the host before unattended work. A permission prompt
+or denial can require your attention. Nightshift never widens access to make a commit possible.
 
-`host-grant` is how you say you want the broad grant anyway, and it happens only because you wrote
-it here — a workspace that predates this setting has not chosen it. Whichever scope is in force is
-named on every revival, and a failed revival is retried at the same one, never a broader one.
-Claude Code inherits its own launch in every case. `watchAgent` remains the advanced override for
-the whole command.
+The scope is named in `shift-log.md` on each revival. Failed revivals retry at the same scope.
+`watchAgent` remains the owner-provided override for the whole command; Nightshift adds no
+permission arguments to it.
 
 `archive` decides where finished shift state is filed. Filing copies evidence; Archive separately
 retires live records that finished work no longer needs. `retention` controls pruning old generated

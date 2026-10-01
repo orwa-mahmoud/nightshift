@@ -7,7 +7,7 @@
 # Codex: armed at shift start, it wakes every interval and, only when the site is mid-shift and
 # provably dead quiet, resumes the shift's own conversation —
 #
-#   codex exec resume -c 'sandbox_mode="danger-full-access"' <session-id> "<revival order>"
+#   codex exec resume <session-id> "<revival order>"
 #
 # A persisted .nightshift/run/work-target keeps the resumed session aimed at the same child repository
 # when run state lives in a parent workspace. The command appends to the same rollout the session
@@ -17,16 +17,9 @@
 # Before either spawn, the watchman advances a process lease and passes its generation/nonce to
 # the child. An older Desktop or terminal process on that conversation then loses observed tools.
 #
-# The sandbox grant is the owner's to choose, in rules.json under recovery.launchScope. The
-# shipped host-grant starts a revived session with danger-full-access, because the workspace-write
-# sandbox protects .git — a revived session could edit but never commit (verified live: "Git
-# cannot create .git/index.lock"), and one commit per item IS the contract in repository mode.
-# host-default passes no sandbox argument at all and takes whatever the host gives, which is
-# narrower and may leave a revived session unable to commit. Whichever is in force is named in the
-# shift log on every revival, and a failed rung is retried at the same scope, never a broader one.
-# Artifact mode writes a receipt instead. The fence around that access is
-# nightshift's own guards: the hardhat denies what the owner forbade, in every mode — the same
-# trade Claude Code makes with bypassPermissions.
+# Recovery restores a recorded restricted sandbox or uses independently configured host defaults.
+# It never adds a bypass grant. Missing or unsupported recorded scopes refuse recovery.
+# Each revival logs its scope, and retries keep that scope.
 #
 #   watchman.sh [--project DIR] [--interval MIN] [--agent CMD] [--max-wakes N]
 #
@@ -254,10 +247,7 @@ spawn_fresh() {
       return $?
       ;;
   esac
-  # host-grant, and only host-grant: the owner wrote it in their own file.
-  ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-    CODEX_PROJECT_DIR "$PROJECT" \
-    codex exec -s danger-full-access "$PROMPT_FRESH"
+  return 1
 }
 
 # Set once when a revival is refused because the recorded scope cannot be reproduced. Retrying
@@ -272,8 +262,8 @@ spawn() { # $1 = rung (1|2)
   case "$scope" in
     unavailable:*)
       RECOVERY_REFUSED=1
-      log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
-      log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in $(ns_layout_name "$NS" rules)."
+      log_line "watchman: $(ns_recovery_refusal "$scope"). Recovery cannot restore this configured scope."
+      log_line "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules)."
       note recovery-scope-unavailable
       return 1
       ;;
@@ -298,11 +288,7 @@ spawn() { # $1 = rung (1|2)
             CODEX_PROJECT_DIR "$PROJECT" \
             codex exec resume -c "sandbox_mode=\"${scope#recorded:}\"" "$(sid)" "$PROMPT_RESUME"
           ;;
-        *)
-          ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
-            CODEX_PROJECT_DIR "$PROJECT" \
-            codex exec resume -c 'sandbox_mode="danger-full-access"' "$(sid)" "$PROMPT_RESUME"
-          ;;
+        *) return 1 ;;
       esac
     else
       spawn_fresh "$scope"

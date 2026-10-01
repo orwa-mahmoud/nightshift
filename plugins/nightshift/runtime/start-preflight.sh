@@ -548,7 +548,7 @@ fi
 RECOVERY_SCOPE="$(ns_recovery_effective_scope "$WORKSPACE" "$HOST_NAME" 2>/dev/null)" || RECOVERY_SCOPE=""
 case "$RECOVERY_SCOPE" in
   unavailable:*)
-    warn "recovery $(ns_recovery_refusal "$RECOVERY_SCOPE") - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Set recovery.launchScope to host-default or host-grant in $(ns_layout_name "$NS" rules) to authorize one."
+    warn "recovery $(ns_recovery_refusal "$RECOVERY_SCOPE") - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules) to authorize one."
     ;;
   '') ;;
   *) ok "recovery revival scope $RECOVERY_SCOPE" ;;

@@ -291,31 +291,20 @@ rung_prompt() { # $1 attempt, $2 total attempts this wake
 RECOVERY_REFUSED=0
 
 spawn() { # $1 optionally overrides the agent for this one attempt; $2 the order for its rung
-  local a="${1:-$AGENT}" p="${2:-$PROMPT_RESUME}" rc scope open_before perm=""
+  local a="${1:-$AGENT}" p="${2:-$PROMPT_RESUME}" rc scope open_before
   ns_ensure_work_target_link "$PROJECT" || true
-  # Claude Code names no scope for a session's permissions, so a shift started under the shipped
-  # inherit setting has nothing to inherit and a revival cannot be shown to be no broader than the
-  # original. That is a refusal, not a reason to launch at whatever the host defaults to.
+  # This runtime does not restore Claude permission modes. Recorded scopes refuse; an explicit
+  # host-default choice uses the owner's independently configured host permissions.
   scope="$(ns_recovery_effective_scope "$PROJECT" claude)"
   case "$scope" in
     unavailable:*)
       RECOVERY_REFUSED=1
-      log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
-      log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in $(ns_layout_name "$NS" rules)."
+      log_line "watchman: $(ns_recovery_refusal "$scope"). Recovery cannot restore this configured scope."
+      log_line "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules)."
       note recovery-scope-unavailable
       return 1
       ;;
   esac
-  case "$scope" in
-    host-grant | recorded:dangerously-skip-permissions | recorded:bypass-permissions)
-      perm="--dangerously-skip-permissions"
-      ;;
-  esac
-  if [ -n "$perm" ] && [ "$AGENT_IS_DEFAULT" -eq 1 ]; then
-    case "$a" in
-      claude\ *) a="claude $perm ${a#claude }" ;;
-    esac
-  fi
   log_line "watchman: reviving under launch scope $scope"
   open_before="$(open_boxes)"
   # NIGHTSHIFT_REVIVAL marks the child for the hooks: a revival session ending is never the

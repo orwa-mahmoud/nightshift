@@ -27,10 +27,13 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   done
 }
 
-# The permission mode is what a headless revival inherits. A copy written into a nested code repo
-# grants the project nothing, and the shift discovers it at the first prompt of the night.
-@test "setup writes the permission settings to an absolute path" {
-  grep -qF '$TASK_ROOT/.claude/settings.local.json' "$SETUP"
+@test "setup leaves host permissions to the owner and saves only recovery preferences" {
+  grep -qF 'Never write permission modes,' "$SETUP"
+  grep -qF 'recovery.launchScope' "$SETUP"
+  if grep -qE 'defaultMode|bypassPermissions|Enable frictionless permissions' "$SETUP"; then
+    echo 'Setup still offers a host permission grant'
+    return 1
+  fi
 }
 
 @test "every skill takes the Nightshift directory from the dispatcher, not from a host rule" {
@@ -220,8 +223,7 @@ PY
   grep -qF 'hosts/<host>.md' "$START"
 
   # Each fact is in its own host's file, and in no other host's.
-  for pair in "claude:claude --resume" "claude:\$TASK_ROOT/.claude/settings.local.json" \
-    "claude:\$TASK_ROOT/.claude/settings.json" "codex:codex resume" \
+  for pair in "claude:claude --resume" "codex:codex resume" \
     "codex:danger-full-access" "cursor:agent --resume" \
     "windows:ConvertFrom-Json" "windows:PSObject.Properties.Name"; do
     host="${pair%%:*}"
