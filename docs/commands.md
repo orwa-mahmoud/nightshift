@@ -158,13 +158,11 @@ Native Windows:
 ns.ps1 check-report --project . --report .\report.md --manifest .\sources.tsv --output .\report.md
 ```
 
-**Permissions: the night cannot click Allow.** An unattended shift freezes on a permission prompt,
-and a watchman revival runs headless — a denied tool stays denied. For long runs,
-`bypassPermissions` is the recommended mode, set in the project's `.claude/settings.local.json` so
-revived sessions inherit it (`/nightshift:setup` offers this and writes it on a yes); the narrower
-alternative is pre-allowing the punch list's own tools. nightshift's guards are hooks — they stay
-armed in every permission mode, bypass included. Decline both and a mid-shift prompt costs the
-night; that trade is the owner's.
+**Permissions: the night cannot click Allow.** Configure unattended permissions directly in the
+host before starting. Setup never writes permission modes, allowlists, or approval settings.
+Recovery never adds bypass flags; `recovery.launchScope` chooses recorded restricted sandbox
+inheritance or independently configured host defaults. A prompt or denied tool can leave the
+shift needing your attention. Nightshift's guards stay active within the host's permissions.
 
 On Codex, unattended execution is `-a never` and the sandbox is a separate choice. A contract
 that does not commit runs under `-s workspace-write`, because ticks alone finish a night. Under

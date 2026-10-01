@@ -516,8 +516,8 @@ function Start-NSAgent {
     # between rungs: a failed revival is retried at the same scope, never a broader one.
     $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
     if ($launchScope -clike 'unavailable:*') {
-        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Not reviving at permissions it cannot show are no broader than the original.')
-        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in $(Get-NSLayoutName $ns 'rules')."
+        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Recovery cannot restore this configured scope.')
+        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules')."
         Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
         return $false
     }
@@ -554,10 +554,6 @@ function Start-NSAgent {
         $commandName = 'agent'
         $commandArguments.Add("--resume=$sessionId")
         $commandArguments.Add('-p')
-        if ($launchScope -ceq 'host-grant') {
-            $commandArguments.Add('--trust')
-            $commandArguments.Add('--yolo')
-        }
         $commandArguments.Add('--workspace')
         $commandArguments.Add($workspace)
         $commandArguments.Add($prompt)
@@ -576,9 +572,6 @@ function Start-NSAgent {
             $commandArguments.Add('--continue')
             $commandArguments.Add('-p')
         }
-        if ($launchScope -ceq 'host-grant' -or $launchScope -ceq 'recorded:dangerously-skip-permissions' -or $launchScope -ceq 'recorded:bypass-permissions') {
-            $commandArguments.Insert(0, '--dangerously-skip-permissions')
-        }
         $commandArguments.Add($prompt)
     }
     else {
@@ -591,10 +584,6 @@ function Start-NSAgent {
                 $commandArguments.Add('-c')
                 $commandArguments.Add('sandbox_mode="' + $launchScope.Substring('recorded:'.Length) + '"')
             }
-            elseif ($launchScope -ceq 'host-grant') {
-                $commandArguments.Add('-c')
-                $commandArguments.Add('sandbox_mode="danger-full-access"')
-            }
             $commandArguments.Add($sessionId)
             $commandArguments.Add($prompt)
         }
@@ -603,10 +592,6 @@ function Start-NSAgent {
             if ($launchScope -clike 'recorded:*') {
                 $commandArguments.Add('-s')
                 $commandArguments.Add($launchScope.Substring('recorded:'.Length))
-            }
-            elseif ($launchScope -ceq 'host-grant') {
-                $commandArguments.Add('-s')
-                $commandArguments.Add('danger-full-access')
             }
             $commandArguments.Add($freshPrompt)
         }

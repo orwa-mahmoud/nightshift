@@ -83,23 +83,28 @@ try {
 
     # The owner's own two choices, by name.
     Set-Rules $workspace 'host-grant'
-    Expect-Equal 'host-grant' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'host-grant is the owner writing it'
+    Expect-Equal 'unavailable:host-grant' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'legacy host-grant refuses recovery'
     Set-Rules $workspace 'host-default'
     Expect-Equal 'host-default' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'host-default is available by name'
     Set-Snapshot $workspace 'danger-full-access' 'observed'
-    Expect-Equal 'unavailable:narrower:danger-full-access' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'host-default is refused when the night was broader'
-    Expect-True ((Get-NSRecoveryRefusal 'unavailable:narrower:danger-full-access') -match 'too narrow') 'the narrower refusal names the recorded scope'
+    Expect-Equal 'host-default' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'host-default uses independent host configuration'
     Set-Snapshot $workspace 'unknown' 'unavailable'
 
     # An observed scope the host can be asked for again passes through; one it cannot is refused.
     Copy-Item $template (Join-Path $workspace '.nightshift/rules.json') -Force
-    foreach ($mode in @('read-only', 'workspace-write', 'danger-full-access')) {
+    foreach ($mode in @('read-only', 'workspace-write')) {
         Set-Snapshot $workspace $mode 'observed'
         Expect-Equal ('recorded:' + $mode) (Get-NSRecoveryEffectiveScope $workspace 'codex') "codex can be asked for $mode"
     }
+    foreach ($mode in @('danger-full-access', 'dangerously-skip-permissions', 'bypass-permissions', 'bypassPermissions')) {
+        Set-Snapshot $workspace $mode 'observed'
+        foreach ($hostName in @('codex', 'claude', 'cursor')) {
+            Expect-Equal ('unavailable:unsupported:' + $mode) (Get-NSRecoveryEffectiveScope $workspace $hostName) "$hostName refuses recorded $mode"
+        }
+    }
     Set-Snapshot $workspace 'some-future-mode' 'observed'
     Expect-Equal 'unavailable:unsupported:some-future-mode' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'an unsupported mode is refused, not passed'
-    Expect-True ((Get-NSRecoveryRefusal 'unavailable:unsupported:some-future-mode') -match 'no way to be asked for again') 'the refusal names the mode'
+    Expect-True ((Get-NSRecoveryRefusal 'unavailable:unsupported:some-future-mode') -match 'does not restore automatically') 'the refusal names the mode'
     Set-Snapshot $workspace 'workspace-write' 'unavailable'
     Expect-Equal 'unavailable:unrecorded' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'a scope nobody observed is not inherited'
 
@@ -134,11 +139,10 @@ try {
 }
 finally { Remove-Item -Recurse -Force $workspace }
 
-# The watchman's own argument construction: the broad flags belong to host-grant alone.
+# The watchman never constructs bypass flags or broad sandbox grants.
 $watchman = [IO.File]::ReadAllText((Join-Path $repository 'plugins/nightshift/runtime/windows/watchman.ps1'), $utf8)
 foreach ($fragment in @(
         "Get-NSRecoveryEffectiveScope",
-        "if (`$launchScope -ceq 'host-grant') {",
         "unavailable:*",
         "recovery-scope-unavailable")) {
     if (-not $watchman.Contains($fragment)) {
@@ -150,6 +154,8 @@ if ($watchman.Contains("if (`$launchScope -ne 'host-default')")) {
     $failures.Add('watchman still treats anything but host-default as the broad grant')
     Write-Host 'FAIL: watchman still treats anything but host-default as the broad grant'
 }
+
+Expect-True ($watchman -notmatch '--dangerously-skip-permissions|--yolo|--trust|danger-full-access') 'watchman never adds bypass grants'
 
 if ($failures.Count -gt 0) {
     Write-Host ("recovery-scope-logic failed ($($failures.Count)):")

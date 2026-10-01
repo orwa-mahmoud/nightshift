@@ -247,25 +247,16 @@ spawn() {
     scope="$(ns_recovery_effective_scope "$PROJECT" cursor)"
     case "$scope" in
       unavailable:*)
-        log_line "watchman: $(ns_recovery_refusal "$scope"). Not reviving at permissions it cannot show are no broader than the original."
-        log_line "watchman: the work is untouched. Resume the shift yourself, or name the scope a revival may use by setting recovery.launchScope to host-default or host-grant in $(ns_layout_name "$NS" rules)."
+        log_line "watchman: $(ns_recovery_refusal "$scope"). Recovery cannot restore this configured scope."
+        log_line "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules)."
         note recovery-scope-unavailable
         return 1
         ;;
     esac
     log_line "watchman: reviving under launch scope $scope"
-    # Cursor exposes no name for a session's permissions, so there is nothing to inherit and the
-    # worker takes its own launch: the broad grant is only used when the owner asked for it by
-    # name, and a scope recorded for another host is never passed to this one.
-    if [ "$scope" != host-grant ]; then
-      ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
-        CURSOR_PROJECT_DIR "$PROJECT" \
-        agent --resume="$worker" -p --workspace "$PROJECT" "$prompt"
-    else
-      ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
-        CURSOR_PROJECT_DIR "$PROJECT" \
-        agent --resume="$worker" -p --trust --yolo --workspace "$PROJECT" "$prompt"
-    fi
+    ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
+      CURSOR_PROJECT_DIR "$PROJECT" \
+      agent --resume="$worker" -p --workspace "$PROJECT" "$prompt"
   fi
   rc=$?
   if [ "$rc" -eq 3 ]; then

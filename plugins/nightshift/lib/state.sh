@@ -1677,10 +1677,8 @@ ns_handoff_view() {
   esac
 }
 
-# ns_recovery_launch_scope <project-dir> — the permission scope a revived session starts under.
-# host-grant is the documented grant for the host; host-default adds no permission argument and
-# takes whatever the host gives. Anything else, or an unreadable file, is host-grant: recovery
-# keeps working, and the scope in force is logged either way. The watchman never widens it.
+# ns_recovery_launch_scope <project-dir> — the owner's recovery preference. Legacy host-grant
+# remains readable so the resolver can refuse it explicitly; missing or invalid values inherit.
 ns_recovery_launch_scope() {
   local v=""
   if [ -n "${NIGHTSHIFT_LAUNCH_SCOPE:-}" ]; then
@@ -1716,23 +1714,8 @@ ns_launch_scope_supported() {
   case "$1" in
     codex)
       case "$2" in
-        read-only | workspace-write | danger-full-access) return 0 ;;
+        read-only | workspace-write) return 0 ;;
       esac
-      ;;
-    claude)
-      case "$2" in
-        dangerously-skip-permissions | bypass-permissions) return 0 ;;
-      esac
-      ;;
-  esac
-  return 1
-}
-
-# A recorded observed scope that host-default cannot reproduce.
-ns_launch_scope_elevated() {
-  case "$1" in
-    danger-full-access | workspace-write | dangerously-skip-permissions | bypass-permissions | bypassPermissions)
-      return 0
       ;;
   esac
   return 1
@@ -1742,10 +1725,8 @@ ns_launch_scope_elevated() {
 # words, and whether the host actually told us. Read only from what the host already exposes; a
 # scope nobody reported is unavailable, never assumed.
 #
-# Only Codex names a session's sandbox, and only in its own environment. Claude Code and Cursor
-# hand a session its permissions at launch and expose no name for them anywhere a hook can read,
-# so there is nothing to observe and this says so. Calling that 'inherited' would have been a
-# label for a measurement never taken.
+# This reader observes Codex's sandbox environment and explicit bypass flags in ancestor process
+# arguments. It does not infer a session's effective permission rules from host configuration.
 _ns_scan_process_scope() {
   local pid="$1" hops=0 args
   while [ -n "$pid" ] && [ "$pid" != 0 ] && [ "$pid" != 1 ] && [ "$hops" -lt 16 ]; do
@@ -1784,43 +1765,18 @@ ns_launch_observed() {
   printf 'unknown\tunavailable'
 }
 
-# ns_recovery_effective_scope <project-dir> <host> — what a revival may actually ask for.
-#
-# The shipped choice inherits the scope the shift was started under, so recovery reproduces the
-# session rather than improving on it. Nothing here ever widens what the original session had — an
-# owner who wants the documented broad grant writes host-grant in their own file, and that is the
-# only way it happens.
-#
-# There are four answers, and the caller logs the one it got:
-#
-#   host-default      the owner asked for it, or no scope was ever recorded. No permission
-#                     argument is passed and the host decides. This is the baseline, not a proof
-#                     that it is narrower than the original session — no host reports enough for
-#                     that claim, and it is not made.
-#   host-grant        the owner wrote it by name. Only ever from their own file.
-#   recorded:<scope>  the shift recorded a scope the host observed and can be asked for again.
-#   unavailable:<s>   a scope was recorded that this host has no way to request. A revival would
-#                     run at some other scope, so the caller refuses rather than guess.
+# ns_recovery_effective_scope <project-dir> <host> — restore a recorded restricted sandbox or
+# use independently configured host defaults. Unknown scopes and legacy broad grants refuse.
+# host-default is an explicit choice, not a claim to reproduce the original session's scope.
 ns_recovery_effective_scope() {
   local configured recorded provenance
   configured="$(ns_recovery_launch_scope "$1")"
   case "$configured" in
     host-grant)
-      printf 'host-grant'
+      printf 'unavailable:host-grant'
       return 0
       ;;
     host-default)
-      _ns_policy_load_shift "$1"
-      case "$NS_POLICY_SHIFT_STATE" in
-        ok)
-          recorded="$(ns_policy_launch "$1" scope 2>/dev/null)" || recorded=""
-          provenance="$(ns_policy_launch "$1" provenance 2>/dev/null)" || provenance=""
-          if [ "$provenance" = observed ] && [ -n "$recorded" ] && ns_launch_scope_elevated "$recorded"; then
-            printf 'unavailable:narrower:%s' "$recorded"
-            return 0
-          fi
-          ;;
-      esac
       printf 'host-default'
       return 0
       ;;
@@ -1854,6 +1810,9 @@ ns_recovery_effective_scope() {
 # Status 1 for a scope that is not a refusal.
 ns_recovery_refusal() {
   case "$1" in
+    unavailable:host-grant)
+      printf 'host-grant is no longer supported; configure permissions directly in the host and choose host-default for recovery'
+      ;;
     unavailable:unrecorded)
       printf 'the host named no scope for the session this shift was started in, so there is nothing to inherit and no way to show a revival would be no broader'
       ;;
@@ -1861,10 +1820,7 @@ ns_recovery_refusal() {
       printf 'the policy that records the launch scope cannot be read, so what this shift was started under is unknown'
       ;;
     unavailable:unsupported:*)
-      printf "the shift was started under '%s', which this host has no way to be asked for again" "${1#unavailable:unsupported:}"
-      ;;
-    unavailable:narrower:*)
-      printf "the shift was started under '%s', so a host-default revival would be too narrow" "${1#unavailable:narrower:}"
+      printf "the shift was started under '%s', which Nightshift does not restore automatically" "${1#unavailable:unsupported:}"
       ;;
     *) return 1 ;;
   esac

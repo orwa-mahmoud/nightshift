@@ -950,7 +950,7 @@ STUB
   [ ! -f "$P/.nightshift/agent-calls" ]
   grep -qE '^- \[ \]' "$P/.nightshift/punch-list.md"
   grep -qF 'nothing to inherit' "$P/.nightshift/shift-log.md"
-  grep -qF 'recovery.launchScope to host-default or host-grant' "$P/.nightshift/shift-log.md"
+  grep -qF 'recovery.launchScope to host-default' "$P/.nightshift/shift-log.md"
   [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = recovery-scope-unavailable ]
 }
 
@@ -1462,11 +1462,11 @@ STUB
           source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools"}' \
     >"$p/.nightshift/shift-policy.json"
 
-  # The broad grant happens only because the owner wrote it in their own file.
+  # A legacy broad grant refuses rather than enabling bypass.
   jq '.recovery.launchScope = "host-grant"' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
-  [ "$output" = host-grant ]
+  [ "$output" = unavailable:host-grant ]
 
   # And the narrowest choice is still available by name.
   jq '.recovery.launchScope = "host-default"' "$p/.nightshift/rules.json" >"$p/r.json"
@@ -1474,15 +1474,13 @@ STUB
   run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
   [ "$output" = host-default ]
 
-  # host-default is too narrow when the night recorded a broader observed scope.
+  # An explicit host-default choice uses the host configuration, even after a broader session.
   jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
           source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools",
           launchScope: "danger-full-access", launchProvenance: "observed"}' \
     >"$p/.nightshift/shift-policy.json"
   run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
-  [ "$output" = "unavailable:narrower:danger-full-access" ]
-  run bash -c '. "$1"; ns_recovery_refusal unavailable:narrower:danger-full-access' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
-  printf '%s' "$output" | grep -qF 'too narrow'
+  [ "$output" = host-default ]
 }
 
 @test "a workspace that predates the setting is not read as having chosen the broad grant" {
@@ -1526,11 +1524,20 @@ STUB
   printf '%s' "$output" | grep -qF "'some-future-mode'"
 
   # Only the modes codex actually takes pass through to a flag.
-  for m in read-only workspace-write danger-full-access; do
+  for m in read-only workspace-write; do
     jq --arg m "$m" '.launchScope = $m' "$p/.nightshift/shift-policy.json" >"$p/pol.json"
     mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
     run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
     [ "$output" = "recorded:$m" ] || { echo "$m -> $output"; return 1; }
+  done
+
+  for m in danger-full-access dangerously-skip-permissions bypass-permissions bypassPermissions; do
+    jq --arg m "$m" '.launchScope = $m' "$p/.nightshift/shift-policy.json" >"$p/pol.json"
+    mv "$p/pol.json" "$p/.nightshift/shift-policy.json"
+    for h in codex claude cursor; do
+      run bash -c '. "$1"; ns_recovery_effective_scope "$2" "$3"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p" "$h"
+      [ "$output" = "unavailable:unsupported:$m" ] || { echo "$h/$m -> $output"; return 1; }
+    done
   done
 
   # Claude and Cursor name no scope at all, so a recorded one is never handed to them.
@@ -1549,9 +1556,8 @@ STUB
   grep -qF 'unavailable:*' "$codex"
   grep -qF 'RECOVERY_REFUSED=1' "$codex"
   grep -qF 'recovery-scope-unavailable' "$codex"
-  grep -qF 'recovery.launchScope to host-default or host-grant' "$codex"
-  # The broad grant is reachable only from the owner writing host-grant.
-  awk '/^spawn_fresh\(\)/, /^}/' "$codex" | grep -qF 'host-grant, and only host-grant'
+  grep -qF 'recovery.launchScope to host-default' "$codex"
+  if grep -qF 'danger-full-access' "$codex"; then return 1; fi
 }
 
 @test "the Codex and Cursor revivals ask for the scope rather than assuming one" {
@@ -1566,8 +1572,7 @@ STUB
   grep -qF 'recorded:*' "$codex"
   grep -qF 'Get-NSRecoveryEffectiveScope' "$win"
   grep -qF 'reviving under launch scope' "$win"
-  # Windows resolves the same four answers, so the broad flags are behind host-grant by name.
-  grep -qF "-ceq 'host-grant'" "$win"
+  if grep -qE -- '--dangerously-skip-permissions|--yolo|--trust|danger-full-access' "$win"; then return 1; fi
   grep -qF 'unavailable:*' "$win"
   # And Windows CI runs the resolver suite that proves it, rather than assuming parity.
   logic="$BATS_TEST_DIRNAME/windows/recovery-scope-logic.ps1"

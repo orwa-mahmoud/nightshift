@@ -1563,12 +1563,8 @@ function Merge-NSShiftBlockDefaults {
 # Get-NSShiftBlock <workspace> - the shift object of the owner rules file, or $null.
 # Get-NSRecoveryLaunchScope <workspace> - the scope the owner chose, as written.
 #
-# host-grant is the documented broad grant for the host and only ever comes from the owner
-# writing it. host-default adds no permission argument and takes whatever the host gives.
-# Everything else - the shipped default, an absent key, an unreadable or malformed file - is
-# inherit-recorded-scope, which resolves against what the shift actually recorded. Falling back
-# to the broad grant because a file could not be read would hand out permissions on a parse
-# error, so it never happens here.
+# Legacy host-grant remains readable so recovery can refuse it explicitly. host-default uses
+# independently configured host permissions; missing or invalid values inherit recorded scope.
 function Get-NSRecoveryLaunchScope {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_LAUNCH_SCOPE)) {
