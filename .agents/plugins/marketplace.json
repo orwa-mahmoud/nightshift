@@ -4,7 +4,7 @@
   "plugins": [
     {
       "name": "nightshift",
-      "description": "Keep long Codex runs on task across compaction, resume, interruptions, and unattended coding shifts.",
+      "description": "Keep long Codex runs on task across compaction, resume, interruptions, and unattended coding shifts, and leave a receipt for every item with its tokens and time.",
       "source": { "source": "local", "path": "./plugins/nightshift" },
       "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
       "category": "Productivity"

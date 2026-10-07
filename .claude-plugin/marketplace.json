@@ -13,7 +13,7 @@
       "source": "./plugins/nightshift",
       "strict": true,
       "displayName": "nightshift",
-      "description": "Keep long Claude Code runs on task: enforce the punch list, park questions, preserve progress, recover crashes, and run product or quality shifts until done.",
+      "description": "Keep long Claude Code runs on task: enforce the punch list, park questions, recover crashes, run product or quality shifts until done, and leave a receipt for every item with its tokens and time.",
       "category": "workflow",
       "tags": [
         "autonomous",
