@@ -44,7 +44,7 @@ foreach ($dir in @((Split-Path -Parent $output), (Split-Path -Parent $log))) {
 $logFrom = [long]0
 if (Test-Path -LiteralPath $log -PathType Leaf) { $logFrom = (Get-Item -LiteralPath $log).Length }
 [IO.File]::AppendAllText($output, ('{0} - start-watchman: launching the {1} watchman for {2}' -f
-        (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $HostName, $workspace) + [Environment]::NewLine, $utf8)
+        (Get-NSLocalNow -Seconds), $HostName, $workspace) + [Environment]::NewLine, $utf8)
 $outputFrom = @([IO.File]::ReadAllLines($output)).Count
 
 # Every record the watchman writes, and the message of the error that ends it, is appended to the

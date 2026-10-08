@@ -856,13 +856,11 @@ function Get-NSHandoffBlock {
     return $block
 }
 
-# Get-NSReceiptUtcStamp <epoch> - that moment in UTC to the second, zone included.
-function Get-NSReceiptUtcStamp {
+# Get-NSReceiptLocalStamp <epoch> - that moment in this machine's local time to the second, with its UTC
+# offset (Get-NSLocalTime).
+function Get-NSReceiptLocalStamp {
     param([AllowEmptyString()][string]$Epoch)
-    $e = 0L
-    if ($Epoch -cnotmatch '^[0-9]+$' -or -not [long]::TryParse($Epoch, [ref]$e)) { return '' }
-    $utc = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
-    return $utc.AddSeconds($e).ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+    return (Get-NSLocalTime $Epoch -Seconds)
 }
 
 # Get-NSReceiptEndedEpoch <nightshift-dir> - when the clock-out gate wrote .ended, or ''.
@@ -1308,7 +1306,7 @@ function Get-NSReceiptContext {
     $started = $createdAt
     $since = $createdAt
     if ($marks.Length -gt 0) {
-        $armed = Get-NSReceiptUtcStamp ([string]$marks[0].Epoch)
+        $armed = Get-NSReceiptLocalStamp ([string]$marks[0].Epoch)
         if ($armed.Length -gt 0) {
             $started = $armed
             $since = '@' + [string]$marks[0].Epoch
@@ -1319,7 +1317,7 @@ function Get-NSReceiptContext {
     $context['shiftDay'] = $(if ($started -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}') { $started.Substring(0, 10) } else { '' })
     $endedEpoch = Get-NSReceiptEndedEpoch $ns
     $context['endedEpoch'] = $endedEpoch
-    $context['ended'] = Get-NSReceiptUtcStamp $endedEpoch
+    $context['ended'] = Get-NSReceiptLocalStamp $endedEpoch
 
     $counts = Get-NSBoxCounts $context['punch']
     $context['ticked'] = [int]$counts.Ticked
@@ -1507,8 +1505,8 @@ function Get-NSReceiptUsageLines {
         foreach ($pause in $pauses) { $paused += [long]$pause.Seconds }
         $work = $wall - $paused
         if ($work -lt 0) { $work = 0 }
-        $lines.Add(('- Span: {0} {1} {2}' -f (Get-NSReceiptUtcStamp ([string]$start)), [char]0x2192,
-                (Get-NSReceiptUtcStamp ([string]$end))))
+        $lines.Add(('- Span: {0} {1} {2}' -f (Get-NSReceiptLocalStamp ([string]$start)), [char]0x2192,
+                (Get-NSReceiptLocalStamp ([string]$end))))
         $lines.Add('- Working: ' + (Get-NSUsageDuration ([string]$work)))
         if ($paused -gt 0) {
             $lines.Add('- Paused: ' + (Get-NSUsageDuration ([string]$paused)))

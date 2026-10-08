@@ -10,6 +10,28 @@ $script:NSUsageTokensFormat = "input {0} $script:NSDot cache_write {1} $script:N
 $script:NSRulesCacheStamp = ''
 $script:NSRulesCache = $null
 
+# Get-NSLocalTime <epoch> [-Seconds] - the moment as the person at this machine reads it: local
+# date and time with the machine's own UTC offset, `2026-10-08 07:12 (UTC+04:00)`; with -Seconds, to
+# the second. '' for an unreadable epoch. Mirrors ns_local_time.
+function Get-NSLocalTime {
+    param([AllowEmptyString()][string]$Epoch, [switch]$Seconds)
+    $e = 0L
+    if ([string]::IsNullOrEmpty($Epoch) -or $Epoch -cnotmatch '^[0-9]+$' -or -not [long]::TryParse($Epoch, [ref]$e)) { return '' }
+    $at = [DateTimeOffset]::FromUnixTimeSeconds($e).ToLocalTime()
+    $fmt = $(if ($Seconds) { 'yyyy-MM-dd HH:mm:ss' } else { 'yyyy-MM-dd HH:mm' })
+    $offset = $at.Offset
+    $sign = $(if ($offset -lt [TimeSpan]::Zero) { '-' } else { '+' })
+    $offset = $offset.Duration()
+    return ('{0} (UTC{1}{2:00}:{3:00})' -f $at.ToString($fmt, [Globalization.CultureInfo]::InvariantCulture),
+        $sign, $offset.Hours, $offset.Minutes)
+}
+
+# Get-NSLocalNow [-Seconds] - now, as Get-NSLocalTime writes it.
+function Get-NSLocalNow {
+    param([switch]$Seconds)
+    return (Get-NSLocalTime ([string][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -Seconds:$Seconds)
+}
+
 function Test-NSWindows {
     return [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 }
@@ -2235,7 +2257,7 @@ function Write-NSControlLog {
         [Parameter(Mandatory = $true)][string]$Line
     )
     $log = Get-NSLayoutPath $NightshiftDir 'shift-log'
-    $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $stamp = Get-NSLocalNow -Seconds
     Add-Content -LiteralPath $log -Value "$stamp $script:NSDot $Line" -Encoding utf8
 }
 
@@ -2251,7 +2273,7 @@ function Stop-NSShift {
         throw "stop-shift: no .nightshift/ at $($ctx.Workspace)"
     }
     if ([string]::IsNullOrEmpty($Reason)) { $Reason = 'stopped by owner' }
-    $ts = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $ts = Get-NSLocalNow -Seconds
     Remove-NSPath (Get-NSLayoutPath $ns 'stop')
     [IO.File]::WriteAllText((Get-NSLayoutPath $ns 'stop'), "$Reason $script:NSDot $ts`n")
     Remove-NSPath (Get-NSLayoutPath $ns 'session')

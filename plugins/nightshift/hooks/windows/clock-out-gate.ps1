@@ -86,7 +86,7 @@ function Get-PropertyValue {
 function Write-NSLogLine {
     param([Parameter(Mandatory = $true)][string]$Message)
     if (Test-Path -LiteralPath $ns -PathType Container) {
-        $line = '{0} - {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
+        $line = '{0} - {1}{2}' -f (Get-NSLocalNow -Seconds), $Message, [Environment]::NewLine
         [IO.File]::AppendAllText($log, $line, $utf8)
     }
 }

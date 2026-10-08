@@ -9,6 +9,22 @@ valid_ere() {
   [ "$?" -le 1 ]
 }
 
+# ns_local_time <epoch> [second] — the moment as the person at this machine reads it: local date
+# and time with the machine's own UTC offset, `2026-10-08 07:12 (UTC+04:00)`; with `second`, to
+# the second. Every time a person reads is written this way. Fields a program reads back keep UTC.
+ns_local_time() {
+  local e="${1:-}" fmt='%Y-%m-%d %H:%M' stamp z
+  case "$e" in '' | *[!0-9]*) return 1 ;; esac
+  [ "${2:-}" != second ] || fmt='%Y-%m-%d %H:%M:%S'
+  stamp="$(date -r "$e" "+$fmt" 2>/dev/null || date -d "@$e" "+$fmt" 2>/dev/null)" || return 1
+  z="$(date -r "$e" +%z 2>/dev/null || date -d "@$e" +%z 2>/dev/null)" || return 1
+  case "$z" in [+-][0-9][0-9][0-9][0-9]) ;; *) return 1 ;; esac
+  printf '%s (UTC%s:%s)' "$stamp" "${z%??}" "${z#???}"
+}
+
+# ns_local_now [second] — now, as ns_local_time writes it.
+ns_local_now() { ns_local_time "$(date +%s)" "${1:-}"; }
+
 ns_mtime() {
   case "$(uname -s)" in
     Darwin) stat -f %m "$1" 2>/dev/null ;;

@@ -1391,7 +1391,8 @@ function Get-NSSessionExtra {
     return ''
 }
 
-# Get-NSSessionHostWords <host/model+host/model> - `claude · claude-opus-5 + codex · gpt-5.5`.
+# Get-NSSessionHostWords <host/model+host/model> - each host and its model joined by the middle dot,
+# the hosts joined by ` + `. Mirrors ns_session_host_words.
 function Get-NSSessionHostWords {
     param([AllowEmptyString()][string]$Hosts)
     $words = New-Object Collections.Generic.List[string]
@@ -1572,13 +1573,13 @@ function Get-NSReceiptUsageSection {
         }
         if ($hostKey.Length -gt 0 -and -not $hostsSeen.Contains($hostKey)) { $hostsSeen.Add($hostKey) }
         $sidCell = $(if ($sid -ceq '-') { $dash } else { $sid.Substring(0, [math]::Min(8, $sid.Length)) })
-        $from = Get-NSUsageIso $start; $to = Get-NSUsageIso $end
+        $from = Get-NSLocalTime $start; $to = Get-NSLocalTime $end
         $rows.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6}{7} | {8} |' -f $n, $sidCell,
                 $(if ($hostKey.Length -gt 0) { Get-NSSessionHostWords $hostKey } else { $dash }),
                 $(if ($from) { $from } else { $dash }), $(if ($to) { $to } else { $dash }),
                 $wcell, $pcell, $cells, $ended.Replace('-', ' ')))
         if ($prevHost.Length -gt 0 -and $hostKey.Length -gt 0 -and $prevHost -cne $hostKey) {
-            $at = Get-NSUsageIso $prevEnd
+            $at = Get-NSLocalTime $prevEnd
             $h = ('- {0} {1} {2} {3} {4} {1} outgoing commits: {5}' -f $(if ($at) { $at } else { $dash }), $script:NSDot,
                 (Get-NSSessionHostWords $prevHost), $arrow, (Get-NSSessionHostWords $hostKey),
                 $(if ($prevCommits.Length -gt 0) { $prevCommits.Replace(',', ', ') } else { 'none' }))
@@ -1634,7 +1635,7 @@ function Get-NSReceiptUsageSection {
         }
         $out.Add('| wall | ' + (Get-NSUsageDuration ([string]$twall)) + ' |')
         if ($null -ne $first -and $null -ne $last) {
-            $out.Add('| span | ' + (Get-NSUsageIso ([string]$first)) + ' ' + $arrow + ' ' + (Get-NSUsageIso ([string]$last)) + ' |')
+            $out.Add('| span | ' + (Get-NSLocalTime ([string]$first)) + ' ' + $arrow + ' ' + (Get-NSLocalTime ([string]$last)) + ' |')
         }
     }
     $word = $(if ($n -eq 1) { 'session' } else { 'sessions' })

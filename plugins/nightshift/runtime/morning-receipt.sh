@@ -219,13 +219,11 @@ _md_cell() {
   fi
 }
 
-# _utc_stamp EPOCH -> UTC_STAMP: that moment in UTC to the second, zone included.
-_utc_stamp() {
-  UTC_STAMP=""
-  case "$1" in '' | *[!0-9]*) return 1 ;; esac
-  UTC_STAMP="$(date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null ||
-    date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"
-  [ -n "$UTC_STAMP" ]
+# _local_stamp EPOCH -> LOCAL_STAMP: that moment in this machine's local time to the second, with
+# its UTC offset (ns_local_time).
+_local_stamp() {
+  LOCAL_STAMP="$(ns_local_time "$1" second)" || LOCAL_STAMP=""
+  [ -n "$LOCAL_STAMP" ]
 }
 
 # _count N NOUN -> COUNTED: "1 file", "3 files".
@@ -777,8 +775,8 @@ _shift_times() {
   local at
   STARTED="$P_CREATEDAT"
   SHIFT_SINCE="$P_CREATEDAT"
-  if [ "$NMARK" -gt 0 ] && _utc_stamp "${M_EPOCH[0]}"; then
-    STARTED="$UTC_STAMP"
+  if [ "$NMARK" -gt 0 ] && _local_stamp "${M_EPOCH[0]}"; then
+    STARTED="$LOCAL_STAMP"
     SHIFT_SINCE="@${M_EPOCH[0]}"
   fi
   case "$STARTED" in
@@ -788,7 +786,7 @@ _shift_times() {
     at="$(ns_mtime "$ENDED_MARKER")" || at=""
     case "$at" in
       '' | *[!0-9]*) ;;
-      *) _utc_stamp "$at" && ENDED_EPOCH="$at" && ENDED="$UTC_STAMP" ;;
+      *) _local_stamp "$at" && ENDED_EPOCH="$at" && ENDED="$LOCAL_STAMP" ;;
     esac
   fi
 }
@@ -995,10 +993,10 @@ _lines_usage() {
     done <"$TMPD/pauses"
     work=$((wall - paused))
     [ "$work" -ge 0 ] || work=0
-    _utc_stamp "$start"
-    v="$UTC_STAMP"
-    _utc_stamp "$end"
-    sec_add "- Span: $v $ARROW $UTC_STAMP"
+    _local_stamp "$start"
+    v="$LOCAL_STAMP"
+    _local_stamp "$end"
+    sec_add "- Span: $v $ARROW $LOCAL_STAMP"
     sec_add "- Working: $(ns_usage_duration "$work")"
     if [ "$paused" -gt 0 ]; then
       sec_add "- Paused: $(ns_usage_duration "$paused")"

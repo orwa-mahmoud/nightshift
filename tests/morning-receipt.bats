@@ -307,21 +307,21 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   GIT_COMMITTER_DATE="@$2 +0000" GIT_AUTHOR_DATE="@$2 +0000" git -C "$1" commit -qm "$5"
 }
 
-@test "the verdict names both ends of the shift in UTC with the zone" {
+@test "the verdict names both ends of the shift in local time with its offset" {
   p="$(verdict_project verdict-times)"
-  run bash "$RECEIPT" --project "$p" --view owner
+  run env TZ=America/Sao_Paulo bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
   [[ "$output" == *$'## How it ended\n'* ]] || false
   # The arming mark, not the policy's earlier createdAt.
-  [[ "$output" == *'- Started: 2026-09-21T14:13:20Z'* ]] || false
-  [[ "$output" == *'- Ended: 2026-09-21T15:10:05Z'* ]] || false
+  [[ "$output" == *'- Started: 2026-09-21 11:13:20 (UTC-03:00)'* ]] || false
+  [[ "$output" == *'- Ended: 2026-09-21 12:10:05 (UTC-03:00)'* ]] || false
 }
 
 @test "time and tokens split the pauses by reason, and the reasons sum to the total" {
   p="$(verdict_project verdict-usage)"
-  run bash "$RECEIPT" --project "$p" --view owner
+  run env TZ=America/Sao_Paulo bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
-  [[ "$output" == *'- Span: 2026-09-21T14:13:20Z → 2026-09-21T15:10:05Z'* ]] || false
+  [[ "$output" == *'- Span: 2026-09-21 11:13:20 (UTC-03:00) → 2026-09-21 12:10:05 (UTC-03:00)'* ]] || false
   # Esc gaps 1100s and 1000s, the revival 800s: 2900s paused inside a 3405s wall.
   [[ "$output" == *$'- Working: 8m 25s\n- Paused: 48m 20s\n  - owner pressed Esc: 35m 0s\n  - the session ended and the shift was revived: 13m 20s\n- Wall: 56m 45s'* ]] || false
   [[ "$output" == *'| input | 400 |'* ]] || false

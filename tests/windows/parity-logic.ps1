@@ -60,9 +60,11 @@ try {
     foreach ($row in (Get-FixtureRows 'sessions.tsv')) {
         Add-NSReceiptSession $sessionsReceipt '6. Runtime only.' $row[0] $row[1] $row[2] $row[3] $row[4] $row[5] $row[6]
     }
-    # A Windows checkout may end the fixture's lines with CRLF; the runtime writes LF.
-    $want = [IO.File]::ReadAllText((Join-Path $fixtures 'sessions-expected.md')).Replace("`r`n", "`n")
-    Expect-Equal $want ([IO.File]::ReadAllText($sessionsReceipt)) 'sessions table'
+    # A Windows checkout may end the fixture's lines with CRLF; the runtime writes LF. The times are
+    # this machine's local ones; the fixture was drawn in UTC, so both sides compare without them.
+    $stamp = '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} \(UTC[+-][0-9]{2}:[0-9]{2}\)'
+    $want = [IO.File]::ReadAllText((Join-Path $fixtures 'sessions-expected.md')).Replace("`r`n", "`n") -creplace $stamp, '<time>'
+    Expect-Equal $want ([IO.File]::ReadAllText($sessionsReceipt) -creplace $stamp, '<time>') 'sessions table'
 }
 finally {
     Remove-Item -LiteralPath $sessionsReceipt -Force -ErrorAction SilentlyContinue

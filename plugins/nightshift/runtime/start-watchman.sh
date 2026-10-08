@@ -82,7 +82,7 @@ mkdir -p "${OUTPUT%/*}" "${LOG%/*}" 2>/dev/null
 log_from=0
 [ -f "$LOG" ] && log_from="$(wc -c <"$LOG" | tr -d '[:space:]')"
 printf '%s · start-watchman: launching the %s watchman for %s\n' \
-  "$(date '+%Y-%m-%d %H:%M:%S')" "$HOST_NAME" "$WORKSPACE" >>"$OUTPUT"
+  "$(ns_local_now second)" "$HOST_NAME" "$WORKSPACE" >>"$OUTPUT"
 output_from="$(wc -l <"$OUTPUT" | tr -d '[:space:]')"
 
 # The watchman runs in a session of its own. A host that tears down the process group of the

@@ -670,12 +670,6 @@ ns_usage_duration() {
   printf '%sh %sm' "$((s / 3600))" "$(((s % 3600) / 60))"
 }
 
-# ns_usage_iso <epoch> — minute-precision UTC for a duration line.
-ns_usage_iso() {
-  case "${1:-}" in '' | *[!0-9]*) return 1 ;; esac
-  date -u -r "$1" +%Y-%m-%dT%H:%MZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%MZ 2>/dev/null
-}
-
 # ---------------------------------------------------------------------------------------------
 # The progress cadence, evaluated by the runtime
 #

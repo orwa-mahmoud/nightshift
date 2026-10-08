@@ -430,7 +430,9 @@ function Get-NSStatusTransitions {
     $out = New-Object 'System.Collections.Generic.List[string]'
     foreach ($raw in (Get-NSStatusFileLines $Path)) {
         $line = $raw -creplace '^-[ \t]*', ''
-        $line = $line -creplace '^[0-9][0-9:TZ .-]*', ''
+        $line = $line -creplace '^[0-9][0-9:TZ .+-]*', ''
+        # A local stamp carries its UTC offset in words; it is part of the preamble too.
+        $line = $line -creplace '^\(UTC[+-][0-9]{2}:[0-9]{2}\)[ \t.-]*', ''
         $line = $line -creplace "^$([char]0x00B7)[ \t]*", ''
         if ($line -inotmatch '^(watchman|the watchman|shift started|shift ended|the session ended|revived|host change)') { continue }
         if ($line.Length -gt 120) { $line = $line.Substring(0, 117) + '...' }
@@ -1011,15 +1013,6 @@ function Get-NSUsageDuration {
     if ($s -lt 60) { return ("{0}s" -f $s) }
     if ($s -lt 3600) { return ("{0}m {1}s" -f [math]::Floor($s / 60), ($s % 60)) }
     return ("{0}h {1}m" -f [math]::Floor($s / 3600), [math]::Floor(($s % 3600) / 60))
-}
-
-function Get-NSUsageIso {
-    param([AllowEmptyString()][string]$Epoch)
-    $e = 0L
-    if ([string]::IsNullOrEmpty($Epoch) -or -not [long]::TryParse($Epoch, [ref]$e)) { return '' }
-    $utc = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
-    return $utc.AddSeconds($e).ToString('yyyy-MM-ddTHH:mmZ',
-        [Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Get-NSUsageSegmentCount {

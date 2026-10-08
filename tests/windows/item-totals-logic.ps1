@@ -10,6 +10,8 @@ $fixtures = Join-Path $repository 'tests/fixtures/receipts'
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $utf8 = New-Object Text.UTF8Encoding($false)
 $item = '4. Book a barber.'
+$d = [string][char]0x00B7
+$a = [string][char]0x2192
 
 function Expect-True {
     param([bool]$Condition, [string]$Message)
@@ -58,7 +60,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $fixtures 'legacy-sessions.md') -Destination (Get-Receipt $ns)
     Write-NSReceiptsIndex $w
     $row = Get-IndexRow (Join-Path $ns 'receipts/README.md')
-    Expect-True ($row.Contains('**input 501 · cache_write 0 · cache_read 4.0k · output 51 · reasoning 0**')) "separate sessions sum: $row"
+    Expect-True ($row.Contains('**input 501 ' + $d + ' cache_write 0 ' + $d + ' cache_read 4.0k ' + $d + ' output 51 ' + $d + ' reasoning 0**')) "separate sessions sum: $row"
     Expect-True ($row.Contains('**9h 6m working**')) "separate sessions sum their time: $row"
 
     $w = Join-Path $root 'legacy-cumulative'
@@ -66,7 +68,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $fixtures 'legacy-cumulative.md') -Destination (Get-Receipt $ns)
     Write-NSReceiptsIndex $w
     $row = Get-IndexRow (Join-Path $ns 'receipts/README.md')
-    Expect-True ($row.Contains('**input 600 · cache_write 0 · cache_read 2.0k · output 60 · reasoning 0**')) "a held block is not added: $row"
+    Expect-True ($row.Contains('**input 600 ' + $d + ' cache_write 0 ' + $d + ' cache_read 2.0k ' + $d + ' output 60 ' + $d + ' reasoning 0**')) "a held block is not added: $row"
 
     # An older receipt is folded into the section on its first redraw, keeping the model's text.
     $w = Join-Path $root 'legacy-fold'
@@ -113,14 +115,14 @@ try {
     [IO.File]::WriteAllText($punch, ([IO.File]::ReadAllText($punch).Replace('- [ ] **4.', '- [x] **4.')), $utf8)
     $null = Invoke-NSPulseMarks $ns $w ''
     $text = [IO.File]::ReadAllText($r)
-    Expect-True ($text -cmatch '(?m)^\| 1 \| .* \| claude · claude-opus-5 \| .* \| paused \|$') "the Claude row: $text"
-    Expect-True ($text -cmatch '(?m)^\| 2 \| .* \| codex · gpt-5\.5 \| .* \| ticked \|$') 'the Codex row'
-    Expect-True ($text.Contains('| 2 sessions | claude · claude-opus-5, codex · gpt-5.5 |')) 'the total names both hosts'
+    Expect-True ($text -cmatch '(?m)^\| 1 \| .* \| claude ' + $d + ' claude-opus-5 \| .* \| paused \|$') "the Claude row: $text"
+    Expect-True ($text -cmatch '(?m)^\| 2 \| .* \| codex ' + $d + ' gpt-5\.5 \| .* \| ticked \|$') 'the Codex row'
+    Expect-True ($text.Contains('| 2 sessions | claude ' + $d + ' claude-opus-5, codex ' + $d + ' gpt-5.5 |')) 'the total names both hosts'
     Expect-True ($text.Contains('| **35** | **4** |')) 'the total covers both hosts'
-    Expect-True ($text.Contains('claude claude-opus-5; codex gpt-5.5 · 2 sessions.')) 'the source line names both hosts'
-    Expect-True ($text -cmatch ('(?m)^- .* · claude · claude-opus-5 → codex · gpt-5\.5 · outgoing commits: .*' + $sha + '.* · last note: Form done, payment step next\.$')) 'the handoff names the outgoing commits and note'
+    Expect-True ($text.Contains('claude claude-opus-5; codex gpt-5.5 ' + $d + ' 2 sessions.')) 'the source line names both hosts'
+    Expect-True ($text -cmatch ('(?m)^- .* ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha + '.* ' + $d + ' last note: Form done, payment step next\.$')) 'the handoff names the outgoing commits and note'
     $log = [IO.File]::ReadAllText((Get-NSLayoutPath $ns 'shift-log'))
-    Expect-True ($log -cmatch ('handoff · ' + [regex]::Escape($item) + ' · claude · claude-opus-5 → codex · gpt-5\.5 · outgoing commits: .*' + $sha)) 'the shift log records the handoff'
+    Expect-True ($log -cmatch ('handoff ' + $d + ' ' + [regex]::Escape($item) + ' ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha)) 'the shift log records the handoff'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

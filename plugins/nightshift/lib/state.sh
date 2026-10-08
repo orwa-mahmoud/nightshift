@@ -630,10 +630,10 @@ ns_receipt_usage_section() {
     [ "$sid" != - ] || sid='—'
     rows="$rows$(printf '| %s | %s | %s | %s | %s | %s | %s%s | %s |' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
       "$(if [ -n "$host" ]; then ns_session_host_words "$host"; else printf '—'; fi)" \
-      "$(ns_usage_iso "$start" || printf '—')" "$(ns_usage_iso "$end" || printf '—')" \
+      "$(ns_local_time "$start" || printf '—')" "$(ns_local_time "$end" || printf '—')" \
       "$v" "$pcell" "$cells" "$(printf '%s' "$ended" | tr '-' ' ')")"$'\n'
     if [ -n "$prev_host" ] && [ -n "$host" ] && [ "$prev_host" != "$host" ]; then
-      handoffs="$handoffs- $(ns_usage_iso "$prev_end" || printf '—') · $(ns_session_host_words "$prev_host") → $(ns_session_host_words "$host") · outgoing commits: $(printf '%s' "${prev_commits:-none}" | sed 's/,/, /g')"
+      handoffs="$handoffs- $(ns_local_time "$prev_end" || printf '—') · $(ns_session_host_words "$prev_host") → $(ns_session_host_words "$host") · outgoing commits: $(printf '%s' "${prev_commits:-none}" | sed 's/,/, /g')"
       [ -z "$prev_note" ] || handoffs="$handoffs · last note: $prev_note"
       handoffs="$handoffs"$'\n'
     fi
@@ -677,7 +677,7 @@ EOF
     fi
     printf '| wall | %s |\n' "$(ns_usage_duration "$twall")"
     if [ -n "$first" ] && [ -n "$last" ]; then
-      printf '| span | %s → %s |\n' "$(ns_usage_iso "$first")" "$(ns_usage_iso "$last")"
+      printf '| span | %s → %s |\n' "$(ns_local_time "$first")" "$(ns_local_time "$last")"
     fi
   fi
   word=sessions
@@ -2223,7 +2223,7 @@ ns_shift_log() { # <nightshift-dir> <line>
   [ -d "$1" ] || return 0
   ns_layout_set log "$1" shift-log
   mkdir -p "${log%/*}" 2>/dev/null || :
-  printf '%s · %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$2" >>"$log"
+  printf '%s · %s\n' "$(ns_local_now second)" "$2" >>"$log"
 }
 
 # Workspace schema. One integer in .nightshift/state-version is the authority, and it names the
@@ -2851,6 +2851,8 @@ ns_status_transitions() {
       # Both writers lead with a dash, a timestamp and a separator before the message. Everything up
       # to the first letter is that preamble, in any locale and with any separator byte.
       sub(/^[^A-Za-z]*/, "", line)
+      # A local stamp carries its UTC offset in words; it is part of the preamble too.
+      if (sub(/^UTC[+-][0-9][0-9]:[0-9][0-9]\)/, "", line)) sub(/^[^A-Za-z]*/, "", line)
     }
     # A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
     # would catch an item summary that merely mentions one.

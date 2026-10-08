@@ -94,7 +94,7 @@ _ns_clock_out_block() {
   printf '{"decision":"block","reason":"%s"}\n' "$escaped"
 }
 
-ts() { date '+%Y-%m-%d %H:%M:%S'; }
+ts() { ns_local_now second; }
 log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 
 # Only the Items list is the shift. A checkbox above it is prose — an owner's note, an example in
