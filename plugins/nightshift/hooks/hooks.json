@@ -42,6 +42,17 @@
         ]
       }
     ],
+    "UserPromptExpansion": [
+      {
+        "matcher": "^nightshift:(plan-exit|start)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch/claude-prompt-expansion.ps1\""
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

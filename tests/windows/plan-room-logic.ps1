@@ -86,6 +86,66 @@ try {
     Expect-True ($status.Contains('Plan room:   open, bound to conversation planner')) "status: $status"
     $doctor = (& $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/doctor.ps1') -Project $w) -join "`n"
     Expect-True ($doctor.Contains('plan room open, bound to conversation planner')) "doctor: $doctor"
+
+    # Leaving. No agent tool call runs plan-exit, from any conversation.
+    foreach ($who in @('planner', 'builder')) {
+        foreach ($command in @('& $ns plan-exit', "& '$plugin/runtime/windows/plan-exit.ps1' -Project .", 'bash runtime/plan-exit.sh --project .')) {
+            $reason = Invoke-Hardhat $w $who (New-Shell $command)
+            Expect-True ($reason.StartsWith("BLOCKED: the plan room marker is the owner's.")) "$who may not run: $command -> $reason"
+        }
+    }
+    Expect-True ((Invoke-Hardhat $w 'builder' (New-Edit 'Write' (Join-Path $w 'skills/plan-exit/SKILL.md'))) -ceq '') 'a path that only shares the name is not the verb'
+
+    # Start refuses while the room is open and names both exits.
+    $preflight = @(& $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/start-preflight.ps1') -Project $w -HostName claude)
+    Expect-True ($LASTEXITCODE -ne 0) 'start-preflight refuses while the plan room is open'
+    Expect-True ($preflight -ccontains 'refuse plan-room the plan room is open, bound to conversation planner, and a shift never arms over it') "preflight: $($preflight -join ' | ')"
+    Expect-True (@($preflight | Where-Object { $_.StartsWith('repair the owner leaves the plan room by typing /nightshift:plan-exit or /nightshift:start') }).Count -eq 1) 'preflight repair names the exits'
+
+    # The prompt hook: the owner's command closes the room, anything else does not.
+    $promptHook = Join-Path $plugin 'hooks/windows/prompt-submit.ps1'
+    function Invoke-PromptHook {
+        param([string]$Project, [string]$HostName, [hashtable]$Payload)
+        $Payload['session_id'] = 'planner'
+        $Payload['cwd'] = $Project
+        $json = $Payload | ConvertTo-Json -Compress
+        $name = if ($HostName -eq 'claude') { 'CLAUDE_PROJECT_DIR' } else { 'CODEX_PROJECT_DIR' }
+        $previous = [Environment]::GetEnvironmentVariable($name)
+        [Environment]::SetEnvironmentVariable($name, $Project)
+        try { return (@($json | & $hostExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $promptHook -HostName $HostName 2>&1) -join "`n") }
+        finally { [Environment]::SetEnvironmentVariable($name, $previous) }
+    }
+    foreach ($name in @('nightshift:status', 'nightshift:plan-exits', 'other:plan-exit', 'plan-exit')) {
+        $out = Invoke-PromptHook $w 'claude' @{ hook_event_name = 'UserPromptExpansion'; command_name = $name; prompt = "/$name" }
+        Expect-True ($out.Trim().Length -eq 0 -and (Test-NSPlanRoomOpen $ns)) "claude $name leaves the room open: $out"
+    }
+    $out = Invoke-PromptHook $w 'claude' @{ hook_event_name = 'UserPromptExpansion'; command_name = 'nightshift:plan-exit'; prompt = '/nightshift:plan-exit' }
+    Expect-True (-not (Test-NSPlanRoomOpen $ns)) 'claude /nightshift:plan-exit closes the room'
+    $context = ($out | ConvertFrom-Json).hookSpecificOutput
+    Expect-True ($context.hookEventName -ceq 'UserPromptExpansion' -and $context.additionalContext.StartsWith('nightshift: the owner left the plan room.')) "claude context: $out"
+    $log = [IO.File]::ReadAllText((Get-NSLayoutPath $ns 'shift-log'))
+    Expect-True ($log.Contains('plan room closed by the owner: typed the plan-exit command (conversation planner)')) "shift log: $log"
+
+    $c = Join-Path $root 'codex'
+    $cns = New-Room $c
+    foreach ($prompt in @('please $nightshift:plan-exit', 'plan-exit', '$nightshift:status')) {
+        $out = Invoke-PromptHook $c 'codex' @{ hook_event_name = 'UserPromptSubmit'; prompt = $prompt }
+        Expect-True ($out.Trim().Length -eq 0 -and (Test-NSPlanRoomOpen $cns)) "codex '$prompt' leaves the room open: $out"
+    }
+    $out = Invoke-PromptHook $c 'codex' @{ hook_event_name = 'UserPromptSubmit'; prompt = '$nightshift:start' }
+    Expect-True (-not (Test-NSPlanRoomOpen $cns)) 'codex $nightshift:start closes the room'
+    Expect-True (($out | ConvertFrom-Json).hookSpecificOutput.additionalContext.Contains('by starting the shift')) "codex context: $out"
+
+    # The terminal verb.
+    $t = Join-Path $root 'terminal'
+    $tns = New-Room $t
+    $exit = @(& $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/plan-exit.ps1') -Project $t)
+    Expect-True ($LASTEXITCODE -eq 0 -and ($exit -join "`n") -ceq 'plan room closed: nothing is fenced any more') "plan-exit: $($exit -join ' | ')"
+    Expect-True (-not (Test-NSPlanRoomOpen $tns)) 'plan-exit closes the room'
+    $again = @(& $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/plan-exit.ps1') -Project $t)
+    Expect-True ($LASTEXITCODE -eq 0 -and ($again -join "`n") -ceq 'plan room was not open') "plan-exit again: $($again -join ' | ')"
+    $log = [IO.File]::ReadAllText((Get-NSLayoutPath $tns 'shift-log'))
+    Expect-True ($log.Contains('plan room closed by the owner: ran plan-exit in a terminal (conversation planner)')) "terminal shift log: $log"
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

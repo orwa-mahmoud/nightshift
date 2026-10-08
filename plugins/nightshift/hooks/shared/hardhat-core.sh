@@ -1420,11 +1420,13 @@ ns_hardhat_plan_probe() {
 }
 
 # ns_hardhat_plan_room_targeted <target> — a path or command that reaches the plan room marker: its
-# name as a path component, or a glob across the folder that holds it.
+# name as a path component, a glob across the folder that holds it, or the plan-exit verb that
+# removes it.
 ns_hardhat_plan_room_targeted() {
   local normalized run_rel
   normalized="$(printf '%s' "$1" | sed "s#\\\\/#/#g; s#[\"']##g")"
   printf '%s' "$normalized" | grep -qE '(^|[/[:space:]])\.?plan-room($|[^[:alnum:]_.-])' && return 0
+  printf '%s' "$normalized" | grep -qE '(^|[^[:alnum:]_-])plan-exit(\.sh|\.ps1)?($|[^[:alnum:]_./-])' && return 0
   ns_hardhat_nightshift_dir_context "$normalized" || return 1
   case "$normalized" in
     *'plan-*'* | *'plan-?'* | *'plan-['* | *'plan-{'* | *'.nightshift/*'* | *'.nightshift/.*'*) return 0 ;;

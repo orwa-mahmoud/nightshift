@@ -26,6 +26,10 @@ client). Closing the session is pause-recovery: the watchman stands down and Sta
 A crash that never fires SessionEnd still revives. `pulse.sh` overwrites `.shift-pulse` for
 the bound session so a quiet live tab is not guessed dead.
 
+`prompt-submit.sh` is the UserPromptSubmit hook. It reads the documented `prompt` field and closes
+an open plan room when the owner's message starts with `$nightshift:plan-exit` or
+`$nightshift:start`; it never blocks a prompt.
+
 Recovery ownership stays host-neutral too. The Codex watchman advances `.shift-lease` before each
 spawn and passes its generation/nonce through the child environment; the hardhat and Stop hook
 accept only that generation for the bound shift. Codex's hook payload does not provide process

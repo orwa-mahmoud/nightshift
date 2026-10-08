@@ -83,3 +83,37 @@ ns_plan_room_message() {
 ns_plan_room_marker_message() {
   printf 'BLOCKED: the plan room marker is the owner'"'"'s. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start.'
 }
+
+# ns_plan_room_exit_word <prompt> — `plan-exit` or `start` when the owner's prompt is an exit
+# command: its first word is /nightshift:plan-exit or /nightshift:start, or the same name after `$`,
+# the way Codex mentions a skill. Anything else, the same words mid-sentence included, is not.
+ns_plan_room_exit_word() {
+  local first
+  first="$(printf '%s\n' "$1" | tr -d '\r' | awk 'NF { print $1; exit }')"
+  case "$first" in
+    /nightshift:plan-exit | "\$nightshift:plan-exit") printf 'plan-exit' ;;
+    /nightshift:start | "\$nightshift:start") printf 'start' ;;
+    *) return 1 ;;
+  esac
+}
+
+# ns_plan_room_leave <nightshift-dir> <how> — the owner leaves: the marker goes and the shift log
+# says how. Status 1 when no room was open or the marker could not be removed.
+ns_plan_room_leave() {
+  local f bound
+  ns_plan_room_open "$1" || return 1
+  bound="$(ns_plan_room_line "$1" 1)"
+  f="$(ns_plan_room_file "$1")"
+  rm -f "$f" 2>/dev/null && [ ! -e "$f" ] || return 1
+  ns_shift_log "$1" "plan room closed by the owner: $2${bound:+ (conversation $bound)}"
+}
+
+# ns_plan_room_left_context <word> — what the conversation is told after the owner's command closed
+# the room.
+ns_plan_room_left_context() {
+  if [ "$1" = start ]; then
+    printf 'nightshift: the owner left the plan room by starting the shift. Nothing is fenced any more.'
+  else
+    printf 'nightshift: the owner left the plan room. Nothing is fenced any more; to build the plan, promote it into the punch list and Start.'
+  fi
+}

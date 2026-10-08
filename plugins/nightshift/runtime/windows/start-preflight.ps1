@@ -176,6 +176,15 @@ else {
     Write-Repair 'Setup or Doctor repairs the marker with migrate-state; Start never writes it'
 }
 
+# --------------------------------------------------------- plan room
+# Planning ends only by the owner's hand. The owner's /nightshift:start clears the room before this
+# runs, so a room still open here means Start was not typed by the owner. Mirrors start-preflight.sh.
+if (Test-NSPlanRoomOpen $ns) {
+    $planBound = Get-NSPlanRoomLine $ns 1
+    $planDetail = if ($planBound.Length -gt 0) { ", bound to conversation $planBound" } else { '' }
+    Write-Refuse ('plan-room the plan room is open' + $planDetail + ', and a shift never arms over it')
+}
+
 # ------------------------------------------------------ work mode/target
 $workMode = ''
 try {

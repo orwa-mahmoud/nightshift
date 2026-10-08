@@ -2348,12 +2348,56 @@ function Get-NSPlanRoomMarkerMessage {
     return "BLOCKED: the plan room marker is the owner's. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start."
 }
 
+# Get-NSPlanRoomExitWord <prompt> - 'plan-exit' or 'start' when the owner's prompt is an exit command:
+# its first word is /nightshift:plan-exit or /nightshift:start, or the same name after '$'. Anything
+# else, the same words mid-sentence included, is ''. Mirrors ns_plan_room_exit_word.
+function Get-NSPlanRoomExitWord {
+    param([AllowEmptyString()][string]$Prompt)
+    foreach ($line in ($Prompt -split "`n")) {
+        $words = @($line.Trim() -split '\s+' | Where-Object { $_.Length -gt 0 })
+        if ($words.Count -eq 0) { continue }
+        switch -CaseSensitive ($words[0]) {
+            '/nightshift:plan-exit' { return 'plan-exit' }
+            '$nightshift:plan-exit' { return 'plan-exit' }
+            '/nightshift:start' { return 'start' }
+            '$nightshift:start' { return 'start' }
+        }
+        return ''
+    }
+    return ''
+}
+
+# Exit-NSPlanRoom <nightshift-dir> <how> - the owner leaves: the marker goes and the shift log says
+# how. False when no room was open or the marker could not be removed. Mirrors ns_plan_room_leave.
+function Exit-NSPlanRoom {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$How)
+    if (-not (Test-NSPlanRoomOpen $NightshiftDir)) { return $false }
+    $bound = Get-NSPlanRoomLine $NightshiftDir 1
+    $f = Get-NSPlanRoomFile $NightshiftDir
+    try { Remove-Item -LiteralPath $f -Force -ErrorAction Stop }
+    catch { return $false }
+    if (Test-Path -LiteralPath $f) { return $false }
+    $line = "plan room closed by the owner: $How"
+    if ($bound.Length -gt 0) { $line += " (conversation $bound)" }
+    Write-NSControlLog $NightshiftDir $line
+    return $true
+}
+
+# Get-NSPlanRoomLeftContext <word> - what the conversation is told after the owner's command closed
+# the room. Mirrors ns_plan_room_left_context.
+function Get-NSPlanRoomLeftContext {
+    param([Parameter(Mandatory = $true)][string]$Word)
+    if ($Word -ceq 'start') { return 'nightshift: the owner left the plan room by starting the shift. Nothing is fenced any more.' }
+    return 'nightshift: the owner left the plan room. Nothing is fenced any more; to build the plan, promote it into the punch list and Start.'
+}
+
 # Test-NSPlanRoomTarget <target> - a path or command that reaches the plan room marker. Mirrors
 # ns_hardhat_plan_room_targeted.
 function Test-NSPlanRoomTarget {
     param([AllowEmptyString()][string]$Target)
     $t = $Target.Replace('\', '/').Replace('"', '').Replace("'", '')
     if ($t -cmatch '(^|[/\s])\.?plan-room($|[^A-Za-z0-9_.-])') { return $true }
+    if ($t -cmatch '(^|[^A-Za-z0-9_-])plan-exit(\.sh|\.ps1)?($|[^A-Za-z0-9_./-])') { return $true }
     if ($t -cnotmatch '\.nightshift') { return $false }
     if ($t -cmatch 'plan-[*?\[{]' -or $t.Contains('.nightshift/*') -or $t.Contains('.nightshift/.*') -or $t -cmatch 'run/[*?]') { return $true }
     return $false

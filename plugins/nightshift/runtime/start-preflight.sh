@@ -211,6 +211,14 @@ case "$STATE_KIND" in
     repair "Setup or Doctor repairs the marker with migrate-state; Start never writes it" ;;
 esac
 
+# ------------------------------------------------------------- plan room
+# Planning ends only by the owner's hand. The owner's /nightshift:start clears the room before this
+# runs, so a room still open here means Start was not typed by the owner.
+if ns_plan_room_open "$NS"; then
+  PLAN_BOUND="$(ns_plan_room_line "$NS" 1)"
+  refuse "plan-room the plan room is open${PLAN_BOUND:+, bound to conversation $PLAN_BOUND}, and a shift never arms over it"
+fi
+
 # --------------------------------------------------------- work mode/target
 WORK_MODE=""
 if WORK_MODE="$(ns_work_mode "$WORKSPACE" 2>/dev/null)"; then

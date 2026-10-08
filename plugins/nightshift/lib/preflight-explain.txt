@@ -37,3 +37,6 @@ explain	work-target	When the work target is unrecorded the resolver takes the wo
 explain	receipts	In artifact mode the receipts directory is where completion lands, so a path that exists but is not a usable directory refuses rather than arming into nowhere.
 
 explain	state-version	Start never writes the state marker, and a newer marker is never rewritten or downgraded. Migration is a Setup or Doctor repair.
+
+explain	plan-room	A planning conversation implements nothing until the owner leaves the plan room, and Start is not a way out of it. Never remove the marker or run plan-exit yourself: tell the owner the plan room is still open, relay the repair line, and stop.
+repair	plan-room	the owner leaves the plan room by typing /nightshift:plan-exit or /nightshift:start (in Codex, $nightshift:plan-exit or $nightshift:start) at the start of a message, or by running ns plan-exit in a terminal, then starts the shift

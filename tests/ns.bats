@@ -327,7 +327,7 @@ bound() {
 
 @test "the two dispatchers carry the same writing verbs" {
   for v in scaffold archive-receipts stop-shift link-workspace evidence-archive \
-    migrate-state apply-profile; do
+    migrate-state apply-profile plan-enter plan-exit; do
     sed -n '/^NS_WRITING_VERBS=/p' "$NS" | grep -qF "$v" || { echo "POSIX list is missing $v"; return 1; }
     sed -n "/^\$NSWritingVerbs = @(/,/)\$/p" "$NSPS" | grep -qF "'$v'" \
       || { echo "Windows list is missing $v"; return 1; }
