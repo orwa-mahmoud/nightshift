@@ -852,7 +852,8 @@ function Get-NSUsageMarkCount {
 
 # Write-NSUsageMark <nightshift-dir> <label> [tick|switch|pause] - the running total and the clock at
 # one moment, closing the span since the mark before it and charging it to <label>. Only a tick mark
-# says the item is done; a mark written before kinds existed is a tick.
+# says the item is done; a mark written before kinds existed is a tick. The fifth column is the running total per host and
+# model (Get-NSUsageHostTotals), so the span a mark closes can name who spent it.
 function Write-NSUsageMark {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label,
           [ValidateSet('tick', 'switch', 'pause')][string]$Kind = 'tick')
@@ -860,9 +861,50 @@ function Write-NSUsageMark {
     $null = New-Item -ItemType Directory -Path $dir -Force
     $file = Get-NSUsageMarksPath $NightshiftDir
     $total = Get-NSUsageTotal $NightshiftDir
-    $line = @((Get-NSUnixTime), $Label, $total, $Kind) -join "`t"
+    $line = @((Get-NSUnixTime), $Label, $total, $Kind, (Get-NSUsageHostTotals $NightshiftDir)) -join "`t"
     [IO.File]::AppendAllText($file, $line + "`n", (New-Object Text.UTF8Encoding($false)))
     return $true
+}
+
+# Get-NSUsageHostTotals <nightshift-dir> - the running total of each host and model, kept apart:
+# `host/model:fields` joined by `;`, ordinal order. A segment that never named its model is
+# `host/-`. Mirrors ns_usage_host_totals.
+function Get-NSUsageHostTotals {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageStatePath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    $sums = @{}
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        $p = $line.Split("`t")
+        if ($p.Length -lt 7 -or [string]::IsNullOrEmpty($p[6]) -or [string]::IsNullOrEmpty($p[1])) { continue }
+        $key = $p[1] + '/' + $(if ([string]::IsNullOrEmpty($p[2])) { '-' } else { $p[2] })
+        $was = $(if ($sums.ContainsKey($key)) { $sums[$key] } else { '' })
+        $sums[$key] = Add-NSUsageFields $was (Get-NSUsageSubtract $p[6] $p[5])
+    }
+    $keys = @($sums.Keys)
+    if ($keys.Count -eq 0) { return '' }
+    [Array]::Sort($keys, [StringComparer]::Ordinal)
+    return (@($keys | ForEach-Object { $_ + ':' + $sums[$_] }) -join ';')
+}
+
+# Get-NSUsageSpanHosts <earlier-host-totals> <later-host-totals> - the hosts and models whose total
+# moved between two marks, `host/model` joined by `+`. Mirrors ns_usage_span_hosts.
+function Get-NSUsageSpanHosts {
+    param([AllowEmptyString()][string]$Earlier, [AllowEmptyString()][string]$Later)
+    if ([string]::IsNullOrEmpty($Later)) { return '' }
+    $moved = New-Object Collections.Generic.List[string]
+    foreach ($entry in $Later.Split(';')) {
+        if ($entry.Length -eq 0) { continue }
+        $i = $entry.IndexOf(':')
+        $key = $entry.Substring(0, $i)
+        $now = $entry.Substring($i + 1)
+        $was = ''
+        foreach ($e in $Earlier.Split(';')) {
+            if ($e.StartsWith($key + ':', [StringComparison]::Ordinal)) { $was = $e.Substring($key.Length + 1); break }
+        }
+        if ((Get-NSUsageSubtract $now $was) -cne (Get-NSUsageSubtract $now $now)) { $moved.Add($key) }
+    }
+    return ($moved -join '+')
 }
 
 # Get-NSUsageActive <nightshift-dir> - the item the running span is being charged to, or ''.
@@ -907,39 +949,6 @@ function Test-NSUsageCarriesOpen {
         if ($fields.Count -ge 2 -and $open -ccontains $fields[1]) { return $true }
     }
     return $false
-}
-
-# Get-NSUsageItemTotal <nightshift-dir> <label> - what this shift has charged to one item across every
-# span that closed on it: `<fields>`t<wall-sec>`t<first-start>`t<paused-sec>`t<reason>`, or ''.
-function Get-NSUsageItemTotal {
-    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
-    $file = Get-NSUsageMarksPath $NightshiftDir
-    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
-    $fields = ''
-    $wall = [long]0
-    $first = ''
-    $paused = [long]0
-    $reason = ''
-    $prev = $null
-    foreach ($line in @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
-        $cur = $line.Split("`t")
-        if ($null -ne $prev -and $cur.Length -ge 2 -and $cur[1] -ceq $Label) {
-            $pt = $(if ($prev.Length -ge 3) { $prev[2] } else { '' })
-            $ct = $(if ($cur.Length -ge 3) { $cur[2] } else { '' })
-            $fields = Add-NSUsageFields $fields (Get-NSUsageSubtract $ct $pt)
-            $wall += ([long]$cur[0] - [long]$prev[0])
-            if ([string]::IsNullOrEmpty($first)) { $first = $prev[0] }
-            $gap = Get-NSUsagePausedBetween $NightshiftDir ([long]$prev[0]) ([long]$cur[0])
-            if (-not [string]::IsNullOrEmpty($gap)) {
-                $gp = $gap.Split("`t")
-                $paused += [long]$gp[0]
-                $reason = $(if ($gp.Length -ge 2) { $gp[1] } else { '' })
-            }
-        }
-        $prev = $cur
-    }
-    if ([string]::IsNullOrEmpty($first)) { return '' }
-    return ($fields + "`t" + $wall + "`t" + $first + "`t" + $paused + "`t" + $reason)
 }
 
 # The shift's own start, written before the first reading so it stands at zero, and the transcripts
@@ -1013,38 +1022,6 @@ function Get-NSUsageIso {
         [Globalization.CultureInfo]::InvariantCulture)
 }
 
-function Get-NSUsageDurationLine {
-    param(
-        [AllowEmptyString()][string]$WallSeconds,
-        [AllowEmptyString()][string]$PausedSeconds = '0',
-        [AllowEmptyString()][string]$Reason = '',
-        [AllowEmptyString()][string]$FromEpoch = '',
-        [AllowEmptyString()][string]$ToEpoch = ''
-    )
-    $wall = 0L
-    $paused = 0L
-    if (-not [long]::TryParse($WallSeconds, [ref]$wall)) { $wall = 0 }
-    if (-not [long]::TryParse($PausedSeconds, [ref]$paused)) { $paused = 0 }
-    $work = $wall - $paused
-    if ($work -lt 0) { $work = 0 }
-    $rows = New-Object 'System.Collections.Generic.List[string]'
-    $null = $rows.Add('| Time | |')
-    $null = $rows.Add('| --- | --- |')
-    $null = $rows.Add('| working | ' + (Get-NSUsageDuration ([string]$work)) + ' |')
-    if ($paused -gt 0) {
-        $pause = (Get-NSUsageDuration ([string]$paused))
-        if (-not [string]::IsNullOrEmpty($Reason)) { $pause += ' (' + $Reason + ')' }
-        $null = $rows.Add('| paused | ' + $pause + ' |')
-    }
-    $null = $rows.Add('| wall | ' + (Get-NSUsageDuration ([string]$wall)) + ' |')
-    $from = Get-NSUsageIso $FromEpoch
-    $to = Get-NSUsageIso $ToEpoch
-    if (-not [string]::IsNullOrEmpty($from) -and -not [string]::IsNullOrEmpty($to)) {
-        $null = $rows.Add('| span | ' + $from + ' ' + [char]0x2192 + ' ' + $to + ' |')
-    }
-    return ($rows -join "`n")
-}
-
 function Get-NSUsageSegmentCount {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     return @(Get-NSUsageSegmentLines (Get-NSUsageStatePath $NightshiftDir)).Count
@@ -1084,60 +1061,6 @@ function Get-NSUsageDimLabel {
         'cache_read' { return 'cache read' }
         default { return $Dimension }
     }
-}
-
-function Get-NSUsageLine {
-    param([AllowEmptyString()][string]$Fields, [AllowEmptyString()][string]$Sources,
-          [AllowEmptyString()][string]$Segments, [AllowEmptyString()][string]$HostName = '')
-    $rows = New-Object 'System.Collections.Generic.List[string]'
-    $null = $rows.Add('| Tokens | Amount |')
-    $null = $rows.Add('| --- | ---: |')
-    $comment = @()
-    $word = 'segment'
-    if ($Segments -cne '1') { $word = 'segments' }
-    foreach ($dim in $script:NSUsageDimensions) {
-        $v = Get-NSUsageField $Fields $dim
-        if ([string]::IsNullOrEmpty($v)) { $v = 'unavailable' }
-        if ($v -cne 'unavailable') {
-            $comment += $v
-            $v = Get-NSUsageScale $v
-        }
-        else {
-            $comment += '0'
-        }
-        $null = $rows.Add('| ' + (Get-NSUsageDimLabel $dim) + ' | ' + $v + ' |')
-    }
-    return (($rows -join "`n") + "`n`n<!-- tokens " + ($comment -join ' ') + " -->`n" +
-            $Sources + ' ' + $script:NSDot + ' ' + $Segments + ' ' + $word + '. ' + (Get-NSUsageOverlapText $HostName))
-}
-
-# The item's own section of the report, written where the model already writes its account of the
-# work. An existing section is spliced into rather than appended after, so one item is one section.
-function Add-NSGateUsageAppend {
-    param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label,
-          [Parameter(Mandatory = $true)][string]$Usage, [Parameter(Mandatory = $true)][string]$Duration)
-    if ([string]::IsNullOrEmpty($Receipt)) { return }
-    if (Test-NSReparsePoint $Receipt) { return }
-    $utf8 = New-Object Text.UTF8Encoding($false)
-    $dir = Split-Path -Parent $Receipt
-    if (-not [string]::IsNullOrEmpty($dir)) {
-        $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction SilentlyContinue
-    }
-    $block = $Usage + "`n`n" + $Duration + "`n"
-    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf)) {
-        [IO.File]::WriteAllText($Receipt, ('# ' + $Label + "`n`n" + $block), $utf8)
-        return
-    }
-    $content = [IO.File]::ReadAllText($Receipt)
-    $nl = "`n"
-    if ($content.Contains("`r`n")) { $nl = "`r`n" }
-    if ($content -cmatch '(?s)^(# [^\r\n]+)(\r?\n)') {
-        $head = $Matches[1]
-        $rest = $content.Substring($Matches[0].Length).TrimStart([char]13, [char]10)
-        [IO.File]::WriteAllText($Receipt, ($head + $nl + $nl + $block + $nl + $rest), $utf8)
-        return
-    }
-    [IO.File]::WriteAllText($Receipt, ($block + $nl + $content), $utf8)
 }
 
 # Get-NSGateTickedLabels <punch-list> - every ticked item's id, list order, as the report heads its
@@ -1314,28 +1237,9 @@ function Invoke-NSGateUsageTick {
     if (-not (Test-NSReceiptsEnabled $Project)) { return $false }
     if (-not (Write-NSUsageMark $NightshiftDir $Label 'tick')) { return $false }
     $receipt = Get-NSReceiptPath $Project $Label
+    # The tick closes the item's last session; the receipt's runtime section, Tokens and Time totals
+    # included, is redrawn from every session it holds (Add-NSReceiptSession).
     Invoke-NSGateSessionRow $NightshiftDir $Project $Label 'ticked'
-    $total = Get-NSUsageItemTotal $NightshiftDir $Label
-    if ([string]::IsNullOrEmpty($total)) { return $false }
-    $parts = $total.Split("`t")
-    # Tokens and time are two measurements with a setting each. One the owner turned off says off,
-    # which is not the same as one the host did not report.
-    if ((Get-NSReceiptsField $Project 'usage') -ceq 'off') {
-        $line = '**Tokens:** off'
-    }
-    else {
-        $hosts = Get-NSUsageHosts $NightshiftDir
-        if ([string]::IsNullOrEmpty($hosts)) { $hosts = 'unknown' }
-        $line = Get-NSUsageLine $parts[0] $hosts (Get-NSUsageSegmentCount $NightshiftDir) ($hosts.Split(' ')[0])
-    }
-    if ((Get-NSReceiptsField $Project 'duration') -ceq 'off') {
-        $duration = '**Time:** off'
-    }
-    else {
-        # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
-        $duration = Get-NSUsageDurationLine $parts[1] $parts[3] $parts[4] $parts[2] ([string](Get-NSUnixTime))
-    }
-    Add-NSGateUsageAppend $receipt $Label $line $duration
     Update-NSReceiptLabel $receipt $Label
     $due = Get-NSLayoutPath $NightshiftDir 'receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
@@ -1344,7 +1248,10 @@ function Invoke-NSGateUsageTick {
 }
 
 # Invoke-NSGateSessionRow <nightshift-dir> <project> <label> <ended> - the span the last mark just
-# closed, recorded as one session in the item's receipt.
+# closed, recorded as one session in the item's receipt, with every token dimension, the recorded
+# pause, the hosts and models whose readings moved, the work target's commits inside the span and
+# the receipt's progress note. A row on another host than the one before it is a handoff. Mirrors
+# ns_gate_session_row.
 function Invoke-NSGateSessionRow {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
           [Parameter(Mandatory = $true)][string]$Label, [Parameter(Mandatory = $true)][string]$Ended)
@@ -1356,23 +1263,79 @@ function Invoke-NSGateSessionRow {
     if (-not [long]::TryParse($lines[$lines.Length - 1].Split("`t")[0], [ref]$end)) { return }
     $start = $end - [long]$parts[1]
     $paused = [long]0
+    $why = ''
     $gap = Get-NSUsagePausedBetween $NightshiftDir $start $end
-    if (-not [string]::IsNullOrEmpty($gap)) { $paused = [long]$gap.Split("`t")[0] }
+    if (-not [string]::IsNullOrEmpty($gap)) {
+        $gp = $gap.Split("`t")
+        $paused = [long]$gp[0]
+        if ($gp.Length -ge 2) { $why = $gp[1] }
+    }
     $work = [string]([math]::Max([long]0, $end - $start - $paused))
-    if ((Get-NSReceiptsField $Project 'duration') -ceq 'off') { $work = 'off' }
+    $pausedText = [string]$paused
+    if ((Get-NSReceiptsField $Project 'duration') -ceq 'off') { $work = 'off'; $pausedText = 'off' }
+    $extras = @()
     if ((Get-NSReceiptsField $Project 'usage') -ceq 'off') {
         $in = 'off'
         $out = 'off'
+        $extras += @('cw=off', 'cr=off', 'rea=off')
     }
     else {
         $in = Get-NSUsageField $parts[0] 'input'
         $out = Get-NSUsageField $parts[0] 'output'
+        foreach ($d in @(@('cache_write', 'cw'), @('cache_read', 'cr'), @('reasoning', 'rea'))) {
+            $v = Get-NSUsageField $parts[0] $d[0]
+            $extras += ($d[1] + '=' + $(if ($v) { $v } else { '-' }))
+        }
     }
+    $extras += ('paused=' + $pausedText)
+    if ($why.Length -gt 0) { $extras += ('why=' + (ConvertTo-NSReceiptEncoded $why)) }
+    $prevMark = $(if ($lines.Length -ge 2) { $lines[$lines.Length - 2].Split("`t") } else { @() })
+    $lastMark = $lines[$lines.Length - 1].Split("`t")
+    $hosts = Get-NSUsageSpanHosts $(if ($prevMark.Length -ge 5) { $prevMark[4] } else { '' }) `
+        $(if ($lastMark.Length -ge 5) { $lastMark[4] } else { '' })
+    if ($hosts.Length -eq 0) { $hosts = (Get-NSUsageHosts $NightshiftDir).Replace('; ', '+').Replace(' ', '/') }
+    if ($hosts.Length -gt 0) { $extras += ('host=' + $hosts) }
+    $commits = ''
+    try {
+        if ((Get-NSWorkMode $Project) -ceq 'repository') {
+            $target = Resolve-NSWorkTarget $Project
+            if (-not [string]::IsNullOrEmpty($target)) {
+                $log = @(& git -C $target log ('--since=@' + $start) ('--until=@' + $end) '--format=%h' 2>$null)
+                if ($LASTEXITCODE -eq 0) { $commits = (@($log | Where-Object { $_.Length -gt 0 }) -join ',') }
+            }
+        }
+    }
+    catch { $commits = '' }
+    if ($commits.Length -gt 0) { $extras += ('commits=' + $commits) }
+    $receipt = Get-NSReceiptPath $Project $Label
+    $note = Get-NSReceiptProgressNote $receipt
+    if ($note.Length -gt 0) { $extras += ('note=' + (ConvertTo-NSReceiptEncoded $note)) }
+    $prev = Get-NSReceiptSessionData $receipt
+    $prevLine = $(if ($prev.Count -gt 0) { $prev[$prev.Count - 1] } else { '' })
     $sid = ''
     $state = Get-NSShiftPolicyState $Project
     if ($state['state'] -ceq 'valid') { $sid = [string]$state['policy']['shiftId'] }
-    Add-NSReceiptSession (Get-NSReceiptPath $Project $Label) $Label $(if ($sid) { $sid } else { '-' }) `
-        $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended
+    Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
+        $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
+    Write-NSGateHandoffLog $NightshiftDir $Label $prevLine $hosts
+}
+
+# Write-NSGateHandoffLog <nightshift-dir> <label> <previous-session-line> <hosts> - when the session
+# that just closed ran on another host or model than the one before it, record the handoff and what
+# the outgoing session left. Mirrors ns_gate_handoff_log.
+function Write-NSGateHandoffLog {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label,
+          [AllowEmptyString()][string]$Previous, [AllowEmptyString()][string]$Hosts)
+    if ([string]::IsNullOrEmpty($Previous) -or [string]::IsNullOrEmpty($Hosts)) { return }
+    $was = Get-NSSessionExtra $Previous 'host'
+    if ($was.Length -eq 0 -or $was -ceq $Hosts) { return }
+    $commits = Get-NSSessionExtra $Previous 'commits'
+    $note = ConvertFrom-NSReceiptEncoded (Get-NSSessionExtra $Previous 'note')
+    $line = ('handoff {0} {1} {0} {2} {3} {4} {0} outgoing commits: {5}' -f $script:NSDot, $Label,
+        (Get-NSSessionHostWords $was), [char]0x2192, (Get-NSSessionHostWords $Hosts),
+        $(if ($commits.Length -gt 0) { $commits.Replace(',', ', ') } else { 'none' }))
+    if ($note.Length -gt 0) { $line += ' ' + $script:NSDot + ' last note: ' + $note }
+    Write-NSControlLog $NightshiftDir $line
 }
 
 # Test-NSGateItemOpen <punch-list> <label> - true when that item is still an open box.
@@ -1717,12 +1680,20 @@ function Get-NSPulseReceiptsCadenceLine {
         (Get-NSReceiptBase $Workspace $Label) + '.md: where it stands, what is left.')
 }
 
-function Test-NSReceiptHasModelText {
+# Get-NSReceiptModelLines <path> - the lines the model wrote: everything outside the runtime section,
+# the stacked usage blocks of older receipts, and the gate-written heading. Mirrors
+# ns_receipt_model_lines.
+function Get-NSReceiptModelLines {
     param([AllowEmptyString()][string]$Path)
-    if ([string]::IsNullOrEmpty($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
-    if (Test-NSReparsePoint $Path) { return $false }
+    $lines = New-Object Collections.Generic.List[string]
+    if ([string]::IsNullOrEmpty($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return , $lines.ToArray() }
+    if (Test-NSReparsePoint $Path) { return , $lines.ToArray() }
     $sessions = $false
+    $usage = $false
     foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ($line.StartsWith('<!-- usage -->')) { $usage = $true; continue }
+        if ($line.StartsWith('<!-- /usage -->')) { $usage = $false; continue }
+        if ($usage) { continue }
         if ($line.StartsWith('<!-- sessions -->')) { $sessions = $true; continue }
         if ($line.StartsWith('<!-- /sessions -->')) { $sessions = $false; continue }
         if ($sessions) { continue }
@@ -1751,9 +1722,15 @@ function Test-NSReceiptHasModelText {
         if ($line.StartsWith('<!-- item: ')) { continue }
         if ($line -cmatch '^Renamed from .* on [0-9]{4}-[0-9]{2}-[0-9]{2}\.$') { continue }
         if ($line -match ' \u00B7 [0-9]+ segments?\.') { continue }
-        return $true
+        $lines.Add($line)
     }
-    return $false
+    return , $lines.ToArray()
+}
+
+function Test-NSReceiptHasModelText {
+    param([AllowEmptyString()][string]$Path)
+    $model = Get-NSReceiptModelLines $Path
+    return ($model.Count -gt 0)
 }
 
 function Get-NSReceiptsMissingNns {

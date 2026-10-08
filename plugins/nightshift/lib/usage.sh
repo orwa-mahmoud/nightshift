@@ -364,13 +364,74 @@ ns_usage_hosts() {
 # ends with an item open. Time is measured exactly like tokens: one cumulative counter, marks on it
 # at the boundaries, deltas for everything else. Only a tick mark says the item is done; a mark
 # written before kinds existed is a tick.
+#
+# The fifth column is the running total per host and model (ns_usage_host_totals), so the span a
+# mark closes can name who spent it.
 ns_usage_mark() {
-  local ns="$1" label="$2" kind="${3:-tick}" dir file total
+  local ns="$1" label="$2" kind="${3:-tick}" dir file total hosts
   dir="$(ns_usage_dir "$ns")"
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$(_ns_usage_marks "$ns")"
   total="$(ns_usage_total "$ns")" || total=""
-  printf '%s\t%s\t%s\t%s\n' "$(date +%s)" "$label" "$total" "$kind" >>"$file" 2>/dev/null || return 1
+  hosts="$(ns_usage_host_totals "$ns")" || hosts=""
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$label" "$total" "$kind" "$hosts" >>"$file" 2>/dev/null ||
+    return 1
+}
+
+# ns_usage_host_totals <nightshift-dir> — the running total of each host and model, the same sum
+# ns_usage_total takes but kept apart: `host/model:fields` joined by `;`, sorted by host and model.
+# A segment that never named its model is `host/-`.
+ns_usage_host_totals() {
+  local file line host model start cur key keys="" out="" k found
+  file="$(_ns_usage_state "$1")"
+  [ -f "$file" ] || return 1
+  local -a names=() sums=()
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    host="$(printf '%s' "$line" | cut -f2)"
+    model="$(printf '%s' "$line" | cut -f3)"
+    start="$(printf '%s' "$line" | cut -f6)"
+    cur="$(printf '%s' "$line" | cut -f7)"
+    [ -n "$cur" ] && [ -n "$host" ] || continue
+    key="$host/${model:--}"
+    found=""
+    for k in "${!names[@]}"; do
+      if [ "${names[$k]}" = "$key" ]; then
+        found="$k"
+        break
+      fi
+    done
+    if [ -z "$found" ]; then
+      names+=("$key")
+      sums+=("")
+      found=$((${#names[@]} - 1))
+    fi
+    sums[found]="$(ns_usage_add "${sums[$found]}" "$(ns_usage_sub "$cur" "$start")")"
+  done <"$file"
+  [ "${#names[@]}" -gt 0 ] || return 1
+  keys="$(for k in "${!names[@]}"; do printf '%s\t%s\n' "${names[$k]}" "${sums[$k]}"; done | LC_ALL=C sort)"
+  while IFS=$'\t' read -r key line; do
+    [ -z "$out" ] || out="$out;"
+    out="$out$key:$line"
+  done <<<"$keys"
+  printf '%s' "$out"
+}
+
+# ns_usage_span_hosts <earlier-host-totals> <later-host-totals> — the hosts and models whose total
+# moved between two marks, `host/model` joined by `+` in sorted order. Empty when none did.
+ns_usage_span_hosts() {
+  local earlier="$1" later="$2" entry key now was out=""
+  [ -n "$later" ] || return 0
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    key="${entry%%:*}"
+    now="${entry#*:}"
+    was="$(printf '%s\n' "$earlier" | tr ';' '\n' | awk -v k="$key" 'index($0, k ":") == 1 { print substr($0, length(k) + 2); exit }')"
+    [ "$(ns_usage_sub "$now" "$was")" != "$(ns_usage_sub "$now" "$now")" ] || continue
+    [ -z "$out" ] || out="$out+"
+    out="$out$key"
+  done < <(printf '%s\n' "$later" | tr ';' '\n')
+  printf '%s' "$out"
 }
 
 # ns_usage_active <nightshift-dir> — the item the running span is being charged to, or nothing.
@@ -413,31 +474,6 @@ ns_usage_carries_open() {
   file="$(_ns_usage_marks "$ns")"
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   cut -f2 "$file" | grep -qxF -f <(printf '%s\n' "$open")
-}
-
-# ns_usage_item_total <nightshift-dir> <label> — what this shift has charged to one item across
-# every span that closed on it: `<fields>\t<wall-sec>\t<first-start>\t<paused-sec>\t<reason>`.
-ns_usage_item_total() {
-  local ns="$1" label="$2" file line prev="" fields="" wall=0 first="" paused=0 reason="" pe e gap
-  file="$(_ns_usage_marks "$ns")"
-  [ -f "$file" ] || return 1
-  while IFS= read -r line || [ -n "$line" ]; do
-    if [ -n "$prev" ] && [ "$(printf '%s' "$line" | cut -f2)" = "$label" ]; then
-      pe="$(printf '%s' "$prev" | cut -f1)"
-      e="$(printf '%s' "$line" | cut -f1)"
-      fields="$(ns_usage_add "$fields" \
-        "$(ns_usage_sub "$(printf '%s' "$line" | cut -f3)" "$(printf '%s' "$prev" | cut -f3)")")"
-      wall=$((wall + e - pe))
-      [ -n "$first" ] || first="$pe"
-      if gap="$(ns_usage_paused_between "$ns" "$pe" "$e")"; then
-        paused=$((paused + $(printf '%s' "$gap" | cut -f1)))
-        reason="$(printf '%s' "$gap" | cut -f2)"
-      fi
-    fi
-    prev="$line"
-  done <"$file"
-  [ -n "$first" ] || return 1
-  printf '%s\t%s\t%s\t%s\t%s' "$fields" "$wall" "$first" "$paused" "$reason"
 }
 
 # ns_usage_mark_arm <nightshift-dir> [transcript...] — the shift's own start.
@@ -625,32 +661,6 @@ ns_usage_dim_label() {
   esac
 }
 
-# ns_usage_line <fields> <host-and-model> <segments> — the usage block as a receipt carries it.
-# Every dimension by name, scaled in the Tokens table, raw integers in the hidden comment,
-# `unavailable` for one the host does not report, never a total across hosts, and never a price.
-ns_usage_line() {
-  local fields="$1" dim v raw label comment="" segs="${3:-0}" word=segment
-  [ "$segs" = 1 ] || word=segments
-  printf '| Tokens | Amount |\n| --- | ---: |\n'
-  for dim in $NS_USAGE_DIMENSIONS; do
-    v="$(ns_usage_field "$fields" "$dim")" || v=unavailable
-    [ -n "$v" ] || v=unavailable
-    raw="$v"
-    if [ "$v" != unavailable ]; then
-      v="$(ns_usage_scale "$v")"
-      [ -z "$comment" ] || comment="$comment "
-      comment="${comment}$raw"
-    else
-      [ -z "$comment" ] || comment="$comment "
-      comment="${comment}0"
-    fi
-    label="$(ns_usage_dim_label "$dim")"
-    printf '| %s | %s |\n' "$label" "$v"
-  done
-  printf '\n<!-- tokens %s -->\n%s · %s %s. %s' \
-    "$comment" "$2" "$segs" "$word" "$(ns_usage_overlap "${4:-}")"
-}
-
 # ns_usage_duration <seconds> — a wall-clock span in the words a person reads.
 ns_usage_duration() {
   local s="${1:-0}"
@@ -664,32 +674,6 @@ ns_usage_duration() {
 ns_usage_iso() {
   case "${1:-}" in '' | *[!0-9]*) return 1 ;; esac
   date -u -r "$1" +%Y-%m-%dT%H:%MZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%MZ 2>/dev/null
-}
-
-# ns_usage_duration_line <wall-sec> <paused-sec> <reason> <from-epoch> <to-epoch>
-# Working time first, then the recorded pause when there is one, then wall and the span.
-# Nothing is subtracted silently: working is wall minus the pauses the runtime recorded.
-ns_usage_duration_line() {
-  local wall="${1:-0}" paused="${2:-0}" reason="${3:-}" from="$4" to="$5" work out span="" to_s=""
-  case "$wall" in '' | *[!0-9]*) wall=0 ;; esac
-  case "$paused" in '' | *[!0-9]*) paused=0 ;; esac
-  work=$((wall - paused))
-  [ "$work" -ge 0 ] || work=0
-  out="$(printf '| Time | |\n| --- | --- |\n| working | %s |' "$(ns_usage_duration "$work")")"
-  if [ "$paused" -gt 0 ]; then
-    if [ -n "$reason" ]; then
-      out="$(printf '%s\n| paused | %s (%s) |' "$out" "$(ns_usage_duration "$paused")" "$reason")"
-    else
-      out="$(printf '%s\n| paused | %s |' "$out" "$(ns_usage_duration "$paused")")"
-    fi
-  fi
-  out="$(printf '%s\n| wall | %s |' "$out" "$(ns_usage_duration "$wall")")"
-  if span="$(ns_usage_iso "$from")" && [ -n "$span" ]; then
-    if to_s="$(ns_usage_iso "$to")" && [ -n "$to_s" ]; then
-      out="$(printf '%s\n| span | %s → %s |' "$out" "$span" "$to_s")"
-    fi
-  fi
-  printf '%s' "$out"
 }
 
 # ---------------------------------------------------------------------------------------------

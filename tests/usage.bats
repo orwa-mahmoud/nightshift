@@ -191,7 +191,7 @@ ns() { printf '%s/.nightshift' "$1"; }
   rec="$p/.nightshift/receipts/P01.md"
   grep -qF '| input | 10 |' "$rec"
   grep -qF '| Time |' "$rec"
-  grep -qF '1 segment.' "$rec"
+  grep -qF '1 session.' "$rec"
   # The host's own overlap, so nothing downstream adds the same tokens twice.
   grep -qF 'Cache reads and cache writes are separate from the input figure' "$rec"
   grep -qF '# P01' "$rec"
@@ -949,7 +949,7 @@ pause_fixture() {
 }
 
 @test "a recorded pause with no reason is listed without one" {
-  run lib ns_usage_duration_line 600 60 '' 1000 1600
+  run lib ns_receipt_usage_section '- 1000 1600 540 5 1 ticked cw=- cr=- rea=- paused=60 host=claude/claude-opus-5'
   [ "$status" -eq 0 ]
   [[ "$output" == *$'| working | 9m 0s |\n| paused | 1m 0s |\n| wall | 10m 0s |'* ]] || false
 }

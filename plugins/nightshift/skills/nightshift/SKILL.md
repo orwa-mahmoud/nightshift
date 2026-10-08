@@ -155,11 +155,13 @@ carries what was delivered, why, what was tried and rejected, the verification t
 where the outputs or commits are, and any snag or parked decision it touched. The runtime adds what the item cost when `receipts.usage`
 is `when-available`, and how long it took when `receipts.duration` is `on`.
 
-The runtime measures what each item cost, from the records the host already keeps, and writes the
-usage and duration lines into the section at the tick, and a Sessions table with one row per stretch
-the item was worked. **Do not write, estimate or edit a usage or duration figure, and keep the
-Sessions block as the runtime wrote it**: you cannot see your own token counts from inside the
-conversation, and a number you infer would be a guess wearing a measurement's clothes.
+The runtime measures what each item cost, from the records the host already keeps, and keeps one
+section under the receipt's heading: the Tokens and Time totals over every stretch the item was
+worked, a Sessions table with one row per stretch naming its host and model, and any handoff between
+hosts. It redraws that section in place whenever a stretch closes. **Do not write, estimate or edit
+a usage or duration figure, and keep that section as the runtime wrote it**: you cannot see your
+own token counts from inside the conversation, and a number you infer would be a guess wearing a
+measurement's clothes.
 
 The item being charged is the open item whose receipt you wrote last. Setting an item aside for
 another is therefore just writing the other item's receipt when you start on it, and writing this
