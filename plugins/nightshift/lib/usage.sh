@@ -397,6 +397,24 @@ ns_usage_set_active() {
   printf '%s\n' "$2" >"$file" 2>/dev/null || return 1
 }
 
+# ns_usage_carries_open <nightshift-dir> <punch-list> — the live readings already hold spend for an
+# item that is still open: the running span is charged to one, or a closed span names one.
+#
+# Reset drops every marker that says a shift was interrupted, so Start cannot tell from markers
+# alone that the work goes on. The readings can: an open item they already charged is continued.
+ns_usage_carries_open() {
+  local ns="$1" list="$2" open active file
+  open="$(ns_item_rows "$list" open | cut -f1)"
+  [ -n "$open" ] || return 1
+  active="$(ns_usage_active "$ns")"
+  if [ -n "$active" ] && printf '%s\n' "$open" | grep -qxF -- "$active"; then
+    return 0
+  fi
+  file="$(_ns_usage_marks "$ns")"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  cut -f2 "$file" | grep -qxF -f <(printf '%s\n' "$open")
+}
+
 # ns_usage_item_total <nightshift-dir> <label> — what this shift has charged to one item across
 # every span that closed on it: `<fields>\t<wall-sec>\t<first-start>\t<paused-sec>\t<reason>`.
 ns_usage_item_total() {

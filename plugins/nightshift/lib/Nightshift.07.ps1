@@ -890,6 +890,25 @@ function Set-NSUsageActive {
     [IO.File]::WriteAllText($file, $Label + "`n", (New-Object Text.UTF8Encoding($false)))
 }
 
+# Test-NSUsageCarriesOpen <nightshift-dir> <punch-list> - the live readings already hold spend for an
+# item that is still open: the running span is charged to one, or a closed span names one. Reset
+# drops every marker that says a shift was interrupted; the readings still show the work goes on.
+# Mirrors ns_usage_carries_open.
+function Test-NSUsageCarriesOpen {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$PunchList)
+    $open = @((Get-NSItemRows $PunchList 'open') | ForEach-Object { $_.Label })
+    if ($open.Count -eq 0) { return $false }
+    $active = Get-NSUsageActive $NightshiftDir
+    if (-not [string]::IsNullOrEmpty($active) -and $open -ccontains $active) { return $true }
+    $file = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return $false }
+    foreach ($line in [IO.File]::ReadAllLines($file)) {
+        $fields = $line -split "`t"
+        if ($fields.Count -ge 2 -and $open -ccontains $fields[1]) { return $true }
+    }
+    return $false
+}
+
 # Get-NSUsageItemTotal <nightshift-dir> <label> - what this shift has charged to one item across every
 # span that closed on it: `<fields>`t<wall-sec>`t<first-start>`t<paused-sec>`t<reason>`, or ''.
 function Get-NSUsageItemTotal {

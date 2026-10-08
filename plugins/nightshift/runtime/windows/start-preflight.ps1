@@ -341,10 +341,10 @@ if (-not $DryRun) {
     $ended = ((Test-Path -LiteralPath $endedPath -PathType Leaf) -and -not (Test-NSReparsePoint $endedPath))
     $stopped = ((Test-Path -LiteralPath $stopPath -PathType Leaf) -and -not (Test-NSReparsePoint $stopPath))
     # Accounting follows the work. A shift that finished its list has its readings set aside, so the
-    # next list starts clean. One that stopped, reached quitting time or died with items still open
-    # is continued, and an open item keeps the time and tokens already spent on it: the readings
-    # stay live, and an ended shift gets its own copy for its archive. The gap since its last work
-    # is recorded as a pause unless one already covers it. Mirrors start-preflight.sh.
+    # next list starts clean. One that stopped, reached quitting time, died or was reset with items
+    # still open is continued, and an open item keeps the time and tokens already spent on it: the
+    # readings stay live, and an ended shift gets its own copy for its archive. The gap since its last
+    # work is recorded as a pause unless one already covers it. Mirrors start-preflight.sh.
     $openNow = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'punch-list')
     $continued = $false
     if ($ended) {
@@ -359,6 +359,11 @@ if (-not $DryRun) {
         }
     }
     elseif ($stopped -or $wasArmed) {
+        $continued = $true
+    }
+    elseif ($openNow -gt 0 -and (Test-NSUsageCarriesOpen $ns (Get-NSLayoutPath $ns 'punch-list'))) {
+        # A Reset leaves no marker behind, but an open item the readings already charged is the same
+        # work going on.
         $continued = $true
     }
     else {

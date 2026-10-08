@@ -151,6 +151,39 @@ try {
         ([IO.File]::ReadAllText($pauses) -ceq "1790380000`tthe shift broke off here and Start resumed it`n")) `
         'an interrupted shift keeps its readings and records the gap from its last work once'
 
+    # Reset leaves no marker behind. An open item the readings already charge is the same work going
+    # on and keeps its readings; readings that charge no open item, or a finished list, retire.
+    $resetActive = New-Site (Join-Path $root 'reset-active')
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $resetActive '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $resetActive '.nightshift/usage/marks.tsv'), "1790380000`tarm`t`n")
+    [IO.File]::WriteAllText((Join-Path $resetActive '.nightshift/usage/active'), "1. work.`n")
+    $resetActiveRun = Invoke-Preflight $resetActive
+    Expect-True ($resetActiveRun.ExitCode -eq 0) "a reset shift with an open item starts: $($resetActiveRun.Stdout)"
+    Expect-True ((Test-Path -LiteralPath (Join-Path $resetActive '.nightshift/usage/marks.tsv') -PathType Leaf) -and
+        @(Get-ChildItem -LiteralPath (Join-Path $resetActive '.nightshift') -Filter 'usage-*').Count -eq 0) `
+        'after a Reset an open item being worked keeps its readings'
+    $resetMarked = New-Site (Join-Path $root 'reset-marked')
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $resetMarked '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $resetMarked '.nightshift/usage/marks.tsv'),
+        "1790380000`tarm`t`n1790380600`t1. work.`tinput=40`tswitch`n")
+    $null = Invoke-Preflight $resetMarked
+    Expect-True (Test-Path -LiteralPath (Join-Path $resetMarked '.nightshift/usage/marks.tsv') -PathType Leaf) `
+        'after a Reset a closed span naming an open item keeps the readings'
+    $resetNewList = New-Site (Join-Path $root 'reset-new-list')
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $resetNewList '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $resetNewList '.nightshift/usage/marks.tsv'),
+        "1790380000`tarm`t`n1790380600`t9. an item from an earlier list.`tinput=40`ttick`n")
+    $null = Invoke-Preflight $resetNewList
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $resetNewList '.nightshift/usage'))) `
+        'after a Reset readings that charge no open item retire'
+    $resetFinished = New-Site (Join-Path $root 'reset-finished') "## Items`n- [x] **1. work.**`n"
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $resetFinished '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $resetFinished '.nightshift/usage/marks.tsv'), "1790380000`tarm`t`n")
+    [IO.File]::WriteAllText((Join-Path $resetFinished '.nightshift/usage/active'), "1. work.`n")
+    $null = Invoke-Preflight $resetFinished
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $resetFinished '.nightshift/usage'))) `
+        'after a Reset a finished list still retires its readings'
+
     # An open-ended item with no clock refuses instead of inventing hours.
     $walk = New-Site (Join-Path $root 'walkthrough') "## Items`n- [ ] **1. walkthrough.** Ending: open-ended`n"
     $walkRun = Invoke-Preflight $walk

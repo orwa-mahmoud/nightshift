@@ -379,10 +379,11 @@ if [ "$DRY_RUN" -eq 0 ]; then
     fi
   done
   # Accounting follows the work. A shift that finished its list has its readings set aside, so the
-  # next list starts clean. One that stopped, reached quitting time or died with items still open
-  # is continued, and an open item keeps the time and tokens already spent on it: the readings
-  # stay live, and an ended shift gets its own copy for its archive. The gap since its last work is
-  # recorded as a pause unless one already covers it, so the timeline shows where it broke off.
+  # next list starts clean. One that stopped, reached quitting time, died or was reset with items
+  # still open is continued, and an open item keeps the time and tokens already spent on it: the
+  # readings stay live, and an ended shift gets its own copy for its archive. The gap since its last
+  # work is recorded as a pause unless one already covers it, so the timeline shows where it broke
+  # off.
   OPEN_NOW=0
   [ -f "$PUNCH" ] && OPEN_NOW="$(ns_open_boxes "$PUNCH")"
   CONTINUED=0
@@ -396,6 +397,10 @@ if [ "$DRY_RUN" -eq 0 ]; then
       [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
     fi
   elif { [ -f "$STOP" ] && [ ! -L "$STOP" ]; } || [ "$WAS_ARMED" -eq 1 ]; then
+    CONTINUED=1
+  elif [ "${OPEN_NOW:-0}" -gt 0 ] && ns_usage_carries_open "$NS" "$PUNCH"; then
+    # A Reset leaves no marker behind, but an open item the readings already charged is the same
+    # work going on.
     CONTINUED=1
   else
     RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
