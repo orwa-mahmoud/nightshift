@@ -462,6 +462,7 @@ receipts.templatePath
 receipts.usage
 shift.execution
 shift.hours
+shift.itemBudget
 shift.toolingPolicy
 shift.verificationProfile'
 

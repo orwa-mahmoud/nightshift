@@ -91,7 +91,7 @@ ns_receipt_title() {
 ns_receipt_basename() {
   local label="$1" nn title slug
   # A leftover `- [x]` from a ticked line must not become an `x-` sidecar file.
-  label="$(printf '%s' "$label" | sed 's/^- \[[xX ]\][[:space:]]*//; s/^\*\*//; s/\*\*$//')"
+  label="$(printf '%s' "$label" | sed 's/^- \[[xX -]\][[:space:]]*//; s/^\*\*//; s/\*\*$//')"
   nn="$(ns_receipt_nn "$label")"
   title="$(ns_receipt_title "$label")"
   [ -n "$title" ] || title="$label"
@@ -131,8 +131,8 @@ function ns_item_id(line,    s) {
 function ns_item_label(line,    lead) {
   sub(/\r$/, "", line)
   sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "", line)
-  sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", line)
-  sub(/^- \[[ xX]\][[:space:]]*/, "", line)
+  sub(/^- \[[ xX-]\][[:space:]]*\*\*/, "", line)
+  sub(/^- \[[ xX-]\][[:space:]]*/, "", line)
   # A dash right after a bare number numbers the item, as in "1 — Fix it": a number alone is no
   # label, so only a later dash ends the title. A code such as P03 before a dash is the label.
   lead = ""
@@ -148,27 +148,27 @@ function ns_item_label(line,    lead) {
 }
 '
 
-# ns_item_rows <punch-list> [open|ticked|all] — `<label>\t<id>` for each top-level item under
-# `## Items` that has a label, list order. The id is empty for an item that has none.
+# ns_item_rows <punch-list> [open|ticked|stopped|all] — `<label>\t<id>` for each top-level item
+# under `## Items` that has a label, list order. The id is empty for an item that has none. A ticked
+# item is `[x]`; a stopped one, closed at its hard budget without being done, is `[-]`.
 ns_item_rows() {
   ns_items_section "$1" 2>/dev/null | awk -v want="${2:-all}" "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ {
-      open = ($0 ~ /^- \[ \]/)
-      if (want == "open" && !open) next
-      if (want == "ticked" && open) next
+    /^- \[[ xX-]\]/ {
+      state = ($0 ~ /^- \[ \]/) ? "open" : ($0 ~ /^- \[-\]/) ? "stopped" : "ticked"
+      if (want != "all" && want != state) next
       label = ns_item_label($0)
       if (label != "") print label "\t" ns_item_id($0)
     }
   '
 }
 
-# ns_item_states <punch-list> — `<open|ticked>\t<label>\t<id>` for each top-level item under
+# ns_item_states <punch-list> — `<open|ticked|stopped>\t<label>\t<id>` for each top-level item under
 # `## Items` that has a label, list order.
 ns_item_states() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ {
+    /^- \[[ xX-]\]/ {
       label = ns_item_label($0)
-      if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : "ticked") "\t" label "\t" ns_item_id($0)
+      if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : ($0 ~ /^- \[-\]/) ? "stopped" : "ticked") "\t" label "\t" ns_item_id($0)
     }
   '
 }
@@ -176,14 +176,14 @@ ns_item_states() {
 # ns_item_ids <punch-list> — every id the list's items carry, one per line.
 ns_item_ids() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ { id = ns_item_id($0); if (id != "") print id }
+    /^- \[[ xX-]\]/ { id = ns_item_id($0); if (id != "") print id }
   '
 }
 
 # ns_item_title_for <punch-list> <id> — the whole title of the item carrying that id: its bold text,
 # or the line after its checkbox, without the id comment.
 ns_item_title_for() {
-  local line box='^- \[[ xX]\][[:space:]]*' tail="[[:space:]]*<!--[[:space:]]*id:[[:space:]]*$2[[:space:]]*-->[[:space:]]*\$"
+  local line box='^- \[[ xX-]\][[:space:]]*' tail="[[:space:]]*<!--[[:space:]]*id:[[:space:]]*$2[[:space:]]*-->[[:space:]]*\$"
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     [[ $line =~ $box ]] || continue
@@ -204,7 +204,7 @@ EOF
 # ns_item_id_for <punch-list> <label> — the id of the first item with that label, or nothing.
 ns_item_id_for() {
   ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ && ns_item_label($0) == want { print ns_item_id($0); exit }
+    /^- \[[ xX-]\]/ && ns_item_label($0) == want { print ns_item_id($0); exit }
   '
 }
 
@@ -249,7 +249,7 @@ ns_punch_assign_ids() {
     { line = $0; sub(/\r$/, "", line) }
     !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; next }
     line ~ /^## / { exit }
-    line ~ /^- \[[ xX]\]/ && ns_item_id(line) == "" { n++ }
+    line ~ /^- \[[ xX-]\]/ && ns_item_id(line) == "" { n++ }
     END { print n + 0 }
   ' "$list")" || return 1
   [ "$need" -gt 0 ] || return 0
@@ -265,7 +265,7 @@ ns_punch_assign_ids() {
     { line = $0; cr = ""; if (sub(/\r$/, "", line)) cr = "\r" }
     !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; print; next }
     line ~ /^## / { on = 0; done = 1 }
-    !done && line ~ /^- \[[ xX]\]/ && ns_item_id(line) == "" {
+    !done && line ~ /^- \[[ xX-]\]/ && ns_item_id(line) == "" {
       k++
       print line " <!-- id: " pool[k] " -->" cr
       next
@@ -576,6 +576,7 @@ ns_receipt_usage_section() {
   local data="$1" line sid start end work in out ended rest n=0 word dim v key
   local cw cr rea paused why host commits note prev_host="" prev_end="" prev_commits="" prev_note=""
   local twork=0 tpause=0 twall=0 first="" last="" last_why="" hosts_seen="" handoffs="" rows=""
+  local budget="" budget_events=""
   local -a tot have off miss
   local i
   for i in 0 1 2 3 4; do tot[i]=0; have[i]=0; off[i]=0; miss[i]=0; done
@@ -592,6 +593,15 @@ ns_receipt_usage_section() {
     host="$(ns_session_extra "$line" host)"
     commits="$(ns_session_extra "$line" commits)"
     note="$(ns_receipt_decode "$(ns_session_extra "$line" note)")"
+    v="$(ns_session_extra "$line" limit)"
+    [ -z "$v" ] || budget="$(ns_receipt_decode "$v")"
+    for v in soft hard; do
+      key="$(ns_session_extra "$line" "$v")"
+      [ -n "$key" ] || continue
+      budget_events="$budget_events- $v limit reached $(ns_local_time "$key" || printf '—')"
+      [ "$v" != hard ] || [ "$ended" != stopped ] || budget_events="$budget_events; closed as stopped"
+      budget_events="$budget_events"$'\n'
+    done
     i=0
     local cells=""
     for v in "$in" "$out" "$cw" "$cr" "$rea"; do
@@ -657,7 +667,7 @@ EOF
         "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")"
       comment="$comment${comment:+ }${tot[j]}"
     done
-    hostline="$(printf '%s\n' "$hosts_seen" | sed '/^$/d; s/\// /; s/ -$//' | paste -sd';' - | sed 's/;/; /g')"
+    hostline="$(printf '%s\n' "$hosts_seen" | sed '/^$/d; s/\// /; s/ -$//' | awk 'NF { printf "%s%s", s, $0; s = "; " }')"
     word=sessions
     [ "$n" -ne 1 ] || word=session
     printf '\n<!-- tokens %s -->\n%s · %s %s. %s\n' "$comment" "${hostline:-unknown}" "$n" "$word" \
@@ -686,7 +696,7 @@ EOF
   printf '| # | Shift | Host · model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |\n'
   printf '| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |\n'
   printf '%s' "$rows"
-  key="$(printf '%s\n' "$hosts_seen" | sed '/^$/d' | while IFS= read -r key; do ns_session_host_words "$key"; printf '\n'; done | paste -sd',' - | sed 's/,/, /g')"
+  key="$(printf '%s\n' "$hosts_seen" | sed '/^$/d' | while IFS= read -r key; do ns_session_host_words "$key"; printf '\n'; done | awk 'NF { printf "%s%s", s, $0; s = ", " }')"
   printf '| **Total** | %s %s | %s |  |  | **%s** | **%s**' "$n" "$word" "${key:-—}" \
     "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
     "$(if [ "$tpause" -gt 0 ]; then ns_usage_duration "$tpause"; elif [ "$havepause" -eq 1 ]; then printf '—'; elif [ "$offpause" -eq 1 ]; then printf off; else printf unavailable; fi)"
@@ -696,6 +706,9 @@ EOF
   printf ' |  |\n'
   if [ -n "$handoffs" ]; then
     printf '\n**Handoffs**\n\n%s' "$handoffs"
+  fi
+  if [ -n "$budget_events" ]; then
+    printf "\n**Budget** \`%s\`\n\n%s" "$budget" "$budget_events"
   fi
   printf '\n<!-- session-data\n%s\n-->\n<!-- /usage -->\n' "$data"
 }
@@ -1094,13 +1107,13 @@ ns_receipts_time_total_cell() {
 
 # ns_receipts_item_names <project-dir> <open|ticked> — receipt file names for boxes in that state.
 # A ticked item's receipt leaves live storage once the shift has ended; an open item's stays, so
-# the next shift writes into the same file.
+# the next shift writes into the same file. A stopped item is not done, so it counts as open here.
 ns_receipts_item_names() {
   local punch state="${2:-open}" label id
   ns_layout_set punch "$1/.nightshift" punch-list
   [ -f "$punch" ] || return 0
   [ "$state" = ticked ] || state=open
-  ns_item_rows "$punch" "$state" | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
+  { ns_item_rows "$punch" "$state"; [ "$state" = ticked ] || ns_item_rows "$punch" stopped; } | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
     [ -n "$label" ] || continue
     printf '%s.md\n' "$(ns_receipt_base "$1" "$label" "$id")"
   done
@@ -1598,7 +1611,7 @@ _ns_archive_items() {
     done { if (mode == "closed") print; next }
     line ~ /^## / { if (mode == "closed") { printf "%s", blanks; print } blanks = ""; done = 1; next }
     line == "" { blanks = blanks $0 "\n"; next }
-    line ~ /^- \[[ xX]\]/ {
+    line ~ /^- \[[ xX-]\]/ {
       take = (line ~ /^- \[[xX]\]/)
       if (take) { if (mode == "closed") printf "%s", blanks; print }
       blanks = ""
@@ -2150,6 +2163,8 @@ ns_count_boxes() { # $1 = punch list, $2 = ERE for the box state
 
 ns_open_boxes()   { ns_count_boxes "$1" '^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'; }
 ns_ticked_boxes() { ns_count_boxes "$1" '^[[:space:]]*-[[:space:]]*\[[xX]\]'; }
+# ns_stopped_boxes <punch-list> — items closed at their hard budget without being done, `- [-]`.
+ns_stopped_boxes() { ns_count_boxes "$1" '^[[:space:]]*-[[:space:]]*\[-\]'; }
 
 # Work orders have no ## Items heading. Count every top-level open box in the file.
 ns_open_boxes_file() {
@@ -2603,7 +2618,7 @@ ns_punch_items() {
 # one. The first item that matches wins. Prints nothing when there is no such item.
 ns_punch_item() {
   ns_punch_items "$1" | awk -v want="$2" "$NS_AWK_ITEM"'
-    function starts_item(line) { return line ~ /^- \[[ xX]\]/ }
+    function starts_item(line) { return line ~ /^- \[[ xX-]\]/ }
     # A top-level line is anything not indented: the next item, a heading, a note. Either way this
     # item has ended.
     function top_level(line) { return line !~ /^[[:space:]]/ && line != "" }
@@ -2654,14 +2669,15 @@ ns_punch_contract() {
 
 # ns_punch_items_normalised <punch-list> — every item line and sub-bullet with the checkbox state
 # flattened, so ticking a box changes nothing and any other edit — a reworded item, a deleted one,
-# an inserted one — changes everything.
+# an inserted one — changes everything. Closing an item as stopped is the other permitted move: its
+# `[-]` is flattened like a tick, and the `Stopped:` sub-bullet it adds is left out.
 #
 # Line endings are flattened with it, here and in the contract. A shift can be handed from a macOS
 # host to a Windows one, and a checkout that converts on the way would otherwise present a contract
 # nobody touched as tampered with. The digest is a property of what the list says, not of how the
 # filesystem it is sitting on ends a line.
 ns_punch_items_normalised() {
-  ns_punch_items "$1" | sed 's/^- \[[xX]\]/- [ ]/'
+  ns_punch_items "$1" | sed -e 's/^- \[[xX-]\]/- [ ]/' -e '/^[[:space:]][[:space:]]*-[[:space:]][[:space:]]*Stopped:/d'
 }
 
 # ns_punch_digest — a stable digest of stdin, from whatever the machine has. Same shape as every
@@ -2736,7 +2752,7 @@ ns_status_open_title() {
   ns_punch_item "$1" "" 2>/dev/null | awk '
     NR == 1 {
       sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "")
-      sub(/^- \[[ xX]\][[:space:]]*/, "")
+      sub(/^- \[[ xX-]\][[:space:]]*/, "")
       gsub(/\*\*/, "")
       sub(/[[:space:]]+$/, "")
       print

@@ -209,7 +209,8 @@ if (Test-Path -LiteralPath $punch -PathType Leaf) {
     $counts = Get-NSBoxCounts $punch
     $open = [int]$counts.Open
     $ticked = [int]$counts.Ticked
-    Add-NSFact "punch list open=$open ticked=$ticked"
+    $stopped = [int]$counts.Stopped
+    Add-NSFact $(if ($stopped -gt 0) { "punch list open=$open ticked=$ticked stopped=$stopped" } else { "punch list open=$open ticked=$ticked" })
 }
 else {
     Add-NSWarn 'punch-list.md is missing'

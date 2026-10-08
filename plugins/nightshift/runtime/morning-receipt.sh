@@ -860,7 +860,7 @@ _key_by_domain() { # <destination> <domain>
 }
 
 _lines_shift() {
-  local i mode ticked open level chosen tooling target gates
+  local i mode ticked open stopped level chosen tooling target gates
   SEC=""
   sec_field Shift "$P_SHIFTID"
   _session_host
@@ -881,7 +881,14 @@ _lines_shift() {
       ticked=""
     fi
   fi
-  [ -z "$ticked" ] || sec_add "- Items: $ticked ticked, $open open"
+  if [ -n "$ticked" ]; then
+    stopped="$(ns_stopped_boxes "$PUNCH" 2>/dev/null)" || stopped=0
+    if [ "${stopped:-0}" -gt 0 ]; then
+      sec_add "- Items: $ticked ticked, $open open, $stopped stopped at their hard budget"
+    else
+      sec_add "- Items: $ticked ticked, $open open"
+    fi
+  fi
   mode="$(ns_work_mode "$WORKSPACE" 2>/dev/null)" || mode=repository
   if [ "$VIEW" = artifact ] || [ "$mode" = artifact ]; then
     sec_add "- Receipts: $(ns_receipts_count "$WORKSPACE")"
@@ -1314,8 +1321,14 @@ EOF
 }
 
 _lines_parked() {
-  local i=0
+  local i=0 label id
   SEC=""
+  # An item stopped at its hard budget is not done, and what happens to it is the owner's call.
+  while IFS=$'\t' read -r label id; do
+    [ -n "$label" ] || continue
+    sec_add "- $label stopped at its hard budget without being done"
+    sec_add "  - Default: it stays open work; reopen it with a new budget, narrow it, or drop it"
+  done < <(ns_item_rows "$PUNCH" stopped 2>/dev/null)
   while [ "$i" -lt "$P_COUNT" ]; do
     sec_add "- ${P_TITLE[$i]}"
     [ -n "${P_DEFAULT[$i]}" ] && sec_add "  - Default: ${P_DEFAULT[$i]}"

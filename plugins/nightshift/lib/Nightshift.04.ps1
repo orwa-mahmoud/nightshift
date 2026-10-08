@@ -366,7 +366,7 @@ function Get-NSArchivePunchItems {
             $blanks = ''; $done = $true; continue
         }
         if ($line -ceq '') { $blanks = $blanks + $record; continue }
-        if ($line -cmatch '^- \[[ xX]\]') {
+        if ($line -cmatch '^- \[[ xX-]\]') {
             $take = ($line -cmatch '^- \[[xX]\]')
             if ($take) { if ($closed) { $null = $out.Append($blanks) }; $null = $out.Append($record) }
             $blanks = ''; continue
@@ -990,8 +990,8 @@ function Get-NSItemLabel {
     param([AllowEmptyString()][string]$Line)
     $t = $Line -creplace '\r$', ''
     $t = $t -creplace $script:NSItemIdPattern, ''
-    $t = $t -creplace '^- \[[ xX]\][ \t]*\*\*', ''
-    $t = $t -creplace '^- \[[ xX]\][ \t]*', ''
+    $t = $t -creplace '^- \[[ xX-]\][ \t]*\*\*', ''
+    $t = $t -creplace '^- \[[ xX-]\][ \t]*', ''
     # A dash right after a bare number numbers the item, as in "1 - Fix it": a number alone is no
     # label, so only a later dash ends the title. A code such as P03 before a dash is the label.
     $lead = ''
@@ -1005,25 +1005,26 @@ function Get-NSItemLabel {
     return ($lead + $t).TrimEnd()
 }
 
-# Get-NSItemRows <punch-list> [open|ticked|all] - Label, Id and Open for each top-level item under
-# `## Items` that has a label, list order. Id is '' for an item that has none.
+# Get-NSItemRows <punch-list> [open|ticked|stopped|all] - Label, Id, Open and State for each top-level
+# item under `## Items` that has a label, list order. Id is '' for an item that has none. A ticked item
+# is `[x]`; a stopped one, closed at its hard budget without being done, is `[-]`. Mirrors ns_item_rows.
 function Get-NSItemRows {
     param(
         [Parameter(Mandatory = $true)][string]$PunchList,
-        [ValidateSet('open', 'ticked', 'all')][string]$State = 'all'
+        [ValidateSet('open', 'ticked', 'stopped', 'all')][string]$State = 'all'
     )
     $rows = New-Object Collections.Generic.List[object]
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) {
         return , $rows.ToArray()
     }
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
-        if ($line -cnotmatch '^- \[[ xX]\]') { continue }
+        if ($line -cnotmatch '^- \[[ xX-]\]') { continue }
         $open = $line -cmatch '^- \[ \]'
-        if ($State -ceq 'open' -and -not $open) { continue }
-        if ($State -ceq 'ticked' -and $open) { continue }
+        $rowState = $(if ($open) { 'open' } elseif ($line -cmatch '^- \[-\]') { 'stopped' } else { 'ticked' })
+        if ($State -cne 'all' -and $State -cne $rowState) { continue }
         $label = Get-NSItemLabel $line
         if ([string]::IsNullOrEmpty($label)) { continue }
-        $rows.Add([pscustomobject]@{ Label = $label; Id = (Get-NSItemId $line); Open = $open })
+        $rows.Add([pscustomobject]@{ Label = $label; Id = (Get-NSItemId $line); Open = $open; State = $rowState })
     }
     return , $rows.ToArray()
 }
@@ -1034,15 +1035,15 @@ function Get-NSItemTitleFor {
     param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][string]$Id)
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) { return '' }
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
-        if ($line -cnotmatch '^- \[[ xX]\]' -or (Get-NSItemId $line) -cne $Id) { continue }
+        if ($line -cnotmatch '^- \[[ xX-]\]' -or (Get-NSItemId $line) -cne $Id) { continue }
         $t = $line -creplace '\r$', ''
         $t = $t -creplace $script:NSItemIdPattern, ''
-        if ($t -cmatch '^- \[[ xX]\][ \t]*\*\*') {
-            $t = $t -creplace '^- \[[ xX]\][ \t]*\*\*', ''
+        if ($t -cmatch '^- \[[ xX-]\][ \t]*\*\*') {
+            $t = $t -creplace '^- \[[ xX-]\][ \t]*\*\*', ''
             $t = $t -creplace '\*\*.*$', ''
         }
         else {
-            $t = $t -creplace '^- \[[ xX]\][ \t]*', ''
+            $t = $t -creplace '^- \[[ xX-]\][ \t]*', ''
         }
         return $t.TrimEnd()
     }
@@ -1122,7 +1123,7 @@ function Add-NSPunchItemIds {
             if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $on = $true }
         }
         elseif (-not $done -and $line -cmatch '^## ') { $done = $true }
-        elseif (-not $done -and $line -cmatch '^- \[[ xX]\]' -and [string]::IsNullOrEmpty((Get-NSItemId $line))) {
+        elseif (-not $done -and $line -cmatch '^- \[[ xX-]\]' -and [string]::IsNullOrEmpty((Get-NSItemId $line))) {
             $id = New-NSItemId $NightshiftDir $taken.ToArray()
             if ([string]::IsNullOrEmpty($id)) { return $false }
             $taken.Add($id)
@@ -1171,7 +1172,7 @@ function Get-NSReceiptTitle {
 
 function Get-NSReceiptBasename {
     param([AllowEmptyString()][string]$Label)
-    $Label = $Label -creplace '^- \[[xX ]\][ \t]*', ''
+    $Label = $Label -creplace '^- \[[xX -]\][ \t]*', ''
     $Label = $Label -creplace '^\*\*', ''
     $Label = $Label -creplace '\*\*$', ''
     $nn = Get-NSReceiptNn $Label
@@ -1532,6 +1533,8 @@ function Get-NSReceiptUsageSection {
     $rows = New-Object Collections.Generic.List[string]
     $handoffs = New-Object Collections.Generic.List[string]
     $prevHost = ''; $prevEnd = ''; $prevCommits = ''; $prevNote = ''
+    $budget = ''
+    $budgetEvents = New-Object Collections.Generic.List[string]
     $n = 0
     $scale = { param([long]$v) Get-NSUsageScale ([string]$v) }
     foreach ($line in $Data) {
@@ -1546,6 +1549,16 @@ function Get-NSReceiptUsageSection {
         $hostKey = Get-NSSessionExtra $line 'host'
         $commits = Get-NSSessionExtra $line 'commits'
         $note = ConvertFrom-NSReceiptEncoded (Get-NSSessionExtra $line 'note')
+        $limitText = Get-NSSessionExtra $line 'limit'
+        if ($limitText.Length -gt 0) { $budget = ConvertFrom-NSReceiptEncoded $limitText }
+        foreach ($lv in @('soft', 'hard')) {
+            $atLimit = Get-NSSessionExtra $line $lv
+            if ($atLimit.Length -eq 0) { continue }
+            $whenLimit = Get-NSLocalTime $atLimit
+            $budgetLine = '- ' + $lv + ' limit reached ' + $(if ($whenLimit) { $whenLimit } else { $dash })
+            if ($lv -ceq 'hard' -and $ended -ceq 'stopped') { $budgetLine += '; closed as stopped' }
+            $budgetEvents.Add($budgetLine)
+        }
         $cells = ''
         for ($i = 0; $i -lt 5; $i++) {
             $v = $vals[$i]; $num = [long]0
@@ -1657,6 +1670,12 @@ function Get-NSReceiptUsageSection {
         $out.Add('**Handoffs**')
         $out.Add('')
         foreach ($h in $handoffs) { $out.Add($h) }
+    }
+    if ($budgetEvents.Count -gt 0) {
+        $out.Add('')
+        $out.Add('**Budget** `' + $budget + '`')
+        $out.Add('')
+        foreach ($e in $budgetEvents) { $out.Add($e) }
     }
     $out.Add('')
     $out.Add('<!-- session-data')
@@ -1941,6 +1960,12 @@ function Get-NSReceiptNamesByState {
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($row in (Get-NSItemRows $punch $State)) {
             $names.Add((Get-NSReceiptBase $Workspace $row.Label $row.Id) + '.md')
+        }
+        # A stopped item is not done, so for its receipt it counts as open.
+        if ($State -ceq 'open') {
+            foreach ($row in (Get-NSItemRows $punch 'stopped')) {
+                $names.Add((Get-NSReceiptBase $Workspace $row.Label $row.Id) + '.md')
+            }
         }
     }
     return $names.ToArray()

@@ -1269,3 +1269,135 @@ ns_hardhat_trusted_shift_control() { # <cmd> <plugin_root> <workspace>
   fi
   return 0
 }
+
+# Restricted modes. A spent hard budget (`wrapup`) narrows the shift to wrap-up: reading, committing
+# the work in progress, and writing the receipt, the punch list and the inbox. Reading stays free;
+# a tool this guard cannot classify is denied, so a new tool never widens a restricted mode. Shell
+# commands are matched by their text, as every hardhat rule is: hardening, not a sandbox.
+
+# ns_hardhat_readonly_tool <tool> — a tool that only reads.
+ns_hardhat_readonly_tool() {
+  case "$1" in
+    Read | Grep | Glob | LS | NotebookRead | TodoWrite | WebFetch | WebSearch | ToolSearch | Skill) return 0 ;;
+  esac
+  return 1
+}
+
+# ns_hardhat_file_write_tool <tool> — a tool whose payload names the files it writes.
+ns_hardhat_file_write_tool() {
+  case "$1" in Edit | Write | MultiEdit | NotebookEdit | apply_patch) return 0 ;; esac
+  return 1
+}
+
+# ns_hardhat_restricted_places <mode> — the canonical paths a restricted mode may write, one per
+# line: a folder admits everything under it.
+ns_hardhat_restricted_places() {
+  local key p
+  case "$1" in
+    wrapup) set -- receipts punch-list parking-lot snag-log ;;
+    *) return 1 ;;
+  esac
+  for key in "$@"; do
+    p="$(ns_layout_path "$NS" "$key")" || continue
+    ns_hardhat_canon_write_target "$p" || printf '%s' "$p"
+    printf '\n'
+  done
+}
+
+# ns_hardhat_outside_places <target> — status 0 when a write target falls outside every place in
+# NS_HARDHAT_PLACES. An unresolvable target is outside.
+ns_hardhat_outside_places() {
+  local t="$1" place
+  # An apply_patch target arrives as its header line.
+  t="${t#\*\*\* Add File: }"
+  t="${t#\*\*\* Update File: }"
+  t="${t#\*\*\* Delete File: }"
+  t="${t#\*\*\* Move to: }"
+  t="$(ns_hardhat_canon_write_target "$t")" || return 0
+  while IFS= read -r place; do
+    [ -n "$place" ] || continue
+    case "$t" in "$place" | "$place"/*) return 1 ;; esac
+  done <<<"$NS_HARDHAT_PLACES"
+  return 0
+}
+
+# ns_hardhat_command_allowed <scrubbed-command> <mode> — status 0 for a command that only reads, or,
+# in wrapup, that also stages and commits. Any redirection that writes, command substitution,
+# background job or unlisted program denies the whole command.
+ns_hardhat_command_allowed() {
+  local cmd="$1" mode="$2" seg word verb rest
+  case "$cmd" in *"\$("* | *"\`"* | *"<("* | *">("*) return 1 ;; esac
+  cmd="$(printf '%s' "$cmd" | sed -E 's#[0-9]*>&[0-9]+##g; s#&?[0-9]*>{1,2}[[:space:]]*/dev/null##g')"
+  case "$cmd" in *'>'*) return 1 ;; esac
+  while IFS= read -r seg; do
+    seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$seg" ] || continue
+    while [[ $seg =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do
+      seg="${seg:${#BASH_REMATCH[0]}}"
+    done
+    word="${seg%%[[:space:]]*}"
+    rest=""
+    [ "$word" = "$seg" ] || rest="${seg#*[[:space:]]}"
+    case "${word##*/}" in
+      cat | head | tail | less | more | wc | grep | egrep | fgrep | rg | ag | ls | tree | file | stat | du | df | \
+        pwd | cd | echo | printf | true | false | test | '[' | which | type | command | date | basename | \
+        dirname | realpath | readlink | sort | uniq | cut | tr | nl | column | diff | cmp | comm | jq | awk)
+        ;;
+      sed)
+        case " $rest " in *' -i'* | *' --in-place'*) return 1 ;; esac
+        ;;
+      find)
+        # -exec covers -execdir, -ok covers -okdir and -fprint covers -fprintf.
+        case " $rest " in *' -delete'* | *' -exec'* | *' -ok'* | *' -fprint'* | *' -fls'*) return 1 ;; esac
+        ;;
+      git)
+        verb="$(ns_hardhat_git_subcommand "$rest")"
+        case "$verb" in
+          status | diff | log | show | rev-parse | ls-files | grep | blame | describe) ;;
+          add | commit) [ "$mode" = wrapup ] || return 1 ;;
+          *) return 1 ;;
+        esac
+        ;;
+      ns)
+        case "$word" in */runtime/ns | ns) ;; *) return 1 ;; esac
+        case "${rest%%[[:space:]]*}" in bind | path | punch-list | status | doctor | help) ;; *) return 1 ;; esac
+        ;;
+      *) return 1 ;;
+    esac
+  done < <(printf '%s\n' "$cmd" | sed -E 's/(\|\||&&|[;|&])/\n/g')
+  return 0
+}
+
+# ns_hardhat_restricted_allows <tool> <payload> <scrubbed-command> <mode> — status 0 when a restricted
+# mode lets this call through.
+ns_hardhat_restricted_allows() {
+  local tool="$1" payload="$2" cmd="$3" mode="$4" rc
+  ns_hardhat_readonly_tool "$tool" && return 0
+  if ns_hardhat_is_command_tool "$tool"; then
+    ns_hardhat_command_allowed "$cmd" "$mode"
+    return
+  fi
+  ns_hardhat_file_write_tool "$tool" || return 1
+  NS_HARDHAT_PLACES="$(ns_hardhat_restricted_places "$mode")" || return 1
+  ns_hardhat_payload_targets "$tool" "$payload" "$cmd" ns_hardhat_outside_places
+  rc=$?
+  [ "$rc" -eq 1 ]
+}
+
+# ns_hardhat_git_subcommand <arguments-after-git> — the subcommand, past global options such as
+# `-C <dir>` and `-c <key=value>`.
+ns_hardhat_git_subcommand() {
+  local skip=0 arg
+  for arg in $1; do
+    if [ "$skip" -eq 1 ]; then
+      skip=0
+      continue
+    fi
+    case "$arg" in
+      -C | -c | --git-dir | --work-tree | --namespace) skip=1 ;;
+      -*) ;;
+      *) printf '%s' "$arg"; return 0 ;;
+    esac
+  done
+  return 1
+}

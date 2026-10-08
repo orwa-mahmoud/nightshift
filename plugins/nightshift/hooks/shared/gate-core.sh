@@ -152,7 +152,13 @@ ns_gate_usage_tick() {
   ns_report_enabled "$project" || return 0
   ns_usage_mark "$ns" "$label" tick || return 0
   receipt="$(ns_receipt_path "$project" "$label")"
-  ns_gate_session_row "$ns" "$project" "$label" ticked
+  # A stopped item, closed at its hard budget, ends its span as stopped: never as ticked.
+  if ns_item_rows "$(ns_layout_path "$ns" punch-list)" stopped | cut -f1 | grep -qxF -- "$label"; then
+    ns_gate_session_row "$ns" "$project" "$label" stopped
+  else
+    ns_gate_session_row "$ns" "$project" "$label" ticked
+  fi
+  ns_budget_forget "$ns" "$label"
   ns_receipt_track_label "$receipt" "$label"
   rm -f "$(ns_layout_path "$ns" receipt-due)" "$(ns_layout_path "$ns" report-due)" 2>/dev/null || :
   ns_receipts_write_index "$project"
@@ -208,12 +214,19 @@ ns_gate_session_row() {
   commits=""
   if [ "$(ns_work_mode "$project" 2>/dev/null)" = repository ] &&
     target="$(ns_work_target "$project" 2>/dev/null)" && [ -n "$target" ]; then
-    commits="$(git -C "$target" log --since="@$start" --until="@$end" --format=%h 2>/dev/null | paste -sd, -)"
+    commits="$(git -C "$target" log --since="@$start" --until="@$end" --format=%h 2>/dev/null | awk 'NF { printf "%s%s", s, $0; s = "," }')"
   fi
   [ -z "$commits" ] || extras="$extras commits=$commits"
   receipt="$(ns_receipt_path "$project" "$label")"
   note="$(ns_receipt_progress_note "$receipt")" || note=""
   [ -z "$note" ] || extras="$extras note=$(ns_receipt_encode "$note")"
+  for v in soft hard; do
+    if dim="$(ns_budget_reached "$ns" "$label" "$v")"; then
+      extras="$extras $v=$dim"
+      [ "${extras#* limit=}" != "$extras" ] ||
+        extras="$extras limit=$(ns_receipt_encode "$(ns_budget_text "$project" "$label")")"
+    fi
+  done
   prev="$(ns_receipt_last_session "$receipt")" || prev=""
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
   ns_receipt_add_session "$receipt" "$label" "${sid:--}" \
@@ -363,12 +376,13 @@ ns_gate_uncharged_labels() {
   '
 }
 
-# ns_gate_ticked_labels <punch-list> — every ticked item's id, list order, one per line, as the
+# ns_gate_ticked_labels <punch-list> — every closed item's id, list order, one per line, as the
 # report heads its section. `- [x] **P03 — …**` gives `P03`. A capital `[X]` is a tick here as it
-# is in the counts. An item whose id cannot be read is `item <n>`, n its place among the ticked.
+# is in the counts, and a stopped item (`- [-]`, closed at its hard budget) closes its span too.
+# An item whose id cannot be read is `item <n>`, n its place among the closed.
 ns_gate_ticked_labels() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[xX]\]/ {
+    /^- \[[xX-]\]/ {
       n++
       line = ns_item_label($0)
       if (line == "") line = "item " n

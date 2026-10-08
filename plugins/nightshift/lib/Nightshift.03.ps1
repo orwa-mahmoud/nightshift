@@ -923,6 +923,7 @@ $script:NSPolicyGroupDefaults['receipts.templatePath'] = ''
 $script:NSPolicyGroupDefaults['receipts.usage'] = 'when-available'
 $script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
 $script:NSPolicyGroupDefaults['shift.hours'] = $null
+$script:NSPolicyGroupDefaults['shift.itemBudget'] = ''
 $script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
 $script:NSPolicyGroupDefaults['shift.verificationProfile'] = 'fast'
 
@@ -957,6 +958,7 @@ $script:NSPolicySettingNames = @(
     'receipts.usage',
     'shift.execution',
     'shift.hours',
+    'shift.itemBudget',
     'shift.toolingPolicy',
     'shift.verificationProfile',
     'stallMax',

@@ -26,7 +26,7 @@ function Write-NSReceiptsIndex {
     $offUsage = $false; $offTime = $false
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($row in (Get-NSItemRows $punch 'all')) {
-            $state = $(if ($row.Open) { 'open' } else { 'ticked' })
+            $state = $row.State
             $label = $row.Label
             $base = Get-NSReceiptBase $Workspace $label $row.Id
             $file = './' + $base + '.md'
@@ -691,7 +691,7 @@ function Test-NSPolicyExactPlan {
 function Get-NSPreflightTitle {
     param([AllowEmptyString()][string]$Line)
     $title = $Line.Trim()
-    $title = [regex]::Replace($title, '^-\s*\[[ xX]\]\s*', '')
+    $title = [regex]::Replace($title, '^-\s*\[[ xX-]\]\s*', '')
     $title = [regex]::Replace($title, '^#+\s*', '')
     $title = $title.Replace('*', '').Replace('`', '')
     $title = [regex]::Replace($title, '[\u0001-\u001F\u007F]', ' ')
@@ -722,7 +722,7 @@ function Get-NSPreflightSectionItems {
         # A ticked box is finished work: it closes the item above it and starts
         # nothing, so no allowance is ever reported or parked for it. The file
         # number still advances, matching the POSIX report.
-        if ($line -match '^\s*-\s*\[[xX]\]') {
+        if ($line -match '^\s*-\s*\[[xX-]\]') {
             $sawBox = $true
             $boxIndex++
             if ($null -ne $current) {

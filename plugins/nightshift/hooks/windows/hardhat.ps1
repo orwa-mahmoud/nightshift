@@ -1079,6 +1079,33 @@ function Get-NSCommandDenyReason {
     return (Get-NSElevationDenyReason -Scrubbed $Scrubbed -Workspace $Workspace)
 }
 
+# Test-NSRestrictedAllows <tool> <targets> <command> <mode> - whether a restricted mode lets this call
+# through: a reading tool, an allowed command, or a file tool writing only where the mode may write.
+# A tool this guard cannot classify is denied. Mirrors ns_hardhat_restricted_allows.
+function Test-NSRestrictedAllows {
+    param([AllowEmptyString()][string]$Tool, [AllowEmptyCollection()][object[]]$Targets = @(),
+          [AllowEmptyString()][string]$Command, [Parameter(Mandatory = $true)][string]$Mode)
+    if ($Tool -in @('Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'TodoWrite', 'WebFetch', 'WebSearch', 'ToolSearch', 'Skill')) { return $true }
+    if ($Tool -in @('Bash', 'PowerShell', 'Shell')) { return (Test-NSRestrictedCommand (Remove-NSCommitMessage $Command) $Mode) }
+    if ($Tool -notin @('Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch')) { return $false }
+    $keys = $(switch ($Mode) { 'wrapup' { @('receipts', 'punch-list', 'parking-lot', 'snag-log') } default { @() } })
+    $places = @(foreach ($key in $keys) {
+            $path = Get-NSLayoutPath $script:ns $key
+            $canon = Resolve-NSWriteTarget $path
+            if ($null -ne $canon) { $canon } else { $path }
+        })
+    foreach ($target in $Targets) {
+        $canon = Resolve-NSWriteTarget ([string]$target)
+        if ($null -eq $canon) { return $false }
+        $inside = $false
+        foreach ($place in $places) {
+            if ($canon -eq $place -or $canon.StartsWith($place + [IO.Path]::DirectorySeparatorChar)) { $inside = $true; break }
+        }
+        if (-not $inside) { return $false }
+    }
+    return $true
+}
+
 if ($env:NIGHTSHIFT_HARDHAT_LIB -eq '1') {
     return
 }
@@ -1268,6 +1295,12 @@ if (-not $controlPassive) {
             Write-Deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in $(Get-NSLayoutName $script:ns 'parking-lot') and keep working."
         }
     }
+}
+
+# A spent hard budget leaves only wrap-up until its item is closed.
+$budgetLabel = Get-NSBudgetHardOpen $script:ns
+if ($budgetLabel.Length -gt 0 -and -not (Test-NSRestrictedAllows $tool @($targets) $command 'wrapup')) {
+    Write-Deny ("BLOCKED: $budgetLabel reached its hard budget. " + (Get-NSBudgetWrapup $budgetLabel))
 }
 
 if ($tool -in @('AskQuestion', 'AskUserQuestion', 'request_user_input')) {

@@ -534,6 +534,10 @@ try {
     $itemTotalsLogicRun = Invoke-TestScript $itemTotalsLogic
     Assert-Equal 0 $itemTotalsLogicRun.ExitCode `
         "item totals: $($itemTotalsLogicRun.Stdout) $($itemTotalsLogicRun.Stderr)"
+    $itemBudgetsLogic = Join-Path $PSScriptRoot 'item-budgets-logic.ps1'
+    $itemBudgetsLogicRun = Invoke-TestScript $itemBudgetsLogic
+    Assert-Equal 0 $itemBudgetsLogicRun.ExitCode `
+        "item budgets: $($itemBudgetsLogicRun.Stdout) $($itemBudgetsLogicRun.Stderr)"
     $localTimeLogic = Join-Path $PSScriptRoot 'local-time-logic.ps1'
     $localTimeLogicRun = Invoke-TestScript $localTimeLogic
     Assert-Equal 0 $localTimeLogicRun.ExitCode `

@@ -357,7 +357,7 @@ function praw_pref(path,    n, i, out, kind) {
 # from one whose owner left a block empty.
 function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
   count = split("shift recovery handoff archive receipts", blocks, " ")
-  fields["shift"] = "execution hours toolingPolicy verificationProfile"
+  fields["shift"] = "execution hours itemBudget toolingPolicy verificationProfile"
   fields["recovery"] = "launchScope"
   fields["handoff"] = "detail enabled language sections templatePath view"
   fields["archive"] = "automatic layout root templatePath"

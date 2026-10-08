@@ -23,7 +23,8 @@
 
 ## How the shift ends (and only these ways)
 
-- **Done** — every box in the Items list is `- [x]`. The ticks are the truth; no magic phrase ends it.
+- **Done** — every box in the Items list is `- [x]`, or `- [-]` for an item stopped at its hard
+  budget, which is never ticked. The ticks are the truth; no magic phrase ends it.
 - **Stop-work order** — `STOP` exists (the Nightshift Stop skill, or
   `touch "$NS/STOP"` on POSIX, or
   `New-Item -ItemType File -Force "$NS\STOP"` in native Windows

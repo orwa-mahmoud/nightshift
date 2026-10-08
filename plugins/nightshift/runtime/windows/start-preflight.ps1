@@ -270,6 +270,7 @@ $punch = Get-NSLayoutPath $ns 'punch-list'
 $counts = Get-NSBoxCounts $punch
 $open = [int]$counts.Open
 $ticked = [int]$counts.Ticked
+$stoppedItems = [int]$counts.Stopped
 
 $watchmanLive = $false
 $watchmanPath = Get-NSLayoutPath $ns 'watchman'
@@ -513,7 +514,7 @@ else {
 }
 
 # --------------------------------------------------- work and deadline
-Write-Ok "punch-list open=$open ticked=$ticked"
+Write-Ok $(if ($stoppedItems -gt 0) { "punch-list open=$open ticked=$ticked stopped=$stoppedItems" } else { "punch-list open=$open ticked=$ticked" })
 $orders = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')
 $drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
 Write-Ok "staged orders=$orders drafts=$drafts"

@@ -154,6 +154,11 @@ if ns_hardhat_payload_targets_control "$TOOL" "$CODEX_RAW" "$SCRUBBED"; then
   deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in $(ns_hardhat_state_name parking-lot) and keep working."
 fi
 
+# A spent hard budget leaves only wrap-up until its item is closed.
+if budget_label="$(ns_budget_hard_open "$NS")" && ! ns_hardhat_restricted_allows "$TOOL" "$CODEX_RAW" "$SCRUBBED" wrapup; then
+  deny "BLOCKED: $budget_label reached its hard budget. $(ns_budget_wrapup "$budget_label")"
+fi
+
 if [ "$TOOL" = "request_user_input" ] \
   || { [ -z "$TOOL" ] && codex_input_mentions_tool "request_user_input"; }; then
   if m="$(ns_hardhat_required_tool_deny_reason request_user_input)"; then deny "$m"; fi

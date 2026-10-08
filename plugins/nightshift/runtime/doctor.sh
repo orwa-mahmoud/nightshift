@@ -196,7 +196,12 @@ TICKED=0
 if [ -f "$PUNCH" ]; then
   OPEN="$(ns_open_boxes "$PUNCH")"
   TICKED="$(ns_ticked_boxes "$PUNCH")"
-  fact "punch list open=$OPEN ticked=$TICKED"
+  STOPPED="$(ns_stopped_boxes "$PUNCH")"
+  if [ "${STOPPED:-0}" -gt 0 ]; then
+    fact "punch list open=$OPEN ticked=$TICKED stopped=$STOPPED"
+  else
+    fact "punch list open=$OPEN ticked=$TICKED"
+  fi
 else
   warn "punch-list.md is missing"
 fi

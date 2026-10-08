@@ -133,6 +133,14 @@ Then the next item. Item anatomy: one top-level checkbox per task, plain `-` sub
 when the punch list has no open item, and only through Start; on shift, drafts stay where the owner
 left them, and you never invent scope the owner didn't ask for.
 
+**Budgets.** An item may carry a `Budget:` line — a soft and/or a hard limit in time and/or tokens —
+and the shift block's `itemBudget` covers an item that names none. The runtime measures it; you never
+do. A soft budget arrives once as a notice: start finishing the item. A spent hard budget leaves only
+wrap-up from the next tool call: commit the work in progress, write the receipt, then close the item
+as stopped — change its box to `- [-]` and add a `Stopped:` sub-bullet naming the limit, what was
+spent and the commit — and move to the next item. A stopped item is never ticked; it stays open work
+for the owner.
+
 ## The receipts
 
 `$NS/receipts/<NN>-<slug>-<id>.md` is the narrative of each item, written as you go rather than

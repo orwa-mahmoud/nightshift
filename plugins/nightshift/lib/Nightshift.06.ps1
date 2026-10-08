@@ -1322,6 +1322,7 @@ function Get-NSReceiptContext {
     $counts = Get-NSBoxCounts $context['punch']
     $context['ticked'] = [int]$counts.Ticked
     $context['open'] = [int]$counts.Open
+    $context['stopped'] = [int]$counts.Stopped
     $context['punchReadable'] = [bool]$counts.Readable
     $context['ending'] = Get-NSReceiptEnding -NightshiftDir $ns -Open ([int]$counts.Open) -Readable ([bool]$counts.Readable)
 
@@ -1421,7 +1422,9 @@ function Get-NSReceiptShiftLines {
         Add-NSReceiptField $lines 'items' 'unknown'
     }
     else {
-        Add-NSReceiptField $lines 'items' ($script:NSReceiptItemsFormat -f ([int]$Context['ticked']), ([int]$Context['open']))
+        $itemsText = ($script:NSReceiptItemsFormat -f ([int]$Context['ticked']), ([int]$Context['open']))
+        if ([int]$Context['stopped'] -gt 0) { $itemsText += (', {0} stopped at their hard budget' -f [int]$Context['stopped']) }
+        Add-NSReceiptField $lines 'items' $itemsText
     }
     $artifactView = ([string]$Context['view']) -ceq 'artifact'
     if ($artifactView -or (([string]$Context['workMode']) -ceq 'artifact')) {
@@ -1550,7 +1553,7 @@ function Get-NSReceiptItemsLines {
     $lines = New-Object Collections.Generic.List[string]
     $workspace = [string]$Context['workspace']
     foreach ($row in (Get-NSItemRows ([string]$Context['punch']) 'all')) {
-        $state = $(if ($row.Open) { 'open' } else { 'ticked' })
+        $state = $row.State
         $lines.Add(('- {0} {1} {2}' -f (Get-NSReceiptItemLink $workspace $row.Label $row.Id), (Get-NSEvidenceDash), $state))
     }
     return , $lines.ToArray()
@@ -1763,6 +1766,11 @@ function Get-NSReceiptChangedLines {
 function Get-NSReceiptParkedLines {
     param($Context)
     $lines = New-Object Collections.Generic.List[string]
+    # An item stopped at its hard budget is not done, and what happens to it is the owner's call.
+    foreach ($row in (Get-NSItemRows ([string]$Context['punch']) 'stopped')) {
+        $lines.Add(($script:NSReceiptPlainFormat -f ($row.Label + ' stopped at its hard budget without being done')))
+        $lines.Add(($script:NSReceiptNestedFormat -f ([string]$script:NSReceiptLabels['default']), 'it stays open work; reopen it with a new budget, narrow it, or drop it'))
+    }
     foreach ($entry in (Get-NSReceiptParkedEntries ([string]$Context['parking']))) {
         $lines.Add(($script:NSReceiptPlainFormat -f ([string]$entry['title'])))
         $default = [string]$entry['default']

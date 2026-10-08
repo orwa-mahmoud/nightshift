@@ -90,7 +90,7 @@ function Get-NSPunchItem {
     $on = $false
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
         if (-not $on) {
-            if ($line -cnotmatch '^- \[[ xX]\]') { continue }
+            if ($line -cnotmatch '^- \[[ xX-]\]') { continue }
             if ([string]::IsNullOrEmpty($Id)) {
                 if ($line -cnotmatch '^- \[ \]') { continue }
             }
@@ -131,12 +131,14 @@ function Get-NSPunchContract {
 
 # Get-NSPunchItemsNormalised <punch-list> - every item line and sub-bullet with the checkbox state
 # flattened, so ticking a box changes nothing and rewording, deleting or inserting an item changes
-# everything.
+# everything. Closing an item as stopped is the other permitted move: its `[-]` is
+# flattened like a tick, and the `Stopped:` sub-bullet it adds is left out. Mirrors ns_punch_items_normalised.
 function Get-NSPunchItemsNormalised {
     param([Parameter(Mandatory = $true)][string]$PunchList)
     $out = New-Object Collections.Generic.List[string]
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
-        $out.Add(($line -creplace '^- \[[xX]\]', '- [ ]'))
+        if ($line -cmatch '^[ \t]+-[ \t]+Stopped:') { continue }
+        $out.Add(($line -creplace '^- \[[xX-]\]', '- [ ]'))
     }
     return $out.ToArray()
 }
@@ -326,7 +328,7 @@ function Get-NSStatusOpenTitle {
     $item = @(Get-NSPunchItem -PunchList $PunchList -Id '')
     if ($item.Count -eq 0) { return '' }
     $title = $item[0] -creplace $script:NSItemIdPattern, ''
-    $title = $title -creplace '^- \[[ xX]\][ \t]*', ''
+    $title = $title -creplace '^- \[[ xX-]\][ \t]*', ''
     $title = $title -creplace '\*\*', ''
     return $title.TrimEnd()
 }
@@ -479,11 +481,12 @@ function Write-NSStatusReport {
         return 0
     }
     $punch = Get-NSLayoutPath $ns 'punch-list'
-    $open = 0; $ticked = 0
+    $open = 0; $ticked = 0; $stopped = 0
     if (Test-NSPathEntry $punch) {
         $counts = Get-NSBoxCounts $punch
         $open = [int]$counts.Open
         $ticked = [int]$counts.Ticked
+        $stopped = [int]$counts.Stopped
     }
     $armed = Test-NSPathEntry (Get-NSLayoutPath $ns 'armed')
     $watch = 0
@@ -492,7 +495,7 @@ function Write-NSStatusReport {
     Say 'Nightshift Status'
     Say ('Workspace:   ' + $Workspace)
     Say ('Shift:       ' + ($(if ($armed) { 'armed' } else { 'not armed' })))
-    Say ('Items:       open=' + $open + ' ticked=' + $ticked)
+    Say ('Items:       open=' + $open + ' ticked=' + $ticked + $(if ($stopped -gt 0) { ' stopped=' + $stopped } else { '' }))
     Say ('evidence:    ' + (Get-NSEvidenceCountSummary $Workspace))
     Say ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
     $activity = Get-NSStatusLastActivity $Workspace
@@ -1064,7 +1067,7 @@ function Get-NSGateTickedLabels {
     $labels = New-Object 'System.Collections.Generic.List[string]'
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return , $labels.ToArray() }
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
-        if ($line -cmatch '^- \[[xX]\]') {
+        if ($line -cmatch '^- \[[xX-]\]') {
             $t = Get-NSItemLabel $line
             if ([string]::IsNullOrEmpty($t)) { $t = 'item ' + ($labels.Count + 1) }
             $labels.Add($t)
@@ -1232,7 +1235,10 @@ function Invoke-NSGateUsageTick {
     $receipt = Get-NSReceiptPath $Project $Label
     # The tick closes the item's last session; the receipt's runtime section, Tokens and Time totals
     # included, is redrawn from every session it holds (Add-NSReceiptSession).
-    Invoke-NSGateSessionRow $NightshiftDir $Project $Label 'ticked'
+    # A stopped item, closed at its hard budget, ends its span as stopped: never as ticked.
+    $stopped = @((Get-NSItemRows (Get-NSLayoutPath $NightshiftDir 'punch-list') 'stopped') | ForEach-Object { $_.Label }) -ccontains $Label
+    Invoke-NSGateSessionRow $NightshiftDir $Project $Label $(if ($stopped) { 'stopped' } else { 'ticked' })
+    Remove-NSBudgetRecord $NightshiftDir $Label
     Update-NSReceiptLabel $receipt $Label
     $due = Get-NSLayoutPath $NightshiftDir 'receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
@@ -1303,6 +1309,13 @@ function Invoke-NSGateSessionRow {
     $receipt = Get-NSReceiptPath $Project $Label
     $note = Get-NSReceiptProgressNote $receipt
     if ($note.Length -gt 0) { $extras += ('note=' + (ConvertTo-NSReceiptEncoded $note)) }
+    $hasLimit = $false
+    foreach ($v in @('soft', 'hard')) {
+        $at = Get-NSBudgetReached $NightshiftDir $Label $v
+        if ($at.Length -eq 0) { continue }
+        $extras += ($v + '=' + $at)
+        if (-not $hasLimit) { $extras += ('limit=' + (ConvertTo-NSReceiptEncoded (Get-NSBudgetText $Project $Label))); $hasLimit = $true }
+    }
     $prev = Get-NSReceiptSessionData $receipt
     $prevLine = $(if ($prev.Count -gt 0) { $prev[$prev.Count - 1] } else { '' })
     $sid = ''
@@ -1994,3 +2007,264 @@ function Move-NSUsageRetire {
     return $dest
 }
 
+
+# Item budgets. An item may name a soft and a hard limit in time, tokens or both; the shift block's
+# itemBudget is the budget of every item that names none. A soft limit tells the agent once to start
+# finishing; a hard limit allows only wrap-up until the item is closed as stopped (`- [-]`), and a
+# stopped item is never ticked. Time is working time across every session; tokens are input plus
+# output. Mirrors lib/budget.sh.
+
+# ConvertFrom-NSBudget <text> - `<soft-seconds> <soft-tokens> <hard-seconds> <hard-tokens>`, `-` for a
+# limit the text does not set; '' for empty text; $null for text that is not a budget.
+function ConvertFrom-NSBudget {
+    param([AllowEmptyString()][string]$Text)
+    $t = $Text.Trim()
+    if ($t.Length -eq 0) { return '' }
+    $lim = @{ 'soft.t' = '-'; 'soft.k' = '-'; 'hard.t' = '-'; 'hard.k' = '-' }
+    $seen = @{}
+    foreach ($clause in $t.Split(',')) {
+        $c = $clause.Trim()
+        if ($c -cnotmatch '^(soft|hard)[ \t]+(.*)$') { return $null }
+        $level = $Matches[1]
+        $rest = $Matches[2].Trim()
+        if ($seen.ContainsKey($level)) { return $null }
+        $seen[$level] = $true
+        foreach ($part in $rest.Split('/')) {
+            $one = $part.Trim()
+            if ($one -cmatch 'tokens?$') {
+                if ($one -cnotmatch '^([0-9]+(\.[0-9]+)?)([kKmMbB]?)[ \t]+tokens?$') { return $null }
+                $m = 1
+                switch -CaseSensitive ($Matches[3]) { 'k' { $m = 1000 } 'K' { $m = 1000 } 'm' { $m = 1000000 } 'M' { $m = 1000000 } 'b' { $m = 1000000000 } 'B' { $m = 1000000000 } }
+                $v = [long][math]::Floor([double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) * $m)
+                $kind = 'k'
+            }
+            else {
+                $v = [long]0
+                foreach ($piece in ($one -split '[ \t]+')) {
+                    if ($piece -cnotmatch '^([0-9]+)([hms])$') { return $null }
+                    $n = [long]$Matches[1]
+                    $v += $(switch ($Matches[2]) { 'h' { $n * 3600 } 'm' { $n * 60 } default { $n } })
+                }
+                $kind = 't'
+            }
+            if ($v -le 0 -or $lim[$level + '.' + $kind] -cne '-') { return $null }
+            $lim[$level + '.' + $kind] = [string]$v
+        }
+    }
+    return ('{0} {1} {2} {3}' -f $lim['soft.t'], $lim['soft.k'], $lim['hard.t'], $lim['hard.k'])
+}
+
+# Get-NSBudgetWords <seconds> <tokens> - `45m 0s / 2.0M tokens`; a `-` half is left out.
+function Get-NSBudgetWords {
+    param([string]$Seconds, [string]$Tokens)
+    $out = ''
+    if ($Seconds -cne '-') { $out = Get-NSUsageDuration $Seconds }
+    if ($Tokens -cne '-') {
+        if ($out.Length -gt 0) { $out += ' / ' }
+        $out += (Get-NSUsageScale $Tokens) + ' tokens'
+    }
+    return $out
+}
+
+# Get-NSBudgetItemText <punch-list> <label> - the text of that item's own `Budget:` line, or ''.
+function Get-NSBudgetItemText {
+    param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][string]$Label)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) { return '' }
+    $inside = $false
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        $l = $line.TrimEnd("`r")
+        if ($l -cmatch '^- \[[ xX-]\]') { $inside = ((Get-NSItemLabel $l) -ceq $Label); continue }
+        if ($l -cmatch '^[^ \t]') { $inside = $false }
+        if ($inside -and $l -cmatch '^[ \t]+-[ \t]+Budget:[ \t]*(.*)$') { return $Matches[1] }
+    }
+    return ''
+}
+
+# Get-NSBudgetText <workspace> <label> - the item's own budget, else the shift block's itemBudget.
+function Get-NSBudgetText {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Label)
+    $own = Get-NSBudgetItemText (Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list') $Label
+    if ($own.Length -gt 0) { return $own }
+    $value = (Get-NSPolicyGroupSetting $Workspace 'shift.itemBudget')['value']
+    if ($null -eq $value) { return '' }
+    return [string]$value
+}
+
+# Get-NSBudgetSpent <nightshift-dir> <workspace> <label> - `<working-seconds> <tokens>` spent so far:
+# every recorded session plus the span running now when it is the item being worked.
+function Get-NSBudgetSpent {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace,
+          [Parameter(Mandatory = $true)][string]$Label)
+    $secs = [long]0; $toks = [long]0
+    foreach ($line in (Get-NSReceiptSessionData (Get-NSReceiptPath $Workspace $Label))) {
+        $f = @($line -split '\s+' | Where-Object { $_.Length -gt 0 })
+        if ($f.Count -lt 7) { continue }
+        if ($f[3] -cmatch '^[0-9]+$') { $secs += [long]$f[3] }
+        if ($f[4] -cmatch '^[0-9]+$') { $toks += [long]$f[4] }
+        if ($f[5] -cmatch '^[0-9]+$') { $toks += [long]$f[5] }
+    }
+    if ((Get-NSUsageActive $NightshiftDir) -ceq $Label) {
+        $since = (Get-NSUsageSinceLastMark $NightshiftDir).Split("`t")
+        $span = [long]0
+        if ($since.Length -ge 2) { $null = [long]::TryParse($since[1], [ref]$span) }
+        $marks = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $NightshiftDir)) | Where-Object { $_.Length -gt 0 })
+        $last = [long]0
+        if ($marks.Count -gt 0 -and [long]::TryParse($marks[$marks.Count - 1].Split("`t")[0], [ref]$last)) {
+            $gap = Get-NSUsagePausedBetween $NightshiftDir $last ($last + $span)
+            if (-not [string]::IsNullOrEmpty($gap)) { $span = [math]::Max([long]0, $span - [long]$gap.Split("`t")[0]) }
+        }
+        $secs += $span
+        foreach ($d in @('input', 'output')) {
+            $v = Get-NSUsageField $since[0] $d
+            if ($v -cmatch '^[0-9]+$') { $toks += [long]$v }
+        }
+    }
+    $s = $(if ((Get-NSReceiptsField $Workspace 'duration') -ceq 'off') { '-' } else { [string]$secs })
+    $k = $(if ((Get-NSReceiptsField $Workspace 'usage') -ceq 'off') { '-' } else { [string]$toks })
+    return ($s + ' ' + $k)
+}
+
+function Get-NSBudgetStateFile { param([Parameter(Mandatory = $true)][string]$NightshiftDir) return (Get-NSLayoutPath $NightshiftDir 'budget') }
+
+# Get-NSBudgetReached <nightshift-dir> <label> <soft|hard> - the epoch that limit was recorded at, or ''.
+function Get-NSBudgetReached {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label,
+          [Parameter(Mandatory = $true)][string]$Level)
+    $file = Get-NSBudgetStateFile $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($file)) {
+        $f = $line.Split("`t")
+        if ($f.Length -ge 3 -and $f[0] -ceq $Label -and $f[1] -ceq $Level) { return $f[2] }
+    }
+    return ''
+}
+
+# Get-NSBudgetHardOpen <nightshift-dir> - the open item whose hard budget is spent, or ''.
+function Get-NSBudgetHardOpen {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSBudgetStateFile $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return '' }
+    foreach ($row in (Get-NSItemRows (Get-NSLayoutPath $NightshiftDir 'punch-list') 'open')) {
+        if ((Get-NSBudgetReached $NightshiftDir $row.Label 'hard').Length -gt 0) { return $row.Label }
+    }
+    return ''
+}
+
+# Remove-NSBudgetRecord <nightshift-dir> <label> - forget a closed item's budget record.
+function Remove-NSBudgetRecord {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
+    $file = Get-NSBudgetStateFile $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return }
+    $keep = @([IO.File]::ReadAllLines($file) | Where-Object { $_.Split("`t")[0] -cne $Label })
+    [IO.File]::WriteAllText($file, $(if ($keep.Count -gt 0) { ($keep -join "`n") + "`n" } else { '' }), $script:NSUtf8NoBom)
+}
+
+# Get-NSBudgetWrapup <label> - the wrap-up a spent hard budget allows, in the agent's words.
+function Get-NSBudgetWrapup {
+    param([Parameter(Mandatory = $true)][string]$Label)
+    return ('From the next tool call only wrap-up is allowed: commit the work in progress (git add, then git commit -m "wip: ..."), ' +
+        "write the item's receipt, then close $Label as stopped: change its box to ``- [-]`` and add a ``Stopped:`` sub-bullet " +
+        'naming the limit, what was spent and the commit. Never tick it. Then move to the next item.')
+}
+
+# Get-NSBudgetNotice <soft|hard> <label> <limit-words> <spent-words> - what the agent is told.
+function Get-NSBudgetNotice {
+    param([string]$Level, [string]$Label, [string]$Limit, [string]$Spent)
+    if ($Level -ceq 'soft') {
+        return ('budget: {0} has reached its soft budget ({1}; spent {2}). Start finishing it now: complete the change in hand, run its Verify, write the receipt and tick it.' -f $Label, $Limit, $Spent)
+    }
+    return ('budget: {0} has reached its hard budget ({1}; spent {2}). {3}' -f $Label, $Limit, $Spent, (Get-NSBudgetWrapup $Label))
+}
+
+# Invoke-NSBudgetCheck <nightshift-dir> <workspace> - on each pulse: when the item being worked has just
+# spent a limit, record it once, journal it, and return the notice. '' otherwise.
+function Invoke-NSBudgetCheck {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $NightshiftDir 'armed') -PathType Leaf)) { return '' }
+    $label = Get-NSActiveItem $Workspace
+    if ([string]::IsNullOrEmpty($label)) { return '' }
+    $parsed = ConvertFrom-NSBudget (Get-NSBudgetText $Workspace $label)
+    if ([string]::IsNullOrEmpty($parsed)) { return '' }
+    $p = $parsed.Split(' ')
+    if ((Get-NSBudgetReached $NightshiftDir $label 'hard').Length -gt 0) { return '' }
+    $spent = (Get-NSBudgetSpent $NightshiftDir $Workspace $label).Split(' ')
+    $over = { param([string]$S, [string]$L) return ($S -cne '-' -and $L -cne '-' -and [long]$S -ge [long]$L) }
+    $level = ''
+    if ((& $over $spent[0] $p[2]) -or (& $over $spent[1] $p[3])) { $level = 'hard'; $limit = Get-NSBudgetWords $p[2] $p[3] }
+    elseif ((Get-NSBudgetReached $NightshiftDir $label 'soft').Length -eq 0 -and
+        ((& $over $spent[0] $p[0]) -or (& $over $spent[1] $p[1]))) { $level = 'soft'; $limit = Get-NSBudgetWords $p[0] $p[1] }
+    if ($level.Length -eq 0) { return '' }
+    $file = Get-NSBudgetStateFile $NightshiftDir
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force
+    [IO.File]::AppendAllText($file, ($label + "`t" + $level + "`t" + (Get-NSUnixTime) + "`n"), $script:NSUtf8NoBom)
+    $words = Get-NSBudgetWords $spent[0] $spent[1]
+    Write-NSControlLog $NightshiftDir ('budget {0} {1} {0} {2} limit reached ({3}; spent {4})' -f $script:NSDot, $label, $level, $limit, $words)
+    return (Get-NSBudgetNotice $level $label $limit $words)
+}
+
+# Get-NSPulseNotices <nightshift-dir> <workspace> - every notice this pulse has for the agent: the
+# receipt lines, then a budget the item being worked has just spent. Mirrors ns_pulse_notices.
+function Get-NSPulseNotices {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
+    $receipts = [string](Get-NSPulseReceiptsNotice $NightshiftDir $Workspace)
+    $budget = [string](Invoke-NSBudgetCheck $NightshiftDir $Workspace)
+    if ($receipts.Length -gt 0 -and $budget.Length -gt 0) { return ($receipts + "`n" + $budget) }
+    return ($receipts + $budget)
+}
+
+# Test-NSRestrictedCommand <scrubbed-command> <mode> - true for a command that only reads, or, in
+# wrapup, that also stages and commits. A redirection that writes, a subexpression, a background job
+# or an unlisted program denies the whole command. PowerShell's reading cmdlets count alongside the
+# POSIX tools. Mirrors ns_hardhat_command_allowed: hardening, not a sandbox.
+function Test-NSRestrictedCommand {
+    param([AllowEmptyString()][string]$Command, [Parameter(Mandatory = $true)][string]$Mode)
+    if ($Command.Contains('$(') -or $Command.Contains('`') -or $Command.Contains('<(') -or $Command.Contains('>(')) { return $false }
+    $c = [regex]::Replace($Command, '[0-9]*>&[0-9]+', '')
+    $c = [regex]::Replace($c, '&?[0-9]*>{1,2}[ \t]*(/dev/null|\$null|NUL)', '')
+    if ($c.Contains('>')) { return $false }
+    $read = @('cat', 'head', 'tail', 'less', 'more', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ls', 'tree', 'file',
+        'stat', 'du', 'df', 'pwd', 'cd', 'echo', 'printf', 'true', 'false', 'test', '[', 'which', 'type', 'command', 'date',
+        'basename', 'dirname', 'realpath', 'readlink', 'sort', 'uniq', 'cut', 'tr', 'nl', 'column', 'diff', 'cmp', 'comm',
+        'jq', 'awk', 'get-content', 'gc', 'get-childitem', 'gci', 'dir', 'select-string', 'sls', 'get-item', 'gi',
+        'test-path', 'resolve-path', 'get-location', 'gl', 'write-output', 'write-host', 'measure-object', 'measure',
+        'sort-object', 'select-object', 'select', 'where-object', 'where', 'format-table', 'ft', 'format-list', 'fl',
+        'out-string', 'convertfrom-json', 'convertto-json', 'get-date', 'set-location', 'sl', 'compare-object')
+    foreach ($segment in [regex]::Split($c, '\|\||&&|[;|&\r\n]')) {
+        $seg = $segment.Trim()
+        if ($seg.Length -eq 0) { continue }
+        while ($seg -cmatch '^[A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+') { $seg = $seg.Substring($Matches[0].Length) }
+        $word = ($seg -split '[ \t]+', 2)[0]
+        $rest = $(if ($seg.Length -gt $word.Length) { $seg.Substring($word.Length).Trim() } else { '' })
+        $name = ($word -split '[/\\]')[-1].ToLowerInvariant() -creplace '\.exe$', ''
+        if ($read -ccontains $name) { continue }
+        if ($name -ceq 'sed') {
+            if ((' ' + $rest + ' ') -cmatch ' (-i|--in-place)') { return $false }
+            continue
+        }
+        if ($name -ceq 'find') {
+            if ((' ' + $rest + ' ') -cmatch ' -(delete|exec|execdir|ok|okdir|fprint|fls)( |$)') { return $false }
+            continue
+        }
+        if ($name -ceq 'git') {
+            $verb = ''
+            $skip = $false
+            foreach ($arg in ($rest -split '[ \t]+')) {
+                if ($skip) { $skip = $false; continue }
+                if ($arg -cin @('-C', '-c', '--git-dir', '--work-tree', '--namespace')) { $skip = $true; continue }
+                if ($arg.StartsWith('-') -or $arg.Length -eq 0) { continue }
+                $verb = $arg
+                break
+            }
+            if ($verb -cin @('status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'grep', 'blame', 'describe')) { continue }
+            if ($verb -cin @('add', 'commit') -and $Mode -ceq 'wrapup') { continue }
+            return $false
+        }
+        if ($name -cin @('ns', 'ns.ps1')) {
+            if ($word -cnotmatch '(^|[/\\])runtime[/\\](windows[/\\])?ns(\.ps1)?$' -and $word -cnotin @('ns', 'ns.ps1')) { return $false }
+            if ((($rest -split '[ \t]+', 2)[0]) -cin @('bind', 'path', 'punch-list', 'status', 'doctor', 'help')) { continue }
+            return $false
+        }
+        return $false
+    }
+    return $true
+}

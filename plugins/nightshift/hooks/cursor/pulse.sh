@@ -25,6 +25,6 @@ ns_pulse_emit "$PROJECT_DIR/.nightshift" "${CURSOR_SESSION_ID:-}"
 ns_pulse_usage "$PROJECT_DIR/.nightshift" cursor "${CURSOR_SESSION_ID:-}" "${CURSOR_RAW:-}"
 ns_pulse_marks "$PROJECT_DIR/.nightshift" "$PROJECT_DIR" "${CURSOR_SESSION_ID:-}"
 if ns_pulse_owner_ok "$PROJECT_DIR/.nightshift" "${CURSOR_SESSION_ID:-}"; then
-  ns_pulse_context cursor "$(ns_pulse_receipts_notice "$PROJECT_DIR/.nightshift" "$PROJECT_DIR")"
+  ns_pulse_context cursor "$(ns_pulse_notices "$PROJECT_DIR/.nightshift" "$PROJECT_DIR")"
 fi
 exit 0

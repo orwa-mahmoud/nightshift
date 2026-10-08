@@ -1070,6 +1070,7 @@ function Get-NSBoxCounts {
     param([Parameter(Mandatory = $true)][string]$PunchList)
     $open = 0
     $ticked = 0
+    $stopped = 0
     $inItems = $false
     $readable = $true
     if (Test-Path -LiteralPath $PunchList -PathType Leaf) {
@@ -1087,15 +1088,19 @@ function Get-NSBoxCounts {
                 elseif ($line -match '^\s*-\s*\[[xX]\]') {
                     $ticked++
                 }
+                elseif ($line -match '^\s*-\s*\[-\]') {
+                    $stopped++
+                }
             }
         }
         catch {
             $readable = $false
             $open = 0
             $ticked = 0
+            $stopped = 0
         }
     }
-    return [pscustomobject]@{ Open = $open; Ticked = $ticked; Total = ($open + $ticked); Readable = $readable }
+    return [pscustomobject]@{ Open = $open; Ticked = $ticked; Stopped = $stopped; Total = ($open + $ticked); Readable = $readable }
 }
 
 function Get-NSOpenBoxesInFile {

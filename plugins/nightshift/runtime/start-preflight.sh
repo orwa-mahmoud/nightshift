@@ -534,7 +534,13 @@ else
 fi
 
 # ------------------------------------------------------- work and deadline
-ok "punch-list open=$OPEN ticked=$TICKED"
+STOPPED=0
+[ ! -f "$PUNCH" ] || [ -L "$PUNCH" ] || STOPPED="$(ns_stopped_boxes "$PUNCH")"
+if [ "${STOPPED:-0}" -gt 0 ]; then
+  ok "punch-list open=$OPEN ticked=$TICKED stopped=$STOPPED"
+else
+  ok "punch-list open=$OPEN ticked=$TICKED"
+fi
 ORDERS="$(ns_open_boxes_file "$WORK_ORDERS")"
 DRAFTS="$(ns_open_drafts "$DRAFTING_TABLE")"
 ok "staged orders=$ORDERS drafts=$DRAFTS"
