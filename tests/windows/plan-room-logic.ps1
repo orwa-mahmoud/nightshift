@@ -73,6 +73,20 @@ try {
         Expect-True ($reason -ceq '') "free: $($payload | ConvertTo-Json -Compress) -> $reason"
     }
     Expect-True ((Invoke-Hardhat $w 'builder' (New-Edit 'Edit' (Join-Path $w 'src/app.js'))) -ceq '') 'another conversation is not fenced'
+
+    # The read-only ns verbs run as the skills write them.
+    $nsPs = Join-Path $plugin 'runtime/windows/ns.ps1'
+    foreach ($command in @("& `"$nsPs`" status", "& '$nsPs' doctor", '& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" path drafting-table',
+            "& `"$nsPs`" plan-enter -HostName claude")) {
+        $reason = Invoke-Hardhat $w 'planner' (New-Shell $command)
+        Expect-True ($reason -ceq '') "free: $command -> $reason"
+    }
+    foreach ($command in @("& `"$nsPs`" scaffold product", "& `"$nsPs`" stop-shift", "& 'C:\evil\rm.exe' -rf src")) {
+        $reason = Invoke-Hardhat $w 'planner' (New-Shell $command)
+        Expect-True ($reason -ceq $expected -or $reason.Replace('\', '/') -ceq $expected) "fenced: $command -> $reason"
+    }
+    Expect-True (-not (Test-NSRestrictedCommand "& `"$nsPs`" plan-enter" 'wrapup')) 'wrap-up has no room to enter'
+    Expect-True (Test-NSRestrictedCommand "& `"$nsPs`" status" 'wrapup') 'wrap-up reads status through the dispatcher'
     $marker = Get-NSPlanRoomFile $ns
     foreach ($who in @('planner', 'builder')) {
         foreach ($payload in @((New-Shell "Remove-Item '$marker'"), (New-Edit 'Write' $marker), (New-Shell 'Remove-Item .nightshift/run/*'))) {
@@ -135,6 +149,24 @@ try {
     $out = Invoke-PromptHook $c 'codex' @{ hook_event_name = 'UserPromptSubmit'; prompt = '$nightshift:start' }
     Expect-True (-not (Test-NSPlanRoomOpen $cns)) 'codex $nightshift:start closes the room'
     Expect-True (($out | ConvertFrom-Json).hookSpecificOutput.additionalContext.Contains('by starting the shift')) "codex context: $out"
+
+    # The shift's own conversation cannot enter the plan room; another conversation can.
+    $s = Join-Path $root 'on-shift'
+    $sns = Join-Path $s '.nightshift'
+    $null = New-Item -ItemType Directory -Path (Join-Path $sns 'run'), (Join-Path $sns 'staging'), (Join-Path $s 'src') -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $sns 'rules.json') -Force
+    [IO.File]::WriteAllText((Join-Path $sns 'state-version'), "2`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $sns 'punch-list.md'), "## Items`n- [ ] **1. first.**`n", $utf8)
+    [IO.File]::WriteAllText((Get-NSLayoutPath $sns 'armed'), '', $utf8)
+    [IO.File]::WriteAllText((Get-NSLayoutPath $sns 'session'), "shifter`n`n`n`nclaude`n", $utf8)
+    & git -C $s init --quiet
+    $null = & $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/plan-enter.ps1') -Project $s
+    $reason = Invoke-Hardhat $s 'shifter' (New-Shell "`$null = 'nightshift-plan-probe'")
+    Expect-True ($reason -ceq 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.') "on-shift probe: $reason"
+    Expect-True (-not (Test-NSPlanRoomOpen $sns)) 'the room the shift conversation asked for is not opened'
+    $null = & $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/plan-enter.ps1') -Project $s
+    Expect-True ((Invoke-Hardhat $s 'planner' (New-Shell "`$null = 'nightshift-plan-probe'")) -ceq '') 'another conversation plans while the shift runs'
+    Expect-True ((Get-NSPlanRoomLine $sns 1) -ceq 'planner') 'and the room binds to it'
 
     # The terminal verb.
     $t = Join-Path $root 'terminal'

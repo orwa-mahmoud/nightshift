@@ -74,7 +74,7 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
       || { echo "unresolved shell fallback in shared skill: $s"; return 1; }
   done
 
-  for s in setup start hunt quality doctor import-issues schedule archive stop reset purge; do
+  for s in setup start hunt quality doctor import-issues schedule archive stop reset purge plan plan-exit; do
     f="$SKILLS/$s/SKILL.md"
     grep -qF '$NIGHTSHIFT_PLUGIN_ROOT' "$f" || { echo "no neutral plugin root: $s"; return 1; }
     grep -qF '${CLAUDE_PLUGIN_ROOT}' "$f" || { echo "no Claude plugin source: $s"; return 1; }

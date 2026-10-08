@@ -84,6 +84,20 @@ ns_plan_room_marker_message() {
   printf 'BLOCKED: the plan room marker is the owner'"'"'s. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start.'
 }
 
+# ns_plan_room_withdraw <nightshift-dir> <session> — take back a room that was never bound, because
+# the conversation that asked for it is working the shift: fencing it would leave the shift unable to
+# work or to clock out.
+ns_plan_room_withdraw() {
+  [ -z "$(ns_plan_room_line "$1" 1)" ] || return 1
+  rm -f "$(ns_plan_room_file "$1")" 2>/dev/null || return 1
+  ns_shift_log "$1" "plan room not opened: conversation $2 is working the shift"
+}
+
+# ns_plan_room_on_shift_message — what that conversation is told.
+ns_plan_room_on_shift_message() {
+  printf 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.'
+}
+
 # ns_plan_room_exit_word <prompt> — `plan-exit` or `start` when the owner's prompt is an exit
 # command: its first word is /nightshift:plan-exit or /nightshift:start, or the same name after `$`,
 # the way Codex mentions a skill. Anything else, the same words mid-sentence included, is not.

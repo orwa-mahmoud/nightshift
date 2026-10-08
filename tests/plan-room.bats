@@ -56,6 +56,25 @@ message() {
   [[ "$(reason "$output")" == 'BLOCKED: the plan room is bound to another conversation.'* ]]
 }
 
+@test "the shift's own conversation cannot enter the plan room, and another conversation can" {
+  p="$(new_project on-shift)"
+  punch_open "$p"
+  printf 'shifter\n\n\n\nclaude\n' >"$p/.nightshift/.shift-session"
+  bash "$PLUGIN/runtime/plan-enter.sh" --project "$p" >/dev/null
+  run claude "$p" shifter "$(bash_call ': nightshift-plan-probe')"
+  [ "$(reason "$output")" = 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.' ]
+  ! lib ns_plan_room_open "$p/.nightshift"
+  grep -q 'plan room not opened: conversation shifter is working the shift$' "$p/.nightshift/shift-log.md"
+  # The shift's work is not fenced.
+  run claude "$p" shifter "$(edit Edit "$p/src/app.js")"
+  [[ "$(reason "$output")" != *'plan room'* ]] || { echo "$output"; return 1; }
+  # Planning tomorrow's work in another conversation while the shift runs is allowed.
+  bash "$PLUGIN/runtime/plan-enter.sh" --project "$p" >/dev/null
+  run claude "$p" planner "$(bash_call ': nightshift-plan-probe')"
+  [ -z "$(reason "$output")" ]
+  [ "$(lib ns_plan_room_line "$p/.nightshift" 1)" = planner ]
+}
+
 @test "the planning conversation is denied every write outside the staging folder, with the exact message" {
   p="$(room fence)"
   for payload in \
@@ -77,6 +96,28 @@ message() {
     run claude "$p" planner "$payload"
     [ -z "$(reason "$output")" ] || { echo "denied: $payload -> $(reason "$output")"; return 1; }
   done
+}
+
+@test "the read-only ns verbs run in the plan room as the skills write them" {
+  p="$(room ns-verbs)"
+  for cmd in "\"$PLUGIN/runtime/ns\" status" "'$PLUGIN/runtime/ns' doctor" \
+    "\"\$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns\" path drafting-table" "\"$PLUGIN/runtime/ns\" plan-enter --host claude" \
+    "ns bind"; do
+    run claude "$p" planner "$(bash_call "$cmd")"
+    [ -z "$(reason "$output")" ] || { echo "denied: $cmd -> $output"; return 1; }
+  done
+  for cmd in "\"$PLUGIN/runtime/ns\" scaffold product" "\"$PLUGIN/runtime/ns\" stop-shift" \
+    "\"/tmp/evil/rm\" -rf src" "'git' commit -m x"; do
+    run claude "$p" planner "$(bash_call "$cmd")"
+    [[ "$(reason "$output")" == 'BLOCKED: the plan room is open'* ]] || { echo "allowed: $cmd -> $output"; return 1; }
+  done
+  # Wrap-up shares the classifier but has no room to enter.
+  run bash -c '. "$1"; . "$2"; ns_hardhat_command_allowed "\"/x/runtime/ns\" plan-enter" wrapup' _ \
+    "$LIB" "$PLUGIN/hooks/shared/hardhat-core.sh"
+  [ "$status" -ne 0 ]
+  run bash -c '. "$1"; . "$2"; ns_hardhat_command_allowed "\"/x/runtime/ns\" status" wrapup' _ \
+    "$LIB" "$PLUGIN/hooks/shared/hardhat-core.sh"
+  [ "$status" -eq 0 ]
 }
 
 @test "another conversation in the same project is not fenced" {

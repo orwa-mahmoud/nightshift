@@ -1188,6 +1188,13 @@ if (Test-NSPlanRoomOpen $script:ns) {
     $planProbe = (($tool -in @('Bash', 'Shell')) -and $command -ceq ': nightshift-plan-probe') -or
         ($tool -eq 'PowerShell' -and $command -ceq "`$null = 'nightshift-plan-probe'")
     if ($planProbe) {
+        if ($active -and -not [string]::IsNullOrEmpty($sessionId) -and (Get-NSPlanRoomLine $script:ns 1).Length -eq 0) {
+            $shiftSession = Read-NSSession $script:ns
+            if ($null -ne $shiftSession -and $shiftSession.SessionId -ceq $sessionId) {
+                $null = Undo-NSPlanRoomEntry $script:ns $sessionId
+                Write-Deny (Get-NSPlanRoomOnShiftMessage)
+            }
+        }
         if (Set-NSPlanRoomBinding $script:ns $sessionId $HostName) { exit 0 }
         Write-Deny 'BLOCKED: the plan room is bound to another conversation. Open that conversation to plan, or the owner leaves the plan room with /nightshift:plan-exit.'
     }

@@ -1342,9 +1342,20 @@ ns_hardhat_command_allowed() {
     while [[ $seg =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do
       seg="${seg:${#BASH_REMATCH[0]}}"
     done
-    word="${seg%%[[:space:]]*}"
-    rest=""
-    [ "$word" = "$seg" ] || rest="${seg#*[[:space:]]}"
+    # The program, honouring quotes: every skill writes the dispatcher as "<plugin-root>/runtime/ns".
+    case "$seg" in
+      \"* | \'*)
+        word="${seg:1}"
+        word="${word%%"${seg:0:1}"*}"
+        rest="${seg:$((${#word} + 2))}"
+        ;;
+      *)
+        word="${seg%%[[:space:]]*}"
+        rest=""
+        [ "$word" = "$seg" ] || rest="${seg#*[[:space:]]}"
+        ;;
+    esac
+    rest="${rest#"${rest%%[![:space:]]*}"}"
     case "${word##*/}" in
       cat | head | tail | less | more | wc | grep | egrep | fgrep | rg | ag | ls | tree | file | stat | du | df | \
         pwd | cd | echo | printf | true | false | test | '[' | which | type | command | date | basename | \
@@ -1367,7 +1378,11 @@ ns_hardhat_command_allowed() {
         ;;
       ns)
         case "$word" in */runtime/ns | ns) ;; *) return 1 ;; esac
-        case "${rest%%[[:space:]]*}" in bind | path | punch-list | status | doctor | help) ;; *) return 1 ;; esac
+        case "${rest%%[[:space:]]*}" in
+          bind | path | punch-list | status | doctor | help) ;;
+          plan-enter) [ "$mode" = plan ] || return 1 ;;
+          *) return 1 ;;
+        esac
         ;;
       *) return 1 ;;
     esac
@@ -1457,6 +1472,12 @@ ns_hardhat_payload_targets_plan_room() {
 ns_hardhat_plan_room_reason() {
   ns_plan_room_open "$NS" || return 1
   if ns_hardhat_plan_probe "$1" "$4"; then
+    if [ -n "$5" ] && [ -z "$(ns_plan_room_line "$NS" 1)" ] && ns_hardhat_active \
+      && [ "$5" = "$(ns_session_line "$NS" 1)" ]; then
+      ns_plan_room_withdraw "$NS" "$5"
+      ns_plan_room_on_shift_message
+      return 0
+    fi
     if ns_plan_room_bind "$NS" "$5" "$6"; then
       return 3
     fi

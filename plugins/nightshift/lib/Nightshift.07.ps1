@@ -2237,8 +2237,19 @@ function Test-NSRestrictedCommand {
         $seg = $segment.Trim()
         if ($seg.Length -eq 0) { continue }
         while ($seg -cmatch '^[A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+') { $seg = $seg.Substring($Matches[0].Length) }
-        $word = ($seg -split '[ \t]+', 2)[0]
-        $rest = $(if ($seg.Length -gt $word.Length) { $seg.Substring($word.Length).Trim() } else { '' })
+        # PowerShell's call operator runs the program that follows it.
+        if ($seg -cmatch '^&[ \t]+') { $seg = $seg.Substring($Matches[0].Length) }
+        # The program, honouring quotes: every skill writes the dispatcher as "<plugin-root>\runtime\windows\ns.ps1".
+        if ($seg.StartsWith('"') -or $seg.StartsWith("'")) {
+            $close = $seg.IndexOf($seg[0], 1)
+            if ($close -lt 0) { $close = $seg.Length }
+            $word = $seg.Substring(1, $close - 1)
+            $rest = $(if ($close + 1 -lt $seg.Length) { $seg.Substring($close + 1).Trim() } else { '' })
+        }
+        else {
+            $word = ($seg -split '[ \t]+', 2)[0]
+            $rest = $(if ($seg.Length -gt $word.Length) { $seg.Substring($word.Length).Trim() } else { '' })
+        }
         $name = ($word -split '[/\\]')[-1].ToLowerInvariant() -creplace '\.exe$', ''
         if ($read -ccontains $name) { continue }
         if ($name -ceq 'sed') {
@@ -2265,7 +2276,9 @@ function Test-NSRestrictedCommand {
         }
         if ($name -cin @('ns', 'ns.ps1')) {
             if ($word -cnotmatch '(^|[/\\])runtime[/\\](windows[/\\])?ns(\.ps1)?$' -and $word -cnotin @('ns', 'ns.ps1')) { return $false }
-            if ((($rest -split '[ \t]+', 2)[0]) -cin @('bind', 'path', 'punch-list', 'status', 'doctor', 'help')) { continue }
+            $nsVerb = ($rest -split '[ \t]+', 2)[0]
+            if ($nsVerb -cin @('bind', 'path', 'punch-list', 'status', 'doctor', 'help')) { continue }
+            if ($nsVerb -ceq 'plan-enter' -and $Mode -ceq 'plan') { continue }
             return $false
         }
         return $false
@@ -2346,6 +2359,21 @@ function Get-NSPlanRoomMessage {
 
 function Get-NSPlanRoomMarkerMessage {
     return "BLOCKED: the plan room marker is the owner's. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start."
+}
+
+# Undo-NSPlanRoomEntry <nightshift-dir> <session> - take back a room that was never bound, because the
+# conversation that asked for it is working the shift. Mirrors ns_plan_room_withdraw.
+function Undo-NSPlanRoomEntry {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$SessionId)
+    if ((Get-NSPlanRoomLine $NightshiftDir 1).Length -gt 0) { return $false }
+    try { Remove-Item -LiteralPath (Get-NSPlanRoomFile $NightshiftDir) -Force -ErrorAction Stop }
+    catch { return $false }
+    Write-NSControlLog $NightshiftDir "plan room not opened: conversation $SessionId is working the shift"
+    return $true
+}
+
+function Get-NSPlanRoomOnShiftMessage {
+    return 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.'
 }
 
 # Get-NSPlanRoomExitWord <prompt> - 'plan-exit' or 'start' when the owner's prompt is an exit command:
