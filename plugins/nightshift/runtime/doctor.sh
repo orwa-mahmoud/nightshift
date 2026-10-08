@@ -206,6 +206,11 @@ else
   warn "punch-list.md is missing"
 fi
 
+if ns_plan_room_open "$NS"; then
+  PLAN_BOUND="$(ns_plan_room_line "$NS" 1)"
+  fact "plan room open, $([ -n "$PLAN_BOUND" ] && printf 'bound to conversation %s' "$PLAN_BOUND" || printf 'waiting for its conversation')"
+fi
+
 # Reports gaps between what open items need and what the resolver allows; it never refuses —
 # a gap is parked, not blocked.
 if ns_policy_json_tool >/dev/null 2>&1; then

@@ -215,6 +215,10 @@ if (Test-Path -LiteralPath $punch -PathType Leaf) {
 else {
     Add-NSWarn 'punch-list.md is missing'
 }
+if (Test-NSPlanRoomOpen $ns) {
+    $planBound = Get-NSPlanRoomLine $ns 1
+    Add-NSFact ('plan room open, ' + $(if ($planBound.Length -gt 0) { 'bound to conversation ' + $planBound } else { 'waiting for its conversation' }))
+}
 
 try {
     if (Test-NSReceiptsEnabled $workspace) {

@@ -243,6 +243,10 @@ function Test-NSHookIdle {
         return $false
     }
     $ns = Join-Path $hostDir '.nightshift'
+    # An open plan room holds whether or not a shift is armed, so it keeps the hooks in.
+    if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'plan-room') -PathType Leaf) {
+        return $false
+    }
     $armed = Get-NSLayoutPath $ns 'armed'
     $ended = Get-NSLayoutPath $ns 'ended'
     if (-not (Test-Path -LiteralPath $armed -PathType Leaf)) {

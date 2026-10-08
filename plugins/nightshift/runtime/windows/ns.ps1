@@ -37,7 +37,7 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 
 # The verbs that change something on disk. Identical in the POSIX dispatcher.
 $NSWritingVerbs = @('scaffold', 'archive-receipts', 'stop-shift', 'link-workspace',
-    'evidence-archive', 'migrate-state', 'apply-profile')
+    'evidence-archive', 'migrate-state', 'apply-profile', 'plan-enter')
 
 # The host, from the environment the hooks already read. Never from searching.
 function Get-NSDispatchHost {

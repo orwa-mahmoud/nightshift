@@ -497,6 +497,10 @@ function Write-NSStatusReport {
     Say ('Shift:       ' + ($(if ($armed) { 'armed' } else { 'not armed' })))
     Say ('Items:       open=' + $open + ' ticked=' + $ticked + $(if ($stopped -gt 0) { ' stopped=' + $stopped } else { '' }))
     Say ('evidence:    ' + (Get-NSEvidenceCountSummary $Workspace))
+    if (Test-NSPlanRoomOpen $ns) {
+        $planBound = Get-NSPlanRoomLine $ns 1
+        Say ('Plan room:   open, ' + $(if ($planBound.Length -gt 0) { 'bound to conversation ' + $planBound } else { 'waiting for its conversation' }))
+    }
     Say ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
     $activity = Get-NSStatusLastActivity $Workspace
     Say ('last activity: ' + ($(if ($activity.Length -gt 0) { $activity } else { 'none' })))
@@ -2267,4 +2271,90 @@ function Test-NSRestrictedCommand {
         return $false
     }
     return $true
+}
+
+# The plan room: a planning conversation that implements nothing until the owner leaves it. The
+# marker is three lines - the bound conversation (empty until the probe), its host, and when the room
+# was entered. Mirrors lib/plan-room.sh.
+function Get-NSPlanRoomFile { param([Parameter(Mandatory = $true)][string]$NightshiftDir) return (Get-NSLayoutPath $NightshiftDir 'plan-room') }
+
+function Test-NSPlanRoomOpen {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $f = Get-NSPlanRoomFile $NightshiftDir
+    return ((Test-Path -LiteralPath $f -PathType Leaf) -and -not (Test-NSReparsePoint $f))
+}
+
+# Get-NSPlanRoomLine <nightshift-dir> <n> - one line of the marker, or ''.
+function Get-NSPlanRoomLine {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][int]$Number)
+    if (-not (Test-NSPlanRoomOpen $NightshiftDir)) { return '' }
+    $lines = @([IO.File]::ReadAllLines((Get-NSPlanRoomFile $NightshiftDir)))
+    if ($lines.Count -lt $Number) { return '' }
+    return $lines[$Number - 1].TrimEnd("`r")
+}
+
+# Enter-NSPlanRoom <nightshift-dir> <host> - open the room, unbound. An open room is left as it is.
+function Enter-NSPlanRoom {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$HostName)
+    if (Test-NSPlanRoomOpen $NightshiftDir) { return $true }
+    $f = Get-NSPlanRoomFile $NightshiftDir
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $f) -Force
+    [IO.File]::WriteAllText($f, ("`n" + $HostName + "`n" + (Get-NSUnixTime) + "`n"), $script:NSUtf8NoBom)
+    return $true
+}
+
+# Set-NSPlanRoomBinding <nightshift-dir> <session> <host> - bind an unbound room to this conversation.
+# False when it is bound to another one or there is no session to bind.
+function Set-NSPlanRoomBinding {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$SessionId, [string]$HostName)
+    if ([string]::IsNullOrEmpty($SessionId) -or -not (Test-NSPlanRoomOpen $NightshiftDir)) { return $false }
+    $bound = Get-NSPlanRoomLine $NightshiftDir 1
+    if ($bound.Length -gt 0) { return ($bound -ceq $SessionId) }
+    $f = Get-NSPlanRoomFile $NightshiftDir
+    $tmp = $f + '.' + [guid]::NewGuid().ToString('N')
+    [IO.File]::WriteAllText($tmp, ($SessionId + "`n" + $HostName + "`n" + (Get-NSPlanRoomLine $NightshiftDir 3) + "`n"), $script:NSUtf8NoBom)
+    Move-Item -LiteralPath $tmp -Destination $f -Force
+    return $true
+}
+
+function Test-NSPlanRoomBinds {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$SessionId)
+    if ([string]::IsNullOrEmpty($SessionId)) { return $false }
+    $bound = Get-NSPlanRoomLine $NightshiftDir 1
+    return ($bound.Length -gt 0 -and $bound -ceq $SessionId)
+}
+
+# Get-NSPlanRoomPlace <nightshift-dir> - where the plan is written: the staging folder, or in a workspace
+# laid out before it existed, the drafting table.
+function Get-NSPlanRoomPlace {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    if (Test-NSLayoutKey $NightshiftDir 'staging') { return (Get-NSLayoutPath $NightshiftDir 'staging') }
+    return (Get-NSLayoutPath $NightshiftDir 'drafting-table')
+}
+
+function Get-NSPlanRoomPlaceName {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    if (Test-NSLayoutKey $NightshiftDir 'staging') { return ('.nightshift/' + (Get-NSLayoutRelativePath $NightshiftDir 'staging') + '/') }
+    return (Get-NSLayoutName $NightshiftDir 'drafting-table')
+}
+
+function Get-NSPlanRoomMessage {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return ('BLOCKED: the plan room is open, so nothing is implemented in this conversation. Tell the owner they are in the plan room and that this change was not made. Here you read, explore and write the plan into ' +
+        (Get-NSPlanRoomPlaceName $NightshiftDir) + '. To build, the owner leaves the plan room: they type /nightshift:plan-exit, or approve the plan and type /nightshift:start.')
+}
+
+function Get-NSPlanRoomMarkerMessage {
+    return "BLOCKED: the plan room marker is the owner's. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start."
+}
+
+# Test-NSPlanRoomTarget <target> - a path or command that reaches the plan room marker. Mirrors
+# ns_hardhat_plan_room_targeted.
+function Test-NSPlanRoomTarget {
+    param([AllowEmptyString()][string]$Target)
+    $t = $Target.Replace('\', '/').Replace('"', '').Replace("'", '')
+    if ($t -cmatch '(^|[/\s])\.?plan-room($|[^A-Za-z0-9_.-])') { return $true }
+    if ($t -cnotmatch '\.nightshift') { return $false }
+    if ($t -cmatch 'plan-[*?\[{]' -or $t.Contains('.nightshift/*') -or $t.Contains('.nightshift/.*') -or $t -cmatch 'run/[*?]') { return $true }
+    return $false
 }

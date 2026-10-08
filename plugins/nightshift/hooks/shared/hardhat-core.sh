@@ -1271,7 +1271,8 @@ ns_hardhat_trusted_shift_control() { # <cmd> <plugin_root> <workspace>
 }
 
 # Restricted modes. A spent hard budget (`wrapup`) narrows the shift to wrap-up: reading, committing
-# the work in progress, and writing the receipt, the punch list and the inbox. Reading stays free;
+# the work in progress, and writing the receipt, the punch list and the inbox. The plan room (`plan`)
+# allows reading and writing the plan into the staging folder. Reading stays free;
 # a tool this guard cannot classify is denied, so a new tool never widens a restricted mode. Shell
 # commands are matched by their text, as every hardhat rule is: hardening, not a sandbox.
 
@@ -1295,6 +1296,12 @@ ns_hardhat_restricted_places() {
   local key p
   case "$1" in
     wrapup) set -- receipts punch-list parking-lot snag-log ;;
+    plan)
+      p="$(ns_plan_room_place "$NS")" || return 1
+      ns_hardhat_canon_write_target "$p" || printf '%s' "$p"
+      printf '\n'
+      return 0
+      ;;
     *) return 1 ;;
   esac
   for key in "$@"; do
@@ -1400,4 +1407,66 @@ ns_hardhat_git_subcommand() {
     esac
   done
   return 1
+}
+
+# ns_hardhat_plan_probe <tool> <command> — the call that binds an unbound plan room to this
+# conversation, as the binding probe binds a shift.
+ns_hardhat_plan_probe() {
+  case "$1" in
+    Bash | Shell) [ "$2" = ": nightshift-plan-probe" ] ;;
+    PowerShell) [ "$2" = "\$null = 'nightshift-plan-probe'" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# ns_hardhat_plan_room_targeted <target> — a path or command that reaches the plan room marker: its
+# name as a path component, or a glob across the folder that holds it.
+ns_hardhat_plan_room_targeted() {
+  local normalized run_rel
+  normalized="$(printf '%s' "$1" | sed "s#\\\\/#/#g; s#[\"']##g")"
+  printf '%s' "$normalized" | grep -qE '(^|[/[:space:]])\.?plan-room($|[^[:alnum:]_.-])' && return 0
+  ns_hardhat_nightshift_dir_context "$normalized" || return 1
+  case "$normalized" in
+    *'plan-*'* | *'plan-?'* | *'plan-['* | *'plan-{'* | *'.nightshift/*'* | *'.nightshift/.*'*) return 0 ;;
+  esac
+  if ns_hardhat_control_dir_rel run_rel; then
+    case "$normalized" in *"$run_rel/"'*'* | *"$run_rel/"'?'*) return 0 ;; esac
+  fi
+  return 1
+}
+
+# ns_hardhat_payload_targets_plan_room <tool> <payload> <command> — any call that reaches the marker.
+# A payload this guard cannot read is treated as reaching it, as the lease guard does.
+ns_hardhat_payload_targets_plan_room() {
+  local rc
+  ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_plan_room_targeted
+  rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 2 ] || return 1
+  case "$1" in
+    AskQuestion | AskUserQuestion | request_user_input | WebFetch | WebSearch | Task | TodoWrite) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# ns_hardhat_plan_room_reason <tool> <payload> <scrubbed-command> <raw-command> <session> <host> —
+# the plan room's answer to this call: status 0 with a denial to print, 1 to let it through, 3 when
+# this call was the probe that bound the room.
+ns_hardhat_plan_room_reason() {
+  ns_plan_room_open "$NS" || return 1
+  if ns_hardhat_plan_probe "$1" "$4"; then
+    if ns_plan_room_bind "$NS" "$5" "$6"; then
+      return 3
+    fi
+    printf 'BLOCKED: the plan room is bound to another conversation. Open that conversation to plan, or the owner leaves the plan room with /nightshift:plan-exit.'
+    return 0
+  fi
+  if ns_hardhat_payload_targets_plan_room "$1" "$2" "$3"; then
+    ns_plan_room_marker_message
+    return 0
+  fi
+  ns_plan_room_binds "$NS" "$5" || return 1
+  ns_hardhat_restricted_allows "$1" "$2" "$3" plan && return 1
+  ns_plan_room_message "$NS"
+  return 0
 }

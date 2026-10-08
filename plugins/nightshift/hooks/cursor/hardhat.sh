@@ -74,6 +74,13 @@ case "$TOOL" in Bash | PowerShell | Shell) LEASE_COMMAND="$SCRUBBED" ;; esac
 LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
 LEASE_GENERATION="${NIGHTSHIFT_LEASE_GENERATION:-}"
 
+# The plan room holds whether or not a shift is armed: planning comes before the shift.
+plan_reason="$(ns_hardhat_plan_room_reason "$TOOL" "$CURSOR_RAW" "$SCRUBBED" "$CMD" "$SID" cursor)"
+case "$?" in
+  0) deny "$plan_reason" ;;
+  3) exit 0 ;;
+esac
+
 # Every remaining rule is shift-scoped: inert unless a shift is truly active. A stop-work order
 # is a request, not the ending — the agent keeps working until its next stop attempt, which is
 # exactly when the site rules still matter. The gate writes ENDED when it actually releases, and

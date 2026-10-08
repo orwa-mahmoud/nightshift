@@ -42,6 +42,8 @@ _ns_lib_dir="${BASH_SOURCE[0]%/*}"
 . "$_ns_lib_dir/usage.sh"
 # shellcheck source=plugins/nightshift/lib/budget.sh
 . "$_ns_lib_dir/budget.sh"
+# shellcheck source=plugins/nightshift/lib/plan-room.sh
+. "$_ns_lib_dir/plan-room.sh"
 # shellcheck source=plugins/nightshift/lib/process.sh
 . "$_ns_lib_dir/process.sh"
 # shellcheck source=plugins/nightshift/lib/ownership.sh

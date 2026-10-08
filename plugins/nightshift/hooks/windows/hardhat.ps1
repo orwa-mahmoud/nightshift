@@ -1089,8 +1089,9 @@ function Test-NSRestrictedAllows {
     if ($Tool -in @('Bash', 'PowerShell', 'Shell')) { return (Test-NSRestrictedCommand (Remove-NSCommitMessage $Command) $Mode) }
     if ($Tool -notin @('Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch')) { return $false }
     $keys = $(switch ($Mode) { 'wrapup' { @('receipts', 'punch-list', 'parking-lot', 'snag-log') } default { @() } })
-    $places = @(foreach ($key in $keys) {
-            $path = Get-NSLayoutPath $script:ns $key
+    $paths = @(foreach ($key in $keys) { Get-NSLayoutPath $script:ns $key })
+    if ($Mode -ceq 'plan') { $paths = @(Get-NSPlanRoomPlace $script:ns) }
+    $places = @(foreach ($path in $paths) {
             $canon = Resolve-NSWriteTarget $path
             if ($null -ne $canon) { $canon } else { $path }
         })
@@ -1180,6 +1181,25 @@ $active = Test-NSHardhatActive $ns
 $nonce = [string]$env:NIGHTSHIFT_LEASE_NONCE
 $generation = [string]$env:NIGHTSHIFT_LEASE_GENERATION
 $revival = $env:NIGHTSHIFT_REVIVAL -eq '1'
+
+# The plan room holds whether or not a shift is armed: planning comes before the shift.
+# Mirrors ns_hardhat_plan_room_reason.
+if (Test-NSPlanRoomOpen $script:ns) {
+    $planProbe = (($tool -in @('Bash', 'Shell')) -and $command -ceq ': nightshift-plan-probe') -or
+        ($tool -eq 'PowerShell' -and $command -ceq "`$null = 'nightshift-plan-probe'")
+    if ($planProbe) {
+        if (Set-NSPlanRoomBinding $script:ns $sessionId $HostName) { exit 0 }
+        Write-Deny 'BLOCKED: the plan room is bound to another conversation. Open that conversation to plan, or the owner leaves the plan room with /nightshift:plan-exit.'
+    }
+    $planTargets = @(Get-NSPayloadTargets $toolInput $tool $command)
+    if ($tool -in @('Bash', 'PowerShell', 'Shell')) { $planTargets += $command }
+    foreach ($target in $planTargets) {
+        if (Test-NSPlanRoomTarget ([string]$target)) { Write-Deny (Get-NSPlanRoomMarkerMessage) }
+    }
+    if ((Test-NSPlanRoomBinds $script:ns $sessionId) -and -not (Test-NSRestrictedAllows $tool $planTargets $command 'plan')) {
+        Write-Deny (Get-NSPlanRoomMessage $script:ns)
+    }
+}
 
 if (-not $active) {
     if ($revival -and (-not (Test-NSLeaseNonce $ns $HostName $nonce $generation) `

@@ -85,6 +85,10 @@ else
   emit "Items:       open=$OPEN ticked=$TICKED"
 fi
 emit "evidence:    $(ns_evidence_counts "$WORKSPACE")"
+if ns_plan_room_open "$NS"; then
+  PLAN_BOUND="$(ns_plan_room_line "$NS" 1)"
+  emit "Plan room:   open, $([ -n "$PLAN_BOUND" ] && printf 'bound to conversation %s' "$PLAN_BOUND" || printf 'waiting for its conversation')"
+fi
 emit "liveness:    $(ns_status_liveness "$NS" "$WATCH")"
 activity="$(ns_status_last_activity "$NS")"
 emit "last activity: ${activity:-none}"

@@ -538,6 +538,10 @@ try {
     $itemBudgetsLogicRun = Invoke-TestScript $itemBudgetsLogic
     Assert-Equal 0 $itemBudgetsLogicRun.ExitCode `
         "item budgets: $($itemBudgetsLogicRun.Stdout) $($itemBudgetsLogicRun.Stderr)"
+    $planRoomLogic = Join-Path $PSScriptRoot 'plan-room-logic.ps1'
+    $planRoomLogicRun = Invoke-TestScript $planRoomLogic
+    Assert-Equal 0 $planRoomLogicRun.ExitCode `
+        "plan room: $($planRoomLogicRun.Stdout) $($planRoomLogicRun.Stderr)"
     $localTimeLogic = Join-Path $PSScriptRoot 'local-time-logic.ps1'
     $localTimeLogicRun = Invoke-TestScript $localTimeLogic
     Assert-Equal 0 $localTimeLogicRun.ExitCode `

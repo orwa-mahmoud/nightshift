@@ -15,15 +15,18 @@ if [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ]; then
     && [ ! -e "$_ns_idle_host/.nightshift-link" ] && [ ! -L "$_ns_idle_host/.nightshift-link" ]; then
     # shellcheck source=plugins/nightshift/lib/layout.sh
     . "${BASH_SOURCE[0]%/*}/../../lib/layout.sh"
-    declare _ns_idle_armed _ns_idle_ended
+    declare _ns_idle_armed _ns_idle_ended _ns_idle_plan
     ns_layout_set _ns_idle_armed "$_ns_idle_host/.nightshift" armed
     ns_layout_set _ns_idle_ended "$_ns_idle_host/.nightshift" ended
-    if [ ! -f "$_ns_idle_armed" ] \
-      || { [ -f "$_ns_idle_ended" ] && [ ! -L "$_ns_idle_ended" ]; }; then
-      unset _ns_idle_host _ns_idle_armed _ns_idle_ended
+    ns_layout_set _ns_idle_plan "$_ns_idle_host/.nightshift" plan-room
+    # An open plan room holds whether or not a shift is armed, so it keeps the hooks in.
+    if { [ ! -f "$_ns_idle_armed" ] \
+      || { [ -f "$_ns_idle_ended" ] && [ ! -L "$_ns_idle_ended" ]; }; } \
+      && [ ! -f "$_ns_idle_plan" ]; then
+      unset _ns_idle_host _ns_idle_armed _ns_idle_ended _ns_idle_plan
       exit 0
     fi
-    unset _ns_idle_armed _ns_idle_ended
+    unset _ns_idle_armed _ns_idle_ended _ns_idle_plan
   fi
   unset _ns_idle_host
 fi
