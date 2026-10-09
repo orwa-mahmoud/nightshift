@@ -41,7 +41,7 @@ $null = 'nightshift-plan-probe'
 ```
 
 - The probe runs cleanly: the room is bound to this conversation. Tell the owner in one line that the
-  plan room is open, that nothing is implemented here, and how they leave it (section 5).
+  plan room is open, that nothing is implemented here, and how they leave it (section 6).
 - The probe is denied because the room is bound to another conversation: tell the owner, and stop.
   They plan in that conversation, or leave the room first.
 - The probe is denied because this conversation is working the shift: no room was opened. Tell the
@@ -58,7 +58,32 @@ none). With an open plan, read the record first and pick up exactly where its `W
 left off: say in a sentence or two what was decided and what comes next, so the owner never repeats
 themselves. With more than one open plan, ask which one this conversation continues.
 
-## 2. Think with the owner
+## 2. Review what the last shift left
+
+`plan-enter` ends with `review` lines: what waits for the owner's word. `review none` means there is
+nothing, and the room is plain planning. Otherwise, before new planning, offer to walk the owner
+through them, one at a time, in this order:
+
+- `review morning` and `review receipts` — the morning page (under `ns path receipts`) and the
+  receipts index (`ns path receipts-index`). Read them first and give the owner the outcome in a few
+  lines: what shipped, what did not, what needs a decision.
+- `review parked` — each open decision in the parking lot (`ns path parking-lot`). Show the default
+  the shift chose and why, and ask whether it stands. Record the answer by appending
+  ` · answered: <the owner's decision>` to that entry.
+- `review snag` — each snag with no disposition in the snag log (`ns path snag-log`). Ask what to do:
+  the owner's decision becomes its disposition (` · rejected-because: <why>` or
+  ` · accepted-tradeoff: <why>`), and a snag to fix becomes an item drafted for the next shift (section
+  5), its disposition written once the fix lands.
+- `review open` and `review stopped` — the items still open, and those closed at their hard budget,
+  in the punch list (`ns path punch-list`). Ask for each: keep it for the next shift as it is, rework
+  it (draft the new version, section 5), or drop it. The punch list is the owner's to edit: a box to
+  reopen, reword or remove is theirs to change, and the room cannot write it.
+
+Nothing is written without the owner's answer to that entry. The parking lot, the snag log, the
+drafting table and the plan record are the only files the room writes; an archived shift reads the
+same way, from what Archive left live.
+
+## 3. Think with the owner
 
 This is a conversation, not a procedure. Follow the owner's direction and pace; do not impose phases,
 templates or a checklist while discussing.
@@ -77,11 +102,11 @@ templates or a checklist while discussing.
   so it is not reopened by accident.
 
 When the owner says "just do it" or "implement it": the room still holds. Say plainly that nothing
-can be built in this conversation while the plan room is open, and give the exits (section 5). Never
+can be built in this conversation while the plan room is open, and give the exits (section 6). Never
 work around the fence: no code written into the staging folder to copy out later, no scripts, and no
 asking another conversation to make the change.
 
-## 3. Keep the plan record current
+## 4. Keep the plan record current
 
 The plan record (`ns path plan-record`) is the room's notebook. Write it as the discussion moves —
 it needs no permission, and it is what lets compaction, a closed tab or a new day lose nothing. Keep
@@ -102,7 +127,7 @@ one entry per plan, below the record's rule, in the shape its header shows:
   name the evidence and the earlier reason together.
 - When the owner sets a plan aside, append ` · dropped: <why>` to the entry's first line.
 
-## 4. Capture — only on the owner's explicit yes
+## 5. Capture — only on the owner's explicit yes
 
 Nothing is written into the drafting table until the owner says yes to that exact write. An answer to
 a design question is not consent, and neither is approval of an idea. When the plan is ready, say
@@ -149,7 +174,7 @@ Codex. With an empty punch list, Start offers the staged items to
 promote. With open items already in the punch list, Start works those, and the plan waits in the
 drafting table.
 
-## 5. Leaving is the owner's
+## 6. Leaving is the owner's
 
 Only the owner closes the room. On Claude Code and Cursor they type `/nightshift:plan-exit`, or
 `/nightshift:start` to leave and start the shift in one step. On Codex they type

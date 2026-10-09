@@ -12,8 +12,9 @@
 #              files (NS_REVIEW_DISPOSITIONS); a disposition follows a ` · ` separator.
 #   op=strays  prints <line> TAB <text> for the first line of each paragraph below the first `---`
 #              rule, or anywhere in a file that has none.
-#   op=open    prints the first line of each entry below the first `---` rule that carries none of
-#              -v dispositions: the plan record's open plans.
+#   op=open    prints the first line of each entry that carries none of -v dispositions, below the
+#              first `---` rule, or anywhere in a file that has none: the open plans, decisions and
+#              snags.
 
 function handled(s) {
   return tolower(s) ~ (" · (" dispositions ")")
@@ -24,10 +25,12 @@ function flush() {
     if (handled(buf)) printf "%s\n", buf >>filed
     else printf "%s\n", buf
   }
-  if (buf != "" && op == "open" && rule && !handled(buf)) {
+  if (buf != "" && op == "open" && !handled(buf)) {
     first = buf
     sub(/\n.*/, "", first)
-    print first
+    m++
+    openat[m] = start
+    opened[m] = first
   }
   buf = ""
   blank = 0
@@ -77,6 +80,7 @@ buf != "" && t ~ /^ *(- )?(\*\*)?(Default|Rollback):/ {
 
 t ~ /^- / {
   flush()
+  start = FNR
   buf = $0
   para = 0
   next
@@ -101,6 +105,11 @@ buf != "" && (!blank || t ~ /^ /) {
 
 END {
   flush()
+  if (op == "open") {
+    for (i = 1; i <= m; i++) {
+      if (!rule || openat[i] > rule) print opened[i]
+    }
+  }
   if (op == "strays") {
     for (i = 1; i <= n; i++) {
       if (!rule || at[i] > rule) printf "%d\t%s\n", at[i], text[i]

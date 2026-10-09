@@ -1297,11 +1297,12 @@ ns_hardhat_restricted_places() {
   case "$1" in
     wrapup) set -- receipts punch-list parking-lot snag-log ;;
     plan)
-      # The place the plan goes, and the room's own notebook beside it.
+      # The place the plan goes, the room's own notebook beside it, and the owner's review decisions:
+      # the answer to a parked decision and the disposition of a snag.
       p="$(ns_plan_room_place "$NS")" || return 1
       ns_hardhat_canon_write_target "$p" || printf '%s' "$p"
       printf '\n'
-      set -- plan-record
+      set -- plan-record parking-lot snag-log
       ;;
     *) return 1 ;;
   esac

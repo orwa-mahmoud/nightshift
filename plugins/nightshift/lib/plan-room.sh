@@ -102,12 +102,18 @@ ns_plan_room_on_shift_message() {
 # with their shift; the others are plans still being worked out.
 NS_PLAN_RECORD_CLOSED='captured|dropped'
 
+# ns_open_entries <file> <dispositions> — the first line of each `- ` entry that carries none of the
+# dispositions: below the file's rule, or anywhere in a file that has none.
+ns_open_entries() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v op=open -v dispositions="$2" -f "$_NS_INBOX_AWK" "$1" | tr -d '\r'
+}
+
 # ns_plan_record_open <nightshift-dir> — the first line of each open plan in the plan record.
 ns_plan_record_open() {
   local f
   ns_layout_set f "$1" plan-record || return 0
-  [ -f "$f" ] && [ ! -L "$f" ] || return 0
-  awk -v op=open -v dispositions="$NS_PLAN_RECORD_CLOSED" -f "$_NS_INBOX_AWK" "$f" | tr -d '\r'
+  ns_open_entries "$f" "$NS_PLAN_RECORD_CLOSED"
 }
 
 # ns_plan_room_exit_word <prompt> — `plan-exit` or `start` when the owner's prompt is an exit
@@ -142,4 +148,55 @@ ns_plan_room_left_context() {
   else
     printf 'nightshift: the owner left the plan room. Nothing is fenced any more; to build the plan, promote it into the punch list and Start.'
   fi
+}
+
+# ns_plan_review <nightshift-dir> — what the plan room walks the owner through, one
+# `review <kind> <text>` line each: the latest morning page and the receipts index, every parked
+# decision and snag still open, and every item still open or stopped while no shift is running.
+# `review none` when there is nothing. A workspace that Archive has filed reads what it left live.
+ns_plan_review() {
+  local ns="$1" dir name f punch armed ended any=0 line
+  ns_layout_set dir "$ns" receipts
+  name="$(ns_receipts_morning_names "$dir" | tail -n1)"
+  if [ -n "$name" ]; then
+    printf 'review morning %s/%s\n' "$(ns_layout_name "$ns" receipts)" "$name"
+    any=1
+  fi
+  ns_layout_set f "$ns" receipts-index
+  if [ -f "$f" ] && [ ! -L "$f" ]; then
+    printf 'review receipts %s\n' "$(ns_layout_name "$ns" receipts-index)"
+    any=1
+  fi
+  ns_layout_set f "$ns" parking-lot
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    printf 'review parked %s\n' "${line#- }"
+    any=1
+  done < <(ns_open_entries "$f" "$NS_REVIEW_DISPOSITIONS")
+  ns_layout_set f "$ns" snag-log
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    printf 'review snag %s\n' "${line#- }"
+    any=1
+  done < <(ns_open_entries "$f" "$NS_REVIEW_DISPOSITIONS")
+  ns_layout_set punch "$ns" punch-list
+  ns_layout_set armed "$ns" armed
+  ns_layout_set ended "$ns" ended
+  # A running shift's items are that shift's to work, not the owner's to decide.
+  if [ ! -f "$armed" ] || { [ -f "$ended" ] && [ ! -L "$ended" ]; }; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      printf 'review %s\n' "$line"
+      any=1
+    done < <(ns_punch_items "$punch" | awk '
+      /^- \[ \]/ { kind = "open" }
+      /^- \[-\]/ { kind = "stopped" }
+      /^- \[( |-)\]/ {
+        line = $0
+        sub(/^- \[.\][[:space:]]*/, "", line)
+        sub(/[[:space:]]*<!--.*-->[[:space:]]*$/, "", line)
+        print kind " " line
+      }')
+  fi
+  [ "$any" -eq 1 ] || printf 'review none\n'
 }

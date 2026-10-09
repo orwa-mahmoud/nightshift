@@ -211,6 +211,40 @@ try {
     Expect-True ((Invoke-Hardhat $legacy 'planner' (New-Edit 'Write' (Get-NSLayoutPath $lns 'plan-record'))) -ceq '') 'a legacy layout writes its record too'
     Expect-True ((Get-NSPlanRecordOpen $rns).Count -eq 1) 'Get-NSPlanRecordOpen reads the one open plan'
 
+    # The morning review: entering after a finished shift lists what it left for the owner.
+    $v = Join-Path $root 'review'
+    $vns = Join-Path $v '.nightshift'
+    $null = New-Item -ItemType Directory -Path (Join-Path $vns 'run'), (Join-Path $vns 'inbox'), (Join-Path $vns 'receipts') -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $vns 'rules.json') -Force
+    [IO.File]::WriteAllText((Join-Path $vns 'state-version'), "2`n", $utf8)
+    & git -C $v init --quiet
+    [IO.File]::WriteAllText((Get-NSLayoutPath $vns 'armed'), '', $utf8)
+    [IO.File]::WriteAllText((Get-NSLayoutPath $vns 'ended'), "shiftId=aaaa1111bbbb2222`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $vns 'punch-list.md'), ("## Items`n- [x] **1. Parse the config.** <!-- id: aa11 -->`n- [ ] **2. Cache the parse.** <!-- id: bb22 -->`n" +
+        "- [-] **3. Rewrite the loader.** <!-- id: cc33 -->`n  - Stopped: hard 45m reached`n"), $utf8)
+    [IO.File]::WriteAllText((Get-NSLayoutPath $vns 'parking-lot'), ("# Parking Lot`n`n---`n`n- Keep the old flag name? $dot default: keep it`n" +
+        "- Bump the minimum Node? $dot answered: yes, to 22`n"), $utf8)
+    [IO.File]::WriteAllText((Get-NSLayoutPath $vns 'snag-log'), ("# Snag Log`n`n---`n`n- The loader retries forever $dot tests/loader.bats $dot 2026-10-09`n" +
+        "- A typo in the help text $dot cli.sh $dot fixed $dot 2026-10-09`n"), $utf8)
+    [IO.File]::WriteAllText((Join-Path $vns 'receipts/morning-2026-10-08-1111aaaa2222bbbb.md'), "# Morning`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $vns 'receipts/morning-2026-10-09-aaaa1111bbbb2222.md'), "# Morning`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $vns 'receipts/README.md'), "# Receipts`n", $utf8)
+    $wantReview = @('review morning .nightshift/receipts/morning-2026-10-09-aaaa1111bbbb2222.md', 'review receipts .nightshift/receipts/README.md',
+        "review parked Keep the old flag name? $dot default: keep it", "review snag The loader retries forever $dot tests/loader.bats $dot 2026-10-09",
+        'review open **2. Cache the parse.**', 'review stopped **3. Rewrite the loader.**')
+    $gotReview = @(@(& $hostExe -NoProfile -NonInteractive -File $enter -Project $v) | Where-Object { $_.StartsWith('review ') })
+    Expect-True (($gotReview -join "`n") -ceq ($wantReview -join "`n")) "review: $($gotReview -join ' | ')"
+    $direct = Get-NSPlanReview $vns; Expect-True (($direct -join "`n") -ceq ($wantReview -join "`n")) "Get-NSPlanReview lists the same review: $($direct -join ' | ')"
+    Remove-Item -LiteralPath (Get-NSLayoutPath $vns 'ended') -Force
+    $runningReview = Get-NSPlanReview $vns
+    Expect-True ($runningReview.Count -gt 0 -and @($runningReview | Where-Object { $_ -cmatch '^review (open|stopped) ' }).Count -eq 0) "a running shift's items are not put up for review"
+    Remove-Item -LiteralPath (Get-NSLayoutPath $vns 'armed') -Force
+    $null = Invoke-Hardhat $v 'planner' (New-Shell "`$null = 'nightshift-plan-probe'")
+    foreach ($key in @('parking-lot', 'snag-log', 'drafting-table')) {
+        Expect-True ((Invoke-Hardhat $v 'planner' (New-Edit 'Edit' (Get-NSLayoutPath $vns $key))) -ceq '') "the plan room records review decisions in $key"
+    }
+    Expect-True ((Invoke-Hardhat $v 'planner' (New-Edit 'Edit' (Join-Path $vns 'punch-list.md'))).Length -gt 0) 'the punch list stays fenced'
+
     # The terminal verb.
     $t = Join-Path $root 'terminal'
     $tns = New-Room $t

@@ -48,6 +48,7 @@ function Write-PlanRecord {
     $open = Get-NSPlanRecordOpen $ns
     if ($open.Count -eq 0) { Write-Output 'open plan: none' }
     foreach ($line in $open) { Write-Output ('open plan: ' + $line) }
+    foreach ($line in (Get-NSPlanReview $ns)) { Write-Output $line }
 }
 
 if (Test-NSPlanRoomOpen $ns) {

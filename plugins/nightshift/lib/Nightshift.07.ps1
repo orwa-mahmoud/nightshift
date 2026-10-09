@@ -2376,25 +2376,66 @@ function Get-NSPlanRoomOnShiftMessage {
     return 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.'
 }
 
-# Get-NSPlanRecordOpen <nightshift-dir> - the first line of each open plan in the plan record: an entry
-# below the rule that is neither captured nor dropped. Mirrors ns_plan_record_open.
-function Get-NSPlanRecordOpen {
-    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
-    $f = Get-NSLayoutPath $NightshiftDir 'plan-record'
-    if (-not (Test-Path -LiteralPath $f -PathType Leaf) -or (Test-NSReparsePoint $f)) { return , @() }
-    $lines = [IO.File]::ReadAllLines($f)
+# Get-NSOpenEntries <file> <dispositions> - the first line of each `- ` entry that carries none of the
+# dispositions: below the file's rule, or anywhere in a file that has none. Mirrors ns_open_entries.
+function Get-NSOpenEntries {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Dispositions)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf) -or (Test-NSReparsePoint $Path)) { return , @() }
+    $lines = [IO.File]::ReadAllLines($Path)
     $rule = 0
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i].TrimEnd() -cmatch '^--- *$') { $rule = $i + 1; break }
     }
-    if ($rule -eq 0) { return , @() }
     $open = New-Object Collections.Generic.List[string]
     foreach ($block in (Get-NSInboxBlocks $lines)) {
         if ($block.Kind -cne 'entry' -or $block.Line -le $rule) { continue }
-        if (Test-NSReviewHandled ($block.Lines -join "`n") $script:NSPlanRecordClosed) { continue }
+        if (Test-NSReviewHandled ($block.Lines -join "`n") $Dispositions) { continue }
         $open.Add([string]$block.Lines[0])
     }
     return , $open.ToArray()
+}
+
+# Get-NSPlanRecordOpen <nightshift-dir> - the first line of each open plan in the plan record.
+# Mirrors ns_plan_record_open.
+function Get-NSPlanRecordOpen {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return , (Get-NSOpenEntries (Get-NSLayoutPath $NightshiftDir 'plan-record') $script:NSPlanRecordClosed)
+}
+
+# Get-NSPlanReview <nightshift-dir> - what the plan room walks the owner through, one
+# `review <kind> <text>` line each: the latest morning page and the receipts index, every parked
+# decision and snag still open, and every item still open or stopped while no shift is running.
+# `review none` when there is nothing. Mirrors ns_plan_review.
+function Get-NSPlanReview {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $out = New-Object Collections.Generic.List[string]
+    $morning = Get-NSReceiptsMorningNames (Get-NSLayoutPath $NightshiftDir 'receipts')
+    if ($morning.Count -gt 0) { $out.Add('review morning ' + (Get-NSLayoutName $NightshiftDir 'receipts') + '/' + $morning[-1]) }
+    $index = Get-NSLayoutPath $NightshiftDir 'receipts-index'
+    if ((Test-Path -LiteralPath $index -PathType Leaf) -and -not (Test-NSReparsePoint $index)) {
+        $out.Add('review receipts ' + (Get-NSLayoutName $NightshiftDir 'receipts-index'))
+    }
+    foreach ($pair in @(@('parking-lot', 'parked'), @('snag-log', 'snag'))) {
+        foreach ($line in (Get-NSOpenEntries (Get-NSLayoutPath $NightshiftDir $pair[0]) $script:NSReviewDispositions)) {
+            $out.Add('review ' + $pair[1] + ' ' + ($line -creplace '^- ', ''))
+        }
+    }
+    # A running shift's items are that shift's to work, not the owner's to decide.
+    $ended = Get-NSLayoutPath $NightshiftDir 'ended'
+    $running = (Test-Path -LiteralPath (Get-NSLayoutPath $NightshiftDir 'armed') -PathType Leaf) -and
+        -not ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended))
+    $punch = Get-NSLayoutPath $NightshiftDir 'punch-list'
+    if (-not $running -and (Test-Path -LiteralPath $punch -PathType Leaf)) {
+        foreach ($line in @(Get-NSPunchItemsSection $punch)) {
+            if ($line -cnotmatch '^- \[( |-)\]') { continue }
+            $kind = if ($Matches[1] -ceq '-') { 'stopped' } else { 'open' }
+            $text = $line -creplace '^- \[.\][ \t]*', ''
+            $text = $text -creplace '[ \t]*<!--.*-->[ \t]*$', ''
+            $out.Add("review $kind $text")
+        }
+    }
+    if ($out.Count -eq 0) { $out.Add('review none') }
+    return , $out.ToArray()
 }
 
 # Get-NSPlanRoomExitWord <prompt> - 'plan-exit' or 'start' when the owner's prompt is an exit command:

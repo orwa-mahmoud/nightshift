@@ -42,8 +42,8 @@ WORKSPACE="$(ns_workspace_root "$PROJECT" 2>/dev/null)" || { printf 'plan-enter:
 NS="$WORKSPACE/.nightshift"
 [ -d "$NS" ] && [ ! -L "$NS" ] || { printf 'plan-enter: no .nightshift/ at %s — run Setup first\n' "$WORKSPACE" >&2; exit 1; }
 
-# record — the plan record, created on first entry, and every plan it holds open: entering resumes
-# from it.
+# record — the plan record, created on first entry, every plan it holds open, and what waits for the
+# owner's review: entering resumes from both.
 record() {
   local open
   bash "$_here/scaffold.sh" --project "$WORKSPACE" plan-record >/dev/null 2>&1 \
@@ -55,6 +55,7 @@ record() {
   else
     printf 'open plan: none\n'
   fi
+  ns_plan_review "$NS"
 }
 
 if ns_plan_room_open "$NS"; then
