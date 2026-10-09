@@ -176,6 +176,12 @@ Then close the record's entry by appending ` · captured: ## Plan: <title>` to i
 Archive files it with the shift. The `Record:` link is relative to the drafting table, and the
 record sits beside it in every layout.
 
+Before offering promotion, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-items`. It reads the
+drafting table and names, per item, a missing or empty `Verify:`, a missing `Commit:`, a `Budget:`
+that does not parse, a nested checkbox, and any checkbox no item owns. Show the owner every finding.
+Correct one in the plan you just wrote only with their yes. The check refuses nothing: whether to
+promote is the owner's call.
+
 After writing, show the owner what was written and where, then name the way to build it: leave the
 plan room by typing Start — `/nightshift:start` on Claude Code and Cursor, `$nightshift:start` on
 Codex. With an empty punch list, Start offers the staged items to

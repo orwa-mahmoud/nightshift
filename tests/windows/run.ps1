@@ -546,6 +546,10 @@ try {
     $shiftEstimateLogicRun = Invoke-TestScript $shiftEstimateLogic
     Assert-Equal 0 $shiftEstimateLogicRun.ExitCode `
         "shift estimate: $($shiftEstimateLogicRun.Stdout) $($shiftEstimateLogicRun.Stderr)"
+    $checkItemsLogic = Join-Path $PSScriptRoot 'check-items-logic.ps1'
+    $checkItemsLogicRun = Invoke-TestScript $checkItemsLogic
+    Assert-Equal 0 $checkItemsLogicRun.ExitCode `
+        "check items: $($checkItemsLogicRun.Stdout) $($checkItemsLogicRun.Stderr)"
     $localTimeLogic = Join-Path $PSScriptRoot 'local-time-logic.ps1'
     $localTimeLogicRun = Invoke-TestScript $localTimeLogic
     Assert-Equal 0 $localTimeLogicRun.ExitCode `

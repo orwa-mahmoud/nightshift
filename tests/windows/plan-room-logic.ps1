@@ -77,7 +77,7 @@ try {
     # The read-only ns verbs run as the skills write them.
     $nsPs = Join-Path $plugin 'runtime/windows/ns.ps1'
     foreach ($command in @("& `"$nsPs`" status", "& '$nsPs' doctor", '& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" path drafting-table',
-            "& `"$nsPs`" plan-enter --host claude", "& `"$nsPs`" shift-estimate --items 4")) {
+            "& `"$nsPs`" plan-enter --host claude", "& `"$nsPs`" shift-estimate --items 4", "& `"$nsPs`" check-items")) {
         $reason = Invoke-Hardhat $w 'planner' (New-Shell $command)
         Expect-True ($reason -ceq '') "free: $command -> $reason"
     }

@@ -1382,7 +1382,7 @@ ns_hardhat_command_allowed() {
         case "$word" in */runtime/ns | ns) ;; *) return 1 ;; esac
         case "${rest%%[[:space:]]*}" in
           bind | path | punch-list | status | doctor | help) ;;
-          plan-enter | shift-estimate) [ "$mode" = plan ] || return 1 ;;
+          plan-enter | shift-estimate | check-items) [ "$mode" = plan ] || return 1 ;;
           *) return 1 ;;
         esac
         ;;
