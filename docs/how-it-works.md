@@ -183,6 +183,49 @@ items and artifact receipts in artifact mode. A deadline is therefore the final
 cost boundary when failed attempts could otherwise keep producing commits. Without a deadline or
 stall cap, a finite shift can remain held and retry until the owner intervenes.
 
+## The plan room
+
+Planning is a conversation that must not drift into building. The plan room holds that line with the
+hooks rather than with a prompt, so it holds however the request is worded and however long the
+conversation runs.
+
+**State.** `/nightshift:plan` runs `ns plan-enter`, which writes `.nightshift/run/plan-room`. The
+agent's very next tool call is a probe that binds the room to that conversation, by the same rule
+that binds a shift to its session. Only the bound conversation is fenced; every other conversation in
+the project works normally. The conversation working an armed shift cannot bind it: the probe takes
+the room back and says why, because a fenced shift could neither work nor clock out.
+
+**Fence.** While the room binds a conversation, the hardhat on every host denies file edits and
+writes, `apply_patch`, unknown tools and mutating shell commands. It allows reads, searches,
+read-only commands, and the plan's own files: the staging folder (the drafting table and the plan
+record), and the parking lot and snag log for review decisions. The denial tells the agent to tell
+you that the plan room is open, that nothing was changed, and how to leave. No conversation may
+touch the marker or run `plan-exit`.
+
+**Leaving is yours.** The marker is removed only by something you typed. On Claude Code that is the
+`UserPromptExpansion` hook, which fires only for a command you type, on `/nightshift:plan-exit` or
+`/nightshift:start`. On Codex it is the `UserPromptSubmit` hook, on a message that starts with
+`$nightshift:plan-exit` or `$nightshift:start`. On Cursor it is `beforeSubmitPrompt`, on the same
+commands. A skill the agent invokes reaches none of these. `ns plan-exit` in a terminal works
+everywhere, and it is the exit wherever a host's prompt hook does not run. Start refuses while the
+room is open, and `/nightshift:start` clears the room before Start's preflight runs. The
+[host references](../plugins/nightshift/skills/nightshift/references/hosts/) record what each host's
+prompt payload carries.
+
+**The plan record.** `.nightshift/staging/plan-record.md` is the room's notebook: one entry per plan,
+holding where the discussion stands, the decisions, the options rejected with the reason, and the
+open questions. The agent writes it as the discussion moves, without asking. `plan-enter` lists every
+open plan, so a new conversation, a compaction or a new day resumes where the last one stopped. An
+entry closes as `captured` (the plan went to the drafting table, on your yes) or `dropped`, and
+Archive files closed entries with the shift.
+
+**Morning review.** `plan-enter` also lists what the last shift left for you: the morning receipt,
+the receipts index, every parked decision and snag still open, and every item still open or stopped
+once no shift is running. The agent walks you through them one at a time and writes each answer where
+it belongs. A parked decision gets `answered`, a snag gets its disposition, and new or reworked work
+is drafted for the next shift. The punch list stays yours to edit. After Archive, the review reads
+what Archive left live.
+
 ## Recovery
 
 No hook can recover the session it was running inside after that process dies. Nightshift's
@@ -559,7 +602,9 @@ and the refused split-runtime boundary are in [Remote environments](remote-envir
   attempt committed by the agent can look alive. Item checks and the deadline remain the backstop.
 - **No built-in push block:** pushing is allowed unless the owner adds it to the shift rules.
 - **Hardhat is hardening, not a sandbox:** shell-command rules match command text. The pattern
-  rules prevent accidental drift by a cooperative agent; they are not unbypassable isolation.
+  rules prevent accidental drift by a cooperative agent; they are not unbypassable isolation. The
+  plan room's fence and the hard-budget wrap-up are built on the same command classifier, under the
+  same limit.
 - **The process lease fences observed tools:** it rejects stale-process calls delivered to the
   host's PreToolUse hook after ownership transfers. It cannot revoke a call already admitted,
   refresh the IDE, terminate a host process, suppress generated text, or control commands a human

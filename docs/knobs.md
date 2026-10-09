@@ -258,9 +258,36 @@ the default in the table.
 | `hours` | `null` | A whole number of hours for a composed shift, or `null` to be asked. A finite punch list can still end at its last tick with no clock |
 | `execution` | `review-first` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
 | `toolingPolicy` | `existing-tools` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
+| `itemBudget` | `""` | The budget every item gets when it names none of its own, in the words of an item's `Budget:` line. Empty means no limit |
 
 A new workspace verifies nothing, because the gates a new owner has not written yet should not fail
 a shift. Set a profile once you have commands worth running.
+
+### Item budgets
+
+An item may carry its own limit as a sub-bullet, and `shift.itemBudget` covers every item that names
+none:
+
+```text
+  - Budget: soft 30m / 1M tokens, hard 45m / 2M tokens
+```
+
+Each level is optional, and each takes a time (`45m`, `1h 30m`, `90s`), a token count (`500k tokens`,
+`2.5M tokens`), or both. Time is working time on the item across every session; tokens are input plus
+output. A reading the host does not give never trips a limit.
+
+- **Soft** — once the item passes it, the next tool result tells the agent, once, to start finishing
+  the item, and the shift log records when.
+- **Hard** — from the next tool call the hardhat allows only wrap-up: reading, `git add` and
+  `git commit`, and writes to the receipts, the punch list and the inbox. Everything else is denied
+  with the reason. A response already being written finishes first; the limit acts at tool-call
+  granularity. The agent commits the work in progress, writes the receipt, and closes the item as
+  stopped: `- [-]` with a `Stopped:` sub-bullet naming the limit, what was spent and the commit.
+
+A stopped item is never ticked. The gate treats it as closed so the shift moves on. Status, Doctor and
+the preflight count it as `stopped=N`. The morning receipt lists it under decisions for you, and
+Archive keeps it live as open work. Reopening it is the owner's edit: change the box back to `- [ ]`.
+`ns shift-estimate --items N` suggests a budget from your own past receipts.
 
 `handoff` is the morning receipt — presentation only. It never decides whether a check ran, and it
 cannot turn an unavailable check into a passed one.

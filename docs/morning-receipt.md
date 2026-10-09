@@ -109,12 +109,23 @@ checks is stated, not implied by a missing section.
 the view's own order. All four views read the same underlying records, so none of them can
 disagree with another — they only differ in which sections they show.
 
+## Review it in the plan room
+
+The page tells you what needs a decision; the plan room is where you make them. Open it with
+`/nightshift:plan` (ask Nightshift to plan on Codex). Entering lists the latest morning page and the
+receipts index, every parked decision and snag still open, and every item still open or stopped. The
+agent walks you through them one at a time and writes each answer where it belongs: ` · answered:`
+on a parked decision, a disposition on a snag, and a drafted item for work to carry into the next
+shift. Nothing is written without your answer, and the punch list stays yours to edit. After
+Archive, the review reads what Archive left live.
+
 ## Determinism
 
 Digests throughout are sha256, hex-encoded. Every comparison row cites the ledger record id and
 locator behind it, and every other line comes from a named record — nothing in the receipt lacks a
-source. Timestamps are UTC (`%Y-%m-%dT%H:%M:%SZ`) and honor `NIGHTSHIFT_EVIDENCE_NOW` in tests. The
-bash and PowerShell renderers produce byte-identical Markdown from the same records, and the bash
+source. Times are in the device's local time with its offset (`2026-10-08 07:12:05 (UTC+04:00)`) and
+honor `NIGHTSHIFT_EVIDENCE_NOW` in tests. The bash and PowerShell renderers produce byte-identical
+Markdown from the same records and the same time zone, and the bash
 side produces the same bytes whether it reads JSON with `jq` or its `python3` fallback.
 
 ---

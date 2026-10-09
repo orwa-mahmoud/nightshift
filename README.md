@@ -111,6 +111,8 @@ Start with one small task in a project you trust. Keep the first run attended an
 | Check progress | “Show Nightshift status.” | `/nightshift:status` |
 | Diagnose | “Diagnose this Nightshift workspace.” | `/nightshift:doctor` |
 | Stop | “Stop the Nightshift shift.” | `/nightshift:stop` |
+| Plan before building | “Plan this with Nightshift.” | `/nightshift:plan` |
+| Leave the plan room | Type `$nightshift:plan-exit` | `/nightshift:plan-exit` |
 
 1. **Set up.** Review the proposed checks and permissions. Setup asks before applying them.
 2. **Write one item** under `## Items` in `.nightshift/punch-list.md`. For a repository that
