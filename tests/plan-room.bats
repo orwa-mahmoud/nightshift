@@ -102,7 +102,7 @@ message() {
   p="$(room ns-verbs)"
   for cmd in "\"$PLUGIN/runtime/ns\" status" "'$PLUGIN/runtime/ns' doctor" \
     "\"\$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns\" path drafting-table" "\"$PLUGIN/runtime/ns\" plan-enter --host claude" \
-    "ns bind"; do
+    "\"$PLUGIN/runtime/ns\" shift-estimate --items 4" "ns bind"; do
     run claude "$p" planner "$(bash_call "$cmd")"
     [ -z "$(reason "$output")" ] || { echo "denied: $cmd -> $output"; return 1; }
   done

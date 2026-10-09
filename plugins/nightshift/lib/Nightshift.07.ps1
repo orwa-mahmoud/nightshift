@@ -2278,7 +2278,7 @@ function Test-NSRestrictedCommand {
             if ($word -cnotmatch '(^|[/\\])runtime[/\\](windows[/\\])?ns(\.ps1)?$' -and $word -cnotin @('ns', 'ns.ps1')) { return $false }
             $nsVerb = ($rest -split '[ \t]+', 2)[0]
             if ($nsVerb -cin @('bind', 'path', 'punch-list', 'status', 'doctor', 'help')) { continue }
-            if ($nsVerb -ceq 'plan-enter' -and $Mode -ceq 'plan') { continue }
+            if ($nsVerb -cin @('plan-enter', 'shift-estimate') -and $Mode -ceq 'plan') { continue }
             return $false
         }
         return $false

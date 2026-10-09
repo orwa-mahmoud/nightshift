@@ -144,9 +144,11 @@ Scope: <what this plan covers>
 Non-goals: <what it deliberately leaves out>
 Design notes: <the decisions taken, and the options rejected with the reason>
 Record: [plan record](plan-record.md) — <topic>
+Estimate: <the shift-estimate figures for these items, or "no history yet">
 
 - [ ] **1. <title>.**
   - <what to build, plainly>
+  - Budget: <only when the owner takes one: soft 30m / 1.5M tokens, hard 1h / 3M tokens>
   - Verify:
     - WHEN <situation> THEN <observable result>
     - WHEN <edge or failure case> THEN <observable result>
@@ -163,6 +165,12 @@ Record: [plan record](plan-record.md) — <topic>
   indented bullets, never a nested checkbox — a nested box counts as an open item once the item is
   promoted.
 - In artifact mode, an item names its receipt instead of a `Commit:` line.
+- **Size it from the owner's history.** Before asking for the yes, run
+  `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-estimate --items <N>` for the N items drafted. It reads
+  the Time and Tokens totals of past ticked receipts and prints per-item figures, a total, a suggested
+  deadline and a suggested `Budget:` line. Show them as an estimate from the owner's own receipts,
+  never a limit, and keep a missing reading missing. Write a `Budget:` line or set a deadline only if
+  the owner takes it. When it reports too few readings, say there is no history to estimate from yet.
 
 Then close the record's entry by appending ` · captured: ## Plan: <title>` to its first line;
 Archive files it with the shift. The `Record:` link is relative to the drafting table, and the

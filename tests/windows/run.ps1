@@ -542,6 +542,10 @@ try {
     $planRoomLogicRun = Invoke-TestScript $planRoomLogic
     Assert-Equal 0 $planRoomLogicRun.ExitCode `
         "plan room: $($planRoomLogicRun.Stdout) $($planRoomLogicRun.Stderr)"
+    $shiftEstimateLogic = Join-Path $PSScriptRoot 'shift-estimate-logic.ps1'
+    $shiftEstimateLogicRun = Invoke-TestScript $shiftEstimateLogic
+    Assert-Equal 0 $shiftEstimateLogicRun.ExitCode `
+        "shift estimate: $($shiftEstimateLogicRun.Stdout) $($shiftEstimateLogicRun.Stderr)"
     $localTimeLogic = Join-Path $PSScriptRoot 'local-time-logic.ps1'
     $localTimeLogicRun = Invoke-TestScript $localTimeLogic
     Assert-Equal 0 $localTimeLogicRun.ExitCode `
