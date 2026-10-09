@@ -277,3 +277,88 @@ SESSIONS='- 1789779600 1789812360 32760 500 50 paused cw=0 cr=2000 rea=- paused=
     [ ! -e "$ledger" ]
   done
 }
+
+@test "an interrupted receipt redraw recovers before indexing and retries its checkpoint once" {
+  p="$(site recover-index)"
+  r="$(receipt "$p")"
+  working "$p" 'Keep this note.'
+  lib ns_receipt_add_session "$r" "$ITEM" shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+  before="$(cat "$r")"
+  run bash -c '. "$1"; ns_receipt_redraw() { return 1; }; ns_receipt_add_session "$2" "$3" shift 200 300 90 5 6 paused checkpoint=shift:2' _ "$LIB" "$r" "$ITEM"
+  [ "$status" -eq 1 ]
+  [ "$(cat "$r")" = "$before" ]
+  ledger="$(lib ns_receipt_session_file "$r")"
+  [ -f "$ledger.pending" ]
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 2 ]
+  lib ns_receipts_write_index "$p"
+  [ ! -e "$ledger.pending" ]
+  grep -qF '| input | 8 |' "$r"
+  grep -qF 'input 8 ' "$p/.nightshift/receipts/README.md"
+  lib ns_receipt_add_session "$r" "$ITEM" shift 200 300 90 5 6 paused 'checkpoint=shift:2 note=Retry'
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 2 ]
+  grep -qxF 'Keep this note.' "$r"
+}
+
+@test "Archive recovers a pending receipt before retiring its ledger on both runtimes" {
+  for host in bash pwsh; do
+    [ "$host" != pwsh ] || command -v pwsh >/dev/null 2>&1 || continue
+    p="$(site "recover-archive-$host")"
+    r="$(receipt "$p")"
+    working "$p" 'Progress.'
+    run bash -c '. "$1"; ns_receipt_redraw() { return 1; }; ns_receipt_add_session "$2" "$3" shift 100 200 90 3 4 ticked checkpoint=shift:1' _ "$LIB" "$r" "$ITEM"
+    [ "$status" -eq 1 ]
+    ledger="$(lib ns_receipt_session_file "$r")"
+    [ -f "$ledger.pending" ]
+    tick "$p"
+    rm "$p/.nightshift/.shift-armed"
+    touch "$p/.nightshift/.ended"
+    if [ "$host" = bash ]; then
+      run bash "$PLUGIN/runtime/archive-receipts.sh" --project "$p" --date 2026-10-09
+    else
+      run pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/archive-receipts.ps1" -Project "$p" -Date 2026-10-09
+    fi
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -e "$ledger" ]
+    [ ! -e "$ledger.pending" ]
+    filed="$(find "$p/.nightshift/archive" -name "${r##*/}" -type f)"
+    grep -qF '| input | 3 |' "$filed"
+  done
+}
+
+@test "existing legacy receipt repositories ignore session state without rerunning Setup" {
+  for host in bash pwsh; do
+    [ "$host" != pwsh ] || command -v pwsh >/dev/null 2>&1 || continue
+    p="$(site "legacy-ignore-$host")"
+    r="$(receipt "$p")"
+    git -C "$p/.nightshift" init --quiet
+    printf STOP >"$p/.nightshift/.gitignore"
+    for end in 200 300; do
+      if [ "$host" = bash ]; then
+        lib ns_receipt_add_session "$r" "$ITEM" shift 100 "$end" 90 3 4 paused
+      else
+        env NS_MODULE="$PLUGIN/lib/Nightshift.psm1" NS_RECEIPT="$r" NS_ITEM="$ITEM" NS_END="$end" pwsh -NoProfile -NonInteractive -Command '
+          Import-Module $env:NS_MODULE -Force -DisableNameChecking; Add-NSReceiptSession $env:NS_RECEIPT $env:NS_ITEM shift 100 $env:NS_END 90 3 4 paused'
+      fi
+    done
+    [ "$(head -n1 "$p/.nightshift/.gitignore")" = STOP ]
+    [ "$(grep -c '^.item-sessions/$' "$p/.nightshift/.gitignore")" -eq 1 ]
+    git -C "$p/.nightshift" add -A
+    [ -z "$(git -C "$p/.nightshift" ls-files '.item-sessions/*')" ]
+  done
+}
+
+@test "a checkpoint journal survives failure before the ledger replacement" {
+  p="$(site recover-ledger-write)"
+  r="$(receipt "$p")"
+  working "$p" 'Keep the old receipt until recovery.'
+  lib ns_receipt_add_session "$r" "$ITEM" shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+  run bash -c '. "$1"; ns_receipt_store_sessions() { return 1; }; ns_receipt_add_session "$2" "$3" shift 200 300 90 5 6 paused checkpoint=shift:2' _ "$LIB" "$r" "$ITEM"
+  [ "$status" -eq 1 ]
+  ledger="$(lib ns_receipt_session_file "$r")"
+  [ "$(wc -l <"$ledger" | tr -d ' ')" -eq 1 ]
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 2 ]
+  lib ns_receipts_write_index "$p"
+  [ ! -e "$ledger.pending" ]
+  [ "$(wc -l <"$ledger" | tr -d ' ')" -eq 2 ]
+  grep -qF '| input | 8 |' "$r"
+}

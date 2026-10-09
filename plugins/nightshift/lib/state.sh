@@ -372,6 +372,7 @@ ns_receipts_rename() {
     want="$dir/$(ns_receipt_want "$project" "$label" "$id").md"
     [ "$f" != "$want" ] || continue
     { [ -e "$want" ] || [ -L "$want" ]; } && continue
+    ns_receipt_refresh "$f" || { rc=1; continue; }
     if [ -f "$(ns_receipt_session_file "$f")" ]; then
       ns_receipt_store_sessions "$want" "$(ns_receipt_session_data "$f")" || { rc=1; continue; }
     fi
@@ -526,7 +527,8 @@ ns_receipt_session_data() {
   local file
   file="$(ns_receipt_session_file "$1")" || file=""
   if [ -n "$file" ]; then
-    [ ! -L "${file%/*}" ] && [ ! -L "${file%/*/*}" ] && [ ! -L "$file" ] || return 1
+    [ ! -L "${file%/*}" ] && [ ! -L "${file%/*/*}" ] && [ ! -L "$file" ] && [ ! -L "$file.pending" ] || return 1
+    if [ -f "$file.pending" ]; then tail -n +2 "$file.pending"; return; fi
     if [ -f "$file" ]; then cat "$file"; return; fi
   fi
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
@@ -539,9 +541,20 @@ ns_receipt_session_data() {
   ' "$1"
 }
 
-ns_receipt_store_sessions() {
-  local file dir tmp
-  file="$(ns_receipt_session_file "$1")" || return 0
+# Existing legacy receipts repositories predate the session ledger's ignore entry.
+ns_receipt_ignore_sessions() {
+  local ns="${1%/*/*}" ignore
+  [ "${ns##*/}" = .nightshift ] || return 0
+  [ -d "$(ns_layout_path "$ns" receipts-repo)" ] || return 0
+  [ "$(ns_layout_path "$ns" item-sessions)" = "$ns/.item-sessions" ] || return 0
+  ignore="$(ns_layout_path "$ns" gitignore)"
+  [ ! -L "$ignore" ] || return 1
+  grep -qE '^/?\.item-sessions/[[:space:]]*$' "$ignore" 2>/dev/null && return 0
+  printf '\n.item-sessions/\n' >>"$ignore"
+}
+
+ns_receipt_write_session_state() {
+  local file="$1" dir tmp
   dir="${file%/*}"
   [ ! -L "$dir" ] && [ ! -L "${dir%/*}" ] && [ ! -L "$file" ] || return 1
   mkdir -p "$dir" || return 1
@@ -549,6 +562,26 @@ ns_receipt_store_sessions() {
   if printf '%s\n' "$2" >"$tmp" && mv "$tmp" "$file"; then return 0; fi
   rm -f "$tmp"
   return 1
+}
+
+ns_receipt_store_sessions() {
+  local file
+  file="$(ns_receipt_session_file "$1")" || return 0
+  ns_receipt_ignore_sessions "$1" || return 1
+  ns_receipt_write_session_state "$file" "$2"
+}
+
+# A journal written before the ledger update keeps the entire checkpoint recoverable.
+ns_receipt_refresh() {
+  local file label data
+  file="$(ns_receipt_session_file "$1")" || return 0
+  [ ! -L "$file.pending" ] || return 1
+  [ -f "$file.pending" ] || return 0
+  label="$(head -n1 "$file.pending")" || return 1
+  data="$(ns_receipt_session_data "$1")" || return 1
+  ns_receipt_store_sessions "$1" "$data" || return 1
+  ns_receipt_redraw "$1" "$label" "$data" || return 1
+  rm -f "$file.pending"
 }
 
 ns_receipt_forget_sessions() {
@@ -768,21 +801,38 @@ EOF
 # none its stacked usage blocks become sessions (ns_receipt_legacy_sessions). A receipt that does
 # not exist yet is created with its heading; one that does keeps its modification time.
 ns_receipt_add_session() {
-  local f="$1" label="$2" data block ref tmp fresh=0 rc=0 row
+  local f="$1" label="$2" data row prior key file
   [ ! -L "$f" ] || return 0
+  data="$(ns_receipt_session_data "$f")" || return 1
+  [ -n "$data" ] || data="$(ns_receipt_legacy_sessions "$f")"
+  row="$3 $4 $5 $6 $7 $8 $9"
+  [ -z "${10:-}" ] || row="$row ${10}"
+  key="$(ns_session_extra "$row" checkpoint)"
+  while IFS= read -r prior; do
+    if [ "$prior" = "$row" ] || { [ -n "$key" ] && [ "$(ns_session_extra "$prior" checkpoint)" = "$key" ]; }; then
+      ns_receipt_refresh "$f"
+      return
+    fi
+  done <<<"$data"
+  data="$(printf '%s\n%s' "$data" "$row" | sed '/^$/d')"
+  ns_receipt_ignore_sessions "$f" || return 1
+  file="$(ns_receipt_session_file "$f")" || file=""
+  if [ -n "$file" ]; then ns_receipt_write_session_state "$file.pending" "$(printf '%s\n%s' "$label" "$data")" || return 1; fi
+  ns_receipt_store_sessions "$f" "$data" || return 1
+  ns_receipt_redraw "$f" "$label" "$data" || return 1
+  [ -z "$file" ] || rm -f "$file.pending"
+}
+
+ns_receipt_redraw() {
+  local f="$1" label="$2" data="$3" block ref tmp fresh=0 rc=0
+  [ ! -L "$f" ] || return 1
   mkdir -p "${f%/*}" 2>/dev/null || return 1
   if [ ! -f "$f" ]; then
     printf '# %s\n' "$label" >"$f" || return 1
     fresh=1
   fi
-  data="$(ns_receipt_session_data "$f")" || return 1
-  [ -n "$data" ] || data="$(ns_receipt_legacy_sessions "$f")"
-  row="$3 $4 $5 $6 $7 $8 $9"
-  [ -z "${10:-}" ] || row="$row ${10}"
-  data="$(printf '%s\n%s' "$data" "$row" | sed '/^$/d')"
-  ns_receipt_store_sessions "$f" "$data" || return 1
   block="$(mktemp "${TMPDIR:-/tmp}/ns-sessions.XXXXXX")" || return 1
-  ns_receipt_usage_section "$data" >"$block"
+  ns_receipt_usage_section "$data" >"$block" || { rm -f "$block"; return 1; }
   ref="$f.mtime.$$"
   [ "$fresh" -eq 1 ] || touch -r "$f" "$ref" 2>/dev/null || { rm -f "$block"; return 1; }
   tmp="$f.sessions.$$"
@@ -1270,7 +1320,7 @@ ns_receipts_write_index() {
   local dir index date_s state base file cells
   local in cw cr out rea work pause usage time _sum
   local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
-  local label id items rows armed
+  local label id items rows armed read_failed=0
   ns_layout_set punch "$project/.nightshift" punch-list
   dir="$(ns_receipts_dir "$project")"
   [ -n "$dir" ] || return 0
@@ -1301,7 +1351,10 @@ ns_receipts_write_index() {
       continue
     fi
     file="./${base}.md"
-    cells="$(ns_receipt_usage_cells "$dir/${base}.md")"
+    if ! ns_receipt_refresh "$dir/${base}.md" || ! cells="$(ns_receipt_usage_cells "$dir/${base}.md")"; then
+      read_failed=1
+      break
+    fi
     IFS=$'\t' read -r in cw cr out rea work pause usage time _sum <<EOF
 $cells
 EOF
@@ -1312,6 +1365,7 @@ EOF
     printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
       "$label" "$state" "$usage" "$time" "$file" "$file" >>"$rows"
   done <"$items"
+  if [ "$read_failed" -eq 1 ]; then rm -f "$items" "$rows"; return 1; fi
   if [ "$mode" = remaining ] && [ ! -s "$rows" ]; then
     rm -f "$index" "$items" "$rows"
     return 0

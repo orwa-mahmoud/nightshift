@@ -280,3 +280,20 @@ EOF
   lib ns_budget_forget "$p/.nightshift" '2. Renamed importer.'
   [ ! -s "$(lib ns_budget_state_file "$p/.nightshift")" ]
 }
+
+@test "closing a replacement identity cannot clear the original hard budget by its label" {
+  p="$(site replacement-close 'hard 100 tokens')"
+  spend "$p" 90 20
+  notices "$p" >/dev/null
+  list="$p/.nightshift/punch-list.md"
+  sed -i.bak 's/id: bb22/id: dd44/; s/^- \[ \] \*\*2\./- [-] **2./' "$list"
+  lib ns_budget_forget "$p/.nightshift" "$ITEM"
+  [ "$(lib ns_budget_hard_open "$p/.nightshift")" = "$ITEM" ]
+  [ -s "$(lib ns_budget_state_file "$p/.nightshift")" ]
+  sed -i.bak 's/id: dd44/id: bb22/' "$list"
+  lib ns_budget_forget "$p/.nightshift" "$ITEM"
+  [ ! -s "$(lib ns_budget_state_file "$p/.nightshift")" ]
+  printf '%s\thard\t100\n' "$ITEM" >"$(lib ns_budget_state_file "$p/.nightshift")"
+  lib ns_budget_forget "$p/.nightshift" "$ITEM"
+  [ ! -s "$(lib ns_budget_state_file "$p/.nightshift")" ]
+}

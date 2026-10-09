@@ -221,6 +221,9 @@ FILE_ONE_FILED=0
 file_one() {
   local f="$1" dir="$2" rule="$3" base
   FILE_ONE_FILED=0
+  if [ "${f%/*}" = "$src" ]; then
+    ns_receipt_refresh "$f" || { printf 'archive-receipts: receipt redraw failed: %s\n' "${f##*/}" >&2; exit 2; }
+  fi
   base="${f##*/}"
   case "$base" in
     .* | '') return 0 ;;

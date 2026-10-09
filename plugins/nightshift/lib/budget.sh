@@ -244,5 +244,5 @@ ns_budget_forget() {
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   tmp="$file.$$"
   id="$(ns_item_id_for "$(ns_layout_path "$1" punch-list)" "$2")"
-  awk -F '\t' -v l="$2" -v id="$id" '!($1 == l || (id != "" && $4 == id))' "$file" >"$tmp" && mv "$tmp" "$file"
+  awk -F '\t' -v l="$2" -v id="$id" '!(($4 == "" && $1 == l) || (id != "" && $4 == id))' "$file" >"$tmp" && mv "$tmp" "$file"
 }

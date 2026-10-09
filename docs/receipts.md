@@ -49,7 +49,9 @@ receipt, Archive and Status all read it. Reset keeps an open item's spend: the n
 the same accounting and records the gap as a pause. The runtime keeps live session rows in its
 own state; receipt text is a view of those rows. Older receipt sections are imported on their
 first checkpoint, and narrative comments do not supply session data. Archiving a closed receipt
-retires its live ledger.
+retires its live ledger. A failed redraw is recovered before indexing or archiving, and a
+checkpoint retry is counted once. Existing legacy receipts repositories automatically ignore
+these runtime files.
 
 When the next session on an item runs on another host or model, the section gains a **Handoffs**
 block, and the shift log gets the same line. It names the item, the host and model before and after,

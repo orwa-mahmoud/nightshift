@@ -1325,6 +1325,7 @@ function Invoke-NSGateSessionRow {
     $sid = ''
     $state = Get-NSShiftPolicyState $Project
     if ($state['state'] -ceq 'valid') { $sid = [string]$state['policy']['shiftId'] }
+    $extras += ('checkpoint=' + $(if ($sid) { $sid } else { $lines[0].Split("`t")[0] }) + ':' + $lines.Length)
     Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
         $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
     Write-NSGateHandoffLog $NightshiftDir $Label $prevLine $hosts
@@ -2176,7 +2177,8 @@ function Remove-NSBudgetRecord {
     $id = Get-NSItemIdFor (Get-NSLayoutPath $NightshiftDir 'punch-list') $Label
     $keep = @([IO.File]::ReadAllLines($file) | Where-Object {
         $f = $_.Split("`t")
-        $f[0] -cne $Label -and -not ($id.Length -gt 0 -and $f.Length -ge 4 -and $f[3] -ceq $id)
+        $legacy = $f.Length -lt 4 -or $f[3].Length -eq 0
+        -not (($legacy -and $f[0] -ceq $Label) -or (-not $legacy -and $id.Length -gt 0 -and $f[3] -ceq $id))
     })
     [IO.File]::WriteAllText($file, $(if ($keep.Count -gt 0) { ($keep -join "`n") + "`n" } else { '' }), $script:NSUtf8NoBom)
 }

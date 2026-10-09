@@ -229,6 +229,7 @@ ns_gate_session_row() {
   done
   prev="$(ns_receipt_last_session "$receipt")" || prev=""
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
+  extras="$extras checkpoint=${sid:-$(head -n1 "$marks" | cut -f1)}:$(awk 'END { print NR }' "$marks")"
   ns_receipt_add_session "$receipt" "$label" "${sid:--}" \
     "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended" "$extras"
   ns_gate_handoff_log "$ns" "$label" "$prev" "$hosts"

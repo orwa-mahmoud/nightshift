@@ -144,6 +144,67 @@ try {
     Add-NSReceiptSession $r $item '-' '100' '200' '90' '3' '4' 'paused' 'cw=0 cr=0 rea=0'
     Expect-True ((Get-NSReceiptSessionData $r).Count -eq 1) 'first checkpoint records only its own row'
 
+    Expect-True ((Get-NSReceiptSessionFile 'relative-fixture.md') -ceq '') 'relative filenames outside runtime state have no ledger'
+    Expect-True ((Get-NSReceiptSessionData 'relative-fixture.md').Count -eq 0) 'a missing relative receipt is empty'
+
+    $w = Join-Path $root 'recover-redraw'
+    $ns = New-Site $w
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+    $before = [IO.File]::ReadAllText($r)
+    $module = Get-Module Nightshift
+    & $module {
+        $script:SavedReceiptView = ${function:Update-NSReceiptSessionView}
+        function script:Update-NSReceiptSessionView { throw 'injected redraw failure' }
+    }
+    $failed = $false
+    try { Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused 'checkpoint=shift:2' }
+    catch { $failed = $true }
+    finally { & $module { Set-Item Function:script:Update-NSReceiptSessionView $script:SavedReceiptView; Remove-Variable SavedReceiptView -Scope Script } }
+    Expect-True $failed 'a failed redraw reports failure'
+    Expect-True ([IO.File]::ReadAllText($r) -ceq $before) 'a failed redraw keeps the old receipt intact'
+    $ledger = Get-NSReceiptSessionFile $r
+    Expect-True (Test-Path -LiteralPath ($ledger + '.pending')) 'the redraw is durably pending'
+    Write-NSReceiptsIndex $w
+    Expect-True (-not (Test-Path -LiteralPath ($ledger + '.pending'))) 'indexing recovers the redraw'
+    Expect-True ([IO.File]::ReadAllText($r).Contains('| input | 8 |')) 'the recovered receipt uses captured rows'
+    Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused 'checkpoint=shift:2 note=Retry'
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 2) 'retrying a captured checkpoint never doubles the span'
+
+    $w = Join-Path $root 'recover-ledger-write'
+    $ns = New-Site $w
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+    & $module {
+        $script:SavedReceiptStore = ${function:Set-NSReceiptSessions}
+        function script:Set-NSReceiptSessions { throw 'injected ledger replacement failure' }
+    }
+    $failed = $false
+    try { Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused 'checkpoint=shift:2' }
+    catch { $failed = $true }
+    finally { & $module { Set-Item Function:script:Set-NSReceiptSessions $script:SavedReceiptStore; Remove-Variable SavedReceiptStore -Scope Script } }
+    Expect-True $failed 'a failed ledger replacement reports failure'
+    $ledger = Get-NSReceiptSessionFile $r
+    Expect-True ([IO.File]::ReadAllLines($ledger).Length -eq 1) 'the old ledger remains intact'
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 2) 'the journal preserves the captured checkpoint'
+    Write-NSReceiptsIndex $w
+    Expect-True (-not (Test-Path -LiteralPath ($ledger + '.pending'))) 'ledger replacement recovers before indexing'
+    Expect-True ([IO.File]::ReadAllLines($ledger).Length -eq 2) 'recovery writes both captured sessions'
+
+    $w = Join-Path $root 'legacy-ignore'
+    $ns = New-Site $w
+    & git -C $ns init --quiet
+    [IO.File]::WriteAllText((Join-Path $ns '.gitignore'), 'STOP', $utf8)
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item shift 100 200 90 3 4 paused
+    Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused
+    $ignore = [IO.File]::ReadAllLines((Join-Path $ns '.gitignore'))
+    Expect-True ($ignore[0] -ceq 'STOP') 'existing ignore content stays intact'
+    Expect-True (@($ignore | Where-Object { $_ -ceq '.item-sessions/' }).Count -eq 1) 'the legacy ignore entry is added once'
+    & git -C $ns add -A
+    $staged = @(& git -C $ns ls-files '.item-sessions/*')
+    Expect-True ($staged.Count -eq 0) 'receipt staging excludes all session state'
+
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
