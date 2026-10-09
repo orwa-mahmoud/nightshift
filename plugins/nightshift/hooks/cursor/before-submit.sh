@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# before-submit.sh — Cursor beforeSubmitPrompt. Catches the first typed message
-# on the origin IDE tab after a CLI worker has taken the shift.
+# before-submit.sh — Cursor beforeSubmitPrompt. Closes the plan room on the owner's exit command,
+# and catches the first typed message on the origin IDE tab after a CLI worker has taken the shift.
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
@@ -16,6 +16,13 @@ SID="${CURSOR_SESSION_ID:-}"
 HOST_DIR="$(cursor_project_dir)"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
 NS="$PROJECT_DIR/.nightshift"
+
+# The owner's own /nightshift:plan-exit or /nightshift:start, as the first word typed, closes the
+# plan room. The model's own tool calls never pass through here.
+if PLAN_WORD="$(ns_plan_room_exit_word "${CURSOR_PROMPT:-}")"; then
+  ns_plan_room_leave "$NS" "typed the $PLAN_WORD command" || :
+fi
+
 declare PUNCH ARMED ENDED
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set ARMED "$NS" armed

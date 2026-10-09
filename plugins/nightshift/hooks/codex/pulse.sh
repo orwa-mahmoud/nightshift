@@ -25,6 +25,6 @@ ns_pulse_emit "$PROJECT_DIR/.nightshift" "${CODEX_SESSION_ID:-}"
 ns_pulse_usage "$PROJECT_DIR/.nightshift" codex "${CODEX_SESSION_ID:-}" "${CODEX_TRANSCRIPT_PATH:-}"
 ns_pulse_marks "$PROJECT_DIR/.nightshift" "$PROJECT_DIR" "${CODEX_SESSION_ID:-}" "${CODEX_TRANSCRIPT_PATH:-}"
 if ns_pulse_owner_ok "$PROJECT_DIR/.nightshift" "${CODEX_SESSION_ID:-}"; then
-  ns_pulse_context codex "$(ns_pulse_receipts_notice "$PROJECT_DIR/.nightshift" "$PROJECT_DIR")"
+  ns_pulse_context codex "$(ns_pulse_notices "$PROJECT_DIR/.nightshift" "$PROJECT_DIR")"
 fi
 exit 0

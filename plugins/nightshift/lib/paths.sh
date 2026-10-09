@@ -133,10 +133,13 @@ ns_hook_host_dir() {
 # closes. Revival workers stay in.
 ns_hook_idle_exit() {
   [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || return 0
-  local host project ns armed ended
+  local host project ns armed ended plan
   host="$(ns_hook_host_dir)"
   project="$(ns_workspace_root "$host" 2>/dev/null)" || return 0
   ns="$project/.nightshift"
+  # An open plan room holds whether or not a shift is armed.
+  ns_layout_set plan "$ns" plan-room
+  [ ! -f "$plan" ] || return 0
   ns_layout_set armed "$ns" armed
   [ -f "$armed" ] || exit 0
   ns_layout_set ended "$ns" ended

@@ -486,7 +486,8 @@ documented_pages() {
   # A description that could belong to another skill cannot help a host choose between them.
   for pair in "start:punch list" "hunt:catalog" "quality:quality debt" "setup:Scaffold" \
     "status:Read-only" "doctor:diagnosis" "archive:archive" "schedule:fixed time" \
-    "import-issues:GitHub issues" "stop:stop-work" "reset:markers" "purge:delete"; do
+    "import-issues:GitHub issues" "stop:stop-work" "reset:markers" "purge:delete" \
+    "plan:plan room" "plan-exit:Leave the plan room"; do
     name="${pair%%:*}"
     phrase="${pair#*:}"
     grep -m1 '^description:' "$SKILLS/$name/SKILL.md" | grep -qF "$phrase" \

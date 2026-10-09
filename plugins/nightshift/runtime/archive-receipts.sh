@@ -364,17 +364,18 @@ if [ -f "$report" ] && [ ! -L "$report" ]; then
   file_one "$report" "$group" closed
 fi
 
-# The parking lot and the snag log: their handled entries are filed, their open entries stay live.
+# The parking lot, the snag log and the plan record: their handled entries are filed, their open
+# entries stay live.
 # They are written with their links already repointed, so the link pass below leaves them alone.
 label="$(ns_archive_review_label "${group##*/}" "$shift_id" "$(ns_archive "$WORKSPACE" layout)")"
 REPOINTED="$PUNCH_REL
 "
-for key in snag-log parking-lot; do
+for key in snag-log parking-lot plan-record; do
   ns_layout_rel_set krel "$NS" "$key"
   REPOINTED="$REPOINTED$krel
 "
   ns_archive_file_review_source "$WORKSPACE" "$key" "$group" "$label" || {
-    printf 'archive-receipts: could not file snag or parking records\n' >&2
+    printf 'archive-receipts: could not file snag, parking or plan records\n' >&2
     exit 2
   }
 done

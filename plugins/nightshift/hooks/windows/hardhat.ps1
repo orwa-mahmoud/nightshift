@@ -470,7 +470,7 @@ function Test-NSNightshiftDirContext {
 # is a hit only when the target's canonical absolute path is the control file's path in this layout.
 function Test-NSControlPrefilter {
     param([AllowEmptyString()][string]$Target)
-    if ($Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)') {
+    if ($Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)') {
         return $true
     }
     $runRel = Get-NSControlDirRelative
@@ -487,6 +487,8 @@ function Get-NSControlKey {
         '.ended' { return 'ended' }
         '.shift-session' { return 'session' }
         '.shift-worker' { return 'worker' }
+        'budget.tsv' { return 'budget' }
+        '.budget.tsv' { return 'budget' }
         'work-target' { return 'work-target' }
         'work-mode' { return 'work-mode' }
         'shift-policy.json' { return 'shift-policy' }
@@ -511,7 +513,7 @@ function Test-NSControlDeleteVerb {
 
 function Test-NSControlBareName {
     param([AllowEmptyString()][string]$Token)
-    return $Token -match '(?i)^(\./)?(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)$'
+    return $Token -match '(?i)^(\./)?(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)$'
 }
 
 # Physical directory path, including symlink and junction ancestors. Matches POSIX cd -P.
@@ -618,7 +620,7 @@ function Test-NSControlRewriteHit {
     }
     foreach ($key in @(
             'stop', 'armed', 'ended', 'session', 'worker',
-            'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline'
+            'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline', 'budget'
         )) {
         $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns $key)
         if ($null -ne $expected -and $Canon -ceq $expected) {
@@ -1079,6 +1081,50 @@ function Get-NSCommandDenyReason {
     return (Get-NSElevationDenyReason -Scrubbed $Scrubbed -Workspace $Workspace)
 }
 
+# Test-NSPlanRoomDirectoryTarget <target> - deleting the state or runtime folder removes the marker.
+function Test-NSPlanRoomDirectoryTarget {
+    param([AllowEmptyString()][string]$Target)
+    $t = $Target.Replace('\', '/').Replace('"', '').Replace("'", '')
+    if (Test-NSControlDeleteVerb $t) {
+        $root = Resolve-NSWriteTarget $script:ns
+        foreach ($candidate in ($t -split '[\s;&|<>()]+')) {
+            $canon = Resolve-NSWriteTarget $candidate
+            if ($null -ne $canon -and ($canon -ceq $root -or (Test-NSControlDirHit $canon))) { return $true }
+        }
+    }
+    return $false
+}
+
+# Test-NSRestrictedAllows <tool> <targets> <command> <mode> - whether a restricted mode lets this call
+# through: a reading tool, an allowed command, or a file tool writing only where the mode may write.
+# A tool this guard cannot classify is denied. Mirrors ns_hardhat_restricted_allows.
+function Test-NSRestrictedAllows {
+    param([AllowEmptyString()][string]$Tool, [AllowEmptyCollection()][object[]]$Targets = @(),
+          [AllowEmptyString()][string]$Command, [Parameter(Mandatory = $true)][string]$Mode)
+    if ($Tool -in @('Read', 'Grep', 'Glob', 'LS', 'NotebookRead', 'TodoWrite', 'WebFetch', 'WebSearch', 'ToolSearch', 'Skill')) { return $true }
+    if ($Tool -in @('Bash', 'PowerShell', 'Shell')) { return (Test-NSRestrictedCommand (Remove-NSCommitMessage $Command) $Mode) }
+    if ($Tool -notin @('Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch')) { return $false }
+    $keys = $(switch ($Mode) { 'wrapup' { @('receipts', 'punch-list', 'parking-lot', 'snag-log') } default { @() } })
+    $paths = @(foreach ($key in $keys) { Get-NSLayoutPath $script:ns $key })
+    if ($Mode -ceq 'plan') {
+        $paths = @((Get-NSPlanRoomPlace $script:ns)) + @(foreach ($key in @('plan-record', 'parking-lot', 'snag-log')) { Get-NSLayoutPath $script:ns $key })
+    }
+    $places = @(foreach ($path in $paths) {
+            $canon = Resolve-NSWriteTarget $path
+            if ($null -ne $canon) { $canon } else { $path }
+        })
+    foreach ($target in $Targets) {
+        $canon = Resolve-NSWriteTarget ([string]$target)
+        if ($null -eq $canon -or (Test-NSReparsePoint $canon)) { return $false }
+        $inside = $false
+        foreach ($place in $places) {
+            if ($canon -eq $place -or $canon.StartsWith($place + [IO.Path]::DirectorySeparatorChar)) { $inside = $true; break }
+        }
+        if (-not $inside) { return $false }
+    }
+    return $true
+}
+
 if ($env:NIGHTSHIFT_HARDHAT_LIB -eq '1') {
     return
 }
@@ -1153,6 +1199,32 @@ $active = Test-NSHardhatActive $ns
 $nonce = [string]$env:NIGHTSHIFT_LEASE_NONCE
 $generation = [string]$env:NIGHTSHIFT_LEASE_GENERATION
 $revival = $env:NIGHTSHIFT_REVIVAL -eq '1'
+
+# The plan room holds whether or not a shift is armed: planning comes before the shift.
+# Mirrors ns_hardhat_plan_room_reason.
+if (Test-NSPlanRoomOpen $script:ns) {
+    $planProbe = (($tool -in @('Bash', 'Shell')) -and $command -ceq ': nightshift-plan-probe') -or
+        ($tool -eq 'PowerShell' -and $command -ceq "`$null = 'nightshift-plan-probe'")
+    if ($planProbe) {
+        if ($active -and -not [string]::IsNullOrEmpty($sessionId) -and (Get-NSPlanRoomLine $script:ns 1).Length -eq 0) {
+            $shiftSession = Read-NSSession $script:ns
+            if ($null -ne $shiftSession -and $shiftSession.SessionId -ceq $sessionId) {
+                $null = Undo-NSPlanRoomEntry $script:ns $sessionId
+                Write-Deny (Get-NSPlanRoomOnShiftMessage)
+            }
+        }
+        if (Set-NSPlanRoomBinding $script:ns $sessionId $HostName) { exit 0 }
+        Write-Deny 'BLOCKED: the plan room is bound to another conversation. Open that conversation to plan, or the owner leaves the plan room with /nightshift:plan-exit.'
+    }
+    $planTargets = @(Get-NSPayloadTargets $toolInput $tool $command)
+    if ($tool -in @('Bash', 'PowerShell', 'Shell')) { $planTargets += $command }
+    foreach ($target in $planTargets) {
+        if ((Test-NSPlanRoomTarget ([string]$target)) -or (Test-NSPlanRoomDirectoryTarget ([string]$target))) { Write-Deny (Get-NSPlanRoomMarkerMessage) }
+    }
+    if ((Test-NSPlanRoomBinds $script:ns $sessionId) -and -not (Test-NSRestrictedAllows $tool $planTargets $command 'plan')) {
+        Write-Deny (Get-NSPlanRoomMessage $script:ns)
+    }
+}
 
 if (-not $active) {
     if ($revival -and (-not (Test-NSLeaseNonce $ns $HostName $nonce $generation) `
@@ -1268,6 +1340,12 @@ if (-not $controlPassive) {
             Write-Deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in $(Get-NSLayoutName $script:ns 'parking-lot') and keep working."
         }
     }
+}
+
+# A spent hard budget leaves only wrap-up until its item is closed.
+$budgetLabel = Get-NSBudgetHardOpen $script:ns
+if ($budgetLabel.Length -gt 0 -and -not (Test-NSRestrictedAllows $tool @($targets) $command 'wrapup')) {
+    Write-Deny ("BLOCKED: $budgetLabel reached its hard budget. " + (Get-NSBudgetWrapup $budgetLabel))
 }
 
 if ($tool -in @('AskQuestion', 'AskUserQuestion', 'request_user_input')) {

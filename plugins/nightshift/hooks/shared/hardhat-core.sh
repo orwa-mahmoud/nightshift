@@ -212,7 +212,7 @@ ns_hardhat_payload_targets() { # $1 = tool, $2 = raw payload, $3 = command/patch
 # control file's path in this layout, so // /./ /../ backslashes and absolute twins cannot slip past.
 ns_hardhat_control_prefilter() {
   printf '%s' "$1" | grep -qE \
-    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)' \
+    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)' \
     && return 0
   ns_hardhat_control_dir_word_in "$1" && ns_hardhat_control_delete_verb "$1"
 }
@@ -225,6 +225,7 @@ ns_hardhat_control_key() {
     .ended) printf 'ended' ;;
     .shift-session) printf 'session' ;;
     .shift-worker) printf 'worker' ;;
+    budget.tsv | .budget.tsv) printf 'budget' ;;
     work-target | work-mode | deadline) printf '%s' "$1" ;;
     shift-policy.json) printf 'shift-policy' ;;
     shift-defaults.json) printf 'shift-defaults' ;;
@@ -269,11 +270,11 @@ ns_hardhat_control_delete_verb() {
 
 ns_hardhat_control_bare_name() {
   case "$1" in
-    STOP | .shift-armed | .ended | .shift-session | .shift-worker | work-target | work-mode \
+    STOP | .shift-armed | .ended | .shift-session | .shift-worker | budget.tsv | .budget.tsv | work-target | work-mode \
       | shift-policy.json | shift-defaults.json | deadline | punch-list.md \
       | ./STOP | ./.shift-armed | ./.ended | ./.shift-session | ./.shift-worker \
       | ./work-target | ./work-mode | ./shift-policy.json | ./shift-defaults.json \
-      | ./deadline | ./punch-list.md)
+      | ./deadline | ./punch-list.md | ./budget.tsv | ./.budget.tsv)
       return 0
       ;;
   esac
@@ -648,6 +649,7 @@ work-mode
 shift-policy
 shift-defaults
 deadline
+budget
 EOF
   return 1
 }
@@ -1267,5 +1269,243 @@ ns_hardhat_trusted_shift_control() { # <cmd> <plugin_root> <workspace>
   if [ "$expected" = purge-workspace.sh ]; then
     [ -n "$confirm" ] || return 1
   fi
+  return 0
+}
+
+# Restricted modes. A spent hard budget (`wrapup`) narrows the shift to wrap-up: reading, committing
+# the work in progress, and writing the receipt, the punch list and the inbox. The plan room (`plan`)
+# allows reading and writing the plan into the staging folder. Reading stays free;
+# a tool this guard cannot classify is denied, so a new tool never widens a restricted mode. Shell
+# commands are matched by their text, as every hardhat rule is: hardening, not a sandbox.
+
+# ns_hardhat_readonly_tool <tool> — a tool that only reads.
+ns_hardhat_readonly_tool() {
+  case "$1" in
+    Read | Grep | Glob | LS | NotebookRead | TodoWrite | WebFetch | WebSearch | ToolSearch | Skill) return 0 ;;
+  esac
+  return 1
+}
+
+# ns_hardhat_file_write_tool <tool> — a tool whose payload names the files it writes.
+ns_hardhat_file_write_tool() {
+  case "$1" in Edit | Write | MultiEdit | NotebookEdit | apply_patch) return 0 ;; esac
+  return 1
+}
+
+# ns_hardhat_restricted_places <mode> — the canonical paths a restricted mode may write, one per
+# line: a folder admits everything under it.
+ns_hardhat_restricted_places() {
+  local key p
+  case "$1" in
+    wrapup) set -- receipts punch-list parking-lot snag-log ;;
+    plan)
+      # The place the plan goes, the room's own notebook beside it, and the owner's review decisions:
+      # the answer to a parked decision and the disposition of a snag.
+      p="$(ns_plan_room_place "$NS")" || return 1
+      ns_hardhat_canon_write_target "$p" || printf '%s' "$p"
+      printf '\n'
+      set -- plan-record parking-lot snag-log
+      ;;
+    *) return 1 ;;
+  esac
+  for key in "$@"; do
+    p="$(ns_layout_path "$NS" "$key")" || continue
+    ns_hardhat_canon_write_target "$p" || printf '%s' "$p"
+    printf '\n'
+  done
+}
+
+# ns_hardhat_outside_places <target> — status 0 when a write target falls outside every place in
+# NS_HARDHAT_PLACES. An unresolvable target is outside.
+ns_hardhat_outside_places() {
+  local t="$1" place
+  # An apply_patch target arrives as its header line.
+  t="${t#\*\*\* Add File: }"
+  t="${t#\*\*\* Update File: }"
+  t="${t#\*\*\* Delete File: }"
+  t="${t#\*\*\* Move to: }"
+  t="$(ns_hardhat_canon_write_target "$t")" || return 0
+  [ ! -L "$t" ] || return 0
+  while IFS= read -r place; do
+    [ -n "$place" ] || continue
+    case "$t" in "$place" | "$place"/*) return 1 ;; esac
+  done <<<"$NS_HARDHAT_PLACES"
+  return 0
+}
+
+# ns_hardhat_command_allowed <scrubbed-command> <mode> — status 0 for a command that only reads, or,
+# in wrapup, that also stages and commits. Any redirection that writes, command substitution,
+# background job or unlisted program denies the whole command.
+ns_hardhat_command_allowed() {
+  local cmd="$1" mode="$2" seg word verb rest
+  case "$cmd" in *"\$("* | *"\`"* | *"<("* | *">("*) return 1 ;; esac
+  cmd="$(printf '%s' "$cmd" | sed -E 's#[0-9]*>&[0-9]+##g; s#&?[0-9]*>{1,2}[[:space:]]*/dev/null##g')"
+  case "$cmd" in *'>'*) return 1 ;; esac
+  while IFS= read -r seg; do
+    seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [ -n "$seg" ] || continue
+    while [[ $seg =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do
+      seg="${seg:${#BASH_REMATCH[0]}}"
+    done
+    # The program, honouring quotes: every skill writes the dispatcher as "<plugin-root>/runtime/ns".
+    case "$seg" in
+      \"* | \'*)
+        word="${seg:1}"
+        word="${word%%"${seg:0:1}"*}"
+        rest="${seg:$((${#word} + 2))}"
+        ;;
+      *)
+        word="${seg%%[[:space:]]*}"
+        rest=""
+        [ "$word" = "$seg" ] || rest="${seg#*[[:space:]]}"
+        ;;
+    esac
+    rest="${rest#"${rest%%[![:space:]]*}"}"
+    case "${word##*/}" in
+      cat | head | tail | less | more | wc | grep | egrep | fgrep | rg | ag | ls | tree | file | stat | du | df | \
+        pwd | cd | echo | printf | true | false | test | '[' | which | type | command | date | basename | \
+        dirname | realpath | readlink | sort | uniq | cut | tr | nl | column | diff | cmp | comm | jq | awk)
+        ;;
+      sed)
+        case " $rest " in *' -i'* | *' --in-place'*) return 1 ;; esac
+        ;;
+      find)
+        # -exec covers -execdir, -ok covers -okdir and -fprint covers -fprintf.
+        case " $rest " in *' -delete'* | *' -exec'* | *' -ok'* | *' -fprint'* | *' -fls'*) return 1 ;; esac
+        ;;
+      git)
+        verb="$(ns_hardhat_git_subcommand "$rest")"
+        case "$verb" in
+          status | diff | log | show | rev-parse | ls-files | grep | blame | describe)
+            case " $rest " in
+              *'--output'* | *'--ext-diff'* | *'--textconv'* | *'--no-index'* | *'--exec-path'* | *'--config-env'* | *' -c '*) return 1 ;;
+            esac
+            ;;
+          add | commit) [ "$mode" = wrapup ] || return 1 ;;
+          *) return 1 ;;
+        esac
+        ;;
+      ns)
+        case "$word" in */runtime/ns | ns) ;; *) return 1 ;; esac
+        case "${rest%%[[:space:]]*}" in
+          bind | path | punch-list | status | doctor | help) ;;
+          plan-enter | shift-estimate | check-items) [ "$mode" = plan ] || return 1 ;;
+          *) return 1 ;;
+        esac
+        ;;
+      *) return 1 ;;
+    esac
+  done < <(printf '%s\n' "$cmd" | sed -E 's/(\|\||&&|[;|&])/\n/g')
+  return 0
+}
+
+# ns_hardhat_restricted_allows <tool> <payload> <scrubbed-command> <mode> — status 0 when a restricted
+# mode lets this call through.
+ns_hardhat_restricted_allows() {
+  local tool="$1" payload="$2" cmd="$3" mode="$4" rc
+  ns_hardhat_readonly_tool "$tool" && return 0
+  if ns_hardhat_is_command_tool "$tool"; then
+    ns_hardhat_command_allowed "$cmd" "$mode"
+    return
+  fi
+  ns_hardhat_file_write_tool "$tool" || return 1
+  NS_HARDHAT_PLACES="$(ns_hardhat_restricted_places "$mode")" || return 1
+  ns_hardhat_payload_targets "$tool" "$payload" "$cmd" ns_hardhat_outside_places
+  rc=$?
+  [ "$rc" -eq 1 ]
+}
+
+# ns_hardhat_git_subcommand <arguments-after-git> — the subcommand, past global options such as
+# `-C <dir>` and `-c <key=value>`.
+ns_hardhat_git_subcommand() {
+  local skip=0 arg
+  for arg in $1; do
+    if [ "$skip" -eq 1 ]; then
+      skip=0
+      continue
+    fi
+    case "$arg" in
+      -C | -c | --git-dir | --work-tree | --namespace) skip=1 ;;
+      -*) ;;
+      *) printf '%s' "$arg"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# ns_hardhat_plan_probe <tool> <command> — the call that binds an unbound plan room to this
+# conversation, as the binding probe binds a shift.
+ns_hardhat_plan_probe() {
+  case "$1" in
+    Bash | Shell) [ "$2" = ": nightshift-plan-probe" ] ;;
+    PowerShell) [ "$2" = "\$null = 'nightshift-plan-probe'" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# ns_hardhat_plan_room_targeted <target> — a path or command that reaches the plan room marker: its
+# name as a path component, a glob across the folder that holds it, or the plan-exit verb that
+# removes it.
+ns_hardhat_plan_room_targeted() {
+  local normalized run_rel candidate canon root
+  normalized="$(printf '%s' "$1" | sed "s#\\\\/#/#g; s#[\"']##g")"
+  printf '%s' "$normalized" | grep -qE '(^|[/[:space:]])\.?plan-room($|[^[:alnum:]_.-])' && return 0
+  printf '%s' "$normalized" | grep -qE '(^|[^[:alnum:]_-])plan-exit(\.sh|\.ps1)?($|[^[:alnum:]_./-])' && return 0
+  if ns_hardhat_control_delete_verb "$normalized"; then
+    root="$(ns_hardhat_canon_write_target "$NS")"
+    while IFS= read -r candidate; do
+      canon="$(ns_hardhat_canon_write_target "$candidate")" || continue
+      if [ "$canon" = "$root" ] || ns_hardhat_control_dir_hit "$canon"; then return 0; fi
+    done < <(ns_hardhat_control_candidates "$normalized")
+  fi
+  ns_hardhat_nightshift_dir_context "$normalized" || return 1
+  case "$normalized" in
+    *'plan-*'* | *'plan-?'* | *'plan-['* | *'plan-{'* | *'.nightshift/*'* | *'.nightshift/.*'*) return 0 ;;
+  esac
+  if ns_hardhat_control_dir_rel run_rel; then
+    case "$normalized" in *"$run_rel/"'*'* | *"$run_rel/"'?'*) return 0 ;; esac
+  fi
+  return 1
+}
+
+# ns_hardhat_payload_targets_plan_room <tool> <payload> <command> — any call that reaches the marker.
+# A payload this guard cannot read is treated as reaching it, as the lease guard does.
+ns_hardhat_payload_targets_plan_room() {
+  local rc
+  ns_hardhat_payload_targets "$1" "$2" "$3" ns_hardhat_plan_room_targeted
+  rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  [ "$rc" -eq 2 ] || return 1
+  case "$1" in
+    AskQuestion | AskUserQuestion | request_user_input | WebFetch | WebSearch | Task | TodoWrite) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# ns_hardhat_plan_room_reason <tool> <payload> <scrubbed-command> <raw-command> <session> <host> —
+# the plan room's answer to this call: status 0 with a denial to print, 1 to let it through, 3 when
+# this call was the probe that bound the room.
+ns_hardhat_plan_room_reason() {
+  ns_plan_room_open "$NS" || return 1
+  if ns_hardhat_plan_probe "$1" "$4"; then
+    if [ -n "$5" ] && [ -z "$(ns_plan_room_line "$NS" 1)" ] && ns_hardhat_active \
+      && [ "$5" = "$(ns_session_line "$NS" 1)" ]; then
+      ns_plan_room_withdraw "$NS" "$5"
+      ns_plan_room_on_shift_message
+      return 0
+    fi
+    if ns_plan_room_bind "$NS" "$5" "$6"; then
+      return 3
+    fi
+    printf 'BLOCKED: the plan room is bound to another conversation. Open that conversation to plan, or the owner leaves the plan room with /nightshift:plan-exit.'
+    return 0
+  fi
+  if ns_hardhat_payload_targets_plan_room "$1" "$2" "$3"; then
+    ns_plan_room_marker_message
+    return 0
+  fi
+  ns_plan_room_binds "$NS" "$5" || return 1
+  ns_hardhat_restricted_allows "$1" "$2" "$3" plan && return 1
+  ns_plan_room_message "$NS"
   return 0
 }

@@ -372,7 +372,10 @@ try {
     Expect-True $owner.Contains("- Shift: $shiftId") 'section 1 names the shift'
     Expect-True $owner.Contains('- Ending: unknown') 'an open punch list with no STOP is never reported as done'
     Expect-True $owner.Contains('- Items: 1 ticked, 1 open') 'section 1 counts ticked and open items'
-    Expect-True $owner.Contains('- Started: 2020-01-01T00:00:00Z') 'section 1 takes the start from the policy that ran'
+    Expect-True $owner.Contains('- Started: ' + (Get-NSLocalTime '1577836800' -Seconds)) 'section 1 takes the start from the policy that ran'
+    $policyContext = Get-NSReceiptContext $project 'owner'
+    Expect-True ($policyContext['since'] -ceq '2020-01-01T00:00:00Z') 'commit counting retains the UTC policy start'
+    Expect-True ($policyContext['shiftDay'] -ceq (Get-NSLocalTime '1577836800' -Seconds).Substring(0, 10)) 'the shift day follows the local policy start'
     Expect-True (-not $owner.Contains('- Ended:')) 'a shift that has not ended names no end'
     Expect-True $owner.Contains('- Policy: profile fast, verification final, tooling existing-tools') `
         'section 1 renders the policy that ran'
@@ -922,8 +925,10 @@ try {
     $verdict = $verdictRun.StdoutText
     Expect-Equal 'How it ended|Time and tokens|Items|Review first|Interruptions|Decisions for you|Found but not fixed|Next step' `
         (Get-SectionOrder $verdict) 'the verdict orders every section it has records for'
-    Expect-True ($verdict.Contains('- Started: 2026-09-21T14:13:20Z') -and $verdict.Contains('- Ended: 2026-09-21T15:10:05Z')) `
-        'both ends of the shift carry the zone'
+    # 2026-09-21 14:13:20 and 15:10:05 UTC, in this machine's zone with its offset.
+    Expect-True ($verdict.Contains('- Started: ' + (Get-NSLocalTime '1790000000' -Seconds)) -and
+        $verdict.Contains('- Ended: ' + (Get-NSLocalTime '1790003405' -Seconds))) `
+        'both ends of the shift are in local time with the offset'
     Expect-True $verdict.Contains(("- Working: 8m 25s`n- Paused: 48m 20s`n  - owner pressed Esc: 35m 0s`n" +
             "  - the session ended and the shift was revived: 13m 20s`n- Wall: 56m 45s")) `
         'pause reasons sum to the paused total'

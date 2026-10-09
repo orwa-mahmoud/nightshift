@@ -44,20 +44,17 @@ try {
     Expect-True ((Get-NSReceiptBasename '- [x] 1. Title without bold.') -ceq '1-title-without-bold') `
         'a leftover checkbox does not become an x- sidecar name'
 
-    $line = Get-NSUsageLine 'input=122,cache_write=55458,cache_read=47457543,output=42091,reasoning=7332' `
-        'claude claude-opus-5' '1' 'claude'
-    Expect-True ($line.Contains('| input | 122 |')) 'the Tokens table scales input'
-    Expect-True ($line.Contains('| cache write | 55.5k |')) 'thousands take one decimal k'
-    Expect-True ($line.Contains('| cache read | 47.5M |')) 'millions take one decimal M'
-    Expect-True ($line.Contains('| output | 42.1k |')) 'output is scaled'
-    Expect-True ($line.Contains('| reasoning | 7.3k |')) 'reasoning is scaled'
-    Expect-True ($line.Contains('<!-- tokens 122 55458 47457543 42091 7332 -->')) `
-        'raw counts stay in the hidden comment'
-
-    $duration = Get-NSUsageDurationLine '2663' '0' '' '' ''
-    Add-NSGateUsageAppend (Get-NSReceiptPath $w $label) $label $line $duration
     $file = Get-NSReceiptPath $w $label
+    Add-NSReceiptSession $file $label '-' '1790000000' '1790002663' '2663' '122' '42091' 'ticked' `
+        'cw=55458 cr=47457543 rea=7332 paused=0 host=claude/claude-opus-5'
     $text = [IO.File]::ReadAllText($file)
+    Expect-True ($text.Contains('| input | 122 |')) 'the Tokens table scales input'
+    Expect-True ($text.Contains('| cache write | 55.5k |')) 'thousands take one decimal k'
+    Expect-True ($text.Contains('| cache read | 47.5M |')) 'millions take one decimal M'
+    Expect-True ($text.Contains('| output | 42.1k |')) 'output is scaled'
+    Expect-True ($text.Contains('| reasoning | 7.3k |')) 'reasoning is scaled'
+    Expect-True ($text.Contains('<!-- tokens 122 55458 47457543 42091 7332 -->')) `
+        'raw counts stay in the hidden comment'
     Expect-True ($text.StartsWith('# 2. Make the packed Node-only build reproducible.')) `
         'a missing file is created with the item heading'
     Expect-True ($text.Contains('| working | 44m 23s |')) 'working time is on the Time table'

@@ -74,7 +74,7 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
       || { echo "unresolved shell fallback in shared skill: $s"; return 1; }
   done
 
-  for s in setup start hunt quality doctor import-issues schedule archive stop reset purge; do
+  for s in setup start hunt quality doctor import-issues schedule archive stop reset purge plan plan-exit; do
     f="$SKILLS/$s/SKILL.md"
     grep -qF '$NIGHTSHIFT_PLUGIN_ROOT' "$f" || { echo "no neutral plugin root: $s"; return 1; }
     grep -qF '${CLAUDE_PLUGIN_ROOT}' "$f" || { echo "no Claude plugin source: $s"; return 1; }
@@ -155,7 +155,7 @@ PY
 @test "start explicitly arms the shift and both host watchmen" {
   grep -qF 'ns" path armed' "$START"
   grep -qF 'ns" start-watchman --host' "$START"
-  grep -qF 'ns.ps1" start-watchman -HostName' "$START"
+  grep -qF 'ns.ps1" start-watchman --host' "$START"
   grep -qF 'Do not begin item work' "$START"
   grep -qF '### Bind this session' "$START"
   grep -qF '$NS/run/.shift-lease' "$START"
@@ -164,6 +164,16 @@ PY
   # Start no longer restates what the preflight does or does not need; the policy verdict says it.
   grep -qF 'Never install jq or python3' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
   grep -qF 'ns" start-preflight' "$START"
+}
+
+# The native Windows dispatcher translates the POSIX spelling, `--host claude`, into the helper's own
+# parameter. A PowerShell-style `-HostName` after the verb reaches the helper as plain text, so the
+# command fails.
+@test "every native Windows dispatcher call in a skill or reference spells its flags --like-this" {
+  if grep -rnE 'ns\.ps1"[[:space:]]+[a-z][a-z-]*([[:space:]]+[^[:space:]`]+)*[[:space:]]+-[A-Z][A-Za-z]+' \
+    "$SKILLS"/*/SKILL.md "$REFS"; then
+    return 1
+  fi
 }
 
 # The lease reader and the watchman recovery keys are the helper's job on both hosts. A skill that

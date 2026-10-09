@@ -8,6 +8,8 @@ or [archive finished shifts](archive.md#archive-and-continue). The commands belo
 /nightshift:quality    # survey quality debt; choose review first or run directly
 /nightshift:hunt       # compose tonight: pick ready shifts, set hours, add your scope
 /nightshift:import-issues  # stage explicitly named GitHub issues onto the drafting table
+/nightshift:plan       # open the plan room: explore and design with the agent; nothing is built
+/nightshift:plan-exit  # leave the plan room (or type /nightshift:start to leave and start)
 # or write your items in the punch list by hand — one checkbox per task
 #   item anatomy, with filled items: examples/overnight-webapp.md
 /nightshift:start      # works queued items without questions; offers drafts only when empty
@@ -96,7 +98,8 @@ ns.ps1 purge-workspace --project C:\absolute\task\root `
 
 Stop writes `STOP` and stands a verified watchman down. Hardhat stays until clock-out writes
 `.nightshift/run/.ended`; Reset is the manual escape. The deadline is preserved. Reset also removes runtime
-markers, the deadline, and leftover STOP. Purge does Reset, then deletes only that project's
+markers, the deadline, and leftover STOP. It keeps the time and tokens an open item has already
+spent: the next Start continues that item's accounting and records the gap as a pause. Purge does Reset, then deletes only that project's
 `.nightshift/` after an exact `--confirm-path` match. None of them uninstall the plugin.
 
 A panic `touch .nightshift/STOP` (POSIX) or `New-Item -ItemType File -Force .nightshift\STOP`
@@ -169,6 +172,52 @@ that does not commit runs under `-s workspace-write`, because ticks alone finish
 Codex's `workspace-write` sandbox `.git` is protected, so a contract that commits cannot run under
 it and needs `codex -a never -s danger-full-access`. The owner-defined Nightshift guards remain
 active in either sandbox mode.
+
+### Plan before you build
+
+`/nightshift:plan` opens the plan room for the conversation that runs it. Nothing is implemented
+there, however the request is worded. The hooks deny every edit, write and mutating command except
+the plan's own files: the drafting table, the plan record and, for a morning review, the parking lot
+and the snag log. Other conversations in the project work normally. The agent explores the code,
+lays out options with a recommendation, keeps the plan record current, and captures a plan into the
+drafting table only when you say yes.
+
+Only you leave the room. In Claude Code and Cursor, type `/nightshift:plan-exit`, or
+`/nightshift:start` to leave and start in one step. In Codex, type `$nightshift:plan-exit` or
+`$nightshift:start` at the start of a message. From any terminal:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" plan-exit
+```
+
+Native Windows:
+
+```powershell
+ns.ps1 plan-exit --project .
+```
+
+Start refuses while a plan room is open, so the agent cannot leave it by starting a shift itself.
+Two read-only verbs size and check a plan; the plan room runs both, and either can run from a
+terminal:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-estimate --items 5   # figures from your past receipts
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-items                # the drafting table's item shape
+```
+
+Native Windows:
+
+```powershell
+ns.ps1 shift-estimate --project . --items 5
+ns.ps1 check-items --project .
+```
+
+`shift-estimate` reads the Time and Tokens totals of every ticked receipt, live and archived, and
+prints the median and range per item; with `--items` it adds a total, a suggested deadline and a
+suggested `Budget:` line. These are estimates from your own history, never limits, and fewer than
+three readings estimate nothing. `check-items` names, per item, a missing or empty `Verify:`, a
+missing `Commit:`, a `Budget:` that does not parse, a nested checkbox, and any checkbox no item owns.
+It refuses nothing.
 
 ### Start it at a fixed time
 

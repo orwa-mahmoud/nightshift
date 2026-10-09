@@ -191,7 +191,7 @@ ns() { printf '%s/.nightshift' "$1"; }
   rec="$p/.nightshift/receipts/P01.md"
   grep -qF '| input | 10 |' "$rec"
   grep -qF '| Time |' "$rec"
-  grep -qF '1 segment.' "$rec"
+  grep -qF '1 session.' "$rec"
   # The host's own overlap, so nothing downstream adds the same tokens twice.
   grep -qF 'Cache reads and cache writes are separate from the input figure' "$rec"
   grep -qF '# P01' "$rec"
@@ -764,6 +764,27 @@ marks() { cat "$1/.nightshift/usage/marks.tsv"; }
   [ "$(cut -f7 "$p/.nightshift/usage-aaaa1111bbbb2222/segments.tsv")" = "$first" ]
 }
 
+@test "an open item keeps its spend across Reset and Start, in the receipt and the index" {
+  p="$(new_project usage-reset-flow)"
+  printf '## Items\n- [ ] **P01 - first.**\n' >"$p/.nightshift/punch-list.md"
+  lib ns_usage_mark "$p/.nightshift" arm
+  lib ns_usage_set_active "$p/.nightshift" P01
+  lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=30,output=3'
+
+  bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/reset-shift.sh" --project "$p" >/dev/null
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  : >"$p/.nightshift/.shift-armed"
+
+  lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/b 10 'input=10,output=1'
+  printf '## Items\n- [x] **P01 - first.**\n' >"$p/.nightshift/punch-list.md"
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
+
+  grep -qF '| input | 40 |' "$p/.nightshift/receipts/P01.md"
+  grep -qF '| output | 4 |' "$p/.nightshift/receipts/P01.md"
+  grep -F '| P01 | ticked |' "$p/.nightshift/receipts/README.md" | grep -qF 'input 40 '
+}
+
 @test "retiring twice under one id keeps both records" {
   p="$(three_open usage-retire-twice)"
   cp "$FIX/claude-multiline.jsonl" "$p/transcript.jsonl"
@@ -928,7 +949,7 @@ pause_fixture() {
 }
 
 @test "a recorded pause with no reason is listed without one" {
-  run lib ns_usage_duration_line 600 60 '' 1000 1600
+  run lib ns_receipt_usage_section '- 1000 1600 540 5 1 ticked cw=- cr=- rea=- paused=60 host=claude/claude-opus-5'
   [ "$status" -eq 0 ]
   [[ "$output" == *$'| working | 9m 0s |\n| paused | 1m 0s |\n| wall | 10m 0s |'* ]] || false
 }

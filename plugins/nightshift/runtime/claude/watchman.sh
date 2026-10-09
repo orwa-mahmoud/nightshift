@@ -177,7 +177,7 @@ ns_layout_set LEASE "$NS" lease
 # Claude Code keeps transcripts under ~/.claude/projects/<project path, non-alnum -> dashes>.
 TRANSCRIPTS="${NIGHTSHIFT_WATCH_TRANSCRIPTS:-$HOME/.claude/projects/$(printf '%s' "$PROJECT" | tr -c 'A-Za-z0-9' '-')}"
 
-ts() { date '+%Y-%m-%d %H:%M:%S'; }
+ts() { ns_local_now second; }
 log_line() { printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 
 # The marker is the shift. Without it there is nothing to revive, nothing to clock out, and no

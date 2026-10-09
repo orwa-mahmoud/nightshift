@@ -7,12 +7,13 @@ load helpers
   json="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hooks.json"
   # The names, not a count: a hook added to the tree but never registered here never runs, and a
   # number alone cannot say which one is missing.
-  for hook in claude-hardhat claude-pulse claude-session-start claude-session-end claude-clock-out; do
+  for hook in claude-hardhat claude-pulse claude-session-start claude-session-end claude-clock-out \
+    claude-prompt-expansion; do
     jq -r '[.. | .command? // empty][]' "$json" | grep -qF "$hook" \
       || { echo "hooks.json does not declare $hook"; return 1; }
   done
   n="$(jq -r '[.. | .command? // empty] | length' "$json")"
-  [ "$n" -eq 5 ] || { echo "hooks.json declares $n commands, expected 5"; return 1; }
+  [ "$n" -eq 6 ] || { echo "hooks.json declares $n commands, expected 6"; return 1; }
 }
 
 @test "every hooks.json command quotes the plugin root (spaced-path safe)" {
@@ -58,6 +59,8 @@ load helpers
   jq -e '.hooks.PostToolUse[0].hooks[0].command | test("pulse")' "$f" >/dev/null
   jq -e '.hooks.PreToolUse[] | select(.matcher=="*") | .hooks[0].command | test("hardhat")' "$f" >/dev/null
   jq -e '.hooks.Stop[0].hooks[0].command | test("clock-out")' "$f" >/dev/null
+  [ "$(jq -r '.hooks.UserPromptExpansion | length' "$f")" -eq 1 ]
+  jq -e '.hooks.UserPromptExpansion[0].hooks[0].command | test("claude-prompt-expansion")' "$f" >/dev/null
 }
 
 @test "the hooks wired in hooks.json actually decide when driven through their own config" {
@@ -82,12 +85,13 @@ load helpers
   root="$BATS_TEST_DIRNAME/../plugins/nightshift"
   f="$root/hooks/codex/hooks.json"
   [ "$(jq -r '[.hooks.PreToolUse[].matcher] | join(",")' "$f")" = "*" ]
-  [ "$(jq -r '[.. | .command? // empty] | length' "$f")" -eq 4 ]
-  [ "$(jq -r '[.. | .commandWindows? // empty] | length' "$f")" -eq 4 ]
+  [ "$(jq -r '[.. | .command? // empty] | length' "$f")" -eq 5 ]
+  [ "$(jq -r '[.. | .commandWindows? // empty] | length' "$f")" -eq 5 ]
   jq -e '.hooks.PreToolUse[0].hooks[0].command | test("codex/hardhat")' "$f" >/dev/null
   jq -e '.hooks.PostToolUse[0].hooks[0].command | test("codex/pulse")' "$f" >/dev/null
   jq -e '.hooks.SessionEnd[0].hooks[0].command | test("codex/session-end")' "$f" >/dev/null
   jq -e '.hooks.Stop[0].hooks[0].command | test("codex/clock-out-gate")' "$f" >/dev/null
+  jq -e '.hooks.UserPromptSubmit[0].hooks[0].command | test("codex/prompt-submit")' "$f" >/dev/null
   jq -e '[.. | .commandWindows? // empty]
     | all(test("^powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand [A-Za-z0-9+/]+={0,2}$"))' "$f" >/dev/null
   while IFS="$(printf '\t')" read -r event cmd; do
@@ -96,6 +100,7 @@ load helpers
       PostToolUse) script_name=pulse.ps1 ;;
       SessionEnd) script_name=session-end.ps1 ;;
       Stop) script_name=clock-out-gate.ps1 ;;
+      UserPromptSubmit) script_name=prompt-submit.ps1 ;;
       *) echo "unexpected Codex Windows hook event: $event"; return 1 ;;
     esac
     # PowerShell encodes the payload as UTF-16LE, not the UTF-8 that jq decodes.

@@ -1806,7 +1806,7 @@ function Copy-NSOwnerTemplate {
 # What Setup scaffolds, and what waits until something needs it: the order Hunt stages, or the
 # product-evolution notebook a product item is cut into. Mirrors runtime/scaffold.sh.
 $script:NSScaffoldDefault = @('punch-list', 'parking-lot', 'snag-log', 'drafting-table')
-$script:NSScaffoldOnRequest = @('work-orders', 'opportunity-map', 'product-research')
+$script:NSScaffoldOnRequest = @('work-orders', 'opportunity-map', 'product-research', 'plan-record')
 
 # Get-NSScaffoldKeys <names> - the state keys a scaffold call names: every default file for none,
 # `product` for both product files. Throws for a name scaffold does not write on request.
@@ -1823,7 +1823,7 @@ function Get-NSScaffoldKeys {
             $keys.Add($name)
         }
         else {
-            throw "$name is not a file scaffold writes on request (work-orders, product)"
+            throw "$name is not a file scaffold writes on request (work-orders, product, plan-record)"
         }
     }
     return , $keys.ToArray()

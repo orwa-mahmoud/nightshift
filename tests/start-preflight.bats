@@ -227,6 +227,59 @@ setup_site() { # <name> [punch-body]
   [ "$(wc -l <"$p/.nightshift/usage/pauses.tsv" | tr -d ' ')" -eq 1 ]
 }
 
+# Reset removes every marker that says a shift was interrupted. The readings still show it: an open
+# item they already charge is the same work going on, and keeps what was spent on it.
+open_label() { bash -c '. "$1"; ns_item_rows "$2" open | head -n1 | cut -f1' _ "$PLUGIN/lib/lib.sh" "$1"; }
+
+@test "Start after a Reset keeps the readings of an open item being worked" {
+  p="$(setup_site preflight-reset-active)"
+  mkdir -p "$p/.nightshift/usage"
+  printf '1790380000\tarm\t\n' >"$p/.nightshift/usage/marks.tsv"
+  open_label "$p/.nightshift/punch-list.md" >"$p/.nightshift/usage/active"
+  run bash "$PLUGIN/runtime/reset-shift.sh" --project "$p"
+  [ "$status" -eq 0 ]
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/usage/marks.tsv" ]
+  ! compgen -G "$p/.nightshift/usage-*" >/dev/null || false
+  grep -qF "$(printf '\towner stop-work')" "$p/.nightshift/usage/pauses.tsv"
+}
+
+@test "Start after a Reset keeps the readings when a closed span names an open item" {
+  p="$(setup_site preflight-reset-marked)"
+  label="$(open_label "$p/.nightshift/punch-list.md")"
+  mkdir -p "$p/.nightshift/usage"
+  printf '1790380000\tarm\t\n1790380600\t%s\tinput=40\tswitch\n' "$label" >"$p/.nightshift/usage/marks.tsv"
+  run bash "$PLUGIN/runtime/reset-shift.sh" --project "$p"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/usage/marks.tsv" ]
+}
+
+@test "Start after a Reset retires readings that charge no open item" {
+  p="$(setup_site preflight-reset-new-list)"
+  mkdir -p "$p/.nightshift/usage"
+  printf '1790380000\tarm\t\n1790380600\t9. an item from an earlier list.\tinput=40\ttick\n' \
+    >"$p/.nightshift/usage/marks.tsv"
+  run bash "$PLUGIN/runtime/reset-shift.sh" --project "$p"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/usage" ]
+}
+
+@test "Start after a Reset of a finished list still retires its readings" {
+  p="$(setup_site preflight-reset-finished '## Items
+- [x] **1. work.**
+')"
+  mkdir -p "$p/.nightshift/usage"
+  printf '1790380000\tarm\t\n' >"$p/.nightshift/usage/marks.tsv"
+  printf '1. work.\n' >"$p/.nightshift/usage/active"
+  run bash "$PLUGIN/runtime/reset-shift.sh" --project "$p"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift/usage" ]
+}
+
 @test "a stopped shift with a live leftover pid is not a second agent" {
   p="$(setup_site preflight-stopped-live)"
   flag="$BATS_TEST_TMPDIR/stopped-live-flag"

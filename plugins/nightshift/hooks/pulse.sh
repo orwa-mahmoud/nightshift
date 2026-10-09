@@ -319,6 +319,19 @@ ns_pulse_receipts_notice() {
   [ "$first" -eq 0 ]
 }
 
+# ns_pulse_notices <ns> <project> — every notice this pulse has for the agent: the receipt lines,
+# then a budget the item being worked has just spent (ns_budget_check). Nothing when there is none.
+ns_pulse_notices() {
+  local receipts budget
+  receipts="$(ns_pulse_receipts_notice "$1" "$2")" || receipts=""
+  budget="$(ns_budget_check "$1" "$2")" || budget=""
+  if [ -n "$receipts" ] && [ -n "$budget" ]; then
+    printf '%s\n%s' "$receipts" "$budget"
+  else
+    printf '%s%s' "$receipts" "$budget"
+  fi
+}
+
 # ns_pulse_active_item <project> — the item being worked; see ns_active_item.
 ns_pulse_active_item() { ns_active_item "$1"; }
 
@@ -415,7 +428,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"
   ns_pulse_marks "$NS" "$PROJECT_DIR" "$SID" "$TPATH"
   if ns_pulse_owner_ok "$NS" "$SID"; then
-    ns_pulse_context claude "$(ns_pulse_receipts_notice "$NS" "$PROJECT_DIR")"
+    ns_pulse_context claude "$(ns_pulse_notices "$NS" "$PROJECT_DIR")"
   fi
   exit 0
 fi

@@ -77,8 +77,18 @@ STOP_REASON="$(ns_status_stop_reason "$NS" 2>/dev/null)"
 emit "Nightshift Status"
 emit "Workspace:   $WORKSPACE"
 emit "Shift:       $([ "$ARMED" -eq 1 ] && printf armed || printf 'not armed')"
-emit "Items:       open=$OPEN ticked=$TICKED"
+STOPPED=0
+[ -f "$PUNCH" ] && STOPPED="$(ns_stopped_boxes "$PUNCH")"
+if [ "${STOPPED:-0}" -gt 0 ]; then
+  emit "Items:       open=$OPEN ticked=$TICKED stopped=$STOPPED"
+else
+  emit "Items:       open=$OPEN ticked=$TICKED"
+fi
 emit "evidence:    $(ns_evidence_counts "$WORKSPACE")"
+if ns_plan_room_open "$NS"; then
+  PLAN_BOUND="$(ns_plan_room_line "$NS" 1)"
+  emit "Plan room:   open, $([ -n "$PLAN_BOUND" ] && printf 'bound to conversation %s' "$PLAN_BOUND" || printf 'waiting for its conversation')"
+fi
 emit "liveness:    $(ns_status_liveness "$NS" "$WATCH")"
 activity="$(ns_status_last_activity "$NS")"
 emit "last activity: ${activity:-none}"

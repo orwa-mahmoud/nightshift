@@ -38,6 +38,30 @@ resets open new segments instead of subtracting incompatible counters. Totals ar
 across hosts, and tokens are never converted into an estimated price. Usage already spent before
 the shift began is excluded from its accounting.
 
+### One section per item, one row per session
+
+Each item receipt has one Time and Tokens section, rewritten in place at every checkpoint and tick,
+never stacked. Its **Sessions** table has one row per session that worked the item: the shift, the
+host and model, from and to, working and paused time, the tokens in the host's own fields, and how it
+ended (`ticked`, `paused`, `switched away`, `blocked`, `stopped`). A restart, a Reset, a revival or a
+host switch opens a new row. The **Total** row is the item's figure, and the index, the morning
+receipt, Archive and Status all read it. Reset keeps an open item's spend: the next Start continues
+the same accounting and records the gap as a pause.
+
+When the next session on an item runs on another host or model, the section gains a **Handoffs**
+block, and the shift log gets the same line. It names the item, the host and model before and after,
+the local time, and what the outgoing session left: its commits on that item and its last progress
+note. Receipts written before this layout keep reading correctly: stacked per-session blocks are
+summed, and a cumulative newest block is not added to the blocks it already contains.
+
+### Times are in your time zone
+
+Every time a person reads — the Sessions table and spans, the morning receipt, the shift log, the
+`STOP` reason, parking-lot and snag-log entries, and Status — is in the device's local time with its
+offset, for example `2026-10-08 07:12 (UTC+04:00)`, and reads the same on POSIX and native Windows.
+Fields the runtime parses back (markers, the lease, policy provenance, evidence records) stay in UTC
+or epoch seconds.
+
 ## Choose when progress updates appear
 
 Receipts default to progress updates after 20 minutes of work on an item. You can choose:

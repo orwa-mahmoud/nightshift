@@ -69,7 +69,7 @@ case "$STALL_WARN" in '' | *[!0-9]* | 0) STALL_OK=0 ;; esac
 NOTIFY="$(rule "$PROJECT_DIR" notifyCommand "${NIGHTSHIFT_NOTIFY_CMD:-}")"
 GATE_MESSAGE="$(ns_expand_injected_paths "$PROJECT_DIR" "$(rule "$PROJECT_DIR" clockOutMessage "${NIGHTSHIFT_GATE_MESSAGE:-}")")"
 
-ts() { date '+%Y-%m-%d %H:%M:%S'; }
+ts() { ns_local_now second; }
 log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 
 # Only the Items list is the shift — a checkbox above the heading is prose and holds nobody.

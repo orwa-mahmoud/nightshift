@@ -95,6 +95,12 @@ receipt-due	0	.receipt-due	file
 receipt-due	2	run/.receipt-due	file
 report-due	0	.report-due	file
 report-due	2	run/.report-due	file
+budget	0	.budget.tsv	file
+budget	2	run/budget.tsv	file
+plan-room	0	.plan-room	file
+plan-room	2	run/plan-room	file
+plan-record	0	plan-record.md	file
+plan-record	2	staging/plan-record.md	file
 pulse	0	.shift-pulse	file
 pulse	2	run/.shift-pulse	file
 session-end	0	.session-end	file

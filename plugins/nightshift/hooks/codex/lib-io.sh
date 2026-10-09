@@ -15,7 +15,7 @@
 
 # codex_read_input — stdin to fields, exported for the caller:
 #   CODEX_SESSION_ID  CODEX_TRANSCRIPT_PATH  CODEX_TOOL_NAME  CODEX_TOOL_CMD
-#   CODEX_CWD         CODEX_TOOL_FILEPATH    CODEX_RAW
+#   CODEX_CWD         CODEX_TOOL_FILEPATH    CODEX_PROMPT           CODEX_RAW
 # session_id, transcript_path, cwd, and tool_name are the documented common fields;
 # tool_input.command is the documented input for Bash and apply_patch — for apply_patch it
 # carries the patch text itself. Stdin is read under a bound, so neither a manual run nor a
@@ -34,6 +34,8 @@ codex_read_input() {
     # UNVERIFIED: tool_input.file_path — docs silent (MCP tools send their own arguments);
     # kept as a belt so an MCP-style editor that does carry it is still recognized.
     CODEX_TOOL_FILEPATH="$(printf '%s' "$CODEX_RAW" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)"
+    # UserPromptSubmit: the documented `prompt`, the text about to be sent.
+    CODEX_PROMPT="$(printf '%s' "$CODEX_RAW" | jq -r '.prompt // empty' 2>/dev/null || true)"
   else
     # Extract the command value rather than falling back to the whole payload here — a caller's
     # quote-scrub would otherwise strip the command string itself and a match would slip through.
@@ -43,10 +45,11 @@ codex_read_input() {
     CODEX_TOOL_CMD="$(printf '%s' "$CODEX_RAW" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p')"
     CODEX_CWD="$(printf '%s' "$CODEX_RAW" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
     CODEX_TOOL_FILEPATH="$(printf '%s' "$CODEX_RAW" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    CODEX_PROMPT="$(printf '%s' "$CODEX_RAW" | sed -n 's/.*"prompt"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   fi
   [ -n "$CODEX_TOOL_CMD" ] || CODEX_TOOL_CMD="$CODEX_RAW"
   export CODEX_RAW CODEX_SESSION_ID CODEX_TRANSCRIPT_PATH CODEX_TOOL_NAME \
-    CODEX_TOOL_CMD CODEX_CWD CODEX_TOOL_FILEPATH
+    CODEX_TOOL_CMD CODEX_CWD CODEX_TOOL_FILEPATH CODEX_PROMPT
 }
 
 # codex_input_mentions_tool <name> — true when the raw payload names the tool even though
@@ -93,5 +96,15 @@ codex_emit_deny() {
     jq -nc --arg r "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
   else
     printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$(_codex_json_escape "$1")"
+  fi
+}
+
+# codex_emit_prompt_context <text> — the documented UserPromptSubmit context: the prompt goes
+# through and the model reads the text as developer context.
+codex_emit_prompt_context() {
+  if command -v jq >/dev/null 2>&1; then
+    jq -nc --arg c "$1" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$c}}'
+  else
+    printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$(_codex_json_escape "$1")"
   fi
 }

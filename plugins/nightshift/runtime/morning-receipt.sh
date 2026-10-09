@@ -219,13 +219,11 @@ _md_cell() {
   fi
 }
 
-# _utc_stamp EPOCH -> UTC_STAMP: that moment in UTC to the second, zone included.
-_utc_stamp() {
-  UTC_STAMP=""
-  case "$1" in '' | *[!0-9]*) return 1 ;; esac
-  UTC_STAMP="$(date -u -r "$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null ||
-    date -u -d "@$1" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"
-  [ -n "$UTC_STAMP" ]
+# _local_stamp EPOCH -> LOCAL_STAMP: that moment in this machine's local time to the second, with
+# its UTC offset (ns_local_time).
+_local_stamp() {
+  LOCAL_STAMP="$(ns_local_time "$1" second)" || LOCAL_STAMP=""
+  [ -n "$LOCAL_STAMP" ]
 }
 
 # _count N NOUN -> COUNTED: "1 file", "3 files".
@@ -765,7 +763,7 @@ EOF
 
 # _shift_times -> STARTED, SHIFT_SINCE, ENDED, ENDED_EPOCH, SHIFT_DAY. The start is the arming
 # mark, or the policy's createdAt for a shift that kept no usage marks, and commits are counted
-# from that same moment; the end is when the clock-out gate wrote .ended. Both are UTC with the
+# from that same moment; the end is when the clock-out gate wrote .ended. Display times are local with the
 # zone written out.
 STARTED=""
 SHIFT_SINCE=""
@@ -777,8 +775,11 @@ _shift_times() {
   local at
   STARTED="$P_CREATEDAT"
   SHIFT_SINCE="$P_CREATEDAT"
-  if [ "$NMARK" -gt 0 ] && _utc_stamp "${M_EPOCH[0]}"; then
-    STARTED="$UTC_STAMP"
+  if [ -n "$P_CREATEDAT" ] && at="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$P_CREATEDAT" +%s 2>/dev/null || date -u -d "$P_CREATEDAT" +%s 2>/dev/null)" && _local_stamp "$at"; then
+    STARTED="$LOCAL_STAMP"
+  fi
+  if [ "$NMARK" -gt 0 ] && _local_stamp "${M_EPOCH[0]}"; then
+    STARTED="$LOCAL_STAMP"
     SHIFT_SINCE="@${M_EPOCH[0]}"
   fi
   case "$STARTED" in
@@ -788,7 +789,7 @@ _shift_times() {
     at="$(ns_mtime "$ENDED_MARKER")" || at=""
     case "$at" in
       '' | *[!0-9]*) ;;
-      *) _utc_stamp "$at" && ENDED_EPOCH="$at" && ENDED="$UTC_STAMP" ;;
+      *) _local_stamp "$at" && ENDED_EPOCH="$at" && ENDED="$LOCAL_STAMP" ;;
     esac
   fi
 }
@@ -862,7 +863,7 @@ _key_by_domain() { # <destination> <domain>
 }
 
 _lines_shift() {
-  local i mode ticked open level chosen tooling target gates
+  local i mode ticked open stopped level chosen tooling target gates
   SEC=""
   sec_field Shift "$P_SHIFTID"
   _session_host
@@ -883,7 +884,14 @@ _lines_shift() {
       ticked=""
     fi
   fi
-  [ -z "$ticked" ] || sec_add "- Items: $ticked ticked, $open open"
+  if [ -n "$ticked" ]; then
+    stopped="$(ns_stopped_boxes "$PUNCH" 2>/dev/null)" || stopped=0
+    if [ "${stopped:-0}" -gt 0 ]; then
+      sec_add "- Items: $ticked ticked, $open open, $stopped stopped at their hard budget"
+    else
+      sec_add "- Items: $ticked ticked, $open open"
+    fi
+  fi
   mode="$(ns_work_mode "$WORKSPACE" 2>/dev/null)" || mode=repository
   if [ "$VIEW" = artifact ] || [ "$mode" = artifact ]; then
     sec_add "- Receipts: $(ns_receipts_count "$WORKSPACE")"
@@ -995,10 +1003,10 @@ _lines_usage() {
     done <"$TMPD/pauses"
     work=$((wall - paused))
     [ "$work" -ge 0 ] || work=0
-    _utc_stamp "$start"
-    v="$UTC_STAMP"
-    _utc_stamp "$end"
-    sec_add "- Span: $v $ARROW $UTC_STAMP"
+    _local_stamp "$start"
+    v="$LOCAL_STAMP"
+    _local_stamp "$end"
+    sec_add "- Span: $v $ARROW $LOCAL_STAMP"
     sec_add "- Working: $(ns_usage_duration "$work")"
     if [ "$paused" -gt 0 ]; then
       sec_add "- Paused: $(ns_usage_duration "$paused")"
@@ -1316,8 +1324,14 @@ EOF
 }
 
 _lines_parked() {
-  local i=0
+  local i=0 label id
   SEC=""
+  # An item stopped at its hard budget is not done, and what happens to it is the owner's call.
+  while IFS=$'\t' read -r label id; do
+    [ -n "$label" ] || continue
+    sec_add "- $label stopped at its hard budget without being done"
+    sec_add "  - Default: it stays open work; reopen it with a new budget, narrow it, or drop it"
+  done < <(ns_item_rows "$PUNCH" stopped 2>/dev/null)
   while [ "$i" -lt "$P_COUNT" ]; do
     sec_add "- ${P_TITLE[$i]}"
     [ -n "${P_DEFAULT[$i]}" ] && sec_add "  - Default: ${P_DEFAULT[$i]}"

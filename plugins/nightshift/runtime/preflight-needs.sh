@@ -92,13 +92,13 @@ scan() { # <source-label> <file>
       gsub(/[*`]/, " ", t)
       printf "L\t%s\t%d\t%s\n", src, idx, t
     }
-    /^[[:space:]]*-[[:space:]]*\[[[:space:]xX]\]/ {
+    /^[[:space:]]*-[[:space:]]*\[[[:space:]xX-]\]/ {
       n++
       idx = n
       open = ($0 ~ /^[[:space:]]*-[[:space:]]*\[[[:space:]]\]/)
       if (open) {
         title = $0
-        sub(/^[[:space:]]*-[[:space:]]*\[[[:space:]xX]\][[:space:]]*/, "", title)
+        sub(/^[[:space:]]*-[[:space:]]*\[[[:space:]xX-]\][[:space:]]*/, "", title)
         gsub(/[*`]/, "", title)
         gsub(/[\001-\037\177]/, " ", title)
         gsub(/[[:space:]]+/, " ", title)

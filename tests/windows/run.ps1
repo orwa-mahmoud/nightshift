@@ -530,6 +530,30 @@ try {
     $itemSessionsLogicRun = Invoke-TestScript $itemSessionsLogic
     Assert-Equal 0 $itemSessionsLogicRun.ExitCode `
         "item sessions: $($itemSessionsLogicRun.Stdout) $($itemSessionsLogicRun.Stderr)"
+    $itemTotalsLogic = Join-Path $PSScriptRoot 'item-totals-logic.ps1'
+    $itemTotalsLogicRun = Invoke-TestScript $itemTotalsLogic
+    Assert-Equal 0 $itemTotalsLogicRun.ExitCode `
+        "item totals: $($itemTotalsLogicRun.Stdout) $($itemTotalsLogicRun.Stderr)"
+    $itemBudgetsLogic = Join-Path $PSScriptRoot 'item-budgets-logic.ps1'
+    $itemBudgetsLogicRun = Invoke-TestScript $itemBudgetsLogic
+    Assert-Equal 0 $itemBudgetsLogicRun.ExitCode `
+        "item budgets: $($itemBudgetsLogicRun.Stdout) $($itemBudgetsLogicRun.Stderr)"
+    $planRoomLogic = Join-Path $PSScriptRoot 'plan-room-logic.ps1'
+    $planRoomLogicRun = Invoke-TestScript $planRoomLogic
+    Assert-Equal 0 $planRoomLogicRun.ExitCode `
+        "plan room: $($planRoomLogicRun.Stdout) $($planRoomLogicRun.Stderr)"
+    $shiftEstimateLogic = Join-Path $PSScriptRoot 'shift-estimate-logic.ps1'
+    $shiftEstimateLogicRun = Invoke-TestScript $shiftEstimateLogic
+    Assert-Equal 0 $shiftEstimateLogicRun.ExitCode `
+        "shift estimate: $($shiftEstimateLogicRun.Stdout) $($shiftEstimateLogicRun.Stderr)"
+    $checkItemsLogic = Join-Path $PSScriptRoot 'check-items-logic.ps1'
+    $checkItemsLogicRun = Invoke-TestScript $checkItemsLogic
+    Assert-Equal 0 $checkItemsLogicRun.ExitCode `
+        "check items: $($checkItemsLogicRun.Stdout) $($checkItemsLogicRun.Stderr)"
+    $localTimeLogic = Join-Path $PSScriptRoot 'local-time-logic.ps1'
+    $localTimeLogicRun = Invoke-TestScript $localTimeLogic
+    Assert-Equal 0 $localTimeLogicRun.ExitCode `
+        "local times: $($localTimeLogicRun.Stdout) $($localTimeLogicRun.Stderr)"
     $boxCountsLogic = Join-Path $PSScriptRoot 'box-counts-logic.ps1'
     $boxCountsLogicRun = Invoke-TestScript $boxCountsLogic
     Assert-Equal 0 $boxCountsLogicRun.ExitCode `

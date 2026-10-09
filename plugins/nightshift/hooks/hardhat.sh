@@ -87,6 +87,13 @@ SCRUBBED="$(ns_hardhat_scrub "$CMD")"
 LEASE_COMMAND="$CMD"
 case "$TOOL" in Bash | PowerShell) LEASE_COMMAND="$SCRUBBED" ;; esac
 
+# The plan room holds whether or not a shift is armed: planning comes before the shift.
+plan_reason="$(ns_hardhat_plan_room_reason "$TOOL" "$INPUT" "$SCRUBBED" "$CMD" "$SID" claude)"
+case "$?" in
+  0) deny "$plan_reason" ;;
+  3) exit 0 ;;
+esac
+
 # Every remaining rule is shift-scoped: inert unless a shift is truly active. A stop-work order
 # is a request, not the ending — the agent keeps working until its next stop attempt, which is
 # exactly when the site rules still matter. The gate writes ENDED when it actually releases, and
@@ -182,6 +189,11 @@ if ns_hardhat_payload_targets_rules "$TOOL" "$INPUT" "$SCRUBBED"; then
 fi
 if ns_hardhat_payload_targets_control "$TOOL" "$INPUT" "$SCRUBBED"; then
   deny "BLOCKED: shift control files are owner-owned while the night is armed. Do not delete or forge .shift-armed, .ended, STOP, .shift-session, work-target, work-mode, shift-policy.json, shift-defaults.json, or deadline, and do not delete the punch list. Park the need in $(ns_hardhat_state_name parking-lot) and keep working."
+fi
+
+# A spent hard budget leaves only wrap-up until its item is closed.
+if budget_label="$(ns_budget_hard_open "$NS")" && ! ns_hardhat_restricted_allows "$TOOL" "$INPUT" "$SCRUBBED" wrapup; then
+  deny "BLOCKED: $budget_label reached its hard budget. $(ns_budget_wrapup "$budget_label")"
 fi
 
 if [ "$TOOL" = "AskUserQuestion" ] \

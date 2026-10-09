@@ -189,7 +189,7 @@ no_json_bin() {
 @test "the settings blocks read back exactly as written" {
   run bash -c '. "$1"; ns_rules_get "$2" shift' _ "$LIB" "$TEMPLATE"
   [ "$status" -eq 0 ]
-  [ "$output" = '{"verificationProfile":"fast","hours":null,"execution":"review-first","toolingPolicy":"existing-tools"}' ]
+  [ "$output" = '{"verificationProfile":"fast","hours":null,"itemBudget":"","execution":"review-first","toolingPolicy":"existing-tools"}' ]
   run bash -c '. "$1"; ns_rules_get "$2" handoff' _ "$LIB" "$TEMPLATE"
   [ "$status" -eq 0 ]
   [ "$output" = '{"enabled":true,"view":"owner","language":"auto","detail":"concise","sections":[],"templatePath":""}' ]

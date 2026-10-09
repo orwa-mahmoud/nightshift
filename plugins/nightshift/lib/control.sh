@@ -206,7 +206,7 @@ ns_control_drop_runtime_markers() { # <ns>
 
 ns_control_write_stop() { # <ns> <reason>
   local ns="$1" reason="$2" ts stop
-  ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  ts="$(ns_local_now second)"
   [ -n "$reason" ] || reason="stopped by owner"
   ns_layout_set stop "$ns" stop
   ns_control_drop "$stop"

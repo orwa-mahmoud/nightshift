@@ -129,7 +129,7 @@ catch {
     [Console]::Error.WriteLine('nightshift: usage accounting skipped - ' + $_.Exception.Message)
 }
 try {
-    Write-NSPulseContext $HostName (Get-NSPulseReceiptsNotice $ns $workspace)
+    Write-NSPulseContext $HostName (Get-NSPulseNotices $ns $workspace)
 }
 catch {
     [Console]::Error.WriteLine('nightshift: receipts notice skipped - ' + $_.Exception.Message)

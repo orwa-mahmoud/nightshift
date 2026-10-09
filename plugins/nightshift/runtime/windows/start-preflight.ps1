@@ -176,6 +176,15 @@ else {
     Write-Repair 'Setup or Doctor repairs the marker with migrate-state; Start never writes it'
 }
 
+# --------------------------------------------------------- plan room
+# Planning ends only by the owner's hand. The owner's /nightshift:start clears the room before this
+# runs, so a room still open here means Start was not typed by the owner. Mirrors start-preflight.sh.
+if (Test-NSPlanRoomOpen $ns) {
+    $planBound = Get-NSPlanRoomLine $ns 1
+    $planDetail = if ($planBound.Length -gt 0) { ", bound to conversation $planBound" } else { '' }
+    Write-Refuse ('plan-room the plan room is open' + $planDetail + ', and a shift never arms over it')
+}
+
 # ------------------------------------------------------ work mode/target
 $workMode = ''
 try {
@@ -270,6 +279,7 @@ $punch = Get-NSLayoutPath $ns 'punch-list'
 $counts = Get-NSBoxCounts $punch
 $open = [int]$counts.Open
 $ticked = [int]$counts.Ticked
+$stoppedItems = [int]$counts.Stopped
 
 $watchmanLive = $false
 $watchmanPath = Get-NSLayoutPath $ns 'watchman'
@@ -341,10 +351,10 @@ if (-not $DryRun) {
     $ended = ((Test-Path -LiteralPath $endedPath -PathType Leaf) -and -not (Test-NSReparsePoint $endedPath))
     $stopped = ((Test-Path -LiteralPath $stopPath -PathType Leaf) -and -not (Test-NSReparsePoint $stopPath))
     # Accounting follows the work. A shift that finished its list has its readings set aside, so the
-    # next list starts clean. One that stopped, reached quitting time or died with items still open
-    # is continued, and an open item keeps the time and tokens already spent on it: the readings
-    # stay live, and an ended shift gets its own copy for its archive. The gap since its last work
-    # is recorded as a pause unless one already covers it. Mirrors start-preflight.sh.
+    # next list starts clean. One that stopped, reached quitting time, died or was reset with items
+    # still open is continued, and an open item keeps the time and tokens already spent on it: the
+    # readings stay live, and an ended shift gets its own copy for its archive. The gap since its last
+    # work is recorded as a pause unless one already covers it. Mirrors start-preflight.sh.
     $openNow = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'punch-list')
     $continued = $false
     if ($ended) {
@@ -359,6 +369,11 @@ if (-not $DryRun) {
         }
     }
     elseif ($stopped -or $wasArmed) {
+        $continued = $true
+    }
+    elseif ($openNow -gt 0 -and (Test-NSUsageCarriesOpen $ns (Get-NSLayoutPath $ns 'punch-list'))) {
+        # A Reset leaves no marker behind, but an open item the readings already charged is the same
+        # work going on.
         $continued = $true
     }
     else {
@@ -405,7 +420,17 @@ else {
         Write-Repair ('fix that named reason in ' + (Get-NSLayoutPath $ns 'rules') + ' or re-run Setup; never half-apply a broken file')
     }
     else {
-        Write-Ok 'rules readable'
+        $defaultBudget = ''
+        $shiftProperty = $rules.PSObject.Properties['shift']
+        if ($null -ne $shiftProperty -and $null -ne $shiftProperty.Value) {
+            $budgetProperty = $shiftProperty.Value.PSObject.Properties['itemBudget']
+            if ($null -ne $budgetProperty) { $defaultBudget = [string]$budgetProperty.Value }
+        }
+        if ($defaultBudget.Length -gt 0 -and [string]::IsNullOrEmpty((ConvertFrom-NSBudget $defaultBudget))) {
+            Write-Refuse 'rules shift.itemBudget is not a valid budget'
+            Write-Repair 'fix shift.itemBudget or leave it empty for no default limit'
+        }
+        else { Write-Ok 'rules readable' }
     }
 }
 
@@ -508,7 +533,7 @@ else {
 }
 
 # --------------------------------------------------- work and deadline
-Write-Ok "punch-list open=$open ticked=$ticked"
+Write-Ok $(if ($stoppedItems -gt 0) { "punch-list open=$open ticked=$ticked stopped=$stoppedItems" } else { "punch-list open=$open ticked=$ticked" })
 $orders = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')
 $drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
 Write-Ok "staged orders=$orders drafts=$drafts"

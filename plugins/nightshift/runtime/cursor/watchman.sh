@@ -113,7 +113,7 @@ for _req in "watchRetrySeconds:$RETRY_SPACING" "revivalPrompt:$PROMPT_RESUME" "f
   fi
 done
 
-ts() { date '+%Y-%m-%d %H:%M:%S'; }
+ts() { ns_local_now second; }
 log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 
 # The marker is the shift. Without it there is nothing to revive and no reading to take, and

@@ -209,10 +209,15 @@ if (Test-Path -LiteralPath $punch -PathType Leaf) {
     $counts = Get-NSBoxCounts $punch
     $open = [int]$counts.Open
     $ticked = [int]$counts.Ticked
-    Add-NSFact "punch list open=$open ticked=$ticked"
+    $stopped = [int]$counts.Stopped
+    Add-NSFact $(if ($stopped -gt 0) { "punch list open=$open ticked=$ticked stopped=$stopped" } else { "punch list open=$open ticked=$ticked" })
 }
 else {
     Add-NSWarn 'punch-list.md is missing'
+}
+if (Test-NSPlanRoomOpen $ns) {
+    $planBound = Get-NSPlanRoomLine $ns 1
+    Add-NSFact ('plan room open, ' + $(if ($planBound.Length -gt 0) { 'bound to conversation ' + $planBound } else { 'waiting for its conversation' }))
 }
 
 try {

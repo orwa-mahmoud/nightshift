@@ -91,7 +91,7 @@ ns_receipt_title() {
 ns_receipt_basename() {
   local label="$1" nn title slug
   # A leftover `- [x]` from a ticked line must not become an `x-` sidecar file.
-  label="$(printf '%s' "$label" | sed 's/^- \[[xX ]\][[:space:]]*//; s/^\*\*//; s/\*\*$//')"
+  label="$(printf '%s' "$label" | sed 's/^- \[[xX -]\][[:space:]]*//; s/^\*\*//; s/\*\*$//')"
   nn="$(ns_receipt_nn "$label")"
   title="$(ns_receipt_title "$label")"
   [ -n "$title" ] || title="$label"
@@ -131,8 +131,8 @@ function ns_item_id(line,    s) {
 function ns_item_label(line,    lead) {
   sub(/\r$/, "", line)
   sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "", line)
-  sub(/^- \[[ xX]\][[:space:]]*\*\*/, "", line)
-  sub(/^- \[[ xX]\][[:space:]]*/, "", line)
+  sub(/^- \[[ xX-]\][[:space:]]*\*\*/, "", line)
+  sub(/^- \[[ xX-]\][[:space:]]*/, "", line)
   # A dash right after a bare number numbers the item, as in "1 — Fix it": a number alone is no
   # label, so only a later dash ends the title. A code such as P03 before a dash is the label.
   lead = ""
@@ -148,27 +148,27 @@ function ns_item_label(line,    lead) {
 }
 '
 
-# ns_item_rows <punch-list> [open|ticked|all] — `<label>\t<id>` for each top-level item under
-# `## Items` that has a label, list order. The id is empty for an item that has none.
+# ns_item_rows <punch-list> [open|ticked|stopped|all] — `<label>\t<id>` for each top-level item
+# under `## Items` that has a label, list order. The id is empty for an item that has none. A ticked
+# item is `[x]`; a stopped one, closed at its hard budget without being done, is `[-]`.
 ns_item_rows() {
   ns_items_section "$1" 2>/dev/null | awk -v want="${2:-all}" "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ {
-      open = ($0 ~ /^- \[ \]/)
-      if (want == "open" && !open) next
-      if (want == "ticked" && open) next
+    /^- \[[ xX-]\]/ {
+      state = ($0 ~ /^- \[ \]/) ? "open" : ($0 ~ /^- \[-\]/) ? "stopped" : "ticked"
+      if (want != "all" && want != state) next
       label = ns_item_label($0)
       if (label != "") print label "\t" ns_item_id($0)
     }
   '
 }
 
-# ns_item_states <punch-list> — `<open|ticked>\t<label>\t<id>` for each top-level item under
+# ns_item_states <punch-list> — `<open|ticked|stopped>\t<label>\t<id>` for each top-level item under
 # `## Items` that has a label, list order.
 ns_item_states() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ {
+    /^- \[[ xX-]\]/ {
       label = ns_item_label($0)
-      if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : "ticked") "\t" label "\t" ns_item_id($0)
+      if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : ($0 ~ /^- \[-\]/) ? "stopped" : "ticked") "\t" label "\t" ns_item_id($0)
     }
   '
 }
@@ -176,14 +176,14 @@ ns_item_states() {
 # ns_item_ids <punch-list> — every id the list's items carry, one per line.
 ns_item_ids() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ { id = ns_item_id($0); if (id != "") print id }
+    /^- \[[ xX-]\]/ { id = ns_item_id($0); if (id != "") print id }
   '
 }
 
 # ns_item_title_for <punch-list> <id> — the whole title of the item carrying that id: its bold text,
 # or the line after its checkbox, without the id comment.
 ns_item_title_for() {
-  local line box='^- \[[ xX]\][[:space:]]*' tail="[[:space:]]*<!--[[:space:]]*id:[[:space:]]*$2[[:space:]]*-->[[:space:]]*\$"
+  local line box='^- \[[ xX-]\][[:space:]]*' tail="[[:space:]]*<!--[[:space:]]*id:[[:space:]]*$2[[:space:]]*-->[[:space:]]*\$"
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     [[ $line =~ $box ]] || continue
@@ -204,7 +204,7 @@ EOF
 # ns_item_id_for <punch-list> <label> — the id of the first item with that label, or nothing.
 ns_item_id_for() {
   ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
-    /^- \[[ xX]\]/ && ns_item_label($0) == want { print ns_item_id($0); exit }
+    /^- \[[ xX-]\]/ && ns_item_label($0) == want { print ns_item_id($0); exit }
   '
 }
 
@@ -249,7 +249,7 @@ ns_punch_assign_ids() {
     { line = $0; sub(/\r$/, "", line) }
     !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; next }
     line ~ /^## / { exit }
-    line ~ /^- \[[ xX]\]/ && ns_item_id(line) == "" { n++ }
+    line ~ /^- \[[ xX-]\]/ && ns_item_id(line) == "" { n++ }
     END { print n + 0 }
   ' "$list")" || return 1
   [ "$need" -gt 0 ] || return 0
@@ -265,7 +265,7 @@ ns_punch_assign_ids() {
     { line = $0; cr = ""; if (sub(/\r$/, "", line)) cr = "\r" }
     !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; print; next }
     line ~ /^## / { on = 0; done = 1 }
-    !done && line ~ /^- \[[ xX]\]/ && ns_item_id(line) == "" {
+    !done && line ~ /^- \[[ xX-]\]/ && ns_item_id(line) == "" {
       k++
       print line " <!-- id: " pool[k] " -->" cr
       next
@@ -471,11 +471,16 @@ ns_receipt_track_label() {
   return "$rc"
 }
 
-# _ns_session_total <measured> <off> <sum> — a Sessions total: the sum of what was measured, off
-# when the owner turned the measurement off and nothing was measured, unavailable otherwise.
+# _ns_session_total <measured> <off> <sum> [missing] — a Sessions total: the sum of what was
+# measured, off when the owner turned the measurement off and nothing was measured, unavailable
+# otherwise. A sum that leaves out a session which never reported the figure says partial.
 _ns_session_total() {
   if [ "$1" -eq 1 ]; then
-    printf '%s' "$3"
+    if [ "${4:-0}" -eq 1 ]; then
+      printf '%s (partial)' "$3"
+    else
+      printf '%s' "$3"
+    fi
   elif [ "$2" -eq 1 ]; then
     printf 'off'
   else
@@ -483,71 +488,280 @@ _ns_session_total() {
   fi
 }
 
+# ns_receipt_encode <text> / ns_receipt_decode <text> — a value that rides in one session-data
+# field: no spaces or tabs, reversible.
+ns_receipt_encode() { printf '%s' "$1" | sed 's/%/%25/g; s/ /%20/g; s/	/%09/g'; }
+ns_receipt_decode() { printf '%s' "$1" | sed 's/%20/ /g; s/%09/	/g; s/%25/%/g'; }
+
+# ns_session_extra <session-line> <key> — one named field after the seven positional ones, or
+# nothing.
+ns_session_extra() {
+  printf '%s\n' "$1" | awk -v k="$2" '{ for (i = 8; i <= NF; i++) if (index($i, k "=") == 1) { print substr($i, length(k) + 2); exit } }'
+}
+
+# ns_session_host_words <host/model+host/model> — the hosts a session ran on, as a person reads
+# them: `claude · claude-opus-5 + codex · gpt-5.5`.
+ns_session_host_words() {
+  printf '%s' "$1" | awk -v RS='+' '
+    { sub(/\n$/, ""); if ($0 == "") next
+      n = index($0, "/"); h = n ? substr($0, 1, n - 1) : $0; m = n ? substr($0, n + 1) : ""
+      out = out (out == "" ? "" : " + ") h ((m != "" && m != "-") ? " · " m : "") }
+    END { printf "%s", out }'
+}
+
+# ns_receipt_session_data <receipt> — the recorded session lines, oldest first.
+ns_receipt_session_data() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk '/^<!-- session-data$/ { on = 1; next } on && /^-->$/ { on = 0 } on && NF { print }' "$1"
+}
+
+# ns_receipt_last_session <receipt> — the most recent session line, or nothing.
+ns_receipt_last_session() { ns_receipt_session_data "$1" | tail -n1; }
+
+# ns_receipt_progress_note <receipt> — the first line of the model's own text: the progress
+# paragraph while the item runs. Cut to 160 characters.
+ns_receipt_progress_note() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  ns_receipt_model_lines "$1" | awk '!/^#/ && NF { print substr($0, 1, 160); exit }'
+}
+
+# ns_iso_epoch <YYYY-MM-DDTHH:MMZ> — the UTC minute a duration line wrote, as epoch seconds.
+ns_iso_epoch() {
+  case "$1" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]Z) ;; *) return 1 ;; esac
+  date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "${1%Z}:00Z" +%s 2>/dev/null || date -u -d "${1%Z}:00" +%s 2>/dev/null
+}
+
+# ns_receipt_legacy_blocks <receipt> — the stacked usage blocks an older receipt carries, the ones
+# that count, oldest first (receipt-legacy.awk).
+ns_receipt_legacy_blocks() {
+  local bin
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  bin="$(ns_usage_awk_bin)" || return 0
+  "$bin" -f "$_NS_USAGE_AWK_DIR/receipt-legacy.awk" "$1"
+}
+
+# ns_receipt_legacy_sessions <receipt> — those blocks as session lines, so a receipt from before
+# the Sessions table keeps every reading it was given when it is first rewritten.
+ns_receipt_legacy_sessions() {
+  local s e w p tok off hosts start end work paused in cw cr out rea extras
+  while IFS=$'\t' read -r s e w p tok off hosts; do
+    start="$(ns_iso_epoch "$s")" || start=-
+    end="$(ns_iso_epoch "$e")" || end=-
+    if [ "$off" = 1 ]; then
+      work=off
+      paused=off
+    else
+      work=-
+      [ "$w" = - ] || work="$(ns_usage_parse_seconds "$w")"
+      paused=0
+      [ "$p" = - ] || paused="$(ns_usage_parse_seconds "$p")"
+    fi
+    if [ "$tok" = off ]; then
+      in=off; cw=off; cr=off; out=off; rea=off
+    elif [ "$tok" = - ]; then
+      in=-; cw=-; cr=-; out=-; rea=-
+    else
+      read -r in cw cr out rea <<<"$tok"
+    fi
+    extras="cw=${cw:--} cr=${cr:--} rea=${rea:--} paused=$paused"
+    [ -z "$hosts" ] || [ "$hosts" = - ] || extras="$extras host=$(printf '%s' "$hosts" | sed 's/; /+/g; s/ /\//g')"
+    printf '%s %s %s %s %s %s %s %s\n' - "$start" "$end" "$work" "${in:--}" "${out:--}" ticked "$extras"
+  done < <(ns_receipt_legacy_blocks "$1")
+}
+
+# ns_receipt_usage_section <session-lines> — the receipt's runtime section, drawn from every
+# session the item was worked in: the Tokens and Time totals, one Sessions row per session with
+# a total row, the handoffs between hosts, and the data the next redraw reads.
+ns_receipt_usage_section() {
+  local data="$1" line sid start end work in out ended rest n=0 word dim v key
+  local cw cr rea paused why host commits note prev_host="" prev_end="" prev_commits="" prev_note=""
+  local twork=0 tpause=0 twall=0 first="" last="" last_why="" hosts_seen="" handoffs="" rows=""
+  local budget="" budget_events=""
+  local -a tot have off miss
+  local i
+  for i in 0 1 2 3 4; do tot[i]=0; have[i]=0; off[i]=0; miss[i]=0; done
+  local havework=0 offwork=0 havepause=0 offpause=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    read -r sid start end work in out ended rest <<<"$line"
+    n=$((n + 1))
+    cw="$(ns_session_extra "$line" cw)"
+    cr="$(ns_session_extra "$line" cr)"
+    rea="$(ns_session_extra "$line" rea)"
+    paused="$(ns_session_extra "$line" paused)"
+    why="$(ns_receipt_decode "$(ns_session_extra "$line" why)")"
+    host="$(ns_session_extra "$line" host)"
+    commits="$(ns_session_extra "$line" commits)"
+    note="$(ns_receipt_decode "$(ns_session_extra "$line" note)")"
+    v="$(ns_session_extra "$line" limit)"
+    [ -z "$v" ] || budget="$(ns_receipt_decode "$v")"
+    for v in soft hard; do
+      key="$(ns_session_extra "$line" "$v")"
+      [ -n "$key" ] || continue
+      budget_events="$budget_events- $v limit reached $(ns_local_time "$key" || printf '—')"
+      [ "$v" != hard ] || [ "$ended" != stopped ] || budget_events="$budget_events; closed as stopped"
+      budget_events="$budget_events"$'\n'
+    done
+    i=0
+    local cells=""
+    for v in "$in" "$out" "$cw" "$cr" "$rea"; do
+      case "$v" in
+        off) off[i]=1; cells="$cells | off" ;;
+        '') miss[i]=1; cells="$cells | —" ;;
+        *[!0-9]* | -) miss[i]=1; cells="$cells | unavailable" ;;
+        *) tot[i]=$((tot[i] + v)); have[i]=1; cells="$cells | $(ns_usage_scale "$v")" ;;
+      esac
+      i=$((i + 1))
+    done
+    case "$work" in
+      off) offwork=1; v=off ;;
+      '' | *[!0-9]*) v=unavailable ;;
+      *) twork=$((twork + work)); havework=1; v="$(ns_usage_duration "$work")" ;;
+    esac
+    local pcell
+    case "$paused" in
+      off) offpause=1; pcell=off ;;
+      '') pcell='—' ;;
+      *[!0-9]*) pcell=unavailable ;;
+      0) havepause=1; pcell='—' ;;
+      *) tpause=$((tpause + paused)); havepause=1; pcell="$(ns_usage_duration "$paused")"
+        [ -z "$why" ] || last_why="$why" ;;
+    esac
+    case "$start" in '' | *[!0-9]*) ;; *)
+      [ -n "$first" ] && [ "$first" -le "$start" ] || first="$start" ;;
+    esac
+    case "$end" in '' | *[!0-9]*) ;; *)
+      [ -n "$last" ] && [ "$last" -ge "$end" ] || last="$end"
+      case "$start" in '' | *[!0-9]*) ;; *) twall=$((twall + end - start)) ;; esac ;;
+    esac
+    if [ -n "$host" ] && ! printf '%s\n' "$hosts_seen" | grep -qxF -- "$host"; then
+      hosts_seen="$hosts_seen${hosts_seen:+$'\n'}$host"
+    fi
+    [ "$sid" != - ] || sid='—'
+    rows="$rows$(printf '| %s | %s | %s | %s | %s | %s | %s%s | %s |' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
+      "$(if [ -n "$host" ]; then ns_session_host_words "$host"; else printf '—'; fi)" \
+      "$(ns_local_time "$start" || printf '—')" "$(ns_local_time "$end" || printf '—')" \
+      "$v" "$pcell" "$cells" "$(printf '%s' "$ended" | tr '-' ' ')")"$'\n'
+    if [ -n "$prev_host" ] && [ -n "$host" ] && [ "$prev_host" != "$host" ]; then
+      handoffs="$handoffs- $(ns_local_time "$prev_end" || printf '—') · $(ns_session_host_words "$prev_host") → $(ns_session_host_words "$host") · outgoing commits: $(printf '%s' "${prev_commits:-none}" | sed 's/,/, /g')"
+      [ -z "$prev_note" ] || handoffs="$handoffs · last note: $prev_note"
+      handoffs="$handoffs"$'\n'
+    fi
+    [ -z "$host" ] || prev_host="$host"
+    prev_end="$end"
+    prev_commits="$commits"
+    prev_note="$note"
+  done <<EOF
+$data
+EOF
+  printf '<!-- usage -->\n'
+  if [ "${have[0]}${have[1]}${have[2]}${have[3]}${have[4]}" = 00000 ] && [ "${off[0]}" -eq 1 ]; then
+    printf '**Tokens:** off\n'
+  else
+    local comment="" label j=0 hostline=""
+    printf '| Tokens | Amount |\n| --- | ---: |\n'
+    for dim in input:0 cache_write:2 cache_read:3 output:1 reasoning:4; do
+      j="${dim#*:}"
+      label="$(ns_usage_dim_label "${dim%%:*}")"
+      printf '| %s | %s |\n' "$label" \
+        "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")"
+      comment="$comment${comment:+ }${tot[j]}"
+    done
+    hostline="$(printf '%s\n' "$hosts_seen" | sed '/^$/d; s/\// /; s/ -$//' | awk 'NF { printf "%s%s", s, $0; s = "; " }')"
+    word=sessions
+    [ "$n" -ne 1 ] || word=session
+    printf '\n<!-- tokens %s -->\n%s · %s %s. %s\n' "$comment" "${hostline:-unknown}" "$n" "$word" \
+      "$(ns_usage_overlap "$(printf '%s' "${hostline:-unknown}" | cut -d' ' -f1)")"
+  fi
+  printf '\n'
+  if [ "$havework" -eq 0 ] && [ "$offwork" -eq 1 ]; then
+    printf '**Time:** off\n'
+  else
+    printf '| Time | |\n| --- | --- |\n| working | %s |\n' "$(ns_usage_duration "$twork")"
+    if [ "$tpause" -gt 0 ]; then
+      if [ -n "$last_why" ]; then
+        printf '| paused | %s (%s) |\n' "$(ns_usage_duration "$tpause")" "$last_why"
+      else
+        printf '| paused | %s |\n' "$(ns_usage_duration "$tpause")"
+      fi
+    fi
+    printf '| wall | %s |\n' "$(ns_usage_duration "$twall")"
+    if [ -n "$first" ] && [ -n "$last" ]; then
+      printf '| span | %s → %s |\n' "$(ns_local_time "$first")" "$(ns_local_time "$last")"
+    fi
+  fi
+  word=sessions
+  [ "$n" -ne 1 ] || word=session
+  printf '\n**Sessions**\n\n'
+  printf '| # | Shift | Host · model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |\n'
+  printf '| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |\n'
+  printf '%s' "$rows"
+  key="$(printf '%s\n' "$hosts_seen" | sed '/^$/d' | while IFS= read -r key; do ns_session_host_words "$key"; printf '\n'; done | awk 'NF { printf "%s%s", s, $0; s = ", " }')"
+  printf '| **Total** | %s %s | %s |  |  | **%s** | **%s**' "$n" "$word" "${key:-—}" \
+    "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
+    "$(if [ "$tpause" -gt 0 ]; then ns_usage_duration "$tpause"; elif [ "$havepause" -eq 1 ]; then printf '—'; elif [ "$offpause" -eq 1 ]; then printf off; else printf unavailable; fi)"
+  for j in 0 1 2 3 4; do
+    printf ' | **%s**' "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")"
+  done
+  printf ' |  |\n'
+  if [ -n "$handoffs" ]; then
+    printf '\n**Handoffs**\n\n%s' "$handoffs"
+  fi
+  if [ -n "$budget_events" ]; then
+    printf "\n**Budget** \`%s\`\n\n%s" "$budget" "$budget_events"
+  fi
+  printf '\n<!-- session-data\n%s\n-->\n<!-- /usage -->\n' "$data"
+}
+
 # ns_receipt_add_session <receipt> <label> <shift-id> <start> <end> <working-sec> <input> <output>
-# <ended> — add one session to the receipt's Sessions table and redraw it. The table is drawn from
-# the data lines kept under it, so its totals stay exact across every shift the item was worked
-# in. `-` is an unknown shift or an unreported token count, and `off` a measurement the owner
-# turned off; <ended> is ticked, switched-away, blocked or paused. A receipt that does not exist
-# yet is created with its heading; one that does keeps its modification time.
+# <ended> [extras] — add one session to the item's receipt and redraw its runtime section. The
+# section is drawn from the data lines kept inside it, so its totals stay exact across every shift
+# the item was worked in, whatever happened to the live readings in between. `-` is an unknown
+# shift or an unreported figure, and `off` a measurement the owner turned off; <ended> is ticked,
+# switched-away, blocked or paused; [extras] are the named fields ns_gate_session_row records.
+#
+# The section sits under the heading and is replaced in place, never stacked. A receipt written
+# before it existed is folded in on its first redraw: its Sessions data is kept, and when it has
+# none its stacked usage blocks become sessions (ns_receipt_legacy_sessions). A receipt that does
+# not exist yet is created with its heading; one that does keeps its modification time.
 ns_receipt_add_session() {
-  local f="$1" label="$2" data line block ref tmp fresh=0 rc=0
-  local sid start end work in out ended n=0 twork=0 tin=0 tout=0 word cell_work cell_in cell_out
-  local havework=0 havein=0 haveout=0 offwork=0 offin=0 offout=0
+  local f="$1" label="$2" data block ref tmp fresh=0 rc=0 row
   [ ! -L "$f" ] || return 0
   mkdir -p "${f%/*}" 2>/dev/null || return 1
   if [ ! -f "$f" ]; then
     printf '# %s\n' "$label" >"$f" || return 1
     fresh=1
   fi
-  data="$(awk '/^<!-- session-data$/ { on = 1; next } on && /^-->$/ { on = 0 } on { print }' "$f")"
-  data="$(printf '%s\n%s %s %s %s %s %s %s' "$data" "$3" "$4" "$5" "$6" "$7" "$8" "$9" | sed '/^$/d')"
+  data="$(ns_receipt_session_data "$f")"
+  [ -n "$data" ] || data="$(ns_receipt_legacy_sessions "$f")"
+  row="$3 $4 $5 $6 $7 $8 $9"
+  [ -z "${10:-}" ] || row="$row ${10}"
+  data="$(printf '%s\n%s' "$data" "$row" | sed '/^$/d')"
   block="$(mktemp "${TMPDIR:-/tmp}/ns-sessions.XXXXXX")" || return 1
-  {
-    printf '<!-- sessions -->\n**Sessions**\n\n'
-    printf '| # | Shift | Start | End | Working | Input | Output | Ended |\n'
-    printf '| --- | --- | --- | --- | --- | ---: | ---: | --- |\n'
-    while read -r sid start end work in out ended; do
-      [ -n "$sid" ] || continue
-      n=$((n + 1))
-      case "$work" in
-        off) offwork=1; cell_work=off ;;
-        '' | *[!0-9]*) cell_work=unavailable ;;
-        *) twork=$((twork + work)); havework=1; cell_work="$(ns_usage_duration "$work")" ;;
-      esac
-      case "$in" in
-        off) offin=1; cell_in=off ;;
-        '' | *[!0-9]*) cell_in=unavailable ;;
-        *) tin=$((tin + in)); havein=1; cell_in="$(ns_usage_scale "$in")" ;;
-      esac
-      case "$out" in
-        off) offout=1; cell_out=off ;;
-        '' | *[!0-9]*) cell_out=unavailable ;;
-        *) tout=$((tout + out)); haveout=1; cell_out="$(ns_usage_scale "$out")" ;;
-      esac
-      [ "$sid" != - ] || sid='—'
-      printf '| %s | %s | %s | %s | %s | %s | %s | %s |\n' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
-        "$(ns_usage_iso "$start" || printf '—')" "$(ns_usage_iso "$end" || printf '—')" \
-        "$cell_work" "$cell_in" "$cell_out" "$(printf '%s' "$ended" | tr '-' ' ')"
-    done <<EOF
-$data
-EOF
-    word=sessions
-    [ "$n" -ne 1 ] || word=session
-    printf '| **Total** | %s %s |  |  | **%s** | **%s** | **%s** |  |\n' "$n" "$word" \
-      "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
-      "$(_ns_session_total "$havein" "$offin" "$(ns_usage_scale "$tin")")" \
-      "$(_ns_session_total "$haveout" "$offout" "$(ns_usage_scale "$tout")")"
-    printf '\n<!-- session-data\n%s\n-->\n<!-- /sessions -->\n' "$data"
-  } >"$block"
+  ns_receipt_usage_section "$data" >"$block"
   ref="$f.mtime.$$"
   [ "$fresh" -eq 1 ] || touch -r "$f" "$ref" 2>/dev/null || { rm -f "$block"; return 1; }
   tmp="$f.sessions.$$"
   if awk -v blockfile="$block" '
     function emit(   l) { while ((getline l < blockfile) > 0) print l; close(blockfile); done = 1 }
-    /^<!-- sessions -->/ { skip = 1; emit(); next }
-    skip && /^<!-- \/sessions -->/ { skip = 0; next }
+    function out(l) { while (pend > 0) { print ""; pend-- } print l }
+    function runtime(l) {
+      return l ~ /^\*\*Usage:\*\*/ || l ~ /^\*\*Duration:\*\*/ || l ~ /^\*\*Tokens:\*\* off$/ ||
+        l ~ /^\*\*Time:\*\* off$/ || l ~ /^  (Source:|Cache reads|The input figure|Cached input|Overlap between)/ ||
+        l ~ /^\| (Tokens|Time) \|/ || l ~ /^\| ---/ ||
+        l ~ /^\| (input|cache [a-z]+|output|reasoning|working|paused|wall|span) \|/ ||
+        l ~ /^<!-- tokens / || l ~ / · [0-9]+ segments?\./
+    }
+    { line = $0; sub(/\r$/, "", line) }
+    /^<!-- usage -->/ || /^<!-- sessions -->/ { skip = 1; next }
+    skip && (/^<!-- \/usage -->/ || /^<!-- \/sessions -->/) { skip = 0; next }
     skip { next }
-    { print }
+    !headed && line ~ /^# / { headed = 1; top = 1; print; print ""; emit(); pend = 0; next }
+    top && (line ~ /^[[:space:]]*$/ || runtime(line)) { next }
+    top && line ~ /^Renamed from .* on [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.$/ { print ""; print; next }
+    top { top = 0; pend = 1 }
+    /^[[:space:]]*$/ { pend++; next }
+    { out($0) }
     END { if (!done) { print ""; emit() } }
   ' "$f" >"$tmp"; then
     mv "$tmp" "$f" || rc=1
@@ -563,12 +777,15 @@ EOF
   return "$rc"
 }
 
-# ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime block
-# and the gate-written heading.
-ns_receipt_has_model_text() {
+# ns_receipt_model_lines <file> — the lines the model wrote: everything outside the runtime
+# section, the stacked usage blocks of older receipts, and the gate-written heading.
+ns_receipt_model_lines() {
   local f="$1"
   { [ -f "$f" ] && [ ! -L "$f" ]; } || return 1
   awk '
+    /^<!-- usage -->/ { usage = 1; next }
+    /^<!-- \/usage -->/ { usage = 0; next }
+    usage { next }
     /^[[:space:]]*$/ { next }
     /^# / { next }
     /^\*\*Usage:\*\*/ { next }
@@ -598,9 +815,14 @@ ns_receipt_has_model_text() {
     /^<!-- item: / { next }
     /^Renamed from .* on [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.$/ { next }
     / · [0-9]+ segments?\./ { next }
-    { found = 1; exit }
-    END { exit found ? 0 : 1 }
+    { print }
   ' "$f"
+}
+
+# ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime section and
+# the gate-written heading.
+ns_receipt_has_model_text() {
+  ns_receipt_model_lines "$1" 2>/dev/null | grep -q .
 }
 
 # ns_receipts_missing_nns <project> — one item number per ticked item with no model text.
@@ -662,13 +884,55 @@ ns_receipts_shift_date() {
   date -u +%Y-%m-%d
 }
 
+# _ns_receipt_legacy_cells <counted-blocks> — ns_receipt_usage_cells for an older receipt's
+# stacked blocks: the counted blocks summed, each measurement off only when every block says so.
+_ns_receipt_legacy_cells() {
+  local s e w p tok off hosts a b c d x in=0 cw=0 cr=0 out=0 rea=0 work=0 pause=0
+  local tokens=0 tokoff=0 times=0 timeoff=0 usage='—' time='—'
+  while IFS=$'\t' read -r s e w p tok off hosts; do
+    if [ "$tok" = off ]; then
+      tokoff=$((tokoff + 1))
+    elif [ -n "$tok" ] && [ "$tok" != - ]; then
+      read -r a b c d x <<<"$tok"
+      in=$((in + ${a:-0})); cw=$((cw + ${b:-0})); cr=$((cr + ${c:-0}))
+      out=$((out + ${d:-0})); rea=$((rea + ${x:-0}))
+      tokens=$((tokens + 1))
+    fi
+    if [ "$off" = 1 ]; then
+      timeoff=$((timeoff + 1))
+    elif [ -n "$w" ] && [ "$w" != - ]; then
+      work=$((work + $(ns_usage_parse_seconds "$w")))
+      [ -z "$p" ] || [ "$p" = - ] || pause=$((pause + $(ns_usage_parse_seconds "$p")))
+      times=$((times + 1))
+    fi
+  done <<EOF
+$1
+EOF
+  if [ "$tokens" -gt 0 ]; then
+    usage="input $(ns_usage_scale "$in") · cache_write $(ns_usage_scale "$cw") · cache_read $(ns_usage_scale "$cr") · output $(ns_usage_scale "$out") · reasoning $(ns_usage_scale "$rea")"
+  elif [ "$tokoff" -gt 0 ]; then
+    usage=off
+  fi
+  if [ "$times" -gt 0 ]; then
+    time="$(ns_receipts_time_cell "$work" "$pause")"
+  elif [ "$timeoff" -gt 0 ]; then
+    time=off
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$((in + out))"
+}
+
 # ns_receipt_usage_cells <file> — input, cache_write, cache_read, output, reasoning, work
 # seconds, pause seconds, the named usage cell, and the time cell, tab separated. A receipt
 # with no runtime block reads as zeros and dashes. An `x-<name>` sidecar is read when the
 # item file itself has no exact line (the old tick-label bug).
+#
+# The runtime section is read when there is one: its totals already cover every session. An older
+# receipt with several stacked usage blocks is read block by block (receipt-legacy.awk), summing
+# the ones that are sessions of their own and skipping the ones a newer block already holds.
 ns_receipt_usage_cells() {
   local f="$1" dir base sidecar exact comment in=0 cw=0 cr=0 out=0 rea=0 tok_sum=0
-  local usage='—' time='—' work=0 pause=0 raw work_s pause_s
+  local usage='—' time='—' work=0 pause=0 raw work_s pause_s section="" legacy=""
   dir="${f%/*}"
   base="${f##*/}"
   if [ -f "$f" ] && { grep -q 'exact:' "$f" 2>/dev/null || grep -q '<!-- tokens ' "$f" 2>/dev/null; }; then
@@ -676,6 +940,19 @@ ns_receipt_usage_cells() {
   else
     sidecar="$dir/x-${base}"
     [ -f "$sidecar" ] && f="$sidecar"
+  fi
+  if [ -f "$f" ] && grep -q '^<!-- usage -->' "$f" 2>/dev/null; then
+    section="$(mktemp "${TMPDIR:-/tmp}/ns-cells.XXXXXX")" || section=""
+    if [ -n "$section" ]; then
+      awk '/^<!-- usage -->/ { on = 1; next } /^<!-- \/usage -->/ { on = 0 } on' "$f" >"$section"
+      f="$section"
+    fi
+  elif [ -f "$f" ]; then
+    legacy="$(ns_receipt_legacy_blocks "$f")"
+  fi
+  if [ "$(printf '%s\n' "$legacy" | grep -c .)" -gt 1 ]; then
+    _ns_receipt_legacy_cells "$legacy"
+    return 0
   fi
   if [ -f "$f" ]; then
     comment="$(sed -n 's/^<!--[[:space:]]*tokens[[:space:]]\{1,\}\(.*\)-->/\1/p' "$f" | head -n1)"
@@ -742,6 +1019,7 @@ ns_receipt_usage_cells() {
     grep -qx '\*\*Tokens:\*\* off' "$f" 2>/dev/null && usage=off
     grep -qx '\*\*Time:\*\* off' "$f" 2>/dev/null && time=off
   fi
+  [ -z "$section" ] || rm -f "$section"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$tok_sum"
 }
@@ -829,13 +1107,13 @@ ns_receipts_time_total_cell() {
 
 # ns_receipts_item_names <project-dir> <open|ticked> — receipt file names for boxes in that state.
 # A ticked item's receipt leaves live storage once the shift has ended; an open item's stays, so
-# the next shift writes into the same file.
+# the next shift writes into the same file. A stopped item is not done, so it counts as open here.
 ns_receipts_item_names() {
   local punch state="${2:-open}" label id
   ns_layout_set punch "$1/.nightshift" punch-list
   [ -f "$punch" ] || return 0
   [ "$state" = ticked ] || state=open
-  ns_item_rows "$punch" "$state" | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
+  { ns_item_rows "$punch" "$state"; [ "$state" = ticked ] || ns_item_rows "$punch" stopped; } | while IFS=$'\t' read -r label id || [ -n "$label" ]; do
     [ -n "$label" ] || continue
     printf '%s.md\n' "$(ns_receipt_base "$1" "$label" "$id")"
   done
@@ -1333,7 +1611,7 @@ _ns_archive_items() {
     done { if (mode == "closed") print; next }
     line ~ /^## / { if (mode == "closed") { printf "%s", blanks; print } blanks = ""; done = 1; next }
     line == "" { blanks = blanks $0 "\n"; next }
-    line ~ /^- \[[ xX]\]/ {
+    line ~ /^- \[[ xX-]\]/ {
       take = (line ~ /^- \[[xX]\]/)
       if (take) { if (mode == "closed") printf "%s", blanks; print }
       blanks = ""
@@ -1507,14 +1785,16 @@ ns_archive_pointer_line() {
   printf 'Filed: [%s](%s)' "$1" "$2"
 }
 
-# ns_archive_file_review_source <project> <parking-lot|snag-log> <folder> <label> — file the handled
-# entries of the live review file into the shift's folder, at the path it has live, then take them
-# out of the live file and leave one pointer to the filed copy, written relative to the live file.
+# ns_archive_file_review_source <project> <parking-lot|snag-log|plan-record> <folder> <label> — file
+# the handled entries of the live review file into the shift's folder, at the path it has live, then
+# take them out of the live file and leave one pointer to the filed copy, written relative to the
+# live file. A plan-record entry is handled once it is captured or dropped.
 # Entries still open stay live, and only there: they wait for the owner. A file with no handled
 # entry files nothing. A later filing of the same shift adds the entries handled since.
 ns_archive_file_review_source() {
   local project="$1" key="$2" group="$3" label="$4"
-  local ns live rel dest tmp filed chunk view missing ptr prel
+  local ns live rel dest tmp filed chunk view missing ptr prel dispositions="$NS_REVIEW_DISPOSITIONS"
+  [ "$key" != plan-record ] || dispositions="$NS_PLAN_RECORD_CLOSED"
   ns="$project/.nightshift"
   ns_layout_set live "$ns" "$key" || return 2
   ns_layout_rel_set rel "$ns" "$key" || return 2
@@ -1528,7 +1808,7 @@ ns_archive_file_review_source() {
   ns_archive_dest "$dest" || return 2
   tmp="$(mktemp)" || return 2
   filed="$(mktemp)" || { rm -f "$tmp"; return 2; }
-  awk -v op=file -v filed="$filed" -v dispositions="$NS_REVIEW_DISPOSITIONS" -f "$_NS_INBOX_AWK" \
+  awk -v op=file -v filed="$filed" -v dispositions="$dispositions" -f "$_NS_INBOX_AWK" \
     "$live" >"$tmp" || {
     rm -f "$tmp" "$filed"
     return 2
@@ -1607,7 +1887,7 @@ ns_archive_check_review_pointers() {
   local project="$1" ns live dest rel line snag key
   ns="$project/.nightshift"
   ns_layout_set snag "$ns" snag-log
-  for key in snag-log parking-lot; do
+  for key in snag-log parking-lot plan-record; do
     ns_layout_set live "$ns" "$key"
     { [ -f "$live" ] && [ ! -L "$live" ]; } || continue
     while IFS= read -r line || [ -n "$line" ]; do
@@ -1639,11 +1919,11 @@ ns_archive_check_review_pointers() {
   return 0
 }
 
-# ns_archive_file_review_records <project> <folder> <label> — both review files, then a check of every
-# pointer they carry. Status 3 when either kept its handled entries live; 2 when filing failed.
+# ns_archive_file_review_records <project> <folder> <label> — the review files and the plan record, then
+# a check of every pointer they carry. Status 3 when either kept its handled entries live; 2 when filing failed.
 ns_archive_file_review_records() {
   local rc=0 one
-  for one in snag-log parking-lot; do
+  for one in snag-log parking-lot plan-record; do
     ns_archive_file_review_source "$1" "$one" "$2" "$3"
     case "$?" in
       0) ;;
@@ -1885,6 +2165,8 @@ ns_count_boxes() { # $1 = punch list, $2 = ERE for the box state
 
 ns_open_boxes()   { ns_count_boxes "$1" '^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'; }
 ns_ticked_boxes() { ns_count_boxes "$1" '^[[:space:]]*-[[:space:]]*\[[xX]\]'; }
+# ns_stopped_boxes <punch-list> — items closed at their hard budget without being done, `- [-]`.
+ns_stopped_boxes() { ns_count_boxes "$1" '^[[:space:]]*-[[:space:]]*\[-\]'; }
 
 # Work orders have no ## Items heading. Count every top-level open box in the file.
 ns_open_boxes_file() {
@@ -1958,7 +2240,7 @@ ns_shift_log() { # <nightshift-dir> <line>
   [ -d "$1" ] || return 0
   ns_layout_set log "$1" shift-log
   mkdir -p "${log%/*}" 2>/dev/null || :
-  printf '%s · %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$2" >>"$log"
+  printf '%s · %s\n' "$(ns_local_now second)" "$2" >>"$log"
 }
 
 # Workspace schema. One integer in .nightshift/state-version is the authority, and it names the
@@ -2338,7 +2620,7 @@ ns_punch_items() {
 # one. The first item that matches wins. Prints nothing when there is no such item.
 ns_punch_item() {
   ns_punch_items "$1" | awk -v want="$2" "$NS_AWK_ITEM"'
-    function starts_item(line) { return line ~ /^- \[[ xX]\]/ }
+    function starts_item(line) { return line ~ /^- \[[ xX-]\]/ }
     # A top-level line is anything not indented: the next item, a heading, a note. Either way this
     # item has ended.
     function top_level(line) { return line !~ /^[[:space:]]/ && line != "" }
@@ -2389,14 +2671,15 @@ ns_punch_contract() {
 
 # ns_punch_items_normalised <punch-list> — every item line and sub-bullet with the checkbox state
 # flattened, so ticking a box changes nothing and any other edit — a reworded item, a deleted one,
-# an inserted one — changes everything.
+# an inserted one — changes everything. Closing an item as stopped is the other permitted move: its
+# `[-]` is flattened like a tick, and the `Stopped:` sub-bullet it adds is left out.
 #
 # Line endings are flattened with it, here and in the contract. A shift can be handed from a macOS
 # host to a Windows one, and a checkout that converts on the way would otherwise present a contract
 # nobody touched as tampered with. The digest is a property of what the list says, not of how the
 # filesystem it is sitting on ends a line.
 ns_punch_items_normalised() {
-  ns_punch_items "$1" | sed 's/^- \[[xX]\]/- [ ]/'
+  ns_punch_items "$1" | sed -e 's/^- \[[xX-]\]/- [ ]/' -e '/^[[:space:]][[:space:]]*-[[:space:]][[:space:]]*Stopped:/d'
 }
 
 # ns_punch_digest — a stable digest of stdin, from whatever the machine has. Same shape as every
@@ -2471,7 +2754,7 @@ ns_status_open_title() {
   ns_punch_item "$1" "" 2>/dev/null | awk '
     NR == 1 {
       sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "")
-      sub(/^- \[[ xX]\][[:space:]]*/, "")
+      sub(/^- \[[ xX-]\][[:space:]]*/, "")
       gsub(/\*\*/, "")
       sub(/[[:space:]]+$/, "")
       print
@@ -2586,6 +2869,8 @@ ns_status_transitions() {
       # Both writers lead with a dash, a timestamp and a separator before the message. Everything up
       # to the first letter is that preamble, in any locale and with any separator byte.
       sub(/^[^A-Za-z]*/, "", line)
+      # A local stamp carries its UTC offset in words; it is part of the preamble too.
+      if (sub(/^UTC[+-][0-9][0-9]:[0-9][0-9]\)/, "", line)) sub(/^[^A-Za-z]*/, "", line)
     }
     # A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
     # would catch an item summary that merely mentions one.

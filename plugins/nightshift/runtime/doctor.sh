@@ -196,9 +196,19 @@ TICKED=0
 if [ -f "$PUNCH" ]; then
   OPEN="$(ns_open_boxes "$PUNCH")"
   TICKED="$(ns_ticked_boxes "$PUNCH")"
-  fact "punch list open=$OPEN ticked=$TICKED"
+  STOPPED="$(ns_stopped_boxes "$PUNCH")"
+  if [ "${STOPPED:-0}" -gt 0 ]; then
+    fact "punch list open=$OPEN ticked=$TICKED stopped=$STOPPED"
+  else
+    fact "punch list open=$OPEN ticked=$TICKED"
+  fi
 else
   warn "punch-list.md is missing"
+fi
+
+if ns_plan_room_open "$NS"; then
+  PLAN_BOUND="$(ns_plan_room_line "$NS" 1)"
+  fact "plan room open, $([ -n "$PLAN_BOUND" ] && printf 'bound to conversation %s' "$PLAN_BOUND" || printf 'waiting for its conversation')"
 fi
 
 # Reports gaps between what open items need and what the resolver allows; it never refuses —

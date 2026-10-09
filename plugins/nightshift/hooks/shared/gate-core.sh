@@ -142,37 +142,23 @@ ns_gate_filing_message() {
 # do. The model writes none of this and is told not to: on no host can it see its own usage from
 # inside the conversation.
 #
+# The tick closes the item's last session; the receipt's runtime section, Tokens and Time totals
+# included, is redrawn from every session it holds (ns_receipt_add_session).
+#
 # ns_gate_usage_tick <nightshift-dir> <project-dir> <item-label>
 ns_gate_usage_tick() {
-  local ns="$1" project="$2" label="$3" total fields seconds host line duration from to
-  local paused_sec paused_why receipt
+  local ns="$1" project="$2" label="$3" receipt
   [ -d "$ns" ] || return 0
   ns_report_enabled "$project" || return 0
   ns_usage_mark "$ns" "$label" tick || return 0
   receipt="$(ns_receipt_path "$project" "$label")"
-  ns_gate_session_row "$ns" "$project" "$label" ticked
-  total="$(ns_usage_item_total "$ns" "$label")" || return 0
-  fields="$(printf '%s' "$total" | cut -f1)"
-  seconds="$(printf '%s' "$total" | cut -f2)"
-  from="$(printf '%s' "$total" | cut -f3)"
-  paused_sec="$(printf '%s' "$total" | cut -f4)"
-  paused_why="$(printf '%s' "$total" | cut -f5)"
-  # Tokens and time are two measurements with a setting each. One the owner turned off says off,
-  # which is not the same as one the host did not report.
-  if [ "$(ns_report "$project" usage)" = off ]; then
-    line='**Tokens:** off'
+  # A stopped item, closed at its hard budget, ends its span as stopped: never as ticked.
+  if ns_item_rows "$(ns_layout_path "$ns" punch-list)" stopped | cut -f1 | grep -qxF -- "$label"; then
+    ns_gate_session_row "$ns" "$project" "$label" stopped
   else
-    host="$(ns_usage_hosts "$ns")" || host="unknown"
-    line="$(ns_usage_line "$fields" "$host" "$(ns_usage_segments "$ns")" "$(printf '%s' "$host" | cut -d' ' -f1)")"
+    ns_gate_session_row "$ns" "$project" "$label" ticked
   fi
-  if [ "$(ns_report "$project" duration)" = off ]; then
-    duration='**Time:** off'
-  else
-    # Working time first. Wall and any recorded gap stay beside it so the figure can be checked.
-    to="$(date +%s)"
-    duration="$(ns_usage_duration_line "$seconds" "$paused_sec" "$paused_why" "$from" "$to")"
-  fi
-  ns_gate_usage_append "$receipt" "$label" "$line" "$duration"
+  ns_budget_forget "$ns" "$label"
   ns_receipt_track_label "$receipt" "$label"
   rm -f "$(ns_layout_path "$ns" receipt-due)" "$(ns_layout_path "$ns" report-due)" 2>/dev/null || :
   ns_receipts_write_index "$project"
@@ -180,27 +166,88 @@ ns_gate_usage_tick() {
 
 # ns_gate_session_row <nightshift-dir> <project-dir> <item-label> <ended> — the span the last mark
 # just closed, recorded as one session in the item's receipt.
+#
+# Beside the seven positional fields the row carries every token dimension, the recorded pause and
+# its reason, the hosts and models whose readings moved in the span, the commits the work target
+# took inside it, and the progress note the receipt held when it closed. A row whose host differs
+# from the row before it is a handoff, and the shift log records what the outgoing session did.
 ns_gate_session_row() {
   local ns="$1" project="$2" label="$3" ended="$4" span start end fields paused work in out sid
+  local marks two hosts dim v extras="" paused_sec why receipt prev target commits note
   span="$(ns_usage_last_item "$ns")" || return 0
   fields="$(printf '%s' "$span" | cut -f1)"
-  end="$(tail -n1 "$(ns_usage_dir "$ns")/marks.tsv" | cut -f1)"
+  marks="$(ns_usage_dir "$ns")/marks.tsv"
+  end="$(tail -n1 "$marks" | cut -f1)"
   case "$end" in '' | *[!0-9]*) return 0 ;; esac
   start=$((end - $(printf '%s' "$span" | cut -f2)))
   paused="$(ns_usage_paused_between "$ns" "$start" "$end")" || paused=0
-  work=$((end - start - ${paused%%$'\t'*}))
+  paused_sec="${paused%%$'\t'*}"
+  why=""
+  case "$paused" in *$'\t'*) why="${paused#*$'\t'}" ;; esac
+  work=$((end - start - paused_sec))
   [ "$work" -ge 0 ] || work=0
-  [ "$(ns_report "$project" duration)" != off ] || work=off
+  if [ "$(ns_report "$project" duration)" = off ]; then
+    work=off
+    paused_sec=off
+  fi
   if [ "$(ns_report "$project" usage)" = off ]; then
     in=off
     out=off
+    extras="cw=off cr=off rea=off"
   else
     in="$(ns_usage_field "$fields" input)" || in=-
     out="$(ns_usage_field "$fields" output)" || out=-
+    for dim in cache_write:cw cache_read:cr reasoning:rea; do
+      v="$(ns_usage_field "$fields" "${dim%%:*}")" || v=-
+      extras="$extras${extras:+ }${dim#*:}=${v:--}"
+    done
   fi
+  extras="$extras paused=$paused_sec"
+  [ -z "$why" ] || extras="$extras why=$(ns_receipt_encode "$why")"
+  two="$(tail -n2 "$marks")"
+  hosts="$(ns_usage_span_hosts "$(printf '%s\n' "$two" | head -n1 | cut -f5)" \
+    "$(printf '%s\n' "$two" | tail -n1 | cut -f5)")"
+  if [ -z "$hosts" ]; then
+    hosts="$(ns_usage_hosts "$ns" 2>/dev/null | sed 's/; /+/g; s/ /\//g')" || hosts=""
+  fi
+  [ -z "$hosts" ] || extras="$extras host=$hosts"
+  commits=""
+  if [ "$(ns_work_mode "$project" 2>/dev/null)" = repository ] &&
+    target="$(ns_work_target "$project" 2>/dev/null)" && [ -n "$target" ]; then
+    commits="$(git -C "$target" log --since="@$start" --until="@$end" --format=%h 2>/dev/null | awk 'NF { printf "%s%s", s, $0; s = "," }')"
+  fi
+  [ -z "$commits" ] || extras="$extras commits=$commits"
+  receipt="$(ns_receipt_path "$project" "$label")"
+  note="$(ns_receipt_progress_note "$receipt")" || note=""
+  [ -z "$note" ] || extras="$extras note=$(ns_receipt_encode "$note")"
+  for v in soft hard; do
+    if dim="$(ns_budget_reached "$ns" "$label" "$v")"; then
+      extras="$extras $v=$dim"
+      [ "${extras#* limit=}" != "$extras" ] ||
+        extras="$extras limit=$(ns_receipt_encode "$(ns_budget_text "$project" "$label")")"
+    fi
+  done
+  prev="$(ns_receipt_last_session "$receipt")" || prev=""
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
-  ns_receipt_add_session "$(ns_receipt_path "$project" "$label")" "$label" "${sid:--}" \
-    "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended"
+  ns_receipt_add_session "$receipt" "$label" "${sid:--}" \
+    "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended" "$extras"
+  ns_gate_handoff_log "$ns" "$label" "$prev" "$hosts"
+}
+
+# ns_gate_handoff_log <nightshift-dir> <item-label> <previous-session-line> <hosts> — when the
+# session that just closed ran on another host or model than the one before it, record the handoff
+# and what the outgoing session left: its commits and its last progress note.
+ns_gate_handoff_log() {
+  local ns="$1" label="$2" prev="$3" hosts="$4" was commits note line
+  [ -n "$prev" ] && [ -n "$hosts" ] || return 0
+  was="$(ns_session_extra "$prev" host)"
+  [ -n "$was" ] && [ "$was" != "$hosts" ] || return 0
+  commits="$(ns_session_extra "$prev" commits)"
+  note="$(ns_receipt_decode "$(ns_session_extra "$prev" note)")"
+  line="handoff · $label · $(ns_session_host_words "$was") → $(ns_session_host_words "$hosts")"
+  line="$line · outgoing commits: $(printf '%s' "${commits:-none}" | sed 's/,/, /g')"
+  [ -z "$note" ] || line="$line · last note: $note"
+  ns_shift_log "$ns" "$line"
 }
 
 # ns_gate_item_is_open <punch-list> <item-label> — status 0 when that item is still an open box.
@@ -259,47 +306,6 @@ ns_gate_usage_flush() {
     ns_gate_session_row "$ns" "$project" "$owner" paused
   fi
   ns_usage_set_active "$ns"
-}
-
-# ns_gate_usage_append <receipt> <item-label> <usage-line> <duration> — write the runtime
-# block at the top of the item's receipt, under the heading. If the model has not written
-# the file yet, it is created with a `# <NN. title>` heading. The measurement does not wait
-# on the narrative.
-ns_gate_usage_append() {
-  local receipt="$1" label="$2" usage="$3" duration="$4" dir tmp block
-  [ -n "$receipt" ] || return 0
-  [ ! -L "$receipt" ] || return 0
-  dir="${receipt%/*}"
-  mkdir -p "$dir" 2>/dev/null || return 0
-  block="$(printf '%s\n\n%s\n' "$usage" "$duration")"
-  if [ ! -f "$receipt" ]; then
-    printf '# %s\n\n%s' "$label" "$block" >"$receipt" 2>/dev/null || return 0
-    return 0
-  fi
-  tmp="$(mktemp "${TMPDIR:-/tmp}/ns-receipt-usage.XXXXXX")" || return 0
-  printf '%s' "$block" >"$tmp.block" || { rm -f "$tmp"; return 0; }
-  awk -v blockfile="$tmp.block" '
-    BEGIN {
-      while ((getline l < blockfile) > 0) block = block l "\n"
-      close(blockfile)
-    }
-    /^# / && !done {
-      print
-      print ""
-      printf "%s", block
-      print ""
-      done = 1
-      next
-    }
-    { print }
-    END {
-      if (!done) {
-        print ""
-        printf "%s", block
-      }
-    }
-  ' "$receipt" >"$tmp" 2>/dev/null && mv "$tmp" "$receipt"
-  rm -f "$tmp" "$tmp.block"
 }
 
 # ns_gate_usage_sync <nightshift-dir> <project-dir> <punch-list> <ticked> — catch the marks up to
@@ -370,12 +376,13 @@ ns_gate_uncharged_labels() {
   '
 }
 
-# ns_gate_ticked_labels <punch-list> — every ticked item's id, list order, one per line, as the
+# ns_gate_ticked_labels <punch-list> — every closed item's id, list order, one per line, as the
 # report heads its section. `- [x] **P03 — …**` gives `P03`. A capital `[X]` is a tick here as it
-# is in the counts. An item whose id cannot be read is `item <n>`, n its place among the ticked.
+# is in the counts, and a stopped item (`- [-]`, closed at its hard budget) closes its span too.
+# An item whose id cannot be read is `item <n>`, n its place among the closed.
 ns_gate_ticked_labels() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[xX]\]/ {
+    /^- \[[xX-]\]/ {
       n++
       line = ns_item_label($0)
       if (line == "") line = "item " n

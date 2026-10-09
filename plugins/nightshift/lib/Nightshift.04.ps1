@@ -366,7 +366,7 @@ function Get-NSArchivePunchItems {
             $blanks = ''; $done = $true; continue
         }
         if ($line -ceq '') { $blanks = $blanks + $record; continue }
-        if ($line -cmatch '^- \[[ xX]\]') {
+        if ($line -cmatch '^- \[[ xX-]\]') {
             $take = ($line -cmatch '^- \[[xX]\]')
             if ($take) { if ($closed) { $null = $out.Append($blanks) }; $null = $out.Append($record) }
             $blanks = ''; continue
@@ -619,10 +619,13 @@ function Test-NSArchiveAutomatic {
 # NS_REVIEW_DISPOSITIONS is the POSIX copy.
 $script:NSReviewDispositions = 'fixed|ignored|answered|rejected-because|accepted-tradeoff'
 
+# The words that close a plan-record entry. Mirrors NS_PLAN_RECORD_CLOSED in lib/plan-room.sh.
+$script:NSPlanRecordClosed = 'captured|dropped'
+
 function Test-NSReviewHandled {
-    param([AllowEmptyString()][string]$Text)
+    param([AllowEmptyString()][string]$Text, [string]$Dispositions = $script:NSReviewDispositions)
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    return [bool]($Text -imatch (' \u00B7 (' + $script:NSReviewDispositions + ')'))
+    return [bool]($Text -imatch (' \u00B7 (' + $Dispositions + ')'))
 }
 
 # Get-NSInboxBlocks <lines> - a parking lot or snag log read entry by entry, the way
@@ -721,7 +724,7 @@ function Get-NSArchivePointerLine {
     return ('Filed: [' + $Label + '](' + $RelPath + ')')
 }
 
-# Save-NSArchiveReviewSource <workspace> <parking-lot|snag-log> <folder> <label> - file the handled
+# Save-NSArchiveReviewSource <workspace> <parking-lot|snag-log|plan-record> <folder> <label> - file the handled
 # entries of the live review file into the shift's folder, at the path it has live, then take them
 # out of the live file and leave one pointer to the filed copy, written relative to the live file.
 # Entries still open stay live, and only there: they wait for the owner. A file with no handled
@@ -744,10 +747,11 @@ function Save-NSArchiveReviewSource {
         throw 'archive dest is outside .nightshift/'
     }
     if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
+    $dispositions = if ($Key -ceq 'plan-record') { $script:NSPlanRecordClosed } else { $script:NSReviewDispositions }
     $keep = New-Object Collections.Generic.List[string]
     $filed = New-Object Collections.Generic.List[string]
     foreach ($block in (Get-NSInboxBlocks $lines)) {
-        if ($block.Kind -ceq 'entry' -and (Test-NSReviewHandled ($block.Lines -join "`n"))) {
+        if ($block.Kind -ceq 'entry' -and (Test-NSReviewHandled ($block.Lines -join "`n") $dispositions)) {
             $filed.AddRange($block.Lines)
         }
         else {
@@ -797,7 +801,7 @@ function Add-NSArchiveBrokenPointers {
     $snag = Get-NSLayoutPath $ns 'snag-log'
     $utf8 = $script:NSUtf8NoBom
     if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
-    foreach ($key in @('snag-log', 'parking-lot')) {
+    foreach ($key in @('snag-log', 'parking-lot', 'plan-record')) {
         $live = Get-NSLayoutPath $ns $key
         if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { continue }
         foreach ($line in [IO.File]::ReadAllLines($live)) {
@@ -834,8 +838,8 @@ function Add-NSArchiveBrokenPointers {
     }
 }
 
-# Save-NSArchiveReviewRecords <workspace> <folder> <label> - both review files, then a check of every
-# pointer they carry. Returns 3 when either kept its handled entries live, 0 otherwise.
+# Save-NSArchiveReviewRecords <workspace> <folder> <label> - the review files and the plan record, then
+# a check of every pointer they carry. Returns 3 when either kept its handled entries live, 0 otherwise.
 function Save-NSArchiveReviewRecords {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -843,7 +847,7 @@ function Save-NSArchiveReviewRecords {
         [Parameter(Mandatory = $true)][string]$Label
     )
     $status = 0
-    foreach ($key in @('snag-log', 'parking-lot')) {
+    foreach ($key in @('snag-log', 'parking-lot', 'plan-record')) {
         if ((Save-NSArchiveReviewSource $Workspace $key $Folder $Label) -eq 3) { $status = 3 }
     }
     Add-NSArchiveBrokenPointers $Workspace
@@ -990,8 +994,8 @@ function Get-NSItemLabel {
     param([AllowEmptyString()][string]$Line)
     $t = $Line -creplace '\r$', ''
     $t = $t -creplace $script:NSItemIdPattern, ''
-    $t = $t -creplace '^- \[[ xX]\][ \t]*\*\*', ''
-    $t = $t -creplace '^- \[[ xX]\][ \t]*', ''
+    $t = $t -creplace '^- \[[ xX-]\][ \t]*\*\*', ''
+    $t = $t -creplace '^- \[[ xX-]\][ \t]*', ''
     # A dash right after a bare number numbers the item, as in "1 - Fix it": a number alone is no
     # label, so only a later dash ends the title. A code such as P03 before a dash is the label.
     $lead = ''
@@ -1005,25 +1009,26 @@ function Get-NSItemLabel {
     return ($lead + $t).TrimEnd()
 }
 
-# Get-NSItemRows <punch-list> [open|ticked|all] - Label, Id and Open for each top-level item under
-# `## Items` that has a label, list order. Id is '' for an item that has none.
+# Get-NSItemRows <punch-list> [open|ticked|stopped|all] - Label, Id, Open and State for each top-level
+# item under `## Items` that has a label, list order. Id is '' for an item that has none. A ticked item
+# is `[x]`; a stopped one, closed at its hard budget without being done, is `[-]`. Mirrors ns_item_rows.
 function Get-NSItemRows {
     param(
         [Parameter(Mandatory = $true)][string]$PunchList,
-        [ValidateSet('open', 'ticked', 'all')][string]$State = 'all'
+        [ValidateSet('open', 'ticked', 'stopped', 'all')][string]$State = 'all'
     )
     $rows = New-Object Collections.Generic.List[object]
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) {
         return , $rows.ToArray()
     }
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
-        if ($line -cnotmatch '^- \[[ xX]\]') { continue }
+        if ($line -cnotmatch '^- \[[ xX-]\]') { continue }
         $open = $line -cmatch '^- \[ \]'
-        if ($State -ceq 'open' -and -not $open) { continue }
-        if ($State -ceq 'ticked' -and $open) { continue }
+        $rowState = $(if ($open) { 'open' } elseif ($line -cmatch '^- \[-\]') { 'stopped' } else { 'ticked' })
+        if ($State -cne 'all' -and $State -cne $rowState) { continue }
         $label = Get-NSItemLabel $line
         if ([string]::IsNullOrEmpty($label)) { continue }
-        $rows.Add([pscustomobject]@{ Label = $label; Id = (Get-NSItemId $line); Open = $open })
+        $rows.Add([pscustomobject]@{ Label = $label; Id = (Get-NSItemId $line); Open = $open; State = $rowState })
     }
     return , $rows.ToArray()
 }
@@ -1034,15 +1039,15 @@ function Get-NSItemTitleFor {
     param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][string]$Id)
     if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) { return '' }
     foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
-        if ($line -cnotmatch '^- \[[ xX]\]' -or (Get-NSItemId $line) -cne $Id) { continue }
+        if ($line -cnotmatch '^- \[[ xX-]\]' -or (Get-NSItemId $line) -cne $Id) { continue }
         $t = $line -creplace '\r$', ''
         $t = $t -creplace $script:NSItemIdPattern, ''
-        if ($t -cmatch '^- \[[ xX]\][ \t]*\*\*') {
-            $t = $t -creplace '^- \[[ xX]\][ \t]*\*\*', ''
+        if ($t -cmatch '^- \[[ xX-]\][ \t]*\*\*') {
+            $t = $t -creplace '^- \[[ xX-]\][ \t]*\*\*', ''
             $t = $t -creplace '\*\*.*$', ''
         }
         else {
-            $t = $t -creplace '^- \[[ xX]\][ \t]*', ''
+            $t = $t -creplace '^- \[[ xX-]\][ \t]*', ''
         }
         return $t.TrimEnd()
     }
@@ -1122,7 +1127,7 @@ function Add-NSPunchItemIds {
             if ($line -cmatch '^##[ \t]*Items[ \t]*$') { $on = $true }
         }
         elseif (-not $done -and $line -cmatch '^## ') { $done = $true }
-        elseif (-not $done -and $line -cmatch '^- \[[ xX]\]' -and [string]::IsNullOrEmpty((Get-NSItemId $line))) {
+        elseif (-not $done -and $line -cmatch '^- \[[ xX-]\]' -and [string]::IsNullOrEmpty((Get-NSItemId $line))) {
             $id = New-NSItemId $NightshiftDir $taken.ToArray()
             if ([string]::IsNullOrEmpty($id)) { return $false }
             $taken.Add($id)
@@ -1171,7 +1176,7 @@ function Get-NSReceiptTitle {
 
 function Get-NSReceiptBasename {
     param([AllowEmptyString()][string]$Label)
-    $Label = $Label -creplace '^- \[[xX ]\][ \t]*', ''
+    $Label = $Label -creplace '^- \[[xX -]\][ \t]*', ''
     $Label = $Label -creplace '^\*\*', ''
     $Label = $Label -creplace '\*\*$', ''
     $nn = Get-NSReceiptNn $Label
@@ -1370,17 +1375,338 @@ function Update-NSReceiptLabel {
     [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp)
 }
 
+# ConvertTo-NSReceiptEncoded / ConvertFrom-NSReceiptEncoded <text> - a value that rides in one
+# session-data field: no spaces or tabs, reversible. Mirrors ns_receipt_encode / ns_receipt_decode.
+function ConvertTo-NSReceiptEncoded {
+    param([AllowEmptyString()][string]$Text)
+    return $Text.Replace('%', '%25').Replace(' ', '%20').Replace("`t", '%09')
+}
+function ConvertFrom-NSReceiptEncoded {
+    param([AllowEmptyString()][string]$Text)
+    return $Text.Replace('%20', ' ').Replace('%09', "`t").Replace('%25', '%')
+}
+
+# Get-NSSessionExtra <session-line> <key> - one named field after the seven positional ones, or ''.
+function Get-NSSessionExtra {
+    param([AllowEmptyString()][string]$Line, [Parameter(Mandatory = $true)][string]$Key)
+    $f = @($Line -split '\s+' | Where-Object { $_.Length -gt 0 })
+    for ($i = 7; $i -lt $f.Count; $i++) {
+        if ($f[$i].StartsWith($Key + '=', [StringComparison]::Ordinal)) { return $f[$i].Substring($Key.Length + 1) }
+    }
+    return ''
+}
+
+# Get-NSSessionHostWords <host/model+host/model> - each host and its model joined by the middle dot,
+# the hosts joined by ` + `. Mirrors ns_session_host_words.
+function Get-NSSessionHostWords {
+    param([AllowEmptyString()][string]$Hosts)
+    $words = New-Object Collections.Generic.List[string]
+    foreach ($entry in $Hosts.Split('+')) {
+        if ($entry.Length -eq 0) { continue }
+        $i = $entry.IndexOf('/')
+        $h = $(if ($i -ge 0) { $entry.Substring(0, $i) } else { $entry })
+        $m = $(if ($i -ge 0) { $entry.Substring($i + 1) } else { '' })
+        $words.Add($h + $(if ($m.Length -gt 0 -and $m -cne '-') { ' ' + $script:NSDot + ' ' + $m } else { '' }))
+    }
+    return ($words -join ' + ')
+}
+
+# Get-NSReceiptSessionData <receipt> - the recorded session lines, oldest first.
+function Get-NSReceiptSessionData {
+    param([AllowEmptyString()][string]$Receipt)
+    $data = New-Object Collections.Generic.List[string]
+    if ([string]::IsNullOrEmpty($Receipt) -or -not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or
+        (Test-NSReparsePoint $Receipt)) { return , $data.ToArray() }
+    $on = $false
+    foreach ($line in [IO.File]::ReadAllLines($Receipt)) {
+        if ($line -ceq '<!-- session-data') { $on = $true; continue }
+        if ($on -and $line -ceq '-->') { $on = $false; continue }
+        if ($on -and $line.Trim().Length -gt 0) { $data.Add($line) }
+    }
+    return , $data.ToArray()
+}
+
+# Get-NSReceiptProgressNote <receipt> - the first line of the model's own text, cut to 160 characters.
+function Get-NSReceiptProgressNote {
+    param([AllowEmptyString()][string]$Receipt)
+    foreach ($line in (Get-NSReceiptModelLines $Receipt)) {
+        if ($line.StartsWith('#') -or $line.Trim().Length -eq 0) { continue }
+        return $line.Substring(0, [math]::Min(160, $line.Length))
+    }
+    return ''
+}
+
+# ConvertFrom-NSIsoMinute <YYYY-MM-DDTHH:MMZ> - that UTC minute as epoch seconds, or ''.
+function ConvertFrom-NSIsoMinute {
+    param([AllowEmptyString()][string]$Text)
+    if ($Text -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}Z$') { return '' }
+    $at = [DateTime]::ParseExact($Text, 'yyyy-MM-ddTHH:mmZ', [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::AdjustToUniversal -bor [Globalization.DateTimeStyles]::AssumeUniversal)
+    $utc = New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)
+    return [string][long]($at - $utc).TotalSeconds
+}
+
+# Get-NSReceiptLegacyBlocks <receipt> - the stacked usage blocks an older receipt carries, the ones
+# that count, oldest first: a newer block whose span holds an older one already counts it, and a
+# block with no span counts only when it is the newest. Each is a hashtable of the fields
+# receipt-legacy.awk prints. Mirrors ns_receipt_legacy_blocks.
+function Get-NSReceiptLegacyBlocks {
+    param([AllowEmptyString()][string]$Receipt)
+    $blocks = New-Object Collections.Generic.List[object]
+    if ([string]::IsNullOrEmpty($Receipt) -or -not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or
+        (Test-NSReparsePoint $Receipt)) { return , @() }
+    $inside = $false
+    $cur = $null
+    foreach ($raw in [IO.File]::ReadAllLines($Receipt)) {
+        $line = $raw.TrimEnd("`r")
+        if ($line.StartsWith('<!-- usage -->') -or $line.StartsWith('<!-- sessions -->')) { $inside = $true; continue }
+        if ($line.StartsWith('<!-- /usage -->') -or $line.StartsWith('<!-- /sessions -->')) { $inside = $false; continue }
+        if ($inside) { continue }
+        if ($line -ceq '| Tokens | Amount |' -or $line -ceq '**Tokens:** off') {
+            $cur = @{ From = ''; To = ''; Work = ''; Pause = ''; Tok = $(if ($line -ceq '**Tokens:** off') { 'off' } else { '' })
+                TimeOff = $false; Host = '' }
+            $blocks.Add($cur)
+            continue
+        }
+        if ($null -eq $cur) { continue }
+        if ($line -cmatch '^<!-- tokens ([0-9 ]+?) *-->$') { $cur.Tok = $Matches[1]; continue }
+        if ($line -cmatch ('^(.*) ' + [regex]::Escape($script:NSDot) + ' [0-9]+ segments?\.')) { $cur.Host = $Matches[1]; continue }
+        if ($line -ceq '**Time:** off') { $cur.TimeOff = $true; continue }
+        if ($line -cmatch '^\| working \| *(.*?) *\|$') { $cur.Work = $Matches[1]; continue }
+        if ($line -cmatch '^\| paused \| *([^|(]*?) *(\(.*)?\|$') { $cur.Pause = $Matches[1].Trim(); continue }
+        if ($line -cmatch ('^\| span \| *(.*?) ' + [char]0x2192 + ' (.*?) *\|$')) { $cur.From = $Matches[1]; $cur.To = $Matches[2]; continue }
+    }
+    $counted = New-Object Collections.Generic.List[object]
+    for ($i = $blocks.Count - 1; $i -ge 0; $i--) {
+        $b = $blocks[$i]
+        if ($b.Tok.Length -eq 0 -and -not $b.TimeOff -and $b.Work.Length -eq 0) { continue }
+        $keep = $true
+        if ($b.From.Length -eq 0) {
+            $keep = ($i -eq 0)
+        }
+        else {
+            for ($j = 0; $j -lt $i; $j++) {
+                $n = $blocks[$j]
+                if ($n.From.Length -gt 0 -and [string]::CompareOrdinal($n.From, $b.From) -le 0 -and
+                    [string]::CompareOrdinal($n.To, $b.To) -ge 0) { $keep = $false; break }
+            }
+        }
+        if ($keep) { $counted.Add($b) }
+    }
+    return , $counted.ToArray()
+}
+
+# Get-NSReceiptLegacySessions <receipt> - those blocks as session lines. Mirrors
+# ns_receipt_legacy_sessions.
+function Get-NSReceiptLegacySessions {
+    param([AllowEmptyString()][string]$Receipt)
+    $rows = New-Object Collections.Generic.List[string]
+    foreach ($b in (Get-NSReceiptLegacyBlocks $Receipt)) {
+        $start = ConvertFrom-NSIsoMinute $b.From
+        $end = ConvertFrom-NSIsoMinute $b.To
+        if ($b.TimeOff) { $work = 'off'; $paused = 'off' }
+        else {
+            $work = $(if ($b.Work.Length -gt 0) { [string](Get-NSUsageParseSeconds $b.Work) } else { '-' })
+            $paused = [string](Get-NSUsageParseSeconds $b.Pause)
+        }
+        if ($b.Tok -ceq 'off') { $t = @('off', 'off', 'off', 'off', 'off') }
+        elseif ($b.Tok.Length -eq 0) { $t = @('-', '-', '-', '-', '-') }
+        else { $t = @($b.Tok.Trim() -split '\s+') }
+        $extras = 'cw={0} cr={1} rea={2} paused={3}' -f $t[1], $t[2], $t[4], $paused
+        if ($b.Host.Length -gt 0) { $extras += ' host=' + $b.Host.Replace('; ', '+').Replace(' ', '/') }
+        $rows.Add(('- {0} {1} {2} {3} {4} ticked {5}' -f $(if ($start) { $start } else { '-' }),
+                $(if ($end) { $end } else { '-' }), $work, $t[0], $t[3], $extras))
+    }
+    return , $rows.ToArray()
+}
+
+# Get-NSReceiptUsageSection <session-lines> - the receipt's runtime section, drawn from every session
+# the item was worked in. Mirrors ns_receipt_usage_section line for line.
+function Get-NSReceiptUsageSection {
+    param([AllowEmptyCollection()][string[]]$Data = @())
+    $dash = [string][char]0x2014
+    $arrow = [string][char]0x2192
+    $tot = @([long]0, [long]0, [long]0, [long]0, [long]0)
+    $have = @($false, $false, $false, $false, $false)
+    $off = @($false, $false, $false, $false, $false)
+    $miss = @($false, $false, $false, $false, $false)
+    $twork = [long]0; $tpause = [long]0; $twall = [long]0
+    $havework = $false; $offwork = $false; $havepause = $false; $offpause = $false
+    $first = $null; $last = $null; $lastWhy = ''
+    $hostsSeen = New-Object Collections.Generic.List[string]
+    $rows = New-Object Collections.Generic.List[string]
+    $handoffs = New-Object Collections.Generic.List[string]
+    $prevHost = ''; $prevEnd = ''; $prevCommits = ''; $prevNote = ''
+    $budget = ''
+    $budgetEvents = New-Object Collections.Generic.List[string]
+    $n = 0
+    $scale = { param([long]$v) Get-NSUsageScale ([string]$v) }
+    foreach ($line in $Data) {
+        if ($line.Trim().Length -eq 0) { continue }
+        $f = @($line -split '\s+' | Where-Object { $_.Length -gt 0 })
+        if ($f.Count -lt 7) { continue }
+        $n++
+        $sid = $f[0]; $start = $f[1]; $end = $f[2]; $work = $f[3]; $ended = $f[6]
+        $vals = @($f[4], $f[5], (Get-NSSessionExtra $line 'cw'), (Get-NSSessionExtra $line 'cr'), (Get-NSSessionExtra $line 'rea'))
+        $paused = Get-NSSessionExtra $line 'paused'
+        $why = ConvertFrom-NSReceiptEncoded (Get-NSSessionExtra $line 'why')
+        $hostKey = Get-NSSessionExtra $line 'host'
+        $commits = Get-NSSessionExtra $line 'commits'
+        $note = ConvertFrom-NSReceiptEncoded (Get-NSSessionExtra $line 'note')
+        $limitText = Get-NSSessionExtra $line 'limit'
+        if ($limitText.Length -gt 0) { $budget = ConvertFrom-NSReceiptEncoded $limitText }
+        foreach ($lv in @('soft', 'hard')) {
+            $atLimit = Get-NSSessionExtra $line $lv
+            if ($atLimit.Length -eq 0) { continue }
+            $whenLimit = Get-NSLocalTime $atLimit
+            $budgetLine = '- ' + $lv + ' limit reached ' + $(if ($whenLimit) { $whenLimit } else { $dash })
+            if ($lv -ceq 'hard' -and $ended -ceq 'stopped') { $budgetLine += '; closed as stopped' }
+            $budgetEvents.Add($budgetLine)
+        }
+        $cells = ''
+        for ($i = 0; $i -lt 5; $i++) {
+            $v = $vals[$i]; $num = [long]0
+            if ($v -ceq 'off') { $off[$i] = $true; $cells += ' | off' }
+            elseif ($v.Length -eq 0) { $miss[$i] = $true; $cells += ' | ' + $dash }
+            elseif ($v -cnotmatch '^[0-9]+$' -or -not [long]::TryParse($v, [ref]$num)) { $miss[$i] = $true; $cells += ' | unavailable' }
+            else { $tot[$i] += $num; $have[$i] = $true; $cells += ' | ' + (& $scale $num) }
+        }
+        $w = [long]0
+        if ($work -ceq 'off') { $offwork = $true; $wcell = 'off' }
+        elseif ($work -cnotmatch '^[0-9]+$') { $wcell = 'unavailable' }
+        else { $w = [long]$work; $twork += $w; $havework = $true; $wcell = Get-NSUsageDuration $work }
+        if ($paused -ceq 'off') { $offpause = $true; $pcell = 'off' }
+        elseif ($paused.Length -eq 0) { $pcell = $dash }
+        elseif ($paused -cnotmatch '^[0-9]+$') { $pcell = 'unavailable' }
+        elseif ($paused -ceq '0') { $havepause = $true; $pcell = $dash }
+        else {
+            $tpause += [long]$paused; $havepause = $true; $pcell = Get-NSUsageDuration $paused
+            if ($why.Length -gt 0) { $lastWhy = $why }
+        }
+        if ($start -cmatch '^[0-9]+$') { if ($null -eq $first -or [long]$start -lt $first) { $first = [long]$start } }
+        if ($end -cmatch '^[0-9]+$') {
+            if ($null -eq $last -or [long]$end -gt $last) { $last = [long]$end }
+            if ($start -cmatch '^[0-9]+$') { $twall += [long]$end - [long]$start }
+        }
+        if ($hostKey.Length -gt 0 -and -not $hostsSeen.Contains($hostKey)) { $hostsSeen.Add($hostKey) }
+        $sidCell = $(if ($sid -ceq '-') { $dash } else { $sid.Substring(0, [math]::Min(8, $sid.Length)) })
+        $from = Get-NSLocalTime $start; $to = Get-NSLocalTime $end
+        $rows.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6}{7} | {8} |' -f $n, $sidCell,
+                $(if ($hostKey.Length -gt 0) { Get-NSSessionHostWords $hostKey } else { $dash }),
+                $(if ($from) { $from } else { $dash }), $(if ($to) { $to } else { $dash }),
+                $wcell, $pcell, $cells, $ended.Replace('-', ' ')))
+        if ($prevHost.Length -gt 0 -and $hostKey.Length -gt 0 -and $prevHost -cne $hostKey) {
+            $at = Get-NSLocalTime $prevEnd
+            $h = ('- {0} {1} {2} {3} {4} {1} outgoing commits: {5}' -f $(if ($at) { $at } else { $dash }), $script:NSDot,
+                (Get-NSSessionHostWords $prevHost), $arrow, (Get-NSSessionHostWords $hostKey),
+                $(if ($prevCommits.Length -gt 0) { $prevCommits.Replace(',', ', ') } else { 'none' }))
+            if ($prevNote.Length -gt 0) { $h += ' ' + $script:NSDot + ' last note: ' + $prevNote }
+            $handoffs.Add($h)
+        }
+        if ($hostKey.Length -gt 0) { $prevHost = $hostKey }
+        $prevEnd = $end; $prevCommits = $commits; $prevNote = $note
+    }
+    $total = {
+        param([int]$i)
+        if ($have[$i]) {
+            $s = Get-NSUsageScale ([string]$tot[$i])
+            if ($miss[$i]) { return $s + ' (partial)' }
+            return $s
+        }
+        if ($off[$i]) { return 'off' }
+        return 'unavailable'
+    }
+    $out = New-Object Collections.Generic.List[string]
+    $out.Add('<!-- usage -->')
+    if (-not ($have -contains $true) -and $off[0]) {
+        $out.Add('**Tokens:** off')
+    }
+    else {
+        $out.Add('| Tokens | Amount |')
+        $out.Add('| --- | ---: |')
+        $comment = @()
+        foreach ($d in @(@('input', 0), @('cache_write', 2), @('cache_read', 3), @('output', 1), @('reasoning', 4))) {
+            $out.Add(('| {0} | {1} |' -f (Get-NSUsageDimLabel $d[0]), (& $total $d[1])))
+            $comment += [string]$tot[$d[1]]
+        }
+        $hostline = (@($hostsSeen | ForEach-Object {
+                    $i = $_.IndexOf('/'); $h = $_.Substring(0, $i); $m = $_.Substring($i + 1)
+                    $(if ($m -ceq '-') { $h } else { $h + ' ' + $m })
+                }) -join '; ')
+        if ($hostline.Length -eq 0) { $hostline = 'unknown' }
+        $word = $(if ($n -eq 1) { 'session' } else { 'sessions' })
+        $out.Add('')
+        $out.Add('<!-- tokens ' + ($comment -join ' ') + ' -->')
+        $out.Add(('{0} {1} {2} {3}. {4}' -f $hostline, $script:NSDot, $n, $word, (Get-NSUsageOverlap $hostline.Split(' ')[0])))
+    }
+    $out.Add('')
+    if (-not $havework -and $offwork) {
+        $out.Add('**Time:** off')
+    }
+    else {
+        $out.Add('| Time | |')
+        $out.Add('| --- | --- |')
+        $out.Add('| working | ' + (Get-NSUsageDuration ([string]$twork)) + ' |')
+        if ($tpause -gt 0) {
+            $out.Add('| paused | ' + (Get-NSUsageDuration ([string]$tpause)) + $(if ($lastWhy.Length -gt 0) { ' (' + $lastWhy + ')' } else { '' }) + ' |')
+        }
+        $out.Add('| wall | ' + (Get-NSUsageDuration ([string]$twall)) + ' |')
+        if ($null -ne $first -and $null -ne $last) {
+            $out.Add('| span | ' + (Get-NSLocalTime ([string]$first)) + ' ' + $arrow + ' ' + (Get-NSLocalTime ([string]$last)) + ' |')
+        }
+    }
+    $word = $(if ($n -eq 1) { 'session' } else { 'sessions' })
+    $out.Add('')
+    $out.Add('**Sessions**')
+    $out.Add('')
+    $out.Add('| # | Shift | Host ' + $script:NSDot + ' model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |')
+    $out.Add('| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |')
+    foreach ($r in $rows) { $out.Add($r) }
+    $hostCell = (@($hostsSeen | ForEach-Object { Get-NSSessionHostWords $_ }) -join ', ')
+    if ($hostCell.Length -eq 0) { $hostCell = $dash }
+    $workTotal = $(if ($havework) { Get-NSUsageDuration ([string]$twork) } elseif ($offwork) { 'off' } else { 'unavailable' })
+    $pauseTotal = $(if ($tpause -gt 0) { Get-NSUsageDuration ([string]$tpause) } elseif ($havepause) { $dash } elseif ($offpause) { 'off' } else { 'unavailable' })
+    $totalRow = ('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}**' -f $n, $word, $hostCell, $workTotal, $pauseTotal)
+    for ($i = 0; $i -lt 5; $i++) { $totalRow += ' | **' + (& $total $i) + '**' }
+    $out.Add($totalRow + ' |  |')
+    if ($handoffs.Count -gt 0) {
+        $out.Add('')
+        $out.Add('**Handoffs**')
+        $out.Add('')
+        foreach ($h in $handoffs) { $out.Add($h) }
+    }
+    if ($budgetEvents.Count -gt 0) {
+        $out.Add('')
+        $out.Add('**Budget** `' + $budget + '`')
+        $out.Add('')
+        foreach ($e in $budgetEvents) { $out.Add($e) }
+    }
+    $out.Add('')
+    $out.Add('<!-- session-data')
+    foreach ($line in $Data) { if ($line.Trim().Length -gt 0) { $out.Add($line) } }
+    $out.Add('-->')
+    $out.Add('<!-- /usage -->')
+    return , $out.ToArray()
+}
+
+# Test-NSReceiptRuntimeLine <line> - a line one of the stacked usage blocks of an older receipt wrote.
+function Test-NSReceiptRuntimeLine {
+    param([AllowEmptyString()][string]$Line)
+    return ($Line.StartsWith('**Usage:**') -or $Line.StartsWith('**Duration:**') -or $Line -ceq '**Tokens:** off' -or
+        $Line -ceq '**Time:** off' -or $Line -cmatch '^  (Source:|Cache reads|The input figure|Cached input|Overlap between)' -or
+        $Line -cmatch '^\| (Tokens|Time) \|' -or $Line.StartsWith('| ---') -or
+        $Line -cmatch '^\| (input|cache [a-z]+|output|reasoning|working|paused|wall|span) \|' -or
+        $Line.StartsWith('<!-- tokens ') -or $Line -match (' ' + [regex]::Escape($script:NSDot) + ' [0-9]+ segments?\.'))
+}
+
 # Add-NSReceiptSession <receipt> <label> <shift-id> <start> <end> <working-sec> <input> <output>
-# <ended> - add one session to the receipt's Sessions table and redraw it. The table is drawn from
-# the data lines kept under it, so its totals stay exact across every shift the item was worked in.
-# `-` is an unknown shift or an unreported token count; <ended> is ticked, switched-away, blocked or
-# paused. A receipt that does not exist yet is created with its heading; one that does keeps its
-# modification time.
+# <ended> [extras] - add one session to the item's receipt and redraw its runtime section, under the
+# heading, in place. An older receipt is folded in on its first redraw. Mirrors ns_receipt_add_session.
 function Add-NSReceiptSession {
     param(
         [Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label,
         [string]$Shift = '-', [string]$Start = '', [string]$End = '', [string]$Work = '0',
-        [string]$In = '-', [string]$Out = '-', [string]$Ended = 'ticked'
+        [string]$In = '-', [string]$Out = '-', [string]$Ended = 'ticked', [string]$Extras = ''
     )
     if (Test-NSReparsePoint $Receipt) { return }
     $utf8 = New-Object Text.UTF8Encoding($false)
@@ -1389,74 +1715,33 @@ function Add-NSReceiptSession {
     $fresh = -not (Test-Path -LiteralPath $Receipt -PathType Leaf)
     if ($fresh) { [IO.File]::WriteAllText($Receipt, "# $Label`n", $utf8) }
     $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
-    $lines = @([IO.File]::ReadAllLines($Receipt))
     $data = New-Object Collections.Generic.List[string]
-    $on = $false
-    foreach ($line in $lines) {
-        if ($line -ceq '<!-- session-data') { $on = $true; continue }
-        if ($on -and $line -ceq '-->') { $on = $false; continue }
-        if ($on -and $line.Length -gt 0) { $data.Add($line) }
-    }
-    $data.Add(('{0} {1} {2} {3} {4} {5} {6}' -f $Shift, $Start, $End, $Work, $In, $Out, $Ended))
-    $dash = [string][char]0x2014
-    $block = New-Object Collections.Generic.List[string]
-    $block.Add('<!-- sessions -->')
-    $block.Add('**Sessions**')
-    $block.Add('')
-    $block.Add('| # | Shift | Start | End | Working | Input | Output | Ended |')
-    $block.Add('| --- | --- | --- | --- | --- | ---: | ---: | --- |')
-    $n = 0
-    # Per column: the sum of what was measured, whether anything was, and whether any row says the
-    # owner turned the measurement off.
-    $sum = @{ work = [long]0; in = [long]0; out = [long]0 }
-    $have = @{ work = $false; in = $false; out = $false }
-    $off = @{ work = $false; in = $false; out = $false }
-    $cell = {
-        param([string]$Column, [string]$Raw)
-        $v = [long]0
-        if ($Raw -ceq 'off') { $off[$Column] = $true; return 'off' }
-        if (-not [long]::TryParse($Raw, [ref]$v)) { return 'unavailable' }
-        $sum[$Column] += $v
-        $have[$Column] = $true
-        if ($Column -ceq 'work') { return (Get-NSUsageDuration $Raw) }
-        return (Get-NSUsageScale $Raw)
-    }
-    $total = {
-        param([string]$Column)
-        if ($have[$Column]) {
-            if ($Column -ceq 'work') { return (Get-NSUsageDuration ([string]$sum[$Column])) }
-            return (Get-NSUsageScale ([string]$sum[$Column]))
-        }
-        if ($off[$Column]) { return 'off' }
-        return 'unavailable'
-    }
-    foreach ($row in $data) {
-        $f = $row.Split(' ')
-        if ($f.Length -lt 7) { continue }
-        $n++
-        $sid = $(if ($f[0] -ceq '-') { $dash } else { $f[0].Substring(0, [math]::Min(8, $f[0].Length)) })
-        $from = Get-NSUsageIso $f[1]
-        $to = Get-NSUsageIso $f[2]
-        $block.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} |' -f $n, $sid,
-                $(if ($from) { $from } else { $dash }), $(if ($to) { $to } else { $dash }),
-                (& $cell 'work' $f[3]), (& $cell 'in' $f[4]), (& $cell 'out' $f[5]), $f[6].Replace('-', ' ')))
-    }
-    $word = $(if ($n -eq 1) { 'session' } else { 'sessions' })
-    $block.Add(('| **Total** | {0} {1} |  |  | **{2}** | **{3}** | **{4}** |  |' -f $n, $word,
-            (& $total 'work'), (& $total 'in'), (& $total 'out')))
-    $block.Add('')
-    $block.Add('<!-- session-data')
-    foreach ($row in $data) { $block.Add($row) }
-    $block.Add('-->')
-    $block.Add('<!-- /sessions -->')
+    foreach ($row in (Get-NSReceiptSessionData $Receipt)) { $data.Add($row) }
+    if ($data.Count -eq 0) { foreach ($row in (Get-NSReceiptLegacySessions $Receipt)) { $data.Add($row) } }
+    $row = ('{0} {1} {2} {3} {4} {5} {6}' -f $Shift, $Start, $End, $Work, $In, $Out, $Ended)
+    if ($Extras.Length -gt 0) { $row += ' ' + $Extras }
+    $data.Add($row)
+    $block = Get-NSReceiptUsageSection $data.ToArray()
     $result = New-Object Collections.Generic.List[string]
-    $skip = $false
-    $done = $false
-    foreach ($line in $lines) {
-        if ($line.StartsWith('<!-- sessions -->')) { $skip = $true; foreach ($b in $block) { $result.Add($b) }; $done = $true; continue }
-        if ($skip -and $line.StartsWith('<!-- /sessions -->')) { $skip = $false; continue }
+    $skip = $false; $headed = $false; $top = $false; $done = $false; $pend = 0
+    foreach ($raw in [IO.File]::ReadAllLines($Receipt)) {
+        $line = $raw.TrimEnd("`r")
+        if ($raw.StartsWith('<!-- usage -->') -or $raw.StartsWith('<!-- sessions -->')) { $skip = $true; continue }
+        if ($skip -and ($raw.StartsWith('<!-- /usage -->') -or $raw.StartsWith('<!-- /sessions -->'))) { $skip = $false; continue }
         if ($skip) { continue }
-        $result.Add($line)
+        if (-not $headed -and $line.StartsWith('# ')) {
+            $headed = $true; $top = $true
+            $result.Add($raw); $result.Add('')
+            foreach ($b in $block) { $result.Add($b) }
+            $done = $true; $pend = 0
+            continue
+        }
+        if ($top -and ($line.Trim().Length -eq 0 -or (Test-NSReceiptRuntimeLine $line))) { continue }
+        if ($top -and $line -cmatch '^Renamed from .* on [0-9]{4}-[0-9]{2}-[0-9]{2}\.$') { $result.Add(''); $result.Add($raw); continue }
+        if ($top) { $top = $false; $pend = 1 }
+        if ($raw.Trim().Length -eq 0) { $pend++; continue }
+        while ($pend -gt 0) { $result.Add(''); $pend-- }
+        $result.Add($raw)
     }
     if (-not $done) {
         $result.Add('')
@@ -1482,6 +1767,45 @@ function Get-NSReceiptsShiftDate {
     return [DateTime]::UtcNow.ToString('yyyy-MM-dd')
 }
 
+# Get-NSReceiptLegacyCells <counted-blocks> - Get-NSReceiptUsageCells for an older receipt's stacked
+# blocks: the counted blocks summed, each measurement off only when every block says so. Mirrors
+# _ns_receipt_legacy_cells.
+function Get-NSReceiptLegacyCells {
+    param([AllowEmptyCollection()][object[]]$Blocks = @())
+    $dash = [string][char]0x2014
+    $cells = @{
+        In = [long]0; CacheWrite = [long]0; CacheRead = [long]0; Out = [long]0; Reasoning = [long]0
+        Work = [long]0; Pause = [long]0; Sum = [long]0; Tokens = $dash; Time = $dash
+    }
+    $tokens = 0; $tokoff = 0; $times = 0; $timeoff = 0
+    foreach ($b in $Blocks) {
+        if ($b.Tok -ceq 'off') { $tokoff++ }
+        elseif ($b.Tok.Length -gt 0) {
+            $t = @($b.Tok.Trim() -split '\s+')
+            $cells['In'] += [long]$t[0]; $cells['CacheWrite'] += [long]$t[1]; $cells['CacheRead'] += [long]$t[2]
+            $cells['Out'] += [long]$t[3]; $cells['Reasoning'] += [long]$t[4]
+            $tokens++
+        }
+        if ($b.TimeOff) { $timeoff++ }
+        elseif ($b.Work.Length -gt 0) {
+            $cells['Work'] += Get-NSUsageParseSeconds $b.Work
+            $cells['Pause'] += Get-NSUsageParseSeconds $b.Pause
+            $times++
+        }
+    }
+    $cells['Sum'] = $cells['In'] + $cells['Out']
+    if ($tokens -gt 0) {
+        $cells['Tokens'] = ($script:NSUsageTokensFormat -f
+            (Get-NSUsageScale ([string]$cells['In'])), (Get-NSUsageScale ([string]$cells['CacheWrite'])),
+            (Get-NSUsageScale ([string]$cells['CacheRead'])), (Get-NSUsageScale ([string]$cells['Out'])),
+            (Get-NSUsageScale ([string]$cells['Reasoning'])))
+    }
+    elseif ($tokoff -gt 0) { $cells['Tokens'] = 'off' }
+    if ($times -gt 0) { $cells['Time'] = Get-NSReceiptsTimeCell ([long]$cells['Work']) ([long]$cells['Pause']) }
+    elseif ($timeoff -gt 0) { $cells['Time'] = 'off' }
+    return $cells
+}
+
 function Get-NSReceiptUsageCells {
     param([Parameter(Mandatory = $true)][string]$Path)
     $dash = [string][char]0x2014
@@ -1501,6 +1825,15 @@ function Get-NSReceiptUsageCells {
     }
     if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
         $text = [IO.File]::ReadAllText($file)
+        # The runtime section already totals every session; an older receipt with several stacked
+        # blocks is read block by block, summing the sessions and skipping what a newer block holds.
+        if ($text -cmatch '(?ms)^<!-- usage -->\r?\n(.*?)^<!-- \/usage -->') {
+            $text = $Matches[1]
+        }
+        else {
+            $legacy = Get-NSReceiptLegacyBlocks $file
+            if ($legacy.Count -gt 1) { return (Get-NSReceiptLegacyCells $legacy) }
+        }
         $parsed = $false
         if ($text -cmatch '(?m)^<!--\s*tokens\s+(.+?)-->') {
             $parts = @($Matches[1].Trim() -split '\s+')
@@ -1631,6 +1964,12 @@ function Get-NSReceiptNamesByState {
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($row in (Get-NSItemRows $punch $State)) {
             $names.Add((Get-NSReceiptBase $Workspace $row.Label $row.Id) + '.md')
+        }
+        # A stopped item is not done, so for its receipt it counts as open.
+        if ($State -ceq 'open') {
+            foreach ($row in (Get-NSItemRows $punch 'stopped')) {
+                $names.Add((Get-NSReceiptBase $Workspace $row.Label $row.Id) + '.md')
+            }
         }
     }
     return $names.ToArray()

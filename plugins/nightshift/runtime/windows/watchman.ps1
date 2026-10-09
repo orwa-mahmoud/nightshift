@@ -18,7 +18,7 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 function Write-NSLogLine {
     param([Parameter(Mandatory = $true)][string]$Message)
     if (Test-Path -LiteralPath $ns -PathType Container) {
-        $line = '{0} - {1}{2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Message, [Environment]::NewLine
+        $line = '{0} - {1}{2}' -f (Get-NSLocalNow -Seconds), $Message, [Environment]::NewLine
         [IO.File]::AppendAllText($log, $line, $utf8)
     }
 }
@@ -969,7 +969,7 @@ try {
                     Write-NSReason $ns 'revived'
                 }
                 $downNotified = $false
-                $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+                $stamp = Get-NSLocalNow -Seconds
                 $cursorWorker = Get-NSCursorWorkerId
                 $notice = if (-not [string]::IsNullOrEmpty($sessionId) -and $HostName -eq 'claude') {
                     "- [notice] $stamp - the shift session died and the watchman revived it. One thread: claude --resume $sessionId $([char]0x00B7) cursor://anthropic.claude-code/open?session=$sessionId $([char]0x00B7) vscode://anthropic.claude-code/open?session=$sessionId"
