@@ -143,7 +143,7 @@ Why: <the problem, and why now>
 Scope: <what this plan covers>
 Non-goals: <what it deliberately leaves out>
 Design notes: <the decisions taken, and the options rejected with the reason>
-Record: [plan record](plan-record.md) — <topic>
+Record: <a Markdown link to the plan record> — <topic>
 Estimate: <the shift-estimate figures for these items, or "no history yet">
 
 - [ ] **1. <title>.**
@@ -173,8 +173,8 @@ Estimate: <the shift-estimate figures for these items, or "no history yet">
   the owner takes it. When it reports too few readings, say there is no history to estimate from yet.
 
 Then close the record's entry by appending ` · captured: ## Plan: <title>` to its first line;
-Archive files it with the shift. The `Record:` link is relative to the drafting table, and the
-record sits beside it in every layout.
+Archive files it with the shift. The record sits beside the drafting table in every layout, so the
+`Record:` link's target is `plan-record.md`.
 
 Before offering promotion, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-items`. It reads the
 drafting table and names, per item, a missing or empty `Verify:`, a missing `Commit:`, a `Budget:`
