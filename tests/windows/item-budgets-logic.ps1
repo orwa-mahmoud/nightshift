@@ -153,6 +153,42 @@ try {
     $morning = (& $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/morning-receipt.ps1') -Project $w) -join "`n"
     Expect-True ($morning.Contains('- Items: 1 ticked, 1 open, 1 stopped at their hard budget')) "morning items: $morning"
     Expect-True ($morning.Contains("## Decisions for you`n`n- 2. Build the importer. stopped at its hard budget without being done")) "morning decisions: $morning"
+    $w = Join-Path $root 'renamed-hard-item'
+    $ns = New-Site $w 'hard 100 tokens'
+    Add-Spend $ns 90 20
+    $null = Get-BudgetNotice $ns $w
+    $punch = Join-Path $ns 'punch-list.md'
+    $text = [IO.File]::ReadAllText($punch).Replace('Build the importer.', 'Renamed importer.')
+    [IO.File]::WriteAllText($punch, $text, $utf8)
+    Expect-True ((Get-NSBudgetHardOpen $ns) -ceq '2. Renamed importer.') 'renaming keeps the reached hard budget'
+    Expect-True ((Get-NSBudgetReached $ns '2. Renamed importer.' 'hard').Length -gt 0) 'reached readings follow the item id'
+    [IO.File]::WriteAllText($punch, $text.Replace('<!-- id: bb22 -->', '<!-- id: dd44 -->'), $utf8)
+    Expect-True ((Get-NSBudgetHardOpen $ns).Length -gt 0) 'replacing the identity does not release the fence'
+    [IO.File]::WriteAllText($punch, $text.Replace('- [ ] **2.', '- [-] **2.'), $utf8)
+    Expect-True ((Get-NSBudgetHardOpen $ns).Length -eq 0) 'closing the same identity releases the fence'
+    Remove-NSBudgetRecord $ns '2. Renamed importer.'
+    Expect-True (([IO.File]::ReadAllText((Get-NSBudgetStateFile $ns))).Length -eq 0) 'closing a renamed item forgets its record'
+    foreach ($command in @(('awk ' + [char]39 + 'BEGIN { system("touch src/new") }' + [char]39), 'sed -n ''w src/new'' input', 'command touch src/new', 'sort -o src/new input', 'rg --pre touch src', 'uniq input src/new', 'Get-ChildItem | Where-Object { Remove-Item src/new }')) {
+        Expect-True (-not (Test-NSRestrictedCommand $command 'plan')) "plan refuses $command"
+        Expect-True (-not (Test-NSRestrictedCommand $command 'wrapup')) "wrapup refuses $command"
+    }
+
+    $w = Join-Path $root 'replacement-close'
+    $ns = New-Site $w 'hard 100 tokens'
+    Add-Spend $ns 90 20
+    $null = Get-BudgetNotice $ns $w
+    $punch = Join-Path $ns 'punch-list.md'
+    $text = [IO.File]::ReadAllText($punch).Replace('<!-- id: bb22 -->', '<!-- id: dd44 -->').Replace('- [ ] **2.', '- [-] **2.')
+    [IO.File]::WriteAllText($punch, $text, $utf8)
+    Remove-NSBudgetRecord $ns $item
+    Expect-True ((Get-NSBudgetHardOpen $ns) -ceq $item) 'closing a replacement cannot clear the original record by label'
+    [IO.File]::WriteAllText($punch, $text.Replace('<!-- id: dd44 -->', '<!-- id: bb22 -->'), $utf8)
+    Remove-NSBudgetRecord $ns $item
+    Expect-True ([IO.File]::ReadAllText((Get-NSBudgetStateFile $ns)).Length -eq 0) 'closing the original clears its record'
+    [IO.File]::WriteAllText((Get-NSBudgetStateFile $ns), ($item + "`thard`t100`n"), $utf8)
+    Remove-NSBudgetRecord $ns $item
+    Expect-True ([IO.File]::ReadAllText((Get-NSBudgetStateFile $ns)).Length -eq 0) 'legacy records still clear by label'
+
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

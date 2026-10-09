@@ -212,7 +212,7 @@ ns_hardhat_payload_targets() { # $1 = tool, $2 = raw payload, $3 = command/patch
 # control file's path in this layout, so // /./ /../ backslashes and absolute twins cannot slip past.
 ns_hardhat_control_prefilter() {
   printf '%s' "$1" | grep -qE \
-    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)' \
+    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv|\.?item-sessions)' \
     && return 0
   ns_hardhat_control_dir_word_in "$1" && ns_hardhat_control_delete_verb "$1"
 }
@@ -226,6 +226,7 @@ ns_hardhat_control_key() {
     .shift-session) printf 'session' ;;
     .shift-worker) printf 'worker' ;;
     budget.tsv | .budget.tsv) printf 'budget' ;;
+    item-sessions | .item-sessions) printf 'item-sessions' ;;
     work-target | work-mode | deadline) printf '%s' "$1" ;;
     shift-policy.json) printf 'shift-policy' ;;
     shift-defaults.json) printf 'shift-defaults' ;;
@@ -270,11 +271,11 @@ ns_hardhat_control_delete_verb() {
 
 ns_hardhat_control_bare_name() {
   case "$1" in
-    STOP | .shift-armed | .ended | .shift-session | .shift-worker | budget.tsv | .budget.tsv | work-target | work-mode \
+    STOP | .shift-armed | .ended | .shift-session | .shift-worker | budget.tsv | .budget.tsv | item-sessions | .item-sessions | work-target | work-mode \
       | shift-policy.json | shift-defaults.json | deadline | punch-list.md \
       | ./STOP | ./.shift-armed | ./.ended | ./.shift-session | ./.shift-worker \
       | ./work-target | ./work-mode | ./shift-policy.json | ./shift-defaults.json \
-      | ./deadline | ./punch-list.md | ./budget.tsv | ./.budget.tsv)
+      | ./deadline | ./punch-list.md | ./budget.tsv | ./.budget.tsv | ./item-sessions | ./.item-sessions)
       return 0
       ;;
   esac
@@ -633,7 +634,11 @@ ns_hardhat_control_expected() { # <key>
 }
 
 ns_hardhat_control_rewrite_hit() {
-  local key exp
+  local key exp expected
+  expected="$(ns_layout_path "$NS" item-sessions)"
+  if expected="$(ns_hardhat_canon_write_target "$expected")"; then
+    case "$1" in "$expected" | "$expected"/*) return 0 ;; esac
+  fi
   while IFS= read -r key; do
     [ -n "$key" ] || continue
     exp="$(ns_hardhat_control_expected "$key")" || continue
@@ -1362,12 +1367,18 @@ ns_hardhat_command_allowed() {
     esac
     rest="${rest#"${rest%%[![:space:]]*}"}"
     case "${word##*/}" in
-      cat | head | tail | less | more | wc | grep | egrep | fgrep | rg | ag | ls | tree | file | stat | du | df | \
-        pwd | cd | echo | printf | true | false | test | '[' | which | type | command | date | basename | \
-        dirname | realpath | readlink | sort | uniq | cut | tr | nl | column | diff | cmp | comm | jq | awk)
+      cat | head | tail | wc | grep | egrep | fgrep | ag | ls | tree | file | stat | du | df | \
+        pwd | cd | echo | printf | true | false | test | '[' | which | type | basename | \
+        dirname | realpath | readlink | cut | tr | nl | column | diff | cmp | comm | jq)
         ;;
-      sed)
-        case " $rest " in *' -i'* | *' --in-place'*) return 1 ;; esac
+      sort)
+        case " $rest " in *' -o'* | *' --output'*) return 1 ;; esac
+        ;;
+      rg)
+        case "$rest" in *'--pre'* | *'--hostname-bin'*) return 1 ;; esac
+        ;;
+      date)
+        case " $rest " in *' -s'* | *' --set'*) return 1 ;; esac
         ;;
       find)
         # -exec covers -execdir, -ok covers -okdir and -fprint covers -fprintf.

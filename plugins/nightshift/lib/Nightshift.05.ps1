@@ -33,6 +33,7 @@ function Write-NSReceiptsIndex {
             $path = Join-Path $dir ($base + '.md')
             if ($Remaining -and $state -ceq 'ticked' -and
                 -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+            Sync-NSReceiptSessions $path
             $cells = Get-NSReceiptUsageCells $path
             $tin += [long]$cells['In']; $tcw += [long]$cells['CacheWrite']; $tcr += [long]$cells['CacheRead']
             $tout += [long]$cells['Out']; $trea += [long]$cells['Reasoning']

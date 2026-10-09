@@ -1314,7 +1314,12 @@ function Rename-NSReceipts {
         if ($name -ceq $want) { continue }
         if (Test-Path -LiteralPath (Join-Path $dir $want)) { continue }
         try {
-            [IO.File]::Move((Join-Path $dir $name), (Join-Path $dir $want))
+            $old = Join-Path $dir $name
+            Sync-NSReceiptSessions $old
+            $new = Join-Path $dir $want
+            if (Test-Path -LiteralPath (Get-NSReceiptSessionFile $old) -PathType Leaf) { Set-NSReceiptSessions $new (Get-NSReceiptSessionData $old) }
+            [IO.File]::Move($old, $new)
+            Remove-NSReceiptSessions $old
         }
         catch {
             Write-Warning ('receipts: ' + $name + ' could not take its item''s name ' + $want + ': ' + $_.Exception.Message)
@@ -1411,19 +1416,100 @@ function Get-NSSessionHostWords {
     return ($words -join ' + ')
 }
 
-# Get-NSReceiptSessionData <receipt> - the recorded session lines, oldest first.
+function Get-NSReceiptSessionFile {
+    param([Parameter(Mandatory = $true)][string]$Receipt)
+    $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Receipt)
+    $ns = [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($path))
+    if ([string]::IsNullOrEmpty($ns) -or (Split-Path -Leaf $ns) -cne '.nightshift') { return '' }
+    return (Join-Path (Get-NSLayoutPath $ns 'item-sessions') ((Split-Path -Leaf $Receipt) + '.tsv'))
+}
+
+# Get-NSReceiptSessionData <receipt> - ledger rows, or an older receipt's first runtime section.
 function Get-NSReceiptSessionData {
     param([AllowEmptyString()][string]$Receipt)
     $data = New-Object Collections.Generic.List[string]
-    if ([string]::IsNullOrEmpty($Receipt) -or -not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or
-        (Test-NSReparsePoint $Receipt)) { return , $data.ToArray() }
-    $on = $false
+    if ([string]::IsNullOrEmpty($Receipt)) { return , $data.ToArray() }
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -gt 0) {
+        $dir = Split-Path -Parent $file
+        if ((Test-NSReparsePoint $file) -or (Test-NSReparsePoint ($file + '.pending')) -or (Test-NSReparsePoint $dir) -or (Test-NSReparsePoint (Split-Path -Parent $dir))) { throw 'receipt session ledger is a link' }
+        if (Test-Path -LiteralPath ($file + '.pending') -PathType Leaf) {
+            $rows = [IO.File]::ReadAllLines($file + '.pending')
+            if ($rows.Length -gt 1) { return , $rows[1..($rows.Length - 1)] }
+            return , $data.ToArray()
+        }
+        if (Test-Path -LiteralPath $file -PathType Leaf) { return , [IO.File]::ReadAllLines($file) }
+    }
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return , $data.ToArray() }
+    $on = $false; $usage = $false; $seen = $false
     foreach ($line in [IO.File]::ReadAllLines($Receipt)) {
-        if ($line -ceq '<!-- session-data') { $on = $true; continue }
-        if ($on -and $line -ceq '-->') { $on = $false; continue }
+        if ($line -ceq '<!-- usage -->') {
+            if ($seen) { break }
+            $usage = $true; $seen = $true; continue
+        }
+        if ($usage -and $line -ceq '<!-- /usage -->') { break }
+        if ($usage -and $line -ceq '<!-- session-data') { $on = $true; continue }
+        if ($on -and $line -ceq '-->') { break }
         if ($on -and $line.Trim().Length -gt 0) { $data.Add($line) }
     }
     return , $data.ToArray()
+}
+
+function Update-NSReceiptSessionIgnore {
+    param([string]$Receipt)
+    $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Receipt)
+    $ns = [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($path))
+    if ([string]::IsNullOrEmpty($ns) -or (Split-Path -Leaf $ns) -cne '.nightshift') { return }
+    if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'receipts-repo') -PathType Container) -or
+        (Get-NSLayoutRelativePath $ns 'item-sessions') -cne '.item-sessions') { return }
+    $ignore = Get-NSLayoutPath $ns 'gitignore'
+    if (Test-NSReparsePoint $ignore) { throw 'receipts ignore file is a link' }
+    if ((Test-Path -LiteralPath $ignore -PathType Leaf) -and [IO.File]::ReadAllText($ignore) -cmatch '(?m)^/?\.item-sessions/\r?$') { return }
+    [IO.File]::AppendAllText($ignore, "`n.item-sessions/`n", $script:NSUtf8NoBom)
+}
+
+function Write-NSReceiptSessionState {
+    param([string]$File, [string[]]$Rows)
+    $dir = Split-Path -Parent $File
+    if ((Test-NSReparsePoint $File) -or (Test-NSReparsePoint $dir) -or (Test-NSReparsePoint (Split-Path -Parent $dir))) { throw 'receipt session ledger is a link' }
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $tmp = Join-Path $dir ('.sessions.' + [guid]::NewGuid().ToString('N'))
+    try {
+        [IO.File]::WriteAllText($tmp, (($Rows -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $tmp -Destination $File -Force
+    }
+    finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+}
+
+function Set-NSReceiptSessions {
+    param([string]$Receipt, [string[]]$Rows)
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -eq 0) { return }
+    Update-NSReceiptSessionIgnore $Receipt
+    Write-NSReceiptSessionState $file $Rows
+}
+
+function Sync-NSReceiptSessions {
+    param([string]$Receipt)
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -eq 0) { return }
+    $pending = $file + '.pending'
+    if (Test-NSReparsePoint $pending) { throw 'receipt redraw marker is a link' }
+    if (-not (Test-Path -LiteralPath $pending -PathType Leaf)) { return }
+    $label = [IO.File]::ReadAllLines($pending)[0]
+    $rows = Get-NSReceiptSessionData $Receipt
+    Set-NSReceiptSessions $Receipt $rows
+    Update-NSReceiptSessionView $Receipt $label $rows
+    Remove-Item -LiteralPath $pending -Force
+}
+
+function Remove-NSReceiptSessions {
+    param([string]$Receipt)
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -eq 0) { return }
+    $dir = Split-Path -Parent $file
+    if ((Test-NSReparsePoint $dir) -or (Test-NSReparsePoint (Split-Path -Parent $dir))) { throw 'receipt session ledger is a link' }
+    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
 }
 
 # Get-NSReceiptProgressNote <receipt> - the first line of the model's own text, cut to 160 characters.
@@ -1709,19 +1795,37 @@ function Add-NSReceiptSession {
         [string]$In = '-', [string]$Out = '-', [string]$Ended = 'ticked', [string]$Extras = ''
     )
     if (Test-NSReparsePoint $Receipt) { return }
+    $data = New-Object Collections.Generic.List[string]
+    foreach ($prior in (Get-NSReceiptSessionData $Receipt)) { $data.Add($prior) }
+    if ($data.Count -eq 0) { foreach ($prior in (Get-NSReceiptLegacySessions $Receipt)) { $data.Add($prior) } }
+    $row = ('{0} {1} {2} {3} {4} {5} {6}' -f $Shift, $Start, $End, $Work, $In, $Out, $Ended)
+    if ($Extras.Length -gt 0) { $row += ' ' + $Extras }
+    $key = Get-NSSessionExtra $row 'checkpoint'
+    foreach ($prior in $data) {
+        if ($prior -ceq $row -or ($key.Length -gt 0 -and (Get-NSSessionExtra $prior 'checkpoint') -ceq $key)) {
+            Sync-NSReceiptSessions $Receipt
+            return
+        }
+    }
+    $data.Add($row)
+    Update-NSReceiptSessionIgnore $Receipt
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -gt 0) { Write-NSReceiptSessionState ($file + '.pending') (@($Label) + $data.ToArray()) }
+    Set-NSReceiptSessions $Receipt $data.ToArray()
+    Update-NSReceiptSessionView $Receipt $Label $data.ToArray()
+    if ($file.Length -gt 0) { Remove-Item -LiteralPath ($file + '.pending') -Force }
+}
+
+function Update-NSReceiptSessionView {
+    param([string]$Receipt, [string]$Label, [string[]]$Data)
+    if (Test-NSReparsePoint $Receipt) { throw 'receipt is a link' }
     $utf8 = New-Object Text.UTF8Encoding($false)
     $dir = Split-Path -Parent $Receipt
     $null = New-Item -ItemType Directory -Path $dir -Force
     $fresh = -not (Test-Path -LiteralPath $Receipt -PathType Leaf)
     if ($fresh) { [IO.File]::WriteAllText($Receipt, "# $Label`n", $utf8) }
     $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
-    $data = New-Object Collections.Generic.List[string]
-    foreach ($row in (Get-NSReceiptSessionData $Receipt)) { $data.Add($row) }
-    if ($data.Count -eq 0) { foreach ($row in (Get-NSReceiptLegacySessions $Receipt)) { $data.Add($row) } }
-    $row = ('{0} {1} {2} {3} {4} {5} {6}' -f $Shift, $Start, $End, $Work, $In, $Out, $Ended)
-    if ($Extras.Length -gt 0) { $row += ' ' + $Extras }
-    $data.Add($row)
-    $block = Get-NSReceiptUsageSection $data.ToArray()
+    $block = Get-NSReceiptUsageSection $Data
     $result = New-Object Collections.Generic.List[string]
     $skip = $false; $headed = $false; $top = $false; $done = $false; $pend = 0
     foreach ($raw in [IO.File]::ReadAllLines($Receipt)) {
@@ -1747,8 +1851,13 @@ function Add-NSReceiptSession {
         $result.Add('')
         foreach ($b in $block) { $result.Add($b) }
     }
-    [IO.File]::WriteAllText($Receipt, (($result -join "`n") + "`n"), $utf8)
-    if (-not $fresh) { [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp) }
+    $tmp = Join-Path $dir ('.receipt.' + [guid]::NewGuid().ToString('N'))
+    try {
+        [IO.File]::WriteAllText($tmp, (($result -join "`n") + "`n"), $utf8)
+        if (-not $fresh) { [IO.File]::SetLastWriteTimeUtc($tmp, $stamp) }
+        Move-Item -LiteralPath $tmp -Destination $Receipt -Force
+    }
+    finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
 }
 
 function Get-NSReceiptsShiftDate {
@@ -1887,6 +1996,7 @@ function Get-NSReceiptUsageCells {
             }
             $cells['Time'] = Get-NSReceiptsTimeCell ([long]$cells['Work']) ([long]$cells['Pause'])
         }
+        if ($text -cmatch '(?m)^\| (input|output) \| unavailable \|') { $cells['Tokens'] = $dash }
         # A measurement the owner turned off says so, rather than reading as one nobody reported.
         if ($text -cmatch '(?m)^\*\*Tokens:\*\* off\r?$') { $cells['Tokens'] = 'off' }
         if ($text -cmatch '(?m)^\*\*Time:\*\* off\r?$') { $cells['Time'] = 'off' }

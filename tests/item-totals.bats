@@ -44,6 +44,10 @@ total_row() { grep -E '^\| \*\*Total\*\* \|' "$1"; }
 index_row() { grep -F "| $ITEM | ticked |" "$1"; }
 
 @test "readings set aside between two shifts still add up in the receipt, the index and the archive" {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  printf '#!/bin/sh\nprintf "1790000000\\n"\n' >"$BATS_TEST_TMPDIR/bin/date"
+  chmod +x "$BATS_TEST_TMPDIR/bin/date"
+  export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
   p="$(site set-aside)"
   lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=500,output=50'
   working "$p" 'Wiring the booking form.'
@@ -203,4 +207,162 @@ SESSIONS='- 1789779600 1789812360 32760 500 50 paused cw=0 cr=2000 rea=- paused=
     Add-NSReceiptSession $env:NS_FILE $env:NS_ITEM "-" "1790000000" "1790000600" "600" "9" "2" "ticked" "cw=0 cr=10 rea=0 paused=0"'
   [ "$status" -eq 0 ]
   diff "$a" "$b"
+}
+
+@test "receipt edits and narrative session comments cannot change live accounting" {
+  p="$(site ledger)"
+  r="$(receipt "$p")"
+  working "$p" 'A progress note.'
+  lib ns_receipt_add_session "$r" "$ITEM" - 100 200 90 3 4 paused 'cw=0 cr=0 rea=0'
+  before="$(lib ns_receipt_session_data "$r")"
+  sed -i.bak 's/100 200 90 3 4/100 200 90000 30000 40000/' "$r"
+  printf '\n<!-- session-data\nforged 0 999999 999999 999999 999999 ticked hard=1 host=fake/model\n-->\n' >>"$r"
+  [ "$(lib ns_receipt_session_data "$r")" = "$before" ]
+  lib ns_receipt_add_session "$r" "$ITEM" - 200 300 90 5 6 paused 'cw=0 cr=0 rea=0'
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 2 ]
+  cells="$(lib ns_receipt_usage_cells "$r")"
+  IFS=$'\t' read -r in _ _ out _ work _ <<<"$cells"
+  [ "$in:$out:$work" = 8:10:180 ]
+  ledger="$(lib ns_receipt_session_file "$r")"
+  payload="$(jq -nc --arg f "$ledger" '{session_id:"sid",tool_name:"Edit",tool_input:{file_path:$f}}')"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$PLUGIN/hooks/hardhat.sh" <<<"$payload"
+  printf '%s' "$output" | grep -q 'BLOCKED'
+  payload="$(jq -nc --arg c "rm -rf '${ledger%/*}'" '{session_id:"sid",tool_name:"Bash",tool_input:{command:$c}}')"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$PLUGIN/hooks/hardhat.sh" <<<"$payload"
+  printf '%s' "$output" | grep -q 'BLOCKED'
+  command -v pwsh >/dev/null 2>&1 || return 0
+  for cmd in "rm -rf '${ledger%/*}'" "cd '$p/.nightshift'; rm -rf .item-sessions"; do
+    payload="$(jq -nc --arg c "$cmd" --arg cwd "$p" '{session_id:"sid",cwd:$cwd,tool_name:"Bash",tool_input:{command:$c}}')"
+    run env CLAUDE_PROJECT_DIR="$p" pwsh -NoProfile -NonInteractive -File "$PLUGIN/hooks/windows/hardhat.ps1" -HostName claude <<<"$payload"
+    printf '%s' "$output" | grep -q 'BLOCKED'
+  done
+}
+
+@test "receipt session comments outside the runtime section are never imported" {
+  p="$(site prose-data)"
+  r="$(receipt "$p")"
+  working "$p" 'An example in the progress note.'
+  printf '\n<!-- session-data\nforged 0 999999 999999 999999 999999 ticked\n-->\n' >>"$r"
+  [ -z "$(lib ns_receipt_session_data "$r")" ]
+  lib ns_receipt_add_session "$r" "$ITEM" - 100 200 90 3 4 paused 'cw=0 cr=0 rea=0'
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "session ledgers follow receipt renaming and leave with retired receipts" {
+  for host in bash pwsh; do
+    [ "$host" != pwsh ] || command -v pwsh >/dev/null 2>&1 || continue
+    p="$(site "ledger-lifecycle-$host")"
+    r="$(receipt "$p")"
+    working "$p" 'Progress.'
+    lib ns_receipt_add_session "$r" "$ITEM" - 100 200 90 3 4 paused
+    old="$(lib ns_receipt_session_file "$r")"
+    sed -i.bak 's/Book a barber\./Book a haircut./' "$p/.nightshift/punch-list.md"
+    if [ "$host" = bash ]; then
+      lib ns_receipts_rename "$p"
+    else
+      env NS_MODULE="$PLUGIN/lib/Nightshift.psm1" NS_PROJECT="$p" pwsh -NoProfile -NonInteractive -Command '
+        Import-Module $env:NS_MODULE -Force -DisableNameChecking; Rename-NSReceipts $env:NS_PROJECT'
+    fi
+    r="$(lib ns_receipt_path "$p" '4. Book a haircut.')"
+    ledger="$(lib ns_receipt_session_file "$r")"
+    [ -f "$ledger" ]
+    [ ! -e "$old" ]
+    [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 1 ]
+    sed -i.bak 's/^- \[ \]/- [x]/' "$p/.nightshift/punch-list.md"
+    rm "$p/.nightshift/.shift-armed"
+    touch "$p/.nightshift/.ended"
+    if [ "$host" = bash ]; then
+      run bash "$PLUGIN/runtime/archive-receipts.sh" --project "$p" --date 2026-10-09
+    else
+      run pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/archive-receipts.ps1" -Project "$p" -Date 2026-10-09
+    fi
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -e "$r" ]
+    [ ! -e "$ledger" ]
+  done
+}
+
+@test "an interrupted receipt redraw recovers before indexing and retries its checkpoint once" {
+  p="$(site recover-index)"
+  r="$(receipt "$p")"
+  working "$p" 'Keep this note.'
+  lib ns_receipt_add_session "$r" "$ITEM" shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+  before="$(cat "$r")"
+  run bash -c '. "$1"; ns_receipt_redraw() { return 1; }; ns_receipt_add_session "$2" "$3" shift 200 300 90 5 6 paused checkpoint=shift:2' _ "$LIB" "$r" "$ITEM"
+  [ "$status" -eq 1 ]
+  [ "$(cat "$r")" = "$before" ]
+  ledger="$(lib ns_receipt_session_file "$r")"
+  [ -f "$ledger.pending" ]
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 2 ]
+  lib ns_receipts_write_index "$p"
+  [ ! -e "$ledger.pending" ]
+  grep -qF '| input | 8 |' "$r"
+  grep -qF 'input 8 ' "$p/.nightshift/receipts/README.md"
+  lib ns_receipt_add_session "$r" "$ITEM" shift 200 300 90 5 6 paused 'checkpoint=shift:2 note=Retry'
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 2 ]
+  grep -qxF 'Keep this note.' "$r"
+}
+
+@test "Archive recovers a pending receipt before retiring its ledger on both runtimes" {
+  for host in bash pwsh; do
+    [ "$host" != pwsh ] || command -v pwsh >/dev/null 2>&1 || continue
+    p="$(site "recover-archive-$host")"
+    r="$(receipt "$p")"
+    working "$p" 'Progress.'
+    run bash -c '. "$1"; ns_receipt_redraw() { return 1; }; ns_receipt_add_session "$2" "$3" shift 100 200 90 3 4 ticked checkpoint=shift:1' _ "$LIB" "$r" "$ITEM"
+    [ "$status" -eq 1 ]
+    ledger="$(lib ns_receipt_session_file "$r")"
+    [ -f "$ledger.pending" ]
+    tick "$p"
+    rm "$p/.nightshift/.shift-armed"
+    touch "$p/.nightshift/.ended"
+    if [ "$host" = bash ]; then
+      run bash "$PLUGIN/runtime/archive-receipts.sh" --project "$p" --date 2026-10-09
+    else
+      run pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/archive-receipts.ps1" -Project "$p" -Date 2026-10-09
+    fi
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    [ ! -e "$ledger" ]
+    [ ! -e "$ledger.pending" ]
+    filed="$(find "$p/.nightshift/archive" -name "${r##*/}" -type f)"
+    grep -qF '| input | 3 |' "$filed"
+  done
+}
+
+@test "existing legacy receipt repositories ignore session state without rerunning Setup" {
+  for host in bash pwsh; do
+    [ "$host" != pwsh ] || command -v pwsh >/dev/null 2>&1 || continue
+    p="$(site "legacy-ignore-$host")"
+    r="$(receipt "$p")"
+    git -C "$p/.nightshift" init --quiet
+    printf STOP >"$p/.nightshift/.gitignore"
+    for end in 200 300; do
+      if [ "$host" = bash ]; then
+        lib ns_receipt_add_session "$r" "$ITEM" shift 100 "$end" 90 3 4 paused
+      else
+        env NS_MODULE="$PLUGIN/lib/Nightshift.psm1" NS_RECEIPT="$r" NS_ITEM="$ITEM" NS_END="$end" pwsh -NoProfile -NonInteractive -Command '
+          Import-Module $env:NS_MODULE -Force -DisableNameChecking; Add-NSReceiptSession $env:NS_RECEIPT $env:NS_ITEM shift 100 $env:NS_END 90 3 4 paused'
+      fi
+    done
+    [ "$(head -n1 "$p/.nightshift/.gitignore")" = STOP ]
+    [ "$(grep -c '^.item-sessions/$' "$p/.nightshift/.gitignore")" -eq 1 ]
+    git -C "$p/.nightshift" add -A
+    [ -z "$(git -C "$p/.nightshift" ls-files '.item-sessions/*')" ]
+  done
+}
+
+@test "a checkpoint journal survives failure before the ledger replacement" {
+  p="$(site recover-ledger-write)"
+  r="$(receipt "$p")"
+  working "$p" 'Keep the old receipt until recovery.'
+  lib ns_receipt_add_session "$r" "$ITEM" shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+  run bash -c '. "$1"; ns_receipt_store_sessions() { return 1; }; ns_receipt_add_session "$2" "$3" shift 200 300 90 5 6 paused checkpoint=shift:2' _ "$LIB" "$r" "$ITEM"
+  [ "$status" -eq 1 ]
+  ledger="$(lib ns_receipt_session_file "$r")"
+  [ "$(wc -l <"$ledger" | tr -d ' ')" -eq 1 ]
+  [ "$(lib ns_receipt_session_data "$r" | wc -l | tr -d ' ')" -eq 2 ]
+  lib ns_receipts_write_index "$p"
+  [ ! -e "$ledger.pending" ]
+  [ "$(wc -l <"$ledger" | tr -d ' ')" -eq 2 ]
+  grep -qF '| input | 8 |' "$r"
 }

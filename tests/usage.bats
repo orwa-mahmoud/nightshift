@@ -280,7 +280,7 @@ ticked_under() {
 @test "with usage and duration both off the tick still lands and neither table is written" {
   p="$(ticked_under both-off '{"usage":"off","duration":"off"}')"
   rec="$p/.nightshift/receipts/P01.md"
-  [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = 'arm|P01:tick' ]
+  [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = 'arm:|P01:tick' ]
   grep -qxF '**Tokens:** off' "$rec"
   grep -qxF '**Time:** off' "$rec"
   ! grep -qF '| Tokens |' "$rec" || false

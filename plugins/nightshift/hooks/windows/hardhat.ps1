@@ -470,7 +470,7 @@ function Test-NSNightshiftDirContext {
 # is a hit only when the target's canonical absolute path is the control file's path in this layout.
 function Test-NSControlPrefilter {
     param([AllowEmptyString()][string]$Target)
-    if ($Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)') {
+    if ($Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv|\.?item-sessions)') {
         return $true
     }
     $runRel = Get-NSControlDirRelative
@@ -489,6 +489,8 @@ function Get-NSControlKey {
         '.shift-worker' { return 'worker' }
         'budget.tsv' { return 'budget' }
         '.budget.tsv' { return 'budget' }
+        'item-sessions' { return 'item-sessions' }
+        '.item-sessions' { return 'item-sessions' }
         'work-target' { return 'work-target' }
         'work-mode' { return 'work-mode' }
         'shift-policy.json' { return 'shift-policy' }
@@ -513,7 +515,7 @@ function Test-NSControlDeleteVerb {
 
 function Test-NSControlBareName {
     param([AllowEmptyString()][string]$Token)
-    return $Token -match '(?i)^(\./)?(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)$'
+    return $Token -match '(?i)^(\./)?(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv|\.?item-sessions)$'
 }
 
 # Physical directory path, including symlink and junction ancestors. Matches POSIX cd -P.
@@ -618,6 +620,8 @@ function Test-NSControlRewriteHit {
     if ([string]::IsNullOrEmpty($Canon) -or [string]::IsNullOrEmpty($script:ns)) {
         return $false
     }
+    $ledger = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'item-sessions')
+    if ($null -ne $ledger -and ($Canon -ceq $ledger -or $Canon.StartsWith($ledger + [IO.Path]::DirectorySeparatorChar))) { return $true }
     foreach ($key in @(
             'stop', 'armed', 'ended', 'session', 'worker',
             'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline', 'budget'

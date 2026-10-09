@@ -168,6 +168,7 @@ function New-NSArchiveFolder {
 # always, keep never. True when the record now has a verified archived copy.
 function Copy-NSArchiveRecord {
     param([string]$Source, [string]$Directory, [string]$Rule)
+    if ((Split-Path -Parent $Source) -ceq $src) { Sync-NSReceiptSessions $Source }
     $base = [IO.Path]::GetFileName($Source)
     if ($base.StartsWith('.', [StringComparison]::Ordinal) -or $base -ceq '') { return $false }
     New-NSArchiveFolder $Directory
@@ -203,6 +204,7 @@ function Copy-NSArchiveRecord {
         $kept.Add($base + ' (could not be removed from live storage)')
         return $true
     }
+    if ((Split-Path -Parent $Source) -ceq $src) { Remove-NSReceiptSessions $Source }
     $script:removed++
     return $true
 }

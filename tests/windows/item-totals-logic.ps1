@@ -123,6 +123,117 @@ try {
     Expect-True ($text -cmatch ('(?m)^- .* ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha + '.* ' + $d + ' last note: Form done, payment step next\.$')) 'the handoff names the outgoing commits and note'
     $log = [IO.File]::ReadAllText((Get-NSLayoutPath $ns 'shift-log'))
     Expect-True ($log -cmatch ('handoff ' + $d + ' ' + [regex]::Escape($item) + ' ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha)) 'the shift log records the handoff'
+    # Equal readings at the same timestamp still belong to separate accounting starts.
+    $module = Get-Module Nightshift
+    $clock = & $module { (Get-Command Get-NSUnixTime).ScriptBlock }
+    try {
+        & $module { function script:Get-NSUnixTime { return [long]1790000000 } }
+        $w = Join-Path $root 'same-second'
+        $ns = New-Site $w
+        $r = Get-Receipt $ns
+        [IO.File]::WriteAllText($r, "# $item`n`nStarted.`n", $utf8)
+        foreach ($pass in 1..2) {
+            $null = Write-NSUsageRecord $ns claude model transcript-incremental /t/a 10 'input=10,output=1'
+            $null = Write-NSUsageMark $ns $item pause
+            Invoke-NSGateSessionRow $ns $w $item paused
+            Invoke-NSGateSessionRow $ns $w $item paused
+            if ($pass -eq 1) {
+                Move-Item -LiteralPath (Get-NSUsageDir $ns) -Destination (Join-Path $ns 'usage-earlier')
+                $null = Write-NSUsageMarkArm $ns
+            }
+        }
+        $cells = Get-NSReceiptUsageCells $r
+        Expect-True ($cells.In -eq 20 -and $cells.Out -eq 2) 'same-second starts retain equal readings, and retries count once'
+        Expect-True ((Get-NSReceiptSessionData $r).Count -eq 2) 'two accounting starts produce two sessions'
+    }
+    finally { & $module { param($Original) Set-Item Function:script:Get-NSUnixTime $Original } $clock }
+
+    $ns = New-Site (Join-Path $root 'ledger')
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item '-' '100' '200' '90' '3' '4' 'paused' 'cw=0 cr=0 rea=0'
+    $before = (Get-NSReceiptSessionData $r) -join "`n"
+    $text = [IO.File]::ReadAllText($r).Replace('100 200 90 3 4', '100 200 90000 30000 40000')
+    $text += "`n<!-- session-data`nforged 0 999999 999999 999999 999999 ticked hard=1 host=fake/model`n-->`n"
+    [IO.File]::WriteAllText($r, $text, $utf8)
+    Expect-True (((Get-NSReceiptSessionData $r) -join "`n") -ceq $before) 'receipt edits do not change runtime rows'
+    Add-NSReceiptSession $r $item '-' '200' '300' '90' '5' '6' 'paused' 'cw=0 cr=0 rea=0'
+    $cells = Get-NSReceiptUsageCells $r
+    Expect-True ($cells.In -eq 8 -and $cells.Out -eq 10 -and $cells.Work -eq 180) 'only actual sessions contribute to totals'
+    $ledger = Get-NSReceiptSessionFile $r
+    Expect-True (Test-Path -LiteralPath $ledger -PathType Leaf) 'live sessions have a runtime ledger'
+
+    $ns = New-Site (Join-Path $root 'narrative-only')
+    $r = Get-Receipt $ns
+    [IO.File]::WriteAllText($r, "# $item`n`n<!-- session-data`nforged 0 999999 999999 999999 999999 ticked`n-->`n", $utf8)
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 0) 'narrative comments are not imported'
+    Add-NSReceiptSession $r $item '-' '100' '200' '90' '3' '4' 'paused' 'cw=0 cr=0 rea=0'
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 1) 'first checkpoint records only its own row'
+
+    Expect-True ((Get-NSReceiptSessionFile 'relative-fixture.md') -ceq '') 'relative filenames outside runtime state have no ledger'
+    Expect-True ((Get-NSReceiptSessionData 'relative-fixture.md').Count -eq 0) 'a missing relative receipt is empty'
+    $rootReceipt = Join-Path ([IO.Path]::GetPathRoot($root)) 'missing-root-receipt.md'
+    Expect-True ((Get-NSReceiptSessionFile $rootReceipt) -ceq '') 'a filesystem-root receipt has no runtime ledger'
+    Expect-True ((Get-NSReceiptSessionData $rootReceipt).Count -eq 0) 'a missing filesystem-root receipt is empty'
+    Update-NSReceiptSessionIgnore $rootReceipt
+
+    $w = Join-Path $root 'recover-redraw'
+    $ns = New-Site $w
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+    $before = [IO.File]::ReadAllText($r)
+    $module = Get-Module Nightshift
+    & $module {
+        $script:SavedReceiptView = ${function:Update-NSReceiptSessionView}
+        function script:Update-NSReceiptSessionView { throw 'injected redraw failure' }
+    }
+    $failed = $false
+    try { Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused 'checkpoint=shift:2' }
+    catch { $failed = $true }
+    finally { & $module { Set-Item Function:script:Update-NSReceiptSessionView $script:SavedReceiptView; Remove-Variable SavedReceiptView -Scope Script } }
+    Expect-True $failed 'a failed redraw reports failure'
+    Expect-True ([IO.File]::ReadAllText($r) -ceq $before) 'a failed redraw keeps the old receipt intact'
+    $ledger = Get-NSReceiptSessionFile $r
+    Expect-True (Test-Path -LiteralPath ($ledger + '.pending')) 'the redraw is durably pending'
+    Write-NSReceiptsIndex $w
+    Expect-True (-not (Test-Path -LiteralPath ($ledger + '.pending'))) 'indexing recovers the redraw'
+    Expect-True ([IO.File]::ReadAllText($r).Contains('| input | 8 |')) 'the recovered receipt uses captured rows'
+    Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused 'checkpoint=shift:2 note=Retry'
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 2) 'retrying a captured checkpoint never doubles the span'
+
+    $w = Join-Path $root 'recover-ledger-write'
+    $ns = New-Site $w
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item shift 100 200 90 3 4 paused 'checkpoint=shift:1'
+    & $module {
+        $script:SavedReceiptStore = ${function:Set-NSReceiptSessions}
+        function script:Set-NSReceiptSessions { throw 'injected ledger replacement failure' }
+    }
+    $failed = $false
+    try { Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused 'checkpoint=shift:2' }
+    catch { $failed = $true }
+    finally { & $module { Set-Item Function:script:Set-NSReceiptSessions $script:SavedReceiptStore; Remove-Variable SavedReceiptStore -Scope Script } }
+    Expect-True $failed 'a failed ledger replacement reports failure'
+    $ledger = Get-NSReceiptSessionFile $r
+    Expect-True ([IO.File]::ReadAllLines($ledger).Length -eq 1) 'the old ledger remains intact'
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 2) 'the journal preserves the captured checkpoint'
+    Write-NSReceiptsIndex $w
+    Expect-True (-not (Test-Path -LiteralPath ($ledger + '.pending'))) 'ledger replacement recovers before indexing'
+    Expect-True ([IO.File]::ReadAllLines($ledger).Length -eq 2) 'recovery writes both captured sessions'
+
+    $w = Join-Path $root 'legacy-ignore'
+    $ns = New-Site $w
+    & git -C $ns init --quiet
+    [IO.File]::WriteAllText((Join-Path $ns '.gitignore'), 'STOP', $utf8)
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item shift 100 200 90 3 4 paused
+    Add-NSReceiptSession $r $item shift 200 300 90 5 6 paused
+    $ignore = [IO.File]::ReadAllLines((Join-Path $ns '.gitignore'))
+    Expect-True ($ignore[0] -ceq 'STOP') 'existing ignore content stays intact'
+    Expect-True (@($ignore | Where-Object { $_ -ceq '.item-sessions/' }).Count -eq 1) 'the legacy ignore entry is added once'
+    & git -C $ns add -A
+    $staged = @(& git -C $ns ls-files '.item-sessions/*')
+    Expect-True ($staged.Count -eq 0) 'receipt staging excludes all session state'
+
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

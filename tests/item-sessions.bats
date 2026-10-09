@@ -85,7 +85,7 @@ tick() { # <project> <number>
   tick "$p" 4
   step "$p"
 
-  [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = 'arm|3. Blocked on a reply.:switch|4. The next one.:tick' ]
+  [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = 'arm:|3. Blocked on a reply.:switch|4. The next one.:tick' ]
   r3="$p/.nightshift/receipts/cc33-blocked-on-a-reply.md"
   r4="$p/.nightshift/receipts/dd44-the-next-one.md"
   [ "$(sessions "$r3" | awk '{ print $5, $6, $7 }')" = '40 4 switched-away' ]
@@ -130,7 +130,7 @@ tick() { # <project> <number>
   step "$p"
 
   [ "$(cut -f2,4 "$p/.nightshift/usage/marks.tsv" | tr '\t' ':' | paste -sd'|' -)" = \
-    'arm|3. Blocked on a reply.:switch|4. The next one.:switch|3. Blocked on a reply.:tick' ]
+    'arm:|3. Blocked on a reply.:switch|4. The next one.:switch|3. Blocked on a reply.:tick' ]
   r3="$p/.nightshift/receipts/cc33-blocked-on-a-reply.md"
   r4="$p/.nightshift/receipts/dd44-the-next-one.md"
   # Item 4's work in hand is its own; item 3 is charged only for what it spent before.
