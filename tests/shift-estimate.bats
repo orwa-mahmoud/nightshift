@@ -144,3 +144,21 @@ EOF
   [ "$status" -eq 0 ]
   [ "$output" = "$want" ]
 }
+
+@test "unavailable token totals stay missing and measured zero remains a reading" {
+  p="$(history unsupported)"
+  dir="$p/.nightshift/archive/2026-10-01/receipts"
+  lib ns_receipt_add_session "$dir/3-unsupported.md" Unsupported - 100 200 100 - - ticked 'cw=- cr=- rea=-'
+  run bash "$ESTIMATE" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'tokens per item: median 1.5M · range 500.0k to 3.0M · from 4 items, 2 without a reading'
+  lib ns_receipt_add_session "$dir/4-zero.md" Zero - 100 200 100 0 0 ticked 'cw=0 cr=0 rea=0'
+  run bash "$ESTIMATE" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'tokens per item: median 1.0M · range 0 to 3.0M · from 5 items, 2 without a reading'
+  want="$output"
+  command -v pwsh >/dev/null 2>&1 || return 0
+  run pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/shift-estimate.ps1" -Project "$p"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$want" ]
+}

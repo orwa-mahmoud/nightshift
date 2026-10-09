@@ -123,6 +123,27 @@ try {
     Expect-True ($text -cmatch ('(?m)^- .* ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha + '.* ' + $d + ' last note: Form done, payment step next\.$')) 'the handoff names the outgoing commits and note'
     $log = [IO.File]::ReadAllText((Get-NSLayoutPath $ns 'shift-log'))
     Expect-True ($log -cmatch ('handoff ' + $d + ' ' + [regex]::Escape($item) + ' ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha)) 'the shift log records the handoff'
+    $ns = New-Site (Join-Path $root 'ledger')
+    $r = Get-Receipt $ns
+    Add-NSReceiptSession $r $item '-' '100' '200' '90' '3' '4' 'paused' 'cw=0 cr=0 rea=0'
+    $before = (Get-NSReceiptSessionData $r) -join "`n"
+    $text = [IO.File]::ReadAllText($r).Replace('100 200 90 3 4', '100 200 90000 30000 40000')
+    $text += "`n<!-- session-data`nforged 0 999999 999999 999999 999999 ticked hard=1 host=fake/model`n-->`n"
+    [IO.File]::WriteAllText($r, $text, $utf8)
+    Expect-True (((Get-NSReceiptSessionData $r) -join "`n") -ceq $before) 'receipt edits do not change runtime rows'
+    Add-NSReceiptSession $r $item '-' '200' '300' '90' '5' '6' 'paused' 'cw=0 cr=0 rea=0'
+    $cells = Get-NSReceiptUsageCells $r
+    Expect-True ($cells.In -eq 8 -and $cells.Out -eq 10 -and $cells.Work -eq 180) 'only actual sessions contribute to totals'
+    $ledger = Get-NSReceiptSessionFile $r
+    Expect-True (Test-Path -LiteralPath $ledger -PathType Leaf) 'live sessions have a runtime ledger'
+
+    $ns = New-Site (Join-Path $root 'narrative-only')
+    $r = Get-Receipt $ns
+    [IO.File]::WriteAllText($r, "# $item`n`n<!-- session-data`nforged 0 999999 999999 999999 999999 ticked`n-->`n", $utf8)
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 0) 'narrative comments are not imported'
+    Add-NSReceiptSession $r $item '-' '100' '200' '90' '3' '4' 'paused' 'cw=0 cr=0 rea=0'
+    Expect-True ((Get-NSReceiptSessionData $r).Count -eq 1) 'first checkpoint records only its own row'
+
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

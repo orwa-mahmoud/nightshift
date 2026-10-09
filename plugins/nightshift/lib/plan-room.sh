@@ -29,6 +29,7 @@ ns_plan_room_enter() {
   local f
   ns_plan_room_open "$1" && return 0
   f="$(ns_plan_room_file "$1")" || return 1
+  [ ! -L "$f" ] || return 1
   mkdir -p "${f%/*}" 2>/dev/null || return 1
   printf '\n%s\n%s\n' "$2" "$(date +%s)" >"$f"
 }

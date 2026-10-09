@@ -147,36 +147,45 @@ ns_budget_spent() {
   printf '%s %s' "$secs" "$toks"
 }
 
-# ns_budget_state_file <nightshift-dir> — the budget record: `<label>\t<soft|hard>\t<epoch>` lines.
+# ns_budget_state_file <nightshift-dir> — the budget record: `<label>\t<soft|hard>\t<epoch>\t<item-id>` lines.
 ns_budget_state_file() { ns_layout_path "$1" budget; }
 
 # ns_budget_reached <nightshift-dir> <label> <soft|hard> — the epoch that limit was recorded at.
 ns_budget_reached() {
-  local file
+  local file id
   file="$(ns_budget_state_file "$1")"
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
-  awk -F '\t' -v l="$2" -v k="$3" '$1 == l && $2 == k { print $3; found = 1; exit } END { exit !found }' "$file"
+  id="$(ns_item_id_for "$(ns_layout_path "$1" punch-list)" "$2")"
+  awk -F '\t' -v l="$2" -v k="$3" -v id="$id" '(($4 != "" && $4 == id) || ($4 == "" && $1 == l)) && $2 == k { print $3; found = 1; exit } END { exit !found }' "$file"
 }
 
 # ns_budget_hard_open <nightshift-dir> — the open item whose hard budget is spent, or status 1.
 # Any one is enough: until it is closed, only wrap-up runs.
 ns_budget_hard_open() {
-  local file label
+  local file punch label level _epoch id state current current_id found
   file="$(ns_budget_state_file "$1")"
+  punch="$(ns_layout_path "$1" punch-list)"
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
-  while IFS= read -r label; do
-    if awk -F '\t' -v l="$label" '$1 == l && $2 == "hard" { found = 1; exit } END { exit !found }' "$file"; then
-      printf '%s' "$label"
-      return 0
-    fi
-  done < <(ns_item_rows "$(ns_layout_path "$1" punch-list)" open | cut -f1)
+  while IFS=$'\t' read -r label level _epoch id; do
+    [ "$level" = hard ] || continue
+    found=0
+    while IFS=$'\t' read -r state current current_id; do
+      if { [ -n "$id" ] && [ "$current_id" = "$id" ]; } || { [ -z "$id" ] && [ "$current" = "$label" ]; }; then
+        found=1
+        if [ "$state" = open ]; then printf '%s' "$current"; return 0; fi
+        break
+      fi
+    done < <(ns_item_states "$punch")
+    # Removing or replacing the identity does not release a reached limit.
+    if [ "$found" -eq 0 ]; then printf '%s' "$label"; return 0; fi
+  done <"$file"
   return 1
 }
 
 # ns_budget_check <nightshift-dir> <project> — on each pulse: when the item being worked has just
 # spent a limit, record it once, journal it, and print the notice for the agent.
 ns_budget_check() {
-  local ns="$1" project="$2" label text parsed ss sk hs hk spent st tk file level limit words
+  local ns="$1" project="$2" label text parsed ss sk hs hk spent st tk file level limit words id
   [ -f "$(ns_layout_path "$ns" armed)" ] || return 1
   label="$(ns_active_item "$project" 2>/dev/null)" || return 1
   [ -n "$label" ] || return 1
@@ -199,7 +208,8 @@ ns_budget_check() {
   file="$(ns_budget_state_file "$ns")"
   mkdir -p "${file%/*}" 2>/dev/null || return 1
   [ ! -L "$file" ] || return 1
-  printf '%s\t%s\t%s\n' "$label" "$level" "$(date +%s)" >>"$file" || return 1
+  id="$(ns_item_id_for "$(ns_layout_path "$ns" punch-list)" "$label")"
+  printf '%s\t%s\t%s\t%s\n' "$label" "$level" "$(date +%s)" "$id" >>"$file" || return 1
   words="$(ns_budget_words "$st" "$tk")"
   ns_shift_log "$ns" "budget · $label · $level limit reached ($limit; spent $words)"
   ns_budget_notice "$level" "$label" "$limit" "$words"
@@ -229,9 +239,10 @@ ns_budget_wrapup() {
 # ns_budget_forget <nightshift-dir> <label> — drop what was recorded for an item once it is closed,
 # so an item the owner opens again starts with its budget unspent.
 ns_budget_forget() {
-  local file tmp
+  local file tmp id
   file="$(ns_budget_state_file "$1")"
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   tmp="$file.$$"
-  awk -F '\t' -v l="$2" '$1 != l' "$file" >"$tmp" && mv "$tmp" "$file"
+  id="$(ns_item_id_for "$(ns_layout_path "$1" punch-list)" "$2")"
+  awk -F '\t' -v l="$2" -v id="$id" '!($1 == l || (id != "" && $4 == id))' "$file" >"$tmp" && mv "$tmp" "$file"
 }

@@ -267,6 +267,7 @@ file_one() {
 "
     return 0
   }
+  if [ "${f%/*}" = "$src" ]; then ns_receipt_forget_sessions "$f" || return 1; fi
   removed=$((removed + 1))
 }
 

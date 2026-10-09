@@ -259,3 +259,24 @@ EOF
     fi
   done
 }
+
+@test "a reached hard budget follows an item identity across renaming" {
+  p="$(site renamed-hard 'hard 100 tokens')"
+  spend "$p" 90 20
+  notices "$p" >/dev/null
+  list="$p/.nightshift/punch-list.md"
+  sed -i.bak 's/Build the importer\./Renamed importer./' "$list"
+  [ "$(lib ns_budget_hard_open "$p/.nightshift")" = '2. Renamed importer.' ]
+  [ -n "$(lib ns_budget_reached "$p/.nightshift" '2. Renamed importer.' hard)" ]
+  r="$(hardhat_tool "$p" "$(jq -nc --arg f "$p/src/importer.js" '{tool_name:"Edit",session_id:"test-shift-session",tool_input:{file_path:$f}}')")"
+  denied "$r"
+  cp "$list" "$p/same-id"
+  sed -i.bak 's/id: bb22/id: dd44/' "$list"
+  [ -n "$(lib ns_budget_hard_open "$p/.nightshift")" ]
+  cp "$p/same-id" "$list"
+  sed -i.bak 's/^- \[ \] \*\*2\./- [-] **2./' "$list"
+  run lib ns_budget_hard_open "$p/.nightshift"
+  [ "$status" -eq 1 ]
+  lib ns_budget_forget "$p/.nightshift" '2. Renamed importer.'
+  [ ! -s "$(lib ns_budget_state_file "$p/.nightshift")" ]
+}

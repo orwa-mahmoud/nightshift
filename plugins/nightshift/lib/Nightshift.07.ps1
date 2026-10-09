@@ -2136,9 +2136,11 @@ function Get-NSBudgetReached {
           [Parameter(Mandatory = $true)][string]$Level)
     $file = Get-NSBudgetStateFile $NightshiftDir
     if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return '' }
+    $id = Get-NSItemIdFor (Get-NSLayoutPath $NightshiftDir 'punch-list') $Label
     foreach ($line in [IO.File]::ReadAllLines($file)) {
         $f = $line.Split("`t")
-        if ($f.Length -ge 3 -and $f[0] -ceq $Label -and $f[1] -ceq $Level) { return $f[2] }
+        $match = $(if ($f.Length -ge 4 -and $f[3].Length -gt 0) { $f[3] -ceq $id } else { $f[0] -ceq $Label })
+        if ($f.Length -ge 3 -and $match -and $f[1] -ceq $Level) { return $f[2] }
     }
     return ''
 }
@@ -2148,8 +2150,20 @@ function Get-NSBudgetHardOpen {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $file = Get-NSBudgetStateFile $NightshiftDir
     if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return '' }
-    foreach ($row in (Get-NSItemRows (Get-NSLayoutPath $NightshiftDir 'punch-list') 'open')) {
-        if ((Get-NSBudgetReached $NightshiftDir $row.Label 'hard').Length -gt 0) { return $row.Label }
+    $rows = Get-NSItemRows (Get-NSLayoutPath $NightshiftDir 'punch-list') 'all'
+    foreach ($line in [IO.File]::ReadAllLines($file)) {
+        $f = $line.Split("`t")
+        if ($f.Length -lt 3 -or $f[1] -cne 'hard') { continue }
+        $id = $(if ($f.Length -ge 4) { $f[3] } else { '' })
+        $found = $false
+        foreach ($row in $rows) {
+            $match = $(if ($id.Length -gt 0) { $row.Id -ceq $id } else { $row.Label -ceq $f[0] })
+            if (-not $match) { continue }
+            $found = $true
+            if ($row.Open) { return $row.Label }
+            break
+        }
+        if (-not $found) { return $f[0] }
     }
     return ''
 }
@@ -2159,7 +2173,11 @@ function Remove-NSBudgetRecord {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label)
     $file = Get-NSBudgetStateFile $NightshiftDir
     if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return }
-    $keep = @([IO.File]::ReadAllLines($file) | Where-Object { $_.Split("`t")[0] -cne $Label })
+    $id = Get-NSItemIdFor (Get-NSLayoutPath $NightshiftDir 'punch-list') $Label
+    $keep = @([IO.File]::ReadAllLines($file) | Where-Object {
+        $f = $_.Split("`t")
+        $f[0] -cne $Label -and -not ($id.Length -gt 0 -and $f.Length -ge 4 -and $f[3] -ceq $id)
+    })
     [IO.File]::WriteAllText($file, $(if ($keep.Count -gt 0) { ($keep -join "`n") + "`n" } else { '' }), $script:NSUtf8NoBom)
 }
 
@@ -2201,7 +2219,8 @@ function Invoke-NSBudgetCheck {
     $file = Get-NSBudgetStateFile $NightshiftDir
     if (Test-NSReparsePoint $file) { return '' }
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force
-    [IO.File]::AppendAllText($file, ($label + "`t" + $level + "`t" + (Get-NSUnixTime) + "`n"), $script:NSUtf8NoBom)
+    $id = Get-NSItemIdFor (Get-NSLayoutPath $NightshiftDir 'punch-list') $label
+    [IO.File]::AppendAllText($file, ($label + "`t" + $level + "`t" + (Get-NSUnixTime) + "`t" + $id + "`n"), $script:NSUtf8NoBom)
     $words = Get-NSBudgetWords $spent[0] $spent[1]
     Write-NSControlLog $NightshiftDir ('budget {0} {1} {0} {2} limit reached ({3}; spent {4})' -f $script:NSDot, $label, $level, $limit, $words)
     return (Get-NSBudgetNotice $level $label $limit $words)
@@ -2223,14 +2242,14 @@ function Get-NSPulseNotices {
 # POSIX tools. Mirrors ns_hardhat_command_allowed: hardening, not a sandbox.
 function Test-NSRestrictedCommand {
     param([AllowEmptyString()][string]$Command, [Parameter(Mandatory = $true)][string]$Mode)
-    if ($Command.Contains('$(') -or $Command.Contains('`') -or $Command.Contains('<(') -or $Command.Contains('>(')) { return $false }
+    if ($Command.Contains('$(') -or $Command.Contains('`') -or $Command.Contains('<(') -or $Command.Contains('>(') -or $Command.Contains('{') -or $Command.Contains('}')) { return $false }
     $c = [regex]::Replace($Command, '[0-9]*>&[0-9]+', '')
     $c = [regex]::Replace($c, '&?[0-9]*>{1,2}[ \t]*(/dev/null|\$null|NUL)', '')
     if ($c.Contains('>')) { return $false }
-    $read = @('cat', 'head', 'tail', 'less', 'more', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ls', 'tree', 'file',
-        'stat', 'du', 'df', 'pwd', 'cd', 'echo', 'printf', 'true', 'false', 'test', '[', 'which', 'type', 'command', 'date',
-        'basename', 'dirname', 'realpath', 'readlink', 'sort', 'uniq', 'cut', 'tr', 'nl', 'column', 'diff', 'cmp', 'comm',
-        'jq', 'awk', 'get-content', 'gc', 'get-childitem', 'gci', 'dir', 'select-string', 'sls', 'get-item', 'gi',
+    $read = @('cat', 'head', 'tail', 'wc', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ls', 'tree', 'file',
+        'stat', 'du', 'df', 'pwd', 'cd', 'echo', 'printf', 'true', 'false', 'test', '[', 'which', 'type', 'date',
+        'basename', 'dirname', 'realpath', 'readlink', 'sort', 'cut', 'tr', 'nl', 'column', 'diff', 'cmp', 'comm',
+        'jq', 'get-content', 'gc', 'get-childitem', 'gci', 'dir', 'select-string', 'sls', 'get-item', 'gi',
         'test-path', 'resolve-path', 'get-location', 'gl', 'write-output', 'write-host', 'measure-object', 'measure',
         'sort-object', 'select-object', 'select', 'where-object', 'where', 'format-table', 'ft', 'format-list', 'fl',
         'out-string', 'convertfrom-json', 'convertto-json', 'get-date', 'set-location', 'sl', 'compare-object')
@@ -2252,11 +2271,10 @@ function Test-NSRestrictedCommand {
             $rest = $(if ($seg.Length -gt $word.Length) { $seg.Substring($word.Length).Trim() } else { '' })
         }
         $name = ($word -split '[/\\]')[-1].ToLowerInvariant() -creplace '\.exe$', ''
+        if ($name -ceq 'sort' -and (' ' + $rest + ' ') -cmatch ' (-o|--output)') { return $false }
+        if ($name -ceq 'rg' -and $rest -cmatch '--(pre|hostname-bin)') { return $false }
+        if ($name -ceq 'date' -and (' ' + $rest + ' ') -cmatch ' (-s|--set)') { return $false }
         if ($read -ccontains $name) { continue }
-        if ($name -ceq 'sed') {
-            if ((' ' + $rest + ' ') -cmatch ' (-i|--in-place)') { return $false }
-            continue
-        }
         if ($name -ceq 'find') {
             if ((' ' + $rest + ' ') -cmatch ' -(delete|exec|execdir|ok|okdir|fprint|fls)( |$)') { return $false }
             continue
@@ -2315,6 +2333,7 @@ function Enter-NSPlanRoom {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$HostName)
     if (Test-NSPlanRoomOpen $NightshiftDir) { return $true }
     $f = Get-NSPlanRoomFile $NightshiftDir
+    if (Test-NSReparsePoint $f) { return $false }
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $f) -Force
     [IO.File]::WriteAllText($f, ("`n" + $HostName + "`n" + (Get-NSUnixTime) + "`n"), $script:NSUtf8NoBom)
     return $true

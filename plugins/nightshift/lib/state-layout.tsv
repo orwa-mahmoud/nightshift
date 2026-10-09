@@ -95,6 +95,8 @@ receipt-due	0	.receipt-due	file
 receipt-due	2	run/.receipt-due	file
 report-due	0	.report-due	file
 report-due	2	run/.report-due	file
+item-sessions	0	.item-sessions	dir
+item-sessions	2	run/item-sessions	dir
 budget	0	.budget.tsv	file
 budget	2	run/budget.tsv	file
 plan-room	0	.plan-room	file

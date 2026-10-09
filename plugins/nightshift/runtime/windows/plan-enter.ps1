@@ -58,7 +58,10 @@ if (Test-NSPlanRoomOpen $ns) {
     Write-PlanRecord
     exit 0
 }
-$null = Enter-NSPlanRoom $ns $HostName
+if (-not (Enter-NSPlanRoom $ns $HostName)) {
+    [Console]::Error.WriteLine('plan-enter: could not write ' + (Get-NSLayoutName $ns 'plan-room'))
+    exit 1
+}
 Write-NSControlLog $ns "plan room opened ($HostName)"
 Write-Output "plan room open: run `$null = 'nightshift-plan-probe' as the next tool call to bind it to this conversation"
 Write-Output ('plan goes in ' + (Get-NSPlanRoomPlaceName $ns))

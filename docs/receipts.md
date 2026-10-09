@@ -46,7 +46,10 @@ host and model, from and to, working and paused time, the tokens in the host's o
 ended (`ticked`, `paused`, `switched away`, `blocked`, `stopped`). A restart, a Reset, a revival or a
 host switch opens a new row. The **Total** row is the item's figure, and the index, the morning
 receipt, Archive and Status all read it. Reset keeps an open item's spend: the next Start continues
-the same accounting and records the gap as a pause.
+the same accounting and records the gap as a pause. The runtime keeps live session rows in its
+own state; receipt text is a view of those rows. Older receipt sections are imported on their
+first checkpoint, and narrative comments do not supply session data. Archiving a closed receipt
+retires its live ledger.
 
 When the next session on an item runs on another host or model, the section gains a **Handoffs**
 block, and the shift log gets the same line. It names the item, the host and model before and after,

@@ -372,7 +372,10 @@ ns_receipts_rename() {
     want="$dir/$(ns_receipt_want "$project" "$label" "$id").md"
     [ "$f" != "$want" ] || continue
     { [ -e "$want" ] || [ -L "$want" ]; } && continue
-    mv "$f" "$want" || rc=1
+    if [ -f "$(ns_receipt_session_file "$f")" ]; then
+      ns_receipt_store_sessions "$want" "$(ns_receipt_session_data "$f")" || { rc=1; continue; }
+    fi
+    if mv "$f" "$want"; then ns_receipt_forget_sessions "$f" || rc=1; else rc=1; fi
   done <<EOF
 $(ns_item_rows "$punch")
 EOF
@@ -509,10 +512,50 @@ ns_session_host_words() {
     END { printf "%s", out }'
 }
 
-# ns_receipt_session_data <receipt> — the recorded session lines, oldest first.
+# ns_receipt_session_file <receipt> — the runtime's session ledger for a live item.
+ns_receipt_session_file() {
+  local ns="${1%/*/*}" dir
+  [ "${ns##*/}" = .nightshift ] || return 1
+  dir="$(ns_layout_path "$ns" item-sessions)" || return 1
+  printf '%s/%s.tsv' "$dir" "${1##*/}"
+}
+
+# ns_receipt_session_data <receipt> — ledger rows, or an older receipt's first runtime section.
+# Narrative comments never contribute rows. Once a ledger exists, receipt edits cannot change it.
 ns_receipt_session_data() {
+  local file
+  file="$(ns_receipt_session_file "$1")" || file=""
+  if [ -n "$file" ]; then
+    [ ! -L "${file%/*}" ] && [ ! -L "${file%/*/*}" ] && [ ! -L "$file" ] || return 1
+    if [ -f "$file" ]; then cat "$file"; return; fi
+  fi
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
-  awk '/^<!-- session-data$/ { on = 1; next } on && /^-->$/ { on = 0 } on && NF { print }' "$1"
+  awk '
+    /^<!-- usage -->$/ { if (seen++) exit; usage = 1; next }
+    /^<!-- \/usage -->$/ { if (usage) exit }
+    usage && /^<!-- session-data$/ { on = 1; next }
+    on && /^-->$/ { exit }
+    on && NF { print }
+  ' "$1"
+}
+
+ns_receipt_store_sessions() {
+  local file dir tmp
+  file="$(ns_receipt_session_file "$1")" || return 0
+  dir="${file%/*}"
+  [ ! -L "$dir" ] && [ ! -L "${dir%/*}" ] && [ ! -L "$file" ] || return 1
+  mkdir -p "$dir" || return 1
+  tmp="$(mktemp "$dir/.sessions.XXXXXX")" || return 1
+  if printf '%s\n' "$2" >"$tmp" && mv "$tmp" "$file"; then return 0; fi
+  rm -f "$tmp"
+  return 1
+}
+
+ns_receipt_forget_sessions() {
+  local file
+  file="$(ns_receipt_session_file "$1")" || return 0
+  [ ! -L "${file%/*}" ] && [ ! -L "${file%/*/*}" ] || return 1
+  rm -f "$file"
 }
 
 # ns_receipt_last_session <receipt> — the most recent session line, or nothing.
@@ -715,7 +758,7 @@ EOF
 
 # ns_receipt_add_session <receipt> <label> <shift-id> <start> <end> <working-sec> <input> <output>
 # <ended> [extras] — add one session to the item's receipt and redraw its runtime section. The
-# section is drawn from the data lines kept inside it, so its totals stay exact across every shift
+# section is drawn from the runtime ledger, so its totals stay exact across every shift
 # the item was worked in, whatever happened to the live readings in between. `-` is an unknown
 # shift or an unreported figure, and `off` a measurement the owner turned off; <ended> is ticked,
 # switched-away, blocked or paused; [extras] are the named fields ns_gate_session_row records.
@@ -732,11 +775,12 @@ ns_receipt_add_session() {
     printf '# %s\n' "$label" >"$f" || return 1
     fresh=1
   fi
-  data="$(ns_receipt_session_data "$f")"
+  data="$(ns_receipt_session_data "$f")" || return 1
   [ -n "$data" ] || data="$(ns_receipt_legacy_sessions "$f")"
   row="$3 $4 $5 $6 $7 $8 $9"
   [ -z "${10:-}" ] || row="$row ${10}"
   data="$(printf '%s\n%s' "$data" "$row" | sed '/^$/d')"
+  ns_receipt_store_sessions "$f" "$data" || return 1
   block="$(mktemp "${TMPDIR:-/tmp}/ns-sessions.XXXXXX")" || return 1
   ns_receipt_usage_section "$data" >"$block"
   ref="$f.mtime.$$"
@@ -1015,6 +1059,7 @@ ns_receipt_usage_cells() {
         time="$(ns_receipts_time_cell "$work" "$pause")"
       fi
     fi
+    if grep -qE '^\| (input|output) \| unavailable \|' "$f"; then usage='—'; fi
     # A measurement the owner turned off says so, rather than reading as one nobody reported.
     grep -qx '\*\*Tokens:\*\* off' "$f" 2>/dev/null && usage=off
     grep -qx '\*\*Time:\*\* off' "$f" 2>/dev/null && time=off

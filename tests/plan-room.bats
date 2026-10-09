@@ -255,3 +255,31 @@ EOF
   winner="$(lib ns_plan_room_line "$p/.nightshift" 1)"
   [ "$(cat "$BATS_TEST_TMPDIR/$winner.result")" -eq 0 ]
 }
+
+@test "restricted modes refuse interpreters, command wrappers and write-capable read options" {
+  p="$(room interpreter-guard)"
+  for cmd in "awk 'BEGIN { system(\"touch src/new\") }'" "sed -n 'w src/new' input" \
+    'command touch src/new' 'sort -o src/new input' 'rg --pre writer text src' 'uniq input src/new'; do
+    run claude "$p" planner "$(bash_call "$cmd")"
+    [ -n "$(reason "$output")" ] || { echo "$cmd: $output"; return 1; }
+    for mode in plan wrapup; do
+      run bash -c '. "$1"; . "$2"; ns_hardhat_command_allowed "$3" "$4"' _ "$LIB" "$PLUGIN/hooks/shared/hardhat-core.sh" "$cmd" "$mode"
+      [ "$status" -ne 0 ]
+    done
+  done
+}
+
+@test "entering refuses a marker symlink without touching its target on either runtime" {
+  p="$(new_project marker-link)"
+  rm -f "$p/.nightshift/.shift-armed"
+  victim="$p/src.txt"
+  printf 'unchanged\n' >"$victim"
+  ln -s "$victim" "$(lib ns_plan_room_file "$p/.nightshift")"
+  run bash "$PLUGIN/runtime/plan-enter.sh" --project "$p"
+  [ "$status" -eq 1 ]
+  [ "$(cat "$victim")" = unchanged ]
+  command -v pwsh >/dev/null 2>&1 || return 0
+  run pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/plan-enter.ps1" -Project "$p"
+  [ "$status" -eq 1 ]
+  [ "$(cat "$victim")" = unchanged ]
+}

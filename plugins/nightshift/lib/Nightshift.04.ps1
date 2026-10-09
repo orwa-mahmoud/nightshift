@@ -1314,7 +1314,11 @@ function Rename-NSReceipts {
         if ($name -ceq $want) { continue }
         if (Test-Path -LiteralPath (Join-Path $dir $want)) { continue }
         try {
-            [IO.File]::Move((Join-Path $dir $name), (Join-Path $dir $want))
+            $old = Join-Path $dir $name
+            $new = Join-Path $dir $want
+            if (Test-Path -LiteralPath (Get-NSReceiptSessionFile $old) -PathType Leaf) { Set-NSReceiptSessions $new (Get-NSReceiptSessionData $old) }
+            [IO.File]::Move($old, $new)
+            Remove-NSReceiptSessions $old
         }
         catch {
             Write-Warning ('receipts: ' + $name + ' could not take its item''s name ' + $want + ': ' + $_.Exception.Message)
@@ -1411,19 +1415,61 @@ function Get-NSSessionHostWords {
     return ($words -join ' + ')
 }
 
-# Get-NSReceiptSessionData <receipt> - the recorded session lines, oldest first.
+function Get-NSReceiptSessionFile {
+    param([Parameter(Mandatory = $true)][string]$Receipt)
+    $ns = Split-Path -Parent (Split-Path -Parent $Receipt)
+    if ((Split-Path -Leaf $ns) -cne '.nightshift') { return '' }
+    return (Join-Path (Get-NSLayoutPath $ns 'item-sessions') ((Split-Path -Leaf $Receipt) + '.tsv'))
+}
+
+# Get-NSReceiptSessionData <receipt> - ledger rows, or an older receipt's first runtime section.
 function Get-NSReceiptSessionData {
     param([AllowEmptyString()][string]$Receipt)
     $data = New-Object Collections.Generic.List[string]
-    if ([string]::IsNullOrEmpty($Receipt) -or -not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or
-        (Test-NSReparsePoint $Receipt)) { return , $data.ToArray() }
-    $on = $false
+    if ([string]::IsNullOrEmpty($Receipt)) { return , $data.ToArray() }
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -gt 0) {
+        $dir = Split-Path -Parent $file
+        if ((Test-NSReparsePoint $file) -or (Test-NSReparsePoint $dir) -or (Test-NSReparsePoint (Split-Path -Parent $dir))) { throw 'receipt session ledger is a link' }
+        if (Test-Path -LiteralPath $file -PathType Leaf) { return , [IO.File]::ReadAllLines($file) }
+    }
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return , $data.ToArray() }
+    $on = $false; $usage = $false; $seen = $false
     foreach ($line in [IO.File]::ReadAllLines($Receipt)) {
-        if ($line -ceq '<!-- session-data') { $on = $true; continue }
-        if ($on -and $line -ceq '-->') { $on = $false; continue }
+        if ($line -ceq '<!-- usage -->') {
+            if ($seen) { break }
+            $usage = $true; $seen = $true; continue
+        }
+        if ($usage -and $line -ceq '<!-- /usage -->') { break }
+        if ($usage -and $line -ceq '<!-- session-data') { $on = $true; continue }
+        if ($on -and $line -ceq '-->') { break }
         if ($on -and $line.Trim().Length -gt 0) { $data.Add($line) }
     }
     return , $data.ToArray()
+}
+
+function Set-NSReceiptSessions {
+    param([string]$Receipt, [string[]]$Rows)
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -eq 0) { return }
+    $dir = Split-Path -Parent $file
+    if ((Test-NSReparsePoint $file) -or (Test-NSReparsePoint $dir) -or (Test-NSReparsePoint (Split-Path -Parent $dir))) { throw 'receipt session ledger is a link' }
+    $null = New-Item -ItemType Directory -Path $dir -Force
+    $tmp = Join-Path $dir ('.sessions.' + [guid]::NewGuid().ToString('N'))
+    try {
+        [IO.File]::WriteAllText($tmp, (($Rows -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+        Move-Item -LiteralPath $tmp -Destination $file -Force
+    }
+    finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+}
+
+function Remove-NSReceiptSessions {
+    param([string]$Receipt)
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -eq 0) { return }
+    $dir = Split-Path -Parent $file
+    if ((Test-NSReparsePoint $dir) -or (Test-NSReparsePoint (Split-Path -Parent $dir))) { throw 'receipt session ledger is a link' }
+    Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
 }
 
 # Get-NSReceiptProgressNote <receipt> - the first line of the model's own text, cut to 160 characters.
@@ -1721,6 +1767,7 @@ function Add-NSReceiptSession {
     $row = ('{0} {1} {2} {3} {4} {5} {6}' -f $Shift, $Start, $End, $Work, $In, $Out, $Ended)
     if ($Extras.Length -gt 0) { $row += ' ' + $Extras }
     $data.Add($row)
+    Set-NSReceiptSessions $Receipt $data.ToArray()
     $block = Get-NSReceiptUsageSection $data.ToArray()
     $result = New-Object Collections.Generic.List[string]
     $skip = $false; $headed = $false; $top = $false; $done = $false; $pend = 0
@@ -1887,6 +1934,7 @@ function Get-NSReceiptUsageCells {
             }
             $cells['Time'] = Get-NSReceiptsTimeCell ([long]$cells['Work']) ([long]$cells['Pause'])
         }
+        if ($text -cmatch '(?m)^\| (input|output) \| unavailable \|') { $cells['Tokens'] = $dash }
         # A measurement the owner turned off says so, rather than reading as one nobody reported.
         if ($text -cmatch '(?m)^\*\*Tokens:\*\* off\r?$') { $cells['Tokens'] = 'off' }
         if ($text -cmatch '(?m)^\*\*Time:\*\* off\r?$') { $cells['Time'] = 'off' }

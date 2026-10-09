@@ -203,6 +203,7 @@ function Copy-NSArchiveRecord {
         $kept.Add($base + ' (could not be removed from live storage)')
         return $true
     }
+    if ((Split-Path -Parent $Source) -ceq $src) { Remove-NSReceiptSessions $Source }
     $script:removed++
     return $true
 }
