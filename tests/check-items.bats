@@ -59,7 +59,7 @@ EOF
   q="$(new_project nothing)"
   run bash "$CHECK" --project "$q"
   [ "$status" -eq 0 ]
-  [[ "$output" == 'no items to check'* ]]
+  [[ "$output" == 'no items to check'* ]] || false
 }
 
 @test "the plan room may run it, and Start arms a list it would flag" {

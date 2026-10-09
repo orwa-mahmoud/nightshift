@@ -84,6 +84,10 @@ try {
     $budget = ConvertFrom-NSBudget 'soft 30m / 1.5M tokens, hard 1h / 3M tokens'
     Expect-True ($null -ne $budget) 'the suggested budget parses as the punch list writes it'
 
+    [IO.File]::WriteAllText((Join-Path $ns 'archive/2026-10-01/receipts/3-disabled.md'), "# Disabled.`n`n**Tokens:** off`n", $utf8)
+    $run = Invoke-Estimate $mixed
+    Expect-True ($run.Text.Contains("tokens per item: median 1.5M $dot range 500.0k to 3.0M $dot from 4 items, 2 without a reading")) "disabled tokens are missing: $($run.Text)"
+
     $few = Join-Path $root 'few'
     $fns = New-Workspace $few
     New-Receipt (Join-Path $fns 'archive/2026-10-01/receipts/1-a.md') '10m 0s' '100' '100'

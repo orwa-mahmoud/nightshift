@@ -40,7 +40,10 @@ case "$HOST_NAME" in claude | codex | cursor) ;; *) printf 'plan-enter: unknown 
 
 WORKSPACE="$(ns_workspace_root "$PROJECT" 2>/dev/null)" || { printf 'plan-enter: no workspace at %s\n' "$PROJECT" >&2; exit 1; }
 NS="$WORKSPACE/.nightshift"
-[ -d "$NS" ] && [ ! -L "$NS" ] || { printf 'plan-enter: no .nightshift/ at %s — run Setup first\n' "$WORKSPACE" >&2; exit 1; }
+if [ ! -d "$NS" ] || [ -L "$NS" ]; then
+  printf 'plan-enter: no .nightshift/ at %s — run Setup first\n' "$WORKSPACE" >&2
+  exit 1
+fi
 
 # record — the plan record, created on first entry, every plan it holds open, and what waits for the
 # owner's review: entering resumes from both.

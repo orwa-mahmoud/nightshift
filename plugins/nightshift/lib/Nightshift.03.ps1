@@ -7,7 +7,7 @@ function Get-NSReceiptIgnoreLines {
     if ($run.Length -gt 0) { return , @((Get-NSLayoutRelativePath $NightshiftDir 'stop'), ($run + '/')) }
     return , @('STOP', '.stall', '.notified', 'deadline', '.session-end', '.shift-pulse', '.mint-failed',
         '.shift-session', '.shift-session.tmp.*', '.shift-worker', '.shift-lease', '.shift-lease.tmp.*',
-        '.mutex-scope', '.mutex-scope.tmp.*', '.watchman', '.watchman-tick', '.lock.d/', '.lease-lock.d/')
+        '.mutex-scope', '.mutex-scope.tmp.*', '.watchman', '.watchman-tick', '.budget.tsv', '.plan-room', '.lock.d/', '.lease-lock.d/')
 }
 
 # Invoke-NSScaffold <workspace> <keys> - copy each key's template to where the workspace's layout

@@ -2199,6 +2199,7 @@ function Invoke-NSBudgetCheck {
         ((& $over $spent[0] $p[0]) -or (& $over $spent[1] $p[1]))) { $level = 'soft'; $limit = Get-NSBudgetWords $p[0] $p[1] }
     if ($level.Length -eq 0) { return '' }
     $file = Get-NSBudgetStateFile $NightshiftDir
+    if (Test-NSReparsePoint $file) { return '' }
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force
     [IO.File]::AppendAllText($file, ($label + "`t" + $level + "`t" + (Get-NSUnixTime) + "`n"), $script:NSUtf8NoBom)
     $words = Get-NSBudgetWords $spent[0] $spent[1]
@@ -2270,7 +2271,10 @@ function Test-NSRestrictedCommand {
                 $verb = $arg
                 break
             }
-            if ($verb -cin @('status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'grep', 'blame', 'describe')) { continue }
+            if ($verb -cin @('status', 'diff', 'log', 'show', 'rev-parse', 'ls-files', 'grep', 'blame', 'describe')) {
+                if ((' ' + $rest + ' ') -cmatch '--(output|ext-diff|textconv|no-index|exec-path|config-env)| -c ') { return $false }
+                continue
+            }
             if ($verb -cin @('add', 'commit') -and $Mode -ceq 'wrapup') { continue }
             return $false
         }
@@ -2321,13 +2325,19 @@ function Enter-NSPlanRoom {
 function Set-NSPlanRoomBinding {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$SessionId, [string]$HostName)
     if ([string]::IsNullOrEmpty($SessionId) -or -not (Test-NSPlanRoomOpen $NightshiftDir)) { return $false }
-    $bound = Get-NSPlanRoomLine $NightshiftDir 1
-    if ($bound.Length -gt 0) { return ($bound -ceq $SessionId) }
-    $f = Get-NSPlanRoomFile $NightshiftDir
-    $tmp = $f + '.' + [guid]::NewGuid().ToString('N')
-    [IO.File]::WriteAllText($tmp, ($SessionId + "`n" + $HostName + "`n" + (Get-NSPlanRoomLine $NightshiftDir 3) + "`n"), $script:NSUtf8NoBom)
-    Move-Item -LiteralPath $tmp -Destination $f -Force
-    return $true
+    $mutex = Enter-NSMutex $NightshiftDir '.lock.d'
+    if ($null -eq $mutex) { return $false }
+    try {
+        if (-not (Test-NSPlanRoomOpen $NightshiftDir)) { return $false }
+        $bound = Get-NSPlanRoomLine $NightshiftDir 1
+        if ($bound.Length -gt 0) { return ($bound -ceq $SessionId) }
+        $f = Get-NSPlanRoomFile $NightshiftDir
+        $tmp = $f + '.' + [guid]::NewGuid().ToString('N')
+        [IO.File]::WriteAllText($tmp, ($SessionId + "`n" + $HostName + "`n" + (Get-NSPlanRoomLine $NightshiftDir 3) + "`n"), $script:NSUtf8NoBom)
+        Move-Item -LiteralPath $tmp -Destination $f -Force
+        return $true
+    }
+    finally { Exit-NSMutex $mutex }
 }
 
 function Test-NSPlanRoomBinds {

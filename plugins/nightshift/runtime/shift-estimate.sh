@@ -46,7 +46,10 @@ case "$ITEMS" in '' | [1-9] | [1-9][0-9] | [1-9][0-9][0-9]) ;; *) printf 'shift-
 
 WORKSPACE="$(ns_workspace_root "$PROJECT" 2>/dev/null)" || { printf 'shift-estimate: no workspace at %s\n' "$PROJECT" >&2; exit 1; }
 NS="$WORKSPACE/.nightshift"
-[ -d "$NS" ] && [ ! -L "$NS" ] || { printf 'shift-estimate: no .nightshift/ at %s\n' "$WORKSPACE" >&2; exit 1; }
+if [ ! -d "$NS" ] || [ -L "$NS" ]; then
+  printf 'shift-estimate: no .nightshift/ at %s\n' "$WORKSPACE" >&2
+  exit 1
+fi
 
 # One `<work-seconds|-> <tokens|->` line per ticked item's receipt, live then archived.
 LIVE=0
@@ -54,7 +57,7 @@ ARCHIVED=0
 READINGS="$(
   ns_layout_set receipts "$NS" receipts
   ns_receipts_ticked_names "$WORKSPACE" | while IFS= read -r name; do
-    [ -n "$name" ] && [ -f "$receipts/$name" ] && [ ! -L "$receipts/$name" ] || continue
+    if [ -z "$name" ] || [ ! -f "$receipts/$name" ] || [ -L "$receipts/$name" ]; then continue; fi
     printf 'live %s\n' "$receipts/$name"
   done
   ns_layout_set archive "$NS" archive
@@ -72,7 +75,7 @@ while IFS= read -r line; do
   cells="$(ns_receipt_usage_cells "$file")"
   IFS=$'\t' read -r in _cw _cr out _rea work _pause usage time <<<"$cells"
   if [ "$time" = '—' ] || [ "${work:-0}" -eq 0 ] 2>/dev/null; then work=-; fi
-  if [ "$usage" = '—' ]; then tokens=-; else tokens=$((in + out)); fi
+  if [ "$usage" = '—' ] || [ "$usage" = off ]; then tokens=-; else tokens=$((in + out)); fi
   SAMPLES="$SAMPLES$work $tokens
 "
   if [ "$where" = live ]; then LIVE=$((LIVE + 1)); else ARCHIVED=$((ARCHIVED + 1)); fi

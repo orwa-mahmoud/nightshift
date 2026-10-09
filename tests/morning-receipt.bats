@@ -139,7 +139,7 @@ policy_fixture_project() { # <name> <policy-file-or-absent>
   [[ "$output" == *"$ITEM_LINE"* ]] || false
   [[ "$output" == *'- Policy record: accepted'* ]] || false
   [[ "$output" == *'- Shift: 9f2c40ab77e51d63'* ]] || false
-  [[ "$output" == *'- Started: 2026-09-02T02:30:00Z'* ]] || false
+  [[ "$output" == *"- Started: $(lib ns_local_time 1788316200 second)"* ]] || false
   [[ "$output" != *'no shift policy was written'* ]] || false
 }
 

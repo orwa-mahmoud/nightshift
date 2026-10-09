@@ -198,6 +198,7 @@ ns_budget_check() {
   [ -n "$level" ] || return 1
   file="$(ns_budget_state_file "$ns")"
   mkdir -p "${file%/*}" 2>/dev/null || return 1
+  [ ! -L "$file" ] || return 1
   printf '%s\t%s\t%s\n' "$label" "$level" "$(date +%s)" >>"$file" || return 1
   words="$(ns_budget_words "$st" "$tk")"
   ns_shift_log "$ns" "budget · $label · $level limit reached ($limit; spent $words)"

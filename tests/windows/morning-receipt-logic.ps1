@@ -372,7 +372,10 @@ try {
     Expect-True $owner.Contains("- Shift: $shiftId") 'section 1 names the shift'
     Expect-True $owner.Contains('- Ending: unknown') 'an open punch list with no STOP is never reported as done'
     Expect-True $owner.Contains('- Items: 1 ticked, 1 open') 'section 1 counts ticked and open items'
-    Expect-True $owner.Contains('- Started: 2020-01-01T00:00:00Z') 'section 1 takes the start from the policy that ran'
+    Expect-True $owner.Contains('- Started: ' + (Get-NSLocalTime '1577836800' -Seconds)) 'section 1 takes the start from the policy that ran'
+    $policyContext = Get-NSReceiptContext $project 'owner'
+    Expect-True ($policyContext['since'] -ceq '2020-01-01T00:00:00Z') 'commit counting retains the UTC policy start'
+    Expect-True ($policyContext['shiftDay'] -ceq (Get-NSLocalTime '1577836800' -Seconds).Substring(0, 10)) 'the shift day follows the local policy start'
     Expect-True (-not $owner.Contains('- Ended:')) 'a shift that has not ended names no end'
     Expect-True $owner.Contains('- Policy: profile fast, verification final, tooling existing-tools') `
         'section 1 renders the policy that ran'

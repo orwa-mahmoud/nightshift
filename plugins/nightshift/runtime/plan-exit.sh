@@ -33,7 +33,10 @@ done
 
 WORKSPACE="$(ns_workspace_root "$PROJECT" 2>/dev/null)" || { printf 'plan-exit: no workspace at %s\n' "$PROJECT" >&2; exit 1; }
 NS="$WORKSPACE/.nightshift"
-[ -d "$NS" ] && [ ! -L "$NS" ] || { printf 'plan-exit: no .nightshift/ at %s\n' "$WORKSPACE" >&2; exit 1; }
+if [ ! -d "$NS" ] || [ -L "$NS" ]; then
+  printf 'plan-exit: no .nightshift/ at %s\n' "$WORKSPACE" >&2
+  exit 1
+fi
 
 if ! ns_plan_room_open "$NS"; then
   printf 'plan room was not open\n'

@@ -241,7 +241,7 @@ open_label() { bash -c '. "$1"; ns_item_rows "$2" open | head -n1 | cut -f1' _ "
   run bash "$PREFLIGHT" --project "$p" --host claude
   [ "$status" -eq 0 ]
   [ -f "$p/.nightshift/usage/marks.tsv" ]
-  ! compgen -G "$p/.nightshift/usage-*" >/dev/null
+  ! compgen -G "$p/.nightshift/usage-*" >/dev/null || false
   grep -qF "$(printf '\towner stop-work')" "$p/.nightshift/usage/pauses.tsv"
 }
 

@@ -47,13 +47,13 @@ message() {
   rm -f "$p/.nightshift/.shift-armed"
   run bash "$PLUGIN/runtime/plan-enter.sh" --project "$p"
   [ "$status" -eq 0 ]
-  [[ "$output" == *': nightshift-plan-probe'* ]]
+  [[ "$output" == *': nightshift-plan-probe'* ]] || false
   [ -z "$(lib ns_plan_room_line "$p/.nightshift" 1)" ]
   run claude "$p" planner "$(bash_call ': nightshift-plan-probe')"
   [ -z "$(reason "$output")" ]
   [ "$(lib ns_plan_room_line "$p/.nightshift" 1)" = planner ]
   run claude "$p" someone-else "$(bash_call ': nightshift-plan-probe')"
-  [[ "$(reason "$output")" == 'BLOCKED: the plan room is bound to another conversation.'* ]]
+  [[ "$(reason "$output")" == 'BLOCKED: the plan room is bound to another conversation.'* ]] || false
 }
 
 @test "the shift's own conversation cannot enter the plan room, and another conversation can" {
@@ -63,7 +63,7 @@ message() {
   bash "$PLUGIN/runtime/plan-enter.sh" --project "$p" >/dev/null
   run claude "$p" shifter "$(bash_call ': nightshift-plan-probe')"
   [ "$(reason "$output")" = 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.' ]
-  ! lib ns_plan_room_open "$p/.nightshift"
+  ! lib ns_plan_room_open "$p/.nightshift" || false
   grep -q 'plan room not opened: conversation shifter is working the shift$' "$p/.nightshift/shift-log.md"
   # The shift's work is not fenced.
   run claude "$p" shifter "$(edit Edit "$p/src/app.js")"
@@ -204,4 +204,54 @@ message() {
     [ "$output" = "$(lib ns_plan_room_message "$p/.nightshift")|$(lib ns_plan_room_marker_message)" ] ||
       { echo "$layout: $output"; return 1; }
   done
+}
+
+@test "another conversation cannot delete or move the plan room's parent directories" {
+  p="$(room directory-guard)"
+  for cmd in 'rm -rf .nightshift/run' 'mv .nightshift/run saved' 'rm -rf .nightshift'; do
+    run claude "$p" helper "$(bash_call "$cmd")"
+    [ "$(reason "$output")" = "$(lib ns_plan_room_marker_message)" ] || { echo "$cmd: $output"; return 1; }
+  done
+  run claude "$p" helper "$(bash_call 'rm -rf src/run')"
+  [ -z "$(reason "$output")" ]
+}
+
+@test "restricted writes reject symlink leaves and write-capable Git flags" {
+  p="$(room write-escapes)"
+  printf 'unchanged\n' >"$p/src/app.js"
+  ln -s "$p/src/app.js" "$p/.nightshift/staging/plan.md"
+  run claude "$p" planner "$(edit Edit "$p/.nightshift/staging/plan.md")"
+  [ -n "$(reason "$output")" ]
+  for cmd in 'git diff --output=src/app.js' 'git log --output src/app.js' 'git show --ext-diff' 'git -c diff.external=writer diff'; do
+    run claude "$p" planner "$(bash_call "$cmd")"
+    [ -n "$(reason "$output")" ] || { echo "$cmd: $output"; return 1; }
+  done
+  [ "$(cat "$p/src/app.js")" = unchanged ]
+}
+
+@test "concurrent first probes admit only the winner" {
+  p="$(room atomic-bind)"
+  lib ns_plan_room_leave "$p/.nightshift" test
+  lib ns_plan_room_enter "$p/.nightshift" claude
+  cat >"$BATS_TEST_TMPDIR/bind.sh" <<'EOF'
+. "$1"
+eval "$(declare -f ns_plan_room_line | sed '1s/ns_plan_room_line/ns_original_plan_line/')"
+ns_plan_room_line() {
+  local out
+  out="$(ns_original_plan_line "$@")" || return 1
+  [ "$2" != 1 ] || sleep 0.3
+  printf '%s' "$out"
+}
+while [ ! -f "$4/start" ]; do sleep 0.02; done
+ns_plan_room_bind "$2" "$3" claude
+printf '%s' "$?" >"$4/$3.result"
+EOF
+  bash "$BATS_TEST_TMPDIR/bind.sh" "$LIB" "$p/.nightshift" first "$BATS_TEST_TMPDIR" & first=$!
+  bash "$BATS_TEST_TMPDIR/bind.sh" "$LIB" "$p/.nightshift" second "$BATS_TEST_TMPDIR" & second=$!
+  touch "$BATS_TEST_TMPDIR/start"
+  wait "$first"
+  wait "$second"
+  [ "$(( $(cat "$BATS_TEST_TMPDIR/first.result") + $(cat "$BATS_TEST_TMPDIR/second.result") ))" -eq 1 ]
+  winner="$(lib ns_plan_room_line "$p/.nightshift" 1)"
+  [ "$(cat "$BATS_TEST_TMPDIR/$winner.result")" -eq 0 ]
 }

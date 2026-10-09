@@ -86,7 +86,7 @@ reason() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionReaso
   run expansion "$q" nightshift:start
   [ "$status" -eq 0 ]
   [ ! -e "$(marker "$q")" ]
-  [[ "$output" == *'by starting the shift'* ]]
+  [[ "$output" == *'by starting the shift'* ]] || false
   # The hook is registered for exactly the two commands, and through the polyglot dispatcher.
   [ "$(jq -r '.hooks.UserPromptExpansion[0].matcher' "$PLUGIN/hooks/hooks.json")" = '^nightshift:(plan-exit|start)$' ]
 }

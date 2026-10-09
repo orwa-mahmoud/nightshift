@@ -68,7 +68,7 @@ $tokens = New-Object Collections.Generic.List[long]
 foreach ($pair in $files) {
     $cells = Get-NSReceiptUsageCells $pair[1]
     if ($cells.Time -cne $dash -and [long]$cells.Work -gt 0) { $times.Add([long]$cells.Work) }
-    if ($cells.Tokens -cne $dash) { $tokens.Add([long]$cells.In + [long]$cells.Out) }
+    if ($cells.Tokens -cne $dash -and $cells.Tokens -cne 'off') { $tokens.Add([long]$cells.In + [long]$cells.Out) }
     if ($pair[0] -ceq 'live') { $live++ } else { $archived++ }
 }
 $total = $live + $archived

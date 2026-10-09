@@ -130,3 +130,17 @@ EOF
     [ "$got" = "$want" ] || { echo "$name"; echo "bash:"; echo "$want"; echo "PowerShell:"; echo "$got"; return 1; }
   done
 }
+
+@test "disabled token measurements are missing rather than zero samples on both runtimes" {
+  p="$(history disabled)"
+  receipt="$p/.nightshift/archive/2026-10-01/receipts/3-disabled.md"
+  printf '# Disabled.\n\n**Tokens:** off\n' >"$receipt"
+  run bash "$ESTIMATE" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'tokens per item: median 1.5M · range 500.0k to 3.0M · from 4 items, 2 without a reading'
+  want="$output"
+  command -v pwsh >/dev/null 2>&1 || return 0
+  run pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/shift-estimate.ps1" -Project "$p"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$want" ]
+}

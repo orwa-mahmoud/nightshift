@@ -77,6 +77,18 @@ try {
     Expect-True ($cleanRun.Stdout.Contains('ok punch-list open=1 ticked=0')) 'clean site counts the punch list'
     Expect-True ($cleanRun.Stdout.Contains('ok deadline none (finite list')) 'a finite list needs no clock'
 
+    $budgetSite = New-Site (Join-Path $root 'default-budget')
+    foreach ($value in @('hard eventually', '', 'soft 30m / 1M tokens, hard 45m / 2M tokens')) {
+        $document = Get-Content -Raw -LiteralPath $rulesTemplate | ConvertFrom-Json
+        $document.shift | Add-Member -NotePropertyName itemBudget -NotePropertyValue $value -Force
+        [IO.File]::WriteAllText((Join-Path $budgetSite '.nightshift/rules.json'), ($document | ConvertTo-Json -Depth 20))
+        $budgetRun = Invoke-Preflight $budgetSite
+        if ($value -ceq 'hard eventually') {
+            Expect-True ($budgetRun.ExitCode -eq 1 -and $budgetRun.Stdout.Contains('refuse rules shift.itemBudget is not a valid budget')) 'a malformed default budget refuses arming'
+        }
+        else { Expect-True ($budgetRun.ExitCode -eq 0) "a valid or empty default budget arms: $value -> $($budgetRun.Stdout)" }
+    }
+
     # An oversized journal joins the last ended shift's folder, after the log Archive filed there.
     $rotate = New-Site (Join-Path $root 'rotate')
     $filedDir = Join-Path $rotate '.nightshift/archive/2026-09-20'

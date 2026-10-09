@@ -146,7 +146,7 @@ denied() { printf '%s' "$1" | grep -q '"permissionDecision":"deny"'; }
   printf '## Items\n- [x] **1. Done.**\n- [-] **2. Build the importer.**\n' >"$p/.nightshift/punch-list.md"
   run gate "$p"
   [ "$status" -eq 0 ]
-  ! printf '%s' "$output" | grep -q '"decision":"block"'
+  ! printf '%s' "$output" | grep -q '"decision":"block"' || false
 }
 
 @test "Archive files a ticked item and keeps a stopped one live" {
@@ -226,5 +226,36 @@ denied() { printf '%s' "$1" | grep -q '"permissionDecision":"deny"'; }
         if (Test-NSRestrictedCommand $env:NS_C $env:NS_M) { "allow" } else { "deny" }'
       [ "$output" = "$b" ] || { echo "$c ($m): bash $b, pwsh $output"; return 1; }
     done
+  done
+}
+
+@test "budget state cannot be forged and recording refuses a symlink" {
+  p="$(site budget-symlink 'hard 1 tokens')"
+  victim="$p/src/keep.txt"
+  printf 'unchanged\n' >"$victim"
+  ln -s "$victim" "$p/.nightshift/.budget.tsv"
+  run env CLAUDE_PROJECT_DIR="$p" bash "$PLUGIN/hooks/hardhat.sh" <<EOF
+{"session_id":"test-shift-session","tool_name":"Bash","tool_input":{"command":"echo forged > .nightshift/.budget.tsv"}}
+EOF
+  printf '%s' "$output" | grep -q 'BLOCKED'
+  # Pin spend so the pulse reaches the limit without depending on a host transcript.
+  run bash -c '. "$1"; ns_budget_spent() { printf "0 2"; }; ns_budget_check "$2" "$3"' _ "$LIB" "$p/.nightshift" "$p"
+  [ "$status" -ne 0 ]
+  [ "$(cat "$victim")" = unchanged ]
+}
+
+@test "Start rejects a malformed default budget while empty and valid defaults remain accepted" {
+  p="$(new_project default-grammar)"
+  printf '## Items\n- [ ] **1. Work.**\n' >"$p/.nightshift/punch-list.md"
+  for value in 'hard eventually' '' 'soft 30m / 1M tokens, hard 45m / 2M tokens'; do
+    jq --arg b "$value" '.shift.itemBudget=$b' "$p/.nightshift/rules.json" >"$p/rules.tmp"
+    mv "$p/rules.tmp" "$p/.nightshift/rules.json"
+    run bash "$PLUGIN/runtime/start-preflight.sh" --project "$p"
+    if [ "$value" = 'hard eventually' ]; then
+      [ "$status" -eq 1 ]
+      printf '%s\n' "$output" | grep -qx 'refuse rules rules.json is not the accepted shape: shift.itemBudget is not a valid budget'
+    else
+      [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+    fi
   done
 }

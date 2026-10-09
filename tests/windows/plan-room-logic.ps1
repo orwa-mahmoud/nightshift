@@ -38,6 +38,7 @@ function New-Room {
 function Invoke-Hardhat {
     param([string]$Project, [string]$Session, [hashtable]$Payload)
     $Payload['session_id'] = $Session
+    $Payload['cwd'] = $Project
     $json = $Payload | ConvertTo-Json -Compress -Depth 5
     $previous = $env:CLAUDE_PROJECT_DIR
     $env:CLAUDE_PROJECT_DIR = $Project
@@ -255,6 +256,51 @@ try {
     Expect-True ($LASTEXITCODE -eq 0 -and ($again -join "`n") -ceq 'plan room was not open') "plan-exit again: $($again -join ' | ')"
     $log = [IO.File]::ReadAllText((Get-NSLayoutPath $tns 'shift-log'))
     Expect-True ($log.Contains('plan room closed by the owner: ran plan-exit in a terminal (conversation planner)')) "terminal shift log: $log"
+    $w = Join-Path $root 'guard-regressions'
+    $ns = New-Room $w
+    foreach ($command in @('rm -rf .nightshift/run', 'mv .nightshift/run saved', 'rm -rf .nightshift')) {
+        Expect-True ((Invoke-Hardhat $w 'helper' (New-Shell $command)).Contains("plan room marker")) "directory guard: $command"
+    }
+    foreach ($command in @('git diff --output=src/app.js', 'git log --output src/app.js', 'git show --ext-diff', 'git -c diff.external=writer diff')) {
+        Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell $command)).Length -gt 0) "write-capable git: $command"
+        Expect-True (-not (Test-NSRestrictedCommand $command 'wrapup')) "wrapup git: $command"
+    }
+    $leaf = Join-Path $ns 'staging/linked.md'
+    $victim = Join-Path $w 'src/app.js'
+    [IO.File]::WriteAllText($victim, 'unchanged', $utf8)
+    $null = New-Item -ItemType SymbolicLink -Path $leaf -Target $victim
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Edit 'Edit' $leaf)).Length -gt 0) 'a leaf symlink cannot write outside staging'
+
+    $claim = Join-Path $root 'atomic'
+    $cns = New-Room $claim
+    $null = Exit-NSPlanRoom $cns 'test'
+    $null = Enter-NSPlanRoom $cns 'claude'
+    $worker = Join-Path $root 'claim.ps1'
+    $ready = Join-Path $root 'ready'
+    $result = Join-Path $root 'result'
+    [IO.File]::WriteAllText($worker, @'
+param($Module, $Ns, $Ready, $Result)
+Import-Module $Module -Force -DisableNameChecking
+[IO.File]::WriteAllText($Ready, 'ready')
+$bound = Set-NSPlanRoomBinding $Ns 'second' 'claude'
+[IO.File]::WriteAllText($Result, [string]$bound)
+'@, $utf8)
+    $mutex = Enter-NSMutex $cns '.lock.d'
+    try {
+        $info = New-Object Diagnostics.ProcessStartInfo
+        $info.FileName = $hostExe
+        $info.Arguments = '-NoProfile -NonInteractive -File "' + $worker + '" "' + (Join-Path $plugin 'lib/Nightshift.psm1') + '" "' + $cns + '" "' + $ready + '" "' + $result + '"'
+        $info.UseShellExecute = $false
+        $child = [Diagnostics.Process]::Start($info)
+        for ($i = 0; $i -lt 500 -and -not (Test-Path -LiteralPath $ready); $i++) { Start-Sleep -Milliseconds 20 }
+        Expect-True (Test-Path -LiteralPath $ready) 'the competing binder started'
+        Expect-True (Set-NSPlanRoomBinding $cns 'first' 'claude') 'the lock holder claims the room first'
+    }
+    finally { Exit-NSMutex $mutex }
+    Expect-True ($child.WaitForExit(10000)) 'the competing binder finishes'
+    Expect-True ([IO.File]::ReadAllText($result) -ceq 'False') 'the competing binder refuses the claimed room'
+    Expect-True ((Get-NSPlanRoomLine $cns 1) -ceq 'first') 'the first claim stays bound'
+
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

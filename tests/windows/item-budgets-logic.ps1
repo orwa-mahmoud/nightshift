@@ -121,6 +121,23 @@ try {
     Expect-True ($receipt -cmatch '(?m)^- hard limit reached .*; closed as stopped$') 'the receipt records the hard limit'
     Expect-True ((Get-NSBudgetHardOpen $ns) -ceq '') 'the budget record is forgotten'
 
+    $w = Join-Path $root 'symlink-budget'
+    $ns = New-Site $w 'hard 1 tokens'
+    Add-Spend $ns 2 0
+    $victim = Join-Path $w 'src/victim.txt'
+    [IO.File]::WriteAllText($victim, 'unchanged', $utf8)
+    $budgetFile = Get-NSBudgetStateFile $ns
+    $null = New-Item -ItemType SymbolicLink -Path $budgetFile -Target $victim
+    Expect-True ((Invoke-NSBudgetCheck $ns $w) -ceq '') 'recording refuses a budget symlink'
+    Expect-True ([IO.File]::ReadAllText($victim) -ceq 'unchanged') 'recording leaves the symlink target intact'
+    $script:ns = $ns
+    $script:cwd = $w
+    Expect-True (Test-NSControlPrefilter $budgetFile) 'the budget is a control target'
+    Expect-True (Test-NSControlRewriteHit (Resolve-NSWriteTarget $budgetFile)) 'the budget cannot be forged'
+    $ignoreLines = Get-NSReceiptIgnoreLines $ns
+    Expect-True ($ignoreLines -ccontains '.budget.tsv') 'legacy budget state is ignored by receipts git'
+    Expect-True ($ignoreLines -ccontains '.plan-room') 'legacy plan room state is ignored by receipts git'
+
     # Status, the preflight and the morning receipt name a stopped item.
     $w = Join-Path $root 'readers'
     $ns = Join-Path $w '.nightshift'

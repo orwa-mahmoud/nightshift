@@ -98,13 +98,21 @@ ns_rules_load() {
 # ns_rules_check <workspace> — status 0 the file is the accepted shape.
 # Status 1 prints one named reason. Status 3 the file is absent.
 ns_rules_check() {
-  local f
+  local f row budget
   ns_layout_set f "$1/.nightshift" rules
   if [ ! -f "$f" ]; then
     printf 'missing\n'
     return 3
   fi
-  ns_rules_load "$f" && return 0
+  if ns_rules_load "$f"; then
+    row="$(_ns_rules_row shift itemBudget '')"
+    budget="$(ns_json_text "${row#*"$_NS_RULES_TAB"}")"
+    if [ -n "$budget" ] && ! ns_budget_parse "$budget" >/dev/null; then
+      printf 'shift.itemBudget is not a valid budget\n'
+      return 1
+    fi
+    return 0
+  fi
   printf '%s\n' "$NS_RULES_ERR"
   return 1
 }

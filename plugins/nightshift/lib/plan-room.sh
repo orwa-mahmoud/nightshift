@@ -36,8 +36,16 @@ ns_plan_room_enter() {
 # ns_plan_room_bind <nightshift-dir> <session> <host> — bind an unbound room to this conversation.
 # Status 1 when the room is already bound to another one or there is no session to bind.
 ns_plan_room_bind() {
-  local f bound tmp
+  local rc=0
   [ -n "$2" ] || return 1
+  ns_lock "$1" || return 1
+  _ns_plan_room_bind_locked "$@" || rc=$?
+  ns_unlock "$1"
+  return "$rc"
+}
+
+_ns_plan_room_bind_locked() {
+  local f bound tmp
   bound="$(ns_plan_room_line "$1" 1)" || return 1
   if [ -n "$bound" ]; then
     [ "$bound" = "$2" ]

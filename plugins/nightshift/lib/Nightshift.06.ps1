@@ -1300,11 +1300,16 @@ function Get-NSReceiptContext {
 
     # The start is the arming mark, or the policy's createdAt for a shift that kept no usage marks,
     # and commits are counted from that same moment; the end is when the clock-out gate wrote
-    # .ended. Both are UTC with the zone written out.
+    # .ended. Display times are local with the zone written out.
     $marks = Get-NSReceiptMarks $ns
     $context['marks'] = $marks
     $started = $createdAt
     $since = $createdAt
+    $policyStart = [DateTimeOffset]::MinValue
+    if ([DateTimeOffset]::TryParse($createdAt, [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::AssumeUniversal, [ref]$policyStart)) {
+        $started = Get-NSReceiptLocalStamp ([string]$policyStart.ToUnixTimeSeconds())
+    }
     if ($marks.Length -gt 0) {
         $armed = Get-NSReceiptLocalStamp ([string]$marks[0].Epoch)
         if ($armed.Length -gt 0) {

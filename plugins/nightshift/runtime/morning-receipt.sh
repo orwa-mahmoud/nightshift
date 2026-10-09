@@ -763,7 +763,7 @@ EOF
 
 # _shift_times -> STARTED, SHIFT_SINCE, ENDED, ENDED_EPOCH, SHIFT_DAY. The start is the arming
 # mark, or the policy's createdAt for a shift that kept no usage marks, and commits are counted
-# from that same moment; the end is when the clock-out gate wrote .ended. Both are UTC with the
+# from that same moment; the end is when the clock-out gate wrote .ended. Display times are local with the
 # zone written out.
 STARTED=""
 SHIFT_SINCE=""
@@ -775,6 +775,9 @@ _shift_times() {
   local at
   STARTED="$P_CREATEDAT"
   SHIFT_SINCE="$P_CREATEDAT"
+  if [ -n "$P_CREATEDAT" ] && at="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "$P_CREATEDAT" +%s 2>/dev/null || date -u -d "$P_CREATEDAT" +%s 2>/dev/null)" && _local_stamp "$at"; then
+    STARTED="$LOCAL_STAMP"
+  fi
   if [ "$NMARK" -gt 0 ] && _local_stamp "${M_EPOCH[0]}"; then
     STARTED="$LOCAL_STAMP"
     SHIFT_SINCE="@${M_EPOCH[0]}"

@@ -420,7 +420,17 @@ else {
         Write-Repair ('fix that named reason in ' + (Get-NSLayoutPath $ns 'rules') + ' or re-run Setup; never half-apply a broken file')
     }
     else {
-        Write-Ok 'rules readable'
+        $defaultBudget = ''
+        $shiftProperty = $rules.PSObject.Properties['shift']
+        if ($null -ne $shiftProperty -and $null -ne $shiftProperty.Value) {
+            $budgetProperty = $shiftProperty.Value.PSObject.Properties['itemBudget']
+            if ($null -ne $budgetProperty) { $defaultBudget = [string]$budgetProperty.Value }
+        }
+        if ($defaultBudget.Length -gt 0 -and [string]::IsNullOrEmpty((ConvertFrom-NSBudget $defaultBudget))) {
+            Write-Refuse 'rules shift.itemBudget is not a valid budget'
+            Write-Repair 'fix shift.itemBudget or leave it empty for no default limit'
+        }
+        else { Write-Ok 'rules readable' }
     }
 }
 

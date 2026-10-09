@@ -392,7 +392,7 @@ ns_usage_host_totals() {
     model="$(printf '%s' "$line" | cut -f3)"
     start="$(printf '%s' "$line" | cut -f6)"
     cur="$(printf '%s' "$line" | cut -f7)"
-    [ -n "$cur" ] && [ -n "$host" ] || continue
+    if [ -z "$cur" ] || [ -z "$host" ]; then continue; fi
     key="$host/${model:--}"
     found=""
     for k in "${!names[@]}"; do

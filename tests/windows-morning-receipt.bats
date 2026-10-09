@@ -107,7 +107,7 @@ HOOK="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/clock-out-gate.ps1"
 }
 
 @test "Windows morning-receipt logic covers the verdict sections" {
-  grep -qF 'both ends of the shift carry the zone' "$LOGIC"
+  grep -qF 'both ends of the shift are in local time with the offset' "$LOGIC"
   grep -qF 'pause reasons sum to the paused total' "$LOGIC"
   grep -qF 'a kind the host did not report reads unavailable' "$LOGIC"
   grep -qF 'a measurement the owner turned off reads off' "$LOGIC"

@@ -72,7 +72,7 @@ n && line ~ /^\| span \| .* → .* \|$/ {
   next
 }
 
-function or(v) { return v == "" ? "-" : v }
+function value_or_dash(v) { return v == "" ? "-" : v }
 
 END {
   for (i = n; i >= 1; i--) {
@@ -89,6 +89,6 @@ END {
       }
     }
     if (!counted) continue
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", or(from[i]), or(to[i]), or(work[i]), or(pause[i]), or(tok[i]), timeoff[i] ? 1 : 0, or(host[i])
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", value_or_dash(from[i]), value_or_dash(to[i]), value_or_dash(work[i]), value_or_dash(pause[i]), value_or_dash(tok[i]), timeoff[i] ? 1 : 0, value_or_dash(host[i])
   }
 }

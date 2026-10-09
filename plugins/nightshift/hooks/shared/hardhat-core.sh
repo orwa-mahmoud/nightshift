@@ -212,7 +212,7 @@ ns_hardhat_payload_targets() { # $1 = tool, $2 = raw payload, $3 = command/patch
 # control file's path in this layout, so // /./ /../ backslashes and absolute twins cannot slip past.
 ns_hardhat_control_prefilter() {
   printf '%s' "$1" | grep -qE \
-    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)' \
+    '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)' \
     && return 0
   ns_hardhat_control_dir_word_in "$1" && ns_hardhat_control_delete_verb "$1"
 }
@@ -225,6 +225,7 @@ ns_hardhat_control_key() {
     .ended) printf 'ended' ;;
     .shift-session) printf 'session' ;;
     .shift-worker) printf 'worker' ;;
+    budget.tsv | .budget.tsv) printf 'budget' ;;
     work-target | work-mode | deadline) printf '%s' "$1" ;;
     shift-policy.json) printf 'shift-policy' ;;
     shift-defaults.json) printf 'shift-defaults' ;;
@@ -269,11 +270,11 @@ ns_hardhat_control_delete_verb() {
 
 ns_hardhat_control_bare_name() {
   case "$1" in
-    STOP | .shift-armed | .ended | .shift-session | .shift-worker | work-target | work-mode \
+    STOP | .shift-armed | .ended | .shift-session | .shift-worker | budget.tsv | .budget.tsv | work-target | work-mode \
       | shift-policy.json | shift-defaults.json | deadline | punch-list.md \
       | ./STOP | ./.shift-armed | ./.ended | ./.shift-session | ./.shift-worker \
       | ./work-target | ./work-mode | ./shift-policy.json | ./shift-defaults.json \
-      | ./deadline | ./punch-list.md)
+      | ./deadline | ./punch-list.md | ./budget.tsv | ./.budget.tsv)
       return 0
       ;;
   esac
@@ -648,6 +649,7 @@ work-mode
 shift-policy
 shift-defaults
 deadline
+budget
 EOF
   return 1
 }
@@ -1323,6 +1325,7 @@ ns_hardhat_outside_places() {
   t="${t#\*\*\* Delete File: }"
   t="${t#\*\*\* Move to: }"
   t="$(ns_hardhat_canon_write_target "$t")" || return 0
+  [ ! -L "$t" ] || return 0
   while IFS= read -r place; do
     [ -n "$place" ] || continue
     case "$t" in "$place" | "$place"/*) return 1 ;; esac
@@ -1373,7 +1376,11 @@ ns_hardhat_command_allowed() {
       git)
         verb="$(ns_hardhat_git_subcommand "$rest")"
         case "$verb" in
-          status | diff | log | show | rev-parse | ls-files | grep | blame | describe) ;;
+          status | diff | log | show | rev-parse | ls-files | grep | blame | describe)
+            case " $rest " in
+              *'--output'* | *'--ext-diff'* | *'--textconv'* | *'--no-index'* | *'--exec-path'* | *'--config-env'* | *' -c '*) return 1 ;;
+            esac
+            ;;
           add | commit) [ "$mode" = wrapup ] || return 1 ;;
           *) return 1 ;;
         esac
@@ -1440,10 +1447,17 @@ ns_hardhat_plan_probe() {
 # name as a path component, a glob across the folder that holds it, or the plan-exit verb that
 # removes it.
 ns_hardhat_plan_room_targeted() {
-  local normalized run_rel
+  local normalized run_rel candidate canon root
   normalized="$(printf '%s' "$1" | sed "s#\\\\/#/#g; s#[\"']##g")"
   printf '%s' "$normalized" | grep -qE '(^|[/[:space:]])\.?plan-room($|[^[:alnum:]_.-])' && return 0
   printf '%s' "$normalized" | grep -qE '(^|[^[:alnum:]_-])plan-exit(\.sh|\.ps1)?($|[^[:alnum:]_./-])' && return 0
+  if ns_hardhat_control_delete_verb "$normalized"; then
+    root="$(ns_hardhat_canon_write_target "$NS")"
+    while IFS= read -r candidate; do
+      canon="$(ns_hardhat_canon_write_target "$candidate")" || continue
+      if [ "$canon" = "$root" ] || ns_hardhat_control_dir_hit "$canon"; then return 0; fi
+    done < <(ns_hardhat_control_candidates "$normalized")
+  fi
   ns_hardhat_nightshift_dir_context "$normalized" || return 1
   case "$normalized" in
     *'plan-*'* | *'plan-?'* | *'plan-['* | *'plan-{'* | *'.nightshift/*'* | *'.nightshift/.*'*) return 0 ;;

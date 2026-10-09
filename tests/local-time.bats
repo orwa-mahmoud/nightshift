@@ -78,3 +78,20 @@ Asia/Kolkata|2026-09-21 19:43 (UTC+05:30)'
   TZ=Asia/Kolkata lib ns_usage_mark "$p/.nightshift" arm
   cut -f1 "$p/.nightshift/usage/marks.tsv" | grep -qxE '[0-9]+'
 }
+
+@test "a policy start without usage marks renders in local time across midnight" {
+  p="$(new_project policy-local)"
+  cp "$BATS_TEST_DIRNAME/fixtures/morning-receipt/shift-policy-valid.json" "$p/.nightshift/shift-policy.json"
+  run env TZ=America/Sao_Paulo bash "$PLUGIN/runtime/morning-receipt.sh" --project "$p"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'- Started: 2026-09-01 23:30:00 (UTC-03:00)'* ]] || false
+  [[ "$output" != *'- Started: 2026-09-02T02:30:00Z'* ]] || false
+  command -v pwsh >/dev/null 2>&1 || return 0
+  run env NS_TEST_PLUGIN="$PLUGIN" NS_TEST_PROJECT="$p" TZ=America/Sao_Paulo pwsh -NoProfile -NonInteractive -Command '
+    Import-Module ($env:NS_TEST_PLUGIN + "/lib/Nightshift.psm1") -Force -DisableNameChecking
+    $context = Get-NSReceiptContext $env:NS_TEST_PROJECT "owner"
+    $context["started"]; $context["since"]; $context["shiftDay"]
+  '
+  [ "$status" -eq 0 ]
+  [ "$output" = $'2026-09-01 23:30:00 (UTC-03:00)\n2026-09-02T02:30:00Z\n2026-09-01' ]
+}

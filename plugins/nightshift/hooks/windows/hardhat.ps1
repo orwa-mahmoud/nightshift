@@ -470,7 +470,7 @@ function Test-NSNightshiftDirContext {
 # is a hit only when the target's canonical absolute path is the control file's path in this layout.
 function Test-NSControlPrefilter {
     param([AllowEmptyString()][string]$Target)
-    if ($Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)') {
+    if ($Target -match '(?i)(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)') {
         return $true
     }
     $runRel = Get-NSControlDirRelative
@@ -487,6 +487,8 @@ function Get-NSControlKey {
         '.ended' { return 'ended' }
         '.shift-session' { return 'session' }
         '.shift-worker' { return 'worker' }
+        'budget.tsv' { return 'budget' }
+        '.budget.tsv' { return 'budget' }
         'work-target' { return 'work-target' }
         'work-mode' { return 'work-mode' }
         'shift-policy.json' { return 'shift-policy' }
@@ -511,7 +513,7 @@ function Test-NSControlDeleteVerb {
 
 function Test-NSControlBareName {
     param([AllowEmptyString()][string]$Token)
-    return $Token -match '(?i)^(\./)?(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md)$'
+    return $Token -match '(?i)^(\./)?(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv)$'
 }
 
 # Physical directory path, including symlink and junction ancestors. Matches POSIX cd -P.
@@ -618,7 +620,7 @@ function Test-NSControlRewriteHit {
     }
     foreach ($key in @(
             'stop', 'armed', 'ended', 'session', 'worker',
-            'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline'
+            'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline', 'budget'
         )) {
         $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns $key)
         if ($null -ne $expected -and $Canon -ceq $expected) {
@@ -1079,6 +1081,20 @@ function Get-NSCommandDenyReason {
     return (Get-NSElevationDenyReason -Scrubbed $Scrubbed -Workspace $Workspace)
 }
 
+# Test-NSPlanRoomDirectoryTarget <target> - deleting the state or runtime folder removes the marker.
+function Test-NSPlanRoomDirectoryTarget {
+    param([AllowEmptyString()][string]$Target)
+    $t = $Target.Replace('\', '/').Replace('"', '').Replace("'", '')
+    if (Test-NSControlDeleteVerb $t) {
+        $root = Resolve-NSWriteTarget $script:ns
+        foreach ($candidate in ($t -split '[\s;&|<>()]+')) {
+            $canon = Resolve-NSWriteTarget $candidate
+            if ($null -ne $canon -and ($canon -ceq $root -or (Test-NSControlDirHit $canon))) { return $true }
+        }
+    }
+    return $false
+}
+
 # Test-NSRestrictedAllows <tool> <targets> <command> <mode> - whether a restricted mode lets this call
 # through: a reading tool, an allowed command, or a file tool writing only where the mode may write.
 # A tool this guard cannot classify is denied. Mirrors ns_hardhat_restricted_allows.
@@ -1099,7 +1115,7 @@ function Test-NSRestrictedAllows {
         })
     foreach ($target in $Targets) {
         $canon = Resolve-NSWriteTarget ([string]$target)
-        if ($null -eq $canon) { return $false }
+        if ($null -eq $canon -or (Test-NSReparsePoint $canon)) { return $false }
         $inside = $false
         foreach ($place in $places) {
             if ($canon -eq $place -or $canon.StartsWith($place + [IO.Path]::DirectorySeparatorChar)) { $inside = $true; break }
@@ -1203,7 +1219,7 @@ if (Test-NSPlanRoomOpen $script:ns) {
     $planTargets = @(Get-NSPayloadTargets $toolInput $tool $command)
     if ($tool -in @('Bash', 'PowerShell', 'Shell')) { $planTargets += $command }
     foreach ($target in $planTargets) {
-        if (Test-NSPlanRoomTarget ([string]$target)) { Write-Deny (Get-NSPlanRoomMarkerMessage) }
+        if ((Test-NSPlanRoomTarget ([string]$target)) -or (Test-NSPlanRoomDirectoryTarget ([string]$target))) { Write-Deny (Get-NSPlanRoomMarkerMessage) }
     }
     if ((Test-NSPlanRoomBinds $script:ns $sessionId) -and -not (Test-NSRestrictedAllows $tool $planTargets $command 'plan')) {
         Write-Deny (Get-NSPlanRoomMessage $script:ns)
