@@ -168,6 +168,49 @@ try {
     Expect-True ((Invoke-Hardhat $s 'planner' (New-Shell "`$null = 'nightshift-plan-probe'")) -ceq '') 'another conversation plans while the shift runs'
     Expect-True ((Get-NSPlanRoomLine $sns 1) -ceq 'planner') 'and the room binds to it'
 
+    # The plan record: created on entry, read back on entry, written without asking, filed when closed.
+    $r = Join-Path $root 'record'
+    $rns = Join-Path $r '.nightshift'
+    $null = New-Item -ItemType Directory -Path $rns -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $rns 'rules.json') -Force
+    [IO.File]::WriteAllText((Join-Path $rns 'state-version'), "2`n", $utf8)
+    & git -C $r init --quiet
+    $enter = Join-Path $plugin 'runtime/windows/plan-enter.ps1'
+    $first = @(& $hostExe -NoProfile -NonInteractive -File $enter -Project $r)
+    $record = Get-NSLayoutPath $rns 'plan-record'
+    Expect-True ((Test-Path -LiteralPath $record -PathType Leaf) -and ([IO.File]::ReadAllLines($record)[0] -ceq '# Plan Record')) 'entering creates the plan record'
+    Expect-True ($first -ccontains 'plan record .nightshift/staging/plan-record.md' -and $first -ccontains 'open plan: none') "first entry: $($first -join ' | ')"
+    $dot = [char]0x00B7
+    $entries = @(
+        "- **Retry budget** $dot open since 2026-10-09 09:12 (UTC+04:00)",
+        '  - Where we are: choosing between a fixed and an adaptive budget',
+        "- **Config loader** $dot open since 2026-10-08 18:40 (UTC+04:00) $dot captured: ## Plan: Config loader",
+        '  - Decided: one TOML file',
+        "- **Dark mode** $dot open since 2026-10-07 11:05 (UTC+04:00) $dot dropped: not this quarter")
+    [IO.File]::AppendAllText($record, (($entries -join "`n") + "`n"), $utf8)
+    $again = @(& $hostExe -NoProfile -NonInteractive -File $enter -Project $r)
+    $openLines = @($again | Where-Object { $_.StartsWith('open plan: ') })
+    Expect-True ($openLines.Count -eq 1 -and $openLines[0] -ceq ('open plan: ' + $entries[0])) "re-entry reads back the open plan: $($again -join ' | ')"
+    $null = Invoke-Hardhat $r 'planner' (New-Shell "`$null = 'nightshift-plan-probe'")
+    Expect-True ((Invoke-Hardhat $r 'planner' (New-Edit 'Edit' $record)) -ceq '') 'the planning conversation writes the record'
+    $null = & $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/plan-exit.ps1') -Project $r
+    [IO.File]::WriteAllText((Get-NSLayoutPath $rns 'ended'), "shiftId=aaaa1111bbbb2222`narchiveRoot=archive`narchiveLayout=date`n", $utf8)
+    $null = & $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/archive-receipts.ps1') -Project $r -Date 2026-10-09
+    $filedRecord = Join-Path $rns 'archive/2026-10-09/staging/plan-record.md'
+    $filedText = if (Test-Path -LiteralPath $filedRecord) { [IO.File]::ReadAllText($filedRecord) } else { '' }
+    Expect-True ($filedText.Contains('**Config loader**') -and $filedText.Contains('**Dark mode**') -and -not $filedText.Contains('Retry budget')) "filed record: $filedText"
+    $liveText = [IO.File]::ReadAllText($record)
+    Expect-True ($liveText.Contains('**Retry budget**') -and -not $liveText.Contains('Config loader') -and $liveText.Contains('Filed: [2026-10-09](../archive/2026-10-09/staging/plan-record.md)')) "live record: $liveText"
+    $legacy = Join-Path $root 'record-legacy'
+    $lns = Join-Path $legacy '.nightshift'
+    $null = New-Item -ItemType Directory -Path $lns -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $lns 'rules.json') -Force
+    & git -C $legacy init --quiet
+    $null = & $hostExe -NoProfile -NonInteractive -File $enter -Project $legacy
+    $null = Invoke-Hardhat $legacy 'planner' (New-Shell "`$null = 'nightshift-plan-probe'")
+    Expect-True ((Invoke-Hardhat $legacy 'planner' (New-Edit 'Write' (Get-NSLayoutPath $lns 'plan-record'))) -ceq '') 'a legacy layout writes its record too'
+    Expect-True ((Get-NSPlanRecordOpen $rns).Count -eq 1) 'Get-NSPlanRecordOpen reads the one open plan'
+
     # The terminal verb.
     $t = Join-Path $root 'terminal'
     $tns = New-Room $t

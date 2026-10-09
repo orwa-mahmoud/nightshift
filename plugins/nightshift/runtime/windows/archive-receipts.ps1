@@ -310,18 +310,19 @@ if ((Test-Path -LiteralPath $report -PathType Leaf) -and -not (Test-NSReparsePoi
     $null = Copy-NSArchiveRecord $report $group 'closed'
 }
 
-# The parking lot and the snag log: their handled entries are filed, their open entries stay live.
+# The parking lot, the snag log and the plan record: their handled entries are filed, their open
+# entries stay live.
 # They are written with their links already repointed, so the link pass below leaves them alone.
 $label = Get-NSArchiveReviewLabel (Split-Path -Leaf $group) $shiftId ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value'])
 $repointed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
 $null = $repointed.Add((Get-NSArchiveRel 'punch-list'))
-foreach ($key in @('snag-log', 'parking-lot')) {
+foreach ($key in @('snag-log', 'parking-lot', 'plan-record')) {
     $null = $repointed.Add((Get-NSArchiveRel $key))
     try {
         $null = Save-NSArchiveReviewSource $workspace $key $group $label
     }
     catch {
-        Write-NSArchiveReceiptsError 'archive-receipts: could not file snag or parking records'
+        Write-NSArchiveReceiptsError 'archive-receipts: could not file snag, parking or plan records'
         exit 2
     }
 }

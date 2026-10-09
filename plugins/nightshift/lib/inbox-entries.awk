@@ -12,6 +12,8 @@
 #              files (NS_REVIEW_DISPOSITIONS); a disposition follows a ` · ` separator.
 #   op=strays  prints <line> TAB <text> for the first line of each paragraph below the first `---`
 #              rule, or anywhere in a file that has none.
+#   op=open    prints the first line of each entry below the first `---` rule that carries none of
+#              -v dispositions: the plan record's open plans.
 
 function handled(s) {
   return tolower(s) ~ (" · (" dispositions ")")
@@ -21,6 +23,11 @@ function flush() {
   if (buf != "" && op == "file") {
     if (handled(buf)) printf "%s\n", buf >>filed
     else printf "%s\n", buf
+  }
+  if (buf != "" && op == "open" && rule && !handled(buf)) {
+    first = buf
+    sub(/\n.*/, "", first)
+    print first
   }
   buf = ""
   blank = 0

@@ -39,14 +39,27 @@ if (-not (Test-Path -LiteralPath $ns -PathType Container) -or (Test-NSReparsePoi
     exit 1
 }
 
+# Write-PlanRecord - the plan record, created on first entry, and every plan it holds open: entering
+# resumes from it.
+function Write-PlanRecord {
+    try { $null = Invoke-NSScaffold -Workspace $workspace -Keys @('plan-record') }
+    catch { [Console]::Error.WriteLine('plan-enter: could not create ' + (Get-NSLayoutName $ns 'plan-record')) }
+    Write-Output ('plan record ' + (Get-NSLayoutName $ns 'plan-record'))
+    $open = Get-NSPlanRecordOpen $ns
+    if ($open.Count -eq 0) { Write-Output 'open plan: none' }
+    foreach ($line in $open) { Write-Output ('open plan: ' + $line) }
+}
+
 if (Test-NSPlanRoomOpen $ns) {
     $bound = Get-NSPlanRoomLine $ns 1
     if ($bound.Length -gt 0) { Write-Output "plan room already open, bound to conversation $bound" }
     else { Write-Output "plan room already open, waiting for its conversation: run `$null = 'nightshift-plan-probe' next" }
+    Write-PlanRecord
     exit 0
 }
 $null = Enter-NSPlanRoom $ns $HostName
 Write-NSControlLog $ns "plan room opened ($HostName)"
 Write-Output "plan room open: run `$null = 'nightshift-plan-probe' as the next tool call to bind it to this conversation"
 Write-Output ('plan goes in ' + (Get-NSPlanRoomPlaceName $ns))
+Write-PlanRecord
 exit 0

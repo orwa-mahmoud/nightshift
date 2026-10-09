@@ -1785,14 +1785,16 @@ ns_archive_pointer_line() {
   printf 'Filed: [%s](%s)' "$1" "$2"
 }
 
-# ns_archive_file_review_source <project> <parking-lot|snag-log> <folder> <label> — file the handled
-# entries of the live review file into the shift's folder, at the path it has live, then take them
-# out of the live file and leave one pointer to the filed copy, written relative to the live file.
+# ns_archive_file_review_source <project> <parking-lot|snag-log|plan-record> <folder> <label> — file
+# the handled entries of the live review file into the shift's folder, at the path it has live, then
+# take them out of the live file and leave one pointer to the filed copy, written relative to the
+# live file. A plan-record entry is handled once it is captured or dropped.
 # Entries still open stay live, and only there: they wait for the owner. A file with no handled
 # entry files nothing. A later filing of the same shift adds the entries handled since.
 ns_archive_file_review_source() {
   local project="$1" key="$2" group="$3" label="$4"
-  local ns live rel dest tmp filed chunk view missing ptr prel
+  local ns live rel dest tmp filed chunk view missing ptr prel dispositions="$NS_REVIEW_DISPOSITIONS"
+  [ "$key" != plan-record ] || dispositions="$NS_PLAN_RECORD_CLOSED"
   ns="$project/.nightshift"
   ns_layout_set live "$ns" "$key" || return 2
   ns_layout_rel_set rel "$ns" "$key" || return 2
@@ -1806,7 +1808,7 @@ ns_archive_file_review_source() {
   ns_archive_dest "$dest" || return 2
   tmp="$(mktemp)" || return 2
   filed="$(mktemp)" || { rm -f "$tmp"; return 2; }
-  awk -v op=file -v filed="$filed" -v dispositions="$NS_REVIEW_DISPOSITIONS" -f "$_NS_INBOX_AWK" \
+  awk -v op=file -v filed="$filed" -v dispositions="$dispositions" -f "$_NS_INBOX_AWK" \
     "$live" >"$tmp" || {
     rm -f "$tmp" "$filed"
     return 2
@@ -1885,7 +1887,7 @@ ns_archive_check_review_pointers() {
   local project="$1" ns live dest rel line snag key
   ns="$project/.nightshift"
   ns_layout_set snag "$ns" snag-log
-  for key in snag-log parking-lot; do
+  for key in snag-log parking-lot plan-record; do
     ns_layout_set live "$ns" "$key"
     { [ -f "$live" ] && [ ! -L "$live" ]; } || continue
     while IFS= read -r line || [ -n "$line" ]; do
@@ -1917,11 +1919,11 @@ ns_archive_check_review_pointers() {
   return 0
 }
 
-# ns_archive_file_review_records <project> <folder> <label> — both review files, then a check of every
-# pointer they carry. Status 3 when either kept its handled entries live; 2 when filing failed.
+# ns_archive_file_review_records <project> <folder> <label> — the review files and the plan record, then
+# a check of every pointer they carry. Status 3 when either kept its handled entries live; 2 when filing failed.
 ns_archive_file_review_records() {
   local rc=0 one
-  for one in snag-log parking-lot; do
+  for one in snag-log parking-lot plan-record; do
     ns_archive_file_review_source "$1" "$one" "$2" "$3"
     case "$?" in
       0) ;;

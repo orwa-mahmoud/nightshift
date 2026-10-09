@@ -619,10 +619,13 @@ function Test-NSArchiveAutomatic {
 # NS_REVIEW_DISPOSITIONS is the POSIX copy.
 $script:NSReviewDispositions = 'fixed|ignored|answered|rejected-because|accepted-tradeoff'
 
+# The words that close a plan-record entry. Mirrors NS_PLAN_RECORD_CLOSED in lib/plan-room.sh.
+$script:NSPlanRecordClosed = 'captured|dropped'
+
 function Test-NSReviewHandled {
-    param([AllowEmptyString()][string]$Text)
+    param([AllowEmptyString()][string]$Text, [string]$Dispositions = $script:NSReviewDispositions)
     if ([string]::IsNullOrEmpty($Text)) { return $false }
-    return [bool]($Text -imatch (' \u00B7 (' + $script:NSReviewDispositions + ')'))
+    return [bool]($Text -imatch (' \u00B7 (' + $Dispositions + ')'))
 }
 
 # Get-NSInboxBlocks <lines> - a parking lot or snag log read entry by entry, the way
@@ -721,7 +724,7 @@ function Get-NSArchivePointerLine {
     return ('Filed: [' + $Label + '](' + $RelPath + ')')
 }
 
-# Save-NSArchiveReviewSource <workspace> <parking-lot|snag-log> <folder> <label> - file the handled
+# Save-NSArchiveReviewSource <workspace> <parking-lot|snag-log|plan-record> <folder> <label> - file the handled
 # entries of the live review file into the shift's folder, at the path it has live, then take them
 # out of the live file and leave one pointer to the filed copy, written relative to the live file.
 # Entries still open stay live, and only there: they wait for the owner. A file with no handled
@@ -744,10 +747,11 @@ function Save-NSArchiveReviewSource {
         throw 'archive dest is outside .nightshift/'
     }
     if (-not (Test-NSArchiveDest $dest)) { throw 'refuse to write through a symlink archive path' }
+    $dispositions = if ($Key -ceq 'plan-record') { $script:NSPlanRecordClosed } else { $script:NSReviewDispositions }
     $keep = New-Object Collections.Generic.List[string]
     $filed = New-Object Collections.Generic.List[string]
     foreach ($block in (Get-NSInboxBlocks $lines)) {
-        if ($block.Kind -ceq 'entry' -and (Test-NSReviewHandled ($block.Lines -join "`n"))) {
+        if ($block.Kind -ceq 'entry' -and (Test-NSReviewHandled ($block.Lines -join "`n") $dispositions)) {
             $filed.AddRange($block.Lines)
         }
         else {
@@ -797,7 +801,7 @@ function Add-NSArchiveBrokenPointers {
     $snag = Get-NSLayoutPath $ns 'snag-log'
     $utf8 = $script:NSUtf8NoBom
     if ($null -eq $utf8) { $utf8 = New-Object System.Text.UTF8Encoding $false }
-    foreach ($key in @('snag-log', 'parking-lot')) {
+    foreach ($key in @('snag-log', 'parking-lot', 'plan-record')) {
         $live = Get-NSLayoutPath $ns $key
         if (-not (Test-Path -LiteralPath $live -PathType Leaf) -or (Test-NSReparsePoint $live)) { continue }
         foreach ($line in [IO.File]::ReadAllLines($live)) {
@@ -834,8 +838,8 @@ function Add-NSArchiveBrokenPointers {
     }
 }
 
-# Save-NSArchiveReviewRecords <workspace> <folder> <label> - both review files, then a check of every
-# pointer they carry. Returns 3 when either kept its handled entries live, 0 otherwise.
+# Save-NSArchiveReviewRecords <workspace> <folder> <label> - the review files and the plan record, then
+# a check of every pointer they carry. Returns 3 when either kept its handled entries live, 0 otherwise.
 function Save-NSArchiveReviewRecords {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -843,7 +847,7 @@ function Save-NSArchiveReviewRecords {
         [Parameter(Mandatory = $true)][string]$Label
     )
     $status = 0
-    foreach ($key in @('snag-log', 'parking-lot')) {
+    foreach ($key in @('snag-log', 'parking-lot', 'plan-record')) {
         if ((Save-NSArchiveReviewSource $Workspace $key $Folder $Label) -eq 3) { $status = 3 }
     }
     Add-NSArchiveBrokenPointers $Workspace

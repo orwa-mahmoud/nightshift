@@ -98,6 +98,18 @@ ns_plan_room_on_shift_message() {
   printf 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.'
 }
 
+# The words that close a plan-record entry, after a ` · ` separator. Archive files those entries
+# with their shift; the others are plans still being worked out.
+NS_PLAN_RECORD_CLOSED='captured|dropped'
+
+# ns_plan_record_open <nightshift-dir> — the first line of each open plan in the plan record.
+ns_plan_record_open() {
+  local f
+  ns_layout_set f "$1" plan-record || return 0
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  awk -v op=open -v dispositions="$NS_PLAN_RECORD_CLOSED" -f "$_NS_INBOX_AWK" "$f" | tr -d '\r'
+}
+
 # ns_plan_room_exit_word <prompt> — `plan-exit` or `start` when the owner's prompt is an exit
 # command: its first word is /nightshift:plan-exit or /nightshift:start, or the same name after `$`,
 # the way Codex mentions a skill. Anything else, the same words mid-sentence included, is not.

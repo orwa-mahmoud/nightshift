@@ -59,7 +59,7 @@ bare() { # a workspace with no state files at all
   done
   run bash "$SCAFFOLD" --project "$p" receipt-item
   [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qF 'is not a file scaffold writes on request (work-orders, product)'
+  printf '%s\n' "$output" | grep -qF 'is not a file scaffold writes on request (work-orders, product, plan-record)'
 }
 
 @test "a file the owner already has is kept, whatever it now contains" {

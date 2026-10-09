@@ -2376,6 +2376,27 @@ function Get-NSPlanRoomOnShiftMessage {
     return 'BLOCKED: this conversation is working the shift, so it cannot enter the plan room, and the plan room was not opened. Plan in another conversation, or stop the shift first.'
 }
 
+# Get-NSPlanRecordOpen <nightshift-dir> - the first line of each open plan in the plan record: an entry
+# below the rule that is neither captured nor dropped. Mirrors ns_plan_record_open.
+function Get-NSPlanRecordOpen {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $f = Get-NSLayoutPath $NightshiftDir 'plan-record'
+    if (-not (Test-Path -LiteralPath $f -PathType Leaf) -or (Test-NSReparsePoint $f)) { return , @() }
+    $lines = [IO.File]::ReadAllLines($f)
+    $rule = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].TrimEnd() -cmatch '^--- *$') { $rule = $i + 1; break }
+    }
+    if ($rule -eq 0) { return , @() }
+    $open = New-Object Collections.Generic.List[string]
+    foreach ($block in (Get-NSInboxBlocks $lines)) {
+        if ($block.Kind -cne 'entry' -or $block.Line -le $rule) { continue }
+        if (Test-NSReviewHandled ($block.Lines -join "`n") $script:NSPlanRecordClosed) { continue }
+        $open.Add([string]$block.Lines[0])
+    }
+    return , $open.ToArray()
+}
+
 # Get-NSPlanRoomExitWord <prompt> - 'plan-exit' or 'start' when the owner's prompt is an exit command:
 # its first word is /nightshift:plan-exit or /nightshift:start, or the same name after '$'. Anything
 # else, the same words mid-sentence included, is ''. Mirrors ns_plan_room_exit_word.

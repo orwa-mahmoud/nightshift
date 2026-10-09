@@ -41,7 +41,7 @@ $null = 'nightshift-plan-probe'
 ```
 
 - The probe runs cleanly: the room is bound to this conversation. Tell the owner in one line that the
-  plan room is open, that nothing is implemented here, and how they leave it (section 4).
+  plan room is open, that nothing is implemented here, and how they leave it (section 5).
 - The probe is denied because the room is bound to another conversation: tell the owner, and stop.
   They plan in that conversation, or leave the room first.
 - The probe is denied because this conversation is working the shift: no room was opened. Tell the
@@ -51,6 +51,12 @@ $null = 'nightshift-plan-probe'
 
 An open room bound to this conversation (after compaction, say) needs no new entry: run
 `plan-enter` and the probe again, and both pass.
+
+**Resume before anything else.** `plan-enter` also prints `plan record <path>` and one
+`open plan: <entry>` line for each plan the record still holds open (`open plan: none` when there is
+none). With an open plan, read the record first and pick up exactly where its `Where we are` line
+left off: say in a sentence or two what was decided and what comes next, so the owner never repeats
+themselves. With more than one open plan, ask which one this conversation continues.
 
 ## 2. Think with the owner
 
@@ -71,11 +77,32 @@ templates or a checklist while discussing.
   so it is not reopened by accident.
 
 When the owner says "just do it" or "implement it": the room still holds. Say plainly that nothing
-can be built in this conversation while the plan room is open, and give the exits (section 4). Never
+can be built in this conversation while the plan room is open, and give the exits (section 5). Never
 work around the fence: no code written into the staging folder to copy out later, no scripts, and no
 asking another conversation to make the change.
 
-## 3. Capture — only on the owner's explicit yes
+## 3. Keep the plan record current
+
+The plan record (`ns path plan-record`) is the room's notebook. Write it as the discussion moves —
+it needs no permission, and it is what lets compaction, a closed tab or a new day lose nothing. Keep
+one entry per plan, below the record's rule, in the shape its header shows:
+
+```text
+- **<topic>** · open since <YYYY-MM-DD HH:MM (UTC±HH:MM)>
+  - Where we are: <the exact point the conversation reached, and the next question>
+  - Decided: <decision> — <why>
+  - Rejected: <option> — <the reason>
+  - Open: <a question still waiting for an answer>
+```
+
+- Start an entry when a new plan starts, in the device's local time with its offset.
+- Add a `Decided:`, `Rejected:` or `Open:` line the moment one is settled or raised, and rewrite
+  `Where we are` at every natural pause. Answered `Open:` lines become `Decided:` lines.
+- **A rejected option stays rejected.** Never propose it again unless there is new evidence, and then
+  name the evidence and the earlier reason together.
+- When the owner sets a plan aside, append ` · dropped: <why>` to the entry's first line.
+
+## 4. Capture — only on the owner's explicit yes
 
 Nothing is written into the drafting table until the owner says yes to that exact write. An answer to
 a design question is not consent, and neither is approval of an idea. When the plan is ready, say
@@ -91,6 +118,7 @@ Why: <the problem, and why now>
 Scope: <what this plan covers>
 Non-goals: <what it deliberately leaves out>
 Design notes: <the decisions taken, and the options rejected with the reason>
+Record: [plan record](plan-record.md) — <topic>
 
 - [ ] **1. <title>.**
   - <what to build, plainly>
@@ -111,13 +139,17 @@ Design notes: <the decisions taken, and the options rejected with the reason>
   promoted.
 - In artifact mode, an item names its receipt instead of a `Commit:` line.
 
+Then close the record's entry by appending ` · captured: ## Plan: <title>` to its first line;
+Archive files it with the shift. The `Record:` link is relative to the drafting table, and the
+record sits beside it in every layout.
+
 After writing, show the owner what was written and where, then name the way to build it: leave the
 plan room by typing Start — `/nightshift:start` on Claude Code and Cursor, `$nightshift:start` on
 Codex. With an empty punch list, Start offers the staged items to
 promote. With open items already in the punch list, Start works those, and the plan waits in the
 drafting table.
 
-## 4. Leaving is the owner's
+## 5. Leaving is the owner's
 
 Only the owner closes the room. On Claude Code and Cursor they type `/nightshift:plan-exit`, or
 `/nightshift:start` to leave and start the shift in one step. On Codex they type

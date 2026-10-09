@@ -11,7 +11,7 @@
   lot, the snag log, the drafting table, and the shift log's header. The rest waits
   until something needs it: `work-orders` when Hunt stages an order, `product`
   (the opportunity map and the research notes) when a product-evolution item is
-  cut. Each file lands where the workspace's layout keeps it, and a `.nightshift/`
+  cut, `plan-record` when the plan room opens. Each file lands where the workspace's layout keeps it, and a `.nightshift/`
   this run creates gets the current state-version first.
 
   Copying a file does not require its text, so the model reads none of the
@@ -62,7 +62,7 @@ if (-not (Test-Path -LiteralPath $templates -PathType Container)) {
 }
 
 if ($List) {
-    foreach ($key in @('punch-list', 'parking-lot', 'snag-log', 'drafting-table', 'work-orders', 'opportunity-map', 'product-research')) {
+    foreach ($key in @('punch-list', 'parking-lot', 'snag-log', 'drafting-table', 'work-orders', 'opportunity-map', 'product-research', 'plan-record')) {
         if (Test-Path -LiteralPath (Join-Path $templates ($key + '.md')) -PathType Leaf) {
             [Console]::Out.Write($key + ".md`n")
         }

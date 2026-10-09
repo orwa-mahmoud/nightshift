@@ -6,8 +6,9 @@
 # With no file named it writes what every shift uses: the punch list, the parking lot, the snag
 # log, the drafting table, and the shift log's header. The rest waits until something needs it:
 # `work-orders` when Hunt stages an order, `product` (the opportunity map and the research notes)
-# when a product-evolution item is cut. Each file lands where the workspace's layout keeps it,
-# and a `.nightshift/` this run creates gets the current state-version first.
+# when a product-evolution item is cut, `plan-record` when the plan room opens. Each file lands
+# where the workspace's layout keeps it, and a `.nightshift/` this run creates gets the current
+# state-version first.
 #
 # Copying a file does not require its text: the model reads none of the templates, and what that
 # saves in context it also saves in fidelity — a copy cannot paraphrase.
@@ -48,7 +49,7 @@ while [ $# -gt 0 ]; do
       awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
       exit 1
       ;;
-    work-orders | opportunity-map | product-research)
+    work-orders | opportunity-map | product-research | plan-record)
       NAMES="$NAMES $1"
       shift
       ;;
@@ -57,7 +58,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     -*) printf 'scaffold: unknown argument: %s\n' "$1" >&2; exit 1 ;;
-    *) printf 'scaffold: %s is not a file scaffold writes on request (work-orders, product)\n' "$1" >&2; exit 1 ;;
+    *) printf 'scaffold: %s is not a file scaffold writes on request (work-orders, product, plan-record)\n' "$1" >&2; exit 1 ;;
   esac
 done
 [ -n "$NAMES" ] || NAMES="punch-list parking-lot snag-log drafting-table"
@@ -69,7 +70,7 @@ TEMPLATES="$_here/../skills/nightshift/references/templates"
 }
 
 if [ "$LIST" = yes ]; then
-  for key in punch-list parking-lot snag-log drafting-table work-orders opportunity-map product-research; do
+  for key in punch-list parking-lot snag-log drafting-table work-orders opportunity-map product-research plan-record; do
     [ -f "$TEMPLATES/$key.md" ] && printf '%s.md\n' "$key"
   done
   exit 0

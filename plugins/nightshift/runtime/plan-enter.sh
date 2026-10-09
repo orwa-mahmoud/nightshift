@@ -42,6 +42,21 @@ WORKSPACE="$(ns_workspace_root "$PROJECT" 2>/dev/null)" || { printf 'plan-enter:
 NS="$WORKSPACE/.nightshift"
 [ -d "$NS" ] && [ ! -L "$NS" ] || { printf 'plan-enter: no .nightshift/ at %s — run Setup first\n' "$WORKSPACE" >&2; exit 1; }
 
+# record — the plan record, created on first entry, and every plan it holds open: entering resumes
+# from it.
+record() {
+  local open
+  bash "$_here/scaffold.sh" --project "$WORKSPACE" plan-record >/dev/null 2>&1 \
+    || printf 'plan-enter: could not create %s\n' "$(ns_layout_name "$NS" plan-record)" >&2
+  printf 'plan record %s\n' "$(ns_layout_name "$NS" plan-record)"
+  open="$(ns_plan_record_open "$NS")"
+  if [ -n "$open" ]; then
+    printf '%s\n' "$open" | sed 's/^/open plan: /'
+  else
+    printf 'open plan: none\n'
+  fi
+}
+
 if ns_plan_room_open "$NS"; then
   bound="$(ns_plan_room_line "$NS" 1)"
   if [ -n "$bound" ]; then
@@ -49,9 +64,11 @@ if ns_plan_room_open "$NS"; then
   else
     printf 'plan room already open, waiting for its conversation: run : nightshift-plan-probe next\n'
   fi
+  record
   exit 0
 fi
 ns_plan_room_enter "$NS" "$HOST_NAME" || { printf 'plan-enter: could not write %s\n' "$(ns_layout_name "$NS" plan-room)" >&2; exit 1; }
 ns_shift_log "$NS" "plan room opened ($HOST_NAME)"
 printf 'plan room open: run : nightshift-plan-probe as the next tool call to bind it to this conversation\n'
 printf 'plan goes in %s\n' "$(ns_plan_room_place_name "$NS")"
+record

@@ -1090,7 +1090,7 @@ function Test-NSRestrictedAllows {
     if ($Tool -notin @('Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch')) { return $false }
     $keys = $(switch ($Mode) { 'wrapup' { @('receipts', 'punch-list', 'parking-lot', 'snag-log') } default { @() } })
     $paths = @(foreach ($key in $keys) { Get-NSLayoutPath $script:ns $key })
-    if ($Mode -ceq 'plan') { $paths = @(Get-NSPlanRoomPlace $script:ns) }
+    if ($Mode -ceq 'plan') { $paths = @((Get-NSPlanRoomPlace $script:ns), (Get-NSLayoutPath $script:ns 'plan-record')) }
     $places = @(foreach ($path in $paths) {
             $canon = Resolve-NSWriteTarget $path
             if ($null -ne $canon) { $canon } else { $path }
