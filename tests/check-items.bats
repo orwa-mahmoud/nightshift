@@ -62,7 +62,7 @@ EOF
   [[ "$output" == 'no items to check'* ]]
 }
 
-@test "the plan room may run it, and Start never consults it" {
+@test "the plan room may run it, and Start arms a list it would flag" {
   p="$(new_project room)"
   rm -f "$p/.nightshift/.shift-armed"
   bash "$PLUGIN/runtime/plan-enter.sh" --project "$p" >/dev/null
@@ -71,7 +71,13 @@ EOF
   run hook_payload "$(jq -nc --arg c "\"$PLUGIN/runtime/ns\" check-items" '{tool_name:"Bash",session_id:"planner",tool_input:{command:$c}}')" \
     env CLAUDE_PROJECT_DIR="$p" bash "$PLUGIN/hooks/hardhat.sh"
   [ -z "$output" ] || { echo "$output"; return 1; }
-  ! grep -q 'check-items' "$PLUGIN/runtime/start-preflight.sh" "$PLUGIN/runtime/windows/start-preflight.ps1" || false
+  # An item check-items would flag still arms: the shape is the owner's call, never Start's.
+  q="$(new_project start)"
+  printf '## Items\n- [ ] **1. No verify and no commit.**\n' >"$q/.nightshift/punch-list.md"
+  run bash "$PLUGIN/runtime/check-items.sh" --project "$q" --file "$q/.nightshift/punch-list.md"
+  printf '%s\n' "$output" | grep -qxF '**1. No verify and no commit.**: no Verify: line'
+  run bash "$PLUGIN/runtime/start-preflight.sh" --project "$q" --host claude
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
 }
 
 @test "native Windows prints the same findings, and its suite is registered" {
