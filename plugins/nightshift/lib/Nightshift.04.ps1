@@ -1418,8 +1418,9 @@ function Get-NSSessionHostWords {
 
 function Get-NSReceiptSessionFile {
     param([Parameter(Mandatory = $true)][string]$Receipt)
-    $ns = Split-Path -Parent (Split-Path -Parent ([IO.Path]::GetFullPath($Receipt)))
-    if ((Split-Path -Leaf $ns) -cne '.nightshift') { return '' }
+    $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Receipt)
+    $ns = [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($path))
+    if ([string]::IsNullOrEmpty($ns) -or (Split-Path -Leaf $ns) -cne '.nightshift') { return '' }
     return (Join-Path (Get-NSLayoutPath $ns 'item-sessions') ((Split-Path -Leaf $Receipt) + '.tsv'))
 }
 
@@ -1456,8 +1457,9 @@ function Get-NSReceiptSessionData {
 
 function Update-NSReceiptSessionIgnore {
     param([string]$Receipt)
-    $ns = Split-Path -Parent (Split-Path -Parent ([IO.Path]::GetFullPath($Receipt)))
-    if ((Split-Path -Leaf $ns) -cne '.nightshift') { return }
+    $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Receipt)
+    $ns = [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($path))
+    if ([string]::IsNullOrEmpty($ns) -or (Split-Path -Leaf $ns) -cne '.nightshift') { return }
     if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'receipts-repo') -PathType Container) -or
         (Get-NSLayoutRelativePath $ns 'item-sessions') -cne '.item-sessions') { return }
     $ignore = Get-NSLayoutPath $ns 'gitignore'

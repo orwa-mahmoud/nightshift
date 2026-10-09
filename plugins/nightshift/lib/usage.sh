@@ -509,7 +509,7 @@ _ns_usage_seg_baseline() {
 }
 
 ns_usage_mark_arm() {
-  local ns="$1" dir file t size
+  local ns="$1" dir file t size generation
   dir="$(ns_usage_dir "$ns")"
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$(_ns_usage_marks "$ns")"
@@ -520,7 +520,9 @@ ns_usage_mark_arm() {
     size="$(ns_file_size "$t")" || continue
     _ns_usage_seg_baseline "$ns" "$t" "$size" || true
   done
-  printf '%s\t%s\t\n' "$(date +%s)" arm >>"$file" 2>/dev/null || return 1
+  # The sixth cell distinguishes accounting starts even when the clock has not moved.
+  generation="$(ns_new_shift_id "$ns")" || return 1
+  printf '%s\t%s\t\t\t\t%s\n' "$(date +%s)" arm "$generation" >>"$file" 2>/dev/null || return 1
   ns_receipts_write_index "${ns%/.nightshift}"
 }
 

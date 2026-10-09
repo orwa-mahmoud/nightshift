@@ -173,7 +173,7 @@ ns_gate_usage_tick() {
 # from the row before it is a handoff, and the shift log records what the outgoing session did.
 ns_gate_session_row() {
   local ns="$1" project="$2" label="$3" ended="$4" span start end fields paused work in out sid
-  local marks two hosts dim v extras="" paused_sec why receipt prev target commits note
+  local marks two hosts dim v extras="" paused_sec why receipt prev target commits note generation
   span="$(ns_usage_last_item "$ns")" || return 0
   fields="$(printf '%s' "$span" | cut -f1)"
   marks="$(ns_usage_dir "$ns")/marks.tsv"
@@ -229,7 +229,9 @@ ns_gate_session_row() {
   done
   prev="$(ns_receipt_last_session "$receipt")" || prev=""
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
-  extras="$extras checkpoint=${sid:-$(head -n1 "$marks" | cut -f1)}:$(awk 'END { print NR }' "$marks")"
+  generation="$(head -n1 "$marks" | cut -f6)"
+  [ -n "$generation" ] || generation="${sid:-$(head -n1 "$marks" | cut -f1)}"
+  extras="$extras checkpoint=$generation:$(awk 'END { print NR }' "$marks")"
   ns_receipt_add_session "$receipt" "$label" "${sid:--}" \
     "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended" "$extras"
   ns_gate_handoff_log "$ns" "$label" "$prev" "$hosts"

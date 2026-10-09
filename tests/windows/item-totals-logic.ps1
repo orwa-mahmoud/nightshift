@@ -123,6 +123,31 @@ try {
     Expect-True ($text -cmatch ('(?m)^- .* ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha + '.* ' + $d + ' last note: Form done, payment step next\.$')) 'the handoff names the outgoing commits and note'
     $log = [IO.File]::ReadAllText((Get-NSLayoutPath $ns 'shift-log'))
     Expect-True ($log -cmatch ('handoff ' + $d + ' ' + [regex]::Escape($item) + ' ' + $d + ' claude ' + $d + ' claude-opus-5 ' + $a + ' codex ' + $d + ' gpt-5\.5 ' + $d + ' outgoing commits: .*' + $sha)) 'the shift log records the handoff'
+    # Equal readings at the same timestamp still belong to separate accounting starts.
+    $module = Get-Module Nightshift
+    $clock = & $module { (Get-Command Get-NSUnixTime).ScriptBlock }
+    try {
+        & $module { function script:Get-NSUnixTime { return [long]1790000000 } }
+        $w = Join-Path $root 'same-second'
+        $ns = New-Site $w
+        $r = Get-Receipt $ns
+        [IO.File]::WriteAllText($r, "# $item`n`nStarted.`n", $utf8)
+        foreach ($pass in 1..2) {
+            $null = Write-NSUsageRecord $ns claude model transcript-incremental /t/a 10 'input=10,output=1'
+            $null = Write-NSUsageMark $ns $item pause
+            Invoke-NSGateSessionRow $ns $w $item paused
+            Invoke-NSGateSessionRow $ns $w $item paused
+            if ($pass -eq 1) {
+                Move-Item -LiteralPath (Get-NSUsageDir $ns) -Destination (Join-Path $ns 'usage-earlier')
+                $null = Write-NSUsageMarkArm $ns
+            }
+        }
+        $cells = Get-NSReceiptUsageCells $r
+        Expect-True ($cells.In -eq 20 -and $cells.Out -eq 2) 'same-second starts retain equal readings, and retries count once'
+        Expect-True ((Get-NSReceiptSessionData $r).Count -eq 2) 'two accounting starts produce two sessions'
+    }
+    finally { & $module { param($Original) Set-Item Function:script:Get-NSUnixTime $Original } $clock }
+
     $ns = New-Site (Join-Path $root 'ledger')
     $r = Get-Receipt $ns
     Add-NSReceiptSession $r $item '-' '100' '200' '90' '3' '4' 'paused' 'cw=0 cr=0 rea=0'
@@ -146,6 +171,10 @@ try {
 
     Expect-True ((Get-NSReceiptSessionFile 'relative-fixture.md') -ceq '') 'relative filenames outside runtime state have no ledger'
     Expect-True ((Get-NSReceiptSessionData 'relative-fixture.md').Count -eq 0) 'a missing relative receipt is empty'
+    $rootReceipt = Join-Path ([IO.Path]::GetPathRoot($root)) 'missing-root-receipt.md'
+    Expect-True ((Get-NSReceiptSessionFile $rootReceipt) -ceq '') 'a filesystem-root receipt has no runtime ledger'
+    Expect-True ((Get-NSReceiptSessionData $rootReceipt).Count -eq 0) 'a missing filesystem-root receipt is empty'
+    Update-NSReceiptSessionIgnore $rootReceipt
 
     $w = Join-Path $root 'recover-redraw'
     $ns = New-Site $w

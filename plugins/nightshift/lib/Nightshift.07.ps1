@@ -975,7 +975,8 @@ function Write-NSUsageMarkArm {
         if ($size -lt 0) { continue }
         $null = Write-NSUsageSegBaseline $NightshiftDir $t $size
     }
-    [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`tarm`t`n"),
+    $generation = [guid]::NewGuid().ToString('N')
+    [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`tarm`t`t`t`t$generation`n"),
         (New-Object Text.UTF8Encoding($false)))
     return $true
 }
@@ -1325,7 +1326,9 @@ function Invoke-NSGateSessionRow {
     $sid = ''
     $state = Get-NSShiftPolicyState $Project
     if ($state['state'] -ceq 'valid') { $sid = [string]$state['policy']['shiftId'] }
-    $extras += ('checkpoint=' + $(if ($sid) { $sid } else { $lines[0].Split("`t")[0] }) + ':' + $lines.Length)
+    $arm = $lines[0].Split("`t")
+    $generation = $(if ($arm.Length -ge 6 -and $arm[5]) { $arm[5] } elseif ($sid) { $sid } else { $arm[0] })
+    $extras += ('checkpoint=' + $generation + ':' + $lines.Length)
     Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
         $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
     Write-NSGateHandoffLog $NightshiftDir $Label $prevLine $hosts

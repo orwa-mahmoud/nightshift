@@ -44,6 +44,10 @@ total_row() { grep -E '^\| \*\*Total\*\* \|' "$1"; }
 index_row() { grep -F "| $ITEM | ticked |" "$1"; }
 
 @test "readings set aside between two shifts still add up in the receipt, the index and the archive" {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  printf '#!/bin/sh\nprintf "1790000000\\n"\n' >"$BATS_TEST_TMPDIR/bin/date"
+  chmod +x "$BATS_TEST_TMPDIR/bin/date"
+  export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
   p="$(site set-aside)"
   lib ns_usage_record "$p/.nightshift" claude claude-opus-5 transcript-incremental /t/a 10 'input=500,output=50'
   working "$p" 'Wiring the booking form.'
