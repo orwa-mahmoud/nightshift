@@ -27,7 +27,7 @@ Pass the host you are running on (`claude`, `codex` or `cursor`):
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" plan-enter --host claude
 ```
 
-Native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" plan-enter -HostName claude`.
+Native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1" plan-enter --host claude`.
 
 The room opens unbound. **The very next tool call is the probe that binds it to this
 conversation** — nothing in between, not even a read:
