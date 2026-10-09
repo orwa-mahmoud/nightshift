@@ -3,6 +3,28 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.26.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.25.4...v0.26.0) (2026-10-09)
+
+
+### Features
+
+* add soft and hard item budgets ([9990b89](https://github.com/orwa-mahmoud/nightshift/commit/9990b8947155a57ca7ca4d009f9fa549e2c644eb))
+* add the plan room fence to hardhat ([7bee67b](https://github.com/orwa-mahmoud/nightshift/commit/7bee67bc29e022b9b33b34c50de4b5330bdd110e))
+* add the plan room skill ([f2212d5](https://github.com/orwa-mahmoud/nightshift/commit/f2212d5bd58b82d5a03714905725fd18e7ad9227))
+* check drafted items before promotion ([427120d](https://github.com/orwa-mahmoud/nightshift/commit/427120d2434a4dabe8a46eb1d22ff83bb0b2e6c5))
+* estimate a shift from past receipts ([d5e8bc1](https://github.com/orwa-mahmoud/nightshift/commit/d5e8bc1768f06bf692fd65b361869d71731698b1))
+* keep the plan room's decisions across sessions ([c237fa6](https://github.com/orwa-mahmoud/nightshift/commit/c237fa6feb4a54a440e70180d78af4c76e4fe5d1))
+* leave the plan room only on an owner command ([cd445c8](https://github.com/orwa-mahmoud/nightshift/commit/cd445c8a2281ca1ca73d0dfe5c04f9f8d6bb991e))
+* review the finished shift in the plan room ([4333587](https://github.com/orwa-mahmoud/nightshift/commit/43335879adf6456bd7bdd0e1f96965f604293654))
+
+
+### Bug Fixes
+
+* arm the native Windows watchman with the dispatcher's flag spelling ([41c9acf](https://github.com/orwa-mahmoud/nightshift/commit/41c9acfbadfab268a54780de817c8056c8d2f140))
+* keep an open item's time and tokens across Reset ([a4ab424](https://github.com/orwa-mahmoud/nightshift/commit/a4ab424882527fbfce6ba2916d43df985a22d93d))
+* show receipt and log times in the local time zone ([4a8e7dd](https://github.com/orwa-mahmoud/nightshift/commit/4a8e7ddf45274f694c89b9957fc68ddadb6eb3ae))
+* total every session of an item in its receipt and the index ([e807a95](https://github.com/orwa-mahmoud/nightshift/commit/e807a95ced734bb1eecdf38b7b50d2a351d01203))
+
 ## [0.25.4](https://github.com/orwa-mahmoud/nightshift/compare/v0.25.3...v0.25.4) (2026-10-01)
 
 

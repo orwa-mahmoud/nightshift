@@ -1,6 +1,6 @@
 {
   "name": "nightshift",
-  "version": "0.25.4",
+  "version": "0.26.0",
   "description": "Keep long Claude Code runs on task: enforce the punch list, park questions, recover crashes, run product or quality shifts until done, and leave a receipt for every item with its tokens and time.",
   "author": {
     "name": "Orwa Mahmoud",
