@@ -95,7 +95,9 @@ reason() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionReaso
   p="$(room codex-exit codex)"
   for prompt in 'please $nightshift:plan-exit' 'plan-exit' 'we are done planning' '$nightshift:status'; do
     run codex_prompt "$p" "$prompt"
-    [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "$prompt: $output"; return 1; }
+    # Any other prompt leaves the room open; in the conversation it binds, it carries the reminder.
+    [ "$status" -eq 0 ] || { echo "$prompt: $output"; return 1; }
+    [ -z "$output" ] || [[ "$output" == *'the plan room is open in this conversation'* ]] || { echo "$prompt: $output"; return 1; }
     [ -f "$(marker "$p")" ] || { echo "$prompt closed the room"; return 1; }
   done
   run codex_prompt "$p" '$nightshift:plan-exit'

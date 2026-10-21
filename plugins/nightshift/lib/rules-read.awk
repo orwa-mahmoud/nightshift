@@ -1194,7 +1194,7 @@ function parse_top_value(key,    c) {
       return
     }
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
-        key == "receipts") {
+        key == "receipts" || key == "planRoom") {
       emit(key, "", "", "o", "")
       parse_settings_object(key)
       return

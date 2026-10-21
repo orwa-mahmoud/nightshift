@@ -245,6 +245,21 @@ read only by Nightshift Archive. Both `runtimeLogDays` and `archiveDays` default
 eligible paths first; deletion needs an explicit yes and never runs from a hook, start,
 status, Doctor, or recovery.
 
+**Plan room** lists live under `planRoom` and apply only to the conversation the plan room binds.
+`blockedTools` holds tool names, with `*` matching any run of characters (`mcp__slack__*`), and
+ships empty. `blockedCommands` is one `grep -E` pattern matched against shell command text; a
+missing key means `git (commit|push|tag)`, and an empty string blocks no command. Native Windows
+matches it with .NET regular expressions. Hooks read both on every call, so an edit applies to the
+next tool call. Everything off the lists runs; the room's edit tools still write only the plan's
+own files, and the planning conversation cannot change `rules.json`.
+
+```json
+"planRoom": {
+  "blockedTools": ["mcp__slack__*"],
+  "blockedCommands": "git (commit|push|tag)|npm publish"
+}
+```
+
 ## Shift, handoff and archive
 
 Three blocks group the settings that are not guards. They are all optional, and an absent key keeps

@@ -2305,7 +2305,6 @@ function Test-NSRestrictedCommand {
             if ($word -cnotmatch '(^|[/\\])runtime[/\\](windows[/\\])?ns(\.ps1)?$' -and $word -cnotin @('ns', 'ns.ps1')) { return $false }
             $nsVerb = ($rest -split '[ \t]+', 2)[0]
             if ($nsVerb -cin @('bind', 'path', 'punch-list', 'status', 'doctor', 'help')) { continue }
-            if ($nsVerb -cin @('plan-enter', 'shift-estimate', 'check-items') -and $Mode -ceq 'plan') { continue }
             return $false
         }
         return $false
@@ -2393,6 +2392,80 @@ function Get-NSPlanRoomMessage {
 
 function Get-NSPlanRoomMarkerMessage {
     return "BLOCKED: the plan room marker is the owner's. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start."
+}
+
+# Get-NSPlanRoomReminder <nightshift-dir> - the line each owner message carries while the room binds
+# the conversation. Mirrors ns_plan_room_reminder.
+function Get-NSPlanRoomReminder {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return ('nightshift: the plan room is open in this conversation. Explore, research and plan freely; write only the plan, into ' +
+        (Get-NSPlanRoomPlaceName $NightshiftDir) + '. Build nothing: no edits to the project and no commits. The owner leaves with /nightshift:plan-exit, or approves the plan and types /nightshift:start.')
+}
+
+$script:NSPlanRoomBlockedCommandsDefault = 'git (commit|push|tag)'
+
+# Get-NSPlanRoomSetting <nightshift-dir> <key> - the planRoom field: State absent, value or error.
+function Get-NSPlanRoomSetting {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Key)
+    $path = Get-NSLayoutPath $NightshiftDir 'rules'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @{ State = 'absent' } }
+    try { $rules = [IO.File]::ReadAllText($path) | ConvertFrom-Json -ErrorAction Stop }
+    catch { return @{ State = 'error'; Error = 'rules.json cannot be read' } }
+    if ($null -eq $rules -or $null -eq $rules.PSObject.Properties['planRoom']) { return @{ State = 'absent' } }
+    $block = $rules.planRoom
+    if ($null -eq $block -or $null -eq $block.PSObject.Properties[$Key]) { return @{ State = 'absent' } }
+    return @{ State = 'value'; Value = $block.$Key }
+}
+
+# Get-NSPlanRoomBlockedTool <nightshift-dir> <tool> - the planRoom.blockedTools entry matching the tool
+# name, `*` matching any run of characters: Matched, the Entry, or the Error that stops the list.
+# Mirrors ns_plan_room_blocked_tool.
+function Get-NSPlanRoomBlockedTool {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Tool)
+    $setting = Get-NSPlanRoomSetting $NightshiftDir 'blockedTools'
+    if ($setting.State -eq 'absent') { return @{ Matched = $false } }
+    if ($setting.State -eq 'error') { return @{ Matched = $false; Error = $setting.Error } }
+    $value = $setting.Value
+    if ($null -eq $value) { return @{ Matched = $false } }
+    if ($value -isnot [array]) { return @{ Matched = $false; Error = 'planRoom.blockedTools is not a list of tool names' } }
+    foreach ($entry in $value) {
+        if ($entry -isnot [string]) { return @{ Matched = $false; Error = 'planRoom.blockedTools is not a list of tool names' } }
+        if ($entry.Length -eq 0) { continue }
+        $pattern = '^' + ([regex]::Escape($entry) -replace '\\\*', '.*') + '$'
+        if ($Tool -cmatch $pattern) { return @{ Matched = $true; Entry = $entry } }
+    }
+    return @{ Matched = $false }
+}
+
+# Get-NSPlanRoomBlockedCommand <nightshift-dir> <command> - whether planRoom.blockedCommands matches the
+# command: Matched, the Entry, or the Error that stops it. An absent field means the room's default.
+# Mirrors ns_plan_room_blocked_command.
+function Get-NSPlanRoomBlockedCommand {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Command)
+    $setting = Get-NSPlanRoomSetting $NightshiftDir 'blockedCommands'
+    if ($setting.State -eq 'error') { return @{ Matched = $false; Error = $setting.Error } }
+    $pattern = $script:NSPlanRoomBlockedCommandsDefault
+    if ($setting.State -eq 'value') {
+        if ($setting.Value -isnot [string]) { return @{ Matched = $false; Error = 'planRoom.blockedCommands is not a pattern' } }
+        $pattern = [string]$setting.Value
+    }
+    if ($pattern.Length -eq 0) { return @{ Matched = $false } }
+    try { $hit = $Command -cmatch $pattern }
+    catch { return @{ Matched = $false; Error = 'planRoom.blockedCommands is not a valid pattern' } }
+    if ($hit) { return @{ Matched = $true; Entry = $pattern } }
+    return @{ Matched = $false }
+}
+
+# Get-NSPlanRoomBlockMessage <list> <entry> - what the planning conversation is told when the owner's
+# list blocks a call. Mirrors ns_plan_room_block_message.
+function Get-NSPlanRoomBlockMessage {
+    param([Parameter(Mandatory = $true)][string]$List, [Parameter(Mandatory = $true)][string]$Entry)
+    return ('BLOCKED: the plan room blocks this: it matches `' + $Entry + '` in planRoom.' + $List +
+        ", the owner's list in .nightshift/rules.json. The change was not made. Keep planning; the owner edits that list to allow it.")
+}
+
+function Get-NSPlanRoomRulesMessage {
+    return "BLOCKED: the plan room keeps .nightshift/rules.json to the owner: it holds the room's block lists. Read it with the file-reading tool if the plan needs it; changing it is the owner's."
 }
 
 # Undo-NSPlanRoomEntry <nightshift-dir> <session> - take back a room that was never bound, because the

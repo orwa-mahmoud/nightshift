@@ -603,8 +603,9 @@ and the refused split-runtime boundary are in [Remote environments](remote-envir
 - **No built-in push block:** pushing is allowed unless the owner adds it to the shift rules.
 - **Hardhat is hardening, not a sandbox:** shell-command rules match command text. The pattern
   rules prevent accidental drift by a cooperative agent; they are not unbypassable isolation. The
-  plan room's fence and the hard-budget wrap-up are built on the same command classifier, under the
-  same limit.
+  hard-budget wrap-up is built on the same command classifier, under the same limit. The plan room
+  reminds the planning conversation and blocks only edits outside the plan and your `planRoom`
+  lists.
 - **The process lease fences observed tools:** it rejects stale-process calls delivered to the
   host's PreToolUse hook after ownership transfers. It cannot revoke a call already admitted,
   refresh the IDE, terminate a host process, suppress generated text, or control commands a human

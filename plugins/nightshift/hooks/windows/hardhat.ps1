@@ -1225,8 +1225,24 @@ if (Test-NSPlanRoomOpen $script:ns) {
     foreach ($target in $planTargets) {
         if ((Test-NSPlanRoomTarget ([string]$target)) -or (Test-NSPlanRoomDirectoryTarget ([string]$target))) { Write-Deny (Get-NSPlanRoomMarkerMessage) }
     }
-    if ((Test-NSPlanRoomBinds $script:ns $sessionId) -and -not (Test-NSRestrictedAllows $tool $planTargets $command 'plan')) {
-        Write-Deny (Get-NSPlanRoomMessage $script:ns)
+    # The bound room refuses only an edit tool writing outside the plan's places, a command reaching
+    # the rules file, and a call on the owner's planRoom lists. Mirrors ns_hardhat_plan_room_denial.
+    if (Test-NSPlanRoomBinds $script:ns $sessionId) {
+        if ($tool -in @('Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'apply_patch')) {
+            if (-not (Test-NSRestrictedAllows $tool $planTargets $command 'plan')) { Write-Deny (Get-NSPlanRoomMessage $script:ns) }
+        }
+        elseif ($tool -in @('Bash', 'PowerShell', 'Shell')) {
+            $planCommand = Remove-NSCommitMessage $command
+            if (Test-NSRulesTarget $planCommand) { Write-Deny (Get-NSPlanRoomRulesMessage) }
+            $planBlock = Get-NSPlanRoomBlockedCommand $script:ns $planCommand
+            if ($planBlock.ContainsKey('Error')) { Write-Deny ('BLOCKED: the plan room cannot read its command list: ' + $planBlock.Error + '. Fix .nightshift/rules.json or run Setup again.') }
+            if ($planBlock.Matched) { Write-Deny (Get-NSPlanRoomBlockMessage 'blockedCommands' $planBlock.Entry) }
+        }
+        else {
+            $planBlock = Get-NSPlanRoomBlockedTool $script:ns $tool
+            if ($planBlock.ContainsKey('Error')) { Write-Deny ('BLOCKED: the plan room cannot read its tool list: ' + $planBlock.Error + '. Fix .nightshift/rules.json or run Setup again.') }
+            if ($planBlock.Matched) { Write-Deny (Get-NSPlanRoomBlockMessage 'blockedTools' $planBlock.Entry) }
+        }
     }
 }
 

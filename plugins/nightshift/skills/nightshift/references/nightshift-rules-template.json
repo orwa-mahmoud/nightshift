@@ -82,5 +82,9 @@
   "retention": {
     "runtimeLogDays": 0,
     "archiveDays": 0
+  },
+  "planRoom": {
+    "blockedTools": [],
+    "blockedCommands": "git (commit|push|tag)"
   }
 }

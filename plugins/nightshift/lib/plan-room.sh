@@ -88,6 +88,104 @@ ns_plan_room_message() {
     "$(ns_plan_room_place_name "$1")"
 }
 
+# ns_plan_room_reminder <nightshift-dir> — the line each owner message carries while the room binds
+# the conversation.
+ns_plan_room_reminder() {
+  printf 'nightshift: the plan room is open in this conversation. Explore, research and plan freely; write only the plan, into %s. Build nothing: no edits to the project and no commits. The owner leaves with /nightshift:plan-exit, or approves the plan and types /nightshift:start.' \
+    "$(ns_plan_room_place_name "$1")"
+}
+
+# The room's own command list when the owner names none: nothing is committed or published while
+# planning.
+NS_PLAN_ROOM_BLOCKED_COMMANDS_DEFAULT='git (commit|push|tag)'
+
+# _ns_plan_room_rules <nightshift-dir> — load the rules file into this shell's reader. Status 1
+# when there is no rules file, 2 when it cannot be read.
+_ns_plan_room_rules() {
+  local f
+  ns_layout_set f "$1" rules
+  [ -f "$f" ] || return 1
+  ns_rules_load "$f" || return 2
+}
+
+# ns_plan_room_blocked_tool <nightshift-dir> <tool> — status 0 printing the planRoom.blockedTools
+# entry that matches the tool name, `*` matching any run of characters; 1 when none does; 2 printing
+# why the list cannot be read.
+ns_plan_room_blocked_tool() {
+  local row rc rest line p3 typ val entry
+  _ns_plan_room_rules "$1"
+  rc=$?
+  case "$rc" in
+    1) return 1 ;;
+    2) printf 'rules.json cannot be read'; return 2 ;;
+  esac
+  row="$(_ns_rules_row planRoom blockedTools "")" || return 1
+  [ "${row%%"$_NS_RULES_TAB"*}" = a ] || { printf 'planRoom.blockedTools is not a list of tool names'; return 2; }
+  rest="$NS_RULES_ROWS"
+  while [ -n "$rest" ]; do
+    line="${rest%%"$_NS_RULES_NL"*}"
+    case "$rest" in *"$_NS_RULES_NL"*) rest="${rest#*"$_NS_RULES_NL"}" ;; *) rest="" ;; esac
+    case "$line" in planRoom"$_NS_RULES_TAB"blockedTools"$_NS_RULES_TAB"?*) ;; *) continue ;; esac
+    line="${line#planRoom"$_NS_RULES_TAB"blockedTools"$_NS_RULES_TAB"}"
+    p3="${line%%"$_NS_RULES_TAB"*}"
+    line="${line#*"$_NS_RULES_TAB"}"
+    typ="${line%%"$_NS_RULES_TAB"*}"
+    val="${line#*"$_NS_RULES_TAB"}"
+    [ -n "$p3" ] || continue
+    [ "$typ" = s ] || { printf 'planRoom.blockedTools is not a list of tool names'; return 2; }
+    entry="$(ns_json_text "$val")"
+    [ -n "$entry" ] || continue
+    if printf '%s\n' "$2" | grep -qE -- "^$(ns_plan_room_glob_regex "$entry")\$"; then
+      printf '%s' "$entry"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ns_plan_room_glob_regex <entry> — a tool-name entry as an extended regex: `*` matches any run of
+# characters and every other character stands for itself.
+ns_plan_room_glob_regex() {
+  printf '%s' "$1" | sed 's/[][\.^$+?(){}|/]/\\&/g; s/\*/.*/g'
+}
+
+# ns_plan_room_blocked_command <nightshift-dir> <command> — status 0 printing the
+# planRoom.blockedCommands pattern when the command matches it; 1 when it does not; 2 printing why
+# the pattern cannot be used. An absent field means the room's default.
+ns_plan_room_blocked_command() {
+  local row rc pattern="$NS_PLAN_ROOM_BLOCKED_COMMANDS_DEFAULT"
+  _ns_plan_room_rules "$1"
+  rc=$?
+  [ "$rc" -ne 2 ] || { printf 'rules.json cannot be read'; return 2; }
+  if [ "$rc" -eq 0 ] && row="$(_ns_rules_row planRoom blockedCommands "")"; then
+    [ "${row%%"$_NS_RULES_TAB"*}" = s ] || { printf 'planRoom.blockedCommands is not a pattern'; return 2; }
+    pattern="$(ns_json_text "${row#*"$_NS_RULES_TAB"}")"
+  fi
+  [ -n "$pattern" ] || return 1
+  printf '%s' "$2" | grep -qE -- "$pattern" 2>/dev/null
+  rc=$?
+  case "$rc" in
+    0) printf '%s' "$pattern"; return 0 ;;
+    1) return 1 ;;
+    *) printf 'planRoom.blockedCommands is not a valid pattern'; return 2 ;;
+  esac
+}
+
+# ns_plan_room_block_message <list> <entry> — what the planning conversation is told when the owner's
+# list blocks a call.
+ns_plan_room_block_message() {
+  local tick
+  tick="$(printf '\140')"
+  printf 'BLOCKED: the plan room blocks this: it matches %s%s%s in planRoom.%s, the owner'"'"'s list in .nightshift/rules.json. The change was not made. Keep planning; the owner edits that list to allow it.' \
+    "$tick" "$2" "$tick" "$1"
+}
+
+# ns_plan_room_rules_message — what the planning conversation is told when a command reaches the
+# rules file that holds the room's lists.
+ns_plan_room_rules_message() {
+  printf 'BLOCKED: the plan room keeps .nightshift/rules.json to the owner: it holds the room'"'"'s block lists. Read it with the file-reading tool if the plan needs it; changing it is the owner'"'"'s.'
+}
+
 # ns_plan_room_marker_message — what any conversation is told when it reaches for the marker.
 ns_plan_room_marker_message() {
   printf 'BLOCKED: the plan room marker is the owner'"'"'s. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start.'

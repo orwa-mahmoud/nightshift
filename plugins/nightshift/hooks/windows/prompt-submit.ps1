@@ -2,16 +2,19 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('claude', 'codex')]
     [string]$HostName,
+    [ValidateSet('expansion', 'submit')]
+    [string]$Event = 'expansion',
     [Parameter(ValueFromPipeline = $true)]
     [AllowEmptyString()]
     [string]$HookJson = ''
 )
 
-# prompt-submit.ps1 - the owner's own command closes the plan room. Mirrors hooks/prompt-expansion.sh
-# (Claude Code UserPromptExpansion: the typed command's name in command_name) and
-# hooks/codex/prompt-submit.sh (Codex UserPromptSubmit: the typed text in prompt). A command or skill
-# the model invokes never reaches either event. The prompt always goes through: this hook never
-# blocks one.
+# prompt-submit.ps1 - the owner's own command closes the plan room, and every other owner message in
+# the conversation the room binds carries the planning reminder. Mirrors hooks/prompt-expansion.sh
+# (Claude Code UserPromptExpansion: the typed command's name in command_name), hooks/prompt-submit.sh
+# (Claude Code UserPromptSubmit, -Event submit: the reminder) and hooks/codex/prompt-submit.sh (Codex
+# UserPromptSubmit: the typed text in prompt, both). A command or skill the model invokes never
+# reaches either event. The prompt always goes through: this hook never blocks one.
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -38,14 +41,16 @@ catch {
 }
 
 $typed = ''
-if ($HostName -eq 'claude') {
+if ($HostName -eq 'claude' -and $Event -eq 'expansion') {
     if ($null -ne $payload.PSObject.Properties['command_name']) { $typed = '/' + [string]$payload.command_name }
 }
 elseif ($null -ne $payload.PSObject.Properties['prompt']) {
     $typed = [string]$payload.prompt
 }
 $word = Get-NSPlanRoomExitWord $typed
-if ($word.Length -eq 0) { exit 0 }
+$remind = $word.Length -eq 0 -and ($HostName -eq 'codex' -or $Event -eq 'submit')
+if ($word.Length -eq 0 -and -not $remind) { exit 0 }
+if ($word.Length -gt 0 -and $HostName -eq 'claude' -and $Event -eq 'submit') { exit 0 }
 
 $hostEnv = if ($HostName -eq 'claude') { [string]$env:CLAUDE_PROJECT_DIR } else { [string]$env:CODEX_PROJECT_DIR }
 $hostRoot = if (-not [string]::IsNullOrEmpty($hostEnv)) {
@@ -64,13 +69,21 @@ catch {
     exit 0
 }
 $ns = Join-Path $workspace '.nightshift'
-if (-not (Exit-NSPlanRoom $ns "typed the $word command")) { exit 0 }
+if ($remind) {
+    $sessionId = if ($null -ne $payload.PSObject.Properties['session_id']) { [string]$payload.session_id } else { '' }
+    if (-not (Test-NSPlanRoomBinds $ns $sessionId)) { exit 0 }
+    $context = Get-NSPlanRoomReminder $ns
+}
+else {
+    if (-not (Exit-NSPlanRoom $ns "typed the $word command")) { exit 0 }
+    $context = Get-NSPlanRoomLeftContext $word
+}
 
-$eventName = if ($HostName -eq 'claude') { 'UserPromptExpansion' } else { 'UserPromptSubmit' }
+$eventName = if ($HostName -eq 'claude' -and $Event -eq 'expansion') { 'UserPromptExpansion' } else { 'UserPromptSubmit' }
 $out = [ordered]@{
     hookSpecificOutput = [ordered]@{
         hookEventName = $eventName
-        additionalContext = (Get-NSPlanRoomLeftContext $word)
+        additionalContext = $context
     }
 }
 [Console]::Out.WriteLine(($out | ConvertTo-Json -Compress -Depth 3))

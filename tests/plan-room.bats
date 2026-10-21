@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
-# The plan room: a planning conversation that implements nothing until the owner leaves it. The
-# fence is hardhat's, so it holds however the conversation is worded, and only for the conversation
-# the room is bound to; the marker itself is out of every conversation's reach.
+# The plan room: a planning conversation reminded on every owner message that it plans and does not
+# build. Hardhat keeps its edit tools to the plan's places and applies the owner's planRoom block
+# lists, only for the conversation the room is bound to; every other tool runs. The marker itself
+# is out of every conversation's reach.
 
 load helpers
 
@@ -75,27 +76,125 @@ message() {
   [ "$(lib ns_plan_room_line "$p/.nightshift" 1)" = planner ]
 }
 
-@test "the planning conversation is denied every write outside the staging folder, with the exact message" {
+@test "the planning conversation's edit tools are denied every write outside the plan's places" {
   p="$(room fence)"
   for payload in \
     "$(edit Edit "$p/src/app.js")" "$(edit Write "$p/README.md")" "$(edit MultiEdit "$p/src/a.js")" \
-    "$(edit NotebookEdit "$p/nb.ipynb")" "$(bash_call 'git commit -m MSG')" "$(bash_call 'rm -rf src')" \
-    "$(bash_call 'mv a b')" "$(bash_call 'echo hi > notes.txt')" "$(bash_call 'npm install')" \
-    '{"tool_name":"mcp__db__write","tool_input":{}}'; do
+    "$(edit NotebookEdit "$p/nb.ipynb")" "$(edit Write "$p/.nightshift/rules.json")"; do
     run claude "$p" planner "$payload"
     [ "$(reason "$output")" = "$(message "$p" .nightshift/staging/)" ] || { echo "not denied as planned: $payload -> $(reason "$output")"; return 1; }
   done
 }
 
-@test "reading, read-only commands and writing the plan into staging stay free" {
+@test "every tool that is not an edit runs: questions, research, connectors, agents and new tools" {
   p="$(room free)"
   for payload in \
     "$(edit Read "$p/src/app.js")" '{"tool_name":"Grep","tool_input":{"pattern":"x"}}' \
+    '{"tool_name":"AskUserQuestion","tool_input":{"questions":[]}}' '{"tool_name":"Agent","tool_input":{"prompt":"x"}}' \
+    '{"tool_name":"mcp__db__write","tool_input":{}}' '{"tool_name":"mcp__ccd_turn__update_plan","tool_input":{"advance":true}}' \
+    '{"tool_name":"SomeToolNoHostHasYet","tool_input":{"x":1}}' \
     "$(bash_call 'git log --oneline -5 && git diff')" "$(bash_call 'grep -rn TODO src | head -20')" \
+    "$(bash_call "grep 'a\\|b' src/app.js")" "$(bash_call 'sed -n 1p src/app.js')" "$(bash_call 'gh issue view 21')" \
+    "$(bash_call 'npm install')" \
     "$(edit Write "$p/.nightshift/staging/drafting-table.md")" "$(edit Edit "$p/.nightshift/staging/plan.md")"; do
     run claude "$p" planner "$payload"
     [ -z "$(reason "$output")" ] || { echo "denied: $payload -> $(reason "$output")"; return 1; }
   done
+}
+
+# expanded <project> <text> — a message as hardhat prints it: the rules file named absolute, under the
+# workspace.
+expanded() {
+  local root
+  root="$(cd -P "$1" && pwd)"
+  printf '%s' "${2//.nightshift\/rules.json/$root/.nightshift/rules.json}"
+}
+
+# set_lists <project> <jq-filter> — rewrite the workspace's planRoom block.
+set_lists() {
+  local f="$1/.nightshift/rules.json"
+  jq "$2" "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+}
+
+@test "the owner's block lists stop what they name, read fresh on every call" {
+  p="$(room lists)"
+  # No planRoom block: the room's own default keeps commits, pushes and tags out.
+  set_lists "$p" 'del(.planRoom)'
+  for cmd in 'git commit -m "push me"' 'git push origin main' 'git tag v1'; do
+    run claude "$p" planner "$(bash_call "$cmd")"
+    [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message blockedCommands 'git (commit|push|tag)')")" ] ||
+      { echo "$cmd: $(reason "$output")"; return 1; }
+  done
+  run claude "$p" planner "$(bash_call 'git log --oneline')"
+  [ -z "$(reason "$output")" ]
+  set_lists "$p" '.planRoom = {blockedTools: ["mcp__slack__*"], blockedCommands: "npm install"}'
+  run claude "$p" planner '{"tool_name":"mcp__slack__post_message","tool_input":{}}'
+  [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message blockedTools 'mcp__slack__*')")" ] || { echo "$output"; return 1; }
+  run claude "$p" planner '{"tool_name":"mcp__github__get_issue","tool_input":{}}'
+  [ -z "$(reason "$output")" ]
+  run claude "$p" planner "$(bash_call 'npm install')"
+  [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message blockedCommands 'npm install')")" ]
+  run claude "$p" planner "$(bash_call 'git commit -m x')"
+  [ -z "$(reason "$output")" ]
+  # Empty lists block nothing.
+  set_lists "$p" '.planRoom = {blockedTools: [], blockedCommands: ""}'
+  run claude "$p" planner "$(bash_call 'git push')"
+  [ -z "$(reason "$output")" ]
+  # A list the room cannot read denies, naming the key.
+  set_lists "$p" '.planRoom = {blockedTools: "mcp__slack__*"}'
+  run claude "$p" planner '{"tool_name":"mcp__slack__post_message","tool_input":{}}'
+  [[ "$(reason "$output")" == *'planRoom.blockedTools is not a list of tool names'* ]] || { echo "$output"; return 1; }
+  set_lists "$p" '.planRoom = {blockedCommands: "(unclosed"}'
+  run claude "$p" planner "$(bash_call 'ls')"
+  [[ "$(reason "$output")" == *'planRoom.blockedCommands is not a valid pattern'* ]] || { echo "$output"; return 1; }
+}
+
+@test "a command reaching the rules file is denied in the room; reading it with Read is not" {
+  p="$(room rules-guard)"
+  for cmd in "sed -i '' 's/x/y/' .nightshift/rules.json" "jq . .nightshift/rules.json"; do
+    run claude "$p" planner "$(bash_call "$cmd")"
+    [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_rules_message)")" ] || { echo "$cmd: $(reason "$output")"; return 1; }
+  done
+  run claude "$p" planner "$(edit Read "$p/.nightshift/rules.json")"
+  [ -z "$(reason "$output")" ]
+}
+
+# submit <project> <session> <prompt> — one Claude Code UserPromptSubmit from that conversation.
+submit() {
+  jq -nc --arg s "$2" --arg q "$3" --arg c "$1" '{session_id:$s,prompt:$q,cwd:$c,hook_event_name:"UserPromptSubmit"}' |
+    env CLAUDE_PROJECT_DIR="$1" bash "$PLUGIN/hooks/prompt-submit.sh"
+}
+
+@test "each owner message in the bound conversation carries the reminder, and no other prompt does" {
+  p="$(room reminder)"
+  run submit "$p" planner 'what does the gate do?'
+  [ "$(printf '%s' "$output" | jq -r '.hookSpecificOutput.hookEventName')" = UserPromptSubmit ]
+  [ "$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')" = "$(lib ns_plan_room_reminder "$p/.nightshift")" ]
+  run submit "$p" builder 'ship it'
+  [ -z "$output" ]
+  run submit "$p" planner '/nightshift:plan-exit'
+  [ -z "$output" ]
+  lib ns_plan_room_leave "$p/.nightshift" test
+  run submit "$p" planner 'and now?'
+  [ -z "$output" ]
+  jq -e '.hooks.UserPromptSubmit[0].hooks[0].command | test("claude-prompt-submit.ps1")' "$PLUGIN/hooks/hooks.json" >/dev/null
+}
+
+@test "Codex carries the reminder the same way, and its exit command still closes the room" {
+  p="$(new_project codex-reminder)"
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '2\n' >"$p/.nightshift/state-version"
+  mkdir -p "$p/.nightshift/staging"
+  bash "$PLUGIN/runtime/plan-enter.sh" --project "$p" --host codex >/dev/null
+  hook_payload '{"tool_name":"Bash","session_id":"codex-plan","tool_input":{"command":": nightshift-plan-probe"}}' \
+    env CODEX_PROJECT_DIR="$p" bash "$PLUGIN/hooks/codex/hardhat.sh" >/dev/null
+  run hook_payload '{"session_id":"codex-plan","prompt":"how should the budget work?"}' \
+    env CODEX_PROJECT_DIR="$p" bash "$PLUGIN/hooks/codex/prompt-submit.sh"
+  [ "$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')" = "$(lib ns_plan_room_reminder "$p/.nightshift")" ]
+  run hook_payload '{"session_id":"codex-plan","prompt":"$nightshift:plan-exit"}' \
+    env CODEX_PROJECT_DIR="$p" bash "$PLUGIN/hooks/codex/prompt-submit.sh"
+  [[ "$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')" == 'nightshift: the owner left the plan room.'* ]] || { echo "$output"; return 1; }
+  ! lib ns_plan_room_open "$p/.nightshift" || false
 }
 
 @test "the read-only ns verbs run in the plan room as the skills write them" {
@@ -106,12 +205,7 @@ message() {
     run claude "$p" planner "$(bash_call "$cmd")"
     [ -z "$(reason "$output")" ] || { echo "denied: $cmd -> $output"; return 1; }
   done
-  for cmd in "\"$PLUGIN/runtime/ns\" scaffold product" "\"$PLUGIN/runtime/ns\" stop-shift" \
-    "\"/tmp/evil/rm\" -rf src" "'git' commit -m x"; do
-    run claude "$p" planner "$(bash_call "$cmd")"
-    [[ "$(reason "$output")" == 'BLOCKED: the plan room is open'* ]] || { echo "allowed: $cmd -> $output"; return 1; }
-  done
-  # Wrap-up shares the classifier but has no room to enter.
+  # Wrap-up keeps the read-only classifier and has no room to enter.
   run bash -c '. "$1"; . "$2"; ns_hardhat_command_allowed "\"/x/runtime/ns\" plan-enter" wrapup' _ \
     "$LIB" "$PLUGIN/hooks/shared/hardhat-core.sh"
   [ "$status" -ne 0 ]
@@ -142,7 +236,7 @@ message() {
   [ -f "$marker" ]
 }
 
-@test "the fence holds on Codex and Cursor too" {
+@test "the edit check and the block lists hold on Codex and Cursor too" {
   p="$(new_project other-hosts)"
   rm -f "$p/.nightshift/.shift-armed"
   printf '2\n' >"$p/.nightshift/state-version"
@@ -167,9 +261,12 @@ message() {
   bash "$PLUGIN/runtime/plan-enter.sh" --project "$q" --host cursor >/dev/null
   jq -nc --arg p "$q" '{tool_name:"Shell",conversation_id:"cursor-plan",transcript_path:"",cwd:$p,tool_input:{command:": nightshift-plan-probe"}}' |
     env CURSOR_PROJECT_DIR="$q" bash "$PLUGIN/hooks/cursor/hardhat.sh" >/dev/null
+  run bash -c 'jq -nc --arg p "$1" '\''{tool_name:"Shell",conversation_id:"cursor-plan",transcript_path:"",cwd:$p,tool_input:{command:"git push"}}'\'' |
+    env CURSOR_PROJECT_DIR="$1" bash "$2"' _ "$q" "$PLUGIN/hooks/cursor/hardhat.sh"
+  [[ "$output" == *'planRoom.blockedCommands'* ]] || { echo "cursor push: $output"; return 1; }
   run bash -c 'jq -nc --arg p "$1" '\''{tool_name:"Shell",conversation_id:"cursor-plan",transcript_path:"",cwd:$p,tool_input:{command:"npm install"}}'\'' |
     env CURSOR_PROJECT_DIR="$1" bash "$2"' _ "$q" "$PLUGIN/hooks/cursor/hardhat.sh"
-  [[ "$output" == *'the plan room is open'* ]] || { echo "cursor: $output"; return 1; }
+  [[ "$output" != *'plan room'* ]] || { echo "cursor install: $output"; return 1; }
 }
 
 @test "Status and Doctor report an open plan room and the conversation it binds" {
@@ -200,8 +297,9 @@ message() {
     [ "$layout" = legacy ] || printf '2\n' >"$p/.nightshift/state-version"
     run env NS_MODULE="$PLUGIN/lib/Nightshift.psm1" NS_NS="$p/.nightshift" pwsh -NoProfile -NonInteractive -Command '
       Import-Module $env:NS_MODULE -Force -DisableNameChecking
-      (Get-NSPlanRoomMessage $env:NS_NS) + "|" + (Get-NSPlanRoomMarkerMessage)'
-    [ "$output" = "$(lib ns_plan_room_message "$p/.nightshift")|$(lib ns_plan_room_marker_message)" ] ||
+      (Get-NSPlanRoomMessage $env:NS_NS) + "|" + (Get-NSPlanRoomMarkerMessage) + "|" + (Get-NSPlanRoomReminder $env:NS_NS) + "|" +
+        (Get-NSPlanRoomBlockMessage blockedTools "mcp__x__*") + "|" + (Get-NSPlanRoomRulesMessage)'
+    [ "$output" = "$(lib ns_plan_room_message "$p/.nightshift")|$(lib ns_plan_room_marker_message)|$(lib ns_plan_room_reminder "$p/.nightshift")|$(lib ns_plan_room_block_message blockedTools 'mcp__x__*')|$(lib ns_plan_room_rules_message)" ] ||
       { echo "$layout: $output"; return 1; }
   done
 }
@@ -216,16 +314,12 @@ message() {
   [ -z "$(reason "$output")" ]
 }
 
-@test "restricted writes reject symlink leaves and write-capable Git flags" {
+@test "the plan's places reject a symlink leaf that reaches the project" {
   p="$(room write-escapes)"
   printf 'unchanged\n' >"$p/src/app.js"
   ln -s "$p/src/app.js" "$p/.nightshift/staging/plan.md"
   run claude "$p" planner "$(edit Edit "$p/.nightshift/staging/plan.md")"
   [ -n "$(reason "$output")" ]
-  for cmd in 'git diff --output=src/app.js' 'git log --output src/app.js' 'git show --ext-diff' 'git -c diff.external=writer diff'; do
-    run claude "$p" planner "$(bash_call "$cmd")"
-    [ -n "$(reason "$output")" ] || { echo "$cmd: $output"; return 1; }
-  done
   [ "$(cat "$p/src/app.js")" = unchanged ]
 }
 
@@ -256,16 +350,12 @@ EOF
   [ "$(cat "$BATS_TEST_TMPDIR/$winner.result")" -eq 0 ]
 }
 
-@test "restricted modes refuse interpreters, command wrappers and write-capable read options" {
-  p="$(room interpreter-guard)"
+@test "wrap-up refuses interpreters, command wrappers and write-capable read options" {
   for cmd in "awk 'BEGIN { system(\"touch src/new\") }'" "sed -n 'w src/new' input" \
-    'command touch src/new' 'sort -o src/new input' 'rg --pre writer text src' 'uniq input src/new'; do
-    run claude "$p" planner "$(bash_call "$cmd")"
-    [ -n "$(reason "$output")" ] || { echo "$cmd: $output"; return 1; }
-    for mode in plan wrapup; do
-      run bash -c '. "$1"; . "$2"; ns_hardhat_command_allowed "$3" "$4"' _ "$LIB" "$PLUGIN/hooks/shared/hardhat-core.sh" "$cmd" "$mode"
-      [ "$status" -ne 0 ]
-    done
+    'command touch src/new' 'sort -o src/new input' 'rg --pre writer text src' 'uniq input src/new' \
+    'git diff --output=src/app.js' 'git -c diff.external=writer diff'; do
+    run bash -c '. "$1"; . "$2"; ns_hardhat_command_allowed "$3" wrapup' _ "$LIB" "$PLUGIN/hooks/shared/hardhat-core.sh" "$cmd"
+    [ "$status" -ne 0 ] || { echo "allowed: $cmd"; return 1; }
   done
 }
 

@@ -1278,10 +1278,10 @@ ns_hardhat_trusted_shift_control() { # <cmd> <plugin_root> <workspace>
 }
 
 # Restricted modes. A spent hard budget (`wrapup`) narrows the shift to wrap-up: reading, committing
-# the work in progress, and writing the receipt, the punch list and the inbox. The plan room (`plan`)
-# allows reading and writing the plan into the staging folder. Reading stays free;
-# a tool this guard cannot classify is denied, so a new tool never widens a restricted mode. Shell
-# commands are matched by their text, as every hardhat rule is: hardening, not a sandbox.
+# the work in progress, and writing the receipt, the punch list and the inbox. Reading stays free;
+# a tool this guard cannot classify is denied, so a new tool never widens wrap-up. The plan room
+# (`plan`) uses only the places its edit tools may write; ns_hardhat_plan_room_denial holds the rest.
+# Shell commands are matched by their text, as every hardhat rule is: hardening, not a sandbox.
 
 # ns_hardhat_readonly_tool <tool> — a tool that only reads.
 ns_hardhat_readonly_tool() {
@@ -1400,7 +1400,6 @@ ns_hardhat_command_allowed() {
         case "$word" in */runtime/ns | ns) ;; *) return 1 ;; esac
         case "${rest%%[[:space:]]*}" in
           bind | path | punch-list | status | doctor | help) ;;
-          plan-enter | shift-estimate | check-items) [ "$mode" = plan ] || return 1 ;;
           *) return 1 ;;
         esac
         ;;
@@ -1516,7 +1515,45 @@ ns_hardhat_plan_room_reason() {
     return 0
   fi
   ns_plan_room_binds "$NS" "$5" || return 1
-  ns_hardhat_restricted_allows "$1" "$2" "$3" plan && return 1
-  ns_plan_room_message "$NS"
-  return 0
+  ns_hardhat_plan_room_denial "$1" "$2" "$3"
+}
+
+# ns_hardhat_plan_room_denial <tool> <payload> <scrubbed-command> — what the bound plan room refuses:
+# status 0 with the denial to print, 1 to let the call through. The room reminds the planning
+# conversation on every owner message, so it refuses only an edit tool writing outside the plan's
+# places, a command reaching the rules file that holds the room's lists, and a call on the owner's
+# planRoom lists. Every other tool runs, a tool no host had yet when this was written included.
+ns_hardhat_plan_room_denial() {
+  local tool="$1" payload="$2" cmd="$3" rc entry
+  if ns_hardhat_file_write_tool "$tool"; then
+    NS_HARDHAT_PLACES="$(ns_hardhat_restricted_places plan)" || {
+      ns_plan_room_message "$NS"
+      return 0
+    }
+    ns_hardhat_payload_targets "$tool" "$payload" "$cmd" ns_hardhat_outside_places
+    rc=$?
+    [ "$rc" -eq 1 ] && return 1
+    ns_plan_room_message "$NS"
+    return 0
+  fi
+  if ns_hardhat_is_command_tool "$tool"; then
+    if ns_hardhat_rules_targeted "$cmd"; then
+      ns_plan_room_rules_message
+      return 0
+    fi
+    entry="$(ns_plan_room_blocked_command "$NS" "$cmd")"
+    rc=$?
+    case "$rc" in
+      0) ns_plan_room_block_message blockedCommands "$entry"; return 0 ;;
+      2) printf 'BLOCKED: the plan room cannot read its command list: %s. Fix .nightshift/rules.json or run Setup again.' "$entry"; return 0 ;;
+    esac
+    return 1
+  fi
+  entry="$(ns_plan_room_blocked_tool "$NS" "$tool")"
+  rc=$?
+  case "$rc" in
+    0) ns_plan_room_block_message blockedTools "$entry"; return 0 ;;
+    2) printf 'BLOCKED: the plan room cannot read its tool list: %s. Fix .nightshift/rules.json or run Setup again.' "$entry"; return 0 ;;
+  esac
+  return 1
 }

@@ -466,6 +466,22 @@
           "description": "Delete dated .nightshift/archive/YYYY-MM-DD directories older than N days. 0 keeps forever."
         }
       }
+    },
+    "planRoom": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What the plan room blocks. The room reminds the planning conversation on every owner message and keeps edit tools to the plan's places; every other tool runs unless one of these lists names it.",
+      "properties": {
+        "blockedTools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tool names blocked while the plan room is open, `*` matching any run of characters, for example `mcp__slack__*`. Empty blocks no tool."
+        },
+        "blockedCommands": {
+          "type": "string",
+          "description": "grep -E pattern matched against shell command text while the plan room is open. Absent means `git (commit|push|tag)`; empty blocks no command."
+        }
+      }
     }
   }
 }
