@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.28.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.27.0...v0.28.0) (2026-10-21)
+
+
+### Features
+
+* verify documentation screenshots against the running UI ([24ddbc0](https://github.com/orwa-mahmoud/nightshift/commit/24ddbc0173776b024cca9a234a8fc910c70ae25c))
+* verify documentation screenshots against the running UI ([#195](https://github.com/orwa-mahmoud/nightshift/issues/195)) ([698bd0f](https://github.com/orwa-mahmoud/nightshift/commit/698bd0f9d62cf1d435203aa86adf24a253a8974b))
+
 ## [0.27.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.26.1...v0.27.0) (2026-10-18)
 
 
