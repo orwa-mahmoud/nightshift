@@ -1593,6 +1593,27 @@ current_site() {
   [ ! -e "${lines[0]}/run/shift-policy.json" ]
 }
 
+@test "archive anchors a bare run/ ignore so filed run records reach the receipts repository" {
+  p="$(new_project anchor-run)"
+  current_site "$p"
+  n="$p/.nightshift"
+  d="archive/$(sed -n 's/^archiveFolder=//p' "$n/run/.ended")"
+  git -C "$n" init -q
+  printf 'STOP\nrun/\n' >"$n/.gitignore"
+  run bash "$ARCHIVE_SH" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$n/.gitignore")" = "$(printf 'STOP\n/run/')" ]
+  git -C "$n" check-ignore -q run/shift-log.md
+  ! git -C "$n" check-ignore -q "$d/run/shift-log.md" || false
+
+  q="$(new_project anchor-dedupe)"
+  current_site "$q"
+  printf 'run/\n/run/\nSTOP\n' >"$q/.nightshift/.gitignore"
+  run bash "$ARCHIVE_SH" --project "$q"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$q/.nightshift/.gitignore")" = "$(printf '/run/\nSTOP')" ]
+}
+
 @test "a second clock-out of a shift appends its findings to the ones already filed" {
   p="$(new_project mirror-findings)"
   current_site "$p"

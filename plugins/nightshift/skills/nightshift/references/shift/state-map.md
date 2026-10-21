@@ -75,7 +75,7 @@ read it as empty.
 | `state-version` | The scaffold, into a `.nightshift/` it creates; `migrate-state`, last | No | On a state migration | Never | Current version `2` |
 | `run/work-target`, `run/work-mode` | Setup | Setup writes them again | When the owner re-points the workspace | Never | — |
 | `run/deadline` | Start, from the composed hours | No | When a shift with hours is cut | Start drops it once it has passed; Reset drops it | UNIX epoch seconds |
-| `.gitignore` | Setup, with the receipts repository; `migrate-state` adds `run/` | Setup adds `STOP` and `run/` when missing | At Setup | Never | — |
+| `.gitignore` | Setup, with the receipts repository; `migrate-state` adds `/run/` | Setup adds `STOP` and `/run/` when missing; Setup and Archive rewrite a bare `run/` as `/run/` | At Setup | Never | — |
 | `.git/` | Setup, only when the owner asks for a receipts repository | No | Commits by the clock-out gate and Archive when `receiptsAutoCommit` is true, else by the owner | Never; never pushed | — |
 
 ### Records the runtime writes
@@ -100,7 +100,7 @@ read it as empty.
 ### Markers the runtime keeps
 
 All of them are generated, and none is archived. Every one but `STOP` lives in `run/`, which the
-receipts repository's `.gitignore` leaves out whole.
+receipts repository's `.gitignore` leaves out whole as `/run/`; archived `run/` records stay in.
 
 | File | Written by | Means | Removed |
 |---|---|---|---|

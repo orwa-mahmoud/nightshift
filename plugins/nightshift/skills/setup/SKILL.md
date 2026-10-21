@@ -124,12 +124,13 @@ scaffolding as if the site were current.
  clear yes, skip it: the receipts still exist as plain files. Present the question neutrally —
  never describe the repo as recommended; the default is no. On yes: if `$NS/.git` does
  not exist, run `git -C "$NS" init` rather than `cd`-ing there.
- Ensure `$NS/.gitignore` contains `STOP` and `run/`, the runtime's own folder; preserve existing
- lines. A site still at version `1` keeps the runtime's files at the top of `$NS/`, so there it
+ Ensure `$NS/.gitignore` contains `STOP` and `/run/`, the runtime's own folder, anchored so each
+ archive folder's `run/` records stay versioned; rewrite a bare `run/` line as `/run/` and
+ preserve the other lines. A site still at version `1` keeps the runtime's files at the top of `$NS/`, so there it
  names the transient markers instead: `STOP`, `.stall`, `.notified`, `deadline`, `.session-end`,
  `.shift-pulse`, `.mint-failed`, `.shift-session`, `.shift-session.tmp.*`, `.shift-worker`,
  `.shift-lease`, `.shift-lease.tmp.*`, `.mutex-scope`, `.mutex-scope.tmp.*`, `.watchman`,
- `.watchman-tick`, `.budget.tsv`, `.item-sessions/`, `.plan-room`, `.lock.d/`, and `.lease-lock.d/`; migrate-state adds `run/` with the move. Make one initial commit only when setup created the receipts repository.
+ `.watchman-tick`, `.budget.tsv`, `.item-sessions/`, `.plan-room`, `.lock.d/`, and `.lease-lock.d/`; migrate-state adds `/run/` with the move. Make one initial commit only when setup created the receipts repository.
  Creating the repo does **not** turn on headless auto-commit — that is `receiptsAutoCommit`
  in `rules.json`, shipped `false`; the owner commits the receipts tree when they want.
  **Never add a remote to it, never push it.**

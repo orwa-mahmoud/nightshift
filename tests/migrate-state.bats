@@ -310,17 +310,17 @@ links_resolve() {
   printf '%s\n' "$output" | grep -qF 'nothing to do'
 }
 
-@test "the receipts repository gets run/ left out, on a last line with no newline too" {
+@test "the receipts repository gets /run/ left out, on a last line with no newline too" {
   ws="$(v1_site)"
   ns="$ws/.nightshift"
   printf 'STOP\n.stall' >"$ns/.gitignore"
   git -C "$ns" init -q
   run bash "$MIGRATE" --project "$ws"
-  printf '%s\n' "$output" | grep -qF 'ignore    .gitignore: add run/'
+  printf '%s\n' "$output" | grep -qF 'ignore    .gitignore: add /run/'
   printf '%s\n' "$output" | grep -qF 'note      the receipts repository shows each move once you commit'
   run bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 0 ]
-  [ "$(cat "$ns/.gitignore")" = "$(printf 'STOP\n.stall\nrun/')" ]
+  [ "$(cat "$ns/.gitignore")" = "$(printf 'STOP\n.stall\n/run/')" ]
   run bash "$MIGRATE" --project "$ws"
   if printf '%s\n' "$output" | grep -qF 'ignore'; then return 1; fi
 }

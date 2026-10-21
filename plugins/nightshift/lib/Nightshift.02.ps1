@@ -1219,13 +1219,14 @@ function Get-NSMigrationPlan {
     # Links that would stop resolving once the moves are made, written again so they do.
     foreach ($record in (Invoke-NSMigrationLinks $Workspace $moves.ToArray() 'plan')) { $records.Add($record) }
 
-    # The receipts repository leaves the runtime's directory out, as Setup writes it.
+    # The receipts repository leaves the runtime's directory out, as Setup writes it: anchored, so
+    # the run records filed under each archive folder stay in.
     $run = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'run'
     $ignoreRel = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'gitignore'
     $ignore = Get-NSMigrationNative $ns $ignoreRel
     if ($run.Length -gt 0 -and (Test-NSMigrationFile $ignore) -and
-        -not ((Read-NSMigrationLines $ignore) -ccontains ($run + '/'))) {
-        $records.Add("ignore`t$ignoreRel`t$run/")
+        -not ((Read-NSMigrationLines $ignore) -ccontains ('/' + $run + '/'))) {
+        $records.Add("ignore`t$ignoreRel`t/$run/")
     }
 
     # Anything this layout has no name for stays where it is, and is named so nothing is a surprise.

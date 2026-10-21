@@ -173,6 +173,10 @@ if { [ -e "$root" ] && [ ! -d "$root" ]; } \
   exit 2
 fi
 
+ns_receipt_anchor_run_ignore "$NS" \
+  || printf 'archive-receipts: could not anchor run/ in %s; filed run records stay out of the receipts repository\n' \
+    "$(ns_layout_name "$NS" gitignore)" >&2
+
 # The receipts of items nobody finished. They stay live and are not filed, exactly as the box stays
 # in the punch list, so the next shift extends the same file; they are filed once their item is
 # ticked.

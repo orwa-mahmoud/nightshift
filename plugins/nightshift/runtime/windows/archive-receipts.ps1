@@ -135,6 +135,11 @@ foreach ($p in @((Get-NSArchiveRoot $workspace), $group, $dest)) {
     }
 }
 
+try { Update-NSReceiptRunIgnore $ns }
+catch {
+    Write-NSArchiveReceiptsError ('archive-receipts: could not anchor run/ in {0}: {1}; filed run records stay out of the receipts repository' -f (Get-NSLayoutName $ns 'gitignore'), $_.Exception.Message)
+}
+
 $utf8 = New-Object Text.UTF8Encoding($false)
 $script:copied = 0
 $script:removed = 0

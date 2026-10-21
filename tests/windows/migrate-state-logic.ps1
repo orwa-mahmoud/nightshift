@@ -330,15 +330,15 @@ try {
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $fresh '.nightshift/staging/work-orders.md'))) 'the work orders wait until Hunt needs them'
     Expect-True ((Invoke-Migrate $fresh).Stdout.Contains('nothing to do')) 'a new site has nothing to move'
 
-    # --- the receipts repository leaves run/ out
+    # --- the receipts repository leaves /run/ out
     $repo = Join-Path $root 'repo'
     $ns = New-V1Site $repo
     Write-Text (Join-Path $ns '.gitignore') "STOP`n.stall"
     $null = & git init --quiet $ns
     $ignored = Invoke-Migrate $repo -Apply
-    Expect-True ($ignored.Stdout.Contains('ignore    .gitignore: add run/')) 'the receipts repository gets run/ left out'
-    Expect-True ((Read-Text (Join-Path $ns '.gitignore')) -ceq "STOP`n.stall`nrun/`n") 'run/ lands on its own line'
-    Expect-True (-not (Invoke-Migrate $repo).Stdout.Contains('ignore')) 'run/ is added once'
+    Expect-True ($ignored.Stdout.Contains('ignore    .gitignore: add /run/')) 'the receipts repository gets /run/ left out'
+    Expect-True ((Read-Text (Join-Path $ns '.gitignore')) -ceq "STOP`n.stall`n/run/`n") '/run/ lands on its own line'
+    Expect-True (-not (Invoke-Migrate $repo).Stdout.Contains('ignore')) '/run/ is added once'
 
     # --- Doctor names each move and changes nothing
     $described = Join-Path $root 'doctor'

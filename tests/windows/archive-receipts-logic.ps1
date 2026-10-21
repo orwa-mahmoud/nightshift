@@ -813,6 +813,19 @@ try {
     $findingsClaimed = Join-Path $findingsSite ('.nightshift/archive/' + (Get-NSEndedField $findingsSite 'archiveFolder'))
     Expect-True ((Get-TextOrEmpty (Join-Path $findingsClaimed 'run/evidence/findings.jsonl')) -ceq ('{"record":"one"}' + "`n" + '{"record":"two"}' + "`n")) `
         'findings filed twice keep both records'
+
+    # A bare run/ ignore is anchored, so the filed run records reach the receipts repository.
+    $anchorSite = New-CurrentSite 'anchor'
+    $anchorIgnore = Join-Path $anchorSite '.nightshift/.gitignore'
+    [IO.File]::WriteAllText($anchorIgnore, "STOP`nrun/`n", $utf8)
+    $anchorRun = Invoke-ArchiveReceipts $anchorSite
+    Expect-True ($anchorRun.ExitCode -eq 0) "anchoring filing exits 0: $($anchorRun.Stderr)"
+    Expect-True (([IO.File]::ReadAllLines($anchorIgnore) -join ' ') -ceq 'STOP /run/') 'a bare run/ ignore is anchored'
+    $dedupeSite = New-CurrentSite 'anchor-dedupe'
+    $dedupeIgnore = Join-Path $dedupeSite '.nightshift/.gitignore'
+    [IO.File]::WriteAllText($dedupeIgnore, "run/`n/run/`nSTOP`n", $utf8)
+    $null = Invoke-ArchiveReceipts $dedupeSite
+    Expect-True (([IO.File]::ReadAllLines($dedupeIgnore) -join ' ') -ceq '/run/ STOP') 'a bare run/ beside an anchored one is dropped'
 }
 finally {
     Remove-Item -LiteralPath $mirror -Recurse -Force -ErrorAction SilentlyContinue

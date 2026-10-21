@@ -553,6 +553,30 @@ ns_receipt_ignore_sessions() {
   printf '\n.item-sessions/\n' >>"$ignore"
 }
 
+# ns_receipt_anchor_run_ignore <state-dir> — the receipts repository leaves out only the live
+# runtime folder. A bare `run/` line matches at every depth and would also leave out the run records
+# each archived shift files under its own folder, so it is rewritten as `/run/`. Status 1 when the
+# ignore file is a symlink or cannot be rewritten.
+ns_receipt_anchor_run_ignore() {
+  local ns="$1" run ignore tmp
+  ns_layout_rel_set run "$ns" run || return 0
+  ns_layout_set ignore "$ns" gitignore || return 0
+  [ ! -L "$ignore" ] || return 1
+  [ -f "$ignore" ] && grep -qxF "$run/" "$ignore" || return 0
+  tmp="$(mktemp "$ns/.gitignore.XXXXXX")" || return 1
+  if cp -p "$ignore" "$tmp" \
+    && awk -v old="$run/" -v new="/$run/" '
+      NR == FNR { if ($0 == new) has = 1; next }
+      $0 == old { if (has) next; $0 = new; has = 1 }
+      { print }
+    ' "$ignore" "$ignore" >"$tmp" \
+    && mv "$tmp" "$ignore"; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
 ns_receipt_write_session_state() {
   local file="$1" dir tmp
   dir="${file%/*}"
