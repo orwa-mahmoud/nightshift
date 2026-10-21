@@ -149,6 +149,11 @@ page, which is the only copy. Do not hand-edit it.
  evidence links and reasons. Keep `candidate`, `building`, and `parked` entries live: they can still
  affect a future cycle or need the owner. Restore the shipped headings if moving the last terminal
  entry leaves an empty section. Never renumber or silently change a status during archive.
+- **Shift worktree — removed once merged, by the runtime.** When the ended shift ran in its own
+ worktree, `archive-receipts` removes that worktree folder once its branch is merged into the
+ owner's checkout, and says so. It never deletes the branch. An unmerged branch keeps its worktree,
+ and the helper names both; tell the owner, with the merge command from the morning page. Never
+ remove a worktree or a branch by hand.
 
 ## Timing
 

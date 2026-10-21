@@ -67,7 +67,7 @@ def allowance($i; $a):
 # emits its type and no fields, which is how a policy written before this feature is told apart
 # from one whose owner left a block empty.
 def PREF: {
-  "shift":    ["execution", "hours", "itemBudget", "toolingPolicy", "verificationProfile"],
+  "shift":    ["copyIn", "execution", "hours", "isolation", "itemBudget", "prepare", "toolingPolicy", "verificationProfile", "worktreeRoot"],
   "recovery": ["launchScope"],
   "handoff":  ["detail", "enabled", "language", "sections", "templatePath", "view"],
   "archive":  ["automatic", "layout", "root", "templatePath"],

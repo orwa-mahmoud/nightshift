@@ -410,4 +410,24 @@ if ($script:copied -ne 0 -or $script:removed -ne 0 -or $filedLines.Count -gt 0) 
     }
 }
 foreach ($line in $filedLines) { Write-Output $line }
+
+# A shift that ran in its own worktree leaves the folder once its branch is in the owner's checkout.
+# The branch itself is never deleted, and a worktree whose branch is not merged stays and is named.
+$worktreePath = if ($rotate) { Get-NSShiftWorktreeCurrent $workspace } else { '' }
+if ($worktreePath.Length -gt 0) {
+    $worktreeBranch = Get-NSShiftWorktreeField $workspace 'branch'
+    $worktreeCheckout = Get-NSShiftWorktreeField $workspace 'checkout'
+    if ((Invoke-NSGitCommand $worktreeCheckout @('merge-base', '--is-ancestor', $worktreeBranch, 'HEAD')).ExitCode -eq 0) {
+        if ((Invoke-NSGitCommand $worktreeCheckout @('worktree', 'remove', $worktreePath)).ExitCode -eq 0) {
+            Remove-Item -LiteralPath (Get-NSLayoutPath $ns 'shift-worktree') -Force -ErrorAction SilentlyContinue
+            Write-Output "archive-receipts: removed the shift worktree $worktreePath; branch $worktreeBranch is merged and kept"
+        }
+        else {
+            Write-NSArchiveReceiptsError "archive-receipts: kept the shift worktree ${worktreePath}: it holds changes or files that are not committed"
+        }
+    }
+    else {
+        Write-NSArchiveReceiptsError "archive-receipts: kept the shift worktree ${worktreePath}: branch $worktreeBranch is not merged into $worktreeCheckout"
+    }
+}
 exit 0

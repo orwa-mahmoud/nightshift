@@ -55,6 +55,8 @@ work-target	0	work-target	file
 work-target	2	run/work-target	file
 work-mode	0	work-mode	file
 work-mode	2	run/work-mode	file
+shift-worktree	0	.shift-worktree	file
+shift-worktree	2	run/shift-worktree	file
 capabilities	0	capabilities.json	file
 capabilities	2	run/capabilities.json	file
 deadline	0	deadline	file

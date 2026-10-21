@@ -485,7 +485,8 @@ function Confirm-NSWorkTargetLink {
         $link = Join-Path $target '.nightshift-link'
         if (Test-NSReparsePoint $link) { return $false }
         $null = Write-NSAtomicLines -Path $link -Lines @($ws)
-        $gitDirectory = Invoke-NSGit $target @('rev-parse', '--git-dir')
+        # Git reads info/exclude from the common directory, which a linked worktree shares.
+        $gitDirectory = Invoke-NSGit $target @('rev-parse', '--git-common-dir')
         if (-not [string]::IsNullOrWhiteSpace($gitDirectory)) {
             if (-not [IO.Path]::IsPathRooted($gitDirectory)) {
                 $gitDirectory = Join-Path $target $gitDirectory
@@ -587,7 +588,50 @@ function Get-NSGitDiffText {
     return $null
 }
 
+# Get-NSShiftWorktreeField <workspace> <key> - one key=value line of the shift worktree record (path,
+# branch, base, checkout, shift), or ''. Mirrors ns_shift_worktree_field.
+function Get-NSShiftWorktreeField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
+    $path = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'shift-worktree'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if ($line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { return $line.Substring($Key.Length + 1).TrimEnd([char]"`r") }
+    }
+    return ''
+}
+
+# Get-NSShiftWorktreeCurrent <workspace> - the worktree path when the record belongs to the shift on
+# record now (its policy, or its ending once clocked out) and the folder is still a checkout; ''
+# otherwise. A record left by an earlier shift is never followed. Mirrors ns_shift_worktree_current.
+function Get-NSShiftWorktreeCurrent {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = Get-NSShiftWorktreeField $Workspace 'path'
+    $shift = Get-NSShiftWorktreeField $Workspace 'shift'
+    if ($path.Length -eq 0 -or $shift.Length -eq 0) { return '' }
+    $current = ''
+    $state = Get-NSShiftPolicyState $Workspace
+    if ([string]$state['state'] -ceq 'valid') { $current = [string](Get-NSRecordText $state['policy'] 'shiftId') }
+    $ended = Get-NSEndedField $Workspace 'shiftId'
+    if ($shift -cne $current -and $shift -cne $ended) { return '' }
+    if (-not (Test-Path -LiteralPath $path -PathType Container) -or (Test-NSReparsePoint $path)) { return '' }
+    if ($null -eq (Invoke-NSGit $path @('rev-parse', '--show-toplevel'))) { return '' }
+    return $path
+}
+
+# Resolve-NSWorkTarget <workspace> - where the shift works: the worktree record of the shift on record
+# when it runs in its own worktree, otherwise the owner's checkout. Mirrors ns_work_target.
 function Resolve-NSWorkTarget {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if ((Get-NSWorkMode (Resolve-NSCanonicalPath $Workspace)) -ne 'artifact') {
+        $worktree = Get-NSShiftWorktreeCurrent $Workspace
+        if ($worktree.Length -gt 0) { return (Resolve-NSCanonicalPath $worktree) }
+    }
+    return (Resolve-NSOwnerWorkTarget $Workspace)
+}
+
+# Resolve-NSOwnerWorkTarget <workspace> - the owner's own work target, never a shift worktree.
+# Mirrors ns_owner_work_target.
+function Resolve-NSOwnerWorkTarget {
     param([Parameter(Mandatory = $true)][string]$Workspace)
 
     $project = Resolve-NSCanonicalPath $Workspace

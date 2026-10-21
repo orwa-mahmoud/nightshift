@@ -125,8 +125,17 @@ snapshot, the contract and items the gate holds this shift to, now that any cut 
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" start-preflight --phase snapshot
 ```
 
-Relay a `warn` line once and arm anyway; a composed shift keeps the policy it already has. Then
-create the marker:
+Relay a `warn` line once and arm anyway; a composed shift keeps the policy it already has. Then give
+a shift with `shift.isolation` set to `worktree` its own worktree:
+
+```bash
+"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" start-preflight --phase worktree
+```
+
+`ok worktree <path> branch <branch>` names where this shift works: do every item there, with
+commands run inside that path and files edited under it, never in the owner's checkout. `ok worktree
+none`, `host` or `not-applicable` means the shift works in the work target as usual. A `refuse` arms
+nothing: relay its lines and stop. Then create the marker:
 
 ```bash
 touch "$("$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" path armed)"

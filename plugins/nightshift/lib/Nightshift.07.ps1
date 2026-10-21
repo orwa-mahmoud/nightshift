@@ -609,6 +609,12 @@ function Write-NSStatusReport {
     $target = ''
     try { $target = [string](Resolve-NSWorkTarget $Workspace) } catch { $target = '' }
     Fact 'work target' $target
+    if ($mode -ceq 'artifact') { Fact 'isolation' 'not-applicable (artifact mode)' }
+    elseif ((Get-NSShiftWorktreeCurrent $Workspace).Length -gt 0) { Fact 'isolation' ('worktree, branch ' + (Get-NSShiftWorktreeField $Workspace 'branch')) }
+    else {
+        $isolation = [string](Get-NSPolicyGroupSetting $Workspace 'shift.isolation')['value']
+        Fact 'isolation' $(if ($isolation.Length -gt 0) { $isolation } else { 'none' })
+    }
     $receipts = 0
     try { $receipts = [int](Get-NSReceiptsCount $Workspace) } catch { $receipts = 0 }
     Fact 'artifact receipts' ([string]$receipts)

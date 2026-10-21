@@ -947,11 +947,15 @@ $script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
 $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
 $script:NSPolicyGroupDefaults['receipts.templatePath'] = ''
 $script:NSPolicyGroupDefaults['receipts.usage'] = 'when-available'
+$script:NSPolicyGroupDefaults['shift.copyIn'] = @()
 $script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
 $script:NSPolicyGroupDefaults['shift.hours'] = $null
+$script:NSPolicyGroupDefaults['shift.isolation'] = 'none'
 $script:NSPolicyGroupDefaults['shift.itemBudget'] = ''
+$script:NSPolicyGroupDefaults['shift.prepare'] = ''
 $script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
 $script:NSPolicyGroupDefaults['shift.verificationProfile'] = 'fast'
+$script:NSPolicyGroupDefaults['shift.worktreeRoot'] = '.nightshift/worktrees'
 
 $script:NSPolicySettingNames = @(
     'archive.automatic',
@@ -982,11 +986,15 @@ $script:NSPolicySettingNames = @(
     'receipts.progressTokens',
     'receipts.templatePath',
     'receipts.usage',
+    'shift.copyIn',
     'shift.execution',
     'shift.hours',
+    'shift.isolation',
     'shift.itemBudget',
+    'shift.prepare',
     'shift.toolingPolicy',
     'shift.verificationProfile',
+    'shift.worktreeRoot',
     'stallMax',
     'toolingPolicy',
     'verificationLevel',

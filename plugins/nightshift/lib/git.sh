@@ -44,15 +44,68 @@ repo_root() {
   printf '%s' "$found"
 }
 
+# ns_json_string_list <compact-json-array> — each string of a JSON string array, one per line, as the
+# rules reader prints an array. jq when installed; otherwise the reader's own quoting, which carries
+# no commas or quotes inside an entry.
+ns_json_string_list() {
+  [ -n "$1" ] && [ "$1" != '[]' ] || return 0
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -r '.[]? | strings' 2>/dev/null
+    return 0
+  fi
+  printf '%s' "$1" | sed 's/^\[//; s/\]$//' | tr ',' '\n' | sed 's/^"//; s/"$//'
+}
+
+# ns_shift_worktree_field <workspace> <key> — one `key=value` line of the shift worktree record
+# (path, branch, base, checkout, shift). Status 1 when the record or the key is absent.
+ns_shift_worktree_field() {
+  local f line
+  ns_layout_set f "$1/.nightshift" shift-worktree
+  [ -f "$f" ] && [ ! -L "$f" ] || return 1
+  line="$(sed -n "s/^$2=//p" "$f" | head -n1 | tr -d '\r')"
+  [ -n "$line" ] || return 1
+  printf '%s' "$line"
+}
+
+# ns_shift_worktree_current <workspace> — status 0 printing the worktree path when the record
+# belongs to the shift on record now (its policy, or its ending once clocked out) and the
+# directory is still a checkout. A record left by an earlier shift is never followed.
+ns_shift_worktree_current() {
+  local ws="$1" path shift_id current ended
+  path="$(ns_shift_worktree_field "$ws" path)" || return 1
+  shift_id="$(ns_shift_worktree_field "$ws" shift)" || return 1
+  current="$(ns_policy_shift_id "$ws" 2>/dev/null)" || current=""
+  ended="$(ns_ended_field "$ws" shiftId 2>/dev/null)" || ended=""
+  [ "$shift_id" = "$current" ] || [ "$shift_id" = "$ended" ] || return 1
+  [ -d "$path" ] && [ ! -L "$path" ] || return 1
+  git -C "$path" rev-parse --show-toplevel >/dev/null 2>&1 || return 1
+  printf '%s' "$path"
+}
+
 # ns_work_target <workspace>
 #
 # Resolve the work target Nightshift works on while keeping run state in <workspace>/.nightshift.
-# Setup persists the choice in .nightshift/run/work-target and the mode in .nightshift/run/work-mode.
-# Readers prefer those records so resumed, scheduled, and revived sessions do not rediscover a
-# different folder. The path record may be absolute or relative to the workspace.
+# A shift running in its own worktree works there: the worktree record of the shift on record wins.
+# Otherwise this is the owner's checkout, ns_owner_work_target.
+ns_work_target() {
+  local mode path
+  mode="$(ns_work_mode "$1")" || return 1
+  if [ "$mode" != artifact ] && path="$(ns_shift_worktree_current "$1")"; then
+    printf '%s' "$path"
+    return 0
+  fi
+  ns_owner_work_target "$1"
+}
+
+# ns_owner_work_target <workspace>
+#
+# The owner's own work target, never a shift worktree. Setup persists the choice in
+# .nightshift/run/work-target and the mode in .nightshift/run/work-mode. Readers prefer those
+# records so resumed, scheduled, and revived sessions do not rediscover a different folder. The
+# path record may be absolute or relative to the workspace.
 # Return 2 when several child repositories make an unstored repository choice ambiguous, 3 when
 # the target is a disposable scratch path, 1 when nothing can be resolved.
-ns_work_target() {
+ns_owner_work_target() {
   local project="$1" record target="" child base top found="" mode=""
   ns_layout_set record "$project/.nightshift" work-target
   mode="$(ns_work_mode "$project")" || return 1

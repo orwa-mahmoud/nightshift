@@ -51,7 +51,11 @@
     "hours": null,
     "itemBudget": "",
     "execution": "review-first",
-    "toolingPolicy": "existing-tools"
+    "toolingPolicy": "existing-tools",
+    "isolation": "none",
+    "prepare": "",
+    "copyIn": [],
+    "worktreeRoot": ".nightshift/worktrees"
   },
   "handoff": {
     "enabled": true,

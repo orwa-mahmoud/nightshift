@@ -287,6 +287,9 @@ $script:NSReceiptLabels = New-Object Collections.Specialized.OrderedDictionary([
 $script:NSReceiptLabels['shift'] = 'Shift'
 $script:NSReceiptLabels['host'] = 'Host'
 $script:NSReceiptLabels['workTarget'] = 'Work target'
+$script:NSReceiptLabels['isolation'] = 'Isolation'
+$script:NSReceiptLabels['branch'] = 'Branch'
+$script:NSReceiptLabels['merge'] = 'Merge'
 $script:NSReceiptLabels['started'] = 'Started'
 $script:NSReceiptLabels['ended'] = 'Ended'
 $script:NSReceiptLabels['ending'] = 'Ending'
@@ -1288,6 +1291,17 @@ function Get-NSReceiptContext {
     }
     $context['workMode'] = $mode
     $context['workTarget'] = Get-NSEvidenceWorkTarget $workspacePath
+    # A shift that ran in its own worktree names its branch, what the branch changed, and the
+    # command that brings it into the owner's checkout. Mirrors _lines_worktree.
+    if ((Get-NSShiftWorktreeCurrent $workspacePath).Length -gt 0) {
+        $worktreeBranch = Get-NSShiftWorktreeField $workspacePath 'branch'
+        $worktreeBase = Get-NSShiftWorktreeField $workspacePath 'base'
+        $worktreeCheckout = Get-NSShiftWorktreeField $workspacePath 'checkout'
+        $context['isolation'] = "worktree, branch $worktreeBranch from " + $worktreeBase.Substring(0, [Math]::Min(7, $worktreeBase.Length))
+        $stat = Get-NSGitDiffText $worktreeCheckout @('diff', '--shortstat', $worktreeBase, $worktreeBranch)
+        $context['branch'] = if ([string]::IsNullOrWhiteSpace($stat)) { 'no changes' } else { $stat.Trim() }
+        $context['merge'] = "git -C `"$worktreeCheckout`" merge --ff-only $worktreeBranch"
+    }
 
     $shiftId = ''
     $createdAt = ''
@@ -1420,6 +1434,9 @@ function Get-NSReceiptShiftLines {
     Add-NSReceiptField $lines 'shift' ([string]$Context['shiftId'])
     Add-NSReceiptField $lines 'host' ([string]$Context['host'])
     Add-NSReceiptField $lines 'workTarget' ([string]$Context['workTarget'])
+    Add-NSReceiptField $lines 'isolation' ([string]$Context['isolation'])
+    Add-NSReceiptField $lines 'branch' ([string]$Context['branch'])
+    Add-NSReceiptField $lines 'merge' ([string]$Context['merge'])
     Add-NSReceiptField $lines 'started' ([string]$Context['started'])
     Add-NSReceiptField $lines 'ended' ([string]$Context['ended'])
     Add-NSReceiptField $lines 'ending' ([string]$Context['ending'])

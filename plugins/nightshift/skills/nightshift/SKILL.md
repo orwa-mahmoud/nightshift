@@ -117,8 +117,10 @@ Top to bottom, one item:
   Whenever a gate does run, it must be green, and no suppression goes in without a written reason
   beside it.
 4. **Record it** — repository mode leaves one conventional commit per item in the work target,
-  local by default. When the contract asks for a coherent batch, one commit may cover the items it
-  belongs with, still local, still a real change. When the contract asks for no commits, finish the
+  local by default. Stage only the paths this item changed, by name, and never commit the owner's
+  pre-existing edits. A shift with its own worktree commits there, on its shift branch. When the
+  contract asks for a coherent batch, one commit may cover the items it belongs with, still local,
+  still a real change. When the contract asks for no commits, finish the
   item and leave the work in the tree — say plainly in the handoff that it is uncommitted, and
   never invent a commit to satisfy a convention. Artifact mode writes the item's receipt at
   `$NS/receipts/<NN>-<slug>-<id>.md`, with links to what it produced. Push yourself only when the punch

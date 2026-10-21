@@ -862,6 +862,20 @@ _key_by_domain() { # <destination> <domain>
   done
 }
 
+# _lines_worktree — a shift that ran in its own worktree names its branch, what the branch changed,
+# and the command that brings it into the owner's checkout. Merging stays the owner's.
+_lines_worktree() {
+  local branch base checkout stat
+  ns_shift_worktree_current "$WORKSPACE" >/dev/null 2>&1 || return 0
+  branch="$(ns_shift_worktree_field "$WORKSPACE" branch)" || return 0
+  base="$(ns_shift_worktree_field "$WORKSPACE" base)" || base=""
+  checkout="$(ns_shift_worktree_field "$WORKSPACE" checkout)" || return 0
+  sec_field Isolation "worktree, branch $branch from ${base:0:7}"
+  stat="$(git -C "$checkout" diff --shortstat "$base" "$branch" 2>/dev/null | sed 's/^ *//')"
+  sec_field Branch "${stat:-no changes}"
+  sec_field Merge "git -C \"$(ns_native_display_path "$checkout")\" merge --ff-only $branch"
+}
+
 _lines_shift() {
   local i mode ticked open stopped level chosen tooling target gates
   SEC=""
@@ -871,6 +885,7 @@ _lines_shift() {
   target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target=""
   target="$(ns_native_display_path "$target")"
   sec_field 'Work target' "$target"
+  _lines_worktree
   sec_field Started "$STARTED"
   sec_field Ended "$ENDED"
   sec_field Ending "$ENDING"

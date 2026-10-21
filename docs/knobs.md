@@ -274,9 +274,24 @@ the default in the table.
 | `execution` | `review-first` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
 | `toolingPolicy` | `existing-tools` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
 | `itemBudget` | `""` | The budget every item gets when it names none of its own, in the words of an item's `Budget:` line. Empty means no limit |
+| `isolation` | `none` | `none` works in the work target itself. `worktree` gives each shift its own git worktree and branch: the owner's checkout, index and uncommitted edits stay untouched, and ignored files such as `.env` are absent unless listed in `copyIn`. Artifact mode ignores it |
+| `prepare` | `""` | One command run in a new shift worktree before the first item, such as `pnpm install --frozen-lockfile`. A failure stops Start and arms nothing |
+| `copyIn` | `[]` | Ignored files, relative to the work target, copied into a new shift worktree, such as `.env.test`. Nothing else ignored is copied |
+| `worktreeRoot` | `.nightshift/worktrees` | The folder that holds shift worktrees, relative to the workspace |
 
 A new workspace verifies nothing, because the gates a new owner has not written yet should not fail
 a shift. Set a profile once you have commands worth running.
+
+### Shift worktrees
+
+With `isolation` set to `worktree`, Start adds `<worktreeRoot>/<shift-id>` on a branch named
+`shift/<date>-<shift name>` from the work target's current commit, copies the `copyIn` files, runs
+`prepare` there, and records the worktree as the shift's work target, so hooks, gates, receipts,
+Status and a revived session all follow it. A session that already runs in a linked worktree of the
+work target, as a host-made worktree does, is used as it is. The morning page names the branch, what
+it changed, and the command that merges it; merging stays yours. Archive removes the worktree folder
+once the branch is merged and never deletes the branch. Hunt and Start can set `isolation` for one
+shift through its policy.
 
 ### Item budgets
 

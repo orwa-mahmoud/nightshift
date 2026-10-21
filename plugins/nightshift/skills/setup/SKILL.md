@@ -147,6 +147,15 @@ scaffolding as if the site were current.
  plugin scripts via `${CURSOR_PLUGIN_ROOT}`. If a `.cursor/hooks.json` already exists, show
  the diff against the shipped file and write only on an explicit yes to replace; never merge
  unknown owner hooks silently. Never create a second `.nightshift/`.
+- **Shift worktree — ask, default no, repository mode only.** Ask — *"run each shift in its own
+ git worktree and branch, so your checkout and uncommitted edits stay untouched and ignored files
+ such as `.env` stay out?"* On a clear yes set `shift.isolation` to `worktree` in `$NS/rules.json`.
+ Then read the work target's lockfile and propose one `shift.prepare` command that installs its
+ dependencies without changing the lockfile (`pnpm-lock.yaml` → `pnpm install --frozen-lockfile`,
+ `package-lock.json` → `npm ci`, `yarn.lock` → `yarn install --immutable`, `uv.lock` → `uv sync`,
+ `poetry.lock` → `poetry install`, `Gemfile.lock` → `bundle install`, `Cargo.lock` → nothing);
+ write it only on the owner's yes. Ask which ignored files the tests need, such as `.env.test`, and
+ list only those in `shift.copyIn`; never propose `.env` itself. Artifact mode skips this question.
 
 ## 3. Gates — ask, never impose
 
