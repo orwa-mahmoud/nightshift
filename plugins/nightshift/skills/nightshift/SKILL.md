@@ -263,9 +263,13 @@ exist.
 ## Snag log discipline
 
 Before reporting findings in a review or walkthrough, read
-`$NS/inbox/snag-log.md` and `$NS/inbox/parking-lot.md` first. Dedupe against ALL seen
-— fixed AND rejected — so a later cycle never re-reports an earlier one. Append dispositions after
-acting. Each entry is one `- ` bullet, `finding · evidence · disposition · date`, and Archive files
+`$NS/inbox/snag-log.md` and `$NS/inbox/parking-lot.md` first. Dedupe against every entry, open
+and closed, so a later cycle never re-reports an earlier one. A finding already recorded is a
+duplicate: it links to the existing entry and carries that entry's disposition forward. A closed
+entry (`fixed`, `ignored`, `answered`, `rejected-because` or `accepted-tradeoff`) stays closed
+unless new evidence shows the behaviour changed, and then that evidence is linked to the entry; a
+matching open entry stays linked and open. A duplicate is not a new owner decision and needs no
+fresh disposition. Append dispositions after acting. Each entry is one `- ` bullet, `finding · evidence · disposition · date`, and Archive files
 an entry once it carries one of `fixed`, `ignored`, `answered`, `rejected-because` or
 `accepted-tradeoff`: write `fixed in <commit>`, or the disposition followed by its reason. An entry
 with no disposition is open and waits for the owner, and text that is not a bullet is never filed.
