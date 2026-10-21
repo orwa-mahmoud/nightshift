@@ -74,6 +74,10 @@ case "$TOOL" in Bash | PowerShell | Shell) LEASE_COMMAND="$SCRUBBED" ;; esac
 LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
 LEASE_GENERATION="${NIGHTSHIFT_LEASE_GENERATION:-}"
 
+# Which copy of the plugin answered this session. A second copy running the same hooks is what
+# Start refuses and Doctor names.
+ns_hook_copy_note "$NS" cursor "${SID:-}" "$_here/../.."
+
 # The plan room holds whether or not a shift is armed: planning comes before the shift.
 plan_reason="$(ns_hardhat_plan_room_reason "$TOOL" "$CURSOR_RAW" "$SCRUBBED" "$CMD" "$SID" cursor)"
 case "$?" in

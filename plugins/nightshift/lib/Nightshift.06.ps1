@@ -993,7 +993,9 @@ function Get-NSReceiptCommitCount {
 }
 
 # The commands in the punch list's Gates block, in byte order. These are the
-# checks the level either ran or skipped; the block stays their only list.
+# checks the level either ran or skipped; the block stays their only list. A span
+# is a command when it has words after the program, or is one word that reads as a
+# program name: lowercase, no dot, no slash. Mirrors _gate_commands.
 function Get-NSReceiptGateCommands {
     param([Parameter(Mandatory = $true)][string]$PunchList)
     $commands = New-Object Collections.Generic.List[string]
@@ -1011,7 +1013,10 @@ function Get-NSReceiptGateCommands {
             if (-not $inGates) { continue }
             foreach ($match in [regex]::Matches($text, '`([^`]+)`')) {
                 $command = $match.Groups[1].Value.Trim()
-                if ($command.Length -gt 0) { $commands.Add($command) }
+                if ($command.Length -eq 0) { continue }
+                # A program with its arguments, never a lone word or a <placeholder> template. Mirrors _gate_commands.
+                if ($command -cmatch '<[^>]*>' -or $command -cnotmatch '[A-Za-z0-9]\s+\S') { continue }
+                $commands.Add($command)
             }
         }
     }
@@ -1354,6 +1359,9 @@ function Get-NSReceiptContext {
         $session = $null
     }
     if ($null -ne $session) { $sessionHost = [string]$session.HostName }
+    # A shift ended by STOP can lose its session record before the page is written; the ending
+    # marker kept the host. Mirrors _session_host.
+    if ($sessionHost.Length -eq 0) { $sessionHost = Get-NSEndedField $workspacePath 'host' }
     if ($sessionHost.Length -eq 0) {
         foreach ($record in @($records)) {
             $candidate = Get-NSRecordText $record 'host'
@@ -1671,13 +1679,30 @@ function Get-NSReceiptReviewLines {
 }
 
 # What interrupted the night, as the runtime wrote it into the shift log: revivals, API failures,
-# stalls, usage limits and how it was stopped.
+# stalls, usage limits and how it was stopped. A run of lines that say the same thing is one line with
+# its first and last time and how many times it was written. Mirrors _collapse_repeats.
 function Get-NSReceiptInterruptionLines {
     param($Context)
     $lines = New-Object Collections.Generic.List[string]
-    foreach ($line in (Get-NSReceiptShiftLogLines (Get-NSLayoutPath ([string]$Context['ns']) 'shift-log') 'interruptions')) {
-        $lines.Add('- ' + $line)
+    $sep = ' ' + [char]0x00B7 + ' '
+    $count = 0; $message = ''; $firstStamp = ''; $lastStamp = ''; $firstLine = ''
+    $flush = {
+        if ($count -eq 1) { $lines.Add('- ' + $firstLine) }
+        elseif ($count -gt 1) {
+            $last = $lastStamp
+            if ($lastStamp.Length -ge 12 -and $firstStamp.Length -ge 10 -and $lastStamp.Substring(0, 10) -ceq $firstStamp.Substring(0, 10)) { $last = $lastStamp.Substring(11) }
+            $lines.Add('- ' + $firstStamp + ' to ' + $last + $sep + $message + ' (' + $count + ' times)')
+        }
     }
+    foreach ($line in (Get-NSReceiptShiftLogLines (Get-NSLayoutPath ([string]$Context['ns']) 'shift-log') 'interruptions')) {
+        $at = $line.IndexOf($sep, [StringComparison]::Ordinal)
+        $stamp = if ($at -ge 0) { $line.Substring(0, $at) } else { '' }
+        $text = if ($at -ge 0) { $line.Substring($at + $sep.Length) } else { $line }
+        if ($count -gt 0 -and $stamp.Length -gt 0 -and $firstStamp.Length -gt 0 -and $text -ceq $message) { $count++; $lastStamp = $stamp; continue }
+        . $flush
+        $count = 1; $message = $text; $firstStamp = $stamp; $lastStamp = $stamp; $firstLine = $line
+    }
+    . $flush
     return , $lines.ToArray()
 }
 

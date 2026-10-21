@@ -1204,6 +1204,13 @@ $nonce = [string]$env:NIGHTSHIFT_LEASE_NONCE
 $generation = [string]$env:NIGHTSHIFT_LEASE_GENERATION
 $revival = $env:NIGHTSHIFT_REVIVAL -eq '1'
 
+# Which copy of the plugin answered this session. A second copy running the same hooks is what Start
+# refuses and Doctor names; the Claude copy inside Cursor stands down and is not one.
+if (-not ($HostName -eq 'claude' -and (Test-NSClaudeForeignCursorSurface -NightshiftDir $script:ns -Transcript $transcript))) {
+    try { Add-NSHookCopyNote $script:ns $HostName $sessionId (Join-Path $PSScriptRoot '../..') }
+    catch { [Console]::Error.WriteLine('nightshift: plugin copy not recorded - ' + $_.Exception.Message) }
+}
+
 # The plan room holds whether or not a shift is armed: planning comes before the shift.
 # Mirrors ns_hardhat_plan_room_reason.
 if (Test-NSPlanRoomOpen $script:ns) {

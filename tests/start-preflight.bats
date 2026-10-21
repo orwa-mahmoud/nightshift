@@ -403,6 +403,50 @@ open_label() { bash -c '. "$1"; ns_item_rows "$2" open | head -n1 | cut -f1' _ "
   printf '%s\n' "$output" | grep -qF 'ok codex-identity not-applicable'
 }
 
+# plugin_copy <dir> <version> — a second install of the plugin, as a marketplace or directory copy
+# beside the first one would be.
+plugin_copy() {
+  cp -R "$BATS_TEST_DIRNAME/../plugins/nightshift" "$1"
+  local m
+  for m in "$1"/.*-plugin/plugin.json; do
+    sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$2\"/" "$m"
+  done
+}
+
+# probe_from <copy> <project> <sid> — the binding probe as that copy's Codex guard sees it.
+probe_from() {
+  hook_payload "$(jq -nc --arg sid "$3" --arg w "$2" \
+    '{session_id:$sid,cwd:$w,tool_name:"Bash",tool_input:{command:": nightshift-binding-probe"}}')" \
+    env CODEX_PROJECT_DIR="$2" bash "$1/hooks/codex/hardhat.sh" >/dev/null
+}
+
+@test "two Nightshift copies answering one session are refused at bind and named by Doctor" {
+  sid=019624f3-6a41-7a6f-9f1e-3a8f0b2c4d5e
+  plugin_copy "$BATS_TEST_TMPDIR/directory-copy" 0.25.3
+  plugin_copy "$BATS_TEST_TMPDIR/marketplace-copy" 0.28.0
+  a="$(cd -P "$BATS_TEST_TMPDIR/directory-copy" && pwd)"
+  b="$(cd -P "$BATS_TEST_TMPDIR/marketplace-copy" && pwd)"
+
+  p="$(setup_site preflight-one-copy)"
+  : >"$p/.nightshift/.shift-armed"
+  printf '%s\n/tmp/r.jsonl\n\n\ncodex\n' "$sid" >"$p/.nightshift/.shift-session"
+  probe_from "$b" "$p" "$sid"
+  run bash "$PREFLIGHT" --project "$p" --phase bind
+  [ "$status" -eq 0 ]
+
+  p="$(setup_site preflight-two-copies)"
+  : >"$p/.nightshift/.shift-armed"
+  printf '%s\n/tmp/r.jsonl\n\n\ncodex\n' "$sid" >"$p/.nightshift/.shift-session"
+  probe_from "$a" "$p" "$sid"
+  probe_from "$b" "$p" "$sid"
+  run bash "$PREFLIGHT" --project "$p" --phase bind
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF "refuse copies 2 Nightshift copies answer this codex session: $a (0.25.3) and $b (0.28.0)"
+  printf '%s\n' "$output" | grep -qF 'repair remove the markers this start created'
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh" --project "$p"
+  printf '%s\n' "$output" | grep -qF "2 Nightshift copies answered one codex session: $a (0.25.3) and $b (0.28.0) - disable all but one"
+}
+
 @test "the preflight needs neither jq nor python3" {
   p="$(setup_site preflight-noparser)"
   bin="$BATS_TEST_TMPDIR/nojson"

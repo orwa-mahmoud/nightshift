@@ -53,7 +53,7 @@ ns_pulse_emit() { # <ns> <sid>
 # Silent, and never fatal: a host that reports nothing leaves no snapshot, and the report says
 # `unavailable` rather than zero.
 ns_pulse_usage() {
-  local ns="$1" host="$2" sid="$3" src="$4" reading fields offset model armed
+  local ns="$1" host="$2" sid="$3" src="$4" reading fields offset model armed generation identity
   [ -n "$ns" ] && [ -n "$src" ] || return 0
   ns_layout_set armed "$ns" armed
   [ -f "$armed" ] || return 0
@@ -95,12 +95,38 @@ ns_pulse_usage() {
       ;;
     cursor)
       reading="$(ns_usage_read_cursor "$src")" || return 0
+      # Each Cursor generation is one agent turn with its own counter, so a turn that reads higher
+      # than the last is still its own spend.
+      generation="$(printf '%s' "$reading" | cut -f4)"
+      identity="cursor:$sid"
+      [ -z "$generation" ] || [ "$generation" = 0 ] || identity="$identity:$generation"
       ns_usage_record "$ns" cursor "$(printf '%s' "$reading" | cut -f3)" stop-payload \
-        "cursor:$sid" 0 "$(printf '%s' "$reading" | cut -f1)" || return 0
+        "$identity" 0 "$(printf '%s' "$reading" | cut -f1)" || return 0
+      ns_pulse_turn_shared "$ns" "$identity" "$(printf '%s' "$reading" | cut -f1)"
       ;;
     *) return 0 ;;
   esac
   return 0
+}
+
+# ns_pulse_turn_shared <ns> <turn-identity> <turn-fields> — give the items ticked inside this Cursor
+# turn the turn's reading. Their spans closed before it arrived, so without it they read nothing
+# spent; with it each receipt shows the turn's reading and names the items that shared it.
+ns_pulse_turn_shared() {
+  local ns="$1" project="${1%/.nightshift}" ticks names active label nr others
+  ticks="$(ns_usage_cursor_turn "$ns" "$2")"
+  [ -n "$ticks" ] || return 0
+  names="$(printf '%s\n' "$ticks" | cut -f1 | awk 'NF && !seen[$0]++')"
+  active="$(ns_usage_active "$ns")"
+  if [ -n "$active" ] && ! printf '%s\n' "$names" | grep -qxF -- "$active"; then
+    names="$names"$'\n'"$active"
+  fi
+  while IFS=$'\t' read -r label nr; do
+    [ -n "$label" ] || continue
+    others="$(printf '%s\n' "$names" | grep -vxF -- "$label" | awk 'NF { printf "%s%s", s, $0; s = "; " }')"
+    ns_receipt_share_turn "$(ns_receipt_path "$project" "$label")" "$label" "$nr" "$3" "$others" || :
+  done <<<"$ticks"
+  ns_receipts_write_index "$project" || :
 }
 
 # ns_usage_carry <nightshift-dir> <id> — the last response identity counted for this transcript.
@@ -423,6 +449,11 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     TPATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
   else
     TPATH="$(printf '%s' "$INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  fi
+  # Cursor loads this Claude plugin beside its own. In a Cursor session the Cursor copy keeps the
+  # records; this copy would only stamp a stale Claude reading onto them.
+  if ns_claude_foreign_cursor_surface "$NS" "${TPATH:-}"; then
+    exit 0
   fi
   ns_pulse_emit "$NS" "$SID"
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"

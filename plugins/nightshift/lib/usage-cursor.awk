@@ -7,7 +7,8 @@
 #
 # Cursor's input overlaps its cache figures, and it reports neither reasoning nor subagent tokens.
 #
-# Prints: <fields>\t0\t<model>\t0
+# Prints: <fields>\t0\t<model>\t<generation>, the generation `0` when the payload names none. Each
+# generation is one agent turn with its own running figures.
 
 function num(line, key,   pos, rest, out, ch, i) {
   pos = index(line, "\"" key "\":")
@@ -39,6 +40,7 @@ function str(line, key,   pos, rest, stop) {
   cacher = num($0, "cache_read_tokens")
   cachew = num($0, "cache_write_tokens")
   model = str($0, "model")
+  generation = str($0, "generation_id")
   found = 1
 }
 
@@ -49,5 +51,5 @@ END {
   if (cachew >= 0) { if (!first) printf ","; printf "cache_write=%d", cachew; first = 0 }
   if (cacher >= 0) { if (!first) printf ","; printf "cache_read=%d", cacher; first = 0 }
   if (output >= 0) { if (!first) printf ","; printf "output=%d", output }
-  printf "\t0\t%s\t0", model
+  printf "\t0\t%s\t%s", model, (generation != "" ? generation : "0")
 }

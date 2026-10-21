@@ -242,18 +242,32 @@ function Complete-NSShiftAndStop {
     Write-Release
 }
 
-# The one hold left in a finished shift: the owner asked for filing, so the model is given its
-# turn before the session terminates. Asking is recorded, so the next stop releases either way.
+# The one hold left in a finished shift: snag-log entries with no disposition first, then filing when
+# the owner asked for it. Each is asked once, so the next stop releases either way. Mirrors
+# ns_gate_ending_hold.
 function Complete-NSShiftHold {
+    $messages = New-Object Collections.Generic.List[string]
+    $endedPath = Get-NSLayoutPath $ns 'ended'
+    if ((Test-Path -LiteralPath $endedPath -PathType Leaf) -and -not (Test-NSReparsePoint $endedPath) -and
+        -not (@([IO.File]::ReadAllLines($endedPath)) -ccontains 'snagsAsked=1')) {
+        $open = Get-NSSnagOpenLines (Get-NSLayoutPath $ns 'snag-log')
+        if ($open.Count -gt 0) {
+            [IO.File]::AppendAllText($endedPath, "snagsAsked=1`n", $utf8)
+            $messages.Add((Get-NSGateSnagsMessage $open))
+        }
+    }
     $pending = Get-NSLayoutPath $ns 'pending-filing'
-    if ((Test-Path -LiteralPath (Get-NSLayoutPath $ns 'ended') -PathType Leaf) -and
+    if ((Test-Path -LiteralPath $endedPath -PathType Leaf) -and
         -not (Test-Path -LiteralPath $armed) -and
         (Test-Path -LiteralPath $pending -PathType Leaf) -and
         -not (Test-NSReparsePoint $pending) -and
         -not (@([IO.File]::ReadAllLines($pending)) -ccontains 'asked=1')) {
         [IO.File]::AppendAllText($pending, "asked=1`n", $utf8)
-        Write-NSLogLine 'archive.automatic is on - holding once so this shift can be filed before the session ends'
-        Write-Block "DO NOT STOP YET - this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete $(Get-NSLayoutName $ns 'pending-filing') when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive."
+        $messages.Add("DO NOT STOP YET - this shift has ended and archive.automatic is on, so file it before the session terminates. Run Archive now: decide from the punch list and the records which belong to work that is finished with, file those, and delete $(Get-NSLayoutName $ns 'pending-filing') when it is done. Stopping again releases the session whether or not filing succeeded, and an unfiled marker is picked up by the next explicit Archive.")
+    }
+    if ($messages.Count -gt 0) {
+        Write-NSLogLine "holding once so this shift's snags and filing are settled before the session ends"
+        Write-Block ($messages -join ' ')
     }
 }
 
@@ -290,7 +304,8 @@ function Complete-NSShift {
     Write-NSEndedRecord -StateDir $ns -ShiftId $endedId `
         -ArchiveRoot ([string](Get-NSPolicyGroupSetting $workspace 'archive.root')['value']) `
         -ArchiveLayout ([string](Get-NSPolicyGroupSetting $workspace 'archive.layout')['value']) `
-        -ShiftName $endedName -ArchiveFolder $endedFolder
+        -ShiftName $endedName -ArchiveFolder $endedFolder `
+        -HostName $(if ($null -ne (Read-NSSession $ns)) { [string](Read-NSSession $ns).HostName } else { '' })
     if (Test-NSArchiveAutomatic $workspace) {
         $pending = Get-NSLayoutPath $ns 'pending-filing'
         if (Test-NSReparsePoint $pending) { Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue }

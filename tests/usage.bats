@@ -67,6 +67,22 @@ core() { bash -c '. "$1"; . "$2"; shift 2; "$@"' _ "$LIB" "$CORE" "$@"; }
   [ "$output" = "$(lib ns_usage_overlap claude)" ]
 }
 
+@test "Codex usage names the model the rollout's turns ran on" {
+  # The token count lines name no model; each turn_context does, and the last one before the count
+  # is the model that spent it.
+  run lib ns_usage_read_codex "$FIX/codex-turn-model.jsonl"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | cut -f3)" = gpt-5.5 ]
+  p="$BATS_TEST_TMPDIR/codex-model"; mkdir -p "$(ns "$p")"
+  lib ns_usage_mark "$(ns "$p")" arm
+  lib ns_usage_record "$(ns "$p")" codex "$(printf '%s' "$output" | cut -f3)" rollout /r/a 0 "$(printf '%s' "$output" | cut -f1)"
+  lib ns_usage_mark "$(ns "$p")" P01 tick
+  # A rollout's first reading is where counting starts, so the mark carries the model at zero.
+  [ "$(tail -n1 "$(ns "$p")/usage/marks.tsv" | cut -f5)" = 'codex/gpt-5.5:input=0,cache_read=0,output=0,reasoning=0' ]
+  run lib ns_usage_hosts "$(ns "$p")"
+  [ "$output" = 'codex gpt-5.5' ]
+}
+
 @test "a Codex line that is not the documented shape is refused, not guessed at" {
   run lib ns_usage_read_codex "$FIX/codex-noshape.jsonl"
   [ "$status" -ne 0 ]
@@ -226,6 +242,85 @@ ns() { printf '%s/.nightshift' "$1"; }
   [ "$(cut -f2 "$p/.nightshift/usage/marks.tsv" | paste -sd' ' -)" = 'arm P02 P01' ]
   [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P02.md")" -eq 1 ]
   [ "$(grep -c '| Tokens |' "$p/.nightshift/receipts/P01.md")" -eq 1 ]
+}
+
+@test "a Cursor stop payload is one turn's spend: one reading counts in full, and each turn adds" {
+  p="$(new_project usage-cursor-turns)"
+  # adapttable 2026-10-10: three turns, each reading lower than the one before.
+  lib ns_usage_record "$p/.nightshift" cursor grok-4.7-high stop-payload cursor:c1 0 \
+    'input=13024728,cache_read=12736768,output=53439'
+  [ "$(lib ns_usage_total "$p/.nightshift")" = 'input=13024728,cache_read=12736768,output=53439' ]
+  lib ns_usage_record "$p/.nightshift" cursor '' stop-payload cursor:c1 0 \
+    'input=10264429,cache_read=10046976,output=35621'
+  lib ns_usage_record "$p/.nightshift" cursor '' stop-payload cursor:c1 0 \
+    'input=101606,cache_read=56064,output=1192'
+  [ "$(lib ns_usage_total "$p/.nightshift")" = 'input=23390763,cache_read=22839808,output=90252' ]
+}
+
+@test "each Cursor generation is its own turn, even when it reads higher than the last" {
+  run lib ns_usage_read_cursor '{"conversation_id":"c1","generation_id":"g2","input_tokens":5,"output_tokens":1}'
+  [ "$(printf '%s' "$output" | cut -f4)" = g2 ]
+  run lib ns_usage_read_cursor "$(cat "$FIX/cursor-stop.json")"
+  [ "$(printf '%s' "$output" | cut -f4)" = 0 ]
+  p="$(new_project usage-cursor-generations)"
+  mkdir -p "$p/.nightshift/usage"
+  : >"$p/.nightshift/.shift-armed"
+  printf 'c1\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
+  for payload in \
+    '{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"output_tokens":10}' \
+    '{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"output_tokens":10}' \
+    '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"output_tokens":20}'; do
+    bash -c '. "$1"; . "$2"; ns_pulse_usage "$3" cursor c1 "$4"' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
+      "$p/.nightshift" "$payload"
+  done
+  # g1 read twice counts once; g2 reads higher and still counts in full.
+  [ "$(lib ns_usage_total "$p/.nightshift")" = 'input=1300,output=30' ]
+}
+
+@test "a mixed host list joins each host and model once" {
+  p="$BATS_TEST_TMPDIR/host-join"; mkdir -p "$(ns "$p")"
+  lib ns_usage_record "$(ns "$p")" claude claude-opus-5-5 transcript-incremental /t/a 10 'input=10,output=5'
+  lib ns_usage_record "$(ns "$p")" cursor grok-4.7-medium stop-payload cursor:c1:g1 0 'input=4,output=1'
+  lib ns_usage_record "$(ns "$p")" cursor grok-4.7-xhigh-fast stop-payload cursor:c1:g2 0 'input=6,output=2'
+  run lib ns_usage_hosts "$(ns "$p")"
+  [ "$output" = 'claude claude-opus-5-5; cursor grok-4.7-medium; cursor grok-4.7-xhigh-fast' ]
+}
+
+@test "items ticked inside one Cursor turn share the turn's reading, and say so" {
+  p="$(new_project usage-cursor-shared-turn)"
+  printf '## Items\n- [ ] **P01 - first.**\n- [ ] **P02 - second.**\n- [ ] **P03 - third.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  mkdir -p "$p/.nightshift/usage"
+  : >"$p/.nightshift/.shift-armed"
+  printf 'c1\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
+  turn() {
+    bash -c '. "$1"; . "$2"; ns_pulse_usage "$3" cursor c1 "$4"' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
+      "$p/.nightshift" "$1"
+  }
+  turn '{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"cache_read_tokens":100,"output_tokens":10}'
+  # P01 and P02 both tick inside the next turn, before its reading arrives at the turn's end.
+  printf '## Items\n- [x] **P01 - first.**\n- [x] **P02 - second.**\n- [ ] **P03 - third.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 2
+  [ "$(grep -c '^- Session' "$p/.nightshift/receipts/P02.md" || :)" = 0 ]
+  turn '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"cache_read_tokens":4000,"output_tokens":20}'
+  r1="$p/.nightshift/receipts/P01.md"
+  r2="$p/.nightshift/receipts/P02.md"
+  # P01's own span carried the first turn; the second turn is shown beside it, not added to it.
+  grep -qF '| input | 500 + shared turn |' "$r1"
+  grep -qF -- '- Session 1 closed inside one Cursor agent turn shared with P02.' "$r1"
+  grep -qF 'whole turn'"'"'s reading: input 800 · cache read 4.0k · output 20.' "$r1"
+  # P02 read nothing of its own, so it shows the turn instead of zero.
+  grep -qF '| input | shared turn |' "$r2"
+  grep -qF '| turn 800 | turn 20 | unavailable | turn 4.0k | unavailable |' "$r2"
+  grep -qF -- '- Session 1 closed inside one Cursor agent turn shared with P01.' "$r2"
+  run grep -qF "| input | 0 |" "$r2"
+  [ "$status" -ne 0 ]
+  # Read again at the same turn's end, the note is rewritten, never stacked.
+  turn '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"cache_read_tokens":4000,"output_tokens":20}'
+  [ "$(grep -c 'closed inside one Cursor agent turn' "$r2")" = 1 ]
+  # The morning total counts the turn once.
+  [ "$(lib ns_usage_total "$p/.nightshift")" = 'input=1300,cache_read=4100,output=30' ]
 }
 
 @test "a dimension the host does not report reads unavailable, never zero" {
@@ -486,7 +581,8 @@ mark_at() {
   fi
   module="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   for pair in "claude-multiline.jsonl Read-NSUsageClaude" "claude-truncated.jsonl Read-NSUsageClaude" \
-    "codex-rollout.jsonl Read-NSUsageCodex" "codex-revived.jsonl Read-NSUsageCodex"; do
+    "codex-rollout.jsonl Read-NSUsageCodex" "codex-revived.jsonl Read-NSUsageCodex" \
+    "codex-turn-model.jsonl Read-NSUsageCodex"; do
     set -- $pair
     case "$2" in
       Read-NSUsageClaude) posix="$(lib ns_usage_read_claude "$FIX/$1")" ;;

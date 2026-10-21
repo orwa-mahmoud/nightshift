@@ -316,6 +316,29 @@ try {
     Expect-True ($bindRefuse.Stdout.Contains('refuse codex-identity unsupported')) 'the unsupported identity is named'
     Expect-True ($bindRefuse.Stdout.Contains('before the watchman or item work')) 'the stop point is named'
 
+    # Two Nightshift copies answering one session are refused at bind and named by Doctor.
+    $module = Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1'
+    $copySid = '019624f3-6a41-7a6f-9f1e-3a8f0b2c4d5e'
+    $copyRoots = @()
+    foreach ($pair in @(@('directory-copy', '0.25.3'), @('marketplace-copy', '0.28.0'))) {
+        $copyRoot = Join-Path $root $pair[0]
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $copyRoot '.codex-plugin')
+        [IO.File]::WriteAllText((Join-Path $copyRoot '.codex-plugin/plugin.json'), "{`n  `"name`": `"nightshift`",`n  `"version`": `"$($pair[1])`"`n}`n")
+        $copyRoots += (Resolve-Path -LiteralPath $copyRoot).Path
+    }
+    $copies = New-Site (Join-Path $root 'copies')
+    $copiesNs = Join-Path $copies '.nightshift'
+    [IO.File]::WriteAllText((Join-Path $copiesNs '.shift-session'), "$copySid`n/tmp/r.jsonl`n`n`ncodex`n")
+    foreach ($copyRoot in $copyRoots) {
+        & $hostExecutable -NoProfile -NonInteractive -Command "Import-Module '$module' -Force -DisableNameChecking; Add-NSHookCopyNote '$copiesNs' codex '$copySid' '$copyRoot'"
+    }
+    $copiesRun = Invoke-Preflight $copies @('-Phase', 'bind')
+    Expect-True ($copiesRun.ExitCode -eq 1) "two copies refuse the start: $($copiesRun.Stdout)"
+    Expect-True ($copiesRun.Stdout.Contains("refuse copies 2 Nightshift copies answer this codex session: $($copyRoots[0]) (0.25.3) and $($copyRoots[1]) (0.28.0)")) "both copies are named: $($copiesRun.Stdout)"
+    $doctorScript = Join-Path $repository 'plugins/nightshift/runtime/windows/doctor.ps1'
+    $doctorOut = & $hostExecutable -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $doctorScript -Project $copies 2>&1 | Out-String
+    Expect-True ($doctorOut.Contains("2 Nightshift copies answered one codex session: $($copyRoots[0]) (0.25.3) and $($copyRoots[1]) (0.28.0) - disable all but one")) "Doctor names both copies: $doctorOut"
+
     # The dry run reports and touches nothing.
     $dry = New-Site (Join-Path $root 'dry')
     [IO.File]::WriteAllText((Join-Path $dry '.nightshift/STOP'), '')

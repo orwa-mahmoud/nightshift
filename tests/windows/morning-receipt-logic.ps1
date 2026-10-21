@@ -680,6 +680,27 @@ try {
     Expect-True (Test-Path -LiteralPath (Join-Path $blockedNs '.ended') -PathType Leaf) `
         'a receipt render failure still clocks the shift out'
 
+    # A STOP ending records its host, and holds the session once to name snag entries that carry
+    # no disposition.
+    $snagProject = Join-Path $root 'gate-snags'
+    $snagNs = New-ReceiptProject -Path $snagProject -Items "- [ ] Quiet the lint rule`n"
+    [IO.File]::WriteAllText((Join-Path $snagNs '.shift-armed'), '', $utf8)
+    [IO.File]::WriteAllText((Get-NSLayoutPath $snagNs 'session'), "11111111-2222-3333-4444-555555555555`n`n`n`nclaude`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $snagNs 'STOP'), "owner`n", $utf8)
+    [IO.File]::WriteAllText((Get-NSLayoutPath $snagNs 'snag-log'),
+        "# Snag Log`n`n---`n`n- Parser drops a comma $([char]0x00B7) tests/parse.bats $([char]0x00B7) fixed in abc123`n- Help text is stale $([char]0x00B7) docs/cli.md $([char]0x00B7) corrected in def456`n", $utf8)
+    $snagInput = '{"session_id":"11111111-2222-3333-4444-555555555555","cwd":"' + ($snagProject -replace '\\', '/') + '"}'
+    $snagRun = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $snagInput `
+        -Environment @{ CLAUDE_PROJECT_DIR = $snagProject }
+    Expect-True $snagRun.StdoutText.Contains('"decision":"block"') "an undispositioned snag holds the ended shift once ($($snagRun.StdoutText))"
+    Expect-True $snagRun.StdoutText.Contains('1 snag-log entry carries no disposition, so Archive keeps it live') 'the hold counts the open entry'
+    Expect-True $snagRun.StdoutText.Contains('line 6: - Help text is stale') 'the hold names the entry by line'
+    Expect-True (-not $snagRun.StdoutText.Contains('Parser drops a comma')) 'a dispositioned entry is not named'
+    Expect-True (@([IO.File]::ReadAllLines((Get-NSLayoutPath $snagNs 'ended')) | Where-Object { $_ -ceq 'host=claude' }).Count -eq 1) 'the ending marker records the host'
+    $snagAgain = Invoke-Script -Path $gate -Arguments @('-HostName', 'claude') -InputText $snagInput `
+        -Environment @{ CLAUDE_PROJECT_DIR = $snagProject }
+    Expect-True (-not $snagAgain.StdoutText.Contains('"decision":"block"')) 'the next stop is released'
+
     # === 6c. How the receipts and handoff switches combine ===
     # One stop finds the first item ticked and holds for the second; the next finds both ticked
     # and clocks the shift out.

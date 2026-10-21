@@ -72,6 +72,17 @@ doctor() {
   printf '%s' "$output" | grep -q 'Actions (Doctor does not perform these)'
 }
 
+@test "Doctor names each snag entry that carries no disposition, by line" {
+  p="$(new_project doctor-snags)"
+  punch_open "$p"
+  snag="$(bash -c '. "$1"; ns_layout_path "$2" snag-log' _ "$LIB" "$p/.nightshift")"
+  printf '# Snag Log\n\n---\n\n- Parser drops a comma · tests/parse.bats · fixed in abc123\n- Help text is stale · docs/cli.md · corrected in def456\n' >"$snag"
+  run doctor "$p"
+  printf '%s\n' "$output" | grep -qF 'line 6 has no disposition, so Archive keeps it live: - Help text is stale · docs/cli.md · corrected in def456'
+  run grep -cF 'has no disposition' <<<"$output"
+  [ "$output" = 1 ]
+}
+
 @test "doctor warns when watchman recovery keys are empty" {
   p="$(new_project)"
   python3 -c '

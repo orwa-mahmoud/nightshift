@@ -34,6 +34,31 @@ try {
     $again = Get-NSPulseReceiptsNotice $ns $w
     Expect-True (-not $again.Contains('started ')) 'a second pulse on the same item does not restart it'
 
+    # In a Cursor session the Claude copy's pulse records nothing, and the Cursor copy's records the turn.
+    $pulseScript = Join-Path $repository 'plugins/nightshift/hooks/windows/pulse.ps1'
+    $hostExecutable = (Get-Process -Id $PID).Path
+    $oneCopy = Join-Path $root 'one-copy'
+    $oneNs = Join-Path $oneCopy '.nightshift'
+    $null = New-Item -ItemType Directory -Path $oneNs -Force
+    [IO.File]::WriteAllText((Join-Path $oneNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $oneNs '.shift-armed'), '', $utf8)
+    [IO.File]::WriteAllText((Join-Path $oneNs '.shift-session'), "conv-1`n`n`n`ncursor`n", $utf8)
+    $cursorTranscript = Join-Path $root 'home/.cursor/projects/w/agent-transcripts/conv-1.jsonl'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $cursorTranscript) -Force
+    Copy-Item -LiteralPath (Join-Path $repository 'tests/fixtures/usage/claude-multiline.jsonl') -Destination $cursorTranscript
+    $claudePayload = (@{ session_id = 'conv-1'; transcript_path = $cursorTranscript; cwd = $oneCopy; tool_name = 'Bash' } | ConvertTo-Json -Compress)
+    $env:CLAUDE_PROJECT_DIR = $oneCopy
+    $null = & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName claude -HookJson $claudePayload
+    Remove-Item Env:CLAUDE_PROJECT_DIR
+    $oneUsage = Get-NSUsageDir $oneNs
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $oneUsage 'marks.tsv'))) 'the Claude copy writes no mark in a Cursor session'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $oneUsage 'segments.tsv'))) 'the Claude copy writes no reading in a Cursor session'
+    $cursorPayload = (@{ conversation_id = 'conv-1'; generation_id = 'g1'; cwd = $oneCopy; input_tokens = 700; output_tokens = 30 } | ConvertTo-Json -Compress)
+    $env:CURSOR_PROJECT_DIR = $oneCopy
+    $null = & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName cursor -HookJson $cursorPayload
+    Remove-Item Env:CURSOR_PROJECT_DIR
+    Expect-True ((Get-NSUsageTotal $oneNs) -ceq 'input=700,output=30') "the Cursor copy records its turn ($(Get-NSUsageTotal $oneNs))"
+
     $tickWs = Join-Path $root 'tick'
     $tickNs = Join-Path $tickWs '.nightshift'
     $null = New-Item -ItemType Directory -Path $tickNs -Force

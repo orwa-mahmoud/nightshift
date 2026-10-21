@@ -156,6 +156,32 @@ SH
   is_allow
 }
 
+@test "a STOP ending records the host the shift ran on" {
+  p="$(new_project stop-host)"
+  punch_open "$p"
+  : >"$p/.nightshift/STOP"
+  run gate "$p"
+  is_release
+  grep -qx 'host=claude' "$p/.nightshift/.ended"
+}
+
+@test "an ended shift holds the session once to name snag entries with no disposition" {
+  p="$(new_project snag-hold)"
+  punch_open "$p"
+  snag="$(bash -c '. "$1"; ns_layout_path "$2" snag-log' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift")"
+  printf '# Snag Log\n\n---\n\n- Parser drops a comma · tests/parse.bats · fixed in abc123\n- Help text is stale · docs/cli.md · corrected in def456\n' >"$snag"
+  : >"$p/.nightshift/STOP"
+  run gate "$p"
+  [ "$status" -eq 0 ]
+  is_block "$output"
+  printf '%s' "$output" | grep -qF '1 snag-log entry carries no disposition, so Archive keeps it live'
+  printf '%s' "$output" | grep -qF 'line 6: - Help text is stale'
+  printf '%s' "$output" | grep -vqF 'Parser drops a comma'
+  # Asked once: the next stop is released.
+  run gate "$p"
+  is_release
+}
+
 @test "panic STOP releases a leftover recovery nonce" {
   p="$(new_project)"
   punch_open "$p"

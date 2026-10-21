@@ -1638,12 +1638,13 @@ function Write-NSEndedRecord {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveRoot,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveLayout,
         [AllowEmptyString()][string]$ShiftName = '',
-        [AllowEmptyString()][string]$ArchiveFolder = ''
+        [AllowEmptyString()][string]$ArchiveFolder = '',
+        [AllowEmptyString()][string]$HostName = ''
     )
     if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { return }
     $path = Get-NSLayoutPath $StateDir 'ended'
     if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
-    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`nshiftName=$ShiftName`narchiveFolder=$ArchiveFolder`n"
+    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`nshiftName=$ShiftName`narchiveFolder=$ArchiveFolder`nhost=$HostName`n"
     [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding($false)))
 }
 

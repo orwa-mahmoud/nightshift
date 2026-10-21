@@ -151,6 +151,17 @@ try {
     }
     Expect-True ([IO.File]::ReadAllText((Join-Path $movingRec 'README.md')).Contains('[./02-fix-the-resolver-cd34.md](./02-fix-the-resolver-cd34.md)')) 'the index links the new name'
 
+    # A morning page written before a rename links the receipt's new name.
+    $morning = Join-Path $root 'morning-relink'
+    $morningNs = New-Workspace $morning "## Items`n- [x] **12. Keep the receipt changes.** <!-- id: bbhb -->`n"
+    [IO.File]::WriteAllText((Join-Path $morningNs 'receipts/12-keep-the-receipt-chan-bbhb.md'), "the receipt`n", $utf8)
+    $morningPage = Join-Path $morningNs 'receipts/morning-2026-10-09-0123456789abcdef.md'
+    [IO.File]::WriteAllText($morningPage, "# Morning`n`n- [12. Keep the receipt changes.](./12-keep-the-receipt-chan-bbhb.md) $([char]0x2014) ticked`n", $utf8)
+    $null = Rename-NSReceipts $morning
+    Expect-True (Test-Path -LiteralPath (Join-Path $morningNs 'receipts/12-keep-the-receipt-changes-bbhb.md')) 'the receipt takes its full name'
+    $morningText = [IO.File]::ReadAllText($morningPage)
+    Expect-True ($morningText.Contains('(./12-keep-the-receipt-changes-bbhb.md)') -and -not $morningText.Contains('(./12-keep-the-receipt-chan-bbhb.md)')) "the morning page follows the rename: $morningText"
+
     # A receipt never moves onto a link planted at its new name.
     if (-not (Test-NSWindows)) {
         $linked = Join-Path $root 'linked'

@@ -153,6 +153,14 @@ if [ "$PHASE" = bind ]; then
   SID="$(ns_session_line "$NS" 1)"
   REC_HOST="$(ns_session_host "$NS")"
   ok "session-host $REC_HOST"
+  # The binding probe ran every copy's guard once, so a second copy of the plugin has recorded itself
+  # by now. Two copies write every usage mark and receipt twice, in two versions' formats.
+  COPIES="$(ns_hook_copies "$NS" "$REC_HOST" 600)"
+  if [ "$(printf '%s' "$COPIES" | grep -c .)" -gt 1 ]; then
+    refuse "copies $(printf '%s' "$COPIES" | grep -c .) Nightshift copies answer this $REC_HOST session: $(printf '%s\n' "$COPIES" | awk -F '\t' 'NF { printf "%s%s (%s)", sep, $1, $2; sep = " and " }') - each writes every usage mark and receipt again"
+    repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable all but one Nightshift copy in the host's plugin settings, start a new conversation, and run Start again"
+    exit 1
+  fi
   if [ "$REC_HOST" != codex ]; then
     ok "codex-identity not-applicable"
     exit 0

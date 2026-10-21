@@ -116,6 +116,15 @@ if ($Phase -eq 'bind') {
     $session = Read-NSSession $ns
     $recordedHost = if ($null -eq $session) { 'claude' } else { [string]$session.HostName }
     Write-Ok "session-host $recordedHost"
+    # The binding probe ran every copy's guard once, so a second copy of the plugin has recorded itself
+    # by now. Two copies write every usage mark and receipt twice, in two versions' formats.
+    $copies = @(Get-NSHookCopies $ns $recordedHost 600)
+    if ($copies.Count -gt 1) {
+        $named = ($copies | ForEach-Object { $f = $_.Split("`t"); $f[0] + ' (' + $f[1] + ')' }) -join ' and '
+        Write-Refuse ("copies {0} Nightshift copies answer this {1} session: {2} - each writes every usage mark and receipt again" -f $copies.Count, $recordedHost, $named)
+        Write-Repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable all but one Nightshift copy in the host's plugin settings, start a new conversation, and run Start again"
+        exit 1
+    }
     if ($recordedHost -ne 'codex') {
         Write-Ok 'codex-identity not-applicable'
         exit 0

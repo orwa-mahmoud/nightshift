@@ -100,6 +100,19 @@ try {
     Expect-True ([IO.File]::ReadAllText($punch) -match 'leftover campaign') `
         'leftover campaign text stays in the punch list'
 
+    # Each snag entry with no disposition is named by line.
+    $snagRoot = Join-Path $root 'snags'
+    $snagNs = Join-Path $snagRoot '.nightshift'
+    $null = New-Item -ItemType Directory -Path $snagNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $snagNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $snagNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
+    [IO.File]::WriteAllText((Join-Path $snagNs 'snag-log.md'),
+        "# Snag Log`n`n---`n`n- Parser drops a comma $([char]0x00B7) tests/parse.bats $([char]0x00B7) fixed in abc123`n- Help text is stale $([char]0x00B7) docs/cli.md $([char]0x00B7) corrected in def456`n")
+    $snags = Invoke-Doctor $snagRoot
+    Expect-True ($snags.Stdout.Contains("line 6 has no disposition, so Archive keeps it live: - Help text is stale $([char]0x00B7) docs/cli.md $([char]0x00B7) corrected in def456")) `
+        "Doctor names the open snag entry by line: $($snags.Stdout)"
+    Expect-True (([regex]::Matches($snags.Stdout, 'has no disposition')).Count -eq 1) 'a dispositioned entry is not named'
+
     Copy-Item -LiteralPath $draftTemplate -Destination (Join-Path $ns 'drafting-table.md')
     $example = Invoke-Doctor $root
     Expect-True ($example.ExitCode -eq 0) "drafting example exits 0 (got $($example.ExitCode) $($example.Stderr))"

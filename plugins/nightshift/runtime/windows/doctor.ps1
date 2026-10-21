@@ -140,6 +140,14 @@ catch {
     Add-NSWarn 'work mode is malformed; treating the site as unusable until Setup rewrites it'
 }
 
+foreach ($copyHost in @('claude', 'codex', 'cursor')) {
+    $copies = @(Get-NSHookCopies $ns $copyHost 86400)
+    if ($copies.Count -gt 1) {
+        $named = ($copies | ForEach-Object { $f = $_.Split("`t"); $f[0] + ' (' + $f[1] + ')' }) -join ' and '
+        Add-NSWarn ("{0} Nightshift copies answered one {1} session: {2} - disable all but one in the host's plugin settings" -f $copies.Count, $copyHost, $named)
+    }
+}
+
 $target = $workspace
 try {
     $target = Resolve-NSWorkTarget $workspace
@@ -255,6 +263,11 @@ foreach ($inboxKey in @('parking-lot', 'snag-log')) {
         Add-NSWarn ('{0} line {1} is not a `- ` bullet, so Archive never files it: {2}' -f (Get-NSLayoutName $ns $inboxKey), $stray.Line, $stray.Text)
         $inboxStrays++
     }
+}
+# A snag entry without one of the five dispositions stays live for the owner; one written as settled in
+# other words never files.
+foreach ($openSnag in (Get-NSSnagOpenLines (Get-NSLayoutPath $ns 'snag-log'))) {
+    Add-NSFact ('{0} line {1} has no disposition, so Archive keeps it live: {2}' -f (Get-NSLayoutName $ns 'snag-log'), $openSnag.Line, $openSnag.Text)
 }
 if ($inboxStrays -gt 0) {
     Add-NSAct confirm 'rewrite each inbox entry Doctor names as one `- ` bullet, keeping its text; Doctor does not edit the inbox'

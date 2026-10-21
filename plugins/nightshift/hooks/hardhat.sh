@@ -87,6 +87,10 @@ SCRUBBED="$(ns_hardhat_scrub "$CMD")"
 LEASE_COMMAND="$CMD"
 case "$TOOL" in Bash | PowerShell) LEASE_COMMAND="$SCRUBBED" ;; esac
 
+# Which copy of the plugin answered this session. A second copy running the same hooks is what
+# Start refuses and Doctor names; the Claude copy inside Cursor stands down and is not one.
+ns_claude_foreign_cursor_surface "$NS" "${TPATH:-}" || ns_hook_copy_note "$NS" claude "${SID:-}" "$_here/.."
+
 # The plan room holds whether or not a shift is armed: planning comes before the shift.
 plan_reason="$(ns_hardhat_plan_room_reason "$TOOL" "$INPUT" "$SCRUBBED" "$CMD" "$SID" claude)"
 case "$?" in
