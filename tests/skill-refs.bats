@@ -474,6 +474,24 @@ documented_pages() {
   [ "$total" -lt 1600 ] || { echo "descriptions total $total characters"; return 1; }
 }
 
+@test "the skills.sh installer is the only root skill and ships in no plugin" {
+  # The skills CLI installs it by name from the root skills/ folder; the plugin's own skills need
+  # the runtime and hooks, so they install only with the plugin.
+  [ "$(ls "$ROOT/skills")" = install-nightshift ]
+  [ -f "$ROOT/skills/install-nightshift/SKILL.md" ]
+  grep -qx 'name: install-nightshift' "$ROOT/skills/install-nightshift/SKILL.md"
+  [ ! -e "$SKILLS/install-nightshift" ]
+  # Every marketplace installs the plugin folder alone, so the installer reaches no plugin user.
+  [ "$(jq -r '.plugins[].source' "$ROOT/.claude-plugin/marketplace.json")" = ./plugins/nightshift ]
+  [ "$(jq -r '.plugins[].source' "$ROOT/.cursor-plugin/marketplace.json")" = ./plugins/nightshift ]
+  [ "$(jq -r '.plugins[].source.path' "$ROOT/.agents/plugins/marketplace.json")" = ./plugins/nightshift ]
+  # The same strict-YAML rule as the plugin's skills.
+  hits="$(awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit }
+    on { v = $0; sub(/^[A-Za-z_-]+:[ ]*/, "", v)
+         if (v !~ /^["'"'"']/ && (index(v, ": ") || index(v, " #"))) print }' "$ROOT/skills/install-nightshift/SKILL.md")"
+  [ -z "$hits" ] || { echo "$hits"; return 1; }
+}
+
 @test "every skill's frontmatter is plain YAML a strict parser reads" {
   # An unquoted ": " opens a nested mapping and " #" starts a comment, so a strict parser drops
   # the whole skill where a lenient host still loads it.
