@@ -3,6 +3,21 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.29.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.28.0...v0.29.0) (2026-10-22)
+
+
+### Features
+
+* a plan room that reminds instead of fencing ([670b701](https://github.com/orwa-mahmoud/nightshift/commit/670b7017b47b073f7d92d22886befbb6b4e3c61b))
+* run shifts in their own worktree ([03b13a8](https://github.com/orwa-mahmoud/nightshift/commit/03b13a84b298c85d5230be302dabce64cb8792c0))
+
+
+### Bug Fixes
+
+* anchor the receipts run/ ignore to the live folder ([e43cacc](https://github.com/orwa-mahmoud/nightshift/commit/e43cacc1b61614786d2ed31cad98339f1fed6744))
+* one complete duplicate rule for the snag log ([79032b0](https://github.com/orwa-mahmoud/nightshift/commit/79032b069aa485bfca229b35a332a574badc15de))
+* one Nightshift copy per session, and a truthful morning page ([88980ed](https://github.com/orwa-mahmoud/nightshift/commit/88980ede4956ee7ff273225924086f104ee5a0a9))
+
 ## [0.28.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.27.0...v0.28.0) (2026-10-21)
 
 
