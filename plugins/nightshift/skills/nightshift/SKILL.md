@@ -2,6 +2,8 @@
 name: nightshift
 description: Work a punch list to completion autonomously — overnight, through a todo list, or until a product is polished — parking decisions and leaving receipts.
 license: MIT
+metadata:
+  internal: true
 ---
 
 # nightshift — the brain

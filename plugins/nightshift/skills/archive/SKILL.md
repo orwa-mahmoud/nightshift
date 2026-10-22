@@ -2,6 +2,8 @@
 name: archive
 description: File a finished shift into its own archive folder, laid out like the live site, so the live files keep only open work.
 license: MIT
+metadata:
+  internal: true
 ---
 
 Archive the finished paperwork for the host-opened project. This files records — it never does

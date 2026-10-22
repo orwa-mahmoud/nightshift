@@ -2,6 +2,8 @@
 name: start
 description: Begin the shift from the punch list without asking, so scheduled and headless runs behave like interactive ones.
 license: MIT
+metadata:
+  internal: true
 ---
 
 Start a Nightshift run in the host-opened project.

@@ -474,6 +474,41 @@ documented_pages() {
   [ "$total" -lt 1600 ] || { echo "descriptions total $total characters"; return 1; }
 }
 
+@test "the skills.sh installer is the only root skill and ships in no plugin" {
+  # The skills CLI finds the installer in the root skills/ folder. The plugin's own skills need the
+  # runtime and hooks, so each is marked internal, which hides it from that CLI.
+  [ "$(ls "$ROOT/skills")" = install-nightshift ]
+  [ -f "$ROOT/skills/install-nightshift/SKILL.md" ]
+  grep -qx 'name: install-nightshift' "$ROOT/skills/install-nightshift/SKILL.md"
+  ! grep -q '^  internal:' "$ROOT/skills/install-nightshift/SKILL.md" || false
+  [ ! -e "$SKILLS/install-nightshift" ]
+  for f in "$SKILLS"/*/SKILL.md; do
+    awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit }
+      on && $0 == "metadata:" { m = 1; next } m && $0 == "  internal: true" { found = 1 }
+      END { exit !found }' "$f" || { echo "$f is not marked internal"; return 1; }
+  done
+  # Every marketplace installs the plugin folder alone, so the installer reaches no plugin user.
+  [ "$(jq -r '.plugins[].source' "$ROOT/.claude-plugin/marketplace.json")" = ./plugins/nightshift ]
+  [ "$(jq -r '.plugins[].source' "$ROOT/.cursor-plugin/marketplace.json")" = ./plugins/nightshift ]
+  [ "$(jq -r '.plugins[].source.path' "$ROOT/.agents/plugins/marketplace.json")" = ./plugins/nightshift ]
+  # The same strict-YAML rule as the plugin's skills.
+  hits="$(awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit }
+    on { v = $0; sub(/^[ ]*[A-Za-z_-]+:[ ]*/, "", v)
+         if (v !~ /^["'"'"']/ && (index(v, ": ") || index(v, " #"))) print }' "$ROOT/skills/install-nightshift/SKILL.md")"
+  [ -z "$hits" ] || { echo "$hits"; return 1; }
+}
+
+@test "every skill's frontmatter is plain YAML a strict parser reads" {
+  # An unquoted ": " opens a nested mapping and " #" starts a comment, so a strict parser drops
+  # the whole skill where a lenient host still loads it.
+  for f in "$SKILLS"/*/SKILL.md; do
+    hits="$(awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit }
+      on { v = $0; sub(/^[ ]*[A-Za-z_-]+:[ ]*/, "", v)
+           if (v !~ /^["'"'"']/ && (index(v, ": ") || index(v, " #"))) print }' "$f")"
+    [ -z "$hits" ] || { echo "$(basename "$(dirname "$f")"): $hits"; return 1; }
+  done
+}
+
 @test "the main skill keeps the words a host matches intent against" {
   text="$(grep -m1 '^description:' "$SKILLS/nightshift/SKILL.md")"
   for word in 'punch list' 'autonomously' 'overnight' 'todo list' 'polish' 'receipts'; do

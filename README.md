@@ -90,6 +90,16 @@ The [Cursor Directory listing](https://cursor.directory/plugins/nightshift) is f
 installation happens inside Cursor. Read the host-specific
 [recovery and CLI limitations](docs/how-it-works.md#recovery) before starting a shift.
 
+### skills.sh
+
+```text
+npx skills add https://github.com/orwa-mahmoud/nightshift --skill install-nightshift
+```
+
+This adds one small skill, kept in this repository's root `skills/` folder, that installs the full
+plugin into Claude Code, Codex or Cursor. Nightshift's own skills need its hooks and runtime, so
+they are marked internal and install only as part of the plugin.
+
 ### Platforms
 
 macOS and Linux use the bundled Bash runtime. Native Windows uses bundled PowerShell, with no
