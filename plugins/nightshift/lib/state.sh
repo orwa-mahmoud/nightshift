@@ -393,7 +393,7 @@ EOF
 ns_receipts_relink() {
   local page tmp rc=0
   for page in "$1"/morning-*.md; do
-    [ -f "$page" ] && [ ! -L "$page" ] || continue
+    if [ ! -f "$page" ] || [ -L "$page" ]; then continue; fi
     grep -qF "(./$2)" "$page" || continue
     tmp="$page.$$"
     if awk -v old="(./$2)" -v new="(./$3)" '
