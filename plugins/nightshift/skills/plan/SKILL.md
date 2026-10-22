@@ -1,6 +1,6 @@
 ---
 name: plan
-description: Open the plan room: explore the code and design the work with the owner, building nothing until the owner leaves.
+description: Open the plan room to explore the code and design the work with the owner, building nothing until the owner leaves.
 license: MIT
 ---
 

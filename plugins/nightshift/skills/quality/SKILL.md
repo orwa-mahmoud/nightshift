@@ -1,6 +1,6 @@
 ---
 name: quality
-description: Compose a shift that works the project's quality debt: tests, code, accessibility, contracts, docs, dependencies, security.
+description: Compose a shift that works the project's quality debt across tests, code, accessibility, contracts, docs, dependencies and security.
 license: MIT
 ---
 

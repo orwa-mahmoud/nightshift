@@ -474,6 +474,17 @@ documented_pages() {
   [ "$total" -lt 1600 ] || { echo "descriptions total $total characters"; return 1; }
 }
 
+@test "every skill's frontmatter is plain YAML a strict parser reads" {
+  # An unquoted ": " opens a nested mapping and " #" starts a comment, so a strict parser drops
+  # the whole skill where a lenient host still loads it.
+  for f in "$SKILLS"/*/SKILL.md; do
+    hits="$(awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit }
+      on { v = $0; sub(/^[A-Za-z_-]+:[ ]*/, "", v)
+           if (v !~ /^["'"'"']/ && (index(v, ": ") || index(v, " #"))) print }' "$f")"
+    [ -z "$hits" ] || { echo "$(basename "$(dirname "$f")"): $hits"; return 1; }
+  done
+}
+
 @test "the main skill keeps the words a host matches intent against" {
   text="$(grep -m1 '^description:' "$SKILLS/nightshift/SKILL.md")"
   for word in 'punch list' 'autonomously' 'overnight' 'todo list' 'polish' 'receipts'; do

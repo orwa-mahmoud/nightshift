@@ -1,6 +1,6 @@
 ---
 name: status
-description: Read-only shift status: items, parked decisions, snags, deadline, STOP or stall state.
+description: Read-only shift status covering items, parked decisions, snags, the deadline and STOP or stall state.
 license: MIT
 ---
 
