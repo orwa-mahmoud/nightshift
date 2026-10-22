@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.29.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.29.0...v0.29.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* keep the plugin's skills out of standalone skill installs ([1fd6e17](https://github.com/orwa-mahmoud/nightshift/commit/1fd6e177822ad254058e8749a98a303f6a5ca72d))
+* skill descriptions that strict YAML parsers read ([adeabc5](https://github.com/orwa-mahmoud/nightshift/commit/adeabc590de2df31ffd7dfbdc3c685eafe49f766))
+
 ## [0.29.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.28.0...v0.29.0) (2026-10-22)
 
 
