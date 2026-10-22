@@ -480,7 +480,7 @@ documented_pages() {
   [ "$(ls "$ROOT/skills")" = install-nightshift ]
   [ -f "$ROOT/skills/install-nightshift/SKILL.md" ]
   grep -qx 'name: install-nightshift' "$ROOT/skills/install-nightshift/SKILL.md"
-  ! grep -q '^  internal:' "$ROOT/skills/install-nightshift/SKILL.md"
+  ! grep -q '^  internal:' "$ROOT/skills/install-nightshift/SKILL.md" || false
   [ ! -e "$SKILLS/install-nightshift" ]
   for f in "$SKILLS"/*/SKILL.md; do
     awk 'NR == 1 && $0 == "---" { on = 1; next } on && $0 == "---" { exit }
