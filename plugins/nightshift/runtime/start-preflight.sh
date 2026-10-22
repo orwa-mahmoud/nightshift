@@ -2,7 +2,7 @@
 # start-preflight.sh — the Start skill's one preflight. Prints one verdict per line.
 #
 #   start-preflight.sh --project DIR [--host claude|codex|cursor]
-#                      [--phase preflight|snapshot|bind] [--dry-run]
+#                      [--phase preflight|snapshot|worktree|bind] [--dry-run]
 #
 # Verdict grammar, one per line. The verdict sentence is byte-identical on POSIX and native
 # Windows; only interpolated paths and a parser's own diagnostic tail differ.
@@ -13,8 +13,10 @@
 #   repair <text>            the exact repair for the refusal above it
 #
 # Phase preflight covers everything before `.shift-armed`; phase snapshot records the plain Start's
-# shift policy right before arming; phase bind is the Codex identity checkpoint that runs after the
-# binding probe and before the watchman.
+# shift policy right before arming; phase worktree gives a shift.isolation worktree shift its own
+# worktree and branch, after the snapshot and before arming; phase bind checks that one plugin copy
+# answers the session and classifies the Codex identity, after the binding probe and before the
+# watchman.
 #
 # Exit: 0 may arm · 1 refused · 2 usage
 set -u
@@ -52,7 +54,7 @@ while [ $# -gt 0 ]; do
 done
 
 case "$PHASE" in
-  preflight | snapshot | bind) ;;
+  preflight | snapshot | worktree | bind) ;;
   *) printf 'start-preflight: unknown phase: %s\n' "$PHASE" >&2; exit 2 ;;
 esac
 
@@ -152,6 +154,14 @@ if [ "$PHASE" = bind ]; then
   SID="$(ns_session_line "$NS" 1)"
   REC_HOST="$(ns_session_host "$NS")"
   ok "session-host $REC_HOST"
+  # The binding probe ran every copy's guard once, so a second copy of the plugin has recorded itself
+  # by now. Two copies write every usage mark and receipt twice, in two versions' formats.
+  COPIES="$(ns_hook_copies "$NS" "$REC_HOST" 600)"
+  if [ "$(printf '%s' "$COPIES" | grep -c .)" -gt 1 ]; then
+    refuse "copies $(printf '%s' "$COPIES" | grep -c .) Nightshift copies answer this $REC_HOST session: $(printf '%s\n' "$COPIES" | awk -F '\t' 'NF { printf "%s%s (%s)", sep, $1, $2; sep = " and " }') - each writes every usage mark and receipt again"
+    repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable all but one Nightshift copy in the host's plugin settings, start a new conversation, and run Start again"
+    exit 1
+  fi
   if [ "$REC_HOST" != codex ]; then
     ok "codex-identity not-applicable"
     exit 0
@@ -194,6 +204,118 @@ if [ "$PHASE" = snapshot ]; then
   else
     warn "snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt"
   fi
+  exit 0
+fi
+
+# ------------------------------------------------------------ phase worktree
+# After the snapshot and before arming: a shift with shift.isolation worktree gets its own worktree
+# and branch, prepared and recorded as its work target. A failure here arms nothing.
+if [ "$PHASE" = worktree ]; then
+  if [ "$(ns_work_mode "$WORKSPACE" 2>/dev/null)" = artifact ]; then
+    ok "worktree not-applicable - artifact mode works in its folder"
+    exit 0
+  fi
+  ISOLATION="$(ns_policy_pref "$WORKSPACE" shift isolation)"
+  case "$ISOLATION" in
+    '' | none)
+      ok "worktree none - the shift works in the work target itself"
+      exit 0 ;;
+    worktree) ;;
+    *)
+      refuse "worktree shift.isolation is '$ISOLATION', not none or worktree"
+      repair "set shift.isolation in $(ns_layout_name "$NS" rules) to none or worktree, then run Start again"
+      exit 1 ;;
+  esac
+  CHECKOUT="$(ns_owner_work_target "$WORKSPACE")" || {
+    refuse "worktree the work target cannot be resolved"
+    repair "run Doctor, repair the work target, then run Start again"
+    exit 1
+  }
+  # A linked worktree's own git dir differs from the repository's common one.
+  GIT_DIR_ABS="$(cd "$CHECKOUT" 2>/dev/null && cd -P "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null && pwd)"
+  GIT_COMMON_ABS="$(cd "$CHECKOUT" 2>/dev/null && cd -P "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd)"
+  if [ -n "$GIT_DIR_ABS" ] && [ "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]; then
+    ok "worktree host $CHECKOUT - this session already works in its own worktree"
+    exit 0
+  fi
+  SHIFT_ID="$(ns_policy_shift_id "$WORKSPACE" 2>/dev/null)" || SHIFT_ID=""
+  if [ -z "$SHIFT_ID" ]; then
+    refuse "worktree no shift policy to name the worktree after"
+    repair "run the snapshot phase first, then the worktree phase"
+    exit 1
+  fi
+  if KEPT="$(ns_shift_worktree_current "$WORKSPACE")"; then
+    ok "worktree $KEPT branch $(ns_shift_worktree_field "$WORKSPACE" branch) - this shift's worktree, kept"
+    exit 0
+  fi
+  ROOT="$(ns_policy_pref "$WORKSPACE" shift worktreeRoot)"
+  [ -n "$ROOT" ] || ROOT=.nightshift/worktrees
+  case "$ROOT" in /*) ;; *) ROOT="$WORKSPACE/$ROOT" ;; esac
+  WT="$ROOT/$SHIFT_ID"
+  NAME="$(ns_shift_name "$PUNCH" 2>/dev/null | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//' | cut -c1-40)"
+  BRANCH="shift/$(date +%Y-%m-%d)-${NAME:-${SHIFT_ID:0:8}}"
+  if git -C "$CHECKOUT" show-ref --verify --quiet "refs/heads/$BRANCH" || [ -e "$WT" ]; then
+    refuse "worktree $BRANCH or $WT already exists"
+    repair "merge or remove that branch and folder, or name the shift differently, then run Start again"
+    exit 1
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    ok "worktree dry-run - would add $WT on $BRANCH"
+    exit 0
+  fi
+  BASE="$(git -C "$CHECKOUT" rev-parse HEAD 2>/dev/null)" || BASE=""
+  if ! { mkdir -p "$ROOT" && git -C "$CHECKOUT" worktree add -q -b "$BRANCH" "$WT" "$BASE" >/dev/null 2>&1; }; then
+    refuse "worktree git could not add $WT on $BRANCH from $CHECKOUT"
+    repair "check that $CHECKOUT has a commit and that git worktree add works there, then run Start again"
+    exit 1
+  fi
+  # undo_worktree — take back the worktree and branch this phase made; they hold no work yet.
+  undo_worktree() {
+    git -C "$CHECKOUT" worktree remove --force "$WT" >/dev/null 2>&1
+    git -C "$CHECKOUT" branch -D "$BRANCH" >/dev/null 2>&1
+  }
+  COPY_IN="$(ns_policy_pref "$WORKSPACE" shift copyIn)"
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    case "/$entry/" in
+      */../* | //*)
+        warn "worktree copyIn entry $entry leaves the work target - not copied"
+        continue ;;
+    esac
+    if [ ! -f "$CHECKOUT/$entry" ] || [ -L "$CHECKOUT/$entry" ]; then
+      warn "worktree copyIn entry $entry is not a regular file in $CHECKOUT - not copied"
+      continue
+    fi
+    if ! { mkdir -p "$(dirname "$WT/$entry")" && cp -p "$CHECKOUT/$entry" "$WT/$entry"; }; then
+      undo_worktree
+      refuse "worktree could not copy $entry into $WT"
+      repair "check the copyIn entry and the folder's permissions, then run Start again"
+      exit 1
+    fi
+  done < <(ns_json_string_list "$COPY_IN")
+  PREPARE="$(ns_policy_pref "$WORKSPACE" shift prepare)"
+  if [ -n "$PREPARE" ]; then
+    PREPARE_OUT="$( (cd "$WT" && sh -c "$PREPARE") 2>&1)"
+    PREPARE_RC=$?
+    if [ "$PREPARE_RC" -ne 0 ]; then
+      undo_worktree
+      refuse "worktree prepare exited $PREPARE_RC in $WT: $(printf '%s' "$PREPARE_OUT" | tail -n 3 | tr '\n' ' ')"
+      repair "fix shift.prepare or what it needs, then run Start again; nothing was armed"
+      exit 1
+    fi
+  fi
+  declare WT_RECORD
+  ns_layout_set WT_RECORD "$NS" shift-worktree
+  if ! { mkdir -p "$(dirname "$WT_RECORD")" &&
+    printf 'path=%s\nbranch=%s\nbase=%s\ncheckout=%s\nshift=%s\n' "$WT" "$BRANCH" "$BASE" "$CHECKOUT" "$SHIFT_ID" >"$WT_RECORD.$$" &&
+    mv "$WT_RECORD.$$" "$WT_RECORD"; }; then
+    rm -f "$WT_RECORD.$$"
+    undo_worktree
+    refuse "worktree could not record $WT"
+    repair "check that .nightshift/ is writable, then run Start again"
+    exit 1
+  fi
+  ok "worktree $WT branch $BRANCH from ${BASE:0:7} - work there; the owner's checkout stays untouched"
   exit 0
 fi
 

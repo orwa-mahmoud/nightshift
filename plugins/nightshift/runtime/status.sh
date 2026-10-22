@@ -178,6 +178,14 @@ esac
 
 fact "work mode" "$(ns_work_mode "$WORKSPACE" 2>/dev/null)"
 fact "work target" "$(ns_work_target "$WORKSPACE" 2>/dev/null)"
+if [ "$(ns_work_mode "$WORKSPACE" 2>/dev/null)" = artifact ]; then
+  fact isolation "not-applicable (artifact mode)"
+elif ns_shift_worktree_current "$WORKSPACE" >/dev/null 2>&1; then
+  fact isolation "worktree, branch $(ns_shift_worktree_field "$WORKSPACE" branch)"
+else
+  ISOLATION="$(ns_policy_pref "$WORKSPACE" shift isolation 2>/dev/null)"
+  fact isolation "${ISOLATION:-none}"
+fi
 RECEIPTS="$(ns_receipts_count "$WORKSPACE" 2>/dev/null)" || RECEIPTS=0
 fact "artifact receipts" "$RECEIPTS"
 fact "latest artifact receipt" "$(ns_latest_receipt "$WORKSPACE" 2>/dev/null)"

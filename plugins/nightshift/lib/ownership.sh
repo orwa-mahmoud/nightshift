@@ -743,6 +743,64 @@ ns_claude_foreign_cursor_surface() { # <ns-dir> <transcript-path>
   [ "$(ns_session_host "$1")" = "cursor" ]
 }
 
+# ns_plugin_version <plugin-root> — the version a plugin copy's own manifest declares, or `unknown`.
+ns_plugin_version() {
+  local m v
+  for m in .claude-plugin .codex-plugin .cursor-plugin; do
+    [ -f "$1/$m/plugin.json" ] || continue
+    v="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1/$m/plugin.json" | head -n1)"
+    if [ -n "$v" ]; then
+      printf '%s' "$v"
+      return 0
+    fi
+  done
+  printf 'unknown'
+}
+
+# ns_hook_copy_note <ns-dir> <host> <session> <plugin-root> — record that this copy of the plugin
+# answered a hook in this session, at most once a minute per copy. Two copies that both run their
+# hooks in one session record two roots under one session id, which Start refuses and Doctor names.
+# Lines are `epoch<TAB>host<TAB>session<TAB>root<TAB>version`; appending keeps two copies writing at
+# once from losing each other's line, and the file is cut back to its last day now and then.
+ns_hook_copy_note() {
+  local f root now last tmp
+  [ -n "$3" ] || return 0
+  ns_layout_set f "$1" hook-copies || return 0
+  [ ! -L "$f" ] || return 0
+  root="$(cd -P "$4" 2>/dev/null && pwd)" || return 0
+  now="$(date +%s)"
+  if [ -f "$f" ]; then
+    last="$(awk -F '\t' -v h="$2" -v s="$3" -v r="$root" '$2 == h && $3 == s && $4 == r { e = $1 } END { print e + 0 }' "$f" 2>/dev/null)"
+    [ $((now - ${last:-0})) -ge 60 ] || return 0
+  fi
+  mkdir -p "${f%/*}" 2>/dev/null || return 0
+  printf '%s\t%s\t%s\t%s\t%s\n' "$now" "$2" "$3" "$root" "$(ns_plugin_version "$root")" >>"$f" 2>/dev/null || return 0
+  if [ "$(wc -l <"$f" | tr -d ' ')" -gt 500 ]; then
+    tmp="$f.$$"
+    if ! { awk -F '\t' -v cut="$((now - 86400))" '$1 >= cut' "$f" >"$tmp" 2>/dev/null && mv "$tmp" "$f"; }; then
+      rm -f "$tmp"
+    fi
+  fi
+}
+
+# ns_hook_copies <ns-dir> <host> <window-seconds> — the plugin copies that answered this host's
+# hooks in its most recent session within the window, one `root<TAB>version` per line. Nothing when
+# no session answered in that time.
+ns_hook_copies() {
+  local f now
+  ns_layout_set f "$1" hook-copies || return 0
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  now="$(date +%s)"
+  awk -F '\t' -v h="$2" -v cut="$((now - $3))" '
+    $2 == h && $1 >= cut { line[NR] = $0; if ($1 >= latest) { latest = $1; session = $3 } }
+    END {
+      for (n in line) {
+        split(line[n], f, "\t")
+        if (f[3] == session && !((f[4]) in seen)) { seen[f[4]] = 1; print f[4] "\t" f[5] }
+      }
+    }' "$f" 2>/dev/null | LC_ALL=C sort
+}
+
 # True when .shift-session is a real file, not a planted symlink.
 ns_session_present() { # <ns-dir>
   local rec

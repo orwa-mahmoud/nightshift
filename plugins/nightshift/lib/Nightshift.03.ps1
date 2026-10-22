@@ -4,10 +4,36 @@
 function Get-NSReceiptIgnoreLines {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $run = Get-NSLayoutRelativePath $NightshiftDir 'run'
-    if ($run.Length -gt 0) { return , @((Get-NSLayoutRelativePath $NightshiftDir 'stop'), ($run + '/')) }
+    if ($run.Length -gt 0) { return , @((Get-NSLayoutRelativePath $NightshiftDir 'stop'), ('/' + $run + '/')) }
     return , @('STOP', '.stall', '.notified', 'deadline', '.session-end', '.shift-pulse', '.mint-failed',
         '.shift-session', '.shift-session.tmp.*', '.shift-worker', '.shift-lease', '.shift-lease.tmp.*',
         '.mutex-scope', '.mutex-scope.tmp.*', '.watchman', '.watchman-tick', '.budget.tsv', '.item-sessions/', '.plan-room', '.lock.d/', '.lease-lock.d/')
+}
+
+# Update-NSReceiptRunIgnore <state-dir> - the receipts repository leaves out only the live runtime
+# folder. A bare `run/` line matches at every depth and would also leave out the run records each
+# archived shift files under its own folder, so it is rewritten as `/run/`. Throws when the ignore
+# file is a link.
+function Update-NSReceiptRunIgnore {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $run = Get-NSLayoutRelativePath $NightshiftDir 'run'
+    if ($run.Length -eq 0) { return }
+    $ignore = Get-NSLayoutPath $NightshiftDir 'gitignore'
+    if (Test-NSReparsePoint $ignore) { throw 'receipts ignore file is a link' }
+    if (-not (Test-Path -LiteralPath $ignore -PathType Leaf)) { return }
+    $bare = $run + '/'
+    $anchored = '/' + $run + '/'
+    $lines = [string[]][IO.File]::ReadAllLines($ignore)
+    if (-not ($lines -ccontains $bare)) { return }
+    $has = $lines -ccontains $anchored
+    $kept = [Collections.Generic.List[string]]::new()
+    foreach ($line in $lines) {
+        if ($line -cne $bare) { $kept.Add($line); continue }
+        if ($has) { continue }
+        $kept.Add($anchored)
+        $has = $true
+    }
+    $null = Write-NSAtomicLines -Path $ignore -Lines $kept.ToArray()
 }
 
 # Invoke-NSScaffold <workspace> <keys> - copy each key's template to where the workspace's layout
@@ -921,11 +947,15 @@ $script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
 $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
 $script:NSPolicyGroupDefaults['receipts.templatePath'] = ''
 $script:NSPolicyGroupDefaults['receipts.usage'] = 'when-available'
+$script:NSPolicyGroupDefaults['shift.copyIn'] = @()
 $script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
 $script:NSPolicyGroupDefaults['shift.hours'] = $null
+$script:NSPolicyGroupDefaults['shift.isolation'] = 'none'
 $script:NSPolicyGroupDefaults['shift.itemBudget'] = ''
+$script:NSPolicyGroupDefaults['shift.prepare'] = ''
 $script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
 $script:NSPolicyGroupDefaults['shift.verificationProfile'] = 'fast'
+$script:NSPolicyGroupDefaults['shift.worktreeRoot'] = '.nightshift/worktrees'
 
 $script:NSPolicySettingNames = @(
     'archive.automatic',
@@ -956,11 +986,15 @@ $script:NSPolicySettingNames = @(
     'receipts.progressTokens',
     'receipts.templatePath',
     'receipts.usage',
+    'shift.copyIn',
     'shift.execution',
     'shift.hours',
+    'shift.isolation',
     'shift.itemBudget',
+    'shift.prepare',
     'shift.toolingPolicy',
     'shift.verificationProfile',
+    'shift.worktreeRoot',
     'stallMax',
     'toolingPolicy',
     'verificationLevel',
@@ -1604,12 +1638,13 @@ function Write-NSEndedRecord {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveRoot,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ArchiveLayout,
         [AllowEmptyString()][string]$ShiftName = '',
-        [AllowEmptyString()][string]$ArchiveFolder = ''
+        [AllowEmptyString()][string]$ArchiveFolder = '',
+        [AllowEmptyString()][string]$HostName = ''
     )
     if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { return }
     $path = Get-NSLayoutPath $StateDir 'ended'
     if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
-    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`nshiftName=$ShiftName`narchiveFolder=$ArchiveFolder`n"
+    $text = "shiftId=$ShiftId`narchiveRoot=$ArchiveRoot`narchiveLayout=$ArchiveLayout`nshiftName=$ShiftName`narchiveFolder=$ArchiveFolder`nhost=$HostName`n"
     [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding($false)))
 }
 

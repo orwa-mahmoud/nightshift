@@ -172,6 +172,22 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
   grep -qF '[./02-fix-the-resolver-cd34.md](./02-fix-the-resolver-cd34.md)' "$r/README.md"
 }
 
+@test "a morning page written before a rename links the receipt's new name" {
+  p="$(new_project ids-rename-morning)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r"
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '## Items\n- [x] **12. Keep the receipt changes.** <!-- id: bbhb -->\n' >"$p/.nightshift/punch-list.md"
+  printf 'the receipt\n' >"$r/12-keep-the-receipt-chan-bbhb.md"
+  printf '# Morning\n\n- [12. Keep the receipt changes.](./12-keep-the-receipt-chan-bbhb.md) — ticked\n' \
+    >"$r/morning-2026-10-09-0123456789abcdef.md"
+  lib ns_receipts_rename "$p"
+  [ -f "$r/12-keep-the-receipt-changes-bbhb.md" ]
+  grep -qF '(./12-keep-the-receipt-changes-bbhb.md)' "$r/morning-2026-10-09-0123456789abcdef.md"
+  run grep -F '(./12-keep-the-receipt-chan-bbhb.md)' "$r/morning-2026-10-09-0123456789abcdef.md"
+  [ "$status" -ne 0 ]
+}
+
 @test "a receipt never moves onto a link planted at its new name" {
   p="$(new_project ids-rename-link)"
   r="$p/.nightshift/receipts"

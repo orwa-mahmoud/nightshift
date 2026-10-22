@@ -176,12 +176,16 @@ ns_file_size() {
 # shape yields nothing and the caller reports `unavailable` with the reason. A partial sum is
 # never presented as a complete one.
 ns_usage_read_codex() {
-  local file="$1" line bin
+  local file="$1" line bin at named
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
-  line="$(grep '"token_count"' "$file" 2>/dev/null | tail -n1)" || return 1
+  line="$(grep -n '"token_count"' "$file" 2>/dev/null | tail -n1)" || return 1
   [ -n "$line" ] || return 1
+  at="${line%%:*}"
+  line="${line#*:}"
+  # The count names no model: the last line before it that names one says which model spent it.
+  named="$(head -n "$at" "$file" | grep '"model":"' 2>/dev/null | tail -n1)" || named=""
   bin="$(ns_usage_awk_bin)" || return 1
-  printf '%s\n' "$line" | "$bin" -f "$_NS_USAGE_CODEX_AWK" 2>/dev/null || return 1
+  printf '%s\n%s\n' "$named" "$line" | "$bin" -f "$_NS_USAGE_CODEX_AWK" 2>/dev/null || return 1
 }
 
 # ns_usage_read_cursor <payload> — the counter from a Cursor stop payload.
@@ -259,38 +263,44 @@ ns_usage_add() {
 # negative.
 ns_usage_record() {
   local ns="$1" host="$2" model="$3" src="$4" id="$5" offset="$6" fields="$7" carry="${8:-}"
-  local dir file line found=0 start cur seg tmp dim now new_id="$id"
+  local dir file line found=0 start cur seg tmp dim now live new_id
   [ -n "$id" ] && [ -n "$fields" ] || return 1
   dir="$(ns_usage_dir "$ns")"
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$(_ns_usage_state "$ns")"
   now="$(date +%s)"
   [ -f "$file" ] || : >"$file"
+  # A counter that started again reads into the segment it last opened, never back into the first.
+  live="$(_ns_usage_live_id "$file" "$id")"
+  new_id="$live"
   # A reading can carry usage and no model: the model already recorded for the segment stands, and
   # a segment split off below keeps the model of the session it continues.
   if [ -z "$model" ]; then
-    model="$(_ns_usage_seg_field "$file" "$id" 3)" || model=""
+    model="$(_ns_usage_seg_field "$file" "$live" 3)" || model=""
   fi
   # Claude's reader hands back only what was appended since the last offset, so its segment total
   # accumulates; the other hosts hand back a counter that is already cumulative for the session.
   if [ "$src" = transcript-incremental ]; then
-    seg="$(_ns_usage_seg_field "$file" "$id" 7)" || seg=""
+    seg="$(_ns_usage_seg_field "$file" "$live" 7)" || seg=""
     fields="$(ns_usage_add "${seg:-}" "$fields")"
   fi
-  start="$(_ns_usage_seg_field "$file" "$id" 6)" || start=""
-  cur="$(_ns_usage_seg_field "$file" "$id" 7)" || cur=""
+  start="$(_ns_usage_seg_field "$file" "$live" 6)" || start=""
+  cur="$(_ns_usage_seg_field "$file" "$live" 7)" || cur=""
   if [ -n "$cur" ] && [ "$(ns_usage_sub "$cur" "$fields")" != "$(ns_usage_sub "$cur" "$cur")" ]; then
     # The stored current is higher than the new reading somewhere: a different counter.
     new_id="$id#$now"
+    while _ns_usage_seg_field "$file" "$new_id" 1 >/dev/null; do new_id="$new_id+"; done
     start=""
     cur=""
   fi
   # A segment's contribution is what it spent after Nightshift began watching it. Where the reader
   # already hands back only the newly appended spend, that is the contribution outright and the
   # start is zero; where it hands back a counter that was already running, the first reading is
-  # the start and only what advances past it counts.
+  # the start and only what advances past it counts. A Cursor stop payload is one agent turn's own
+  # spend, so it counts from zero too: the next turn reads lower, opens its own segment, and adds
+  # its own spend instead of nothing.
   if [ -z "$start" ]; then
-    if [ "$src" = transcript-incremental ]; then
+    if [ "$src" = transcript-incremental ] || [ "$src" = stop-payload ]; then
       start="$(ns_usage_sub "$fields" "$fields")"
     else
       start="$fields"
@@ -307,6 +317,12 @@ ns_usage_record() {
   done <"$file"
   [ "$found" -eq 1 ] || printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$new_id" "$host" "$model" "$src" "$offset" "$start" "$fields" "$carry" >>"$tmp"
   mv "$tmp" "$file" 2>/dev/null || { rm -f "$tmp"; return 1; }
+}
+
+# _ns_usage_live_id <file> <identity> — the segment an identity reads into now: the last one opened
+# under its name, `<identity>` itself or a later `<identity>#<epoch>`.
+_ns_usage_live_id() {
+  awk -F '\t' -v id="$2" '$1 == id || index($1, id "#") == 1 { last = $1 } END { print (last != "" ? last : id) }' "$1" 2>/dev/null
 }
 
 # _ns_usage_seg_field <file> <identity> <column> — one column of a segment, or empty.
@@ -354,7 +370,8 @@ ns_usage_hosts() {
   local file
   file="$(_ns_usage_state "$1")"
   [ -f "$file" ] || return 1
-  cut -f2,3 "$file" 2>/dev/null | sort -u | tr '\t' ' ' | paste -sd'; ' - 2>/dev/null
+  # paste would cycle `;` and a space as two delimiters, so the pairs are joined here instead.
+  cut -f2,3 "$file" 2>/dev/null | sort -u | tr '\t' ' ' | awk 'NF { printf "%s%s", sep, $0; sep = "; " }'
 }
 
 # ns_usage_mark <nightshift-dir> <label> [tick|switch|pause] — the running total and the clock at
@@ -549,6 +566,27 @@ ns_usage_since_last_mark() {
   total="$(ns_usage_total "$1")" || total=""
   case "$epoch" in '' | *[!0-9]*) epoch="$now" ;; esac
   printf '%s\t%s' "$(ns_usage_sub "$total" "$(printf '%s' "$last" | cut -f3)")" "$((now - epoch))"
+}
+
+# ns_usage_cursor_turn <nightshift-dir> <turn-identity> — the items ticked inside the Cursor turn
+# this reading belongs to, one `label<TAB>mark-number` per line.
+#
+# Cursor reports usage once per agent turn, when the turn ends, so an item ticked inside a turn
+# closes before any reading for it arrives. The turn began where the previous turn's reading was
+# taken; `cursor-turn` remembers that point, and a later reading for the same turn keeps it.
+ns_usage_cursor_turn() {
+  local ns="$1" id="$2" file marks now from last="" was="" at=""
+  marks="$(_ns_usage_marks "$ns")"
+  [ -f "$marks" ] || return 0
+  file="$(ns_usage_dir "$ns")/cursor-turn"
+  [ ! -L "$file" ] || rm -f "$file"
+  [ ! -f "$file" ] || IFS=$'\t' read -r last was at <"$file" || :
+  if [ "$last" = "$id" ]; then from="$was"; else from="$at"; fi
+  case "$from" in '' | *[!0-9]*) from=0 ;; esac
+  now="$(awk 'END { print NR }' "$marks")"
+  [ "$from" -le "$now" ] || from=0
+  printf '%s\t%s\t%s\n' "$id" "$from" "$now" >"$file" 2>/dev/null || return 0
+  awk -F '\t' -v from="$from" 'NR > from && $4 == "tick" { print $2 "\t" NR }' "$marks"
 }
 
 # ns_usage_last_item <nightshift-dir> — the span between the last two marks: what the item ticked

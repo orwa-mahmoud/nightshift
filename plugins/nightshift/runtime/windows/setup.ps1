@@ -132,6 +132,7 @@ if ($Receipts -or (Test-Path -LiteralPath $receiptRepo -PathType Container)) {
         }
         $receiptsCreated = $true
     }
+    Update-NSReceiptRunIgnore $ns
     $receiptIgnore = Get-NSReceiptIgnoreLines $ns
     $receiptIgnorePath = Get-NSLayoutPath $ns 'gitignore'
     $receiptIgnoreLines = [Collections.Generic.List[string]]::new()

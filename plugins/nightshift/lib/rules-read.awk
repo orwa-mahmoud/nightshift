@@ -357,7 +357,7 @@ function praw_pref(path,    n, i, out, kind) {
 # from one whose owner left a block empty.
 function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
   count = split("shift recovery handoff archive receipts", blocks, " ")
-  fields["shift"] = "execution hours itemBudget toolingPolicy verificationProfile"
+  fields["shift"] = "copyIn execution hours isolation itemBudget prepare toolingPolicy verificationProfile worktreeRoot"
   fields["recovery"] = "launchScope"
   fields["handoff"] = "detail enabled language sections templatePath view"
   fields["archive"] = "automatic layout root templatePath"
@@ -1194,7 +1194,7 @@ function parse_top_value(key,    c) {
       return
     }
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
-        key == "receipts") {
+        key == "receipts" || key == "planRoom") {
       emit(key, "", "", "o", "")
       parse_settings_object(key)
       return

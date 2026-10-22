@@ -164,7 +164,8 @@ ns_record_workspace_link() {
   tmp="$host/.nightshift-link.$$"
   printf '%s\n' "$canonical" >"$tmp" || return 1
   mv "$tmp" "$host/.nightshift-link" || return 1
-  if git_dir="$(git -C "$host" rev-parse --git-dir 2>/dev/null)"; then
+  # Git reads info/exclude from the common directory, which a linked worktree shares.
+  if git_dir="$(git -C "$host" rev-parse --git-common-dir 2>/dev/null)"; then
     case "$git_dir" in /*) ;; *) git_dir="$host/$git_dir" ;; esac
     exclude="$git_dir/info/exclude"
     mkdir -p "${exclude%/*}" || return 1

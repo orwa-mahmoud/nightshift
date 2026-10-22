@@ -28,12 +28,8 @@ E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/comp
   grep -qi 'uncertain' "$E"
 }
 
-@test "environment example drift preserves complete prior snag dispositions" {
-  grep -qi 'already recorded in `snag-log.md` is a `duplicate`' "$E"
-  grep -qi 'links to the existing record and carries forward its disposition' "$E"
-  grep -qi '`fixed`, `ignored`, `answered`, `rejected-because`, or `accepted-tradeoff`' "$E"
-  grep -qi 'matching open snags linked and open' "$E"
-  grep -qi 'not new owner decisions and do not require a fresh disposition' "$E"
+@test "environment example drift records duplicates under the shared rule" {
+  grep -qi 'already recorded in `snag-log.md` is a `duplicate` under Snag log discipline' "$E"
 }
 
 @test "environment example drift parks ambiguity and stays out of runtime behavior" {

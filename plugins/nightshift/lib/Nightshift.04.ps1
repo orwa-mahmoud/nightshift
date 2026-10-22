@@ -5,8 +5,13 @@ function Read-NSUsageCodex {
     param([Parameter(Mandatory = $true)][string]$Path)
     if ((Test-NSReparsePoint $Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     $last = ''
+    $lastModel = ''
+    $model = ''
+    # The token count line names no model; the model is the last one the rollout named before it.
     foreach ($line in [IO.File]::ReadLines($Path)) {
-        if ($line.IndexOf('"token_count"', [StringComparison]::Ordinal) -ge 0) { $last = $line }
+        $named = Get-NSUsageString $line 'model'
+        if ($named.Length -gt 0) { $lastModel = $named }
+        if ($line.IndexOf('"token_count"', [StringComparison]::Ordinal) -ge 0) { $last = $line; $model = $lastModel }
     }
     if ([string]::IsNullOrEmpty($last)) { return $null }
     $at = $last.IndexOf('"total_token_usage"', [StringComparison]::Ordinal)
@@ -26,7 +31,7 @@ function Read-NSUsageCodex {
     $fields += ",output=$output"
     $reason = Get-NSUsageNumber $block 'reasoning_output_tokens'
     if ($reason -ge 0) { $fields += ",reasoning=$reason" }
-    return ($fields + "`t0`t" + (Get-NSUsageString $last 'model') + "`t0")
+    return ($fields + "`t0`t" + $model + "`t0")
 }
 
 # Get-NSUsageOverlap <host> - the one sentence saying what is already counted inside what.
@@ -1320,6 +1325,7 @@ function Rename-NSReceipts {
             if (Test-Path -LiteralPath (Get-NSReceiptSessionFile $old) -PathType Leaf) { Set-NSReceiptSessions $new (Get-NSReceiptSessionData $old) }
             [IO.File]::Move($old, $new)
             Remove-NSReceiptSessions $old
+            Update-NSReceiptLinks $dir $name $want
         }
         catch {
             Write-Warning ('receipts: ' + $name + ' could not take its item''s name ' + $want + ': ' + $_.Exception.Message)
@@ -1327,6 +1333,19 @@ function Rename-NSReceipts {
         }
     }
     return $ok
+}
+
+# Update-NSReceiptLinks <receipts-dir> <old-name> <new-name> - a morning page links each receipt by its
+# file name, so after a rename the pages in the folder link the new name. Mirrors ns_receipts_relink.
+function Update-NSReceiptLinks {
+    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$OldName,
+          [Parameter(Mandatory = $true)][string]$NewName)
+    foreach ($page in @(Get-ChildItem -LiteralPath $Directory -Filter 'morning-*.md' -File -ErrorAction SilentlyContinue)) {
+        if (Test-NSReparsePoint $page.FullName) { continue }
+        $text = [IO.File]::ReadAllText($page.FullName)
+        $relinked = $text.Replace('(./' + $OldName + ')', '(./' + $NewName + ')')
+        if ($relinked -cne $text) { [IO.File]::WriteAllText($page.FullName, $relinked, (New-Object Text.UTF8Encoding($false))) }
+    }
 }
 
 function Get-NSReceiptPath {
@@ -1616,6 +1635,9 @@ function Get-NSReceiptUsageSection {
     $have = @($false, $false, $false, $false, $false)
     $off = @($false, $false, $false, $false, $false)
     $miss = @($false, $false, $false, $false, $false)
+    $shared = @($false, $false, $false, $false, $false)
+    $sharedTurns = New-Object Collections.Generic.List[string]
+    $dims = @('input', 'output', 'cache_write', 'cache_read', 'reasoning')
     $twork = [long]0; $tpause = [long]0; $twall = [long]0
     $havework = $false; $offwork = $false; $havepause = $false; $offpause = $false
     $first = $null; $last = $null; $lastWhy = ''
@@ -1650,8 +1672,25 @@ function Get-NSReceiptUsageSection {
             $budgetEvents.Add($budgetLine)
         }
         $cells = ''
+        $turn = Get-NSSessionExtra $line 'turn'
+        if ($turn.Length -gt 0) {
+            $with = ConvertFrom-NSReceiptEncoded (Get-NSSessionExtra $line 'with')
+            $t = '- Session ' + $n + ' closed inside one Cursor agent turn'
+            if ($with.Length -gt 0) { $t += ' shared with ' + $with }
+            $sharedTurns.Add($t + ". Cursor reports usage once per turn, so this is the whole turn's reading: " + (Get-NSReceiptTurnWords $turn) + '.')
+        }
         for ($i = 0; $i -lt 5; $i++) {
             $v = $vals[$i]; $num = [long]0
+            # A Cursor turn's reading arrives when the turn ends, after an item ticked inside it has
+            # closed. Shown as the turn's, and left out of the totals. Mirrors ns_receipt_usage_section.
+            $tv = $(if ($turn.Length -gt 0) { Get-NSUsageField $turn $dims[$i] } else { '' })
+            if ($tv.Length -gt 0) {
+                $shared[$i] = $true
+                if ($v -cne 'off' -and ($v.Length -eq 0 -or $v -ceq '0' -or $v -cnotmatch '^[0-9]+$')) {
+                    $cells += ' | turn ' + (Get-NSUsageScale $tv)
+                    continue
+                }
+            }
             if ($v -ceq 'off') { $off[$i] = $true; $cells += ' | off' }
             elseif ($v.Length -eq 0) { $miss[$i] = $true; $cells += ' | ' + $dash }
             elseif ($v -cnotmatch '^[0-9]+$' -or -not [long]::TryParse($v, [ref]$num)) { $miss[$i] = $true; $cells += ' | unavailable' }
@@ -1694,6 +1733,12 @@ function Get-NSReceiptUsageSection {
     }
     $total = {
         param([int]$i)
+        if ($shared[$i]) {
+            if (-not $have[$i] -or $tot[$i] -eq 0) { return 'shared turn' }
+            $s = Get-NSUsageScale ([string]$tot[$i])
+            if ($miss[$i]) { $s += ' (partial)' }
+            return $s + ' + shared turn'
+        }
         if ($have[$i]) {
             $s = Get-NSUsageScale ([string]$tot[$i])
             if ($miss[$i]) { return $s + ' (partial)' }
@@ -1755,6 +1800,12 @@ function Get-NSReceiptUsageSection {
     $totalRow = ('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}**' -f $n, $word, $hostCell, $workTotal, $pauseTotal)
     for ($i = 0; $i -lt 5; $i++) { $totalRow += ' | **' + (& $total $i) + '**' }
     $out.Add($totalRow + ' |  |')
+    if ($sharedTurns.Count -gt 0) {
+        $out.Add('')
+        $out.Add('**Shared turn**')
+        $out.Add('')
+        foreach ($t in $sharedTurns) { $out.Add($t) }
+    }
     if ($handoffs.Count -gt 0) {
         $out.Add('')
         $out.Add('**Handoffs**')
@@ -1814,6 +1865,52 @@ function Add-NSReceiptSession {
     Set-NSReceiptSessions $Receipt $data.ToArray()
     Update-NSReceiptSessionView $Receipt $Label $data.ToArray()
     if ($file.Length -gt 0) { Remove-Item -LiteralPath ($file + '.pending') -Force }
+}
+
+# Set-NSReceiptSharedTurn <receipt> <label> <mark-number> <turn-fields> [items] - mark the session
+# that closed at that mark as one inside a Cursor agent turn. Mirrors ns_receipt_share_turn.
+function Set-NSReceiptSharedTurn {
+    param(
+        [Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label,
+        [Parameter(Mandatory = $true)][string]$Mark, [Parameter(Mandatory = $true)][string]$Turn,
+        [AllowEmptyString()][string]$With = ''
+    )
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return }
+    $data = @(Get-NSReceiptSessionData $Receipt)
+    if ($data.Count -eq 0) { return }
+    $changed = $false
+    $new = New-Object Collections.Generic.List[string]
+    foreach ($line in $data) {
+        $f = @($line -split '\s+' | Where-Object { $_.Length -gt 0 })
+        $hit = $false
+        for ($i = 7; $i -lt $f.Count; $i++) { if ($f[$i] -cmatch ('^checkpoint=.*:' + $Mark + '$')) { $hit = $true } }
+        if (-not $hit) { $new.Add($line); continue }
+        $row = @($f | Select-Object -First 7) + @($f | Select-Object -Skip 7 | Where-Object { $_ -cnotmatch '^(turn|with)=' })
+        $row += 'turn=' + $Turn
+        if ($With.Length -gt 0) { $row += 'with=' + (ConvertTo-NSReceiptEncoded $With) }
+        $joined = $row -join ' '
+        if ($joined -cne $line) { $changed = $true }
+        $new.Add($joined)
+    }
+    if (-not $changed) { return }
+    Update-NSReceiptSessionIgnore $Receipt
+    $file = Get-NSReceiptSessionFile $Receipt
+    if ($file.Length -gt 0) { Write-NSReceiptSessionState ($file + '.pending') (@($Label) + $new.ToArray()) }
+    Set-NSReceiptSessions $Receipt $new.ToArray()
+    Update-NSReceiptSessionView $Receipt $Label $new.ToArray()
+    if ($file.Length -gt 0) { Remove-Item -LiteralPath ($file + '.pending') -Force }
+}
+
+# Get-NSReceiptTurnWords <fields> - a turn's reading as a person reads it. Mirrors ns_receipt_turn_words.
+function Get-NSReceiptTurnWords {
+    param([AllowEmptyString()][string]$Fields)
+    $words = @()
+    foreach ($d in @('input', 'cache_write', 'cache_read', 'output', 'reasoning')) {
+        $v = Get-NSUsageField $Fields $d
+        if ($v.Length -gt 0) { $words += (Get-NSUsageDimLabel $d) + ' ' + (Get-NSUsageScale $v) }
+    }
+    if ($words.Count -eq 0) { return 'unavailable' }
+    return ($words -join (' ' + $script:NSDot + ' '))
 }
 
 function Update-NSReceiptSessionView {

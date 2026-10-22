@@ -468,11 +468,15 @@ receipts.progressMode
 receipts.progressTokens
 receipts.templatePath
 receipts.usage
+shift.copyIn
 shift.execution
 shift.hours
+shift.isolation
 shift.itemBudget
+shift.prepare
 shift.toolingPolicy
-shift.verificationProfile'
+shift.verificationProfile
+shift.worktreeRoot'
 
 ns_rules_facts() {
   local k c row typ val present pol pat

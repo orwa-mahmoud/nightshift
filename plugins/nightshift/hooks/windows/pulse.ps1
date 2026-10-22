@@ -108,6 +108,12 @@ elseif ($null -eq $session -or [string]::IsNullOrEmpty($session.SessionId) -or $
     exit 0
 }
 
+# Cursor loads the Claude plugin beside its own. In a Cursor session the Cursor copy keeps the records;
+# this copy would only stamp a stale Claude reading onto them. Mirrors hooks/pulse.sh.
+if ($HostName -eq 'claude' -and (Test-NSClaudeForeignCursorSurface -NightshiftDir $ns -Transcript ([string](Get-PropertyValue $payload 'transcript_path')))) {
+    exit 0
+}
+
 if ($counts.Open -gt 0) {
     $pulse = Get-NSLayoutPath $ns 'pulse'
     if (Test-NSReparsePoint $pulse) {

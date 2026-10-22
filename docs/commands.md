@@ -176,11 +176,15 @@ active in either sandbox mode.
 ### Plan before you build
 
 `/nightshift:plan` opens the plan room for the conversation that runs it. Nothing is implemented
-there, however the request is worded. The hooks deny every edit, write and mutating command except
-the plan's own files: the drafting table, the plan record and, for a morning review, the parking lot
-and the snag log. Other conversations in the project work normally. The agent explores the code,
-lays out options with a recommendation, keeps the plan record current, and captures a plan into the
-drafting table only when you say yes.
+there. Each message you send carries a reminder that the conversation is planning, and the edit
+tools write only the plan's own files: the drafting table, the plan record and, for a morning
+review, the parking lot and the snag log. Commands and tools on your `planRoom` lists in `rules.json`
+are blocked, by default `git commit`, `git push` and `git tag` ([knobs](knobs.md)). Everything else
+runs: reading, search, the web, `gh`, the browser, helper agents, questions and tools a host adds
+later. Claude Code and Codex carry the reminder; Cursor's prompt hook cannot add context, so on
+Cursor the plan skill's own instructions and the edit check hold the room. Other conversations in
+the project work normally. The agent explores the code, lays out options with a recommendation,
+keeps the plan record current, and captures a plan into the drafting table only when you say yes.
 
 Only you leave the room. In Claude Code and Cursor, type `/nightshift:plan-exit`, or
 `/nightshift:start` to leave and start in one step. In Codex, type `$nightshift:plan-exit` or

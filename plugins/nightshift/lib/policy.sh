@@ -145,7 +145,11 @@ ns_policy_builtin() {
     receipts.usage) printf '"when-available"' ;;
     shift.execution) printf '"review-first"' ;;
     shift.hours) printf 'null' ;;
+    shift.copyIn) printf '[]' ;;
+    shift.isolation) printf '"none"' ;;
     shift.itemBudget) printf '""' ;;
+    shift.prepare) printf '""' ;;
+    shift.worktreeRoot) printf '".nightshift/worktrees"' ;;
     shift.toolingPolicy) printf '"existing-tools"' ;;
     shift.verificationProfile) printf '"fast"' ;;
     archive.templatePath | handoff.templatePath | receipts.templatePath) printf '""' ;;
@@ -294,7 +298,7 @@ SCALARS = ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
 # The owner preference blocks tonight'"'"'s snapshot freezes. A block the snapshot does not carry
 # emits its type and no fields, which is how a policy written before this feature is told apart
 # from one whose owner left a block empty.
-PREF = [("shift", ["execution", "hours", "itemBudget", "toolingPolicy", "verificationProfile"]),
+PREF = [("shift", ["copyIn", "execution", "hours", "isolation", "itemBudget", "prepare", "toolingPolicy", "verificationProfile", "worktreeRoot"]),
         ("recovery", ["launchScope"]),
         ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
         ("archive", ["automatic", "layout", "root", "templatePath"]),

@@ -173,6 +173,10 @@ if { [ -e "$root" ] && [ ! -d "$root" ]; } \
   exit 2
 fi
 
+ns_receipt_anchor_run_ignore "$NS" \
+  || printf 'archive-receipts: could not anchor run/ in %s; filed run records stay out of the receipts repository\n' \
+    "$(ns_layout_name "$NS" gitignore)" >&2
+
 # The receipts of items nobody finished. They stay live and are not filed, exactly as the box stays
 # in the punch list, so the next shift extends the same file; they are filed once their item is
 # ticked.
@@ -475,4 +479,21 @@ if [ "$copied" -ne 0 ] || [ "$removed" -ne 0 ] || [ -n "$filed_lines" ]; then
   [ "$removed" -eq 0 ] || printf 'archive-receipts: retired %s closed record(s) from live storage\n' "$removed"
 fi
 printf '%s' "$filed_lines"
+
+# A shift that ran in its own worktree leaves the folder once its branch is in the owner's checkout.
+# The branch itself is never deleted, and a worktree whose branch is not merged stays and is named.
+if [ "$ROTATE" -eq 1 ] && WT_PATH="$(ns_shift_worktree_current "$WORKSPACE")"; then
+  WT_BRANCH="$(ns_shift_worktree_field "$WORKSPACE" branch)"
+  WT_CHECKOUT="$(ns_shift_worktree_field "$WORKSPACE" checkout)"
+  if git -C "$WT_CHECKOUT" merge-base --is-ancestor "$WT_BRANCH" HEAD 2>/dev/null; then
+    if git -C "$WT_CHECKOUT" worktree remove "$WT_PATH" >/dev/null 2>&1; then
+      rm -f "$(ns_layout_path "$NS" shift-worktree)"
+      printf 'archive-receipts: removed the shift worktree %s; branch %s is merged and kept\n' "$WT_PATH" "$WT_BRANCH"
+    else
+      printf 'archive-receipts: kept the shift worktree %s: it holds changes or files that are not committed\n' "$WT_PATH" >&2
+    fi
+  else
+    printf 'archive-receipts: kept the shift worktree %s: branch %s is not merged into %s\n' "$WT_PATH" "$WT_BRANCH" "$WT_CHECKOUT" >&2
+  fi
+fi
 exit 0

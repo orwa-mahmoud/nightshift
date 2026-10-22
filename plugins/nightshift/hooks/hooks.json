@@ -42,6 +42,16 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ". \"${CLAUDE_PLUGIN_ROOT}/hooks/dispatch/claude-prompt-submit.ps1\""
+          }
+        ]
+      }
+    ],
     "UserPromptExpansion": [
       {
         "matcher": "^nightshift:(plan-exit|start)$",

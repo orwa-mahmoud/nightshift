@@ -45,6 +45,58 @@ try {
     Expect-True ((Get-NSUsageCarry $ns $transcript) -ceq $f[4]) 'the last response identity is carried'
     Expect-True ((Get-NSUsageOffset $ns $transcript) -eq [long]$f[1]) 'the offset is where the read stopped'
 
+    # A Cursor stop payload is one turn's own spend: a single reading counts in full, and each later
+    # turn that reads lower adds its own spend instead of nothing.
+    $w = Join-Path $root 'cursor-turns'
+    $ns = New-Workspace $w $punchText
+    $null = Write-NSUsageRecord $ns 'cursor' 'grok-4.7-high' 'stop-payload' 'cursor:c1' '0' 'input=13024728,cache_read=12736768,output=53439'
+    Expect-True ((Get-NSUsageTotal $ns) -ceq 'input=13024728,cache_read=12736768,output=53439') "one Cursor reading counts in full ($(Get-NSUsageTotal $ns))"
+    $null = Write-NSUsageRecord $ns 'cursor' '' 'stop-payload' 'cursor:c1' '0' 'input=10264429,cache_read=10046976,output=35621'
+    $null = Write-NSUsageRecord $ns 'cursor' '' 'stop-payload' 'cursor:c1' '0' 'input=101606,cache_read=56064,output=1192'
+    Expect-True ((Get-NSUsageTotal $ns) -ceq 'input=23390763,cache_read=22839808,output=90252') "each Cursor turn adds its own spend ($(Get-NSUsageTotal $ns))"
+
+    # Each Cursor generation is its own turn, even when it reads higher than the last.
+    Expect-True ((Read-NSUsageCursor '{"generation_id":"g2","input_tokens":5,"output_tokens":1}').Split("`t")[3] -ceq 'g2') 'the reader carries the generation'
+    $w = Join-Path $root 'cursor-generations'
+    $ns = New-Workspace $w $punchText
+    foreach ($payload in @('{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"output_tokens":10}',
+            '{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"output_tokens":10}',
+            '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"output_tokens":20}')) {
+        $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' $payload
+    }
+    Expect-True ((Get-NSUsageTotal $ns) -ceq 'input=1300,output=30') "one generation read twice counts once, a higher one counts in full ($(Get-NSUsageTotal $ns))"
+
+    # Items ticked inside one Cursor turn share the turn's reading, and say so.
+    $w = Join-Path $root 'cursor-shared-turn'
+    $ns = New-Workspace $w "# Punch list`n`n## Items`n`n- [ ] **P01 - first.**`n- [ ] **P02 - second.**`n- [ ] **P03 - third.**`n"
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' '{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"cache_read_tokens":100,"output_tokens":10}'
+    $punch = Join-Path $ns 'punch-list.md'
+    [IO.File]::WriteAllText($punch, "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n- [x] **P02 - second.**`n- [ ] **P03 - third.**`n")
+    $null = Invoke-NSGateUsageSync $ns $w $punch 2
+    $turn2 = '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"cache_read_tokens":4000,"output_tokens":20}'
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' $turn2
+    $r1 = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P01.md'))
+    $r2 = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P02.md'))
+    Expect-True $r1.Contains('| input | 500 + shared turn |') 'an item with its own spend shows the turn beside it'
+    Expect-True $r1.Contains('- Session 1 closed inside one Cursor agent turn shared with P02.') 'the first receipt names the item sharing the turn'
+    Expect-True $r1.Contains("whole turn's reading: input 800 $([char]0x00B7) cache read 4.0k $([char]0x00B7) output 20.") 'the receipt states the turn reading'
+    Expect-True $r2.Contains('| input | shared turn |') 'an item with no spend of its own shows the shared turn'
+    Expect-True $r2.Contains('| turn 800 | turn 20 | unavailable | turn 4.0k | unavailable |') 'the session row shows the turn figures'
+    Expect-True $r2.Contains('- Session 1 closed inside one Cursor agent turn shared with P01.') 'the second receipt names the item sharing the turn'
+    Expect-True (-not $r2.Contains('| input | 0 |')) 'no item sharing the turn shows zero'
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' $turn2
+    $r2 = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P02.md'))
+    Expect-True (([regex]::Matches($r2, 'closed inside one Cursor agent turn')).Count -eq 1) 'a second reading of the same turn rewrites the note'
+    Expect-True ((Get-NSUsageTotal $ns) -ceq 'input=1300,cache_read=4100,output=30') "the turn counts once in the total ($(Get-NSUsageTotal $ns))"
+
+    # A mixed host list joins each host and model once.
+    $w = Join-Path $root 'host-join'
+    $ns = New-Workspace $w $punchText
+    $null = Write-NSUsageRecord $ns 'claude' 'claude-opus-5-5' 'transcript-incremental' '/t/a' '10' 'input=10,output=5'
+    $null = Write-NSUsageRecord $ns 'cursor' 'grok-4.7-medium' 'stop-payload' 'cursor:c1:g1' '0' 'input=4,output=1'
+    $null = Write-NSUsageRecord $ns 'cursor' 'grok-4.7-xhigh-fast' 'stop-payload' 'cursor:c1:g2' '0' 'input=6,output=2'
+    Expect-True ((Get-NSUsageHosts $ns) -ceq 'claude claude-opus-5-5; cursor grok-4.7-medium; cursor grok-4.7-xhigh-fast') "the host list joins cleanly ($(Get-NSUsageHosts $ns))"
+
     # A reading that names no model keeps the model the segment recorded, a counter that starts
     # again keeps its session's model, and a reading that names one sets it from then on.
     $w = Join-Path $root 'no-model'

@@ -141,6 +141,12 @@ else
   MODE=""
   warn "work mode is malformed; treating the site as unusable until Setup rewrites it"
 fi
+for COPY_HOST in claude codex cursor; do
+  COPIES="$(ns_hook_copies "$NS" "$COPY_HOST" 86400)"
+  if [ "$(printf '%s' "$COPIES" | grep -c .)" -gt 1 ]; then
+    warn "$(printf '%s' "$COPIES" | grep -c .) Nightshift copies answered one $COPY_HOST session: $(printf '%s\n' "$COPIES" | awk -F '\t' 'NF { printf "%s%s (%s)", sep, $1, $2; sep = " and " }') - disable all but one in the host's plugin settings"
+  fi
+done
 if TARGET="$(ns_work_target "$WORKSPACE" 2>/dev/null)"; then
   fact "work target $TARGET"
 else
@@ -259,6 +265,13 @@ done
 if [ "$INBOX_STRAYS" -gt 0 ]; then
   act confirm "rewrite each inbox entry Doctor names as one \`- \` bullet, keeping its text; Doctor does not edit the inbox"
 fi
+# A snag entry without one of the five dispositions stays live for the owner; one written as settled
+# in other words never files.
+ns_layout_set INBOX_FILE "$NS" snag-log
+while IFS=$'\t' read -r SNAG_LINE SNAG_TEXT; do
+  [ -n "$SNAG_LINE" ] || continue
+  fact "$(ns_layout_name "$NS" snag-log) line $SNAG_LINE has no disposition, so Archive keeps it live: $SNAG_TEXT"
+done < <(ns_snag_open_lines "$INBOX_FILE")
 
 ARMED=0
 [ -f "$ARMED_FILE" ] && ARMED=1

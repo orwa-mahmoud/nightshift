@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# prompt-submit.sh — Codex UserPromptSubmit hook. The owner's own command closes the plan room.
+# prompt-submit.sh — Codex UserPromptSubmit hook. The owner's own command closes the plan room, and
+# every other owner message in the conversation the room binds carries the planning reminder.
 #
 # Codex documents `prompt` as the user prompt about to be sent, and records a skill mention as the
 # text the owner typed. A prompt whose first word is $nightshift:plan-exit or $nightshift:start (or
@@ -18,8 +19,13 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/lib-io.sh"
 
 codex_read_input "$@"
-WORD="$(ns_plan_room_exit_word "${CODEX_PROMPT:-}")" || exit 0
 PROJECT_DIR="$(ns_workspace_root "$(codex_project_dir)" 2>/dev/null)" || exit 0
-ns_plan_room_leave "$PROJECT_DIR/.nightshift" "typed the $WORD command" || exit 0
-codex_emit_prompt_context "$(ns_plan_room_left_context "$WORD")"
+NS="$PROJECT_DIR/.nightshift"
+if WORD="$(ns_plan_room_exit_word "${CODEX_PROMPT:-}")"; then
+  ns_plan_room_leave "$NS" "typed the $WORD command" || exit 0
+  codex_emit_prompt_context "$(ns_plan_room_left_context "$WORD")"
+  exit 0
+fi
+ns_plan_room_binds "$NS" "${CODEX_SESSION_ID:-}" || exit 0
+codex_emit_prompt_context "$(ns_plan_room_reminder "$NS")"
 exit 0

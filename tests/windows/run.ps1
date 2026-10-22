@@ -425,16 +425,17 @@ try {
     Assert-True ($null -ne (Get-NSRulesObject $workspace)) 'the first rules read after import succeeds'
     $receiptSetup = Invoke-TestScript $setup @('-Project', $workspace, '-WorkTarget', $workTarget, '-Receipts')
     Assert-Equal 0 $receiptSetup.ExitCode "setup creates local receipts: $($receiptSetup.Stderr)"
-    Assert-True (([IO.File]::ReadAllLines((Join-Path $workspace '.nightshift/.gitignore'))) -contains 'run/') `
+    Assert-True (([IO.File]::ReadAllLines((Join-Path $workspace '.nightshift/.gitignore'))) -ccontains '/run/') `
         'setup keeps the runtime folder, the private mutex identity included, out of receipts'
     $receiptIgnorePath = Join-Path $workspace '.nightshift/.gitignore'
-    $legacyReceiptIgnore = @([IO.File]::ReadAllLines($receiptIgnorePath) | Where-Object { $_ -cne 'run/' })
+    $legacyReceiptIgnore = @([IO.File]::ReadAllLines($receiptIgnorePath) | ForEach-Object { if ($_ -ceq '/run/') { 'run/' } else { $_ } })
     [IO.File]::WriteAllLines($receiptIgnorePath, $legacyReceiptIgnore, (New-Object Text.UTF8Encoding($false)))
     $customRules = Get-Content -LiteralPath (Join-Path $workspace '.nightshift/rules.json') -Raw
     $secondSetup = Invoke-TestScript $setup @('-Project', $workspace, '-WorkTarget', $workTarget)
     Assert-Equal 0 $secondSetup.ExitCode 'setup is idempotent'
-    Assert-True (([IO.File]::ReadAllLines($receiptIgnorePath)) -contains 'run/') `
-        'setup upgrades ignores in an existing receipts repository'
+    $upgradedIgnore = [IO.File]::ReadAllLines($receiptIgnorePath)
+    Assert-True (($upgradedIgnore -ccontains '/run/') -and -not ($upgradedIgnore -ccontains 'run/')) `
+        'setup anchors a bare run/ ignore in an existing receipts repository'
     Assert-Equal $customRules (Get-Content -LiteralPath (Join-Path $workspace '.nightshift/rules.json') -Raw) 'setup does not clobber rules'
     $workspaceNightshift = Join-Path $workspace '.nightshift'
     $receiptScope = Get-NSMutexScope $workspaceNightshift
@@ -542,6 +543,10 @@ try {
     $planRoomLogicRun = Invoke-TestScript $planRoomLogic
     Assert-Equal 0 $planRoomLogicRun.ExitCode `
         "plan room: $($planRoomLogicRun.Stdout) $($planRoomLogicRun.Stderr)"
+    $shiftWorktreeLogic = Join-Path $PSScriptRoot 'shift-worktree-logic.ps1'
+    $shiftWorktreeLogicRun = Invoke-TestScript $shiftWorktreeLogic
+    Assert-Equal 0 $shiftWorktreeLogicRun.ExitCode `
+        "shift worktree: $($shiftWorktreeLogicRun.Stdout) $($shiftWorktreeLogicRun.Stderr)"
     $shiftEstimateLogic = Join-Path $PSScriptRoot 'shift-estimate-logic.ps1'
     $shiftEstimateLogicRun = Invoke-TestScript $shiftEstimateLogic
     Assert-Equal 0 $shiftEstimateLogicRun.ExitCode `

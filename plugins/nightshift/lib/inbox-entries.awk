@@ -15,6 +15,7 @@
 #   op=open    prints the first line of each entry that carries none of -v dispositions, below the
 #              first `---` rule, or anywhere in a file that has none: the open plans, decisions and
 #              snags.
+#   op=openlines  the same entries as <line> TAB <first line>.
 
 function handled(s) {
   return tolower(s) ~ (" · (" dispositions ")")
@@ -25,7 +26,7 @@ function flush() {
     if (handled(buf)) printf "%s\n", buf >>filed
     else printf "%s\n", buf
   }
-  if (buf != "" && op == "open" && !handled(buf)) {
+  if (buf != "" && (op == "open" || op == "openlines") && !handled(buf)) {
     first = buf
     sub(/\n.*/, "", first)
     m++
@@ -108,6 +109,11 @@ END {
   if (op == "open") {
     for (i = 1; i <= m; i++) {
       if (!rule || openat[i] > rule) print opened[i]
+    }
+  }
+  if (op == "openlines") {
+    for (i = 1; i <= m; i++) {
+      if (!rule || openat[i] > rule) printf "%d\t%s\n", openat[i], opened[i]
     }
   }
   if (op == "strays") {

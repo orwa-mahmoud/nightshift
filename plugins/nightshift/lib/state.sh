@@ -376,10 +376,35 @@ ns_receipts_rename() {
     if [ -f "$(ns_receipt_session_file "$f")" ]; then
       ns_receipt_store_sessions "$want" "$(ns_receipt_session_data "$f")" || { rc=1; continue; }
     fi
-    if mv "$f" "$want"; then ns_receipt_forget_sessions "$f" || rc=1; else rc=1; fi
+    if mv "$f" "$want"; then
+      ns_receipt_forget_sessions "$f" || rc=1
+      ns_receipts_relink "$dir" "${f##*/}" "${want##*/}" || rc=1
+    else
+      rc=1
+    fi
   done <<EOF
 $(ns_item_rows "$punch")
 EOF
+  return "$rc"
+}
+
+# ns_receipts_relink <receipts-dir> <old-name> <new-name> — a morning page links each receipt by its
+# file name, so after a rename the pages in the folder link the new name.
+ns_receipts_relink() {
+  local page tmp rc=0
+  for page in "$1"/morning-*.md; do
+    if [ ! -f "$page" ] || [ -L "$page" ]; then continue; fi
+    grep -qF "(./$2)" "$page" || continue
+    tmp="$page.$$"
+    if awk -v old="(./$2)" -v new="(./$3)" '
+      { out = ""; while ((i = index($0, old)) > 0) { out = out substr($0, 1, i - 1) new; $0 = substr($0, i + length(old)) } print out $0 }
+    ' "$page" >"$tmp" && mv "$tmp" "$page"; then
+      :
+    else
+      rm -f "$tmp"
+      rc=1
+    fi
+  done
   return "$rc"
 }
 
@@ -492,6 +517,40 @@ _ns_session_total() {
   fi
 }
 
+# _ns_session_shared <shared> <have> <total-cell> <total> — a total that a shared Cursor turn also
+# covers.
+_ns_session_shared() {
+  if [ "$1" -eq 0 ]; then
+    printf '%s' "$3"
+  elif [ "$2" -eq 1 ] && [ "$4" -gt 0 ]; then
+    printf '%s + shared turn' "$3"
+  else
+    printf 'shared turn'
+  fi
+}
+
+# _ns_session_dim <column> — the usage dimension behind a session row's token column.
+_ns_session_dim() {
+  case "$1" in
+    0) printf input ;;
+    1) printf output ;;
+    2) printf cache_write ;;
+    3) printf cache_read ;;
+    *) printf reasoning ;;
+  esac
+}
+
+# ns_receipt_turn_words <fields> — a turn's reading as a person reads it: `input 1.2M · output 30.0k`.
+ns_receipt_turn_words() {
+  local dim v out=""
+  for dim in input cache_write cache_read output reasoning; do
+    v="$(ns_usage_field "$1" "$dim")" || continue
+    [ -n "$v" ] || continue
+    out="$out${out:+ · }$(ns_usage_dim_label "$dim") $(ns_usage_scale "$v")"
+  done
+  printf '%s' "${out:-unavailable}"
+}
+
 # ns_receipt_encode <text> / ns_receipt_decode <text> — a value that rides in one session-data
 # field: no spaces or tabs, reversible.
 ns_receipt_encode() { printf '%s' "$1" | sed 's/%/%25/g; s/ /%20/g; s/	/%09/g'; }
@@ -551,6 +610,30 @@ ns_receipt_ignore_sessions() {
   [ ! -L "$ignore" ] || return 1
   grep -qE '^/?\.item-sessions/[[:space:]]*$' "$ignore" 2>/dev/null && return 0
   printf '\n.item-sessions/\n' >>"$ignore"
+}
+
+# ns_receipt_anchor_run_ignore <state-dir> — the receipts repository leaves out only the live
+# runtime folder. A bare `run/` line matches at every depth and would also leave out the run records
+# each archived shift files under its own folder, so it is rewritten as `/run/`. Status 1 when the
+# ignore file is a symlink or cannot be rewritten.
+ns_receipt_anchor_run_ignore() {
+  local ns="$1" run ignore tmp
+  ns_layout_rel_set run "$ns" run || return 0
+  ns_layout_set ignore "$ns" gitignore || return 0
+  [ ! -L "$ignore" ] || return 1
+  [ -f "$ignore" ] && grep -qxF "$run/" "$ignore" || return 0
+  tmp="$(mktemp "$ns/.gitignore.XXXXXX")" || return 1
+  if cp -p "$ignore" "$tmp" \
+    && awk -v old="$run/" -v new="/$run/" '
+      NR == FNR { if ($0 == new) has = 1; next }
+      $0 == old { if (has) next; $0 = new; has = 1 }
+      { print }
+    ' "$ignore" "$ignore" >"$tmp" \
+    && mv "$tmp" "$ignore"; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
 }
 
 ns_receipt_write_session_state() {
@@ -652,10 +735,10 @@ ns_receipt_usage_section() {
   local data="$1" line sid start end work in out ended rest n=0 word dim v key
   local cw cr rea paused why host commits note prev_host="" prev_end="" prev_commits="" prev_note=""
   local twork=0 tpause=0 twall=0 first="" last="" last_why="" hosts_seen="" handoffs="" rows=""
-  local budget="" budget_events=""
-  local -a tot have off miss
+  local budget="" budget_events="" turn with shared_turns=""
+  local -a tot have off miss shared
   local i
-  for i in 0 1 2 3 4; do tot[i]=0; have[i]=0; off[i]=0; miss[i]=0; done
+  for i in 0 1 2 3 4; do tot[i]=0; have[i]=0; off[i]=0; miss[i]=0; shared[i]=0; done
   local havework=0 offwork=0 havepause=0 offpause=0
   while IFS= read -r line; do
     [ -n "$line" ] || continue
@@ -680,7 +763,28 @@ ns_receipt_usage_section() {
     done
     i=0
     local cells=""
+    turn="$(ns_session_extra "$line" turn)"
+    if [ -n "$turn" ]; then
+      with="$(ns_receipt_decode "$(ns_session_extra "$line" with)")"
+      shared_turns="$shared_turns- Session $n closed inside one Cursor agent turn"
+      [ -z "$with" ] || shared_turns="$shared_turns shared with $with"
+      shared_turns="$shared_turns. Cursor reports usage once per turn, so this is the whole turn's reading: $(ns_receipt_turn_words "$turn")."$'\n'
+    fi
     for v in "$in" "$out" "$cw" "$cr" "$rea"; do
+      # A Cursor turn's reading arrives when the turn ends, after an item ticked inside it has
+      # closed. Where the session itself read nothing, the cell shows the turn's figure. It stays
+      # out of the item's totals: every item that shared the turn would count it again.
+      if [ -n "$turn" ] && dim="$(ns_usage_field "$turn" "$(_ns_session_dim "$i")")" && [ -n "$dim" ]; then
+        shared[i]=1
+        case "$v" in
+          off) ;;
+          '' | 0 | *[!0-9]* | -)
+            cells="$cells | turn $(ns_usage_scale "$dim")"
+            i=$((i + 1))
+            continue
+            ;;
+        esac
+      fi
       case "$v" in
         off) off[i]=1; cells="$cells | off" ;;
         '') miss[i]=1; cells="$cells | —" ;;
@@ -740,7 +844,7 @@ EOF
       j="${dim#*:}"
       label="$(ns_usage_dim_label "${dim%%:*}")"
       printf '| %s | %s |\n' "$label" \
-        "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")"
+        "$(_ns_session_shared "${shared[j]}" "${have[j]}" "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")" "${tot[j]}")"
       comment="$comment${comment:+ }${tot[j]}"
     done
     hostline="$(printf '%s\n' "$hosts_seen" | sed '/^$/d; s/\// /; s/ -$//' | awk 'NF { printf "%s%s", s, $0; s = "; " }')"
@@ -777,9 +881,12 @@ EOF
     "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
     "$(if [ "$tpause" -gt 0 ]; then ns_usage_duration "$tpause"; elif [ "$havepause" -eq 1 ]; then printf '—'; elif [ "$offpause" -eq 1 ]; then printf off; else printf unavailable; fi)"
   for j in 0 1 2 3 4; do
-    printf ' | **%s**' "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")"
+    printf ' | **%s**' "$(_ns_session_shared "${shared[j]}" "${have[j]}" "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")" "${tot[j]}")"
   done
   printf ' |  |\n'
+  if [ -n "$shared_turns" ]; then
+    printf '\n**Shared turn**\n\n%s' "$shared_turns"
+  fi
   if [ -n "$handoffs" ]; then
     printf '\n**Handoffs**\n\n%s' "$handoffs"
   fi
@@ -820,6 +927,34 @@ ns_receipt_add_session() {
   if [ -n "$file" ]; then ns_receipt_write_session_state "$file.pending" "$(printf '%s\n%s' "$label" "$data")" || return 1; fi
   ns_receipt_store_sessions "$f" "$data" || return 1
   ns_receipt_redraw "$f" "$label" "$data" || return 1
+  [ -z "$file" ] || rm -f "$file.pending"
+}
+
+# ns_receipt_share_turn <receipt> <label> <mark-number> <turn-fields> [items] — mark the session
+# that closed at that mark as one inside a Cursor agent turn: the turn's reading, and the other items
+# that closed or ran inside it, `; `-joined. Marking it again replaces both.
+ns_receipt_share_turn() {
+  local f="$1" label="$2" data new file
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  data="$(ns_receipt_session_data "$f")" || return 1
+  [ -n "$data" ] || return 0
+  new="$(printf '%s\n' "$data" | awk -v nr="$3" -v turn="$4" -v with="$(ns_receipt_encode "${5:-}")" '
+    {
+      n = split($0, f, " "); hit = 0
+      for (i = 8; i <= n; i++) if (f[i] ~ ("^checkpoint=.*:" nr "$")) hit = 1
+      if (!hit) { print; next }
+      out = f[1]
+      for (i = 2; i <= n; i++) if (f[i] !~ /^(turn|with)=/) out = out " " f[i]
+      out = out " turn=" turn
+      if (with != "") out = out " with=" with
+      print out
+    }')"
+  [ "$new" != "$data" ] || return 0
+  ns_receipt_ignore_sessions "$f" || return 1
+  file="$(ns_receipt_session_file "$f")" || file=""
+  if [ -n "$file" ]; then ns_receipt_write_session_state "$file.pending" "$(printf '%s\n%s' "$label" "$new")" || return 1; fi
+  ns_receipt_store_sessions "$f" "$new" || return 1
+  ns_receipt_redraw "$f" "$label" "$new" || return 1
   [ -z "$file" ] || rm -f "$file.pending"
 }
 
@@ -1394,15 +1529,17 @@ ns_archive() {
 # One line per field, `key=value`, and an empty marker stays a valid ending.
 #
 # ns_ended_record <state-dir> <shift-id> <archive-root-name> <archive-layout> [<shift-name>
-# <archive-folder>] — the folder is the one clock-out claimed for the shift, by its name under the
-# archive root, so every later filing of that shift returns to it whatever day it runs.
+# <archive-folder> [<host>]] — the folder is the one clock-out claimed for the shift, by its name
+# under the archive root, so every later filing of that shift returns to it whatever day it runs.
+# The host is the one that worked the shift, kept for the morning page once the session record is
+# gone.
 ns_ended_record() {
   local ns="$1" ended
   [ -d "$ns" ] || return 0
   ns_layout_set ended "$ns" ended
   [ -L "$ended" ] && rm -f "$ended"
-  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\nshiftName=%s\narchiveFolder=%s\n' \
-    "$2" "$3" "$4" "${5-}" "${6-}" >"$ended" 2>/dev/null || :
+  printf 'shiftId=%s\narchiveRoot=%s\narchiveLayout=%s\nshiftName=%s\narchiveFolder=%s\nhost=%s\n' \
+    "$2" "$3" "$4" "${5-}" "${6-}" "${7-}" >"$ended" 2>/dev/null || :
 }
 
 # ns_shift_name <punch-list> — the name the owner gave the shift on the list's title line, as in
@@ -1866,6 +2003,13 @@ _NS_INBOX_AWK="$_NS_INBOX_AWK/inbox-entries.awk"
 ns_inbox_strays() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
   awk -v op=strays -f "$_NS_INBOX_AWK" "$1"
+}
+
+# ns_snag_open_lines <snag-log> — `<line> TAB <first line>` for each entry that carries none of the
+# five dispositions Archive files: the entries that stay live and wait for the owner.
+ns_snag_open_lines() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v op=openlines -v dispositions="$NS_REVIEW_DISPOSITIONS" -f "$_NS_INBOX_AWK" "$1" | tr -d '\r'
 }
 
 # ns_archive_review_label <folder-name> <shift-id> <layout> — what a Filed pointer is labelled: the

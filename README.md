@@ -240,6 +240,9 @@ terminal path that needs no live model session or remaining allowance.
   headless worker can continue without you watching it.
 - **Review before publishing.** Commits stay local unless the contract authorizes otherwise.
   Ticks are self-reported; item checks and human review determine whether the work is good.
+- **Keep your checkout free.** Set `shift.isolation` to `worktree` and each shift works in its own
+  git worktree and branch, so your checkout and uncommitted edits stay untouched and `.env` stays out
+  ([shift worktrees](docs/knobs.md#shift-worktrees)).
 
 The recovery signals, process lease, host differences, and limits are in
 [How Nightshift works](docs/how-it-works.md#how-nightshift-works). The

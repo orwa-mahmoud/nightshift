@@ -609,6 +609,12 @@ function Write-NSStatusReport {
     $target = ''
     try { $target = [string](Resolve-NSWorkTarget $Workspace) } catch { $target = '' }
     Fact 'work target' $target
+    if ($mode -ceq 'artifact') { Fact 'isolation' 'not-applicable (artifact mode)' }
+    elseif ((Get-NSShiftWorktreeCurrent $Workspace).Length -gt 0) { Fact 'isolation' ('worktree, branch ' + (Get-NSShiftWorktreeField $Workspace 'branch')) }
+    else {
+        $isolation = [string](Get-NSPolicyGroupSetting $Workspace 'shift.isolation')['value']
+        Fact 'isolation' $(if ($isolation.Length -gt 0) { $isolation } else { 'none' })
+    }
     $receipts = 0
     try { $receipts = [int](Get-NSReceiptsCount $Workspace) } catch { $receipts = 0 }
     Fact 'artifact receipts' ([string]$receipts)
@@ -788,24 +794,34 @@ function Write-NSUsageRecord {
     $null = New-Item -ItemType Directory -Path $dir -Force
     $file = Get-NSUsageStatePath $NightshiftDir
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Write-NSUsageSegments $file @() }
+    # A counter that started again reads into the segment it last opened, never back into the first.
+    $live = $Id
+    foreach ($line in (Get-NSUsageSegmentLines $file)) {
+        $name = $line.Split("`t")[0]
+        if ($name -ceq $Id -or $name.StartsWith($Id + '#', [StringComparison]::Ordinal)) { $live = $name }
+    }
     # A reading can carry usage and no model: the model already recorded for the segment stands, and
     # a segment split off below keeps the model of the session it continues.
-    if ([string]::IsNullOrEmpty($Model)) { $Model = Get-NSUsageSegField $file $Id 3 }
-    $newId = $Id
+    if ([string]::IsNullOrEmpty($Model)) { $Model = Get-NSUsageSegField $file $live 3 }
+    $newId = $live
     if ($Source -ceq 'transcript-incremental') {
-        $seg = Get-NSUsageSegField $file $Id 7
+        $seg = Get-NSUsageSegField $file $live 7
         $Fields = Add-NSUsageFields $seg $Fields
     }
-    $start = Get-NSUsageSegField $file $Id 6
-    $cur = Get-NSUsageSegField $file $Id 7
+    $start = Get-NSUsageSegField $file $live 6
+    $cur = Get-NSUsageSegField $file $live 7
     if ((-not [string]::IsNullOrEmpty($cur)) -and
         ((Get-NSUsageSubtract $cur $Fields) -cne (Get-NSUsageSubtract $cur $cur))) {
         $newId = $Id + '#' + (Get-NSUnixTime)
+        $taken = @(Get-NSUsageSegmentLines $file | ForEach-Object { $_.Split("`t")[0] })
+        while ($taken -ccontains $newId) { $newId += '+' }
         $start = ''
         $cur = ''
     }
     if ([string]::IsNullOrEmpty($start)) {
-        if ($Source -ceq 'transcript-incremental') { $start = Get-NSUsageSubtract $Fields $Fields }
+        # A Cursor stop payload is one agent turn's own spend, so like Claude's appended bytes it
+        # counts from zero; mirrors ns_usage_record.
+        if ($Source -ceq 'transcript-incremental' -or $Source -ceq 'stop-payload') { $start = Get-NSUsageSubtract $Fields $Fields }
         else { $start = $Fields }
     }
     $row = @($newId, $HostName, $Model, $Source, $Offset, $start, $Fields, $Carry) -join "`t"
@@ -995,6 +1011,39 @@ function Get-NSUsageSinceLastMark {
     if ($last.Length -ge 1 -and [long]::TryParse($last[0], [ref]$n)) { $epoch = $n }
     $prevTotal = $(if ($last.Length -ge 3) { $last[2] } else { '' })
     return ((Get-NSUsageSubtract (Get-NSUsageTotal $NightshiftDir) $prevTotal) + "`t" + ($now - $epoch))
+}
+
+# Get-NSUsageCursorTurn <nightshift-dir> <turn-identity> - the items ticked inside the Cursor turn this
+# reading belongs to, one "label<TAB>mark-number" per line. The turn began where the previous turn's
+# reading was taken; cursor-turn remembers that point. Mirrors ns_usage_cursor_turn.
+function Get-NSUsageCursorTurn {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Identity)
+    $marks = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $marks -PathType Leaf)) { return @() }
+    $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'cursor-turn'
+    if (Test-NSReparsePoint $file) { Remove-Item -LiteralPath $file -Force }
+    $last = ''; $was = ''; $at = ''
+    if (Test-Path -LiteralPath $file -PathType Leaf) {
+        $first = @([IO.File]::ReadAllLines($file))
+        if ($first.Count -gt 0) {
+            $p = $first[0].Split("`t")
+            $last = $p[0]
+            if ($p.Length -ge 2) { $was = $p[1] }
+            if ($p.Length -ge 3) { $at = $p[2] }
+        }
+    }
+    $from = $(if ($last -ceq $Identity) { $was } else { $at })
+    if ($from -cnotmatch '^[0-9]+$') { $from = '0' }
+    $lines = @([IO.File]::ReadAllLines($marks))
+    $now = $lines.Count
+    if ([long]$from -gt $now) { $from = '0' }
+    try { [IO.File]::WriteAllText($file, ("{0}`t{1}`t{2}`n" -f $Identity, $from, $now)) } catch { return @() }
+    $out = New-Object Collections.Generic.List[string]
+    for ($n = [int]$from; $n -lt $now; $n++) {
+        $f = $lines[$n].Split("`t")
+        if ($f.Length -ge 4 -and $f[3] -ceq 'tick') { $out.Add($f[1] + "`t" + ($n + 1)) }
+    }
+    return $out.ToArray()
 }
 
 function Get-NSUsageLastItem {
@@ -1470,12 +1519,14 @@ function Read-NSUsageCursor {
     $cacher = Get-NSUsageNumber $Payload 'cache_read_tokens'
     $cachew = Get-NSUsageNumber $Payload 'cache_write_tokens'
     $model = Get-NSUsageString $Payload 'model'
+    $generation = Get-NSUsageString $Payload 'generation_id'
+    if ([string]::IsNullOrEmpty($generation)) { $generation = '0' }
     $parts = New-Object 'System.Collections.Generic.List[string]'
     if ($input -ge 0) { $null = $parts.Add('input=' + $input) }
     if ($cachew -ge 0) { $null = $parts.Add('cache_write=' + $cachew) }
     if ($cacher -ge 0) { $null = $parts.Add('cache_read=' + $cacher) }
     if ($output -ge 0) { $null = $parts.Add('output=' + $output) }
-    return (($parts -join ',') + "`t0`t" + $model + "`t0")
+    return (($parts -join ',') + "`t0`t" + $model + "`t" + $generation)
 }
 
 # Get-NSUsageSubagents <transcript> - the subagent transcripts belonging to one session, if any.
@@ -1544,10 +1595,35 @@ function Invoke-NSPulseUsage {
             $reading = Read-NSUsageCursor $Source
             if ([string]::IsNullOrEmpty($reading)) { return $false }
             $f = $reading.Split("`t")
-            return (Write-NSUsageRecord $NightshiftDir 'cursor' $f[2] 'stop-payload' ('cursor:' + $SessionId) '0' $f[0])
+            # Each Cursor generation is one turn with its own counter. Mirrors ns_pulse_usage.
+            $identity = 'cursor:' + $SessionId
+            if ($f.Length -ge 4 -and $f[3] -cne '0' -and $f[3].Length -gt 0) { $identity += ':' + $f[3] }
+            if (-not (Write-NSUsageRecord $NightshiftDir 'cursor' $f[2] 'stop-payload' $identity '0' $f[0])) { return $false }
+            Invoke-NSPulseTurnShared $NightshiftDir $identity $f[0]
+            return $true
         }
     }
     return $false
+}
+
+# Invoke-NSPulseTurnShared <ns> <turn-identity> <turn-fields> - give the items ticked inside this
+# Cursor turn the turn's reading, and name the items that shared it. Mirrors ns_pulse_turn_shared.
+function Invoke-NSPulseTurnShared {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [string]$Identity, [string]$Fields)
+    $ticks = @(Get-NSUsageCursorTurn $NightshiftDir $Identity)
+    if ($ticks.Count -eq 0) { return }
+    $project = [IO.Path]::GetDirectoryName($NightshiftDir)
+    $names = New-Object Collections.Generic.List[string]
+    foreach ($t in $ticks) { $l = $t.Split("`t")[0]; if ($l.Length -gt 0 -and -not $names.Contains($l)) { $names.Add($l) } }
+    $active = Get-NSUsageActive $NightshiftDir
+    if ($active.Length -gt 0 -and -not $names.Contains($active)) { $names.Add($active) }
+    foreach ($t in $ticks) {
+        $p = $t.Split("`t")
+        if ($p[0].Length -eq 0) { continue }
+        $others = (@($names | Where-Object { $_ -cne $p[0] }) -join '; ')
+        Set-NSReceiptSharedTurn (Get-NSReceiptPath $project $p[0]) $p[0] $p[1] $Fields $others
+    }
+    Write-NSReceiptsIndex $project
 }
 
 # Invoke-NSPulseMarks <ns> <project> - mark every item ticked since the last mark, at this moment.
@@ -2305,7 +2381,6 @@ function Test-NSRestrictedCommand {
             if ($word -cnotmatch '(^|[/\\])runtime[/\\](windows[/\\])?ns(\.ps1)?$' -and $word -cnotin @('ns', 'ns.ps1')) { return $false }
             $nsVerb = ($rest -split '[ \t]+', 2)[0]
             if ($nsVerb -cin @('bind', 'path', 'punch-list', 'status', 'doctor', 'help')) { continue }
-            if ($nsVerb -cin @('plan-enter', 'shift-estimate', 'check-items') -and $Mode -ceq 'plan') { continue }
             return $false
         }
         return $false
@@ -2395,6 +2470,83 @@ function Get-NSPlanRoomMarkerMessage {
     return "BLOCKED: the plan room marker is the owner's. Only the owner leaves the plan room, with /nightshift:plan-exit or by typing /nightshift:start."
 }
 
+# Get-NSPlanRoomReminder <nightshift-dir> - the line each owner message carries while the room binds
+# the conversation. Mirrors ns_plan_room_reminder.
+function Get-NSPlanRoomReminder {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return ('nightshift: the plan room is open in this conversation. Explore, research and plan freely; write only the plan, into ' +
+        (Get-NSPlanRoomPlaceName $NightshiftDir) + '. Build nothing: no edits to the project and no commits. The owner leaves with /nightshift:plan-exit, or approves the plan and types /nightshift:start.')
+}
+
+$script:NSPlanRoomBlockedCommandsDefault = 'git (commit|push|tag)'
+
+# Get-NSPlanRoomSetting <nightshift-dir> <key> - the planRoom field: State absent, value or error.
+function Get-NSPlanRoomSetting {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Key)
+    $path = Get-NSLayoutPath $NightshiftDir 'rules'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @{ State = 'absent' } }
+    try { $rules = [IO.File]::ReadAllText($path) | ConvertFrom-Json -ErrorAction Stop }
+    catch { return @{ State = 'error'; Error = 'rules.json cannot be read' } }
+    if ($null -eq $rules -or $null -eq $rules.PSObject.Properties['planRoom']) { return @{ State = 'absent' } }
+    $block = $rules.planRoom
+    if ($null -eq $block -or $null -eq $block.PSObject.Properties[$Key]) { return @{ State = 'absent' } }
+    return @{ State = 'value'; Value = $block.$Key }
+}
+
+# Get-NSPlanRoomBlockedTool <nightshift-dir> <tool> - the planRoom.blockedTools entry matching the tool
+# name, `*` matching any run of characters: Matched, the Entry, or the Error that stops the list.
+# Mirrors ns_plan_room_blocked_tool.
+function Get-NSPlanRoomBlockedTool {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Tool)
+    $setting = Get-NSPlanRoomSetting $NightshiftDir 'blockedTools'
+    if ($setting.State -eq 'absent') { return @{ Matched = $false } }
+    if ($setting.State -eq 'error') { return @{ Matched = $false; Error = $setting.Error } }
+    $value = $setting.Value
+    if ($null -eq $value) { return @{ Matched = $false } }
+    if ($value -isnot [array]) { return @{ Matched = $false; Error = 'planRoom.blockedTools is not a list of tool names' } }
+    foreach ($entry in $value) {
+        if ($entry -isnot [string]) { return @{ Matched = $false; Error = 'planRoom.blockedTools is not a list of tool names' } }
+        if ($entry.Length -eq 0) { continue }
+        $pattern = '^' + ([regex]::Escape($entry) -replace '\\\*', '.*') + '$'
+        if ($Tool -cmatch $pattern) { return @{ Matched = $true; Entry = $entry } }
+    }
+    return @{ Matched = $false }
+}
+
+# Get-NSPlanRoomBlockedCommand <nightshift-dir> <command> - whether planRoom.blockedCommands matches the
+# command: Matched, the Entry, or the Error that stops it. An absent field means the room's default.
+# Mirrors ns_plan_room_blocked_command.
+function Get-NSPlanRoomBlockedCommand {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Command)
+    $setting = Get-NSPlanRoomSetting $NightshiftDir 'blockedCommands'
+    if ($setting.State -eq 'error') { return @{ Matched = $false; Error = $setting.Error } }
+    $pattern = $script:NSPlanRoomBlockedCommandsDefault
+    if ($setting.State -eq 'value') {
+        if ($setting.Value -isnot [string]) { return @{ Matched = $false; Error = 'planRoom.blockedCommands is not a pattern' } }
+        $pattern = [string]$setting.Value
+    }
+    if ($pattern.Length -eq 0) { return @{ Matched = $false } }
+    try { $hit = $Command -cmatch $pattern }
+    catch { return @{ Matched = $false; Error = 'planRoom.blockedCommands is not a valid pattern' } }
+    if ($hit) { return @{ Matched = $true; Entry = $pattern } }
+    return @{ Matched = $false }
+}
+
+# Get-NSPlanRoomBlockMessage <nightshift-dir> <list> <entry> - what the planning conversation is told
+# when the owner's list blocks a call. Mirrors ns_plan_room_block_message.
+function Get-NSPlanRoomBlockMessage {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$List, [Parameter(Mandatory = $true)][string]$Entry)
+    return ('BLOCKED: the plan room blocks this: it matches `' + $Entry + '` in planRoom.' + $List +
+        ", the owner's list in " + (Get-NSLayoutName $NightshiftDir 'rules') + '. The change was not made. Keep planning; the owner edits that list to allow it.')
+}
+
+function Get-NSPlanRoomRulesMessage {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$NightshiftDir)
+    return ('BLOCKED: the plan room keeps ' + (Get-NSLayoutName $NightshiftDir 'rules') +
+        " to the owner: it holds the room's block lists. Read it with the file-reading tool if the plan needs it; changing it is the owner's.")
+}
+
 # Undo-NSPlanRoomEntry <nightshift-dir> <session> - take back a room that was never bound, because the
 # conversation that asked for it is working the shift. Mirrors ns_plan_room_withdraw.
 function Undo-NSPlanRoomEntry {
@@ -2427,6 +2579,40 @@ function Get-NSOpenEntries {
         $open.Add([string]$block.Lines[0])
     }
     return , $open.ToArray()
+}
+
+# Get-NSSnagOpenLines <snag-log> - each entry that carries none of the five dispositions Archive files,
+# as Line and Text: the entries that stay live and wait for the owner. Mirrors ns_snag_open_lines.
+function Get-NSSnagOpenLines {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $open = New-Object Collections.Generic.List[object]
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf) -or (Test-NSReparsePoint $Path)) { return , $open.ToArray() }
+    $lines = [IO.File]::ReadAllLines($Path)
+    $rule = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].TrimEnd() -cmatch '^--- *$') { $rule = $i + 1; break }
+    }
+    foreach ($block in (Get-NSInboxBlocks $lines)) {
+        if ($block.Kind -cne 'entry' -or $block.Line -le $rule) { continue }
+        if (Test-NSReviewHandled ($block.Lines -join "`n") $script:NSReviewDispositions) { continue }
+        $open.Add([pscustomobject]@{ Line = $block.Line; Text = ([string]$block.Lines[0]).TrimEnd([char]"`r") })
+    }
+    return , $open.ToArray()
+}
+
+# Get-NSGateSnagsMessage <open-entries> - what the model is told when an ended shift leaves entries
+# with no disposition: each by line, the first five of them. Mirrors ns_gate_snags_message.
+function Get-NSGateSnagsMessage {
+    param([AllowEmptyCollection()][object[]]$Open)
+    $named = @($Open | Select-Object -First 5 | ForEach-Object {
+            $t = [string]$_.Text
+            if ($t.Length -gt 80) { $t = $t.Substring(0, 77) + '...' }
+            'line ' + $_.Line + ': ' + $t
+        }) -join '; '
+    $count = $(if ($Open.Count -eq 1) { '1 snag-log entry carries no disposition, so Archive keeps it' }
+        else { [string]$Open.Count + ' snag-log entries carry no disposition, so Archive keeps them' })
+    return ('BEFORE YOU STOP - ' + $count + ' live for the owner (' + $named +
+        '). Give each one that is settled its disposition after a " ' + [char]0x00B7 + ' " separator - fixed in <commit>, ignored, answered, rejected-because <why> or accepted-tradeoff <why> - and leave open only what the owner must decide. Stopping again releases the session either way.')
 }
 
 # Get-NSPlanRecordOpen <nightshift-dir> - the first line of each open plan in the plan record.

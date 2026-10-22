@@ -243,9 +243,10 @@ end_shift() {
 # being held forever by a hook that cannot do the filing itself.
 end_and_stop() {
   end_shift "$1"
-  if ns_gate_filing_due "$NS"; then
-    log_line "archive.automatic is on - holding once so this shift can be filed before the session ends"
-    _ns_clock_out_block "$(ns_gate_filing_message "$NS")"
+  hold="$(ns_gate_ending_hold "$NS")"
+  if [ -n "$hold" ]; then
+    log_line "holding once so this shift's snags and filing are settled before the session ends"
+    _ns_clock_out_block "$hold"
   fi
   exit 0
 }

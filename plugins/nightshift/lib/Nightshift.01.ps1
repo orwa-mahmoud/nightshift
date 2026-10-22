@@ -485,7 +485,8 @@ function Confirm-NSWorkTargetLink {
         $link = Join-Path $target '.nightshift-link'
         if (Test-NSReparsePoint $link) { return $false }
         $null = Write-NSAtomicLines -Path $link -Lines @($ws)
-        $gitDirectory = Invoke-NSGit $target @('rev-parse', '--git-dir')
+        # Git reads info/exclude from the common directory, which a linked worktree shares.
+        $gitDirectory = Invoke-NSGit $target @('rev-parse', '--git-common-dir')
         if (-not [string]::IsNullOrWhiteSpace($gitDirectory)) {
             if (-not [IO.Path]::IsPathRooted($gitDirectory)) {
                 $gitDirectory = Join-Path $target $gitDirectory
@@ -587,7 +588,50 @@ function Get-NSGitDiffText {
     return $null
 }
 
+# Get-NSShiftWorktreeField <workspace> <key> - one key=value line of the shift worktree record (path,
+# branch, base, checkout, shift), or ''. Mirrors ns_shift_worktree_field.
+function Get-NSShiftWorktreeField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
+    $path = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'shift-worktree'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if ($line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { return $line.Substring($Key.Length + 1).TrimEnd([char]"`r") }
+    }
+    return ''
+}
+
+# Get-NSShiftWorktreeCurrent <workspace> - the worktree path when the record belongs to the shift on
+# record now (its policy, or its ending once clocked out) and the folder is still a checkout; ''
+# otherwise. A record left by an earlier shift is never followed. Mirrors ns_shift_worktree_current.
+function Get-NSShiftWorktreeCurrent {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $path = Get-NSShiftWorktreeField $Workspace 'path'
+    $shift = Get-NSShiftWorktreeField $Workspace 'shift'
+    if ($path.Length -eq 0 -or $shift.Length -eq 0) { return '' }
+    $current = ''
+    $state = Get-NSShiftPolicyState $Workspace
+    if ([string]$state['state'] -ceq 'valid') { $current = [string](Get-NSRecordText $state['policy'] 'shiftId') }
+    $ended = Get-NSEndedField $Workspace 'shiftId'
+    if ($shift -cne $current -and $shift -cne $ended) { return '' }
+    if (-not (Test-Path -LiteralPath $path -PathType Container) -or (Test-NSReparsePoint $path)) { return '' }
+    if ($null -eq (Invoke-NSGit $path @('rev-parse', '--show-toplevel'))) { return '' }
+    return $path
+}
+
+# Resolve-NSWorkTarget <workspace> - where the shift works: the worktree record of the shift on record
+# when it runs in its own worktree, otherwise the owner's checkout. Mirrors ns_work_target.
 function Resolve-NSWorkTarget {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if ((Get-NSWorkMode (Resolve-NSCanonicalPath $Workspace)) -ne 'artifact') {
+        $worktree = Get-NSShiftWorktreeCurrent $Workspace
+        if ($worktree.Length -gt 0) { return (Resolve-NSCanonicalPath $worktree) }
+    }
+    return (Resolve-NSOwnerWorkTarget $Workspace)
+}
+
+# Resolve-NSOwnerWorkTarget <workspace> - the owner's own work target, never a shift worktree.
+# Mirrors ns_owner_work_target.
+function Resolve-NSOwnerWorkTarget {
     param([Parameter(Mandatory = $true)][string]$Workspace)
 
     $project = Resolve-NSCanonicalPath $Workspace
@@ -1677,6 +1721,70 @@ function Test-NSClaudeForeignCursorSurface {
     }
     $session = Read-NSSession $NightshiftDir
     return ($null -ne $session -and $session.HostName -eq 'cursor')
+}
+
+# Get-NSPluginVersion <plugin-root> - the version a plugin copy's own manifest declares, or 'unknown'.
+# Mirrors ns_plugin_version.
+function Get-NSPluginVersion {
+    param([Parameter(Mandatory = $true)][string]$PluginRoot)
+    foreach ($manifest in @('.claude-plugin', '.codex-plugin', '.cursor-plugin')) {
+        $path = Join-Path (Join-Path $PluginRoot $manifest) 'plugin.json'
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        foreach ($line in [IO.File]::ReadAllLines($path)) {
+            if ($line -cmatch '^\s*"version"\s*:\s*"([^"]*)"') { return $Matches[1] }
+        }
+    }
+    return 'unknown'
+}
+
+# Add-NSHookCopyNote <ns-dir> <host> <session> <plugin-root> - record that this copy of the plugin
+# answered a hook in this session, at most once a minute per copy. Mirrors ns_hook_copy_note.
+function Add-NSHookCopyNote {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$HostName,
+          [AllowEmptyString()][string]$SessionId, [Parameter(Mandatory = $true)][string]$PluginRoot)
+    if ([string]::IsNullOrEmpty($SessionId)) { return }
+    $path = Get-NSLayoutPath $NightshiftDir 'hook-copies'
+    if (Test-NSReparsePoint $path) { return }
+    try { $root = Resolve-NSCanonicalPath $PluginRoot } catch { return }
+    $now = Get-NSUnixTime
+    $lines = @()
+    if (Test-Path -LiteralPath $path -PathType Leaf) { $lines = @([IO.File]::ReadAllLines($path)) }
+    $last = 0
+    foreach ($line in $lines) {
+        $f = $line.Split("`t")
+        if ($f.Count -ge 4 -and $f[1] -ceq $HostName -and $f[2] -ceq $SessionId -and $f[3] -ceq $root) { $last = [long]$f[0] }
+    }
+    if ($now - $last -lt 60) { return }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force
+    $record = @([string]$now, $HostName, $SessionId, $root, (Get-NSPluginVersion $root)) -join "`t"
+    [IO.File]::AppendAllText($path, $record + "`n", (New-Object Text.UTF8Encoding($false)))
+    if ($lines.Count -gt 500) {
+        $kept = @([IO.File]::ReadAllLines($path) | Where-Object { $_.Split("`t")[0] -as [long] -ge ($now - 86400) })
+        $null = Write-NSAtomicLines -Path $path -Lines $kept
+    }
+}
+
+# Get-NSHookCopies <ns-dir> <host> <window-seconds> - the plugin copies that answered this host's
+# hooks in its most recent session within the window, as 'root<TAB>version'. Mirrors ns_hook_copies.
+function Get-NSHookCopies {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$HostName,
+          [Parameter(Mandatory = $true)][long]$WindowSeconds)
+    $path = Get-NSLayoutPath $NightshiftDir 'hook-copies'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return @() }
+    $cut = (Get-NSUnixTime) - $WindowSeconds
+    $rows = @(foreach ($line in [IO.File]::ReadAllLines($path)) {
+            $f = $line.Split("`t")
+            if ($f.Count -ge 5 -and $f[1] -ceq $HostName -and ($f[0] -as [long]) -ge $cut) { , $f }
+        })
+    if ($rows.Count -eq 0) { return @() }
+    $latest = $rows | Sort-Object { [long]$_[0] } | Select-Object -Last 1
+    $session = $latest[2]
+    $seen = @{}
+    $copies = foreach ($f in $rows) {
+        if ($f[2] -ceq $session -and -not $seen.ContainsKey($f[3])) { $seen[$f[3]] = $true; $f[3] + "`t" + $f[4] }
+    }
+    $sorted = Sort-NSOrdinal @($copies)
+    return $sorted
 }
 
 function Write-NSSession {

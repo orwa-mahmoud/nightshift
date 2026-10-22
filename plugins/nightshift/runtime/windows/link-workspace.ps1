@@ -60,7 +60,8 @@ if (Test-NSReparsePoint $link) {
 }
 $null = Write-NSAtomicLines -Path $link -Lines @($workspacePath)
 
-$gitDirectory = Invoke-NSGit $hostPath @('rev-parse', '--git-dir')
+# Git reads info/exclude from the common directory, which a linked worktree shares.
+$gitDirectory = Invoke-NSGit $hostPath @('rev-parse', '--git-common-dir')
 if (-not [string]::IsNullOrWhiteSpace($gitDirectory)) {
     if (-not [IO.Path]::IsPathRooted($gitDirectory)) {
         $gitDirectory = Join-Path $hostPath $gitDirectory

@@ -13,8 +13,10 @@
   The verdict sentence is byte-identical to the POSIX helper; only interpolated
   paths and a parser's own diagnostic tail differ. Phase preflight covers
   everything before .shift-armed; phase snapshot records the plain Start's shift
-  policy right before arming; phase bind is the Codex identity checkpoint that
-  runs after the binding probe and before the watchman.
+  policy right before arming; phase worktree gives a shift.isolation worktree
+  shift its own worktree and branch, after the snapshot and before arming; phase
+  bind checks that one plugin copy answers the session and classifies the Codex
+  identity, after the binding probe and before the watchman.
 
   Exit: 0 may arm - 1 refused - 2 usage
 #>
@@ -22,7 +24,7 @@ param(
     [string]$Project = [Environment]::CurrentDirectory,
     [ValidateSet('claude', 'codex', 'cursor', 'unknown', '')]
     [string]$HostName = '',
-    [ValidateSet('preflight', 'snapshot', 'bind')]
+    [ValidateSet('preflight', 'snapshot', 'worktree', 'bind')]
     [string]$Phase = 'preflight',
     [switch]$DryRun
 )
@@ -114,6 +116,15 @@ if ($Phase -eq 'bind') {
     $session = Read-NSSession $ns
     $recordedHost = if ($null -eq $session) { 'claude' } else { [string]$session.HostName }
     Write-Ok "session-host $recordedHost"
+    # The binding probe ran every copy's guard once, so a second copy of the plugin has recorded itself
+    # by now. Two copies write every usage mark and receipt twice, in two versions' formats.
+    $copies = @(Get-NSHookCopies $ns $recordedHost 600)
+    if ($copies.Count -gt 1) {
+        $named = ($copies | ForEach-Object { $f = $_.Split("`t"); $f[0] + ' (' + $f[1] + ')' }) -join ' and '
+        Write-Refuse ("copies {0} Nightshift copies answer this {1} session: {2} - each writes every usage mark and receipt again" -f $copies.Count, $recordedHost, $named)
+        Write-Repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable all but one Nightshift copy in the host's plugin settings, start a new conversation, and run Start again"
+        exit 1
+    }
     if ($recordedHost -ne 'codex') {
         Write-Ok 'codex-identity not-applicable'
         exit 0
@@ -158,6 +169,144 @@ if ($Phase -eq 'snapshot') {
     else {
         Write-Warn 'snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt'
     }
+    exit 0
+}
+
+# --------------------------------------------------------- phase worktree
+# After the snapshot and before arming: a shift with shift.isolation worktree gets its own worktree
+# and branch, prepared and recorded as its work target. A failure here arms nothing.
+if ($Phase -eq 'worktree') {
+    $workMode = 'repository'
+    try { $workMode = Get-NSWorkMode $workspace } catch { $workMode = 'repository' }
+    if ($workMode -eq 'artifact') {
+        Write-Ok 'worktree not-applicable - artifact mode works in its folder'
+        exit 0
+    }
+    $isolation = [string](Get-NSPolicyGroupSetting $workspace 'shift.isolation')['value']
+    if ($isolation.Length -eq 0 -or $isolation -ceq 'none') {
+        Write-Ok 'worktree none - the shift works in the work target itself'
+        exit 0
+    }
+    if ($isolation -cne 'worktree') {
+        Write-Refuse "worktree shift.isolation is '$isolation', not none or worktree"
+        Write-Repair ('set shift.isolation in ' + (Get-NSLayoutName $ns 'rules') + ' to none or worktree, then run Start again')
+        exit 1
+    }
+    try { $checkout = Resolve-NSOwnerWorkTarget $workspace }
+    catch {
+        Write-Refuse 'worktree the work target cannot be resolved'
+        Write-Repair 'run Doctor, repair the work target, then run Start again'
+        exit 1
+    }
+    # A linked worktree's own git dir differs from the repository's common one.
+    $gitDir = Invoke-NSGit $checkout @('rev-parse', '--absolute-git-dir')
+    $commonDir = Invoke-NSGit $checkout @('rev-parse', '--git-common-dir')
+    if (-not [string]::IsNullOrEmpty($commonDir) -and -not [IO.Path]::IsPathRooted($commonDir)) { $commonDir = Join-Path $checkout $commonDir }
+    if (-not [string]::IsNullOrEmpty($gitDir) -and -not [string]::IsNullOrEmpty($commonDir) -and
+        (Resolve-NSCanonicalPath $gitDir) -ne (Resolve-NSCanonicalPath $commonDir)) {
+        Write-Ok "worktree host $checkout - this session already works in its own worktree"
+        exit 0
+    }
+    $policyState = Get-NSShiftPolicyState $workspace
+    $shiftId = if ([string]$policyState['state'] -ceq 'valid') { [string](Get-NSRecordText $policyState['policy'] 'shiftId') } else { '' }
+    if ($shiftId.Length -eq 0) {
+        Write-Refuse 'worktree no shift policy to name the worktree after'
+        Write-Repair 'run the snapshot phase first, then the worktree phase'
+        exit 1
+    }
+    $kept = Get-NSShiftWorktreeCurrent $workspace
+    if ($kept.Length -gt 0) {
+        Write-Ok ("worktree $kept branch " + (Get-NSShiftWorktreeField $workspace 'branch') + " - this shift's worktree, kept")
+        exit 0
+    }
+    $root = [string](Get-NSPolicyGroupSetting $workspace 'shift.worktreeRoot')['value']
+    if ($root.Length -eq 0) { $root = '.nightshift/worktrees' }
+    if (-not [IO.Path]::IsPathRooted($root)) { $root = Join-Path $workspace $root }
+    $worktree = Join-Path $root $shiftId
+    $name = (Get-NSShiftName (Get-NSLayoutPath $ns 'punch-list')).ToLowerInvariant() -creplace '[^a-z0-9]+', '-'
+    $name = $name.Trim('-')
+    if ($name.Length -gt 40) { $name = $name.Substring(0, 40) }
+    if ($name.Length -eq 0) { $name = $shiftId.Substring(0, [Math]::Min(8, $shiftId.Length)) }
+    $branch = 'shift/' + (Get-Date -Format 'yyyy-MM-dd') + '-' + $name
+    $branchExists = (Invoke-NSGitCommand $checkout @('show-ref', '--verify', '--quiet', "refs/heads/$branch")).ExitCode -eq 0
+    if ($branchExists -or (Test-Path -LiteralPath $worktree)) {
+        Write-Refuse "worktree $branch or $worktree already exists"
+        Write-Repair 'merge or remove that branch and folder, or name the shift differently, then run Start again'
+        exit 1
+    }
+    if ($DryRun) {
+        Write-Ok "worktree dry-run - would add $worktree on $branch"
+        exit 0
+    }
+    $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD')
+    $null = New-Item -ItemType Directory -Path $root -Force
+    if ((Invoke-NSGitCommand $checkout @('worktree', 'add', '-q', '-b', $branch, $worktree, [string]$base)).ExitCode -ne 0) {
+        Write-Refuse "worktree git could not add $worktree on $branch from $checkout"
+        Write-Repair "check that $checkout has a commit and that git worktree add works there, then run Start again"
+        exit 1
+    }
+    # Undo-Worktree - take back the worktree and branch this phase made; they hold no work yet.
+    function Undo-Worktree {
+        $null = Invoke-NSGitCommand $checkout @('worktree', 'remove', '--force', $worktree)
+        $null = Invoke-NSGitCommand $checkout @('branch', '-D', $branch)
+    }
+    foreach ($entry in @((Get-NSPolicyGroupSetting $workspace 'shift.copyIn')['value'])) {
+        $entry = [string]$entry
+        if ($entry.Length -eq 0) { continue }
+        if (('/' + $entry.Replace('\', '/') + '/').Contains('/../') -or [IO.Path]::IsPathRooted($entry)) {
+            Write-Warn "worktree copyIn entry $entry leaves the work target - not copied"
+            continue
+        }
+        $source = Join-Path $checkout $entry
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or (Test-NSReparsePoint $source)) {
+            Write-Warn "worktree copyIn entry $entry is not a regular file in $checkout - not copied"
+            continue
+        }
+        try {
+            $target = Join-Path $worktree $entry
+            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force
+            Copy-Item -LiteralPath $source -Destination $target -Force -ErrorAction Stop
+        }
+        catch {
+            Undo-Worktree
+            Write-Refuse "worktree could not copy $entry into $worktree"
+            Write-Repair "check the copyIn entry and the folder's permissions, then run Start again"
+            exit 1
+        }
+    }
+    $prepare = [string](Get-NSPolicyGroupSetting $workspace 'shift.prepare')['value']
+    if ($prepare.Length -gt 0) {
+        $shellExe = (Get-Process -Id $PID).Path
+        Push-Location -LiteralPath $worktree
+        try {
+            $previous = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $prepareOut = @(& $shellExe -NoProfile -NonInteractive -Command $prepare 2>&1 | ForEach-Object { [string]$_ })
+            $prepareCode = $LASTEXITCODE
+            $ErrorActionPreference = $previous
+        }
+        finally { Pop-Location }
+        if ($prepareCode -ne 0) {
+            Undo-Worktree
+            $tail = ($prepareOut | Select-Object -Last 3) -join ' '
+            Write-Refuse "worktree prepare exited $prepareCode in ${worktree}: $tail"
+            Write-Repair 'fix shift.prepare or what it needs, then run Start again; nothing was armed'
+            exit 1
+        }
+    }
+    $record = Get-NSLayoutPath $ns 'shift-worktree'
+    try {
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $record) -Force
+        $null = Write-NSAtomicLines -Path $record -Lines @("path=$worktree", "branch=$branch", "base=$base", "checkout=$checkout", "shift=$shiftId")
+    }
+    catch {
+        Undo-Worktree
+        Write-Refuse "worktree could not record $worktree"
+        Write-Repair 'check that .nightshift/ is writable, then run Start again'
+        exit 1
+    }
+    $short = if ([string]::IsNullOrEmpty($base)) { '' } else { ([string]$base).Substring(0, [Math]::Min(7, ([string]$base).Length)) }
+    Write-Ok "worktree $worktree branch $branch from $short - work there; the owner's checkout stays untouched"
     exit 0
 }
 

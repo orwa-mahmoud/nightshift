@@ -100,6 +100,31 @@ RECIPE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/co
   grep -qF '$NS/receipts/' "$RECIPE"
 }
 
+# Every shift writes its work receipt from the shared template, so an unparsed tool output reads as
+# unavailable the same way in every receipt.
+@test "every entry names the shared cycle receipt" {
+  for f in "$SHIFTS"/*.md; do
+    grep -qF 'cycle-specialist-evidence.md' "$f" || { echo "no shared receipt: $f"; return 1; }
+  done
+}
+
+# The duplicate rule lives once, in the shift skill and the snag-log template; an entry points at it.
+@test "no entry restates the duplicate rule in its own words" {
+  for f in "$SHIFTS"/*.md; do
+    if grep -qF 'ALL seen' "$f"; then
+      echo "restates the duplicate rule: $f"
+      return 1
+    fi
+  done
+  grep -qF 'carries that entry'"'"'s disposition forward' "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/SKILL.md"
+  grep -qF 'carry that entry'"'"'s disposition forward' \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/snag-log.md"
+  for d in fixed ignored answered rejected-because accepted-tradeoff; do
+    grep -qF "\`$d\`" "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/SKILL.md" ||
+      { echo "the rule does not name $d"; return 1; }
+  done
+}
+
 @test "the recipe tells a contributor to add a file, not edit a shared one" {
   grep -qF 'shifts/' "$RECIPE"
   grep -qi 'tests/shifts/' "$RECIPE"

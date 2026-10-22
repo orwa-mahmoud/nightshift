@@ -314,11 +314,12 @@ EOF
   # Links that would stop resolving once the moves are made, written again so they do.
   _ns_migrate_links "$ws" "$moves" plan
 
-  # The receipts repository leaves the runtime's directory out, as Setup writes it.
+  # The receipts repository leaves the runtime's directory out, as Setup writes it: anchored, so
+  # the run records filed under each archive folder stay in.
   ns_layout_rel_at f "$NS_LAYOUT_VERSION" gitignore
   if ns_layout_rel_at d "$NS_LAYOUT_VERSION" run && [ -f "$ns/$f" ] && [ ! -L "$ns/$f" ] \
-    && ! grep -qxF "$d/" "$ns/$f" 2>/dev/null; then
-    printf 'ignore\t%s\t%s/\n' "$f" "$d"
+    && ! grep -qxF "/$d/" "$ns/$f" 2>/dev/null; then
+    printf 'ignore\t%s\t/%s/\n' "$f" "$d"
   fi
 
   # Anything this layout has no name for stays where it is, and is named so nothing is a surprise.

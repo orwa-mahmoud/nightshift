@@ -14,7 +14,8 @@ SHIFT_MODES="$BATS_TEST_DIRNAME/../../docs/shift-modes.md"
 
 @test "defect hunt deduplicates every finding against the snag log" {
   grep -qi 'snag-log.md' "$E"
-  grep -qi 'ALL seen' "$E"
+  grep -qi 'against snag-log.md under' "$E"
+  grep -qi 'Snag log discipline' "$E"
   grep -qi 'never re-reports' "$E"
 }
 

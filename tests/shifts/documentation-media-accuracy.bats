@@ -45,6 +45,12 @@ E="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/comp
   grep -qi 'source commit, flow, and result in the item receipt' "$E"
 }
 
-@test "documentation media accuracy deduplicates rejected findings" {
-  grep -qF 'snag-log.md (ALL seen — fixed and rejected)' "$E"
+@test "documentation media accuracy deduplicates under the shared rule" {
+  grep -qF 'snag-log.md under Snag log discipline' "$E"
+}
+
+@test "documentation media accuracy uses the shared cycle receipt" {
+  grep -qF 'receipts/cycle-specialist-evidence.md' "$E"
+  grep -qF 'mode: doc-media-accuracy' "$E"
+  grep -qi 'cannot be parsed is `unavailable`, never an empty result' "$E"
 }

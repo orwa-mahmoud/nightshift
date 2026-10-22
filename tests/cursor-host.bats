@@ -144,6 +144,31 @@ cursor_pulse() {
   grep -qF conv-1 "$p/.nightshift/.shift-pulse"
 }
 
+@test "in a Cursor session the Claude copy's pulse records nothing and the Cursor copy's records the turn" {
+  p="$(new_project cursor-one-copy)"
+  punch_open "$p"
+  bind_session "$p" conv-1 cursor
+  usage="$(bash -c '. "$1"; ns_usage_dir "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift")"
+  # Cursor loads the Claude plugin beside its own and hands it a transcript under ~/.cursor.
+  mkdir -p "$BATS_TEST_TMPDIR/home/.cursor/projects/w/agent-transcripts"
+  t="$BATS_TEST_TMPDIR/home/.cursor/projects/w/agent-transcripts/conv-1.jsonl"
+  cp "$BATS_TEST_DIRNAME/fixtures/usage/claude-multiline.jsonl" "$t"
+  run hook_payload "$(jq -nc --arg t "$t" '{session_id:"conv-1",transcript_path:$t,tool_name:"Bash"}')" \
+    env CLAUDE_PROJECT_DIR="$p" bash "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -e "$usage/marks.tsv" ] || { echo "the Claude copy wrote a mark"; return 1; }
+  [ ! -e "$usage/segments.tsv" ] || { echo "the Claude copy wrote a reading"; return 1; }
+
+  # The Cursor copy takes the turn's reading from its own stop payload, once.
+  run hook_payload "$(jq -nc --arg w "$p" '{conversation_id:"conv-1",generation_id:"g1",cwd:$w,input_tokens:700,output_tokens:30}')" \
+    env CURSOR_PROJECT_DIR="$p" bash "$CURSOR/pulse.sh"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '	arm	' "$usage/marks.tsv")" = 1 ]
+  [ "$(cut -f2 "$usage/segments.tsv" | sort -u)" = cursor ]
+  [ "$(bash -c '. "$1"; ns_usage_total "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift")" = 'input=700,output=30' ]
+}
+
 @test "the Cursor pulse says nothing once the shift is over" {
   p="$(new_project cursor-pulse-ended)"
   punch_open "$p"

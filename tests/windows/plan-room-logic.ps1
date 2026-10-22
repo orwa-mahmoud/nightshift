@@ -63,16 +63,53 @@ try {
     $expected = 'BLOCKED: the plan room is open, so nothing is implemented in this conversation. Tell the owner they are in the plan room and that this change was not made. Here you read, explore and write the plan into ' +
         (Join-Path $canonical '.nightshift/staging/').Replace('\', '/') + '. To build, the owner leaves the plan room: they type /nightshift:plan-exit, or approve the plan and type /nightshift:start.'
     foreach ($payload in @((New-Edit 'Edit' (Join-Path $w 'src/app.js')), (New-Edit 'Write' (Join-Path $w 'README.md')),
-            (New-Shell 'Set-Content -Path notes.txt -Value hi'), (New-Shell 'git commit -m wip'), (New-Shell 'Remove-Item src -Recurse'),
-            @{ tool_name = 'mcp__db__write'; tool_input = @{} })) {
+            (New-Edit 'MultiEdit' (Join-Path $w 'src/a.js')), (New-Edit 'Write' (Join-Path $ns 'rules.json')))) {
         $reason = Invoke-Hardhat $w 'planner' $payload
         Expect-True ($reason.Replace('\', '/') -ceq $expected) "fenced: $($payload | ConvertTo-Json -Compress) -> $reason"
     }
+    # Every tool that is not an edit runs: questions, research, connectors, agents and new tools.
     foreach ($payload in @((New-Edit 'Read' (Join-Path $w 'src/app.js')), (New-Shell 'git log --oneline -5'),
-            (New-Shell 'Get-ChildItem src | Select-String TODO'), (New-Edit 'Write' (Join-Path $ns 'staging/plan.md')))) {
+            (New-Shell 'Get-ChildItem src | Select-String TODO'), (New-Edit 'Write' (Join-Path $ns 'staging/plan.md')),
+            (New-Shell 'Set-Content -Path notes.txt -Value hi'), (New-Shell 'gh issue view 21'), (New-Shell "grep 'a\|b' src/app.js"),
+            @{ tool_name = 'AskUserQuestion'; tool_input = @{ questions = @() } }, @{ tool_name = 'Agent'; tool_input = @{ prompt = 'x' } },
+            @{ tool_name = 'mcp__db__write'; tool_input = @{} }, @{ tool_name = 'mcp__ccd_turn__update_plan'; tool_input = @{ advance = $true } },
+            @{ tool_name = 'SomeToolNoHostHasYet'; tool_input = @{ x = 1 } })) {
         $reason = Invoke-Hardhat $w 'planner' $payload
         Expect-True ($reason -ceq '') "free: $($payload | ConvertTo-Json -Compress) -> $reason"
     }
+
+    # The owner's block lists, read fresh on every call.
+    $rulesPath = Join-Path $ns 'rules.json'
+    function Set-Lists {
+        param([AllowNull()][object]$Block)
+        $rules = [IO.File]::ReadAllText($rulesPath) | ConvertFrom-Json
+        $rules.PSObject.Properties.Remove('planRoom')
+        if ($null -ne $Block) { $rules | Add-Member -NotePropertyName planRoom -NotePropertyValue $Block }
+        [IO.File]::WriteAllText($rulesPath, ($rules | ConvertTo-Json -Depth 8), $utf8)
+    }
+    $rulesShown = (Join-Path $canonical '.nightshift/rules.json').Replace('\', '/')
+    function Expected-Block { param([string]$List, [string]$Entry) return (Get-NSPlanRoomBlockMessage $ns $List $Entry).Replace('.nightshift/rules.json', $rulesShown) }
+    Set-Lists $null
+    foreach ($command in @('git commit -m "push me"', 'git push origin main', 'git tag v1')) {
+        $reason = (Invoke-Hardhat $w 'planner' (New-Shell $command)).Replace('\', '/')
+        Expect-True ($reason -ceq (Expected-Block 'blockedCommands' 'git (commit|push|tag)')) "default list: $command -> $reason"
+    }
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell 'git log --oneline')) -ceq '') 'the default list lets reads through'
+    Set-Lists ([pscustomobject]@{ blockedTools = @('mcp__slack__*'); blockedCommands = 'npm install' })
+    Expect-True ((Invoke-Hardhat $w 'planner' @{ tool_name = 'mcp__slack__post_message'; tool_input = @{} }).Replace('\', '/') -ceq (Expected-Block 'blockedTools' 'mcp__slack__*')) 'blockedTools names the entry'
+    Expect-True ((Invoke-Hardhat $w 'planner' @{ tool_name = 'mcp__github__get_issue'; tool_input = @{} }) -ceq '') 'a tool off the list runs'
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell 'npm install')).Replace('\', '/') -ceq (Expected-Block 'blockedCommands' 'npm install')) 'blockedCommands names the pattern'
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell 'git commit -m x')) -ceq '') 'an owner pattern replaces the default'
+    Set-Lists ([pscustomobject]@{ blockedTools = @(); blockedCommands = '' })
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell 'git push')) -ceq '') 'empty lists block nothing'
+    Set-Lists ([pscustomobject]@{ blockedTools = 'mcp__slack__*' })
+    Expect-True ((Invoke-Hardhat $w 'planner' @{ tool_name = 'mcp__slack__post_message'; tool_input = @{} }).Contains('planRoom.blockedTools is not a list of tool names')) 'a tool list that is not a list denies'
+    Set-Lists ([pscustomobject]@{ blockedCommands = '(unclosed' })
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell 'Get-ChildItem')).Contains('planRoom.blockedCommands is not a valid pattern')) 'a pattern that does not compile denies'
+    Set-Lists ([pscustomobject]@{ blockedTools = @(); blockedCommands = 'git (commit|push|tag)' })
+    $rulesMessage = (Get-NSPlanRoomRulesMessage $ns).Replace('.nightshift/rules.json', $rulesShown)
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell "Set-Content .nightshift/rules.json '{}'")).Replace('\', '/') -ceq $rulesMessage) 'a command reaching the rules file is denied'
+    Expect-True ((Invoke-Hardhat $w 'planner' (New-Edit 'Read' $rulesPath)) -ceq '') 'reading the rules file with Read runs'
     Expect-True ((Invoke-Hardhat $w 'builder' (New-Edit 'Edit' (Join-Path $w 'src/app.js'))) -ceq '') 'another conversation is not fenced'
 
     # The read-only ns verbs run as the skills write them.
@@ -81,10 +118,6 @@ try {
             "& `"$nsPs`" plan-enter --host claude", "& `"$nsPs`" shift-estimate --items 4", "& `"$nsPs`" check-items")) {
         $reason = Invoke-Hardhat $w 'planner' (New-Shell $command)
         Expect-True ($reason -ceq '') "free: $command -> $reason"
-    }
-    foreach ($command in @("& `"$nsPs`" scaffold product", "& `"$nsPs`" stop-shift", "& 'C:\evil\rm.exe' -rf src")) {
-        $reason = Invoke-Hardhat $w 'planner' (New-Shell $command)
-        Expect-True ($reason -ceq $expected -or $reason.Replace('\', '/') -ceq $expected) "fenced: $command -> $reason"
     }
     Expect-True (-not (Test-NSRestrictedCommand "& `"$nsPs`" plan-enter" 'wrapup')) 'wrap-up has no room to enter'
     Expect-True (Test-NSRestrictedCommand "& `"$nsPs`" status" 'wrapup') 'wrap-up reads status through the dispatcher'
@@ -120,16 +153,25 @@ try {
     # The prompt hook: the owner's command closes the room, anything else does not.
     $promptHook = Join-Path $plugin 'hooks/windows/prompt-submit.ps1'
     function Invoke-PromptHook {
-        param([string]$Project, [string]$HostName, [hashtable]$Payload)
-        $Payload['session_id'] = 'planner'
+        param([string]$Project, [string]$HostName, [hashtable]$Payload, [string]$Event = 'expansion', [string]$Session = 'planner')
+        $Payload['session_id'] = $Session
         $Payload['cwd'] = $Project
         $json = $Payload | ConvertTo-Json -Compress
         $name = if ($HostName -eq 'claude') { 'CLAUDE_PROJECT_DIR' } else { 'CODEX_PROJECT_DIR' }
         $previous = [Environment]::GetEnvironmentVariable($name)
         [Environment]::SetEnvironmentVariable($name, $Project)
-        try { return (@($json | & $hostExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $promptHook -HostName $HostName 2>&1) -join "`n") }
+        try { return (@($json | & $hostExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $promptHook -HostName $HostName -Event $Event 2>&1) -join "`n") }
         finally { [Environment]::SetEnvironmentVariable($name, $previous) }
     }
+    # Each owner message in the bound conversation carries the reminder; no other prompt does.
+    $reminder = Get-NSPlanRoomReminder $ns
+    $out = Invoke-PromptHook $w 'claude' @{ hook_event_name = 'UserPromptSubmit'; prompt = 'what does the gate do?' } 'submit'
+    $context = ($out | ConvertFrom-Json).hookSpecificOutput
+    Expect-True ($context.hookEventName -ceq 'UserPromptSubmit' -and $context.additionalContext -ceq $reminder) "claude reminder: $out"
+    $out = Invoke-PromptHook $w 'claude' @{ hook_event_name = 'UserPromptSubmit'; prompt = 'ship it' } 'submit' 'builder'
+    Expect-True ($out.Trim().Length -eq 0) "another conversation gets no reminder: $out"
+    $out = Invoke-PromptHook $w 'claude' @{ hook_event_name = 'UserPromptSubmit'; prompt = '/nightshift:plan-exit' } 'submit'
+    Expect-True ($out.Trim().Length -eq 0 -and (Test-NSPlanRoomOpen $ns)) "the exit command's submit adds nothing and leaves closing to the expansion: $out"
     foreach ($name in @('nightshift:status', 'nightshift:plan-exits', 'other:plan-exit', 'plan-exit')) {
         $out = Invoke-PromptHook $w 'claude' @{ hook_event_name = 'UserPromptExpansion'; command_name = $name; prompt = "/$name" }
         Expect-True ($out.Trim().Length -eq 0 -and (Test-NSPlanRoomOpen $ns)) "claude $name leaves the room open: $out"
@@ -145,7 +187,7 @@ try {
     $cns = New-Room $c
     foreach ($prompt in @('please $nightshift:plan-exit', 'plan-exit', '$nightshift:status')) {
         $out = Invoke-PromptHook $c 'codex' @{ hook_event_name = 'UserPromptSubmit'; prompt = $prompt }
-        Expect-True ($out.Trim().Length -eq 0 -and (Test-NSPlanRoomOpen $cns)) "codex '$prompt' leaves the room open: $out"
+        Expect-True ((Test-NSPlanRoomOpen $cns) -and ($out | ConvertFrom-Json).hookSpecificOutput.additionalContext -ceq (Get-NSPlanRoomReminder $cns)) "codex '$prompt' leaves the room open and carries the reminder: $out"
     }
     $out = Invoke-PromptHook $c 'codex' @{ hook_event_name = 'UserPromptSubmit'; prompt = '$nightshift:start' }
     Expect-True (-not (Test-NSPlanRoomOpen $cns)) 'codex $nightshift:start closes the room'
@@ -262,7 +304,6 @@ try {
         Expect-True ((Invoke-Hardhat $w 'helper' (New-Shell $command)).Contains("plan room marker")) "directory guard: $command"
     }
     foreach ($command in @('git diff --output=src/app.js', 'git log --output src/app.js', 'git show --ext-diff', 'git -c diff.external=writer diff')) {
-        Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell $command)).Length -gt 0) "write-capable git: $command"
         Expect-True (-not (Test-NSRestrictedCommand $command 'wrapup')) "wrapup git: $command"
     }
     $leaf = Join-Path $ns 'staging/linked.md'

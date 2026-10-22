@@ -96,13 +96,15 @@ ns_gate_deadline_passed() {
 #
 # ns_gate_record_ending <nightshift-dir> <project-dir> <shift-id>
 ns_gate_record_ending() {
-  local ns="$1" project="$2" id="${3:-unknown}" pending name folder
+  local ns="$1" project="$2" id="${3:-unknown}" pending name folder host
   # The shift's folder is claimed now, under its name when the owner gave it one, and the marker
   # remembers it: every later filing of this shift, clock-out's own included, lands there.
   name="$(ns_shift_name "$(ns_layout_path "$ns" punch-list)")"
   folder="$(ns_archive_dir "$project" "$(date +%Y-%m-%d)" "$id" "$name" 2>/dev/null)" || folder=""
+  host=""
+  ns_session_present "$ns" && host="$(ns_session_host "$ns")"
   ns_ended_record "$ns" "$id" \
-    "$(ns_archive "$project" root)" "$(ns_archive "$project" layout)" "$name" "${folder##*/}"
+    "$(ns_archive "$project" root)" "$(ns_archive "$project" layout)" "$name" "${folder##*/}" "$host"
   [ -d "$ns" ] || return 0
   ns_archive_automatic "$project" || return 0
   ns_layout_set pending "$ns" pending-filing
@@ -125,6 +127,47 @@ ns_gate_filing_due() {
   grep -q '^asked=1$' "$pending" 2>/dev/null && return 1
   printf 'asked=1\n' >>"$pending" 2>/dev/null || return 1
   return 0
+}
+
+# ns_gate_snags_due <nightshift-dir> — status 0 when this ended shift leaves snag-log entries with
+# no disposition and the model has not been told yet. Telling is recorded in the ending marker, so
+# the next stop releases either way: an entry left open on purpose stays for the owner.
+ns_gate_snags_due() {
+  local ns="$1" ended snag
+  ns_layout_set ended "$ns" ended
+  [ -f "$ended" ] && [ ! -L "$ended" ] || return 1
+  grep -q '^snagsAsked=1$' "$ended" 2>/dev/null && return 1
+  ns_layout_set snag "$ns" snag-log
+  [ -n "$(ns_snag_open_lines "$snag")" ] || return 1
+  printf 'snagsAsked=1\n' >>"$ended" 2>/dev/null || return 1
+}
+
+# ns_gate_snags_message <nightshift-dir> — what the model is told when entries carry no disposition:
+# each by line, the first five of them.
+ns_gate_snags_message() {
+  local ns="$1" snag lines count named
+  ns_layout_set snag "$ns" snag-log
+  lines="$(ns_snag_open_lines "$snag")"
+  count="$(printf '%s\n' "$lines" | grep -c .)"
+  named="$(printf '%s\n' "$lines" | head -n 5 | awk -F '\t' 'NF { t = $2; if (length(t) > 80) t = substr(t, 1, 77) "..."; printf "%sline %s: %s", sep, $1, t; sep = "; " }')"
+  if [ "$count" -eq 1 ]; then
+    count='1 snag-log entry carries no disposition, so Archive keeps it'
+  else
+    count="$count snag-log entries carry no disposition, so Archive keeps them"
+  fi
+  printf 'BEFORE YOU STOP - %s live for the owner (%s). Give each one that is settled its disposition after a " · " separator - fixed in <commit>, ignored, answered, rejected-because <why> or accepted-tradeoff <why> - and leave open only what the owner must decide. Stopping again releases the session either way.' \
+    "$count" "$named"
+}
+
+# ns_gate_ending_hold <nightshift-dir> — the one message an ended shift holds the session for, or
+# nothing: undispositioned snags first, then filing when the owner asked for it.
+ns_gate_ending_hold() {
+  local ns="$1" out=""
+  ns_gate_snags_due "$ns" && out="$(ns_gate_snags_message "$ns")"
+  if ns_gate_filing_due "$ns"; then
+    out="${out:+$out }$(ns_gate_filing_message "$ns")"
+  fi
+  printf '%s' "$out"
 }
 
 # ns_gate_filing_message <nightshift-dir> — what the model is told when filing is due.

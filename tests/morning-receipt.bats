@@ -390,6 +390,58 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   [[ "$output" != *'install the parser'* ]] || false
 }
 
+# truthful_project <name> — the verdict fixture ended by STOP after its session record was gone,
+# with a Gates block that mixes commands with prose words and templates, and ten identical
+# stall warnings in a row.
+truthful_project() {
+  local p ns i
+  p="$(verdict_project "$1")"
+  ns="$p/.nightshift"
+  printf 'shiftId=9f2c40ab77e51d63\nhost=codex\n' >"$ns/.ended"
+  TZ=UTC touch -t 202609211510.05 "$ns/.ended"
+  cat >"$ns/punch-list.md" <<'MD'
+# Punch list
+
+## Gates
+
+- After each fix, run the touched package's checks:
+  `pnpm --filter @app/<pkg> exec tsc --noEmit` (or the package's
+  `vue-tsc` / Angular type script), `pnpm --filter @app/<pkg> exec eslint <paths>`.
+- Parity: `node scripts/check-parts-parity.mjs`, `pnpm check:boundary`.
+- Diff against `origin/main`; poll the scan to `SUCCESS`; shell files end in `.sh`.
+
+## Items
+
+- [x] **1. Add the parser.** <!-- id: a1b2 -->
+- [x] **2. Wire the parser into the CLI.** <!-- id: c3d4 -->
+- [ ] **3. Document the flags.** <!-- id: e5f6 -->
+MD
+  printf '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-21T14:12:20Z","source":"composition","deadlineEpoch":null,"verificationLevel":"none","toolingPolicy":"existing-tools"}\n' \
+    >"$ns/shift-policy.json"
+  for i in 0 1 2 3 4 5 6 7 8 9; do
+    printf '2026-09-21 20:0%s:00 · stall warning — session active, no durable checkpoint since the last 3 stop attempts, 1/3 done; keeping shift open\n' "$i" \
+      >>"$ns/shift-log.md"
+  done
+  printf '%s' "$p"
+}
+
+@test "the morning page names a STOP ending's host, only the gate's commands, and each repeat once" {
+  p="$(truthful_project verdict-truthful)"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'- Host: codex'* ]] || false
+  [[ "$output" == *'- Disabled by owner: node scripts/check-parts-parity.mjs, pnpm check:boundary'$'\n'* ]] || false
+  [[ "$output" == *'- 2026-09-21 20:00:00 to 20:09:00 · stall warning — session active, no durable checkpoint since the last 3 stop attempts, 1/3 done; keeping shift open (10 times)'* ]] || false
+  [ "$(printf '%s\n' "$output" | grep -c 'stall warning')" = 2 ]
+  command -v pwsh >/dev/null 2>&1 || return 0
+  run pwsh -NoProfile -NonInteractive -File \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/morning-receipt.ps1" -Project "$p" -View owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'- Host: codex'* ]] || false
+  [[ "$output" == *'- Disabled by owner: node scripts/check-parts-parity.mjs, pnpm check:boundary'* ]] || false
+  [[ "$output" == *'- 2026-09-21 20:00:00 to 20:09:00 · stall warning — session active, no durable checkpoint since the last 3 stop attempts, 1/3 done; keeping shift open (10 times)'* ]] || false
+}
+
 @test "parked decisions render in full, with the default and the rollback" {
   p="$(verdict_project verdict-parked)"
   run bash "$RECEIPT" --project "$p" --view owner

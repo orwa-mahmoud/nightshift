@@ -10,7 +10,8 @@
 # dressed as a complete one.
 #
 # Prints: <fields>\t<offset>\t<model>\t<responses>   (offset and responses are 0: the counter is
-# already cumulative, so there is nothing to page through and nothing to deduplicate.)
+# already cumulative, so there is nothing to page through and nothing to deduplicate.) The token
+# count line names no model; the model is the last one the rollout named on any line before it.
 
 function num(line, key,   pos, rest, out, ch, i) {
   pos = index(line, "\"" key "\":")
@@ -36,6 +37,8 @@ function str(line, key,   pos, rest, stop) {
 }
 
 {
+  named = str($0, "model")
+  if (named != "") lastmodel = named
   if (index($0, "\"total_token_usage\"") == 0) next
   block = substr($0, index($0, "\"total_token_usage\""))
   input = num(block, "input_tokens")
@@ -44,7 +47,7 @@ function str(line, key,   pos, rest, stop) {
   cacher = num(block, "cached_input_tokens")
   cachew = num(block, "cache_write_input_tokens")
   reason = num(block, "reasoning_output_tokens")
-  model = str($0, "model")
+  model = lastmodel
   found = 1
 }
 

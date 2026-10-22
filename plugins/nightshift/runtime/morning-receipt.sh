@@ -248,7 +248,9 @@ _shift_log_lines() {
   sed 's/[[:cntrl:]]/ /g' "$LOG" | awk -v op="$1" -f "$READ_AWK"
 }
 
-# _gate_commands -> $TMPD/gates: backtick commands under ## Gates, byte-ordered.
+# _gate_commands -> $TMPD/gates: backtick commands under ## Gates, byte-ordered. A Gates block is
+# prose, so a span is a command when it has words after the program, or is one word that reads as a
+# program name: lowercase, no dot, no slash. `.sh`, `SUCCESS` and `origin/main` are not commands.
 _gate_commands() {
   local in_gates=0 line rest cmd
   : >"$TMPD/gates"
@@ -266,6 +268,13 @@ _gate_commands() {
           rest="${rest#*\`}"
           cmd="${rest%%\`*}"
           rest="${rest#*\`}"
+          # A gate command is a program with its arguments. A lone word in backticks is prose (a
+          # status, a branch, a tool named in passing), and a span with a <placeholder> is a template.
+          case "$cmd" in
+            *'<'*'>'*) cmd="" ;;
+            *[[:alnum:]][[:space:]]*[![:space:]]*) ;;
+            *) cmd="" ;;
+          esac
           [ -n "$cmd" ] && printf '%s\n' "$cmd" >>"$TMPD/gates"
           ;;
         *) break ;;
@@ -297,6 +306,10 @@ _session_host() {
     host="$(ns_session_line "$NS" 5 2>/dev/null | tr -d '[:space:]')"
     [ -n "$host" ] && SESSION_HOST="$host" && return 0
   fi
+  # A shift ended by STOP can lose its session record before the page is written; the ending
+  # marker kept the host.
+  host="$(ns_ended_field "$WORKSPACE" host 2>/dev/null)"
+  [ -n "$host" ] && SESSION_HOST="$host" && return 0
   i=0
   while [ "$i" -lt "$NREC" ]; do
     [ -n "${R_HOST[$i]}" ] && SESSION_HOST="${R_HOST[$i]}"
@@ -862,6 +875,20 @@ _key_by_domain() { # <destination> <domain>
   done
 }
 
+# _lines_worktree — a shift that ran in its own worktree names its branch, what the branch changed,
+# and the command that brings it into the owner's checkout. Merging stays the owner's.
+_lines_worktree() {
+  local branch base checkout stat
+  ns_shift_worktree_current "$WORKSPACE" >/dev/null 2>&1 || return 0
+  branch="$(ns_shift_worktree_field "$WORKSPACE" branch)" || return 0
+  base="$(ns_shift_worktree_field "$WORKSPACE" base)" || base=""
+  checkout="$(ns_shift_worktree_field "$WORKSPACE" checkout)" || return 0
+  sec_field Isolation "worktree, branch $branch from ${base:0:7}"
+  stat="$(git -C "$checkout" diff --shortstat "$base" "$branch" 2>/dev/null | sed 's/^ *//')"
+  sec_field Branch "${stat:-no changes}"
+  sec_field Merge "git -C \"$(ns_native_display_path "$checkout")\" merge --ff-only $branch"
+}
+
 _lines_shift() {
   local i mode ticked open stopped level chosen tooling target gates
   SEC=""
@@ -871,6 +898,7 @@ _lines_shift() {
   target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target=""
   target="$(ns_native_display_path "$target")"
   sec_field 'Work target' "$target"
+  _lines_worktree
   sec_field Started "$STARTED"
   sec_field Ended "$ENDED"
   sec_field Ending "$ENDING"
@@ -1119,7 +1147,8 @@ EOF
 }
 
 # What interrupted the night, as the runtime wrote it into the shift log: revivals, API failures,
-# stalls, usage limits and how it was stopped.
+# stalls, usage limits and how it was stopped. A run of lines that say the same thing is one line with
+# its first and last time and how many times it was written.
 _lines_interruptions() {
   local line
   SEC=""
@@ -1127,9 +1156,32 @@ _lines_interruptions() {
     [ -n "$line" ] || continue
     sec_add "- $line"
   done <<EOF
-$(_shift_log_lines interruptions)
+$(_shift_log_lines interruptions | _collapse_repeats)
 EOF
   [ -n "$SEC" ]
+}
+
+# _collapse_repeats — consecutive `<stamp> · <message>` lines with the same message, as one line:
+# `<first stamp> to <last stamp> · <message> (<n> times)`, the last stamp without its date when the
+# day is the same.
+_collapse_repeats() {
+  awk -v sep=" $(printf '\302\267') " '
+    function flush() {
+      if (n == 0) return
+      if (n == 1) { print first_line; n = 0; return }
+      last = last_stamp
+      if (substr(last_stamp, 1, 10) == substr(first_stamp, 1, 10)) last = substr(last_stamp, 12)
+      print first_stamp " to " last sep msg " (" n " times)"
+      n = 0
+    }
+    {
+      i = index($0, sep)
+      if (i > 0) { stamp = substr($0, 1, i - 1); m = substr($0, i + length(sep)) } else { stamp = ""; m = $0 }
+      if (n > 0 && stamp != "" && first_stamp != "" && m == msg) { n++; last_stamp = stamp; next }
+      flush()
+      n = 1; msg = m; first_stamp = stamp; last_stamp = stamp; first_line = $0
+    }
+    END { flush() }'
 }
 
 _lines_baseline() {
