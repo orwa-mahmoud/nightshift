@@ -97,8 +97,8 @@ npx skills add https://github.com/orwa-mahmoud/nightshift --skill install-nights
 ```
 
 This adds one small skill, kept in this repository's root `skills/` folder, that installs the full
-plugin into Claude Code, Codex or Cursor. Install it by name as shown: Nightshift's own skills
-need its hooks and runtime, so they work only as part of the plugin.
+plugin into Claude Code, Codex or Cursor. Nightshift's own skills need its hooks and runtime, so
+they are marked internal and install only as part of the plugin.
 
 ### Platforms
 

@@ -2,6 +2,8 @@
 name: plan
 description: Open the plan room to explore the code and design the work with the owner, building nothing until the owner leaves.
 license: MIT
+metadata:
+  internal: true
 ---
 
 Plan with the owner in the plan room. Here the conversation explores, weighs options and draws the

@@ -2,6 +2,8 @@
 name: status
 description: Read-only shift status covering items, parked decisions, snags, the deadline and STOP or stall state.
 license: MIT
+metadata:
+  internal: true
 ---
 
 Report the shift status for the host-opened project **without starting or changing anything** —
