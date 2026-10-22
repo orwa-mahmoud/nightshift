@@ -20,7 +20,7 @@ function Expect-True {
     }
 }
 
-function Invoke-Git { param([string]$Directory, [string[]]$Arguments) $null = & git -C $Directory @Arguments 2>&1 }
+function Invoke-Git { param([string]$Directory, [string[]]$Arguments) $null = Invoke-NSGitCommand $Directory $Arguments }
 
 # New-Site <path> <shift-block> - a version-2 workspace beside its code repo, no shift armed, one open
 # item, the owner's shift block merged from the hashtable. The repo ignores .env files and the owner

@@ -48,14 +48,14 @@ try {
     Copy-Item -LiteralPath (Join-Path $repository 'tests/fixtures/usage/claude-multiline.jsonl') -Destination $cursorTranscript
     $claudePayload = (@{ session_id = 'conv-1'; transcript_path = $cursorTranscript; cwd = $oneCopy; tool_name = 'Bash' } | ConvertTo-Json -Compress)
     $env:CLAUDE_PROJECT_DIR = $oneCopy
-    $null = & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName claude -HookJson $claudePayload
+    $null = $claudePayload | & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName claude
     Remove-Item Env:CLAUDE_PROJECT_DIR
     $oneUsage = Get-NSUsageDir $oneNs
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $oneUsage 'marks.tsv'))) 'the Claude copy writes no mark in a Cursor session'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $oneUsage 'segments.tsv'))) 'the Claude copy writes no reading in a Cursor session'
     $cursorPayload = (@{ conversation_id = 'conv-1'; generation_id = 'g1'; cwd = $oneCopy; input_tokens = 700; output_tokens = 30 } | ConvertTo-Json -Compress)
     $env:CURSOR_PROJECT_DIR = $oneCopy
-    $null = & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName cursor -HookJson $cursorPayload
+    $null = $cursorPayload | & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName cursor
     Remove-Item Env:CURSOR_PROJECT_DIR
     Expect-True ((Get-NSUsageTotal $oneNs) -ceq 'input=700,output=30') "the Cursor copy records its turn ($(Get-NSUsageTotal $oneNs))"
 
