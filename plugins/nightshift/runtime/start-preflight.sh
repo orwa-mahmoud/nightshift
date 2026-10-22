@@ -14,8 +14,9 @@
 #
 # Phase preflight covers everything before `.shift-armed`; phase snapshot records the plain Start's
 # shift policy right before arming; phase worktree gives a shift.isolation worktree shift its own
-# worktree and branch, after the snapshot and before arming; phase bind is the Codex identity checkpoint that runs after the
-# binding probe and before the watchman.
+# worktree and branch, after the snapshot and before arming; phase bind checks that one plugin copy
+# answers the session and classifies the Codex identity, after the binding probe and before the
+# watchman.
 #
 # Exit: 0 may arm · 1 refused · 2 usage
 set -u
@@ -222,7 +223,7 @@ if [ "$PHASE" = worktree ]; then
     worktree) ;;
     *)
       refuse "worktree shift.isolation is '$ISOLATION', not none or worktree"
-      repair "set shift.isolation in .nightshift/rules.json to none or worktree, then run Start again"
+      repair "set shift.isolation in $(ns_layout_name "$NS" rules) to none or worktree, then run Start again"
       exit 1 ;;
   esac
   CHECKOUT="$(ns_owner_work_target "$WORKSPACE")" || {

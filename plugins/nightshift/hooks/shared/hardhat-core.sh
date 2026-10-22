@@ -1538,22 +1538,22 @@ ns_hardhat_plan_room_denial() {
   fi
   if ns_hardhat_is_command_tool "$tool"; then
     if ns_hardhat_rules_targeted "$cmd"; then
-      ns_plan_room_rules_message
+      ns_plan_room_rules_message "$NS"
       return 0
     fi
     entry="$(ns_plan_room_blocked_command "$NS" "$cmd")"
     rc=$?
     case "$rc" in
-      0) ns_plan_room_block_message blockedCommands "$entry"; return 0 ;;
-      2) printf 'BLOCKED: the plan room cannot read its command list: %s. Fix .nightshift/rules.json or run Setup again.' "$entry"; return 0 ;;
+      0) ns_plan_room_block_message "$NS" blockedCommands "$entry"; return 0 ;;
+      2) printf 'BLOCKED: the plan room cannot read its command list: %s. Fix %s or run Setup again.' "$entry" "$(ns_layout_name "$NS" rules)"; return 0 ;;
     esac
     return 1
   fi
   entry="$(ns_plan_room_blocked_tool "$NS" "$tool")"
   rc=$?
   case "$rc" in
-    0) ns_plan_room_block_message blockedTools "$entry"; return 0 ;;
-    2) printf 'BLOCKED: the plan room cannot read its tool list: %s. Fix .nightshift/rules.json or run Setup again.' "$entry"; return 0 ;;
+    0) ns_plan_room_block_message "$NS" blockedTools "$entry"; return 0 ;;
+    2) printf 'BLOCKED: the plan room cannot read its tool list: %s. Fix %s or run Setup again.' "$entry" "$(ns_layout_name "$NS" rules)"; return 0 ;;
   esac
   return 1
 }

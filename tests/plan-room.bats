@@ -122,18 +122,18 @@ set_lists() {
   set_lists "$p" 'del(.planRoom)'
   for cmd in 'git commit -m "push me"' 'git push origin main' 'git tag v1'; do
     run claude "$p" planner "$(bash_call "$cmd")"
-    [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message blockedCommands 'git (commit|push|tag)')")" ] ||
+    [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message "$p/.nightshift" blockedCommands 'git (commit|push|tag)')")" ] ||
       { echo "$cmd: $(reason "$output")"; return 1; }
   done
   run claude "$p" planner "$(bash_call 'git log --oneline')"
   [ -z "$(reason "$output")" ]
   set_lists "$p" '.planRoom = {blockedTools: ["mcp__slack__*"], blockedCommands: "npm install"}'
   run claude "$p" planner '{"tool_name":"mcp__slack__post_message","tool_input":{}}'
-  [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message blockedTools 'mcp__slack__*')")" ] || { echo "$output"; return 1; }
+  [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message "$p/.nightshift" blockedTools 'mcp__slack__*')")" ] || { echo "$output"; return 1; }
   run claude "$p" planner '{"tool_name":"mcp__github__get_issue","tool_input":{}}'
   [ -z "$(reason "$output")" ]
   run claude "$p" planner "$(bash_call 'npm install')"
-  [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message blockedCommands 'npm install')")" ]
+  [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_block_message "$p/.nightshift" blockedCommands 'npm install')")" ]
   run claude "$p" planner "$(bash_call 'git commit -m x')"
   [ -z "$(reason "$output")" ]
   # Empty lists block nothing.
@@ -153,7 +153,7 @@ set_lists() {
   p="$(room rules-guard)"
   for cmd in "sed -i '' 's/x/y/' .nightshift/rules.json" "jq . .nightshift/rules.json"; do
     run claude "$p" planner "$(bash_call "$cmd")"
-    [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_rules_message)")" ] || { echo "$cmd: $(reason "$output")"; return 1; }
+    [ "$(reason "$output")" = "$(expanded "$p" "$(lib ns_plan_room_rules_message "$p/.nightshift")")" ] || { echo "$cmd: $(reason "$output")"; return 1; }
   done
   run claude "$p" planner "$(edit Read "$p/.nightshift/rules.json")"
   [ -z "$(reason "$output")" ]
@@ -298,8 +298,8 @@ submit() {
     run env NS_MODULE="$PLUGIN/lib/Nightshift.psm1" NS_NS="$p/.nightshift" pwsh -NoProfile -NonInteractive -Command '
       Import-Module $env:NS_MODULE -Force -DisableNameChecking
       (Get-NSPlanRoomMessage $env:NS_NS) + "|" + (Get-NSPlanRoomMarkerMessage) + "|" + (Get-NSPlanRoomReminder $env:NS_NS) + "|" +
-        (Get-NSPlanRoomBlockMessage blockedTools "mcp__x__*") + "|" + (Get-NSPlanRoomRulesMessage)'
-    [ "$output" = "$(lib ns_plan_room_message "$p/.nightshift")|$(lib ns_plan_room_marker_message)|$(lib ns_plan_room_reminder "$p/.nightshift")|$(lib ns_plan_room_block_message blockedTools 'mcp__x__*')|$(lib ns_plan_room_rules_message)" ] ||
+        (Get-NSPlanRoomBlockMessage $env:NS_NS blockedTools "mcp__x__*") + "|" + (Get-NSPlanRoomRulesMessage $env:NS_NS)'
+    [ "$output" = "$(lib ns_plan_room_message "$p/.nightshift")|$(lib ns_plan_room_marker_message)|$(lib ns_plan_room_reminder "$p/.nightshift")|$(lib ns_plan_room_block_message "$p/.nightshift" blockedTools 'mcp__x__*')|$(lib ns_plan_room_rules_message "$p/.nightshift")" ] ||
       { echo "$layout: $output"; return 1; }
   done
 }

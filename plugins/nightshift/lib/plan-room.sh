@@ -171,19 +171,20 @@ ns_plan_room_blocked_command() {
   esac
 }
 
-# ns_plan_room_block_message <list> <entry> — what the planning conversation is told when the owner's
-# list blocks a call.
+# ns_plan_room_block_message <nightshift-dir> <list> <entry> — what the planning conversation is told
+# when the owner's list blocks a call.
 ns_plan_room_block_message() {
   local tick
   tick="$(printf '\140')"
-  printf 'BLOCKED: the plan room blocks this: it matches %s%s%s in planRoom.%s, the owner'"'"'s list in .nightshift/rules.json. The change was not made. Keep planning; the owner edits that list to allow it.' \
-    "$tick" "$2" "$tick" "$1"
+  printf 'BLOCKED: the plan room blocks this: it matches %s%s%s in planRoom.%s, the owner'"'"'s list in %s. The change was not made. Keep planning; the owner edits that list to allow it.' \
+    "$tick" "$3" "$tick" "$2" "$(ns_layout_name "$1" rules)"
 }
 
-# ns_plan_room_rules_message — what the planning conversation is told when a command reaches the
-# rules file that holds the room's lists.
+# ns_plan_room_rules_message <nightshift-dir> — what the planning conversation is told when a command
+# reaches the rules file that holds the room's lists.
 ns_plan_room_rules_message() {
-  printf 'BLOCKED: the plan room keeps .nightshift/rules.json to the owner: it holds the room'"'"'s block lists. Read it with the file-reading tool if the plan needs it; changing it is the owner'"'"'s.'
+  printf 'BLOCKED: the plan room keeps %s to the owner: it holds the room'"'"'s block lists. Read it with the file-reading tool if the plan needs it; changing it is the owner'"'"'s.' \
+    "$(ns_layout_name "$1" rules)"
 }
 
 # ns_plan_room_marker_message — what any conversation is told when it reaches for the marker.

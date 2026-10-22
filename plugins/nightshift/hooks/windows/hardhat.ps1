@@ -1240,15 +1240,15 @@ if (Test-NSPlanRoomOpen $script:ns) {
         }
         elseif ($tool -in @('Bash', 'PowerShell', 'Shell')) {
             $planCommand = Remove-NSCommitMessage $command
-            if (Test-NSRulesTarget $planCommand) { Write-Deny (Get-NSPlanRoomRulesMessage) }
+            if (Test-NSRulesTarget $planCommand) { Write-Deny (Get-NSPlanRoomRulesMessage $script:ns) }
             $planBlock = Get-NSPlanRoomBlockedCommand $script:ns $planCommand
-            if ($planBlock.ContainsKey('Error')) { Write-Deny ('BLOCKED: the plan room cannot read its command list: ' + $planBlock.Error + '. Fix .nightshift/rules.json or run Setup again.') }
-            if ($planBlock.Matched) { Write-Deny (Get-NSPlanRoomBlockMessage 'blockedCommands' $planBlock.Entry) }
+            if ($planBlock.ContainsKey('Error')) { Write-Deny ('BLOCKED: the plan room cannot read its command list: ' + $planBlock.Error + '. Fix ' + (Get-NSLayoutName $script:ns 'rules') + ' or run Setup again.') }
+            if ($planBlock.Matched) { Write-Deny (Get-NSPlanRoomBlockMessage $script:ns 'blockedCommands' $planBlock.Entry) }
         }
         else {
             $planBlock = Get-NSPlanRoomBlockedTool $script:ns $tool
-            if ($planBlock.ContainsKey('Error')) { Write-Deny ('BLOCKED: the plan room cannot read its tool list: ' + $planBlock.Error + '. Fix .nightshift/rules.json or run Setup again.') }
-            if ($planBlock.Matched) { Write-Deny (Get-NSPlanRoomBlockMessage 'blockedTools' $planBlock.Entry) }
+            if ($planBlock.ContainsKey('Error')) { Write-Deny ('BLOCKED: the plan room cannot read its tool list: ' + $planBlock.Error + '. Fix ' + (Get-NSLayoutName $script:ns 'rules') + ' or run Setup again.') }
+            if ($planBlock.Matched) { Write-Deny (Get-NSPlanRoomBlockMessage $script:ns 'blockedTools' $planBlock.Entry) }
         }
     }
 }

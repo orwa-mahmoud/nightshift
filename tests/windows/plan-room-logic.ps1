@@ -88,7 +88,7 @@ try {
         [IO.File]::WriteAllText($rulesPath, ($rules | ConvertTo-Json -Depth 8), $utf8)
     }
     $rulesShown = (Join-Path $canonical '.nightshift/rules.json').Replace('\', '/')
-    function Expected-Block { param([string]$List, [string]$Entry) return (Get-NSPlanRoomBlockMessage $List $Entry).Replace('.nightshift/rules.json', $rulesShown) }
+    function Expected-Block { param([string]$List, [string]$Entry) return (Get-NSPlanRoomBlockMessage $ns $List $Entry).Replace('.nightshift/rules.json', $rulesShown) }
     Set-Lists $null
     foreach ($command in @('git commit -m "push me"', 'git push origin main', 'git tag v1')) {
         $reason = (Invoke-Hardhat $w 'planner' (New-Shell $command)).Replace('\', '/')
@@ -107,7 +107,7 @@ try {
     Set-Lists ([pscustomobject]@{ blockedCommands = '(unclosed' })
     Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell 'Get-ChildItem')).Contains('planRoom.blockedCommands is not a valid pattern')) 'a pattern that does not compile denies'
     Set-Lists ([pscustomobject]@{ blockedTools = @(); blockedCommands = 'git (commit|push|tag)' })
-    $rulesMessage = (Get-NSPlanRoomRulesMessage).Replace('.nightshift/rules.json', $rulesShown)
+    $rulesMessage = (Get-NSPlanRoomRulesMessage $ns).Replace('.nightshift/rules.json', $rulesShown)
     Expect-True ((Invoke-Hardhat $w 'planner' (New-Shell "Set-Content .nightshift/rules.json '{}'")).Replace('\', '/') -ceq $rulesMessage) 'a command reaching the rules file is denied'
     Expect-True ((Invoke-Hardhat $w 'planner' (New-Edit 'Read' $rulesPath)) -ceq '') 'reading the rules file with Read runs'
     Expect-True ((Invoke-Hardhat $w 'builder' (New-Edit 'Edit' (Join-Path $w 'src/app.js'))) -ceq '') 'another conversation is not fenced'

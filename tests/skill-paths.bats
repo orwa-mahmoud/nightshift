@@ -188,7 +188,7 @@ PY
 }
 
 @test "start validates the captured Codex identity before its watchman or item work" {
-  checkpoint="$(grep -n '^### Codex identity checkpoint' "$START" | cut -d: -f1)"
+  checkpoint="$(grep -n '^### Plugin copies and Codex identity' "$START" | cut -d: -f1)"
   watchman="$(grep -n '^## [0-9]\+\. Arm the night watchman' "$START" | cut -d: -f1)"
   work="$(grep -n '^## [0-9]\+\. Work' "$START" | cut -d: -f1)"
   [ -n "$checkpoint" ]

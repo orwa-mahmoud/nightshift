@@ -15,8 +15,8 @@
   everything before .shift-armed; phase snapshot records the plain Start's shift
   policy right before arming; phase worktree gives a shift.isolation worktree
   shift its own worktree and branch, after the snapshot and before arming; phase
-  bind is the Codex identity checkpoint that
-  runs after the binding probe and before the watchman.
+  bind checks that one plugin copy answers the session and classifies the Codex
+  identity, after the binding probe and before the watchman.
 
   Exit: 0 may arm - 1 refused - 2 usage
 #>
@@ -189,7 +189,7 @@ if ($Phase -eq 'worktree') {
     }
     if ($isolation -cne 'worktree') {
         Write-Refuse "worktree shift.isolation is '$isolation', not none or worktree"
-        Write-Repair 'set shift.isolation in .nightshift/rules.json to none or worktree, then run Start again'
+        Write-Repair ('set shift.isolation in ' + (Get-NSLayoutName $ns 'rules') + ' to none or worktree, then run Start again')
         exit 1
     }
     try { $checkout = Resolve-NSOwnerWorkTarget $workspace }

@@ -2532,16 +2532,19 @@ function Get-NSPlanRoomBlockedCommand {
     return @{ Matched = $false }
 }
 
-# Get-NSPlanRoomBlockMessage <list> <entry> - what the planning conversation is told when the owner's
-# list blocks a call. Mirrors ns_plan_room_block_message.
+# Get-NSPlanRoomBlockMessage <nightshift-dir> <list> <entry> - what the planning conversation is told
+# when the owner's list blocks a call. Mirrors ns_plan_room_block_message.
 function Get-NSPlanRoomBlockMessage {
-    param([Parameter(Mandatory = $true)][string]$List, [Parameter(Mandatory = $true)][string]$Entry)
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$List, [Parameter(Mandatory = $true)][string]$Entry)
     return ('BLOCKED: the plan room blocks this: it matches `' + $Entry + '` in planRoom.' + $List +
-        ", the owner's list in .nightshift/rules.json. The change was not made. Keep planning; the owner edits that list to allow it.")
+        ", the owner's list in " + (Get-NSLayoutName $NightshiftDir 'rules') + '. The change was not made. Keep planning; the owner edits that list to allow it.')
 }
 
 function Get-NSPlanRoomRulesMessage {
-    return "BLOCKED: the plan room keeps .nightshift/rules.json to the owner: it holds the room's block lists. Read it with the file-reading tool if the plan needs it; changing it is the owner's."
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$NightshiftDir)
+    return ('BLOCKED: the plan room keeps ' + (Get-NSLayoutName $NightshiftDir 'rules') +
+        " to the owner: it holds the room's block lists. Read it with the file-reading tool if the plan needs it; changing it is the owner's.")
 }
 
 # Undo-NSPlanRoomEntry <nightshift-dir> <session> - take back a room that was never bound, because the
