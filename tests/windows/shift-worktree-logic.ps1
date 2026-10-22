@@ -22,6 +22,16 @@ function Expect-True {
 
 function Invoke-Git { param([string]$Directory, [string[]]$Arguments) $null = Invoke-NSGitCommand $Directory $Arguments }
 
+# Invoke-Archive <script> <site> - Archive's output, stdout and stderr together. Windows PowerShell
+# turns a native command's stderr into an error record, which 'Stop' would make terminating.
+function Invoke-Archive {
+    param([string]$Script, [string]$Site)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { return ((& $hostExe -NoProfile -NonInteractive -File $Script -Project $Site 2>&1 | ForEach-Object { [string]$_ }) -join "`n") }
+    finally { $ErrorActionPreference = $previous }
+}
+
 # New-Site <path> <shift-block> - a version-2 workspace beside its code repo, no shift armed, one open
 # item, the owner's shift block merged from the hashtable. The repo ignores .env files and the owner
 # has uncommitted work in it. The snapshot is recorded.
@@ -99,12 +109,12 @@ try {
     $id = Get-NSShiftWorktreeField $site 'shift'
     [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $site '.nightshift') 'ended'), "shiftId=$id`narchiveRoot=archive`narchiveLayout=date`n", $utf8)
     $archive = Join-Path $plugin 'runtime/windows/archive-receipts.ps1'
-    $out = (& $hostExe -NoProfile -NonInteractive -File $archive -Project $site 2>&1 | ForEach-Object { [string]$_ }) -join "`n"
+    $out = Invoke-Archive $archive $site
     Expect-True ($out.Contains("kept the shift worktree ${worktree}: branch $branch is not merged") -and (Test-Path -LiteralPath $worktree)) "unmerged archive: $out"
     Invoke-Git $repo @('stash', '-q')
     Invoke-Git $repo @('merge', '-q', '--ff-only', $branch)
     Invoke-Git $repo @('stash', 'pop', '-q')
-    $out = (& $hostExe -NoProfile -NonInteractive -File $archive -Project $site 2>&1 | ForEach-Object { [string]$_ }) -join "`n"
+    $out = Invoke-Archive $archive $site
     Expect-True ($out.Contains("removed the shift worktree $worktree; branch $branch is merged and kept")) "merged archive: $out"
     Expect-True (-not (Test-Path -LiteralPath $worktree)) 'the merged worktree folder is gone'
     Expect-True (@(& git -C $repo branch --list $branch).Count -eq 1) 'the branch is never deleted'
