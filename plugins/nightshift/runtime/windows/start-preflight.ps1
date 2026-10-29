@@ -150,8 +150,10 @@ if ($Phase -eq 'bind') {
 # holds the shift to the contract and items it actually starts with. A composed shift already has
 # its snapshot and keeps it.
 if ($Phase -eq 'snapshot') {
+    # With file maps on, the commit the shift starts on is recorded here too.
     if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'shift-policy')) {
         Write-Ok 'snapshot composed - this shift keeps the policy it was composed with'
+        if (-not $DryRun) { Start-NSFileMap $workspace }
         exit 0
     }
     if ((Get-NSBoxCounts (Get-NSLayoutPath $ns 'punch-list')).Open -eq 0) {
@@ -165,6 +167,7 @@ if ($Phase -eq 'snapshot') {
     $snapshotId = New-NSStartSnapshot $workspace
     if (-not [string]::IsNullOrEmpty($snapshotId)) {
         Write-Ok "snapshot start-defaults recorded for shift $snapshotId"
+        Start-NSFileMap $workspace
     }
     else {
         Write-Warn 'snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt'

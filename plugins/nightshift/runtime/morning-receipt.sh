@@ -890,7 +890,7 @@ _lines_worktree() {
 }
 
 _lines_shift() {
-  local i mode ticked open stopped level chosen tooling target gates
+  local i mode ticked open stopped level chosen tooling target gates files
   SEC=""
   sec_field Shift "$P_SHIFTID"
   _session_host
@@ -926,6 +926,9 @@ _lines_shift() {
   else
     _commit_count
     sec_field Commits "$COMMIT_COUNT"
+  fi
+  if files="$(ns_filemap_summary "$(ns_layout_path "$NS" shift-map)")" && [ -n "$files" ]; then
+    sec_field Files "$files ([shift-map.md](./shift-map.md))"
   fi
   _policy_profile
   _resolved verificationLevel

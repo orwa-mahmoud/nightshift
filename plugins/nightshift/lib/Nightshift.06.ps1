@@ -296,6 +296,7 @@ $script:NSReceiptLabels['ending'] = 'Ending'
 $script:NSReceiptLabels['items'] = 'Items'
 $script:NSReceiptLabels['commits'] = 'Commits'
 $script:NSReceiptLabels['receipts'] = 'Receipts'
+$script:NSReceiptLabels['files'] = 'Files'
 $script:NSReceiptLabels['policy'] = 'Policy'
 $script:NSReceiptLabels['allowance'] = 'Allowance'
 $script:NSReceiptLabels['gates'] = 'Gates'
@@ -1465,6 +1466,8 @@ function Get-NSReceiptShiftLines {
         # read as a night that committed nothing.
         Add-NSReceiptField $lines 'commits' (Get-NSReceiptCommitCount -Target ([string]$Context['workTarget']) -Since ([string]$Context['since']))
     }
+    $filesSummary = Get-NSFileMapSummary (Get-NSLayoutPath (Join-Path ([string]$Context['workspace']) '.nightshift') 'shift-map')
+    if ($filesSummary.Length -gt 0) { Add-NSReceiptField $lines 'files' ($filesSummary + ' ([shift-map.md](./shift-map.md))') }
     $profile = [string]$Context['profile']
     if ($profile.Length -eq 0) { $profile = $script:NSReceiptNone }
     Add-NSReceiptField $lines 'policy' ($script:NSReceiptPolicyFormat -f $profile, ([string]$Context['verificationLevel']), ([string]$Context['toolingPolicy']))

@@ -54,7 +54,7 @@ if ((Test-Path -LiteralPath $archive -PathType Container) -and -not (Test-NSRepa
     $found = @(Get-ChildItem -LiteralPath $archive -Recurse -File -Filter '*.md' -ErrorAction SilentlyContinue | Where-Object {
             $_.Directory.Name -ceq 'receipts' -and $_.Name -cne 'README.md' -and $_.Name -cne 'previous-report.md' -and
             -not $_.Name.StartsWith('morning-', [StringComparison]::Ordinal) -and -not $_.Name.StartsWith('x-', [StringComparison]::Ordinal) -and
-            -not $_.Name.EndsWith('.original.md', [StringComparison]::Ordinal)
+            -not $_.Name.EndsWith('.original.md', [StringComparison]::Ordinal) -and $_.Name -cne 'shift-map.md'
         } | ForEach-Object { $_.FullName })
     $sorted = [string[]]$found
     [Array]::Sort($sorted, [StringComparer]::Ordinal)

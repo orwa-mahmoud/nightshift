@@ -183,10 +183,11 @@ fi
 # ------------------------------------------------------------ phase snapshot
 # Start runs this right before it arms, after any draft or order was cut into the list, so the gate
 # holds the shift to the contract and items it actually starts with. A composed shift already has
-# its snapshot and keeps it.
+# its snapshot and keeps it. With file maps on, the commit the shift starts on is recorded here too.
 if [ "$PHASE" = snapshot ]; then
   if [ -e "$POLICY" ] || [ -L "$POLICY" ]; then
     ok "snapshot composed - this shift keeps the policy it was composed with"
+    [ "$DRY_RUN" -eq 1 ] || ns_filemap_start "$WORKSPACE" || :
     exit 0
   fi
   OPEN="$(ns_open_boxes "$PUNCH" 2>/dev/null)" || OPEN=0
@@ -201,6 +202,7 @@ if [ "$PHASE" = snapshot ]; then
   fi
   if SNAPSHOT_ID="$(ns_start_snapshot "$WORKSPACE" "$_here/shift-policy.sh")"; then
     ok "snapshot start-defaults recorded for shift $SNAPSHOT_ID"
+    ns_filemap_start "$WORKSPACE" || :
   else
     warn "snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt"
   fi

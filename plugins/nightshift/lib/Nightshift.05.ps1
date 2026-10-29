@@ -51,7 +51,7 @@ function Write-NSReceiptsIndex {
         (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
             -UsageTotal (Get-NSIndexTotal (Get-NSIndexUsageTotalCell $usageTotal) $offUsage) `
             -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
-            -Morning (Get-NSReceiptsMorningNames $dir)), $utf8)
+            -Morning (Get-NSReceiptsMorningNames $dir) -ShiftMap:(Test-NSShiftMapPage $dir)), $utf8)
 }
 
 # Get-NSIndexTotal <cell> <any-off> - a totals cell: off when nothing was measured because a row's

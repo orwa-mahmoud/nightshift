@@ -2273,6 +2273,13 @@ function Get-NSReceiptsMorningNames {
     return , $sorted
 }
 
+# Test-NSShiftMapPage <receipts-dir> - true when the folder holds the shift's file map.
+function Test-NSShiftMapPage {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+    $page = Join-Path $Directory 'shift-map.md'
+    return ((Test-Path -LiteralPath $page -PathType Leaf) -and -not (Test-NSReparsePoint $page))
+}
+
 function Get-NSReceiptsIndexPage {
     param(
         [Parameter(Mandatory = $true)][string]$Date,
@@ -2280,7 +2287,8 @@ function Get-NSReceiptsIndexPage {
         [string]$UsageTotal = '',
         [string]$TimeTotal = '',
         [long]$TokenTotal = 0,
-        [AllowEmptyCollection()][string[]]$Morning = @()
+        [AllowEmptyCollection()][string[]]$Morning = @(),
+        [switch]$ShiftMap
     )
     $dash = [string][char]0x2014
     $tokCell = $(if (-not [string]::IsNullOrEmpty($UsageTotal)) { $UsageTotal }
@@ -2292,6 +2300,10 @@ function Get-NSReceiptsIndexPage {
     $lines.Add('')
     foreach ($name in $Morning) {
         $lines.Add(('Shift summary: [{0}](./{0})' -f $name))
+        $lines.Add('')
+    }
+    if ($ShiftMap) {
+        $lines.Add('Shift file map: [shift-map.md](./shift-map.md)')
         $lines.Add('')
     }
     $lines.Add('| Item | State | **Usage** | **Time** | Receipt |')
@@ -2382,7 +2394,7 @@ function Write-NSArchiveReceiptsIndex {
         if ($name -ceq 'README.md' -or
             $name.StartsWith('morning-', [StringComparison]::Ordinal) -or
             $name.StartsWith('x-', [StringComparison]::Ordinal) -or
-            $name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
+            $name.EndsWith('.original.md', [StringComparison]::Ordinal) -or $name -ceq 'shift-map.md') { continue }
         $label = ''
         foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
             if ($line -cmatch '^# (.+)$') { $label = $Matches[1]; break }
@@ -2425,6 +2437,6 @@ function Write-NSArchiveReceiptsIndex {
         (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() `
             -UsageTotal (Get-NSIndexTotal (Get-NSIndexUsageTotalCell $usageTotal) $offUsage) `
             -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
-            -Morning (Get-NSReceiptsMorningNames $Directory)), $utf8)
+            -Morning (Get-NSReceiptsMorningNames $Directory) -ShiftMap:(Test-NSShiftMapPage $Directory)), $utf8)
 }
 

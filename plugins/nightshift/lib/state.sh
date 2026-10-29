@@ -1132,6 +1132,9 @@ ns_receipt_model_lines() {
     /^<!-- usage -->/ { usage = 1; next }
     /^<!-- \/usage -->/ { usage = 0; next }
     usage { next }
+    /^<!-- nightshift:[a-z-]+ -->/ { generated = 1; next }
+    /^<!-- \/nightshift:[a-z-]+ -->/ { generated = 0; next }
+    generated { next }
     /^[[:space:]]*$/ { next }
     /^# / { next }
     /^\*\*Usage:\*\*/ { next }
@@ -1453,6 +1456,9 @@ ns_receipts_index_head() {
     done <<EOF
 $(ns_receipts_morning_names "$2")
 EOF
+    if [ -f "$2/shift-map.md" ] && [ ! -L "$2/shift-map.md" ]; then
+      printf 'Shift file map: [shift-map.md](./shift-map.md)\n\n'
+    fi
   fi
   printf '| Item | State | **Usage** | **Time** | Receipt |\n'
   printf '| --- | --- | --- | --- | --- |\n'
@@ -1587,7 +1593,7 @@ _ns_archive_receipt_headings() {
   find "$1" -maxdepth 1 -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
     { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
     case "${f##*/}" in
-      README.md | morning-* | x-* | *.original.md) continue ;;
+      README.md | morning-* | x-* | *.original.md | shift-map.md) continue ;;
     esac
     label="$(sed -n 's/^# //p' "$f" | head -n1)"
     label="${label%$'\r'}"

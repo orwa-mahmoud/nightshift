@@ -63,7 +63,7 @@ READINGS="$(
   ns_layout_set archive "$NS" archive
   if [ -d "$archive" ] && [ ! -L "$archive" ]; then
     find "$archive" -type f -path '*/receipts/*.md' ! -name 'README.md' ! -name 'morning-*.md' \
-      ! -name 'previous-report.md' ! -name 'x-*.md' ! -name '*.original.md' 2>/dev/null | LC_ALL=C sort |
+      ! -name 'previous-report.md' ! -name 'x-*.md' ! -name '*.original.md' ! -name 'shift-map.md' 2>/dev/null | LC_ALL=C sort |
       sed 's/^/archived /'
   fi
 )"

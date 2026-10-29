@@ -1438,6 +1438,7 @@ function Invoke-NSGateUsageTick {
     Invoke-NSGateSessionRow $NightshiftDir $Project $Label $(if ($stopped) { 'stopped' } else { 'ticked' })
     Remove-NSBudgetRecord $NightshiftDir $Label
     Update-NSReceiptLabel $receipt $Label
+    Invoke-NSFileMapTick $NightshiftDir $Project $Label
     $due = Get-NSLayoutPath $NightshiftDir 'receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
     Write-NSReceiptsIndex $Project
@@ -1997,10 +1998,14 @@ function Get-NSReceiptModelLines {
     if (Test-NSReparsePoint $Path) { return , $lines.ToArray() }
     $sessions = $false
     $usage = $false
+    $generated = $false
     foreach ($line in [IO.File]::ReadAllLines($Path)) {
         if ($line.StartsWith('<!-- usage -->')) { $usage = $true; continue }
         if ($line.StartsWith('<!-- /usage -->')) { $usage = $false; continue }
         if ($usage) { continue }
+        if ($line -cmatch '^<!-- nightshift:[a-z-]+ -->') { $generated = $true; continue }
+        if ($line -cmatch '^<!-- /nightshift:[a-z-]+ -->') { $generated = $false; continue }
+        if ($generated) { continue }
         if ($line.StartsWith('<!-- sessions -->')) { $sessions = $true; continue }
         if ($line.StartsWith('<!-- /sessions -->')) { $sessions = $false; continue }
         if ($sessions) { continue }
@@ -2928,4 +2933,383 @@ function Test-NSPlanRoomTarget {
     if ($t -cnotmatch '\.nightshift') { return $false }
     if ($t -cmatch 'plan-[*?\[{]' -or $t.Contains('.nightshift/*') -or $t.Contains('.nightshift/.*') -or $t -cmatch 'run/[*?]') { return $true }
     return $false
+}
+
+# File maps: the files an item and a shift changed, drawn by the runtime at each tick. With
+# receipts.evidence.fileMap on, the tick writes the item's map, from the commits made since the
+# previous tick, as a generated block at the end of its receipt, and the shift's, from the commit
+# the shift started on to HEAD, as receipts/shift-map.md. In artifact mode the item map lists the
+# paths the receipt's Outputs section declares and the shift map is their union. Mirrors
+# lib/file-map.sh byte for byte.
+$script:NSFileMapCollapse = 40
+$script:NSFileMapOpen = '<!-- nightshift:file-map -->'
+$script:NSFileMapClose = '<!-- /nightshift:file-map -->'
+
+function Test-NSFileMapEnabled {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return ((Get-NSReceiptsField $Workspace 'evidence.fileMap') -ceq 'on')
+}
+
+# Get-NSFileMapField <workspace> <key> - one value from run/file-map, or ''.
+function Get-NSFileMapField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
+    $path = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'file-map'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Test-NSReparsePoint $path)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if ($line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { return $line.Substring($Key.Length + 1).TrimEnd("`r") }
+    }
+    return ''
+}
+
+# Set-NSFileMapField <workspace> <key> <value> - write one value into run/file-map, keeping the others.
+function Set-NSFileMapField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key,
+          [AllowEmptyString()][string]$Value)
+    $path = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'file-map'
+    if (Test-NSReparsePoint $path) { return }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force
+    $lines = New-Object Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        foreach ($line in [IO.File]::ReadAllLines($path)) {
+            if (-not $line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { $lines.Add($line.TrimEnd("`r")) }
+        }
+    }
+    $lines.Add($Key + '=' + $Value)
+    [IO.File]::WriteAllText($path, (($lines -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+}
+
+# Get-NSFileMapShiftId <workspace> - tonight's shift id, or ''.
+function Get-NSFileMapShiftId {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $state = Get-NSShiftPolicyState $Workspace
+    if ($state['state'] -ceq 'valid') { return [string]$state['policy']['shiftId'] }
+    return ''
+}
+
+# Get-NSFileMapHead <workspace> - HEAD of the work target, or ''.
+function Get-NSFileMapHead {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    try { $target = Resolve-NSWorkTarget $Workspace } catch { return '' }
+    $result = Invoke-NSGitCommand $target @('rev-parse', '--verify', '--quiet', 'HEAD')
+    if ($result.ExitCode -ne 0 -or $result.Lines.Count -eq 0) { return '' }
+    return ([string]$result.Lines[0]).Trim()
+}
+
+# Start-NSFileMap <workspace> - record the commit tonight's shift starts on, once per shift.
+function Start-NSFileMap {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-NSFileMapEnabled $Workspace)) { return }
+    $mode = 'repository'
+    try { $mode = Get-NSWorkMode $Workspace } catch { return }
+    if ($mode -cne 'repository') { return }
+    $sid = Get-NSFileMapShiftId $Workspace
+    if ((Get-NSFileMapField $Workspace 'base').Length -gt 0 -and (Get-NSFileMapField $Workspace 'shift') -ceq $sid) { return }
+    $head = Get-NSFileMapHead $Workspace
+    if ($head.Length -eq 0) { return }
+    Set-NSFileMapField $Workspace 'shift' $sid
+    Set-NSFileMapField $Workspace 'base' $head
+    Set-NSFileMapField $Workspace 'last' $head
+}
+
+# Get-NSGitZeroFields <dir> <args> - git's NUL-separated output as fields, or $null when git fails.
+function Get-NSGitZeroFields {
+    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string[]]$Arguments)
+    $previousEncoding = [Console]::OutputEncoding
+    $previousEap = $ErrorActionPreference
+    $hadNative = Test-Path Variable:PSNativeCommandUseErrorActionPreference
+    $previousNative = $false
+    if ($hadNative) { $previousNative = $PSNativeCommandUseErrorActionPreference; $PSNativeCommandUseErrorActionPreference = $false }
+    try {
+        [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+        $ErrorActionPreference = 'Continue'
+        $output = & git -C $Directory @Arguments 2>$null
+        if ($LASTEXITCODE -ne 0) { return $null }
+        $text = (@($output) | ForEach-Object { [string]$_ }) -join "`n"
+        $fields = New-Object Collections.Generic.List[string]
+        foreach ($field in $text.Split([char]0)) { $fields.Add($field) }
+        if ($fields.Count -gt 0 -and $fields[$fields.Count - 1].Length -eq 0) { $fields.RemoveAt($fields.Count - 1) }
+        return , $fields.ToArray()
+    }
+    catch {
+        return $null
+    }
+    finally {
+        [Console]::OutputEncoding = $previousEncoding
+        $ErrorActionPreference = $previousEap
+        if ($hadNative) { $PSNativeCommandUseErrorActionPreference = $previousNative }
+    }
+}
+
+# Get-NSFileMapGitRows <dir> <from> <to> - one row per changed path, renames and copies under their
+# new path, or $null when git cannot read the range. Mirrors ns_filemap_git_rows.
+function Get-NSFileMapGitRows {
+    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$From,
+          [Parameter(Mandatory = $true)][string]$To)
+    $names = Get-NSGitZeroFields $Directory @('diff', '-M', '--name-status', '-z', $From, $To)
+    if ($null -eq $names) { return $null }
+    $counts = Get-NSGitZeroFields $Directory @('diff', '-M', '--numstat', '-z', $From, $To)
+    if ($null -eq $counts) { return $null }
+    $add = New-Object 'Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
+    $del = New-Object 'Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
+    $i = 0
+    while ($i -lt $counts.Count) {
+        $rec = $counts[$i]; $i++
+        $parts = $rec.Split([char]"`t", 3)
+        if ($parts.Count -lt 3) { continue }
+        $path = $parts[2]
+        if ($path.Length -eq 0) { $i++; $path = $(if ($i -lt $counts.Count) { $counts[$i] } else { '' }); $i++ }
+        $add[$path] = $parts[0]
+        $del[$path] = $parts[1]
+    }
+    $rows = New-Object Collections.Generic.List[object]
+    $i = 0
+    while ($i -lt $names.Count) {
+        $st = $names[$i]; $i++
+        if ($st.Length -eq 0) { continue }
+        $old = ''
+        if ($st[0] -ceq 'R' -or $st[0] -ceq 'C') { $old = $names[$i]; $i++ }
+        $path = $(if ($i -lt $names.Count) { $names[$i] } else { '' }); $i++
+        $a = '0'; $d = '0'
+        if ($add.ContainsKey($path)) { $a = $add[$path]; $d = $del[$path] }
+        $rows.Add([pscustomobject]@{ Path = $path; Status = [string]$st[0]; Old = $old; Add = $a; Del = $d })
+    }
+    return , $rows.ToArray()
+}
+
+# Get-NSFileMapOutputs <receipt> - the paths a receipt's Outputs section declares: relative link
+# targets and backticked paths, without a leading ./, sorted and unique. Mirrors ns_filemap_outputs.
+function Get-NSFileMapOutputs {
+    param([Parameter(Mandatory = $true)][string]$Receipt)
+    $found = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return , @() }
+    $inside = $false
+    foreach ($raw in [IO.File]::ReadAllLines($Receipt)) {
+        $line = $raw.TrimEnd("`r")
+        if ($line.StartsWith('## ', [StringComparison]::Ordinal)) { $inside = ($line -ceq '## Outputs'); continue }
+        if (-not $inside) { continue }
+        $candidates = New-Object Collections.Generic.List[string]
+        foreach ($m in [regex]::Matches($line, '\]\(([^)]+)\)')) {
+            $t = ($m.Groups[1].Value -split '[ \t]', 2)[0]
+            if ($t -cmatch '^[a-z][a-z0-9+.-]*:' -or $t.StartsWith('#') -or $t.StartsWith('/')) { continue }
+            $candidates.Add($t)
+        }
+        foreach ($m in [regex]::Matches($line, '`([^`]+)`')) {
+            $t = $m.Groups[1].Value
+            if ($t -cmatch '[ \t]' -or $t -cmatch '^[a-z][a-z0-9+.-]*:' -or $t.StartsWith('/')) { continue }
+            if (-not $t.Contains('/') -and $t -cnotmatch '\.[A-Za-z0-9]+$') { continue }
+            $candidates.Add($t)
+        }
+        foreach ($t in $candidates) {
+            $p = $t
+            if ($p.StartsWith('./', [StringComparison]::Ordinal)) { $p = $p.Substring(2) }
+            if ($p.Trim().Length -gt 0) { $null = $found.Add($p) }
+        }
+    }
+    return , @($found)
+}
+
+# Format-NSFileMap <rows> <git|artifact> - the map's summary line and tree. Mirrors ns_filemap_render.
+function Format-NSFileMap {
+    param([AllowEmptyCollection()][object[]]$Rows = @(), [Parameter(Mandatory = $true)][string]$Kind)
+    $n = $Rows.Count
+    if ($n -eq 0) {
+        if ($Kind -ceq 'git') { return "No files changed.`n" }
+        return "No outputs declared.`n"
+    }
+    $countsOf = { param($r) if ($r.Add -ceq '-') { 'binary' } else { '+' + $r.Add + ' -' + $r.Del } }
+    $lines = New-Object Collections.Generic.List[string]
+    if ($n -le $script:NSFileMapCollapse) {
+        $entries = foreach ($r in $Rows) {
+            $slash = $r.Path.LastIndexOf('/')
+            $dir = $(if ($slash -ge 0) { $r.Path.Substring(0, $slash) } else { '' })
+            $name = $(if ($slash -ge 0) { $r.Path.Substring($slash + 1) } else { $r.Path })
+            [pscustomobject]@{ Dir = $dir; Name = $name; Row = $r }
+        }
+        $sorted = [Collections.Generic.List[object]]::new()
+        foreach ($e in $entries) { $sorted.Add($e) }
+        $sorted.Sort([Comparison[object]] {
+                param($x, $y)
+                $c = [string]::CompareOrdinal($x.Dir, $y.Dir)
+                if ($c -ne 0) { return $c }
+                return [string]::CompareOrdinal($x.Name, $y.Name)
+            })
+        $dir = $null
+        foreach ($e in $sorted) {
+            if ($null -eq $dir -or $e.Dir -cne $dir) {
+                $dir = $e.Dir
+                $lines.Add($(if ($dir.Length -eq 0) { './' } else { $dir + '/' }))
+            }
+            if ($Kind -ceq 'git') {
+                $line = '  ' + $e.Row.Status + ' ' + $e.Name + '  ' + (& $countsOf $e.Row)
+                if ($e.Row.Old.Length -gt 0) { $line += '  (from ' + $e.Row.Old + ')' }
+                $lines.Add($line)
+            }
+            else {
+                $lines.Add('  ' + $e.Name)
+            }
+        }
+    }
+    else {
+        $keyOf = {
+            param([string]$p, [int]$depth)
+            $parts = $p.Split('/')
+            if ($parts.Count - 1 -lt $depth) { return $p }
+            return (($parts[0..($depth - 1)]) -join '/') + '/'
+        }
+        $depth = 3
+        for (; $depth -ge 1; $depth--) {
+            $seen = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+            foreach ($r in $Rows) { $null = $seen.Add((& $keyOf $r.Path $depth)) }
+            if ($seen.Count -le $script:NSFileMapCollapse -or $depth -eq 1) { break }
+        }
+        $files = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+        $plus = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+        $minus = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+        $keyed = New-Object Collections.Generic.List[object]
+        foreach ($r in $Rows) {
+            $k = & $keyOf $r.Path $depth
+            if ($k.EndsWith('/')) {
+                if (-not $files.ContainsKey($k)) { $files[$k] = 0; $plus[$k] = 0; $minus[$k] = 0 }
+                $files[$k]++
+                if ($r.Add -cne '-') { $plus[$k] += [long]$r.Add; $minus[$k] += [long]$r.Del }
+                continue
+            }
+            if ($Kind -ceq 'git') {
+                $line = $r.Status + ' ' + $r.Path + '  ' + (& $countsOf $r)
+                if ($r.Old.Length -gt 0) { $line += '  (from ' + $r.Old + ')' }
+            }
+            else { $line = $r.Path }
+            $keyed.Add([pscustomobject]@{ Key = $k; Line = $line })
+        }
+        foreach ($k in $files.Keys) {
+            $count = $files[$k]
+            if ($Kind -ceq 'git') {
+                $line = $k + '  ' + $count + $(if ($count -eq 1) { ' file' } else { ' files' }) + '  +' + $plus[$k] + ' -' + $minus[$k]
+            }
+            else {
+                $line = $k + '  ' + $count + $(if ($count -eq 1) { ' output' } else { ' outputs' })
+            }
+            $keyed.Add([pscustomobject]@{ Key = $k; Line = $line })
+        }
+        $keyed.Sort([Comparison[object]] {
+                param($x, $y)
+                $c = [string]::CompareOrdinal($x.Key, $y.Key)
+                if ($c -ne 0) { return $c }
+                return [string]::CompareOrdinal($x.Line, $y.Line)
+            })
+        foreach ($e in $keyed) { $lines.Add($e.Line) }
+    }
+    $collapsed = $n -gt $script:NSFileMapCollapse
+    if ($Kind -ceq 'git') {
+        $a = [long]0; $d = [long]0
+        foreach ($r in $Rows) { if ($r.Add -cne '-') { $a += [long]$r.Add; $d += [long]$r.Del } }
+        $summary = '{0} {1} changed, +{2} -{3}' -f $n, $(if ($n -eq 1) { 'file' } else { 'files' }), $a, $d
+    }
+    else {
+        $summary = '{0} {1} declared' -f $n, $(if ($n -eq 1) { 'output' } else { 'outputs' })
+    }
+    if ($collapsed) { $summary += ', folders collapsed' }
+    $fence = '```'
+    return ($summary + "`n`n" + $fence + "text`n" + ($lines -join "`n") + "`n" + $fence + "`n")
+}
+
+# Get-NSFileMapSummary <page> - the summary line of a drawn map, or ''. Mirrors ns_filemap_summary.
+function Get-NSFileMapSummary {
+    param([Parameter(Mandatory = $true)][string]$Page)
+    if (-not (Test-Path -LiteralPath $Page -PathType Leaf) -or (Test-NSReparsePoint $Page)) { return '' }
+    $dash = [string][char]0x2014
+    foreach ($raw in [IO.File]::ReadAllLines($Page)) {
+        $line = $raw.TrimEnd("`r")
+        if ($line -cmatch '^[0-9]+ (file|files|output|outputs) ' -or $line -cmatch '^No (files changed|outputs declared)\.$' -or
+            $line.StartsWith('unavailable ' + $dash + ' ', [StringComparison]::Ordinal)) { return $line }
+    }
+    return ''
+}
+
+# Write-NSFileMapBlock <receipt> <body> - put the generated block at the end of the receipt, replacing
+# the one already there. The receipt keeps its time. Mirrors ns_filemap_write_block.
+function Write-NSFileMapBlock {
+    param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Body)
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return }
+    $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
+    $kept = New-Object Collections.Generic.List[string]
+    $skip = $false
+    $text = [IO.File]::ReadAllText($Receipt)
+    $all = $text.Split("`n")
+    $count = $all.Count
+    if ($count -gt 0 -and $all[$count - 1].Length -eq 0) { $count-- }
+    for ($i = 0; $i -lt $count; $i++) {
+        $raw = $all[$i]
+        $line = $raw.TrimEnd("`r")
+        if ($line -ceq $script:NSFileMapOpen) { $skip = $true; continue }
+        if ($skip -and $line -ceq $script:NSFileMapClose) { $skip = $false; continue }
+        if ($skip) { continue }
+        $kept.Add($raw)
+    }
+    while ($kept.Count -gt 0 -and $kept[$kept.Count - 1] -cmatch '^[ \t\f\v\r]*$') { $kept.RemoveAt($kept.Count - 1) }
+    $out = New-Object Text.StringBuilder
+    foreach ($l in $kept) { $null = $out.Append($l).Append("`n") }
+    if ($kept.Count -gt 0) { $null = $out.Append("`n") }
+    $null = $out.Append($script:NSFileMapOpen).Append("`n").Append($Body).Append($script:NSFileMapClose).Append("`n")
+    [IO.File]::WriteAllText($Receipt, $out.ToString(), (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp)
+}
+
+# Invoke-NSFileMapTick <nightshift-dir> <workspace> <label> - draw the item's map into its receipt and
+# the shift's into receipts/shift-map.md. Mirrors ns_filemap_tick.
+function Invoke-NSFileMapTick {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [Parameter(Mandatory = $true)][string]$Label)
+    if (-not (Test-NSFileMapEnabled $Project)) { return }
+    $receipt = Get-NSReceiptPath $Project $Label
+    if (-not (Test-Path -LiteralPath $receipt -PathType Leaf) -or (Test-NSReparsePoint $receipt)) { return }
+    $dir = Get-NSReceiptsDir $Project
+    $page = Get-NSLayoutPath $NightshiftDir 'shift-map'
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $dash = [string][char]0x2014
+    $mode = 'repository'
+    try { $mode = Get-NSWorkMode $Project } catch { $mode = 'repository' }
+    if ($mode -ceq 'artifact') {
+        $rows = @(Get-NSFileMapOutputs $receipt | ForEach-Object { [pscustomobject]@{ Path = $_; Status = ''; Old = ''; Add = ''; Del = '' } })
+        Write-NSFileMapBlock $receipt ("## File map`n`n" + (Format-NSFileMap -Rows $rows -Kind 'artifact'))
+        $union = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
+        foreach ($name in (Get-NSTickedReceiptNames $Project)) {
+            foreach ($p in (Get-NSFileMapOutputs (Join-Path $dir $name))) { $null = $union.Add($p) }
+        }
+        $all = @($union | ForEach-Object { [pscustomobject]@{ Path = $_; Status = ''; Old = ''; Add = ''; Del = '' } })
+        [IO.File]::WriteAllText($page, ("# Shift file map`n`nThe outputs the ticked items declare.`n`n" + (Format-NSFileMap -Rows $all -Kind 'artifact')), $utf8)
+        return
+    }
+    $base = Get-NSFileMapField $Project 'base'
+    $last = Get-NSFileMapField $Project 'last'
+    if ($last.Length -eq 0) { $last = $base }
+    $head = Get-NSFileMapHead $Project
+    $target = ''
+    try { $target = Resolve-NSWorkTarget $Project } catch { $target = '' }
+    $short = { param([string]$s) if ($s.Length -gt 12) { $s.Substring(0, 12) } else { $s } }
+    if ($base.Length -eq 0) {
+        $body = "## File map`n`nunavailable $dash no starting commit was recorded when the shift started`n"
+    }
+    elseif ($head.Length -eq 0) {
+        $body = "## File map`n`nunavailable $dash the work target has no readable HEAD`n"
+    }
+    else {
+        $rows = Get-NSFileMapGitRows $target $last $head
+        if ($null -eq $rows) { $body = "## File map`n`nunavailable $dash git could not read $(& $short $last)..$(& $short $head)`n" }
+        else { $body = "## File map`n`n" + (Format-NSFileMap -Rows $rows -Kind 'git') }
+    }
+    Write-NSFileMapBlock $receipt $body
+    $shiftRows = $null
+    if ($base.Length -gt 0 -and $head.Length -gt 0) { $shiftRows = Get-NSFileMapGitRows $target $base $head }
+    if ($null -ne $shiftRows) {
+        $text = "# Shift file map`n`nFrom $(& $short $base), where the shift started, to $(& $short $head).`n`n" + (Format-NSFileMap -Rows $shiftRows -Kind 'git')
+    }
+    elseif ($base.Length -gt 0 -and $head.Length -gt 0) {
+        $text = "# Shift file map`n`nunavailable $dash git could not read $(& $short $base)..$(& $short $head)`n"
+    }
+    else {
+        $text = "# Shift file map`n`nunavailable $dash no starting commit was recorded when the shift started`n"
+    }
+    [IO.File]::WriteAllText($page, $text, $utf8)
+    if ($head.Length -gt 0) { Set-NSFileMapField $Project 'last' $head }
 }
