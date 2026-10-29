@@ -239,6 +239,41 @@ function Copy-NSArchiveFolder {
     else { $script:removed++ }
 }
 
+# Copy-NSArchiveEvidence <live-dir> <archived-dir> <receipt> - an item's evidence folder, filed
+# beside its receipt file by file, and removed from live storage only once the receipt itself was
+# and every file in it was filed. Mirrors file_evidence.
+function Copy-NSArchiveEvidence {
+    param([string]$Live, [string]$To, [string]$Receipt)
+    $name = [IO.Path]::GetFileName($Live) + '/'
+    if (Test-NSReparsePoint $Live) {
+        $kept.Add($name + ' (a link, not a folder of evidence)')
+        return
+    }
+    $whole = $true
+    $root = (Get-Item -LiteralPath $Live -Force).FullName.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $entries = @(Get-ChildItem -LiteralPath $Live -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer })
+    $rels = Sort-NSOrdinal @($entries | ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') } |
+        Where-Object { -not ('/' + $_).Contains('/.') })
+    foreach ($rel in $rels) {
+        $file = Join-Path $Live $rel
+        $sub = $To
+        $slash = $rel.LastIndexOf('/')
+        if ($slash -gt 0) { $sub = Join-Path $To $rel.Substring(0, $slash) }
+        if (Test-NSReparsePoint $file) { $whole = $false; continue }
+        if (-not (Copy-NSArchiveRecord $file $sub 'keep')) { $whole = $false }
+    }
+    if (-not $whole) {
+        $kept.Add($name + ' (not every file in it could be filed)')
+        return
+    }
+    if (-not $rotate) { return }
+    # A receipt that stayed live keeps its evidence beside it.
+    if (Test-Path -LiteralPath $Receipt) { return }
+    Remove-Item -LiteralPath $Live -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Live) { $kept.Add($name + ' (could not be removed from live storage)') }
+    else { $script:removed++ }
+}
+
 # The receipts of items nobody finished. They stay live and are not filed, exactly as the box stays
 # in the punch list, so the next shift extends the same file; they are filed once their item is
 # ticked.
@@ -255,7 +290,12 @@ if (Test-Path -LiteralPath $src -PathType Container) {
     foreach ($file in (Sort-NSOrdinal @($files | ForEach-Object { $_.Name }))) {
         # An open item's receipt stays live only, until its item is ticked.
         if ($openNames -ccontains $file) { continue }
-        $null = Copy-NSArchiveRecord (Join-Path $src $file) $dest 'closed'
+        if (-not (Copy-NSArchiveRecord (Join-Path $src $file) $dest 'closed')) { continue }
+        $stem = $file -creplace '\.md$', ''
+        $evidence = Join-Path $src $stem
+        if (Test-Path -LiteralPath $evidence -PathType Container) {
+            Copy-NSArchiveEvidence $evidence (Join-Path $dest $stem) (Join-Path $src $file)
+        }
     }
 }
 

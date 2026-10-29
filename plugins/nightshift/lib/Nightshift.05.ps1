@@ -29,7 +29,6 @@ function Write-NSReceiptsIndex {
             $state = $row.State
             $label = $row.Label
             $base = Get-NSReceiptBase $Workspace $label $row.Id
-            $file = './' + $base + '.md'
             $path = Join-Path $dir ($base + '.md')
             if ($Remaining -and $state -ceq 'ticked' -and
                 -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
@@ -39,8 +38,8 @@ function Write-NSReceiptsIndex {
             $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
             if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
             if ($cells['Time'] -ceq 'off') { $offTime = $true }
-            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f
-                $label, $state, $cells['Tokens'], $cells['Time'], $file))
+            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | {4} |' -f
+                $label, $state, $cells['Tokens'], $cells['Time'], (Get-NSReceiptCell $dir ($base + '.md'))))
         }
     }
     if ($Remaining -and $rows.Count -eq 0) {

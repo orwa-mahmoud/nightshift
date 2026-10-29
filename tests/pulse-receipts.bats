@@ -42,6 +42,28 @@ armed() {
   [[ "$output" != *'sections: What was delivered'* ]] || false
 }
 
+@test "an item that asks for evidence is told the Evidence section, its folder, and how to write a gap" {
+  p="$(new_project pulse-evidence)"
+  printf '## Items\n- [ ] **36. Restyle the page.**\n  - Evidence: before/after screenshots\n- [ ] **37. Plain.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  armed "$p"
+  run pulse "$p"
+  [[ "$output" == *'.nightshift/receipts/36-restyle-the-page.md with one paragraph on the approach; sections: What was delivered · Why · Tried and rejected · Verification · Evidence · Outputs · Parked decisions and snags; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively, and evidence that could not be produced written as `unavailable — <reason>`.'* ]] || { printf '%s\n' "$output"; return 1; }
+  line() { bash -c '. "$1"; . "$2"; ns_pulse_receipts_start_line "$3" "$4"' _ "$LIB" "$PULSE" "$p" "$1"; }
+  # An item without the line reads exactly as before.
+  [[ "$(line '37. Plain.')" == *'Verification · Outputs · Parked decisions and snags.' ]] || false
+  jq '.receipts.templatePath = "notes/item.md"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  [[ "$(line '36. Restyle the page.')" == *"follow the owner's template at notes/item.md, with an Evidence section; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively"* ]] || false
+  [[ "$(line '37. Plain.')" == *"follow the owner's template at notes/item.md" ]] || false
+  command -v pwsh >/dev/null 2>&1 || return 0
+  for label in '36. Restyle the page.' '37. Plain.'; do
+    got="$(NS_MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1" NS_WS="$p" NS_LABEL="$label" \
+      pwsh -NoProfile -NonInteractive -Command '[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false); Import-Module $env:NS_MODULE -Force -DisableNameChecking; Get-NSPulseReceiptsStartLine -Workspace $env:NS_WS -Label $env:NS_LABEL')"
+    [ "$got" = "$(line "$label")" ] || { echo "bash: $(line "$label")"; echo "PowerShell: $got"; return 1; }
+  done
+}
+
 @test "cadence text names the item and file, and a stale marker is rewritten" {
   p="$(new_project pulse-cadence)"
   printf '## Items\n- [x] **37. Second of the replay.**\n- [ ] **38. Third of the replay.**\n' \

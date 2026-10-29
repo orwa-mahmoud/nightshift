@@ -182,22 +182,33 @@ ns_pulse_receipts_basename() {
   ns_receipt_base "$1" "$2"
 }
 
-# ns_pulse_receipts_sections <project> — the approach clause on an item-start notice.
+# ns_pulse_receipts_sections <project> <label> — the approach clause on an item-start notice. An
+# item that asks for evidence gets an Evidence section and the folder its large files go in.
 ns_pulse_receipts_sections() {
-  local path
+  local path folder=""
+  if ns_item_evidence_asked "$(ns_layout_path "$1/.nightshift" punch-list)" "$2"; then
+    folder="$(ns_layout_name "$1/.nightshift" receipts)/$(ns_pulse_receipts_basename "$1" "$2")/"
+  fi
   path="$(ns_receipts "$1" templatePath 2>/dev/null)" || path=""
   if [ -n "$path" ]; then
     printf 'follow the owner'\''s template at %s' "$path"
+    [ -n "$folder" ] || return 0
+    printf ', with an Evidence section'
+  elif [ -n "$folder" ]; then
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Evidence · Outputs · Parked decisions and snags'
+  else
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
     return 0
   fi
-  printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+  printf '; short evidence inline, large files in %s linked relatively, and evidence that could not be produced written as %s.' \
+    "$folder" "\`unavailable — <reason>\`"
 }
 
 # ns_pulse_receipts_start_line <project> <label>
 ns_pulse_receipts_start_line() {
   printf 'receipts: item %s started — open %s/%s.md with one paragraph on the approach; %s' \
     "$2" "$(ns_layout_name "$1/.nightshift" receipts)" "$(ns_pulse_receipts_basename "$1" "$2")" \
-    "$(ns_pulse_receipts_sections "$1")"
+    "$(ns_pulse_receipts_sections "$1" "$2")"
 }
 
 # ns_pulse_receipts_tick_line <project> <label>

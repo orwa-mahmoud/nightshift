@@ -201,6 +201,16 @@ $(ns_items_section "$1" 2>/dev/null)
 EOF
 }
 
+# ns_item_evidence_asked <punch-list> <label> — status 0 when that item carries an `Evidence:` line.
+ns_item_evidence_asked() {
+  ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
+    /^- \[[ xX-]\]/ { inside = (ns_item_label($0) == want); next }
+    /^[^[:space:]]/ { inside = 0 }
+    inside && /^[[:space:]]+-[[:space:]]+Evidence:/ { found = 1; exit }
+    END { exit !found }
+  '
+}
+
 # ns_item_id_for <punch-list> <label> — the id of the first item with that label, or nothing.
 ns_item_id_for() {
   ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
@@ -372,12 +382,15 @@ ns_receipts_rename() {
     want="$dir/$(ns_receipt_want "$project" "$label" "$id").md"
     [ "$f" != "$want" ] || continue
     { [ -e "$want" ] || [ -L "$want" ]; } && continue
+    # The evidence folder moves with its receipt, so a name its folder cannot take is not taken.
+    if [ -d "${f%.md}" ] && { [ -e "${want%.md}" ] || [ -L "${want%.md}" ]; }; then continue; fi
     ns_receipt_refresh "$f" || { rc=1; continue; }
     if [ -f "$(ns_receipt_session_file "$f")" ]; then
       ns_receipt_store_sessions "$want" "$(ns_receipt_session_data "$f")" || { rc=1; continue; }
     fi
     if mv "$f" "$want"; then
       ns_receipt_forget_sessions "$f" || rc=1
+      ns_receipt_evidence_move "$dir" "${f##*/}" "${want##*/}" || rc=1
       ns_receipts_relink "$dir" "${f##*/}" "${want##*/}" || rc=1
     else
       rc=1
@@ -388,24 +401,67 @@ EOF
   return "$rc"
 }
 
-# ns_receipts_relink <receipts-dir> <old-name> <new-name> — a morning page links each receipt by its
-# file name, so after a rename the pages in the folder link the new name.
+# ns_receipts_relink <receipts-dir> <old-name> <new-name> — a morning page links each receipt, and
+# its evidence folder, by name, so after a rename the pages in the folder link the new names.
 ns_receipts_relink() {
-  local page tmp rc=0
+  local page rc=0
   for page in "$1"/morning-*.md; do
     if [ ! -f "$page" ] || [ -L "$page" ]; then continue; fi
-    grep -qF "(./$2)" "$page" || continue
-    tmp="$page.$$"
-    if awk -v old="(./$2)" -v new="(./$3)" '
-      { out = ""; while ((i = index($0, old)) > 0) { out = out substr($0, 1, i - 1) new; $0 = substr($0, i + length(old)) } print out $0 }
-    ' "$page" >"$tmp" && mv "$tmp" "$page"; then
-      :
-    else
-      rm -f "$tmp"
-      rc=1
-    fi
+    _ns_replace_links "$page" "(./$2)" "(./$3)" || rc=1
+    _ns_replace_links "$page" "(./${2%.md}/" "(./${3%.md}/" || rc=1
   done
   return "$rc"
+}
+
+# _ns_replace_links <file> <old> <new> — replace every literal <old> with <new> in the file.
+_ns_replace_links() {
+  local tmp
+  grep -qF -- "$2" "$1" || return 0
+  tmp="$1.$$"
+  if awk -v old="$2" -v new="$3" '
+    { out = ""; while ((i = index($0, old)) > 0) { out = out substr($0, 1, i - 1) new; $0 = substr($0, i + length(old)) } print out $0 }
+  ' "$1" >"$tmp" && mv "$tmp" "$1"; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+# ns_receipt_evidence_dir <receipts-dir> <receipt-name> — an item's evidence folder: the folder named
+# after its receipt, beside it, printed only when it is a real folder holding at least one file.
+ns_receipt_evidence_dir() {
+  local d="$1/${2%.md}"
+  { [ -d "$d" ] && [ ! -L "$d" ]; } || return 1
+  [ -n "$(find "$d" -type f ! -name '.*' -print 2>/dev/null | head -n1)" ] || return 1
+  printf '%s' "$d"
+}
+
+# ns_receipt_evidence_move <receipts-dir> <old-name> <new-name> — after a receipt is renamed, carry
+# its evidence folder to the new name and repoint the receipt's links into it. The receipt keeps its
+# modification time, as every runtime write does.
+ns_receipt_evidence_move() {
+  local dir="$1" old="${2%.md}" new="${3%.md}" receipt ref rc=0
+  { [ -d "$dir/$old" ] && [ ! -L "$dir/$old" ]; } || return 0
+  { [ -e "$dir/$new" ] || [ -L "$dir/$new" ]; } && return 1
+  mv "$dir/$old" "$dir/$new" || return 1
+  receipt="$dir/$new.md"
+  { [ -f "$receipt" ] && [ ! -L "$receipt" ]; } || return 0
+  ref="$receipt.mtime.$$"
+  touch -r "$receipt" "$ref" 2>/dev/null || return 1
+  _ns_replace_links "$receipt" "](./$old/" "](./$new/" || rc=1
+  _ns_replace_links "$receipt" "]($old/" "]($new/" || rc=1
+  touch -r "$ref" "$receipt" 2>/dev/null || rc=1
+  rm -f "$ref"
+  return "$rc"
+}
+
+# ns_receipt_cell <receipts-dir> <receipt-name> — an index row's Receipt cell: the receipt, and its
+# evidence folder when it holds anything.
+ns_receipt_cell() {
+  printf '[./%s](./%s)' "$2" "$2"
+  if ns_receipt_evidence_dir "$1" "$2" >/dev/null; then
+    printf ' · [evidence](./%s/)' "${2%.md}"
+  fi
 }
 
 # ns_receipt_path <project-dir> <label> [id] — the item's file under receipts/.
@@ -1569,8 +1625,8 @@ EOF
       *$'\n'"$base"$'\n'*) state=open ;;
       *) state=ticked ;;
     esac
-    printf '| %s | %s | **%s** | **%s** | [./%s](./%s) |\n' \
-      "$label" "$state" "$usage" "$time" "$base" "$base" >>"$rows"
+    printf '| %s | %s | **%s** | **%s** | %s |\n' \
+      "$label" "$state" "$usage" "$time" "$(ns_receipt_cell "$dir" "$base")" >>"$rows"
   done <<FIND
 $(_ns_archive_receipt_headings "$dir" | ns_receipts_heading_order)
 FIND
@@ -1593,7 +1649,7 @@ FIND
 # and every ticked item whose receipt is still there — and removes it when nothing is left.
 ns_receipts_write_index() {
   local project="$1" mode="${2:-}" punch
-  local dir index date_s state base file cells
+  local dir index date_s state base cells
   local in cw cr out rea work pause usage time _sum measured
   local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0 tmeasured=00000 anyu=0 turns=""
   local label id items rows armed read_failed=0
@@ -1626,7 +1682,6 @@ ns_receipts_write_index() {
     if [ "$mode" = remaining ] && [ "$state" = ticked ] && [ ! -f "$dir/${base}.md" ]; then
       continue
     fi
-    file="./${base}.md"
     if ! ns_receipt_refresh "$dir/${base}.md" || ! cells="$(ns_receipt_usage_cells "$dir/${base}.md")"; then
       read_failed=1
       break
@@ -1640,8 +1695,8 @@ EOF
     case "$usage" in off) offu=1 ;; '—') ;; *) anyu=1 ;; esac
     turns="$turns$(ns_receipt_shared_readings "$dir/${base}.md")"$'\n'
     [ "$time" != off ] || offt=1
-    printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
-      "$label" "$state" "$usage" "$time" "$file" "$file" >>"$rows"
+    printf '| %s | %s | **%s** | **%s** | %s |\n' \
+      "$label" "$state" "$usage" "$time" "$(ns_receipt_cell "$dir" "${base}.md")" >>"$rows"
   done <"$items"
   if [ "$read_failed" -eq 1 ]; then rm -f "$items" "$rows"; return 1; fi
   if [ "$mode" = remaining ] && [ ! -s "$rows" ]; then

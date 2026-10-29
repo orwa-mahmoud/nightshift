@@ -160,6 +160,12 @@ The shape of every item file is What was delivered · Why · Tried and rejected 
 Outputs · Parked decisions and snags. Read that shape once when the first item starts. When
 `receipts.templatePath` is set, follow that template instead.
 
+An item with an `Evidence:` line also gets an `## Evidence` section after Verification. Short
+evidence goes inline; screenshots, recordings and data go in a folder named after the receipt,
+beside it, linked relatively (`./<receipt-base>/before.png`). Evidence the item asked for and that
+could not be produced is written as `unavailable — <reason>`, never left out. Evidence never holds
+a tick. Archive files the folder with its receipt, and a renamed receipt takes its folder along.
+
 **One file per punch-list item**, named `<NN>-<slug>-<id>.md`: the item's number, its title, and
 the permanent id on the item's line (`<!-- id: k7q2 -->`). The pulse names the file, the runtime
 finds it by its id, and between shifts it is renamed to follow a renumbered or retitled item. It

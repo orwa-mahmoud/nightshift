@@ -1913,13 +1913,44 @@ function Test-NSReceiptsEnabled {
     return ((Get-NSReceiptsField $Workspace 'enabled') -cne 'false')
 }
 
+# Test-NSItemEvidenceAsked <punch-list> <label> - true when that item carries an `Evidence:` line.
+# Mirrors ns_item_evidence_asked.
+function Test-NSItemEvidenceAsked {
+    param([Parameter(Mandatory = $true)][string]$PunchList, [Parameter(Mandatory = $true)][string]$Label)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) { return $false }
+    $inside = $false
+    foreach ($line in (Get-NSPunchItemsSection $PunchList)) {
+        $l = $line.TrimEnd("`r")
+        if ($l -cmatch '^- \[[ xX-]\]') { $inside = ((Get-NSItemLabel $l) -ceq $Label); continue }
+        if ($l -cmatch '^[^ \t]') { $inside = $false }
+        if ($inside -and $l -cmatch '^[ \t]+-[ \t]+Evidence:') { return $true }
+    }
+    return $false
+}
+
+# Get-NSPulseReceiptsSections <workspace> <label> - the approach clause on an item-start notice. An
+# item that asks for evidence gets an Evidence section and the folder its large files go in.
 function Get-NSPulseReceiptsSections {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+    param([Parameter(Mandatory = $true)][string]$Workspace, [string]$Label = '')
+    $ns = Join-Path $Workspace '.nightshift'
+    $folder = ''
+    if ($Label.Length -gt 0 -and (Test-NSItemEvidenceAsked (Get-NSLayoutPath $ns 'punch-list') $Label)) {
+        $folder = (Get-NSLayoutName $ns 'receipts') + '/' + (Get-NSReceiptBase $Workspace $Label) + '/'
+    }
     $path = Get-NSReceiptsField $Workspace 'templatePath'
     if (-not [string]::IsNullOrEmpty($path)) {
-        return ('follow the owner''s template at ' + $path)
+        $clause = 'follow the owner''s template at ' + $path
+        if ($folder.Length -eq 0) { return $clause }
+        $clause += ', with an Evidence section'
     }
-    return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Outputs $script:NSDot Parked decisions and snags."
+    elseif ($folder.Length -gt 0) {
+        $clause = "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Evidence $script:NSDot Outputs $script:NSDot Parked decisions and snags"
+    }
+    else {
+        return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Outputs $script:NSDot Parked decisions and snags."
+    }
+    $dash = [string][char]0x2014
+    return ($clause + '; short evidence inline, large files in ' + $folder + ' linked relatively, and evidence that could not be produced written as `unavailable ' + $dash + ' <reason>`.')
 }
 
 function Get-NSPulseReceiptsStartLine {
@@ -1927,7 +1958,7 @@ function Get-NSPulseReceiptsStartLine {
     $dash = [string][char]0x2014
     return ('receipts: item ' + $Label + ' started ' + $dash + ' open ' + (Get-NSLayoutName (Join-Path $Workspace '.nightshift') 'receipts') + '/' +
         (Get-NSReceiptBase $Workspace $Label) + '.md with one paragraph on the approach; ' +
-        (Get-NSPulseReceiptsSections $Workspace))
+        (Get-NSPulseReceiptsSections $Workspace $Label))
 }
 
 function Get-NSPulseReceiptsTickLine {
