@@ -59,14 +59,26 @@ sessions. The checks and your review still determine whether a completed item is
 
 ### Codex and ChatGPT
 
-[Install Nightshift from the official OpenAI Plugin Directory](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe).
-
-For local Codex development, install the same package from its marketplace:
+**Recommended: the full plugin for local Codex.** Install it from the repository marketplace:
 
 ```text
 codex plugin marketplace add orwa-mahmoud/nightshift
 codex plugin add nightshift@nightshift
 ```
+
+Add the marketplace once per Codex installation. Review and trust the plugin's hooks (`/hooks` in
+the CLI), then start a new conversation. The full plugin carries the clock-out gate, safety rules,
+session recovery, and per-item token usage and time.
+
+**Skills-only edition.** The
+[official OpenAI Plugin Directory listing](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
+works the punch list, receipts, parked decisions and continuation notes with the session's own
+tools. Directory versions up to 0.25.3 carry the full plugin; later versions are skills-only,
+because the directory does not accept
+[lifecycle hooks](https://developers.openai.com/plugins/build/plugins#bundled-mcp-servers-and-lifecycle-hooks).
+It has no clock-out gate, recovery or usage accounting, so it suits attended sessions and ChatGPT.
+Its Setup offers the full plugin; after installing it, turn the directory copy off so one
+Nightshift is enabled.
 
 Open the project you want Nightshift to change in Codex, or connect Codex to its GitHub repository.
 A Git repository or a persistent local folder works. A disposable ChatGPT scratch conversation
