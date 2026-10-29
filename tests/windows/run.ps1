@@ -555,6 +555,10 @@ try {
     $fileMapLogicRun = Invoke-TestScript $fileMapLogic
     Assert-Equal 0 $fileMapLogicRun.ExitCode `
         "file maps: $($fileMapLogicRun.Stdout) $($fileMapLogicRun.Stderr)"
+    $architectureLogic = Join-Path $PSScriptRoot 'receipt-architecture-logic.ps1'
+    $architectureLogicRun = Invoke-TestScript $architectureLogic
+    Assert-Equal 0 $architectureLogicRun.ExitCode `
+        "architecture diagram: $($architectureLogicRun.Stdout) $($architectureLogicRun.Stderr)"
     $checkItemsLogic = Join-Path $PSScriptRoot 'check-items-logic.ps1'
     $checkItemsLogicRun = Invoke-TestScript $checkItemsLogic
     Assert-Equal 0 $checkItemsLogicRun.ExitCode `

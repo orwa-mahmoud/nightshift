@@ -11,7 +11,7 @@
 # archived snapshot), the resolved policy, the punch list, the usage marks, the shift log, the
 # parking lot, the snag log, the opportunity map, the work target's history and the shift markers.
 # It measures nothing, reruns nothing, and never renders a check the owner disabled as one that
-# passed. Eleven sections in a fixed order, each omitted when it is empty; the view chooses which
+# passed. Twelve sections in a fixed order, each omitted when it is empty; the view chooses which
 # of them a reader gets:
 #
 #   owner     every section
@@ -1462,6 +1462,40 @@ EOF
   [ -n "$SEC" ]
 }
 
+# _lines_architecture — the diagram as the shift left it, and the items that changed it. Only
+# while receipts.evidence.architecture is on and the diagram exists.
+_lines_architecture() {
+  local page line label what started=0
+  SEC=""
+  ns_architecture_enabled "$WORKSPACE" || return 1
+  page="$(ns_layout_path "$NS" architecture)"
+  { [ -f "$page" ] && [ ! -L "$page" ]; } || return 1
+  sec_add "[architecture.md](./architecture.md), as the shift left it:"
+  sec_add ""
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    if [ "$started" -eq 0 ]; then
+      case "$line" in '# '* | '') continue ;; esac
+      started=1
+    fi
+    sec_add "$line"
+  done <"$page"
+  while [ "${SEC%"$NL$NL"}" != "$SEC" ]; do SEC="${SEC%"$NL"}"; done
+  sec_add ""
+  if [ -n "$(ns_architecture_changes "$WORKSPACE")" ]; then
+    sec_add "Changed by:"
+    while IFS=$'\t' read -r label what; do
+      [ -n "$label" ] || continue
+      sec_add "- $label $DASH $what"
+    done <<EOF
+$(ns_architecture_changes "$WORKSPACE")
+EOF
+  else
+    sec_add "Changed by: no item this shift."
+  fi
+  [ -n "$SEC" ]
+}
+
 # ---------------------------------------------------------------- assembly
 
 _load_ledger
@@ -1517,6 +1551,7 @@ _emit_section() { # <name>
     snags) _lines_snags && sec_flush '## Found but not fixed' ;;
     baseline) _lines_baseline && sec_flush '## Baseline' ;;
     changed) _lines_changed "$REGRESSIONS_ONLY" && sec_flush '## What changed' ;;
+    architecture) _lines_architecture && sec_flush '## Architecture' ;;
     unsupported) _lines_unsupported && sec_flush '## Unsupported / unmeasured' ;;
     next) _lines_next && sec_flush '## Next step' ;;
   esac
@@ -1526,8 +1561,8 @@ if [ -n "$HANDOFF_SECTIONS" ]; then
   VIEW_SECTIONS="$(_sections_in_order)"
 else
   case "$VIEW" in
-    owner) VIEW_SECTIONS='shift usage items review interruptions parked snags baseline changed unsupported next' ;;
-    reviewer) VIEW_SECTIONS='review baseline changed' ;;
+    owner) VIEW_SECTIONS='shift usage items review interruptions parked snags baseline changed architecture unsupported next' ;;
+    reviewer) VIEW_SECTIONS='review baseline changed architecture' ;;
     release) VIEW_SECTIONS='shift changed' ;;
     artifact) VIEW_SECTIONS='shift usage items review interruptions parked snags unsupported next' ;;
   esac

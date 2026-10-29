@@ -1439,6 +1439,7 @@ function Invoke-NSGateUsageTick {
     Remove-NSBudgetRecord $NightshiftDir $Label
     Update-NSReceiptLabel $receipt $Label
     Invoke-NSFileMapTick $NightshiftDir $Project $Label
+    Invoke-NSArchitectureTick $NightshiftDir $Project $Label
     $due = Get-NSLayoutPath $NightshiftDir 'receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
     Write-NSReceiptsIndex $Project
@@ -1964,12 +1965,16 @@ function Get-NSPulseReceiptsSections {
     return ($clause + '; short evidence inline, large files in ' + $folder + ' linked relatively, and evidence that could not be produced written as `unavailable ' + $dash + ' <reason>`.')
 }
 
+# Get-NSPulseReceiptsStartLine <workspace> <label> - with the architecture diagram on, the notice also
+# carries the step the item owes it.
 function Get-NSPulseReceiptsStartLine {
     param([string]$Workspace, [string]$Label)
     $dash = [string][char]0x2014
+    $sections = Get-NSPulseReceiptsSections $Workspace $Label
+    $diagram = Get-NSArchitectureNotice $Workspace
+    if ($diagram.Length -gt 0) { $sections = $sections.TrimEnd('.') + '; ' + $diagram + '.' }
     return ('receipts: item ' + $Label + ' started ' + $dash + ' open ' + (Get-NSLayoutName (Join-Path $Workspace '.nightshift') 'receipts') + '/' +
-        (Get-NSReceiptBase $Workspace $Label) + '.md with one paragraph on the approach; ' +
-        (Get-NSPulseReceiptsSections $Workspace $Label))
+        (Get-NSReceiptBase $Workspace $Label) + '.md with one paragraph on the approach; ' + $sections)
 }
 
 function Get-NSPulseReceiptsTickLine {
@@ -2942,8 +2947,6 @@ function Test-NSPlanRoomTarget {
 # paths the receipt's Outputs section declares and the shift map is their union. Mirrors
 # lib/file-map.sh byte for byte.
 $script:NSFileMapCollapse = 40
-$script:NSFileMapOpen = '<!-- nightshift:file-map -->'
-$script:NSFileMapClose = '<!-- /nightshift:file-map -->'
 
 function Test-NSFileMapEnabled {
     param([Parameter(Mandatory = $true)][string]$Workspace)
@@ -3226,35 +3229,6 @@ function Get-NSFileMapSummary {
     return ''
 }
 
-# Write-NSFileMapBlock <receipt> <body> - put the generated block at the end of the receipt, replacing
-# the one already there. The receipt keeps its time. Mirrors ns_filemap_write_block.
-function Write-NSFileMapBlock {
-    param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Body)
-    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return }
-    $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
-    $kept = New-Object Collections.Generic.List[string]
-    $skip = $false
-    $text = [IO.File]::ReadAllText($Receipt)
-    $all = $text.Split("`n")
-    $count = $all.Count
-    if ($count -gt 0 -and $all[$count - 1].Length -eq 0) { $count-- }
-    for ($i = 0; $i -lt $count; $i++) {
-        $raw = $all[$i]
-        $line = $raw.TrimEnd("`r")
-        if ($line -ceq $script:NSFileMapOpen) { $skip = $true; continue }
-        if ($skip -and $line -ceq $script:NSFileMapClose) { $skip = $false; continue }
-        if ($skip) { continue }
-        $kept.Add($raw)
-    }
-    while ($kept.Count -gt 0 -and $kept[$kept.Count - 1] -cmatch '^[ \t\f\v\r]*$') { $kept.RemoveAt($kept.Count - 1) }
-    $out = New-Object Text.StringBuilder
-    foreach ($l in $kept) { $null = $out.Append($l).Append("`n") }
-    if ($kept.Count -gt 0) { $null = $out.Append("`n") }
-    $null = $out.Append($script:NSFileMapOpen).Append("`n").Append($Body).Append($script:NSFileMapClose).Append("`n")
-    [IO.File]::WriteAllText($Receipt, $out.ToString(), (New-Object Text.UTF8Encoding($false)))
-    [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp)
-}
-
 # Invoke-NSFileMapTick <nightshift-dir> <workspace> <label> - draw the item's map into its receipt and
 # the shift's into receipts/shift-map.md. Mirrors ns_filemap_tick.
 function Invoke-NSFileMapTick {
@@ -3271,7 +3245,7 @@ function Invoke-NSFileMapTick {
     try { $mode = Get-NSWorkMode $Project } catch { $mode = 'repository' }
     if ($mode -ceq 'artifact') {
         $rows = @(Get-NSFileMapOutputs $receipt | ForEach-Object { [pscustomobject]@{ Path = $_; Status = ''; Old = ''; Add = ''; Del = '' } })
-        Write-NSFileMapBlock $receipt ("## File map`n`n" + (Format-NSFileMap -Rows $rows -Kind 'artifact'))
+        Write-NSReceiptBlock $receipt 'file-map' ("## File map`n`n" + (Format-NSFileMap -Rows $rows -Kind 'artifact'))
         $union = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
         foreach ($name in (Get-NSTickedReceiptNames $Project)) {
             foreach ($p in (Get-NSFileMapOutputs (Join-Path $dir $name))) { $null = $union.Add($p) }
@@ -3298,7 +3272,7 @@ function Invoke-NSFileMapTick {
         if ($null -eq $rows) { $body = "## File map`n`nunavailable $dash git could not read $(& $short $last)..$(& $short $head)`n" }
         else { $body = "## File map`n`n" + (Format-NSFileMap -Rows $rows -Kind 'git') }
     }
-    Write-NSFileMapBlock $receipt $body
+    Write-NSReceiptBlock $receipt 'file-map' $body
     $shiftRows = $null
     if ($base.Length -gt 0 -and $head.Length -gt 0) { $shiftRows = Get-NSFileMapGitRows $target $base $head }
     if ($null -ne $shiftRows) {
@@ -3312,4 +3286,139 @@ function Invoke-NSFileMapTick {
     }
     [IO.File]::WriteAllText($page, $text, $utf8)
     if ($head.Length -gt 0) { Set-NSFileMapField $Project 'last' $head }
+}
+
+# Get-NSRecordField <file> <key> - one value from a key=value run record, or ''. Mirrors
+# ns_record_get.
+function Get-NSRecordField {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Key)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf) -or (Test-NSReparsePoint $Path)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ($line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { return $line.Substring($Key.Length + 1).TrimEnd("`r") }
+    }
+    return ''
+}
+
+# Set-NSRecordField <file> <key> <value> - write one value into a key=value run record, keeping the
+# others. Mirrors ns_record_set.
+function Set-NSRecordField {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Key,
+          [AllowEmptyString()][string]$Value)
+    if (Test-NSReparsePoint $Path) { return }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force
+    $lines = New-Object Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        foreach ($line in [IO.File]::ReadAllLines($Path)) {
+            if (-not $line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { $lines.Add($line.TrimEnd("`r")) }
+        }
+    }
+    $lines.Add($Key + '=' + $Value)
+    [IO.File]::WriteAllText($Path, (($lines -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+}
+
+# The architecture diagram: with receipts.evidence.architecture on, the model keeps
+# receipts/architecture.md and each receipt says whether its item changed it; at the tick the
+# runtime copies the diagram into the item's evidence folder when it differs from the last copy and
+# links the receipt to the diagram as it stood after that item. Mirrors lib/architecture.sh.
+function Test-NSArchitectureEnabled {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return ((Get-NSReceiptsField $Workspace 'evidence.architecture') -ceq 'on')
+}
+
+function Invoke-NSArchitectureTick {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Project,
+          [Parameter(Mandatory = $true)][string]$Label)
+    if (-not (Test-NSArchitectureEnabled $Project)) { return }
+    $receipt = Get-NSReceiptPath $Project $Label
+    if (-not (Test-Path -LiteralPath $receipt -PathType Leaf) -or (Test-NSReparsePoint $receipt)) { return }
+    $dir = Get-NSReceiptsDir $Project
+    $page = Get-NSLayoutPath $NightshiftDir 'architecture'
+    $state = Get-NSLayoutPath $NightshiftDir 'architecture-state'
+    $sid = Get-NSFileMapShiftId $Project
+    $last = ''
+    if ((Get-NSRecordField $state 'shift') -ceq $sid) { $last = Get-NSRecordField $state 'last' }
+    $dash = [string][char]0x2014
+    if ((Test-Path -LiteralPath $page -PathType Leaf) -and -not (Test-NSReparsePoint $page)) {
+        $base = [IO.Path]::GetFileNameWithoutExtension($receipt)
+        $previous = $(if ($last.Length -gt 0) { Join-Path (Join-Path $dir $last) 'architecture.md' } else { '' })
+        if ($last.Length -eq 0 -or -not (Test-Path -LiteralPath $previous -PathType Leaf) -or -not (Test-NSSameFileBytes $page $previous)) {
+            $folder = Join-Path $dir $base
+            try {
+                $null = New-Item -ItemType Directory -Path $folder -Force
+                if (-not (Test-NSReparsePoint $folder)) {
+                    Copy-Item -LiteralPath $page -Destination (Join-Path $folder 'architecture.md') -Force
+                    $last = $base
+                    Set-NSRecordField $state 'shift' $sid
+                    Set-NSRecordField $state 'last' $last
+                }
+            }
+            catch {
+                Write-Warning ('architecture: the diagram could not be copied for ' + $Label + ': ' + $_.Exception.Message)
+            }
+        }
+        if ($last.Length -gt 0) { $body = "**Architecture after this item:** [architecture.md](./$last/architecture.md)`n" }
+        else { $body = "**Architecture after this item:** unavailable $dash the diagram could not be copied`n" }
+    }
+    else {
+        $body = "**Architecture after this item:** no diagram yet.`n"
+    }
+    Write-NSReceiptBlock $receipt 'architecture' $body
+}
+
+# Get-NSArchitectureReceiptLines <workspace> - each ticked item with its receipt's path, list order.
+function Get-NSArchitectureReceipts {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $out = New-Object Collections.Generic.List[object]
+    $punch = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list'
+    if (-not (Test-Path -LiteralPath $punch -PathType Leaf)) { return , $out.ToArray() }
+    $dir = Get-NSReceiptsDir $Workspace
+    foreach ($row in (Get-NSItemRows $punch 'ticked')) {
+        $out.Add([pscustomobject]@{ Label = $row.Label; Path = (Join-Path $dir ((Get-NSReceiptBase $Workspace $row.Label $row.Id) + '.md')) })
+    }
+    return , $out.ToArray()
+}
+
+# Get-NSArchitectureChanges <workspace> - each ticked item whose receipt says `Diagram: updated - ...`,
+# with what changed, list order. Mirrors ns_architecture_changes.
+function Get-NSArchitectureChanges {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $out = New-Object Collections.Generic.List[object]
+    $prefix = '^[-*\s]*Diagram: updated ' + [char]0x2014 + ' (.*)$'
+    foreach ($item in (Get-NSArchitectureReceipts $Workspace)) {
+        if (-not (Test-Path -LiteralPath $item.Path -PathType Leaf) -or (Test-NSReparsePoint $item.Path)) { continue }
+        foreach ($raw in [IO.File]::ReadAllLines($item.Path)) {
+            $line = $raw.TrimEnd("`r")
+            if ($line -cmatch $prefix -and $Matches[1].Length -gt 0) {
+                $out.Add([pscustomobject]@{ Label = $item.Label; What = $Matches[1] })
+                break
+            }
+        }
+    }
+    return , $out.ToArray()
+}
+
+# Get-NSArchitectureMissing <workspace> - the label of each ticked item whose receipt has no
+# `Diagram:` line, list order; nothing while the diagram is off. Mirrors ns_architecture_missing.
+function Get-NSArchitectureMissing {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $out = New-Object Collections.Generic.List[string]
+    if (-not (Test-NSArchitectureEnabled $Workspace)) { return , $out.ToArray() }
+    $pattern = '^[-*\s]*Diagram: (updated|unchanged) ' + [char]0x2014 + ' '
+    foreach ($item in (Get-NSArchitectureReceipts $Workspace)) {
+        $found = $false
+        if ((Test-Path -LiteralPath $item.Path -PathType Leaf) -and -not (Test-NSReparsePoint $item.Path)) {
+            foreach ($line in [IO.File]::ReadAllLines($item.Path)) { if ($line -cmatch $pattern) { $found = $true; break } }
+        }
+        if (-not $found) { $out.Add($item.Label) }
+    }
+    return , $out.ToArray()
+}
+
+# Get-NSArchitectureNotice <workspace> - the item-start notice's instruction while the diagram is on.
+function Get-NSArchitectureNotice {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-NSArchitectureEnabled $Workspace)) { return '' }
+    $dash = [string][char]0x2014
+    return ('after the commit and before the tick, update ' + (Get-NSLayoutName (Join-Path $Workspace '.nightshift') 'receipts') +
+        '/architecture.md only if this item changed the structure, then write `Diagram: updated ' + $dash + ' <what changed>` or `Diagram: unchanged ' + $dash + ' <why>` in the receipt')
 }

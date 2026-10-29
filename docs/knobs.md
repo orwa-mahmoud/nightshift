@@ -328,7 +328,7 @@ cannot turn an unavailable check into a passed one.
 | `view` | `owner` | `owner`, `reviewer`, `release`, `artifact` |
 | `language` | `auto` | Follows the language of the conversation that ran the shift. Paths, commands and identifiers are never translated |
 | `detail` | `concise` | `concise` or `detailed` |
-| `sections` | `[]` | Any of `shift`, `usage`, `items`, `review`, `interruptions`, `parked`, `snags`, `baseline`, `changed`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view; [the morning receipt](morning-receipt.md) says what each one holds |
+| `sections` | `[]` | Any of `shift`, `usage`, `items`, `review`, `interruptions`, `parked`, `snags`, `baseline`, `changed`, `architecture`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view; [the morning receipt](morning-receipt.md) says what each one holds |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
 
 `handoff.enabled` and `receipts.enabled` are separate switches. What each combination writes under

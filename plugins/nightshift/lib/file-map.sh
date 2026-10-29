@@ -12,8 +12,6 @@
 # shift started on (base) and HEAD at the last tick (last).
 
 NS_FILEMAP_COLLAPSE=40
-NS_FILEMAP_OPEN='<!-- nightshift:file-map -->'
-NS_FILEMAP_CLOSE='<!-- /nightshift:file-map -->'
 NS_FILEMAP_FENCE="\`\`\`"
 
 # ns_filemap_enabled <project> — status 0 when the owner asked for file maps.
@@ -23,30 +21,12 @@ ns_filemap_enabled() {
 
 # ns_filemap_field <project> <key> — one value from run/file-map, or nothing.
 ns_filemap_field() {
-  local f line
-  ns_layout_set f "$1/.nightshift" file-map
-  { [ -f "$f" ] && [ ! -L "$f" ]; } || return 0
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in "$2="*) printf '%s' "${line#*=}"; return 0 ;; esac
-  done <"$f"
+  ns_record_get "$(ns_layout_path "$1/.nightshift" file-map)" "$2"
 }
 
 # ns_filemap_set <project> <key> <value> — write one value into run/file-map, keeping the others.
 ns_filemap_set() {
-  local f tmp line
-  ns_layout_set f "$1/.nightshift" file-map
-  [ ! -L "$f" ] || return 1
-  mkdir -p "${f%/*}" 2>/dev/null || return 1
-  tmp="$f.$$"
-  {
-    if [ -f "$f" ]; then
-      while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in "$2="*) ;; *) printf '%s\n' "$line" ;; esac
-      done <"$f"
-    fi
-    printf '%s=%s\n' "$2" "$3"
-  } >"$tmp" || { rm -f "$tmp"; return 1; }
-  mv "$tmp" "$f" || { rm -f "$tmp"; return 1; }
+  ns_record_set "$(ns_layout_path "$1/.nightshift" file-map)" "$2" "$3"
 }
 
 # ns_filemap_start <project> — record the commit tonight's shift starts on, once per shift. Nothing
@@ -230,38 +210,6 @@ ns_filemap_summary() {
   ' "$1"
 }
 
-# ns_filemap_write_block <receipt> <body-file> — put the generated block at the end of the receipt,
-# replacing the one already there, so a refresh never draws it twice. The receipt keeps its time.
-ns_filemap_write_block() {
-  local f="$1" body="$2" ref tmp rc=0
-  { [ -f "$f" ] && [ ! -L "$f" ]; } || return 1
-  ref="$f.mtime.$$"
-  touch -r "$f" "$ref" 2>/dev/null || return 1
-  tmp="$f.filemap.$$"
-  if awk -v first="$NS_FILEMAP_OPEN" -v last="$NS_FILEMAP_CLOSE" -v bodyfile="$body" '
-    { line = $0; sub(/\r$/, "", line) }
-    line == first { skip = 1; next }
-    skip && line == last { skip = 0; next }
-    skip { next }
-    { kept[++n] = $0 }
-    END {
-      while (n > 0 && kept[n] ~ /^[[:space:]]*\r?$/) n--
-      for (i = 1; i <= n; i++) print kept[i]
-      if (n > 0) print ""
-      print first
-      while ((getline l < bodyfile) > 0) print l
-      print last
-    }' "$f" >"$tmp" && mv "$tmp" "$f"; then
-    :
-  else
-    rm -f "$tmp"
-    rc=1
-  fi
-  touch -r "$ref" "$f" 2>/dev/null || rc=1
-  rm -f "$ref"
-  return "$rc"
-}
-
 # ns_filemap_tick <nightshift-dir> <project> <item-label> — draw the item's map into its receipt and
 # the shift's into receipts/shift-map.md. Called by the gate when it records a tick.
 ns_filemap_tick() {
@@ -276,7 +224,7 @@ ns_filemap_tick() {
   if [ "$(ns_work_mode "$project" 2>/dev/null)" = artifact ]; then
     ns_filemap_outputs "$receipt" >"$rows"
     { printf '## File map\n\n'; ns_filemap_render "$rows" artifact; } >"$body"
-    ns_filemap_write_block "$receipt" "$body" || :
+    ns_receipt_write_block "$receipt" file-map "$body" || :
     names="$(ns_receipts_ticked_names "$project")"
     : >"$rows"
     while IFS= read -r f; do
@@ -304,7 +252,7 @@ EOF
   else
     printf '## File map\n\nunavailable — git could not read %s..%s\n' "${last:0:12}" "${head:0:12}" >"$body"
   fi
-  ns_filemap_write_block "$receipt" "$body" || :
+  ns_receipt_write_block "$receipt" file-map "$body" || :
   if [ -n "$base" ] && [ -n "$head" ] && ns_filemap_git_rows "$target" "$base" "$head" >"$rows"; then
     {
       printf '# Shift file map\n\nFrom %s, where the shift started, to %s.\n\n' "${base:0:12}" "${head:0:12}"

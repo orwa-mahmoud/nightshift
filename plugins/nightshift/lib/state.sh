@@ -401,30 +401,101 @@ EOF
   return "$rc"
 }
 
-# ns_receipts_relink <receipts-dir> <old-name> <new-name> — a morning page links each receipt, and
-# its evidence folder, by name, so after a rename the pages in the folder link the new names.
+# ns_receipts_relink <receipts-dir> <old-name> <new-name> — a morning page links each receipt by
+# name, and any page in the folder may link a receipt's evidence folder (another item's receipt
+# links the architecture snapshot it kept), so after a rename those links follow the new names.
 ns_receipts_relink() {
   local page rc=0
   for page in "$1"/morning-*.md; do
     if [ ! -f "$page" ] || [ -L "$page" ]; then continue; fi
     _ns_replace_links "$page" "(./$2)" "(./$3)" || rc=1
+  done
+  for page in "$1"/*.md; do
+    if [ ! -f "$page" ] || [ -L "$page" ]; then continue; fi
     _ns_replace_links "$page" "(./${2%.md}/" "(./${3%.md}/" || rc=1
   done
   return "$rc"
 }
 
-# _ns_replace_links <file> <old> <new> — replace every literal <old> with <new> in the file.
+# _ns_replace_links <file> <old> <new> — replace every literal <old> with <new> in the file, which
+# keeps its modification time.
 _ns_replace_links() {
-  local tmp
+  local tmp ref
   grep -qF -- "$2" "$1" || return 0
   tmp="$1.$$"
+  ref="$1.mtime.$$"
+  touch -r "$1" "$ref" 2>/dev/null || return 1
   if awk -v old="$2" -v new="$3" '
     { out = ""; while ((i = index($0, old)) > 0) { out = out substr($0, 1, i - 1) new; $0 = substr($0, i + length(old)) } print out $0 }
   ' "$1" >"$tmp" && mv "$tmp" "$1"; then
+    touch -r "$ref" "$1" 2>/dev/null
+    rm -f "$ref"
     return 0
   fi
-  rm -f "$tmp"
+  rm -f "$tmp" "$ref"
   return 1
+}
+
+# ns_record_get <file> <key> — one value from a key=value run record, or nothing.
+ns_record_get() {
+  local line
+  { [ -f "$1" ] && [ ! -L "$1" ]; } || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "$2="*) printf '%s' "${line#*=}"; return 0 ;; esac
+  done <"$1"
+}
+
+# ns_record_set <file> <key> <value> — write one value into a key=value run record, keeping the
+# others.
+ns_record_set() {
+  local f="$1" tmp line
+  [ ! -L "$f" ] || return 1
+  mkdir -p "${f%/*}" 2>/dev/null || return 1
+  tmp="$f.$$"
+  {
+    if [ -f "$f" ]; then
+      while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in "$2="*) ;; *) printf '%s\n' "$line" ;; esac
+      done <"$f"
+    fi
+    printf '%s=%s\n' "$2" "$3"
+  } >"$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$f" || { rm -f "$tmp"; return 1; }
+}
+
+# ns_receipt_write_block <receipt> <name> <body-file> — a block the runtime generates in a receipt,
+# between `<!-- nightshift:<name> -->` and its closing comment: replaced where it stands, or added
+# at the end the first time, so a refresh never draws it twice. The receipt keeps its time.
+ns_receipt_write_block() {
+  local f="$1" first="<!-- nightshift:$2 -->" last="<!-- /nightshift:$2 -->" body="$3" ref tmp present=0 rc=0
+  { [ -f "$f" ] && [ ! -L "$f" ]; } || return 1
+  grep -qxF -- "$first" "$f" && present=1
+  ref="$f.mtime.$$"
+  touch -r "$f" "$ref" 2>/dev/null || return 1
+  tmp="$f.block.$$"
+  if awk -v first="$first" -v last="$last" -v bodyfile="$body" -v present="$present" '
+    function block(   l) { print first; while ((getline l < bodyfile) > 0) print l; close(bodyfile); print last }
+    { line = $0; sub(/\r$/, "", line) }
+    line == first { if (!done) block(); done = 1; skip = 1; next }
+    skip && line == last { skip = 0; next }
+    skip { next }
+    present { print; next }
+    { kept[++n] = $0 }
+    END {
+      if (present) exit
+      while (n > 0 && kept[n] ~ /^[[:space:]]*\r?$/) n--
+      for (i = 1; i <= n; i++) print kept[i]
+      if (n > 0) print ""
+      block()
+    }' "$f" >"$tmp" && mv "$tmp" "$f"; then
+    :
+  else
+    rm -f "$tmp"
+    rc=1
+  fi
+  touch -r "$ref" "$f" 2>/dev/null || rc=1
+  rm -f "$ref"
+  return "$rc"
 }
 
 # ns_receipt_evidence_dir <receipts-dir> <receipt-name> — an item's evidence folder: the folder named
@@ -440,18 +511,14 @@ ns_receipt_evidence_dir() {
 # its evidence folder to the new name and repoint the receipt's links into it. The receipt keeps its
 # modification time, as every runtime write does.
 ns_receipt_evidence_move() {
-  local dir="$1" old="${2%.md}" new="${3%.md}" receipt ref rc=0
+  local dir="$1" old="${2%.md}" new="${3%.md}" receipt rc=0
   { [ -d "$dir/$old" ] && [ ! -L "$dir/$old" ]; } || return 0
   { [ -e "$dir/$new" ] || [ -L "$dir/$new" ]; } && return 1
   mv "$dir/$old" "$dir/$new" || return 1
   receipt="$dir/$new.md"
   { [ -f "$receipt" ] && [ ! -L "$receipt" ]; } || return 0
-  ref="$receipt.mtime.$$"
-  touch -r "$receipt" "$ref" 2>/dev/null || return 1
   _ns_replace_links "$receipt" "](./$old/" "](./$new/" || rc=1
   _ns_replace_links "$receipt" "]($old/" "]($new/" || rc=1
-  touch -r "$ref" "$receipt" 2>/dev/null || rc=1
-  rm -f "$ref"
   return "$rc"
 }
 
@@ -1593,7 +1660,7 @@ _ns_archive_receipt_headings() {
   find "$1" -maxdepth 1 -type f -name '*.md' 2>/dev/null | while IFS= read -r f; do
     { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
     case "${f##*/}" in
-      README.md | morning-* | x-* | *.original.md | shift-map.md) continue ;;
+      README.md | morning-* | x-* | *.original.md | shift-map.md | architecture.md) continue ;;
     esac
     label="$(sed -n 's/^# //p' "$f" | head -n1)"
     label="${label%$'\r'}"

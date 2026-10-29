@@ -359,6 +359,7 @@
               "snags",
               "baseline",
               "changed",
+              "architecture",
               "unsupported",
               "next"
             ]

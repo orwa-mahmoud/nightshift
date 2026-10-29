@@ -132,6 +132,11 @@ Top to bottom, one item:
 6. **Tick** the box to `- [x]`. Never fake a tick: the box means the work behind it is complete —
   that claim is about the work, not about how it was recorded or how often a gate ran.
 
+When the item-start notice names the architecture diagram, the item owes one more step after its
+commit and before its tick: decide whether it changed the structure, update the diagram only if it
+did, and write the `Diagram:` line the notice gives. `Diagram: unchanged — <why>` is the usual
+answer and never a gap. The runtime keeps the snapshots and links.
+
 Then the next item. Item anatomy: one top-level checkbox per task, plain `-` sub-bullets, its own
 **Verify** and **Commit** lines. Promotion from `$NS/staging/drafting-table.md` into `## Items` happens only
 when the punch list has no open item, and only through Start; on shift, drafts stay where the owner

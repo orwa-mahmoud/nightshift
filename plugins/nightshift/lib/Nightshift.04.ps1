@@ -1347,12 +1347,61 @@ function Update-NSReceiptLinks {
           [Parameter(Mandatory = $true)][string]$NewName)
     $oldStem = $OldName -creplace '\.md$', ''
     $newStem = $NewName -creplace '\.md$', ''
-    foreach ($page in @(Get-ChildItem -LiteralPath $Directory -Filter 'morning-*.md' -File -ErrorAction SilentlyContinue)) {
+    foreach ($page in @(Get-ChildItem -LiteralPath $Directory -Filter '*.md' -File -ErrorAction SilentlyContinue)) {
         if (Test-NSReparsePoint $page.FullName) { continue }
         $text = [IO.File]::ReadAllText($page.FullName)
-        $relinked = $text.Replace('(./' + $OldName + ')', '(./' + $NewName + ')').Replace('(./' + $oldStem + '/', '(./' + $newStem + '/')
-        if ($relinked -cne $text) { [IO.File]::WriteAllText($page.FullName, $relinked, (New-Object Text.UTF8Encoding($false))) }
+        $relinked = $text
+        if ($page.Name.StartsWith('morning-', [StringComparison]::Ordinal)) {
+            $relinked = $relinked.Replace('(./' + $OldName + ')', '(./' + $NewName + ')')
+        }
+        $relinked = $relinked.Replace('(./' + $oldStem + '/', '(./' + $newStem + '/')
+        if ($relinked -cne $text) {
+            $stamp = [IO.File]::GetLastWriteTimeUtc($page.FullName)
+            [IO.File]::WriteAllText($page.FullName, $relinked, (New-Object Text.UTF8Encoding($false)))
+            [IO.File]::SetLastWriteTimeUtc($page.FullName, $stamp)
+        }
     }
+}
+
+# Write-NSReceiptBlock <receipt> <name> <body> - a block the runtime generates in a receipt, between
+# `<!-- nightshift:<name> -->` and its closing comment: replaced where it stands, or added at the end
+# the first time. The receipt keeps its time. Mirrors ns_receipt_write_block.
+function Write-NSReceiptBlock {
+    param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Name,
+          [Parameter(Mandatory = $true)][string]$Body)
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return }
+    $first = '<!-- nightshift:' + $Name + ' -->'
+    $last = '<!-- /nightshift:' + $Name + ' -->'
+    $block = $first + "`n" + $Body + $last + "`n"
+    $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
+    $all = [IO.File]::ReadAllText($Receipt).Split("`n")
+    $count = $all.Count
+    if ($count -gt 0 -and $all[$count - 1].Length -eq 0) { $count-- }
+    $present = $false
+    for ($i = 0; $i -lt $count; $i++) { if ($all[$i].TrimEnd("`r") -ceq $first) { $present = $true; break } }
+    $out = New-Object Text.StringBuilder
+    $kept = New-Object Collections.Generic.List[string]
+    $skip = $false
+    $done = $false
+    for ($i = 0; $i -lt $count; $i++) {
+        $raw = $all[$i]
+        $line = $raw.TrimEnd("`r")
+        if ($line -ceq $first) {
+            if (-not $done) { $null = $out.Append($block) }
+            $done = $true; $skip = $true; continue
+        }
+        if ($skip -and $line -ceq $last) { $skip = $false; continue }
+        if ($skip) { continue }
+        if ($present) { $null = $out.Append($raw).Append("`n") } else { $kept.Add($raw) }
+    }
+    if (-not $present) {
+        while ($kept.Count -gt 0 -and $kept[$kept.Count - 1] -cmatch '^[ \t\f\v\r]*$') { $kept.RemoveAt($kept.Count - 1) }
+        foreach ($l in $kept) { $null = $out.Append($l).Append("`n") }
+        if ($kept.Count -gt 0) { $null = $out.Append("`n") }
+        $null = $out.Append($block)
+    }
+    [IO.File]::WriteAllText($Receipt, $out.ToString(), (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp)
 }
 
 # Get-NSReceiptEvidenceDir <receipts-dir> <receipt-name> - an item's evidence folder: the folder named
@@ -2394,7 +2443,7 @@ function Write-NSArchiveReceiptsIndex {
         if ($name -ceq 'README.md' -or
             $name.StartsWith('morning-', [StringComparison]::Ordinal) -or
             $name.StartsWith('x-', [StringComparison]::Ordinal) -or
-            $name.EndsWith('.original.md', [StringComparison]::Ordinal) -or $name -ceq 'shift-map.md') { continue }
+            $name.EndsWith('.original.md', [StringComparison]::Ordinal) -or $name -ceq 'shift-map.md' -or $name -ceq 'architecture.md') { continue }
         $label = ''
         foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
             if ($line -cmatch '^# (.+)$') { $label = $Matches[1]; break }

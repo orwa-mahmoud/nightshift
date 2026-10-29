@@ -204,6 +204,7 @@ ns_gate_usage_tick() {
   ns_budget_forget "$ns" "$label"
   ns_receipt_track_label "$receipt" "$label"
   ns_filemap_tick "$ns" "$project" "$label" || :
+  ns_architecture_tick "$ns" "$project" "$label" || :
   rm -f "$(ns_layout_path "$ns" receipt-due)" "$(ns_layout_path "$ns" report-due)" 2>/dev/null || :
   ns_receipts_write_index "$project"
 }

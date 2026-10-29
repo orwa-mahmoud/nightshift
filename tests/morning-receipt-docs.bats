@@ -39,7 +39,7 @@ TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
   for section in 'How it ended** (`shift`)' 'Time and tokens** (`usage`)' 'Items** (`items`)' \
     'Review first** (`review`)' 'Interruptions** (`interruptions`)' \
     'Decisions for you** (`parked`)' 'Found but not fixed** (`snags`)' \
-    'Baseline** (`baseline`)' 'What changed** (`changed`)' \
+    'Baseline** (`baseline`)' 'What changed** (`changed`)' 'Architecture** (`architecture`)' \
     'Unsupported / unmeasured** (`unsupported`)' 'Next step** (`next`)'; do
     grep -qF "**$section" "$DOC" || { echo "missing section: $section"; return 1; }
   done

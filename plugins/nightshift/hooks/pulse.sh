@@ -210,11 +210,16 @@ ns_pulse_receipts_sections() {
     "$folder" "\`unavailable — <reason>\`"
 }
 
-# ns_pulse_receipts_start_line <project> <label>
+# ns_pulse_receipts_start_line <project> <label> — with the architecture diagram on, the notice also
+# carries the step the item owes it.
 ns_pulse_receipts_start_line() {
+  local sections diagram
+  sections="$(ns_pulse_receipts_sections "$1" "$2")"
+  diagram="$(ns_architecture_notice "$1")"
+  [ -z "$diagram" ] || sections="${sections%.}; $diagram."
   printf 'receipts: item %s started — open %s/%s.md with one paragraph on the approach; %s' \
     "$2" "$(ns_layout_name "$1/.nightshift" receipts)" "$(ns_pulse_receipts_basename "$1" "$2")" \
-    "$(ns_pulse_receipts_sections "$1" "$2")"
+    "$sections"
 }
 
 # ns_pulse_receipts_tick_line <project> <label>
