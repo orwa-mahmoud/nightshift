@@ -93,7 +93,7 @@ pref() { bash -c '. "$1"; ns_policy_pref "$2" "$3" "$4"' _ "$LIB" "$1" "$2" "$3"
   run bash -c '. "$1"; ns_archive_root "$2"' _ "$LIB" "$p"
   [ "$status" -eq 0 ]
   [ "$output" = "$p/.nightshift/archive" ]
-  run bash -c '. "$1"; ns_report_enabled "$2"' _ "$LIB" "$p"
+  run bash -c '. "$1"; ns_receipts_enabled "$2"' _ "$LIB" "$p"
   [ "$status" -eq 0 ]
 }
 

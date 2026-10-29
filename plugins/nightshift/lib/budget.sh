@@ -142,8 +142,8 @@ ns_budget_spent() {
     secs=$((secs + span))
     toks=$((toks + $(ns_usage_field "$fields" input || printf 0) + $(ns_usage_field "$fields" output || printf 0)))
   fi
-  [ "$(ns_report "$project" duration)" != off ] || secs=-
-  [ "$(ns_report "$project" usage)" != off ] || toks=-
+  [ "$(ns_receipts "$project" duration)" != off ] || secs=-
+  [ "$(ns_receipts "$project" usage)" != off ] || toks=-
   printf '%s %s' "$secs" "$toks"
 }
 

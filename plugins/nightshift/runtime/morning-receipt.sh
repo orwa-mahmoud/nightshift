@@ -1023,7 +1023,7 @@ _lines_usage() {
   start="${M_EPOCH[0]}"
   end="${ENDED_EPOCH:-${M_EPOCH[$((NMARK - 1))]}}"
   [ "$end" -ge "$start" ] || end="$start"
-  if [ "$(ns_report "$WORKSPACE" duration)" = off ]; then
+  if [ "$(ns_receipts "$WORKSPACE" duration)" = off ]; then
     sec_add '- Time: off'
   else
     wall=$((end - start))
@@ -1050,7 +1050,7 @@ _lines_usage() {
     fi
     sec_add "- Wall: $(ns_usage_duration "$wall")"
   fi
-  if [ "$(ns_report "$WORKSPACE" usage)" = off ]; then
+  if [ "$(ns_receipts "$WORKSPACE" usage)" = off ]; then
     sec_add '- Tokens: off'
   else
     fields="$(ns_usage_total "$NS")" || fields=""

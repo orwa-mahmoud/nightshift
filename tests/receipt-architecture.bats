@@ -11,7 +11,6 @@ LIB="$PLUGIN/lib/lib.sh"
 CORE="$PLUGIN/hooks/shared/gate-core.sh"
 PULSE="$PLUGIN/hooks/pulse.sh"
 PSM1="$PLUGIN/lib/Nightshift.psm1"
-CHECK="$PLUGIN/runtime/check-receipts.sh"
 
 lib() { bash -c '. "$1"; shift; "$@"' _ "$LIB" "$@"; }
 core() { bash -c '. "$1"; . "$2"; shift 2; "$@"' _ "$LIB" "$CORE" "$@"; }
@@ -80,29 +79,7 @@ three_items() {
   [[ "$section" == *$'Changed by:\n- 1. Add the parser. — added the parser behind the CLI\n- 3. Add the cache. — added the cache under the parser'* ]] || { printf '%s\n' "$section"; return 1; }
 }
 
-@test "a ticked item with no Diagram line is named by check-receipts, and the tick stands" {
-  p="$(new_project arch-check)"
-  diagram "$p" on
-  three_items "$p"
-  r="$p/.nightshift/receipts"
-  draw "$p" 'cli --> parser'
-  printf '# 1. Add the parser.\n\nDone.\n\n- Diagram: updated — added the parser\n' >"$r/01-add-the-parser-aa11.md"
-  printf '# 2. Tune the parser.\n\nDone, no diagram line.\n' >"$r/02-tune-the-parser-bb22.md"
-  tick "$p" 1
-  tick "$p" 2
-  grep -qxF -- '- [x] **2. Tune the parser.** <!-- id: bb22 -->' "$p/.nightshift/punch-list.md"
-  run bash "$CHECK" --project "$p" --diagrams
-  [ "$status" -eq 0 ]
-  [ "$output" = "$(printf '%s\n' '2. Tune the parser.: no Diagram: line' 'checked 2 ticked items: 1 with findings')" ] || { printf '%s\n' "$output"; return 1; }
-  # Through the dispatcher too, and without --diagrams it is still check-report.
-  run env -u CLAUDE_PROJECT_DIR NIGHTSHIFT_HOST=claude bash -c 'cd "$1" && "$2" check-receipts --diagrams' _ "$p" "$PLUGIN/runtime/ns"
-  [[ "$output" == *'2. Tune the parser.: no Diagram: line'* ]] || { printf '%s\n' "$output"; return 1; }
-  run bash "$CHECK" --project "$p"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'check-report: --report is required'* ]] || false
-}
-
-@test "with the diagram off there is no step, no copy, no link, no section and nothing to check" {
+@test "with the diagram off there is no step, no copy, no link and no section" {
   p="$(new_project arch-off)"
   three_items "$p"
   r="$p/.nightshift/receipts"
@@ -117,8 +94,6 @@ three_items() {
   ! grep -qF 'nightshift:architecture' "$r/01-add-the-parser-aa11.md" || false
   run bash "$PLUGIN/runtime/morning-receipt.sh" --project "$p"
   [[ "$output" != *'## Architecture'* ]] || false
-  run bash "$CHECK" --project "$p" --diagrams
-  [ "$output" = 'checked 1 ticked items: 0 with findings' ]
 }
 
 @test "with the diagram on, the item-start notice carries the step, in both runtimes" {
@@ -179,8 +154,6 @@ three_items() {
     sed -n '/^## Architecture$/,/^## /p' | sed '$d')"
   [ -n "$bash_section" ]
   [ "$bash_section" = "$ps_section" ] || { echo "bash:"; echo "$bash_section"; echo "PowerShell:"; echo "$ps_section"; return 1; }
-  run pwsh -NoProfile -File "$PLUGIN/runtime/windows/check-receipts.ps1" -Project "$q" -Diagrams
-  [ "$output" = 'checked 2 ticked items: 0 with findings' ] || { printf '%s\n' "$output"; return 1; }
 }
 
 @test "native Windows covers the architecture diagram, and its suite is registered" {

@@ -3397,23 +3397,6 @@ function Get-NSArchitectureChanges {
     return , $out.ToArray()
 }
 
-# Get-NSArchitectureMissing <workspace> - the label of each ticked item whose receipt has no
-# `Diagram:` line, list order; nothing while the diagram is off. Mirrors ns_architecture_missing.
-function Get-NSArchitectureMissing {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $out = New-Object Collections.Generic.List[string]
-    if (-not (Test-NSArchitectureEnabled $Workspace)) { return , $out.ToArray() }
-    $pattern = '^[-*\s]*Diagram: (updated|unchanged) ' + [char]0x2014 + ' '
-    foreach ($item in (Get-NSArchitectureReceipts $Workspace)) {
-        $found = $false
-        if ((Test-Path -LiteralPath $item.Path -PathType Leaf) -and -not (Test-NSReparsePoint $item.Path)) {
-            foreach ($line in [IO.File]::ReadAllLines($item.Path)) { if ($line -cmatch $pattern) { $found = $true; break } }
-        }
-        if (-not $found) { $out.Add($item.Label) }
-    }
-    return , $out.ToArray()
-}
-
 # Get-NSArchitectureNotice <workspace> - the item-start notice's instruction while the diagram is on.
 function Get-NSArchitectureNotice {
     param([Parameter(Mandatory = $true)][string]$Workspace)

@@ -192,7 +192,7 @@ ns_gate_filing_message() {
 ns_gate_usage_tick() {
   local ns="$1" project="$2" label="$3" receipt
   [ -d "$ns" ] || return 0
-  ns_report_enabled "$project" || return 0
+  ns_receipts_enabled "$project" || return 0
   ns_usage_mark "$ns" "$label" tick || return 0
   receipt="$(ns_receipt_path "$project" "$label")"
   # A stopped item, closed at its hard budget, ends its span as stopped: never as ticked.
@@ -238,11 +238,11 @@ ns_gate_session_row() {
   case "$paused" in *$'\t'*) why="${paused#*$'\t'}" ;; esac
   work=$((end - start - paused_sec))
   [ "$work" -ge 0 ] || work=0
-  if [ "$(ns_report "$project" duration)" = off ]; then
+  if [ "$(ns_receipts "$project" duration)" = off ]; then
     work=off
     paused_sec=off
   fi
-  if [ "$(ns_report "$project" usage)" = off ]; then
+  if [ "$(ns_receipts "$project" usage)" = off ]; then
     in=off
     out=off
     extras="cw=off cr=off rea=off"
@@ -282,7 +282,7 @@ ns_gate_session_row() {
   generation="$(ns_usage_generation "$ns" "$sid")"
   nr="$(awk 'END { print NR }' "$marks")"
   extras="$extras checkpoint=$generation:$nr"
-  if [ "$(ns_report "$project" usage)" != off ]; then
+  if [ "$(ns_receipts "$project" usage)" != off ]; then
     ns_usage_turn_resolve "$ns" "$label" "$nr" || :
     while IFS= read -r turn; do
       [ -z "$turn" ] || extras="$extras turn=$turn"
@@ -331,7 +331,7 @@ ns_gate_session_end() {
 # whatever the usage and duration settings say; those decide only what a receipt shows.
 ns_gate_usage_accounting() {
   [ -d "$1" ] && [ -f "$(ns_layout_path "$1" armed)" ] || return 1
-  ns_report_enabled "$2" || return 1
+  ns_receipts_enabled "$2" || return 1
   [ -s "$(ns_usage_dir "$1")/marks.tsv" ]
 }
 
@@ -381,7 +381,7 @@ ns_gate_usage_sync() {
   # Accounting belongs to an armed shift with the report on. Before Start there is no shift to bill,
   # and an arm mark written then would stand in the way of the baseline the real arming records.
   [ -f "$(ns_layout_path "$ns" armed)" ] || return 0
-  ns_report_enabled "$project" || return 0
+  ns_receipts_enabled "$project" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
   # The arm mark is the shift's own start, and is not an item. When no pulse has written it yet,
   # arm here with whatever transcripts the caller has, so reading begins where they stand now.

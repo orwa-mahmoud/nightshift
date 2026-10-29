@@ -7,8 +7,6 @@ $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $plugin = Join-Path $repository 'plugins/nightshift'
 Import-Module (Join-Path $plugin 'lib/Nightshift.psm1') -Force -DisableNameChecking
 $rulesTemplate = Join-Path $plugin 'skills/nightshift/references/nightshift-rules-template.json'
-$check = Join-Path $plugin 'runtime/windows/check-receipts.ps1'
-$hostExe = (Get-Process -Id $PID).Path
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $utf8 = New-Object Text.UTF8Encoding($false)
 $dash = [string][char]0x2014
@@ -54,8 +52,6 @@ try {
     $want = @('[architecture.md](./architecture.md), as the shift left it:', '', '```mermaid', 'flowchart LR', '  cli --> parser', '```', '',
         'Legend: a box is a component.', '', 'Changed by:', "- 1. Add the parser. $dash added the parser")
     Expect-True (($section -join "`n") -ceq ($want -join "`n")) ("the morning section: " + ($section -join ' | '))
-    $run = (& $hostExe -NoProfile -NonInteractive -File $check -Project $on -Diagrams) -join "`n"
-    Expect-True ($run -ceq "2. Tune the parser.: no Diagram: line`nchecked 2 ticked items: 1 with findings") "check-receipts names the gap: $run"
 
     $off = Join-Path $root 'off'
     $offNs = New-Workspace $off 'off'
@@ -65,8 +61,6 @@ try {
     Expect-True ((Get-NSArchitectureNotice $off).Length -eq 0) 'off: no step in the notice'
     $offSection = Get-NSReceiptArchitectureLines @{ workspace = $off; ns = $offNs }
     Expect-True ($null -eq $offSection -or $offSection.Count -eq 0) 'off: no morning section'
-    $offRun = (& $hostExe -NoProfile -NonInteractive -File $check -Project $off -Diagrams) -join "`n"
-    Expect-True ($offRun -ceq 'checked 2 ticked items: 0 with findings') "off: nothing to check: $offRun"
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

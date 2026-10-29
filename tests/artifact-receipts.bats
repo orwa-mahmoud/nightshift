@@ -151,7 +151,6 @@ new_artifact() {
     return 1
   fi
   [ "$(bash -c '. "$1"; ns_receipts_count "$2"' _ "$LIB" "$a")" = 0 ]
-  [ "$(bash -c '. "$1"; ns_receipts_fingerprint "$2"' _ "$LIB" "$a")" = none ]
   run bash "$DOCTOR" --project "$a"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'artifact receipts 0'

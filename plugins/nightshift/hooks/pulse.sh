@@ -58,8 +58,8 @@ ns_pulse_usage() {
   ns_layout_set armed "$ns" armed
   [ -f "$armed" ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
-  ns_report_enabled "${ns%/.nightshift}" || return 0
-  [ "$(ns_report "${ns%/.nightshift}" usage)" != off ] || return 0
+  ns_receipts_enabled "${ns%/.nightshift}" || return 0
+  [ "$(ns_receipts "${ns%/.nightshift}" usage)" != off ] || return 0
   # The shift's own start, stood up before the first reading so it sits at zero. A baseline taken
   # after spend had already accrued would swallow the first item's cost. The transcripts go with
   # it: whatever the setting-up conversation already wrote is where reading begins, not byte zero.
@@ -428,7 +428,7 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   # the report on. Anything else is a to-do list in a folder, and it is not billed.
   [ -f "$(ns_layout_path "$ns" armed)" ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
-  ns_report_enabled "$project" || return 0
+  ns_receipts_enabled "$project" || return 0
   ns_layout_set punch "$ns" punch-list
   [ -f "$punch" ] || return 0
   # This file's own directory, never the caller's. The Codex and Cursor pulses source this file and

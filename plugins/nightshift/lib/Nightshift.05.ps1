@@ -134,12 +134,6 @@ function Get-NSUsageScale {
     return ('{0}.{1}{2}' -f [long][math]::Floor([decimal]$tenths / 10), ($tenths % 10), $suffixes[$i])
 }
 
-# Get-NSReportPath kept as the receipts folder path only for callers not yet moved.
-function Get-NSReportPath {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    return (Get-NSReceiptsDir $Workspace)
-}
-
 # Get-NSPolicyHostName - which host this session is, from what the host itself sets.
 function Get-NSPolicyHostName {
     if (-not [string]::IsNullOrEmpty($env:CURSOR_PLUGIN_ROOT)) { return 'cursor' }
@@ -642,19 +636,6 @@ function Resolve-NSPolicy {
     $document['schemaVersion'] = 1
     $document['settings'] = $resolution['settings']
     return (ConvertTo-NSCanonicalJson $document -Compact)
-}
-
-# The gate honours the earlier of the two, so a deadline file that drifts from
-# the policy shortens the night rather than extending it.
-function Get-NSPolicyDeadlineEpoch {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $resolution = Get-NSPolicyResolution $Workspace
-    $file = $resolution['deadlineFile']
-    $fromPolicy = $resolution['deadlinePolicy']
-    if ($null -eq $file) { return $fromPolicy }
-    if ($null -eq $fromPolicy) { return $file }
-    if ([long]$file -lt [long]$fromPolicy) { return [long]$file }
-    return [long]$fromPolicy
 }
 
 # 0 allow - 1 deny - 2 the category is denied and no exact plan covers this
@@ -1383,13 +1364,6 @@ function Get-NSProvisionByteSha256 {
     $builder = New-Object Text.StringBuilder
     foreach ($byte in $hash) { $null = $builder.Append($byte.ToString('x2')) }
     return $builder.ToString()
-}
-
-# The blob file name is the digest of the normalized relative path, so the store
-# is addressable without reading the transaction.
-function Get-NSProvisionBlobId {
-    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Rel)
-    return (Get-NSTextSha256 (Get-NSProvisionRelPath $Rel))
 }
 
 # Every path the engine touches is relative, inside the work target, and never an

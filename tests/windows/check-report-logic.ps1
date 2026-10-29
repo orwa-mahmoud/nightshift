@@ -1,4 +1,4 @@
-# check-receipts.ps1 is a thin alias that names check-report, forwards to it, and exits as it does.
+# check-report.ps1, the helper behind ns check-report, refuses a call with no report.
 # Run on macOS or Windows: pwsh -File tests/windows/check-report-logic.ps1
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -7,7 +7,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 }
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$helper = Join-Path $repository 'plugins/nightshift/runtime/windows/check-receipts.ps1'
+$helper = Join-Path $repository 'plugins/nightshift/runtime/windows/check-report.ps1'
 $hostExecutable = (Get-Process -Id $PID).Path
 $failures = New-Object 'System.Collections.Generic.List[string]'
 
@@ -19,7 +19,7 @@ function Expect-True {
     }
 }
 
-$root = Join-Path ([IO.Path]::GetTempPath()) ("ns-check-report-alias-" + [guid]::NewGuid().ToString('N'))
+$root = Join-Path ([IO.Path]::GetTempPath()) ("ns-check-report-" + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path (Join-Path $root '.nightshift/receipts') -Force
 try {
     $out = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N') + '.check-out')
@@ -34,10 +34,9 @@ try {
         }
         $code = $LASTEXITCODE
         $text = if (Test-Path -LiteralPath $out) { [IO.File]::ReadAllText($out) } else { '' }
-        # No -Report: check-report refuses with status 1, and the alias must say the same.
-        Expect-True ($code -eq 1) "alias exits as check-report does (got $code $text)"
-        Expect-True ($text -like '*ns check-report*') "alias names check-report: $text"
-        Expect-True ($text -like '*-Report is required*') "alias forwards the refusal: $text"
+        # No -Report: check-report refuses with status 1 and says what is missing.
+        Expect-True ($code -eq 1) "check-report refuses a call with no report (got $code $text)"
+        Expect-True ($text -like '*-Report is required*') "check-report names the missing report: $text"
     }
     finally {
         Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue

@@ -20,18 +20,9 @@ ns_receipts() {
   ns_policy_pref "$1" receipts "$2"
 }
 
-# ns_report — the old name. Same fields live under receipts now.
-ns_report() {
-  ns_receipts "$@"
-}
-
 # ns_receipts_enabled <project-dir> — status 0 unless the owner turned receipts off.
 ns_receipts_enabled() {
   [ "$(ns_receipts "$1" enabled)" != false ]
-}
-
-ns_report_enabled() {
-  ns_receipts_enabled "$1"
 }
 
 # ns_receipts_dir <project-dir> — the folder that holds the index, morning page, and item files.
@@ -2622,13 +2613,6 @@ ns_recovery_refusal() {
 
 # toolDeny requires exact key matching. The shipped reader accepts the template's
 # object-of-strings shape and nothing else. Malformed input fails closed.
-ns_tool_map_ok() { # stdin = a JSON object of string values
-  local raw
-  raw="$(cat)"
-  ns_rules_map_parse "$raw" || return 1
-  printf '%s' "$raw"
-}
-
 ns_tool_rules() { # $1 = project dir, $2 = session override
   local f raw
   ns_layout_set f "$1/.nightshift" rules
@@ -2744,7 +2728,6 @@ ns_record_reason() { # <nightshift-dir> <code> [detail]
 }
 
 ns_reason_code() { sed -n 1p "$(ns_layout_path "$1" watch-reason)" 2>/dev/null | tr -d '[:space:]'; }
-ns_reason_detail() { sed -n 2p "$(ns_layout_path "$1" watch-reason)" 2>/dev/null; }
 
 # The shift log is the owner's record of what the runtime did. Append-only, one line per
 # event, in the format the gate and the control helpers already write. Hooks do not load
@@ -3027,16 +3010,6 @@ ns_receipts_usable_dir() {
   printf '%s' "$dir"
 }
 
-ns_file_sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" 2>/dev/null | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
-  else
-    return 1
-  fi
-}
-
 ns_receipts_count() {
   local dir n
   dir="$(ns_receipts_usable_dir "$1")" || {
@@ -3080,22 +3053,6 @@ ns_latest_receipt() {
   printf '%s' "${out##*"$tab"}"
 }
 
-# Stable stall token: none when the directory is empty, otherwise a cksum of every receipt.
-ns_receipts_fingerprint() {
-  local dir out
-  dir="$(ns_receipts_usable_dir "$1")" || {
-    printf 'none'
-    return 0
-  }
-  out="$(find "$dir" -maxdepth 1 -type f ! -name '.*' -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
-    cksum "$f" 2>/dev/null
-  done)"
-  if [ -z "$out" ]; then
-    printf 'none'
-    return 0
-  fi
-  printf '%s\n' "$out" | cksum | awk '{print $1"-"$2}'
-}
 
 # ---------------------------------------------------------------------------------------------
 # Reading one item out of the punch list, and holding the contract to what it was

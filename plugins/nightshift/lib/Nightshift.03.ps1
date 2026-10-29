@@ -1018,12 +1018,6 @@ function Write-NSPolicyError {
     [Console]::Error.WriteLine($Text)
 }
 
-function Get-NSPolicyNow {
-    $fixed = $env:NIGHTSHIFT_POLICY_NOW
-    if (-not [string]::IsNullOrEmpty($fixed)) { return $fixed }
-    return [DateTime]::UtcNow.ToString('yyyy-MM-dd\THH:mm:ss\Z', [Globalization.CultureInfo]::InvariantCulture)
-}
-
 function Get-NSPolicyPaths {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $ns = Join-NSPath (Get-NSAbsolutePath $Workspace) '.nightshift'

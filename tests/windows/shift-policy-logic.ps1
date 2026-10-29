@@ -575,14 +575,11 @@ try {
     Expect-True ([string]$malformedResolution['policyError']).StartsWith('toolingPolicy:', [StringComparison]::Ordinal) `
         "the resolver names the exact field (got $($malformedResolution['policyError']))"
 
-    # === 9. the deadline projection honours the earlier value ===
+    # === 9. a deadline file that disagrees with the policy ===
     $deadlineProject = Join-Path $root 'deadline'
     $deadlineNs = New-PolicyProject $deadlineProject
     Write-JsonFile (Join-Path $deadlineNs 'shift-policy.json') (New-Policy -DeadlineEpoch 1788000000)
-    [IO.File]::WriteAllText((Join-Path $deadlineNs 'deadline'), "1787000000`n", $utf8)
-    Expect-Equal 1787000000 (Get-NSPolicyDeadlineEpoch $deadlineProject) 'the earlier of file and policy wins'
     [IO.File]::WriteAllText((Join-Path $deadlineNs 'deadline'), "1789000000`n", $utf8)
-    Expect-Equal 1788000000 (Get-NSPolicyDeadlineEpoch $deadlineProject) 'a later deadline file never extends the night'
 
     # === 10. Doctor renders the one view and names every defect ===
     $doctorRun = Invoke-Script -Path $doctor -Arguments @('-Project', $deadlineProject)

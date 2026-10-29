@@ -66,26 +66,6 @@ $(ns_item_rows "$punch" ticked)
 EOF
 }
 
-# ns_architecture_missing <project> — the label of each ticked item whose receipt has no `Diagram:`
-# line, list order. Nothing while the diagram is off.
-ns_architecture_missing() {
-  local project="$1" punch dir label id f
-  ns_architecture_enabled "$project" || return 0
-  ns_layout_set punch "$project/.nightshift" punch-list
-  dir="$(ns_receipts_dir "$project")"
-  [ -f "$punch" ] || return 0
-  while IFS=$'\t' read -r label id || [ -n "$label" ]; do
-    [ -n "$label" ] || continue
-    f="$dir/$(ns_receipt_base "$project" "$label" "$id").md"
-    if [ -f "$f" ] && [ ! -L "$f" ] && grep -Eq '^[-*[:space:]]*Diagram: (updated|unchanged) — ' "$f"; then
-      continue
-    fi
-    printf '%s\n' "$label"
-  done <<EOF
-$(ns_item_rows "$punch" ticked)
-EOF
-}
-
 # ns_architecture_notice <project> — the item-start notice's instruction while the diagram is on.
 ns_architecture_notice() {
   ns_architecture_enabled "$1" || return 0
