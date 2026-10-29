@@ -56,6 +56,11 @@ armed() {
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
   [[ "$(line '36. Restyle the page.')" == *"follow the owner's template at notes/item.md, with an Evidence section; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively"* ]] || false
   [[ "$(line '37. Plain.')" == *"follow the owner's template at notes/item.md" ]] || false
+  # Evidence the shift asks of every item reaches an item with no line of its own.
+  jq '.receipts.templatePath = "" | .receipts.evidence.default = "the command run and its output"' \
+    "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  [[ "$(line '37. Plain.')" == *'Verification · Evidence · Outputs · Parked decisions and snags; the shift asks every item for this evidence: the command run and its output; short evidence inline, large files in .nightshift/receipts/37-plain/ linked relatively'* ]] || { line '37. Plain.'; return 1; }
   command -v pwsh >/dev/null 2>&1 || return 0
   for label in '36. Restyle the page.' '37. Plain.'; do
     got="$(NS_MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1" NS_WS="$p" NS_LABEL="$label" \

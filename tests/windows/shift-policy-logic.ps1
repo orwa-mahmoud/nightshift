@@ -691,6 +691,54 @@ try {
     $getRun = Invoke-Script -Path $helper -Arguments @('-Project', $movedPath, '-Command', 'defaults-get')
     Expect-True $getRun.StdoutText.Contains('"toolingPolicy": "auto-add"') `
         'defaults-get reads the block defaults-set wrote'
+
+    # === the evidence settings: off by default, fixed per shift, and a bad value named ===
+    $evidence = Join-Path $root 'evidence'
+    $evidenceNs = New-PolicyProject $evidence
+    $evidenceTable = (Invoke-Helper @('-Project', $evidence, '-Command', 'resolve', '-Table')).StdoutText.TrimEnd("`n")
+    Expect-Equal 'receipts.evidence.architecture=off (rules, permanent)' (Get-SettingLine $evidenceTable 'receipts.evidence.architecture') `
+        'the diagram is off by default'
+    Expect-Equal 'receipts.evidence.default= (rules, permanent)' (Get-SettingLine $evidenceTable 'receipts.evidence.default') `
+        'no shift-wide evidence by default'
+    Expect-Equal 'receipts.evidence.fileMap=off (rules, permanent)' (Get-SettingLine $evidenceTable 'receipts.evidence.fileMap') `
+        'the file map is off by default'
+    $evidencePolicy = New-Policy
+    $evidenceBlock = New-NSOrdinalMap
+    $evidenceBlock['evidence'] = New-NSOrdinalMap
+    $evidenceBlock['evidence']['fileMap'] = 'on'
+    $evidencePolicy['receipts'] = $evidenceBlock
+    $evidenceJson = Join-Path $root 'evidence-policy.json'
+    Write-JsonFile $evidenceJson $evidencePolicy
+    $evidenceSet = Invoke-Helper @('-Project', $evidence, '-Command', 'set', '-FromJson', $evidenceJson)
+    Expect-Equal 0 $evidenceSet.ExitCode "a policy may turn the file map on for one shift ($($evidenceSet.StderrText))"
+    $evidenceShift = (Invoke-Helper @('-Project', $evidence, '-Command', 'resolve', '-Table')).StdoutText.TrimEnd("`n")
+    Expect-Equal 'receipts.evidence.fileMap=on (one-shift, shift)' (Get-SettingLine $evidenceShift 'receipts.evidence.fileMap') `
+        'the shift policy owns the file map for tonight'
+    Remove-Item -LiteralPath (Join-Path $evidenceNs 'shift-policy.json') -Force
+    $evidenceNext = (Invoke-Helper @('-Project', $evidence, '-Command', 'resolve', '-Table')).StdoutText.TrimEnd("`n")
+    Expect-Equal 'receipts.evidence.fileMap=off (rules, permanent)' (Get-SettingLine $evidenceNext 'receipts.evidence.fileMap') `
+        'the next shift reads the rules default again'
+    $evidenceBlock['evidence']['fileMap'] = 'maybe'
+    Write-JsonFile $evidenceJson $evidencePolicy
+    $evidenceBad = Invoke-Helper @('-Project', $evidence, '-Command', 'set', '-FromJson', $evidenceJson)
+    Expect-Equal 2 $evidenceBad.ExitCode 'a file map value outside off and on is refused'
+    Expect-True (($evidenceBad.StdoutText + $evidenceBad.StderrText).Contains('receipts.evidence.fileMap')) `
+        "the refusal names the key: $($evidenceBad.StdoutText) $($evidenceBad.StderrText)"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $evidenceNs 'shift-policy.json'))) 'a refused policy is not written'
+    # Start freezes the block as the owner's file holds it, one level down.
+    $null = New-NSStartSnapshot $evidence
+    $frozen = [IO.File]::ReadAllText((Join-Path $evidenceNs 'shift-policy.json'))
+    $frozenEvidence = (ConvertFrom-Json $frozen).receipts.evidence
+    Expect-True ($null -ne $frozenEvidence -and $frozenEvidence.fileMap -ceq 'off' -and $frozenEvidence.architecture -ceq 'off' -and
+        $frozenEvidence.default -ceq '' -and $null -eq (ConvertFrom-Json $frozen).receipts.PSObject.Properties['evidence.fileMap']) `
+        "the snapshot nests the evidence block: $frozen"
+    Remove-Item -LiteralPath (Join-Path $evidenceNs 'shift-policy.json') -Force
+    $rulesFile = Join-Path $evidenceNs 'rules.json'
+    $rulesText = [IO.File]::ReadAllText($rulesFile).Replace('"architecture": "off"', '"architecture": "sometimes"')
+    [IO.File]::WriteAllText($rulesFile, $rulesText, $utf8)
+    $evidenceDoctor = Invoke-Script -Path $doctor -Arguments @('-Project', $evidence)
+    Expect-True $evidenceDoctor.StdoutText.Contains('rules.json receipts.evidence.architecture is "sometimes"; it must be off or on') `
+        "Doctor names a bad evidence value: $($evidenceDoctor.StdoutText)"
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

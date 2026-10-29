@@ -1934,8 +1934,17 @@ function Get-NSPulseReceiptsSections {
     param([Parameter(Mandatory = $true)][string]$Workspace, [string]$Label = '')
     $ns = Join-Path $Workspace '.nightshift'
     $folder = ''
-    if ($Label.Length -gt 0 -and (Test-NSItemEvidenceAsked (Get-NSLayoutPath $ns 'punch-list') $Label)) {
-        $folder = (Get-NSLayoutName $ns 'receipts') + '/' + (Get-NSReceiptBase $Workspace $Label) + '/'
+    $shiftDefault = ''
+    if ($Label.Length -gt 0) {
+        if (Test-NSItemEvidenceAsked (Get-NSLayoutPath $ns 'punch-list') $Label) {
+            $folder = (Get-NSLayoutName $ns 'receipts') + '/' + (Get-NSReceiptBase $Workspace $Label) + '/'
+        }
+        else {
+            $shiftDefault = Get-NSReceiptsField $Workspace 'evidence.default'
+            if ($shiftDefault.Length -gt 0) {
+                $folder = (Get-NSLayoutName $ns 'receipts') + '/' + (Get-NSReceiptBase $Workspace $Label) + '/'
+            }
+        }
     }
     $path = Get-NSReceiptsField $Workspace 'templatePath'
     if (-not [string]::IsNullOrEmpty($path)) {
@@ -1950,6 +1959,7 @@ function Get-NSPulseReceiptsSections {
         return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Outputs $script:NSDot Parked decisions and snags."
     }
     $dash = [string][char]0x2014
+    if ($shiftDefault.Length -gt 0) { $clause += '; the shift asks every item for this evidence: ' + $shiftDefault }
     return ($clause + '; short evidence inline, large files in ' + $folder + ' linked relatively, and evidence that could not be produced written as `unavailable ' + $dash + ' <reason>`.')
 }
 

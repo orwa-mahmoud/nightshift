@@ -463,6 +463,9 @@ handoff.view
 recovery.launchScope
 receipts.duration
 receipts.enabled
+receipts.evidence.architecture
+receipts.evidence.default
+receipts.evidence.fileMap
 receipts.progressMinutes
 receipts.progressMode
 receipts.progressTokens

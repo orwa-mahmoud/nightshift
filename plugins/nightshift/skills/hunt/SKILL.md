@@ -191,6 +191,10 @@ Only on a yes, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/eviden
 suggest one `Evidence:` line per item, beside its Verify; the owner keeps, edits or drops each, and
 the kept lines are written into the order. Ask once per compose, and never in run directly, where
 items carry no evidence line unless the owner's sentence asked for one. Evidence never gates a tick.
+The same offer covers the shift-wide settings, once, not per item: evidence every item should
+carry (`receipts.evidence.default`), a file map on every receipt (`receipts.evidence.fileMap`), and
+an architecture diagram kept current (`receipts.evidence.architecture`). Each is off unless the
+owner says yes, and a yes goes into tonight's policy under `receipts.evidence` with the rest of it.
 
 In **run directly**, do not ask again: write the order and immediately cut it into the active
 shift. Record significant discovery and selection decisions in `$NS/inbox/parking-lot.md`.

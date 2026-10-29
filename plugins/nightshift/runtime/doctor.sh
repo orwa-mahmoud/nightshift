@@ -451,6 +451,25 @@ elif json_is_object "$RULES"; then
         ;;
     esac
   done
+  # The evidence settings take off or on, and text. Any other value is named here, because the
+  # receipts would otherwise treat it as off without saying so.
+  while IFS=$'\t' read -r ev_kind ev_name ev_present ev_val; do
+    [ "$ev_kind" = g ] && [ "$ev_present" = 1 ] || continue
+    case "$ev_name" in
+      receipts.evidence.fileMap | receipts.evidence.architecture)
+        case "$ev_val" in '"off"' | '"on"') continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be off or on"
+        act confirm "set $ev_name to \"off\" or \"on\" in $RULES"
+        ;;
+      receipts.evidence.default)
+        case "$ev_val" in '"'*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be text"
+        act confirm "set $ev_name to the evidence every item should carry, or \"\", in $RULES"
+        ;;
+    esac
+  done <<EVIDENCE
+$(ns_rules_facts "$RULES" 2>/dev/null)
+EVIDENCE
 else
   if [ -n "$NS_RULES_ERR" ]; then
     warn "rules.json is unreadable or not a JSON object ($NS_RULES_ERR)"

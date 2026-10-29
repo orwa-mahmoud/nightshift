@@ -177,6 +177,13 @@ Estimate: <the shift-estimate figures for these items, or "no history yet">
   per item; the owner keeps, edits or drops each. Record the answer in the plan record
   (`Decided: evidence lines — declined`, or the lines kept) and do not offer again for that plan.
   Evidence shows the work; it never gates a tick.
+- **Shift-wide evidence rides in the same offer.** Evidence every item should carry, a file map on
+  every receipt, or an architecture diagram kept current is one question for the whole plan, not a
+  line per item: for example "Include the file map on every receipt?" All of it is off unless the
+  owner says yes. The room cannot write `rules.json` or the shift policy, so record the yes in the
+  plan record and give the owner the setting to apply: `receipts.evidence.default`,
+  `receipts.evidence.fileMap` or `receipts.evidence.architecture` in their rules file, or Hunt
+  for one shift.
 - **Size it from the owner's history.** Before asking for the yes, run
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-estimate --items <N>` for the N items drafted. It reads
   the Time and Tokens totals of past ticked receipts and prints per-item figures, a total, a suggested

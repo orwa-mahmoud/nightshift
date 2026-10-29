@@ -97,6 +97,18 @@ with both off the item is still ticked and its sessions still recorded. `off` me
 measurement off, and `unavailable` means the host did not report it. See
 [Owner knobs](knobs.md#shift-handoff-and-archive) for the exact settings.
 
+## Evidence a reviewer opens first
+
+An item can carry an `Evidence:` line beside `Verify:` naming what shows the work at a glance:
+screenshots at named widths, a benchmark's before and after, a sample response. Plan and Hunt offer
+these lines once, from an evidence catalog, and add none without your yes. `receipts.evidence.default`
+asks the same of every item for a shift.
+
+Such an item's receipt gets an `## Evidence` section. Short evidence sits inline; screenshots,
+recordings and data go in a folder named after the receipt, beside it, and are linked relatively.
+Evidence that could not be produced reads `unavailable — <reason>`. Archive files the folder with its
+receipt, a renamed receipt takes it along, and the index links it. Evidence never holds a tick.
+
 ## Receipts and the morning receipt are separate switches
 
 `receipts.enabled` controls the item files, the index and usage measurement; `handoff.enabled`

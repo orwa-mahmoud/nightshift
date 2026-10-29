@@ -183,11 +183,16 @@ ns_pulse_receipts_basename() {
 }
 
 # ns_pulse_receipts_sections <project> <label> — the approach clause on an item-start notice. An
-# item that asks for evidence gets an Evidence section and the folder its large files go in.
+# item that asks for evidence, or a shift that asks it of every item, gets an Evidence section and
+# the folder its large files go in.
 ns_pulse_receipts_sections() {
-  local path folder=""
+  local path folder="" shift_default=""
   if ns_item_evidence_asked "$(ns_layout_path "$1/.nightshift" punch-list)" "$2"; then
     folder="$(ns_layout_name "$1/.nightshift" receipts)/$(ns_pulse_receipts_basename "$1" "$2")/"
+  else
+    shift_default="$(ns_receipts "$1" evidence.default 2>/dev/null)" || shift_default=""
+    [ -z "$shift_default" ] ||
+      folder="$(ns_layout_name "$1/.nightshift" receipts)/$(ns_pulse_receipts_basename "$1" "$2")/"
   fi
   path="$(ns_receipts "$1" templatePath 2>/dev/null)" || path=""
   if [ -n "$path" ]; then
@@ -200,6 +205,7 @@ ns_pulse_receipts_sections() {
     printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
     return 0
   fi
+  [ -z "$shift_default" ] || printf '; the shift asks every item for this evidence: %s' "$shift_default"
   printf '; short evidence inline, large files in %s linked relatively, and evidence that could not be produced written as %s.' \
     "$folder" "\`unavailable — <reason>\`"
 }

@@ -942,6 +942,9 @@ $script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
 $script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
 $script:NSPolicyGroupDefaults['receipts.duration'] = 'on'
 $script:NSPolicyGroupDefaults['receipts.enabled'] = $true
+$script:NSPolicyGroupDefaults['receipts.evidence.architecture'] = 'off'
+$script:NSPolicyGroupDefaults['receipts.evidence.default'] = ''
+$script:NSPolicyGroupDefaults['receipts.evidence.fileMap'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
 $script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
 $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
@@ -981,6 +984,9 @@ $script:NSPolicySettingNames = @(
     'recovery.launchScope',
     'receipts.duration',
     'receipts.enabled',
+    'receipts.evidence.architecture',
+    'receipts.evidence.default',
+    'receipts.evidence.fileMap',
     'receipts.progressMinutes',
     'receipts.progressMode',
     'receipts.progressTokens',
@@ -1167,6 +1173,20 @@ function Test-NSShiftPolicyDocument {
     }
     if ($Document.Contains('toolingPolicy') -and -not (Test-NSEvidenceEnum $Document['toolingPolicy'] $script:NSPolicyToolingPolicies)) {
         $errors.Add('toolingPolicy: must be one of ' + ($script:NSPolicyToolingPolicies -join ', '))
+    }
+    # The evidence settings are on or off, and free text, as the schema states them.
+    $receiptsBlock = Get-NSPolicyField $Document 'receipts'
+    if ($receiptsBlock -is [Collections.IDictionary] -and $receiptsBlock.Contains('evidence') -and
+        $receiptsBlock['evidence'] -is [Collections.IDictionary]) {
+        $evidenceBlock = $receiptsBlock['evidence']
+        foreach ($k in @('fileMap', 'architecture')) {
+            if ($evidenceBlock.Contains($k) -and $null -ne $evidenceBlock[$k] -and -not (Test-NSEvidenceEnum $evidenceBlock[$k] @('off', 'on'))) {
+                $errors.Add("receipts.evidence.${k}: must be off or on")
+            }
+        }
+        if ($evidenceBlock.Contains('default') -and $null -ne $evidenceBlock['default'] -and $evidenceBlock['default'] -isnot [string]) {
+            $errors.Add('receipts.evidence.default: must be text')
+        }
     }
     if ($Document.Contains('completionMode') -and -not (Test-NSEvidenceEnum $Document['completionMode'] $script:NSPolicyCompletionModes)) {
         $errors.Add('completionMode: must be one of ' + ($script:NSPolicyCompletionModes -join ', '))
@@ -1511,7 +1531,15 @@ function Set-NSShiftPolicy {
         $frozen = New-NSOrdinalMap
         foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
             if (-not $name.StartsWith($block + '.', [StringComparison]::Ordinal)) { continue }
-            $frozen[$name.Substring($block.Length + 1)] = (Get-NSPolicyGroupSetting $Workspace $name)['value']
+            $field = $name.Substring($block.Length + 1)
+            $value = (Get-NSPolicyGroupSetting $Workspace $name)['value']
+            # A field one level down (receipts.evidence.fileMap) is written inside its own object, as
+            # the owner's file holds it.
+            $dot = $field.IndexOf('.')
+            if ($dot -lt 0) { $frozen[$field] = $value; continue }
+            $group = $field.Substring(0, $dot)
+            if (-not $frozen.Contains($group)) { $frozen[$group] = New-NSOrdinalMap }
+            $frozen[$group][$field.Substring($dot + 1)] = $value
         }
         if ($frozen.Count -gt 0) { $document[$block] = $frozen }
     }

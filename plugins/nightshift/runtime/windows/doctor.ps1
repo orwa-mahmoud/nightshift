@@ -497,6 +497,30 @@ else {
                 }
             }
         }
+        # The evidence settings take off or on, and text. Any other value is named here, because
+        # the receipts would otherwise treat it as off without saying so.
+        $receiptsRule = $rules.PSObject.Properties['receipts']
+        $evidenceRule = $null
+        if ($null -ne $receiptsRule -and $receiptsRule.Value -is [Management.Automation.PSCustomObject]) {
+            $evidenceRule = $receiptsRule.Value.PSObject.Properties['evidence']
+        }
+        if ($null -ne $evidenceRule -and $evidenceRule.Value -is [Management.Automation.PSCustomObject]) {
+            foreach ($k in @('architecture', 'default', 'fileMap')) {
+                $setting = $evidenceRule.Value.PSObject.Properties[$k]
+                if ($null -eq $setting) { continue }
+                $name = 'receipts.evidence.' + $k
+                $shown = ConvertTo-Json -Compress -InputObject $setting.Value
+                if ($k -ceq 'default') {
+                    if ($setting.Value -is [string]) { continue }
+                    Add-NSWarn "rules.json $name is $shown; it must be text"
+                    Add-NSAct confirm "set $name to the evidence every item should carry, or `"`", in $rulesPath"
+                    continue
+                }
+                if ($setting.Value -is [string] -and ($setting.Value -ceq 'off' -or $setting.Value -ceq 'on')) { continue }
+                Add-NSWarn "rules.json $name is $shown; it must be off or on"
+                Add-NSAct confirm "set $name to `"off`" or `"on`" in $rulesPath"
+            }
+        }
     }
 }
 

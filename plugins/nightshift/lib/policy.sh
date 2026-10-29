@@ -139,6 +139,8 @@ ns_policy_builtin() {
     handoff.view) printf '"owner"' ;;
     recovery.launchScope) printf '"inherit-recorded-scope"' ;;
     receipts.duration) printf '"on"' ;;
+    receipts.evidence.architecture | receipts.evidence.fileMap) printf '"off"' ;;
+    receipts.evidence.default) printf '""' ;;
     receipts.progressMinutes) printf '20' ;;
     receipts.progressMode) printf '"time"' ;;
     receipts.progressTokens) printf '100000' ;;
@@ -302,8 +304,9 @@ PREF = [("shift", ["copyIn", "execution", "hours", "isolation", "itemBudget", "p
         ("recovery", ["launchScope"]),
         ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
         ("archive", ["automatic", "layout", "root", "templatePath"]),
-        ("receipts", ["duration", "enabled", "progressMinutes", "progressMode",
-                    "progressTokens", "templatePath", "usage"])]
+        ("receipts", ["duration", "enabled", "evidence.architecture", "evidence.default",
+                    "evidence.fileMap", "progressMinutes", "progressMode", "progressTokens",
+                    "templatePath", "usage"])]
 out = []
 
 
@@ -357,9 +360,15 @@ def ks(p, v):
             out.append("k\t%s\t%s" % (p, scrub(k)))
 
 
+def dig(v, k):
+    for part in k.split("."):
+        v = obj(v).get(part)
+    return v
+
+
 def sc(p, v, names):
     for k in names:
-        out.append("j\t%s\t%s" % (jn(p, k), enc(obj(v).get(k))))
+        out.append("j\t%s\t%s" % (jn(p, k), enc(dig(v, k))))
 
 
 def cnt(p, v):
@@ -893,6 +902,23 @@ _ns_policy_validate_shift() {
       return 1
     }
   done
+  # The evidence settings are on or off, and free text, as the schema states them.
+  for key in fileMap architecture; do
+    case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "receipts.evidence.$key")" in
+      '' | null | '"off"' | '"on"') ;;
+      *)
+        _ns_policy_shift_fail "receipts.evidence.$key" "must be off or on"
+        return 1
+        ;;
+    esac
+  done
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.default)" in
+    '' | null | '"'*) ;;
+    *)
+      _ns_policy_shift_fail receipts.evidence.default "must be text"
+      return 1
+      ;;
+  esac
   case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" completionMode)" in
     null | '"clear-all"' | '"no-regression-plus-selected-debt"') ;;
     *)
@@ -1024,9 +1050,10 @@ ns_policy_launch() {
 # ns_policy_freeze_pref <workspace> <block> — the block as it applies tonight, compact JSON, ready
 # to be written into the snapshot. Every supported field is present: the owner's value where their
 # file states one, the shipped default where it does not, so the frozen block answers on its own
-# and a later edit to the owner's file cannot change what tonight resolved to.
+# and a later edit to the owner's file cannot change what tonight resolved to. A field one level
+# down (`receipts.evidence.fileMap`) is written inside its own object, as the owner's file holds it.
 ns_policy_freeze_pref() {
-  local f facts line name val out="" first=1
+  local f facts line name val leaf sub out="" first=1 open="" subfirst=1
   ns_layout_set f "$1/.nightshift" rules
   facts=""
   if [ -f "$f" ]; then
@@ -1047,12 +1074,31 @@ ns_policy_freeze_pref() {
 $facts
 FACTS
     [ -n "$val" ] || val="$(ns_policy_builtin "$name")" || val=null
-    [ "$first" -eq 1 ] || out="$out,"
-    first=0
-    out="$out\"${name#*.}\":$val"
+    leaf="${name#*.}"
+    sub=""
+    case "$leaf" in *.*) sub="${leaf%%.*}" leaf="${leaf#*.}" ;; esac
+    if [ "$sub" != "$open" ]; then
+      [ -z "$open" ] || out="$out}"
+      open="$sub"
+      if [ -n "$sub" ]; then
+        [ "$first" -eq 1 ] || out="$out,"
+        first=0
+        out="$out\"$sub\":{"
+        subfirst=1
+      fi
+    fi
+    if [ -n "$sub" ]; then
+      [ "$subfirst" -eq 1 ] || out="$out,"
+      subfirst=0
+    else
+      [ "$first" -eq 1 ] || out="$out,"
+      first=0
+    fi
+    out="$out\"$leaf\":$val"
   done <<KEYS
 $NS_RULES_GROUP_KEYS
 KEYS
+  [ -z "$open" ] || out="$out}"
   [ "$first" -eq 0 ] || return 1
   printf '{%s}' "$out"
 }

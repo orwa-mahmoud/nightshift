@@ -442,14 +442,17 @@ function Get-NSPolicyGroupSetting {
         elseif ($Name -ceq 'archive.layout') { $ended = Get-NSEndedField $Workspace 'archiveLayout' }
         if (-not [string]::IsNullOrEmpty($ended)) { return (New-NSPolicySetting $ended 'one-shift' 'shift') }
     }
+    # A field one level down, receipts.evidence.fileMap, is read through its own object.
+    $parts = $key.Split('.')
     if ($state['state'] -ceq 'valid') {
-        $frozen = Get-NSMapValue $state['policy'] $block
-        if ($frozen -is [Collections.IDictionary] -and $frozen.Contains($key)) {
-            $value = $frozen[$key]
-            if ($null -ne $value) {
-                if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'one-shift' 'shift') }
-                return (New-NSPolicySetting $value 'one-shift' 'shift')
-            }
+        $node = Get-NSMapValue $state['policy'] $block
+        foreach ($part in $parts) {
+            if ($node -is [Collections.IDictionary] -and $node.Contains($part)) { $node = $node[$part] }
+            else { $node = $null; break }
+        }
+        if ($null -ne $node) {
+            if ($node -is [Array]) { return (New-NSPolicySetting ([object[]]@($node)) 'one-shift' 'shift') }
+            return (New-NSPolicySetting $node 'one-shift' 'shift')
         }
     }
 
@@ -457,7 +460,12 @@ function Get-NSPolicyGroupSetting {
     if ($null -eq $rules) { return (New-NSPolicySetting $fallback 'built-in' '-') }
     $property = $rules.PSObject.Properties[$block]
     if ($null -eq $property -or $null -eq $property.Value) { return (New-NSPolicySetting $fallback 'built-in' '-') }
-    $inner = $property.Value.PSObject.Properties[$key]
+    $inner = $property
+    foreach ($part in $parts) {
+        if ($null -eq $inner.Value -or $inner.Value -isnot [Management.Automation.PSCustomObject]) { $inner = $null; break }
+        $inner = $inner.Value.PSObject.Properties[$part]
+        if ($null -eq $inner) { break }
+    }
     if ($null -eq $inner) { return (New-NSPolicySetting $fallback 'built-in' '-') }
     $value = $inner.Value
     if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'rules' 'permanent') }
