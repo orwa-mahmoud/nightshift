@@ -3,6 +3,18 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.29.2](https://github.com/orwa-mahmoud/nightshift/compare/v0.29.1...v0.29.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* attribute Cursor usage to the agent turn that spent it ([dedc4a9](https://github.com/orwa-mahmoud/nightshift/commit/dedc4a93ecf1ce69ac0fbde77f64a4bebc302ae8))
+* claim the site and lease locks with an exclusive create ([ddf721a](https://github.com/orwa-mahmoud/nightshift/commit/ddf721a472c610bf69e2558b708e98cb706e28ef))
+* hold a Cursor revival when the session returns during the mint ([2df5a25](https://github.com/orwa-mahmoud/nightshift/commit/2df5a254663f593892d2406bd84f6b2cec1d11d2))
+* record a Cursor worker only when a revival launches it ([a99d1af](https://github.com/orwa-mahmoud/nightshift/commit/a99d1aff64a3af163acbf5d440c90645977357a9))
+* relaunch a headless Cursor worker that exits with open boxes ([ba7f300](https://github.com/orwa-mahmoud/nightshift/commit/ba7f300d34cd77f7930b3933f6e7b18450b1738f))
+* write pulse marks under the site lock ([8b87ce9](https://github.com/orwa-mahmoud/nightshift/commit/8b87ce98dabcf15ff7bc590267496251d57e6cb5))
+
 ## [0.29.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.29.0...v0.29.1) (2026-10-22)
 
 
