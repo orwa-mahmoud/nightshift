@@ -177,6 +177,14 @@ Estimate: <the shift-estimate figures for these items, or "no history yet">
   per item; the owner keeps, edits or drops each. Record the answer in the plan record
   (`Decided: evidence lines — declined`, or the lines kept) and do not offer again for that plan.
   Evidence shows the work; it never gates a tick.
+- **Offer an edge-case pass once, never run it unasked.** With the items drafted, before the
+  capture question, ask one line: "Want an edge-case pass on these items before I write them? It
+  adds a few minutes." The default is no, and plain planning stays as fast as it was. Only on a
+  yes, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/plan/edge-cases.md` and propose
+  WHEN/THEN lines per item for the cases that apply, never every case for every item; the owner
+  keeps, edits or drops each, and only the kept lines reach the drafting table. Record the answer
+  in the plan record (`Decided: edge-case pass — declined`, or the cases kept) and do not offer
+  again for that plan.
 - **Shift-wide evidence rides in the same offer.** Evidence every item should carry, a file map on
   every receipt, or an architecture diagram kept current is one question for the whole plan, not a
   line per item: for example "Include the file map on every receipt?" All of it is off unless the

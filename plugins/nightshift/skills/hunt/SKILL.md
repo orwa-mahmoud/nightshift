@@ -196,6 +196,11 @@ carry (`receipts.evidence.default`), a file map on every receipt (`receipts.evid
 an architecture diagram kept current (`receipts.evidence.architecture`). Each is off unless the
 owner says yes, and a yes goes into tonight's policy under `receipts.evidence` with the rest of it.
 
+Offer the edge-case pass the same way, once per compose and never in run directly: "Want an
+edge-case pass on these items before I write them? It adds a few minutes." The default is no.
+Only on a yes, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/plan/edge-cases.md`,
+propose WHEN/THEN lines for the cases each item can meet, and write only the lines the owner keeps.
+
 In **run directly**, do not ask again: write the order and immediately cut it into the active
 shift. Record significant discovery and selection decisions in `$NS/inbox/parking-lot.md`.
 
