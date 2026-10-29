@@ -589,6 +589,133 @@ ns_usage_cursor_turn() {
   awk -F '\t' -v from="$from" 'NR > from && $4 == "tick" { print $2 "\t" NR }' "$marks"
 }
 
+# ---------------------------------------------------------------------------------------------
+# Cursor turns
+#
+# Cursor reports usage once per agent turn, at the turn's end, and a turn routinely spans several
+# items. A mark delta would book the whole reading to whichever item is open when it arrives, so
+# Cursor's readings are attributed by turn instead: `turns.tsv` records each turn's reading and the
+# items it covered, one line per turn:
+#
+#   <identity>\t<marks-at-arrival>\t<fields>\t<covered>
+#
+# `covered` is `;`-joined `<label>@<mark-number>` entries for the items ticked inside the turn, and
+# `<label>@open` for the item still being worked when it ended, resolved to its mark number when that
+# item's session closes. A turn that covered nothing known goes to the session it arrived in. A turn
+# that covers one item is that item's reading; one that covers several is one shared reading, shown
+# on each of their receipts and never split between them.
+
+_ns_usage_turns() { printf '%s/turns.tsv' "$(ns_usage_dir "$1")"; }
+
+# ns_usage_turn_enc <text> / ns_usage_turn_dec <text> — a label or identity that rides inside a
+# covered list or a session-data field: no spaces, tabs, slashes, `;` or `@`, reversible.
+ns_usage_turn_enc() { printf '%s' "$1" | sed 's/%/%25/g; s/ /%20/g; s/	/%09/g; s#/#%2F#g; s/;/%3B/g; s/@/%40/g'; }
+ns_usage_turn_dec() { printf '%s' "$1" | sed 's/%40/@/g; s/%3B/;/g; s#%2F#/#g; s/%09/	/g; s/%20/ /g; s/%25/%/g'; }
+
+# _ns_usage_turns_replace <nightshift-dir> — the ledger rewritten from stdin, whole or not at all.
+_ns_usage_turns_replace() {
+  local file tmp
+  file="$(_ns_usage_turns "$1")"
+  tmp="$file.$$"
+  if cat >"$tmp" && mv "$tmp" "$file"; then return 0; fi
+  rm -f "$tmp"
+  return 1
+}
+
+# ns_usage_turn_note <nightshift-dir> <identity> <fields> <covered> — record one turn's reading. A
+# turn read again keeps the items it was first found to cover and takes the newer reading.
+ns_usage_turn_note() {
+  local ns="$1" file marks at
+  [ -n "$2" ] && [ -n "$3" ] || return 1
+  mkdir -p "$(ns_usage_dir "$ns")" 2>/dev/null || return 1
+  file="$(_ns_usage_turns "$ns")"
+  [ ! -L "$file" ] || return 1
+  if [ -f "$file" ] && cut -f1 "$file" | grep -qxF -- "$2"; then
+    awk -F '\t' -v OFS='\t' -v id="$2" -v fields="$3" '$1 == id { $3 = fields } { print }' "$file" |
+      _ns_usage_turns_replace "$ns"
+    return
+  fi
+  marks="$(_ns_usage_marks "$ns")"
+  at=0
+  [ ! -f "$marks" ] || at="$(awk 'END { print NR }' "$marks")"
+  printf '%s\t%s\t%s\t%s\n' "$2" "$at" "$3" "$4" >>"$file" 2>/dev/null || return 1
+}
+
+# ns_usage_turn_covered <nightshift-dir> <identity> — the covered list recorded for one turn.
+ns_usage_turn_covered() {
+  local file
+  file="$(_ns_usage_turns "$1")"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  awk -F '\t' -v id="$2" '$1 == id { print $4; exit }' "$file"
+}
+
+# ns_usage_turn_resolve <nightshift-dir> <label> <mark-number> — the session of <label> that closed
+# at <mark-number> takes the turns that ended while it was being worked, and the turns that arrived
+# inside its span covering nothing known.
+ns_usage_turn_resolve() {
+  local file
+  file="$(_ns_usage_turns "$1")"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  awk -F '\t' -v OFS='\t' -v nr="$3" -v open="$(ns_usage_turn_enc "$2")@open" -v entry="$(ns_usage_turn_enc "$2")@$3" '
+    {
+      if ($4 == "" && $2 < nr) $4 = entry
+      else {
+        n = split($4, c, ";"); out = ""
+        for (i = 1; i <= n; i++) out = out (out == "" ? "" : ";") (c[i] == open ? entry : c[i])
+        $4 = out
+      }
+      print
+    }' "$file" | _ns_usage_turns_replace "$1"
+}
+
+# ns_usage_turns_for <nightshift-dir> <label> <mark-number> — the turns covering the session of
+# <label> that closed at <mark-number>, one session-data value per line:
+# `<identity>/<fields>/<items>`, the identity and each item encoded, the items `;`-joined in the order
+# the turn covered them.
+ns_usage_turns_for() {
+  local file
+  file="$(_ns_usage_turns "$1")"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  awk -F '\t' -v entry="$(ns_usage_turn_enc "$2")@$3" '
+    {
+      n = split($4, c, ";"); hit = 0; items = ""
+      for (i = 1; i <= n; i++) {
+        if (c[i] == entry) hit = 1
+        l = c[i]; sub(/@[^@]*$/, "", l)
+        if (!(l in seen)) { seen[l] = 1; items = items (items == "" ? "" : ";") l }
+      }
+      delete seen
+      if (hit) print $1 "\t" $3 "\t" items
+    }' "$file" | while IFS=$'\t' read -r id fields items; do
+    printf '%s/%s/%s\n' "$(ns_usage_turn_enc "$id")" "$fields" "$items"
+  done
+}
+
+# ns_usage_span_fields <earlier-host-totals> <later-host-totals> [host] — what moved between two
+# marks, summed over every host and model except <host>.
+ns_usage_span_fields() {
+  local earlier="$1" later="$2" skip="${3:-}" entry key now was out=""
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    key="${entry%%:*}"
+    [ -z "$skip" ] || [ "${key%%/*}" != "$skip" ] || continue
+    now="${entry#*:}"
+    was="$(printf '%s\n' "$earlier" | tr ';' '\n' | awk -v k="$key" 'index($0, k ":") == 1 { print substr($0, length(k) + 2); exit }')"
+    out="$(ns_usage_add "$out" "$(ns_usage_sub "$now" "$was")")"
+  done < <(printf '%s\n' "$later" | tr ';' '\n')
+  printf '%s' "$out"
+}
+
+# ns_usage_generation <nightshift-dir> [shift-id] — the accounting start a checkpoint is keyed to:
+# the arm mark's generation, else the shift id, else the arm mark's clock.
+ns_usage_generation() {
+  local marks generation
+  marks="$(_ns_usage_marks "$1")"
+  generation="$(head -n1 "$marks" 2>/dev/null | cut -f6)"
+  [ -n "$generation" ] || generation="${2:-$(head -n1 "$marks" 2>/dev/null | cut -f1)}"
+  printf '%s' "$generation"
+}
+
 # ns_usage_last_item <nightshift-dir> — the span between the last two marks: what the item ticked
 # second cost, and how long it ran. `<fields>\t<seconds>\t<label>`.
 ns_usage_last_item() {

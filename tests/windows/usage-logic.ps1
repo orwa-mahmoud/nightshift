@@ -77,17 +77,108 @@ try {
     $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' $turn2
     $r1 = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P01.md'))
     $r2 = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P02.md'))
-    Expect-True $r1.Contains('| input | 500 + shared turn |') 'an item with its own spend shows the turn beside it'
-    Expect-True $r1.Contains('- Session 1 closed inside one Cursor agent turn shared with P02.') 'the first receipt names the item sharing the turn'
-    Expect-True $r1.Contains("whole turn's reading: input 800 $([char]0x00B7) cache read 4.0k $([char]0x00B7) output 20.") 'the receipt states the turn reading'
-    Expect-True $r2.Contains('| input | shared turn |') 'an item with no spend of its own shows the shared turn'
-    Expect-True $r2.Contains('| turn 800 | turn 20 | unavailable | turn 4.0k | unavailable |') 'the session row shows the turn figures'
-    Expect-True $r2.Contains('- Session 1 closed inside one Cursor agent turn shared with P01.') 'the second receipt names the item sharing the turn'
+    $sharedLine = "- input 800 $([char]0x00B7) cache read 4.0k $([char]0x00B7) output 20 across items P01, P02, not split by item."
+    Expect-True $r1.Contains('| input | 500 + not attributable |') 'an item with its own reading shows the shared turn as not attributable beside it'
+    Expect-True $r1.Contains($sharedLine) 'the first receipt lists the shared turn and its items'
+    Expect-True $r2.Contains('| input | not attributable |') 'an item with no reading of its own is not attributable'
+    Expect-True $r2.Contains('| not attributable | not attributable | unavailable | not attributable | unavailable |') 'the session row marks each shared figure'
+    Expect-True $r2.Contains($sharedLine) 'the second receipt lists the same shared turn'
     Expect-True (-not $r2.Contains('| input | 0 |')) 'no item sharing the turn shows zero'
     $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' $turn2
     $r2 = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P02.md'))
-    Expect-True (([regex]::Matches($r2, 'closed inside one Cursor agent turn')).Count -eq 1) 'a second reading of the same turn rewrites the note'
+    Expect-True (([regex]::Matches($r2, 'across items P01, P02')).Count -eq 1) 'a second reading of the same turn rewrites it'
     Expect-True ((Get-NSUsageTotal $ns) -ceq 'input=1300,cache_read=4100,output=30') "the turn counts once in the total ($(Get-NSUsageTotal $ns))"
+    $index = [IO.File]::ReadAllText((Join-Path $ns 'receipts/README.md'))
+    Expect-True $index.Contains("| **Totals** |  | **input 1.3k $([char]0x00B7) cache_write unavailable $([char]0x00B7) cache_read 4.1k $([char]0x00B7) output 30 $([char]0x00B7) reasoning unavailable** |") 'the index counts the shared turn once'
+
+    # One Cursor turn across items 2 to 5 is one shared reading on each of their receipts, and the item
+    # still being worked when it ended takes it when it ticks.
+    $w = Join-Path $root 'cursor-span'
+    $six = "# Punch list`n`n## Items`n`n" + ((1..6 | ForEach-Object { "- [ ] **P0$_ - item $_.**`n" }) -join '')
+    $ns = New-Workspace $w $six
+    $punch = Join-Path $ns 'punch-list.md'
+    $tickTo = {
+        param([int]$Count)
+        $text = [IO.File]::ReadAllText($punch)
+        for ($k = 1; $k -le $Count; $k++) { $text = $text.Replace("- [ ] **P0$k ", "- [x] **P0$k ") }
+        [IO.File]::WriteAllText($punch, $text)
+        $null = Invoke-NSGateUsageSync $ns $w $punch $Count
+    }
+    $null = Write-NSUsageMarkArm $ns
+    Set-NSUsageActive $ns 'P01'
+    & $tickTo 1
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' '{"conversation_id":"c1","generation_id":"g1","input_tokens":1000,"output_tokens":5}'
+    Set-NSUsageActive $ns 'P02'
+    & $tickTo 4
+    Set-NSUsageActive $ns 'P05'
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' '{"conversation_id":"c1","generation_id":"g2","input_tokens":15900000,"cache_read_tokens":15000000,"output_tokens":60200}'
+    & $tickTo 5
+    $p1 = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P01.md'))
+    Expect-True ($p1.Contains('| input | 1.0k |') -and -not $p1.Contains('not attributable')) 'an item worked alone through a turn keeps that turn as its own'
+    foreach ($k in 2..5) {
+        $r = [IO.File]::ReadAllText((Join-Path $ns "receipts/P0$k.md"))
+        Expect-True $r.Contains("- input 15.9M $([char]0x00B7) cache read 15.0M $([char]0x00B7) output 60.2k across items P02, P03, P04, P05, not split by item.") "item $k lists the shared turn"
+        Expect-True $r.Contains('| input | not attributable |') "item $k has no figure of its own"
+        Expect-True $r.Contains('<!-- tokens - - - - - -->') "item $k marks every dimension unmeasured"
+    }
+    $index = [IO.File]::ReadAllText((Join-Path $ns 'receipts/README.md'))
+    Expect-True $index.Contains("| **Totals** |  | **input 15.9M $([char]0x00B7) cache_write unavailable $([char]0x00B7) cache_read 15.0M $([char]0x00B7) output 60.2k $([char]0x00B7) reasoning unavailable** |") 'the index counts the shared turn once, not once per item'
+
+    # A Cursor turn that reports no usage leaves its item unavailable, never zero.
+    $w = Join-Path $root 'cursor-none'
+    $ns = New-Workspace $w "# Punch list`n`n## Items`n`n- [ ] **P01 - first.**`n- [ ] **P02 - second.**`n"
+    $punch = Join-Path $ns 'punch-list.md'
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' '{"conversation_id":"c1","generation_id":"g1","input_tokens":300,"output_tokens":3}'
+    [IO.File]::WriteAllText($punch, "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n- [ ] **P02 - second.**`n")
+    $null = Invoke-NSGateUsageSync $ns $w $punch 1
+    Set-NSUsageActive $ns 'P02'
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' '{"conversation_id":"c1","generation_id":"g2","status":"completed"}'
+    [IO.File]::WriteAllText($punch, "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n- [x] **P02 - second.**`n")
+    $null = Invoke-NSGateUsageSync $ns $w $punch 2
+    $r = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P02.md'))
+    Expect-True ($r.Contains('| input | unavailable |') -and $r.Contains('| output | unavailable |')) 'an item with no reading is unavailable'
+    Expect-True $r.Contains('<!-- tokens - - - - - -->') 'the marker records no measurement, not zero'
+    Expect-True (-not ($r -cmatch '\| (input|output) \| 0 \|')) 'no reading never reads zero'
+    $index = [IO.File]::ReadAllText((Join-Path $ns 'receipts/README.md'))
+    Expect-True $index.Contains('| P02 | ticked | **unavailable** |') 'the index row says unavailable'
+    Expect-True $index.Contains("| P01 | ticked | **input 300 $([char]0x00B7) cache_write unavailable $([char]0x00B7) cache_read unavailable $([char]0x00B7) output 3 $([char]0x00B7) reasoning unavailable** |") 'an unreported dimension is unavailable in the index'
+
+    # A Cursor turn that reports zero reads zero.
+    $w = Join-Path $root 'cursor-zero'
+    $ns = New-Workspace $w "# Punch list`n`n## Items`n`n- [ ] **P01 - first.**`n"
+    $punch = Join-Path $ns 'punch-list.md'
+    $null = Write-NSUsageMarkArm $ns
+    Set-NSUsageActive $ns 'P01'
+    $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' '{"conversation_id":"c1","generation_id":"g1","input_tokens":0,"output_tokens":0}'
+    [IO.File]::WriteAllText($punch, "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n")
+    $null = Invoke-NSGateUsageSync $ns $w $punch 1
+    $r = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P01.md'))
+    Expect-True ($r.Contains('| input | 0 |') -and $r.Contains('| output | 0 |')) 'a reading of zero is zero'
+    Expect-True $r.Contains('<!-- tokens 0 - - 0 - -->') 'the marker keeps the measured zero'
+
+    # A pulse that cannot take the site lock leaves the marks to the holder.
+    $w = Join-Path $root 'marks-lock'
+    $ns = New-Workspace $w "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n"
+    $null = Write-NSUsageMarkArm $ns
+    $holder = [powershell]::Create()
+    $null = $holder.AddScript({
+            param($Module, $Dir)
+            Import-Module $Module -Force -DisableNameChecking
+            $m = Enter-NSMutex $Dir '.lock.d'
+            Start-Sleep -Seconds 4
+            Exit-NSMutex $m
+        }).AddArgument((Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1')).AddArgument($ns)
+    $held = $holder.BeginInvoke()
+    Start-Sleep -Seconds 1
+    $null = Invoke-NSPulseMarks $ns $w
+    $labels = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns)) | ForEach-Object { $_.Split("`t")[1] })
+    Expect-True (($labels -join ' ') -ceq 'arm') "a pulse without the lock writes no mark ($($labels -join ' '))"
+    $null = $holder.EndInvoke($held)
+    $holder.Dispose()
+    $null = Invoke-NSPulseMarks $ns $w
+    $null = Invoke-NSPulseMarks $ns $w
+    $labels = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns)) | ForEach-Object { $_.Split("`t")[1] })
+    Expect-True (($labels -join ' ') -ceq 'arm P01') "the lock's next taker marks the item once ($($labels -join ' '))"
 
     # A mixed host list joins each host and model once.
     $w = Join-Path $root 'host-join'

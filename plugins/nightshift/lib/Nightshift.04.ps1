@@ -1636,7 +1636,8 @@ function Get-NSReceiptUsageSection {
     $off = @($false, $false, $false, $false, $false)
     $miss = @($false, $false, $false, $false, $false)
     $shared = @($false, $false, $false, $false, $false)
-    $sharedTurns = New-Object Collections.Generic.List[string]
+    $sharedKeys = New-Object Collections.Generic.List[string]
+    $sharedTurns = New-Object Collections.Generic.List[object]
     $dims = @('input', 'output', 'cache_write', 'cache_read', 'reasoning')
     $twork = [long]0; $tpause = [long]0; $twall = [long]0
     $havework = $false; $offwork = $false; $havepause = $false; $offpause = $false
@@ -1672,24 +1673,47 @@ function Get-NSReceiptUsageSection {
             $budgetEvents.Add($budgetLine)
         }
         $cells = ''
-        $turn = Get-NSSessionExtra $line 'turn'
-        if ($turn.Length -gt 0) {
-            $with = ConvertFrom-NSReceiptEncoded (Get-NSSessionExtra $line 'with')
-            $t = '- Session ' + $n + ' closed inside one Cursor agent turn'
-            if ($with.Length -gt 0) { $t += ' shared with ' + $with }
-            $sharedTurns.Add($t + ". Cursor reports usage once per turn, so this is the whole turn's reading: " + (Get-NSReceiptTurnWords $turn) + '.')
+        $own = ''
+        $sharedUnion = ''
+        foreach ($t in (Get-NSSessionTurns $line)) {
+            if ($t.Length -eq 0) { continue }
+            $tp = $t.Split('/')
+            if ($tp.Count -ge 3) {
+                $tkey = $tp[0]; $tfields = $tp[1]; $titems = ($tp[2..($tp.Count - 1)] -join '/')
+                $legacy = $false
+            }
+            else {
+                # A session recorded before turns were attributed carries the turn's reading and the
+                # items that shared it, and no identity: it is one shared turn of its own.
+                $tkey = 'legacy:' + $t; $tfields = $t; $legacy = $true
+                $with = ConvertFrom-NSReceiptEncoded (Get-NSSessionExtra $line 'with')
+                $titems = (@($with -split '; ' | Where-Object { $_.Length -gt 0 } | ForEach-Object { ConvertTo-NSUsageTurnEncoded $_ }) -join ';')
+            }
+            if ($legacy -or $titems.Contains(';')) {
+                $sharedUnion = Add-NSUsageFields $sharedUnion $tfields
+                if (-not $sharedKeys.Contains($tkey)) {
+                    $sharedKeys.Add($tkey)
+                    $sharedTurns.Add(@($tkey, $tfields, $titems, $legacy))
+                }
+            }
+            else { $own = Add-NSUsageFields $own $tfields }
         }
         for ($i = 0; $i -lt 5; $i++) {
             $v = $vals[$i]; $num = [long]0
-            # A Cursor turn's reading arrives when the turn ends, after an item ticked inside it has
-            # closed. Shown as the turn's, and left out of the totals. Mirrors ns_receipt_usage_section.
-            $tv = $(if ($turn.Length -gt 0) { Get-NSUsageField $turn $dims[$i] } else { '' })
-            if ($tv.Length -gt 0) {
+            # A Cursor turn that covered only this item is its own reading. Mirrors ns_receipt_usage_section.
+            $d = Get-NSUsageField $own $dims[$i]
+            if ($v -cne 'off' -and $d.Length -gt 0) {
+                if ($v -cmatch '^[0-9]+$') { $v = [string]([long]$v + [long]$d) } else { $v = $d }
+            }
+            # One that covered several is shared: this item's part of it has no figure.
+            if ($v -cne 'off' -and (Get-NSUsageField $sharedUnion $dims[$i]).Length -gt 0) {
                 $shared[$i] = $true
-                if ($v -cne 'off' -and ($v.Length -eq 0 -or $v -ceq '0' -or $v -cnotmatch '^[0-9]+$')) {
-                    $cells += ' | turn ' + (Get-NSUsageScale $tv)
-                    continue
+                if ($v -cmatch '^[0-9]+$' -and $v -cne '0') {
+                    $num = [long]$v; $tot[$i] += $num; $have[$i] = $true
+                    $cells += ' | ' + (& $scale $num) + ' + not attributable'
                 }
+                else { $cells += ' | not attributable' }
+                continue
             }
             if ($v -ceq 'off') { $off[$i] = $true; $cells += ' | off' }
             elseif ($v.Length -eq 0) { $miss[$i] = $true; $cells += ' | ' + $dash }
@@ -1734,10 +1758,10 @@ function Get-NSReceiptUsageSection {
     $total = {
         param([int]$i)
         if ($shared[$i]) {
-            if (-not $have[$i] -or $tot[$i] -eq 0) { return 'shared turn' }
+            if (-not $have[$i] -or $tot[$i] -eq 0) { return 'not attributable' }
             $s = Get-NSUsageScale ([string]$tot[$i])
             if ($miss[$i]) { $s += ' (partial)' }
-            return $s + ' + shared turn'
+            return $s + ' + not attributable'
         }
         if ($have[$i]) {
             $s = Get-NSUsageScale ([string]$tot[$i])
@@ -1758,7 +1782,7 @@ function Get-NSReceiptUsageSection {
         $comment = @()
         foreach ($d in @(@('input', 0), @('cache_write', 2), @('cache_read', 3), @('output', 1), @('reasoning', 4))) {
             $out.Add(('| {0} | {1} |' -f (Get-NSUsageDimLabel $d[0]), (& $total $d[1])))
-            $comment += [string]$tot[$d[1]]
+            $comment += $(if ($have[$d[1]]) { [string]$tot[$d[1]] } else { '-' })
         }
         $hostline = (@($hostsSeen | ForEach-Object {
                     $i = $_.IndexOf('/'); $h = $_.Substring(0, $i); $m = $_.Substring($i + 1)
@@ -1768,6 +1792,13 @@ function Get-NSReceiptUsageSection {
         $word = $(if ($n -eq 1) { 'session' } else { 'sessions' })
         $out.Add('')
         $out.Add('<!-- tokens ' + ($comment -join ' ') + ' -->')
+        foreach ($st in $sharedTurns) {
+            # A legacy turn's reading is already inside another session's own figure.
+            if ($st[3]) { continue }
+            $sc = @(foreach ($dim in @('input', 'cache_write', 'cache_read', 'output', 'reasoning')) {
+                    $sv = Get-NSUsageField $st[1] $dim; $(if ($sv.Length -gt 0) { $sv } else { '-' }) })
+            $out.Add('<!-- shared ' + (ConvertTo-NSUsageTurnEncoded $st[0]) + ' ' + ($sc -join ' ') + ' -->')
+        }
         $out.Add(('{0} {1} {2} {3}. {4}' -f $hostline, $script:NSDot, $n, $word, (Get-NSUsageOverlap $hostline.Split(' ')[0])))
     }
     $out.Add('')
@@ -1804,7 +1835,15 @@ function Get-NSReceiptUsageSection {
         $out.Add('')
         $out.Add('**Shared turn**')
         $out.Add('')
-        foreach ($t in $sharedTurns) { $out.Add($t) }
+        $out.Add('Cursor reports usage once per agent turn. A turn that covers several items is one reading: it is shown on each of their receipts, not split between them, and counted once in the receipts index.')
+        $out.Add('')
+        foreach ($st in $sharedTurns) {
+            $words = Get-NSTurnItemsWords $st[2]
+            if ($st[3]) {
+                $out.Add('- ' + (Get-NSReceiptTurnWords $st[1]) + ' across this item' + $(if ($words.Length -gt 0) { ' and ' + $words } else { '' }) + ', not split by item.')
+            }
+            else { $out.Add('- ' + (Get-NSReceiptTurnWords $st[1]) + ' across items ' + $words + ', not split by item.') }
+        }
     }
     if ($handoffs.Count -gt 0) {
         $out.Add('')
@@ -1867,13 +1906,13 @@ function Add-NSReceiptSession {
     if ($file.Length -gt 0) { Remove-Item -LiteralPath ($file + '.pending') -Force }
 }
 
-# Set-NSReceiptSharedTurn <receipt> <label> <mark-number> <turn-fields> [items] - mark the session
-# that closed at that mark as one inside a Cursor agent turn. Mirrors ns_receipt_share_turn.
-function Set-NSReceiptSharedTurn {
+# Set-NSReceiptTurns <receipt> <label> <checkpoint> <turns> - give the session that closed at
+# <checkpoint> the Cursor turns that cover it. Setting them again replaces them, so a turn read twice
+# is never counted twice. Mirrors ns_receipt_set_turns.
+function Set-NSReceiptTurns {
     param(
         [Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Label,
-        [Parameter(Mandatory = $true)][string]$Mark, [Parameter(Mandatory = $true)][string]$Turn,
-        [AllowEmptyString()][string]$With = ''
+        [Parameter(Mandatory = $true)][string]$Checkpoint, [AllowEmptyCollection()][string[]]$Turns = @()
     )
     if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return }
     $data = @(Get-NSReceiptSessionData $Receipt)
@@ -1882,12 +1921,9 @@ function Set-NSReceiptSharedTurn {
     $new = New-Object Collections.Generic.List[string]
     foreach ($line in $data) {
         $f = @($line -split '\s+' | Where-Object { $_.Length -gt 0 })
-        $hit = $false
-        for ($i = 7; $i -lt $f.Count; $i++) { if ($f[$i] -cmatch ('^checkpoint=.*:' + $Mark + '$')) { $hit = $true } }
-        if (-not $hit) { $new.Add($line); continue }
+        if (@($f | Select-Object -Skip 7) -cnotcontains ('checkpoint=' + $Checkpoint)) { $new.Add($line); continue }
         $row = @($f | Select-Object -First 7) + @($f | Select-Object -Skip 7 | Where-Object { $_ -cnotmatch '^(turn|with)=' })
-        $row += 'turn=' + $Turn
-        if ($With.Length -gt 0) { $row += 'with=' + (ConvertTo-NSReceiptEncoded $With) }
+        foreach ($t in $Turns) { if ($t.Length -gt 0) { $row += 'turn=' + $t } }
         $joined = $row -join ' '
         if ($joined -cne $line) { $changed = $true }
         $new.Add($joined)
@@ -1899,6 +1935,21 @@ function Set-NSReceiptSharedTurn {
     Set-NSReceiptSessions $Receipt $new.ToArray()
     Update-NSReceiptSessionView $Receipt $Label $new.ToArray()
     if ($file.Length -gt 0) { Remove-Item -LiteralPath ($file + '.pending') -Force }
+}
+
+# Get-NSSessionTurns <session-line> - every Cursor turn the session carries. Mirrors ns_session_turns.
+function Get-NSSessionTurns {
+    param([AllowEmptyString()][string]$Line)
+    $f = @($Line -split '\s+' | Where-Object { $_.Length -gt 0 })
+    return , @($f | Select-Object -Skip 7 | Where-Object { $_.StartsWith('turn=', [StringComparison]::Ordinal) } |
+            ForEach-Object { $_.Substring(5) })
+}
+
+# Get-NSTurnItemsWords <encoded-items> - a turn's items as a person reads them. Mirrors
+# _ns_turn_items_words.
+function Get-NSTurnItemsWords {
+    param([AllowEmptyString()][string]$Items)
+    return (@($Items.Split(';') | Where-Object { $_.Length -gt 0 } | ForEach-Object { ConvertFrom-NSUsageTurnEncoded $_ }) -join ', ')
 }
 
 # Get-NSReceiptTurnWords <fields> - a turn's reading as a person reads it. Mirrors ns_receipt_turn_words.
@@ -1982,6 +2033,7 @@ function Get-NSReceiptLegacyCells {
     $cells = @{
         In = [long]0; CacheWrite = [long]0; CacheRead = [long]0; Out = [long]0; Reasoning = [long]0
         Work = [long]0; Pause = [long]0; Sum = [long]0; Tokens = $dash; Time = $dash
+        Measured = '00000'; Shared = @()
     }
     $tokens = 0; $tokoff = 0; $times = 0; $timeoff = 0
     foreach ($b in $Blocks) {
@@ -2001,6 +2053,7 @@ function Get-NSReceiptLegacyCells {
     }
     $cells['Sum'] = $cells['In'] + $cells['Out']
     if ($tokens -gt 0) {
+        $cells['Measured'] = '11111'
         $cells['Tokens'] = ($script:NSUsageTokensFormat -f
             (Get-NSUsageScale ([string]$cells['In'])), (Get-NSUsageScale ([string]$cells['CacheWrite'])),
             (Get-NSUsageScale ([string]$cells['CacheRead'])), (Get-NSUsageScale ([string]$cells['Out'])),
@@ -2018,6 +2071,7 @@ function Get-NSReceiptUsageCells {
     $cells = @{
         In = [long]0; CacheWrite = [long]0; CacheRead = [long]0; Out = [long]0; Reasoning = [long]0
         Work = [long]0; Pause = [long]0; Sum = [long]0; Tokens = $dash; Time = $dash
+        Measured = '00000'; Shared = @()
     }
     $file = $Path
     if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
@@ -2044,11 +2098,30 @@ function Get-NSReceiptUsageCells {
         if ($text -cmatch '(?m)^<!--\s*tokens\s+(.+?)-->') {
             $parts = @($Matches[1].Trim() -split '\s+')
             if ($parts.Count -ge 5) {
+                $cells['Shared'] = Get-NSReceiptSharedReadings $text
+                $sharedFlags = @($false, $false, $false, $false, $false)
+                foreach ($sr in $cells['Shared']) {
+                    $sp = $sr.Split(' ')
+                    for ($j = 0; $j -lt 5; $j++) { if ($sp[$j + 1] -cmatch '^[0-9]+$') { $sharedFlags[$j] = $true } }
+                }
                 $nums = @()
-                foreach ($p in $parts[0..4]) {
+                $words = @()
+                $measured = ''
+                $names = @('input', 'cache_write', 'cache_read', 'output', 'reasoning')
+                for ($j = 0; $j -lt 5; $j++) {
+                    $p = $parts[$j]
                     $n = 0L
-                    if (-not [long]::TryParse($p, [ref]$n)) { $n = 0 }
+                    if ($p -cmatch '^[0-9]+$' -and [long]::TryParse($p, [ref]$n)) {
+                        $measured += '1'
+                        $word = Get-NSUsageScale ([string]$n)
+                        if ($sharedFlags[$j]) { $word += ' + not attributable' }
+                    }
+                    else {
+                        $n = 0; $measured += '0'
+                        $word = $(if ($sharedFlags[$j]) { 'not attributable' } else { 'unavailable' })
+                    }
                     $nums += $n
+                    $words += ($names[$j] + ' ' + $word)
                 }
                 $cells['In'] = $nums[0]
                 $cells['CacheWrite'] = $nums[1]
@@ -2056,10 +2129,9 @@ function Get-NSReceiptUsageCells {
                 $cells['Out'] = $nums[3]
                 $cells['Reasoning'] = $nums[4]
                 $cells['Sum'] = $nums[0] + $nums[3]
-                $cells['Tokens'] = ($script:NSUsageTokensFormat -f
-                    (Get-NSUsageScale ([string]$nums[0])), (Get-NSUsageScale ([string]$nums[1])),
-                    (Get-NSUsageScale ([string]$nums[2])), (Get-NSUsageScale ([string]$nums[3])),
-                    (Get-NSUsageScale ([string]$nums[4])))
+                $cells['Measured'] = $measured
+                $cells['Tokens'] = $(if ($measured -ceq '00000' -and $sharedFlags -notcontains $true) { 'unavailable' }
+                    else { $words -join (' ' + $script:NSDot + ' ') })
                 $parsed = $true
             }
         }
@@ -2070,6 +2142,7 @@ function Get-NSReceiptUsageCells {
             $cells['Out'] = [long]$Matches[4]
             $cells['Reasoning'] = [long]$Matches[5]
             $cells['Sum'] = [long]$Matches[1] + [long]$Matches[4]
+            $cells['Measured'] = '11111'
             $cells['Tokens'] = ($script:NSUsageTokensFormat -f
                 (Get-NSUsageScale $Matches[1]), (Get-NSUsageScale $Matches[2]),
                 (Get-NSUsageScale $Matches[3]), (Get-NSUsageScale $Matches[4]),
@@ -2093,12 +2166,28 @@ function Get-NSReceiptUsageCells {
             }
             $cells['Time'] = Get-NSReceiptsTimeCell ([long]$cells['Work']) ([long]$cells['Pause'])
         }
-        if ($text -cmatch '(?m)^\| (input|output) \| unavailable \|') { $cells['Tokens'] = $dash }
+        if ($text -cmatch '(?m)^\| (input|output) \| unavailable \|' -and $cells['Measured'] -ceq '11111') {
+            $cells['Tokens'] = 'unavailable'
+            $cells['Measured'] = '00000'
+        }
         # A measurement the owner turned off says so, rather than reading as one nobody reported.
         if ($text -cmatch '(?m)^\*\*Tokens:\*\* off\r?$') { $cells['Tokens'] = 'off' }
         if ($text -cmatch '(?m)^\*\*Time:\*\* off\r?$') { $cells['Time'] = 'off' }
+        if ($cells['Tokens'] -ceq 'off') { $cells['Measured'] = '00000' }
     }
     return $cells
+}
+
+# Get-NSReceiptSharedReadings <section-text> - the shared Cursor turns a runtime section lists, one
+# `<identity> <input> <cache-write> <cache-read> <output> <reasoning>` line each. Mirrors
+# ns_receipt_shared_readings.
+function Get-NSReceiptSharedReadings {
+    param([AllowEmptyString()][string]$Text)
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($Text, '(?m)^<!-- shared ([^ ]+)((?: [0-9-]+){5}) -->\r?$')) {
+        $out.Add($m.Groups[1].Value + $m.Groups[2].Value)
+    }
+    return , $out.ToArray()
 }
 
 function Get-NSUsageParseSeconds {
@@ -2260,16 +2349,15 @@ function Write-NSArchiveReceiptsIndex {
         $headings = [string[]]@($index2 | ForEach-Object { $labels[$_] })
     }
     $rows = New-Object Collections.Generic.List[string]
-    $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
     $twork = [long]0; $tpause = [long]0
     $offUsage = $false; $offTime = $false
+    $usageTotal = New-NSIndexUsageTotal
     for ($i = 0; $i -lt $order.Length; $i++) {
         $name = $order[$i]
         $label = $headings[$i]
         $path = Join-Path $Directory $name
         $cells = Get-NSReceiptUsageCells $path
-        $tin += [long]$cells['In']; $tcw += [long]$cells['CacheWrite']; $tcr += [long]$cells['CacheRead']
-        $tout += [long]$cells['Out']; $trea += [long]$cells['Reasoning']
+        Add-NSIndexUsage $usageTotal $cells
         $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
         if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
         if ($cells['Time'] -ceq 'off') { $offTime = $true }
@@ -2281,7 +2369,7 @@ function Write-NSArchiveReceiptsIndex {
     $utf8 = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($index,
         (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() `
-            -UsageTotal (Get-NSIndexTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) $offUsage) `
+            -UsageTotal (Get-NSIndexTotal (Get-NSIndexUsageTotalCell $usageTotal) $offUsage) `
             -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
             -Morning (Get-NSReceiptsMorningNames $Directory)), $utf8)
 }

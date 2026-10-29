@@ -21,9 +21,9 @@ function Write-NSReceiptsIndex {
     }
     $punch = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list'
     $rows = New-Object Collections.Generic.List[string]
-    $tin = [long]0; $tcw = [long]0; $tcr = [long]0; $tout = [long]0; $trea = [long]0
     $twork = [long]0; $tpause = [long]0
     $offUsage = $false; $offTime = $false
+    $usageTotal = New-NSIndexUsageTotal
     if ((Test-Path -LiteralPath $punch -PathType Leaf) -and -not (Test-NSReparsePoint $punch)) {
         foreach ($row in (Get-NSItemRows $punch 'all')) {
             $state = $row.State
@@ -35,8 +35,7 @@ function Write-NSReceiptsIndex {
                 -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
             Sync-NSReceiptSessions $path
             $cells = Get-NSReceiptUsageCells $path
-            $tin += [long]$cells['In']; $tcw += [long]$cells['CacheWrite']; $tcr += [long]$cells['CacheRead']
-            $tout += [long]$cells['Out']; $trea += [long]$cells['Reasoning']
+            Add-NSIndexUsage $usageTotal $cells
             $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
             if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
             if ($cells['Time'] -ceq 'off') { $offTime = $true }
@@ -51,7 +50,7 @@ function Write-NSReceiptsIndex {
     $utf8 = New-Object Text.UTF8Encoding($false)
     [IO.File]::WriteAllText($index,
         (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
-            -UsageTotal (Get-NSIndexTotal (Get-NSReceiptsUsageTotalCell $tin $tcw $tcr $tout $trea) $offUsage) `
+            -UsageTotal (Get-NSIndexTotal (Get-NSIndexUsageTotalCell $usageTotal) $offUsage) `
             -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
             -Morning (Get-NSReceiptsMorningNames $dir)), $utf8)
 }
@@ -64,15 +63,42 @@ function Get-NSIndexTotal {
     return $Cell
 }
 
-function Get-NSReceiptsUsageTotalCell {
-    param([long]$In, [long]$CacheWrite, [long]$CacheRead, [long]$Out, [long]$Reasoning)
-    if (($In + $CacheWrite + $CacheRead + $Out + $Reasoning) -eq 0) {
+# New-NSIndexUsageTotal / Add-NSIndexUsage <total> <cells> / Get-NSIndexUsageTotalCell <total> - the
+# totals cell of an index page: every item's own reading, and each shared Cursor turn once however
+# many items it covered. A dimension nothing measured is unavailable, never zero. Mirrors
+# _ns_index_usage_total.
+function New-NSIndexUsageTotal {
+    return @{ Tot = @([long]0, [long]0, [long]0, [long]0, [long]0); Measured = @($false, $false, $false, $false, $false)
+        Any = $false; Shared = (New-Object Collections.Generic.List[string]) }
+}
+function Add-NSIndexUsage {
+    param([Parameter(Mandatory = $true)][hashtable]$Total, [Parameter(Mandatory = $true)][hashtable]$Cells)
+    $nums = @($Cells['In'], $Cells['CacheWrite'], $Cells['CacheRead'], $Cells['Out'], $Cells['Reasoning'])
+    $measured = [string]$Cells['Measured']
+    for ($j = 0; $j -lt 5; $j++) {
+        $Total['Tot'][$j] += [long]$nums[$j]
+        if ($measured.Length -gt $j -and $measured[$j] -eq [char]'1') { $Total['Measured'][$j] = $true }
+    }
+    if ($Cells['Tokens'] -cne 'off' -and $Cells['Tokens'] -cne [string][char]0x2014) { $Total['Any'] = $true }
+    foreach ($sr in @($Cells['Shared'])) {
+        $sp = ([string]$sr).Split(' ')
+        if ($sp.Count -lt 6 -or $Total['Shared'].Contains($sp[0])) { continue }
+        $Total['Shared'].Add($sp[0])
+        for ($j = 0; $j -lt 5; $j++) {
+            if ($sp[$j + 1] -cmatch '^[0-9]+$') { $Total['Tot'][$j] += [long]$sp[$j + 1]; $Total['Measured'][$j] = $true }
+        }
+    }
+}
+function Get-NSIndexUsageTotalCell {
+    param([Parameter(Mandatory = $true)][hashtable]$Total)
+    if ($Total['Measured'] -notcontains $true) {
+        if ($Total['Any']) { return 'unavailable' }
         return [string][char]0x2014
     }
-    return ($script:NSUsageTokensFormat -f
-        (Get-NSUsageScale $In), (Get-NSUsageScale $CacheWrite),
-        (Get-NSUsageScale $CacheRead), (Get-NSUsageScale $Out),
-        (Get-NSUsageScale $Reasoning))
+    $names = @('input', 'cache_write', 'cache_read', 'output', 'reasoning')
+    return (@(for ($j = 0; $j -lt 5; $j++) {
+                $names[$j] + ' ' + $(if ($Total['Measured'][$j]) { Get-NSUsageScale ([string]$Total['Tot'][$j]) } else { 'unavailable' })
+            }) -join (' ' + $script:NSDot + ' '))
 }
 
 function Get-NSReceiptsTimeCell {

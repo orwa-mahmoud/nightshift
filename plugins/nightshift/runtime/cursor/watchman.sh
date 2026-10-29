@@ -7,9 +7,9 @@
 # Those ids are not interchangeable: this watchman never passes the IDE id to --resume.
 #
 # First wake after an IDE death mints a CLI chat (agent create-chat), records it in
-# .shift-worker, and resumes that id with freshRevivalPrompt. Later wakes resume the same
-# CLI id with revivalPrompt. A shift that started from the CLI already has a CLI id — that
-# id is recorded as the worker and resumed from the first wake.
+# .shift-worker as the revival launches, and resumes it with freshRevivalPrompt; a worker that
+# exits having ticked a box is relaunched with revivalPrompt. A CLI-started shift's own id is
+# the worker from the first wake.
 #
 #   watchman.sh [--project DIR] [--interval MIN] [--agent CMD] [--max-wakes N]
 #
@@ -188,29 +188,32 @@ transcript_grew() {
   [ -n "$TRANSCRIPT_SEEN" ] && [ "$now" != "$TRANSCRIPT_SEEN" ]
 }
 
-# Resolve the CLI worker id. Never returns the origin IDE conversation_id unless that id
-# already lives in the CLI store (Start from agent).
-ensure_worker() {
-  local existing origin kind minted
-  existing="$(ns_cursor_worker_id "$NS")"
-  if [ -n "$existing" ]; then
-    printf '%s' "$existing"
-    return 0
-  fi
+site_alive() {
+  recorded_process_alive || transcript_grew || lease_pid_live || pulse_alive
+}
+
+# Resolve the CLI worker id into WORKER without recording it; WORKER_FRESH=1 when the site has
+# none yet. Never the origin IDE conversation_id unless that id already lives in the CLI store
+# (Start from agent). .shift-worker is written only when a revival launches under the id.
+WORKER=""
+WORKER_FRESH=0
+resolve_worker() {
+  local origin kind minted
+  WORKER="$(ns_cursor_worker_id "$NS")"
+  WORKER_FRESH=0
+  [ -z "$WORKER" ] || return 0
   if [ -f "$MINT_FAILED" ] && [ ! -L "$MINT_FAILED" ]; then
     return 1
   fi
+  WORKER_FRESH=1
   origin="$(sid)"
   kind="$(ns_cursor_store_kind "$(transcript)")"
   if [ "$kind" = cli ] && [ -n "$origin" ]; then
-    ns_cursor_worker_write "$NS" "$origin" || return 1
-    printf '%s' "$origin"
+    WORKER="$origin"
     return 0
   fi
   if [ -n "$AGENT" ]; then
-    minted="${NIGHTSHIFT_CURSOR_TEST_WORKER:-minted-cli-worker}"
-    ns_cursor_worker_write "$NS" "$minted" || return 1
-    printf '%s' "$minted"
+    WORKER="${NIGHTSHIFT_CURSOR_TEST_WORKER:-minted-cli-worker}"
     return 0
   fi
   minted="$(agent create-chat 2>/dev/null | tr -d '[:space:]')"
@@ -220,30 +223,54 @@ ensure_worker() {
     printf '%s\n' "$(date +%s)" >"$MINT_FAILED"
     return 1
   fi
-  ns_cursor_worker_write "$NS" "$minted" || return 1
-  printf '%s' "$minted"
+  WORKER="$minted"
 }
 
-# $1 = 1 resume the stored CLI worker · 2 fresh CLI worker (same id, fresh prompt)
-spawn() {
-  local worker prompt rc freshly scope open_before
-  ns_ensure_work_target_link "$PROJECT" || true
-  open_before="$(ns_open_boxes "$PUNCH")"
-  freshly=0
-  if ! ns_cursor_worker_present "$NS"; then
-    freshly=1
-  fi
-  worker="$(ensure_worker)" || return 1
-  if [ "$freshly" -eq 1 ] || [ "$1" -ge 2 ]; then
-    prompt="$PROMPT_FRESH"
-  else
-    prompt="$PROMPT_RESUME"
-  fi
+# An id this wake recorded for a revival that never launched goes again, so the origin tab is
+# not pointed at an empty chat. An id an earlier revival ran under stays.
+forget_fresh_worker() {
+  [ "$WORKER_FRESH" -eq 1 ] || return 0
+  [ "$(ns_cursor_worker_id "$NS")" = "$WORKER" ] || return 0
+  rm -f "$(ns_layout_path "$NS" worker)"
+}
+
+launch_worker() { # <prompt>
   if [ -n "$AGENT" ]; then
     # shellcheck disable=SC2086
-    ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$prompt"
+    ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
+      CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$1"
   else
+    ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
+      CURSOR_PROJECT_DIR "$PROJECT" \
+      agent --resume="$WORKER" -p --workspace "$PROJECT" "$1"
+  fi
+}
+
+# A headless `agent -p` worker runs no stop hook, so the clock-out gate cannot hold it: it exits
+# when its turn ends, open boxes or not. A run that ticked a box earns the next one; a run that
+# ticked nothing, or a shift that ended, stopped, or was taken back, returns to the wake cycle.
+relaunch_due() { # <open-before-the-run>
+  local now dl
+  armed && [ ! -f "$STOP" ] && [ -f "$PUNCH" ] || return 1
+  { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; } && return 1
+  { [ -f "$SESSION_END" ] && [ ! -L "$SESSION_END" ]; } && return 1
+  if [ -f "$DEADLINE" ] && [ ! -L "$DEADLINE" ]; then
+    dl="$(tr -d '[:space:]' <"$DEADLINE" 2>/dev/null)"
+    printf '%s' "$dl" | grep -qE '^[0-9]+$' && [ "$(date +%s)" -ge "$dl" ] && return 1
+  fi
+  now="$(ns_open_boxes "$PUNCH")" || return 1
+  [ "$now" -gt 0 ] && [ "$now" -lt "$1" ] || return 1
+  ns_lease_valid "$NS" && [ -n "$NS_LEASE_NONCE" ] || return 1
+  ! lease_pid_live
+}
+
+# $1 = 1 resume the stored CLI worker · 2 fresh prompt to the same worker
+# Returns 0 revived · 1 failed · 2 the session came back while the worker was minted.
+spawn() {
+  local prompt rc scope open_before
+  ns_ensure_work_target_link "$PROJECT" || true
+  open_before="$(ns_open_boxes "$PUNCH")"
+  if [ -z "$AGENT" ]; then
     scope="$(ns_recovery_effective_scope "$PROJECT" cursor)"
     case "$scope" in
       unavailable:*)
@@ -253,21 +280,43 @@ spawn() {
         return 1
         ;;
     esac
-    log_line "watchman: reviving under launch scope $scope"
-    ns_watchman_run_child "$NS" cursor "$worker" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" \
-      agent --resume="$worker" -p --workspace "$PROJECT" "$prompt"
   fi
+  resolve_worker || return 1
+  # Minting has no deadline of its own, and the tab it replaces can come back meanwhile.
+  if [ "$WORKER_FRESH" -eq 1 ] && site_alive; then
+    log_line "watchman: session activity while the CLI worker was minted — not reviving"
+    return 2
+  fi
+  if [ "$WORKER_FRESH" -eq 1 ] || [ "$1" -ge 2 ]; then
+    prompt="$PROMPT_FRESH"
+  else
+    prompt="$PROMPT_RESUME"
+  fi
+  if [ "$WORKER_FRESH" -eq 1 ]; then
+    ns_cursor_worker_write "$NS" "$WORKER" || return 1
+  fi
+  [ -n "$AGENT" ] || log_line "watchman: reviving under launch scope $scope"
+  launch_worker "$prompt"
   rc=$?
   if [ "$rc" -eq 3 ]; then
     log_line "watchman: process lease transfer failed — not spawning beside an unfenced session"
+    forget_fresh_worker
     return 1
   fi
-  if ns_watchman_revival_proved "$NS" "" "$INTERVAL_MIN" "$open_before"; then
-    return 0
+  if ! ns_watchman_revival_proved "$NS" "" "$INTERVAL_MIN" "$open_before"; then
+    log_line "watchman: revival child returned without moving the shift — not counting it as a resume"
+    return 1
   fi
-  log_line "watchman: revival child returned without moving the shift — not counting it as a resume"
-  return 1
+  while relaunch_due "$open_before"; do
+    open_before="$(ns_open_boxes "$PUNCH")"
+    log_line "watchman: CLI worker $WORKER exited with $open_before open — relaunching it"
+    launch_worker "$PROMPT_RESUME"
+    if [ "$?" -eq 3 ]; then
+      log_line "watchman: process lease transfer failed — not spawning beside an unfenced session"
+      break
+    fi
+  done
+  return 0
 }
 
 notice_revival() {
@@ -387,12 +436,13 @@ while :; do
 
   attempt=0
   revived=1
+  held=0
   # shellcheck disable=SC2086
   set -- $RETRY_SPACING
   total=$(( $# + 1 ))
   for gap in 0 $RETRY_SPACING; do
     [ "$gap" -gt 0 ] && sleep "$gap"
-    if recorded_process_alive || transcript_grew || lease_pid_live || pulse_alive; then
+    if site_alive; then
       note silent-standby
       log_line "watchman: session activity during retries — holding the remaining attempts"
       break
@@ -404,7 +454,9 @@ while :; do
     else
       log_line "watchman: site dead quiet mid-shift — resume attempt $attempt (minting a CLI worker)"
     fi
-    if spawn "$attempt"; then
+    spawn "$attempt"
+    spawn_rc=$?
+    if [ "$spawn_rc" -eq 0 ]; then
       revived=0
       if [ "$attempt" -ge 2 ]; then
         note fresh-fallback
@@ -414,9 +466,14 @@ while :; do
       notice_revival
       break
     fi
+    if [ "$spawn_rc" -eq 2 ]; then
+      held=1
+      note silent-standby
+      break
+    fi
     baseline_transcript
   done
-  if [ "$revived" -eq 1 ] && [ "$attempt" -gt 0 ]; then
+  if [ "$revived" -eq 1 ] && [ "$attempt" -gt 0 ] && [ "$held" -eq 0 ]; then
     note exhausted-retry
     # Every attempt took the lease for its own worker. A ladder that revived nothing hands it
     # back, so the recorded conversation is not left waiting on a generation nobody holds.

@@ -1046,6 +1046,150 @@ function Get-NSUsageCursorTurn {
     return $out.ToArray()
 }
 
+# Cursor turns. Cursor reports usage once per agent turn, at the turn's end, and a turn routinely
+# spans several items, so its readings are attributed by turn: turns.tsv records each turn's reading
+# and the items it covered. Mirrors the Cursor turns section of usage.sh.
+function Get-NSUsageTurnsPath { param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return (Join-Path (Get-NSUsageDir $NightshiftDir) 'turns.tsv') }
+
+# ConvertTo-NSUsageTurnEncoded / ConvertFrom-NSUsageTurnEncoded - a label or identity that rides
+# inside a covered list or a session-data field. Mirrors ns_usage_turn_enc and ns_usage_turn_dec.
+function ConvertTo-NSUsageTurnEncoded {
+    param([AllowEmptyString()][string]$Text)
+    return $Text.Replace('%', '%25').Replace(' ', '%20').Replace("`t", '%09').Replace('/', '%2F').Replace(';', '%3B').Replace('@', '%40')
+}
+function ConvertFrom-NSUsageTurnEncoded {
+    param([AllowEmptyString()][string]$Text)
+    return $Text.Replace('%40', '@').Replace('%3B', ';').Replace('%2F', '/').Replace('%09', "`t").Replace('%20', ' ').Replace('%25', '%')
+}
+
+function Get-NSUsageTurnLines {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $file = Get-NSUsageTurnsPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return @() }
+    return @([IO.File]::ReadAllLines($file) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+}
+
+# Write-NSUsageTurnNote <nightshift-dir> <identity> <fields> <covered> - record one turn's reading. A
+# turn read again keeps the items it was first found to cover and takes the newer reading. Mirrors
+# ns_usage_turn_note.
+function Write-NSUsageTurnNote {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Identity,
+          [AllowEmptyString()][string]$Fields, [AllowEmptyString()][string]$Covered)
+    if ([string]::IsNullOrEmpty($Identity) -or [string]::IsNullOrEmpty($Fields)) { return $false }
+    $null = New-Item -ItemType Directory -Path (Get-NSUsageDir $NightshiftDir) -Force
+    $file = Get-NSUsageTurnsPath $NightshiftDir
+    if (Test-NSReparsePoint $file) { return $false }
+    $lines = @(Get-NSUsageTurnLines $NightshiftDir)
+    $found = $false
+    $new = New-Object Collections.Generic.List[string]
+    foreach ($line in $lines) {
+        $f = $line.Split("`t")
+        if ($f[0] -ceq $Identity -and $f.Length -ge 4) { $found = $true; $f[2] = $Fields; $new.Add($f -join "`t") }
+        else { $new.Add($line) }
+    }
+    if (-not $found) {
+        $marks = Get-NSUsageMarksPath $NightshiftDir
+        $at = $(if (Test-Path -LiteralPath $marks -PathType Leaf) { @([IO.File]::ReadAllLines($marks)).Count } else { 0 })
+        $new.Add(("{0}`t{1}`t{2}`t{3}" -f $Identity, $at, $Fields, $Covered))
+    }
+    Write-NSUsageSegments $file $new.ToArray()
+    return $true
+}
+
+# Get-NSUsageTurnCovered <nightshift-dir> <identity> - the covered list recorded for one turn.
+function Get-NSUsageTurnCovered {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$Identity)
+    foreach ($line in (Get-NSUsageTurnLines $NightshiftDir)) {
+        $f = $line.Split("`t")
+        if ($f[0] -ceq $Identity) { return $(if ($f.Length -ge 4) { $f[3] } else { '' }) }
+    }
+    return ''
+}
+
+# Resolve-NSUsageTurns <nightshift-dir> <label> <mark-number> - the session of <label> that closed at
+# <mark-number> takes the turns that ended while it was being worked, and the turns that arrived
+# inside its span covering nothing known. Mirrors ns_usage_turn_resolve.
+function Resolve-NSUsageTurns {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label,
+          [Parameter(Mandatory = $true)][long]$Mark)
+    $lines = @(Get-NSUsageTurnLines $NightshiftDir)
+    if ($lines.Count -eq 0) { return }
+    $enc = ConvertTo-NSUsageTurnEncoded $Label
+    $entry = $enc + '@' + $Mark
+    $new = New-Object Collections.Generic.List[string]
+    foreach ($line in $lines) {
+        $f = $line.Split("`t")
+        if ($f.Length -lt 4) { $new.Add($line); continue }
+        $at = [long]0
+        if ($f[3].Length -eq 0) {
+            if ([long]::TryParse($f[1], [ref]$at) -and $at -lt $Mark) { $f[3] = $entry }
+        }
+        else {
+            $f[3] = (@($f[3].Split(';') | ForEach-Object { if ($_ -ceq ($enc + '@open')) { $entry } else { $_ } }) -join ';')
+        }
+        $new.Add($f -join "`t")
+    }
+    Write-NSUsageSegments (Get-NSUsageTurnsPath $NightshiftDir) $new.ToArray()
+}
+
+# Get-NSUsageTurnsFor <nightshift-dir> <label> <mark-number> - the turns covering the session of
+# <label> that closed at <mark-number>, one session-data value each: `<identity>/<fields>/<items>`.
+# Mirrors ns_usage_turns_for.
+function Get-NSUsageTurnsFor {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Label,
+          [Parameter(Mandatory = $true)][long]$Mark)
+    $entry = (ConvertTo-NSUsageTurnEncoded $Label) + '@' + $Mark
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($line in (Get-NSUsageTurnLines $NightshiftDir)) {
+        $f = $line.Split("`t")
+        if ($f.Length -lt 4) { continue }
+        $covered = @($f[3].Split(';') | Where-Object { $_.Length -gt 0 })
+        if ($covered -cnotcontains $entry) { continue }
+        $items = New-Object Collections.Generic.List[string]
+        foreach ($c in $covered) {
+            $l = $c.Substring(0, $c.LastIndexOf('@'))
+            if (-not $items.Contains($l)) { $items.Add($l) }
+        }
+        $out.Add((ConvertTo-NSUsageTurnEncoded $f[0]) + '/' + $f[2] + '/' + ($items -join ';'))
+    }
+    return , $out.ToArray()
+}
+
+# Get-NSUsageSpanFields <earlier-host-totals> <later-host-totals> [host] - what moved between two
+# marks, summed over every host and model except <host>. Mirrors ns_usage_span_fields.
+function Get-NSUsageSpanFields {
+    param([AllowEmptyString()][string]$Earlier, [AllowEmptyString()][string]$Later, [AllowEmptyString()][string]$Skip = '')
+    $out = ''
+    foreach ($entry in $Later.Split(';')) {
+        if ($entry.Length -eq 0) { continue }
+        $i = $entry.IndexOf(':')
+        $key = $entry.Substring(0, $i)
+        if ($Skip.Length -gt 0 -and $key.Split('/')[0] -ceq $Skip) { continue }
+        $now = $entry.Substring($i + 1)
+        $was = ''
+        foreach ($e in $Earlier.Split(';')) {
+            if ($e.StartsWith($key + ':', [StringComparison]::Ordinal)) { $was = $e.Substring($key.Length + 1); break }
+        }
+        $out = Add-NSUsageFields $out (Get-NSUsageSubtract $now $was)
+    }
+    return $out
+}
+
+# Get-NSUsageGeneration <nightshift-dir> [shift-id] - the accounting start a checkpoint is keyed to.
+# Mirrors ns_usage_generation.
+function Get-NSUsageGeneration {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [AllowEmptyString()][string]$ShiftId = '')
+    $marks = Get-NSUsageMarksPath $NightshiftDir
+    if (-not (Test-Path -LiteralPath $marks -PathType Leaf)) { return $ShiftId }
+    $lines = @([IO.File]::ReadAllLines($marks))
+    if ($lines.Count -eq 0) { return $ShiftId }
+    $arm = $lines[0].Split("`t")
+    if ($arm.Length -ge 6 -and $arm[5]) { return $arm[5] }
+    if ($ShiftId) { return $ShiftId }
+    return $arm[0]
+}
+
 function Get-NSUsageLastItem {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $file = Get-NSUsageMarksPath $NightshiftDir
@@ -1312,6 +1456,14 @@ function Invoke-NSGateSessionRow {
     if ([string]::IsNullOrEmpty($span)) { return }
     $parts = $span.Split("`t")
     $lines = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $NightshiftDir)) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    $prevMark = $(if ($lines.Length -ge 2) { $lines[$lines.Length - 2].Split("`t") } else { @() })
+    $lastMark = $lines[$lines.Length - 1].Split("`t")
+    $earlier = $(if ($prevMark.Length -ge 5) { $prevMark[4] } else { '' })
+    $later = $(if ($lastMark.Length -ge 5) { $lastMark[4] } else { '' })
+    # Cursor's readings are attributed by turn (Get-NSUsageTurnsFor), so what moved on Cursor between
+    # the two marks is left out here rather than booked to whichever item was open when it arrived.
+    $fields = $parts[0]
+    if (($earlier + $later).Length -gt 0) { $fields = Get-NSUsageSpanFields $earlier $later 'cursor' }
     $end = [long]0
     if (-not [long]::TryParse($lines[$lines.Length - 1].Split("`t")[0], [ref]$end)) { return }
     $start = $end - [long]$parts[1]
@@ -1333,19 +1485,16 @@ function Invoke-NSGateSessionRow {
         $extras += @('cw=off', 'cr=off', 'rea=off')
     }
     else {
-        $in = Get-NSUsageField $parts[0] 'input'
-        $out = Get-NSUsageField $parts[0] 'output'
+        $in = Get-NSUsageField $fields 'input'
+        $out = Get-NSUsageField $fields 'output'
         foreach ($d in @(@('cache_write', 'cw'), @('cache_read', 'cr'), @('reasoning', 'rea'))) {
-            $v = Get-NSUsageField $parts[0] $d[0]
+            $v = Get-NSUsageField $fields $d[0]
             $extras += ($d[1] + '=' + $(if ($v) { $v } else { '-' }))
         }
     }
     $extras += ('paused=' + $pausedText)
     if ($why.Length -gt 0) { $extras += ('why=' + (ConvertTo-NSReceiptEncoded $why)) }
-    $prevMark = $(if ($lines.Length -ge 2) { $lines[$lines.Length - 2].Split("`t") } else { @() })
-    $lastMark = $lines[$lines.Length - 1].Split("`t")
-    $hosts = Get-NSUsageSpanHosts $(if ($prevMark.Length -ge 5) { $prevMark[4] } else { '' }) `
-        $(if ($lastMark.Length -ge 5) { $lastMark[4] } else { '' })
+    $hosts = Get-NSUsageSpanHosts $earlier $later
     if ($hosts.Length -eq 0) { $hosts = (Get-NSUsageHosts $NightshiftDir).Replace('; ', '+').Replace(' ', '/') }
     if ($hosts.Length -gt 0) { $extras += ('host=' + $hosts) }
     $commits = ''
@@ -1375,9 +1524,12 @@ function Invoke-NSGateSessionRow {
     $sid = ''
     $state = Get-NSShiftPolicyState $Project
     if ($state['state'] -ceq 'valid') { $sid = [string]$state['policy']['shiftId'] }
-    $arm = $lines[0].Split("`t")
-    $generation = $(if ($arm.Length -ge 6 -and $arm[5]) { $arm[5] } elseif ($sid) { $sid } else { $arm[0] })
+    $generation = Get-NSUsageGeneration $NightshiftDir $sid
     $extras += ('checkpoint=' + $generation + ':' + $lines.Length)
+    if ((Get-NSReceiptsField $Project 'usage') -cne 'off') {
+        Resolve-NSUsageTurns $NightshiftDir $Label $lines.Length
+        foreach ($t in (Get-NSUsageTurnsFor $NightshiftDir $Label $lines.Length)) { $extras += ('turn=' + $t) }
+    }
     Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
         $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
     Write-NSGateHandoffLog $NightshiftDir $Label $prevLine $hosts
@@ -1599,31 +1751,48 @@ function Invoke-NSPulseUsage {
             $identity = 'cursor:' + $SessionId
             if ($f.Length -ge 4 -and $f[3] -cne '0' -and $f[3].Length -gt 0) { $identity += ':' + $f[3] }
             if (-not (Write-NSUsageRecord $NightshiftDir 'cursor' $f[2] 'stop-payload' $identity '0' $f[0])) { return $false }
-            Invoke-NSPulseTurnShared $NightshiftDir $identity $f[0]
+            Invoke-NSPulseTurn $NightshiftDir $identity $f[0]
             return $true
         }
     }
     return $false
 }
 
-# Invoke-NSPulseTurnShared <ns> <turn-identity> <turn-fields> - give the items ticked inside this
-# Cursor turn the turn's reading, and name the items that shared it. Mirrors ns_pulse_turn_shared.
-function Invoke-NSPulseTurnShared {
+# Invoke-NSPulseTurn <ns> <turn-identity> <turn-fields> - record which items this Cursor turn
+# covered: the items ticked inside it, whose sessions closed before its reading arrived, and the item
+# still being worked. The closed sessions take the reading now; the open one takes it when it closes.
+# Mirrors ns_pulse_turn.
+function Invoke-NSPulseTurn {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [string]$Identity, [string]$Fields)
     $ticks = @(Get-NSUsageCursorTurn $NightshiftDir $Identity)
-    if ($ticks.Count -eq 0) { return }
     $project = [IO.Path]::GetDirectoryName($NightshiftDir)
-    $names = New-Object Collections.Generic.List[string]
-    foreach ($t in $ticks) { $l = $t.Split("`t")[0]; if ($l.Length -gt 0 -and -not $names.Contains($l)) { $names.Add($l) } }
-    $active = Get-NSUsageActive $NightshiftDir
-    if ($active.Length -gt 0 -and -not $names.Contains($active)) { $names.Add($active) }
+    $covered = New-Object Collections.Generic.List[string]
+    $labels = New-Object Collections.Generic.List[string]
     foreach ($t in $ticks) {
         $p = $t.Split("`t")
         if ($p[0].Length -eq 0) { continue }
-        $others = (@($names | Where-Object { $_ -cne $p[0] }) -join '; ')
-        Set-NSReceiptSharedTurn (Get-NSReceiptPath $project $p[0]) $p[0] $p[1] $Fields $others
+        $covered.Add((ConvertTo-NSUsageTurnEncoded $p[0]) + '@' + $p[1])
+        $labels.Add($p[0])
     }
-    Write-NSReceiptsIndex $project
+    $active = Get-NSUsageActive $NightshiftDir
+    if ($active.Length -gt 0 -and -not $labels.Contains($active)) { $covered.Add((ConvertTo-NSUsageTurnEncoded $active) + '@open') }
+    if (-not (Write-NSUsageTurnNote $NightshiftDir $Identity $Fields ($covered -join ';'))) { return }
+    $sid = ''
+    $state = Get-NSShiftPolicyState $project
+    if ($state['state'] -ceq 'valid') { $sid = [string]$state['policy']['shiftId'] }
+    $generation = Get-NSUsageGeneration $NightshiftDir $sid
+    $wrote = $false
+    foreach ($entry in (Get-NSUsageTurnCovered $NightshiftDir $Identity).Split(';')) {
+        $at = $entry.LastIndexOf('@')
+        if ($at -lt 1) { continue }
+        $nr = $entry.Substring($at + 1)
+        if ($nr -cnotmatch '^[0-9]+$') { continue }
+        $label = ConvertFrom-NSUsageTurnEncoded $entry.Substring(0, $at)
+        Set-NSReceiptTurns (Get-NSReceiptPath $project $label) $label ($generation + ':' + $nr) `
+            (Get-NSUsageTurnsFor $NightshiftDir $label ([long]$nr))
+        $wrote = $true
+    }
+    if ($wrote) { Write-NSReceiptsIndex $project }
 }
 
 # Invoke-NSPulseMarks <ns> <project> - mark every item ticked since the last mark, at this moment.
@@ -1643,9 +1812,16 @@ function Invoke-NSPulseMarks {
     if (-not $counts.Readable) { return $false }
     $transcripts = @()
     if (-not [string]::IsNullOrEmpty($Source) -and (Test-Path -LiteralPath $Source -PathType Leaf)) { $transcripts = @($Source) }
-    $synced = Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts
-    # Then follow the item being worked, so a stretch spent on one item is not charged to another.
-    Invoke-NSGateUsageSwitch $NightshiftDir $Project (Get-NSActiveItem $Project)
+    # Marks are written under the site lock: two pulses deciding at once that the same box is unmarked
+    # would both mark it. A pulse that cannot take the lock leaves the marks to the holder.
+    $mutex = Enter-NSMutex $NightshiftDir '.lock.d'
+    if ($null -eq $mutex) { return $false }
+    try {
+        $synced = Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts
+        # Then follow the item being worked, so a stretch spent on one item is not charged to another.
+        Invoke-NSGateUsageSwitch $NightshiftDir $Project (Get-NSActiveItem $Project)
+    }
+    finally { Exit-NSMutex $mutex }
     return $synced
 }
 

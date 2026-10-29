@@ -286,41 +286,135 @@ ns() { printf '%s/.nightshift' "$1"; }
   [ "$output" = 'claude claude-opus-5-5; cursor grok-4.7-medium; cursor grok-4.7-xhigh-fast' ]
 }
 
-@test "items ticked inside one Cursor turn share the turn's reading, and say so" {
-  p="$(new_project usage-cursor-shared-turn)"
-  printf '## Items\n- [ ] **P01 - first.**\n- [ ] **P02 - second.**\n- [ ] **P03 - third.**\n' \
-    >"$p/.nightshift/punch-list.md"
+# cursor_turn <project> <payload> — one Cursor turn's reading, delivered the way the pulse gets it.
+cursor_turn() {
+  bash -c '. "$1"; . "$2"; ns_pulse_usage "$3" cursor c1 "$4"' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
+    "$1/.nightshift" "$2"
+}
+
+# cursor_project <name> <items> — an armed Cursor shift with <items> open boxes, P01 upwards.
+cursor_project() {
+  local p n
+  p="$(new_project "$1")"
+  printf '## Items\n' >"$p/.nightshift/punch-list.md"
+  for n in $(seq 1 "$2"); do printf -- '- [ ] **P0%s - item %s.**\n' "$n" "$n" >>"$p/.nightshift/punch-list.md"; done
   mkdir -p "$p/.nightshift/usage"
-  : >"$p/.nightshift/.shift-armed"
   printf 'c1\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
-  turn() {
-    bash -c '. "$1"; . "$2"; ns_pulse_usage "$3" cursor c1 "$4"' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
-      "$p/.nightshift" "$1"
-  }
-  turn '{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"cache_read_tokens":100,"output_tokens":10}'
+  printf '%s' "$p"
+}
+
+# tick_to <project> <count> — tick the first <count> boxes and let the gate catch the marks up.
+tick_to() {
+  local n
+  for n in $(seq 1 "$2"); do sed -i.bak "s/- \[ \] \*\*P0$n /- [x] **P0$n /" "$1/.nightshift/punch-list.md"; done
+  rm -f "$1/.nightshift/punch-list.md.bak"
+  core ns_gate_usage_sync "$1/.nightshift" "$1" "$1/.nightshift/punch-list.md" "$2"
+}
+
+@test "items ticked inside one Cursor turn share the turn's reading, and say so" {
+  p="$(cursor_project usage-cursor-shared-turn 3)"
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g1","input_tokens":500,"cache_read_tokens":100,"output_tokens":10}'
   # P01 and P02 both tick inside the next turn, before its reading arrives at the turn's end.
-  printf '## Items\n- [x] **P01 - first.**\n- [x] **P02 - second.**\n- [ ] **P03 - third.**\n' \
-    >"$p/.nightshift/punch-list.md"
-  core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 2
-  [ "$(grep -c '^- Session' "$p/.nightshift/receipts/P02.md" || :)" = 0 ]
-  turn '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"cache_read_tokens":4000,"output_tokens":20}'
+  tick_to "$p" 2
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"cache_read_tokens":4000,"output_tokens":20}'
   r1="$p/.nightshift/receipts/P01.md"
   r2="$p/.nightshift/receipts/P02.md"
-  # P01's own span carried the first turn; the second turn is shown beside it, not added to it.
-  grep -qF '| input | 500 + shared turn |' "$r1"
-  grep -qF -- '- Session 1 closed inside one Cursor agent turn shared with P02.' "$r1"
-  grep -qF 'whole turn'"'"'s reading: input 800 · cache read 4.0k · output 20.' "$r1"
-  # P02 read nothing of its own, so it shows the turn instead of zero.
-  grep -qF '| input | shared turn |' "$r2"
-  grep -qF '| turn 800 | turn 20 | unavailable | turn 4.0k | unavailable |' "$r2"
-  grep -qF -- '- Session 1 closed inside one Cursor agent turn shared with P01.' "$r2"
+  # P01's span carried the first turn, its own; the second is shared and adds nothing to either item.
+  grep -qF '| input | 500 + not attributable |' "$r1"
+  grep -qF -- '- input 800 · cache read 4.0k · output 20 across items P01, P02, not split by item.' "$r1"
+  grep -qF '| input | not attributable |' "$r2"
+  grep -qF '| not attributable | not attributable | unavailable | not attributable | unavailable |' "$r2"
+  grep -qF -- '- input 800 · cache read 4.0k · output 20 across items P01, P02, not split by item.' "$r2"
   run grep -qF "| input | 0 |" "$r2"
   [ "$status" -ne 0 ]
-  # Read again at the same turn's end, the note is rewritten, never stacked.
-  turn '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"cache_read_tokens":4000,"output_tokens":20}'
-  [ "$(grep -c 'closed inside one Cursor agent turn' "$r2")" = 1 ]
-  # The morning total counts the turn once.
+  # Read again at the same turn's end, the turn is rewritten, never stacked.
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g2","input_tokens":800,"cache_read_tokens":4000,"output_tokens":20}'
+  [ "$(grep -c 'across items P01, P02' "$r2")" = 1 ]
+  [ "$(grep -c '^<!-- shared ' "$r2")" = 1 ]
+  # The shift total and the receipts index both count the shared turn once.
   [ "$(lib ns_usage_total "$p/.nightshift")" = 'input=1300,cache_read=4100,output=30' ]
+  grep -qF '| **Totals** |  | **input 1.3k · cache_write unavailable · cache_read 4.1k · output 30 · reasoning unavailable** |' \
+    "$p/.nightshift/receipts/README.md"
+  grep -qF '| P02 | ticked | **input not attributable · cache_write unavailable · cache_read not attributable · output not attributable · reasoning unavailable** |' \
+    "$p/.nightshift/receipts/README.md"
+}
+
+@test "one Cursor turn across items 2 to 5 is one shared reading on each of their receipts" {
+  p="$(cursor_project usage-cursor-span 6)"
+  # Item 1 is worked and ticked alone inside the first turn.
+  lib ns_usage_mark_arm "$p/.nightshift"
+  lib ns_usage_set_active "$p/.nightshift" P01
+  tick_to "$p" 1
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g1","input_tokens":1000,"output_tokens":5}'
+  # The second turn ticks items 2 to 4 and ends with item 5 still being worked.
+  lib ns_usage_set_active "$p/.nightshift" P02
+  tick_to "$p" 4
+  lib ns_usage_set_active "$p/.nightshift" P05
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g2","input_tokens":15900000,"cache_read_tokens":15000000,"output_tokens":60200}'
+  # Item 5 ticks after the turn's reading arrived, and the reading still reaches it.
+  tick_to "$p" 5
+  grep -qF '| input | 1.0k |' "$p/.nightshift/receipts/P01.md"
+  run grep -qF 'not attributable' "$p/.nightshift/receipts/P01.md"
+  [ "$status" -ne 0 ]
+  for n in 2 3 4 5; do
+    r="$p/.nightshift/receipts/P0$n.md"
+    grep -qF -- '- input 15.9M · cache read 15.0M · output 60.2k across items P02, P03, P04, P05, not split by item.' "$r"
+    grep -qF '| input | not attributable |' "$r"
+    grep -qF '<!-- tokens - - - - - -->' "$r"
+  done
+  # Counted once in the index, not once per item.
+  grep -qF '| **Totals** |  | **input 15.9M · cache_write unavailable · cache_read 15.0M · output 60.2k · reasoning unavailable** |' \
+    "$p/.nightshift/receipts/README.md"
+}
+
+@test "a Cursor turn that reports no usage leaves its item unavailable, never zero" {
+  p="$(cursor_project usage-cursor-none 2)"
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g1","input_tokens":300,"output_tokens":3}'
+  tick_to "$p" 1
+  lib ns_usage_set_active "$p/.nightshift" P02
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g2","status":"completed"}'
+  tick_to "$p" 2
+  r="$p/.nightshift/receipts/P02.md"
+  grep -qF '| input | unavailable |' "$r"
+  grep -qF '| output | unavailable |' "$r"
+  grep -qF '<!-- tokens - - - - - -->' "$r"
+  run grep -qE '\| (input|output) \| 0 \|' "$r"
+  [ "$status" -ne 0 ]
+  grep -qF '| P02 | ticked | **unavailable** |' "$p/.nightshift/receipts/README.md"
+  grep -qF '| P01 | ticked | **input 300 · cache_write unavailable · cache_read unavailable · output 3 · reasoning unavailable** |' \
+    "$p/.nightshift/receipts/README.md"
+}
+
+@test "a Cursor turn that reports zero reads zero" {
+  p="$(cursor_project usage-cursor-zero 1)"
+  lib ns_usage_mark_arm "$p/.nightshift"
+  lib ns_usage_set_active "$p/.nightshift" P01
+  cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g1","input_tokens":0,"output_tokens":0}'
+  tick_to "$p" 1
+  r="$p/.nightshift/receipts/P01.md"
+  grep -qF '| input | 0 |' "$r"
+  grep -qF '| output | 0 |' "$r"
+  grep -qF '<!-- tokens 0 - - 0 - -->' "$r"
+}
+
+@test "a pulse that cannot take the site lock leaves the marks to the holder" {
+  p="$(cursor_project usage-marks-lock 1)"
+  lib ns_usage_mark_arm "$p/.nightshift"
+  sed -i.bak 's/- \[ \] \*\*P01 /- [x] **P01 /' "$p/.nightshift/punch-list.md"
+  lock="$(lib ns_layout_path "$p/.nightshift" lock)"
+  mkdir -p "$lock"
+  printf '%s' "$$" >"$lock/pid"
+  marks() {
+    bash -c '. "$1"; . "$2"; ns_pulse_marks "$3" "$4" c1' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
+      "$p/.nightshift" "$p"
+  }
+  marks
+  [ "$(cut -f2 "$p/.nightshift/usage/marks.tsv" | paste -sd' ' -)" = arm ]
+  rm -rf "$lock"
+  marks
+  marks
+  [ "$(cut -f2 "$p/.nightshift/usage/marks.tsv" | paste -sd' ' -)" = 'arm P01' ]
+  [ ! -e "$lock" ]
 }
 
 @test "a dimension the host does not report reads unavailable, never zero" {

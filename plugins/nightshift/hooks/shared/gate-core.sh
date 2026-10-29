@@ -217,9 +217,16 @@ ns_gate_usage_tick() {
 ns_gate_session_row() {
   local ns="$1" project="$2" label="$3" ended="$4" span start end fields paused work in out sid
   local marks two hosts dim v extras="" paused_sec why receipt prev target commits note generation
+  local earlier later nr turn
   span="$(ns_usage_last_item "$ns")" || return 0
   fields="$(printf '%s' "$span" | cut -f1)"
   marks="$(ns_usage_dir "$ns")/marks.tsv"
+  two="$(tail -n2 "$marks")"
+  earlier="$(printf '%s\n' "$two" | head -n1 | cut -f5)"
+  later="$(printf '%s\n' "$two" | tail -n1 | cut -f5)"
+  # Cursor's readings are attributed by turn (ns_usage_turns_for), so what moved on Cursor between
+  # the two marks is left out here rather than booked to whichever item was open when it arrived.
+  [ -z "$earlier$later" ] || fields="$(ns_usage_span_fields "$earlier" "$later" cursor)"
   end="$(tail -n1 "$marks" | cut -f1)"
   case "$end" in '' | *[!0-9]*) return 0 ;; esac
   start=$((end - $(printf '%s' "$span" | cut -f2)))
@@ -247,9 +254,7 @@ ns_gate_session_row() {
   fi
   extras="$extras paused=$paused_sec"
   [ -z "$why" ] || extras="$extras why=$(ns_receipt_encode "$why")"
-  two="$(tail -n2 "$marks")"
-  hosts="$(ns_usage_span_hosts "$(printf '%s\n' "$two" | head -n1 | cut -f5)" \
-    "$(printf '%s\n' "$two" | tail -n1 | cut -f5)")"
+  hosts="$(ns_usage_span_hosts "$earlier" "$later")"
   if [ -z "$hosts" ]; then
     hosts="$(ns_usage_hosts "$ns" 2>/dev/null | sed 's/; /+/g; s/ /\//g')" || hosts=""
   fi
@@ -272,9 +277,15 @@ ns_gate_session_row() {
   done
   prev="$(ns_receipt_last_session "$receipt")" || prev=""
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
-  generation="$(head -n1 "$marks" | cut -f6)"
-  [ -n "$generation" ] || generation="${sid:-$(head -n1 "$marks" | cut -f1)}"
-  extras="$extras checkpoint=$generation:$(awk 'END { print NR }' "$marks")"
+  generation="$(ns_usage_generation "$ns" "$sid")"
+  nr="$(awk 'END { print NR }' "$marks")"
+  extras="$extras checkpoint=$generation:$nr"
+  if [ "$(ns_report "$project" usage)" != off ]; then
+    ns_usage_turn_resolve "$ns" "$label" "$nr" || :
+    while IFS= read -r turn; do
+      [ -z "$turn" ] || extras="$extras turn=$turn"
+    done < <(ns_usage_turns_for "$ns" "$label" "$nr")
+  fi
   ns_receipt_add_session "$receipt" "$label" "${sid:--}" \
     "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended" "$extras"
   ns_gate_handoff_log "$ns" "$label" "$prev" "$hosts"

@@ -179,6 +179,7 @@ function Test-NSApiFailureEvidence {
 
 $script:TranscriptStamp = ''
 $script:WedgeSeen = [long]-1
+$script:MintHeld = $false
 function Set-NSTranscriptBaseline {
     $transcript = Get-NSTranscript
     if ([string]::IsNullOrEmpty($transcript)) {
@@ -261,6 +262,8 @@ function Write-NSCursorWorkerId {
     }
 }
 
+# The CLI worker id a revival resumes, without recording it: .shift-worker is written only when a
+# revival launches under the id.
 function Resolve-NSCursorWorkerId {
     $existing = Get-NSCursorWorkerId
     if (-not [string]::IsNullOrEmpty($existing)) {
@@ -272,17 +275,13 @@ function Resolve-NSCursorWorkerId {
     $transcript = Get-NSSessionValue 'Transcript'
     $origin = Get-NSSessionValue 'SessionId'
     if ($transcript -match '[/\\]\.cursor[/\\]chats([/\\]|$)' -and -not [string]::IsNullOrEmpty($origin)) {
-        if (Write-NSCursorWorkerId $origin) { return $origin }
-        return ''
+        return $origin
     }
     if (-not [string]::IsNullOrEmpty($Agent)) {
-        $minted = if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_CURSOR_TEST_WORKER)) {
-            $env:NIGHTSHIFT_CURSOR_TEST_WORKER
-        } else {
-            'minted-cli-worker'
+        if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_CURSOR_TEST_WORKER)) {
+            return $env:NIGHTSHIFT_CURSOR_TEST_WORKER
         }
-        if (Write-NSCursorWorkerId $minted) { return $minted }
-        return ''
+        return 'minted-cli-worker'
     }
     try {
         $minted = (& agent create-chat 2>$null | Out-String).Trim()
@@ -295,8 +294,17 @@ function Resolve-NSCursorWorkerId {
         Write-NSMintFailed
         return ''
     }
-    if (Write-NSCursorWorkerId $minted) { return $minted }
-    return ''
+    return $minted
+}
+
+# An id this wake recorded for a revival that never launched goes again, so the origin tab is not
+# pointed at an empty chat. An id an earlier revival ran under stays.
+function Remove-NSFreshCursorWorker {
+    param([Parameter(Mandatory = $true)][string]$WorkerId)
+    if ((Get-NSCursorWorkerId) -ne $WorkerId) {
+        return
+    }
+    Remove-Item -LiteralPath (Get-NSLayoutPath $ns 'worker') -Force -ErrorAction SilentlyContinue
 }
 
 function Get-NSHostProcessState {
@@ -493,13 +501,62 @@ function Quote-NSPowerShellLiteral {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 
+# The powershell.exe argument line that runs one agent command and passes its exit code back.
+function Get-NSAgentArgumentLine {
+    param(
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][Collections.Generic.List[string]]$CommandArguments
+    )
+    $invocation = '& { & ' + (Quote-NSPowerShellLiteral $CommandName)
+    foreach ($argument in $CommandArguments) {
+        $invocation += ' ' + (Quote-NSPowerShellLiteral $argument)
+    }
+    $invocation += '; $nsOk = $?; $nsExit = $LASTEXITCODE; ' +
+        'if ($null -ne $nsExit) { exit $nsExit }; if (-not $nsOk) { exit 1 } }'
+    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $invocation)
+    return (($arguments | ForEach-Object { Quote-NSWindowsArgument $_ }) -join ' ')
+}
+
+# A Cursor worker that exited after ticking a box is relaunched, unless the shift ended, stopped,
+# passed its deadline, was closed by the owner, or was taken back by another session.
+function Test-NSCursorRelaunchDue {
+    param([Parameter(Mandatory = $true)][int]$OpenBefore)
+    if (-not (Test-Path -LiteralPath $armedMarker -PathType Leaf) `
+        -or (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) `
+        -or -not (Test-Path -LiteralPath $punch -PathType Leaf) `
+        -or (Test-NSRealEnded) -or (Test-NSRealSessionEnd) -or (Test-NSDeadlinePassed)) {
+        return $false
+    }
+    $open = [int](Get-NSBoxCounts $punch).Open
+    if ($open -le 0 -or $open -ge $OpenBefore) {
+        return $false
+    }
+    $lease = Read-NSLease $ns
+    if ($null -eq $lease -or [string]::IsNullOrEmpty($lease.Nonce)) {
+        return $false
+    }
+    return -not (Test-NSLeasePidLive $ns)
+}
+
 function Start-NSAgent {
     param(
         [Parameter(Mandatory = $true)][int]$Attempt,
         [Parameter(Mandatory = $true)][int]$TotalAttempts
     )
+    $script:MintHeld = $false
+    # The permission scope a revived session starts under is the owner's, and it never widens
+    # between rungs: a failed revival is retried at the same scope, never a broader one. A scope
+    # that cannot be restored refuses before a Cursor worker is minted.
+    $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
+    if ($launchScope -clike 'unavailable:*') {
+        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Recovery cannot restore this configured scope.')
+        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules')."
+        Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
+        return $false
+    }
     $sessionId = Get-NSSessionValue 'SessionId'
     $hadCursorWorker = $false
+    $freshCursorWorker = $false
     if ($HostName -eq 'cursor') {
         $hadCursorWorker = -not [string]::IsNullOrEmpty((Get-NSCursorWorkerId))
         $workerId = Resolve-NSCursorWorkerId
@@ -508,33 +565,34 @@ function Start-NSAgent {
             return $false
         }
         $sessionId = $workerId
+        $freshCursorWorker = -not $hadCursorWorker
+        # Minting has no deadline of its own, and the tab it replaces can come back meanwhile.
+        if ($freshCursorWorker -and (Get-NSSiteVerdict) -ne 'dead') {
+            Write-NSLogLine 'watchman: session activity while the CLI worker was minted - not reviving'
+            $script:MintHeld = $true
+            return $false
+        }
     }
     $null = Confirm-NSWorkTargetLink $workspace
     $openBefore = [int](Get-NSBoxCounts $punch).Open
     $fresh = $Attempt -ge $TotalAttempts -and $TotalAttempts -gt 1
-    # The permission scope a revived session starts under is the owner's, and it never widens
-    # between rungs: a failed revival is retried at the same scope, never a broader one.
-    $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
-    if ($launchScope -clike 'unavailable:*') {
-        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Recovery cannot restore this configured scope.')
-        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules')."
-        Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
-        return $false
-    }
     Write-NSLogLine ('watchman: reviving under launch scope ' + $launchScope)
     $prompt = if ($fresh) { $freshPrompt } else { $revivalPrompt }
     if ($HostName -eq 'cursor' -and -not $hadCursorWorker) {
         $prompt = $freshPrompt
     }
+    if ($freshCursorWorker -and -not (Write-NSCursorWorkerId $sessionId)) {
+        return $false
+    }
     $lease = Takeover-NSLease $ns $sessionId $HostName
     if ($null -eq $lease) {
         Write-NSLogLine 'watchman: process lease transfer failed - not spawning beside an unfenced session'
+        if ($freshCursorWorker) { Remove-NSFreshCursorWorker $sessionId }
         return $false
     }
 
     $commandName = ''
     $commandArguments = New-Object Collections.Generic.List[string]
-    $arguments = New-Object Collections.Generic.List[string]
     if (-not [string]::IsNullOrEmpty($Agent)) {
         if (Test-Path -LiteralPath $Agent.Trim("'`"") -PathType Leaf) {
             $commandName = $Agent.Trim("'`"")
@@ -596,19 +654,7 @@ function Start-NSAgent {
             $commandArguments.Add($freshPrompt)
         }
     }
-    $invocation = '& { & ' + (Quote-NSPowerShellLiteral $commandName)
-    foreach ($argument in $commandArguments) {
-        $invocation += ' ' + (Quote-NSPowerShellLiteral $argument)
-    }
-    $invocation += '; $nsOk = $?; $nsExit = $LASTEXITCODE; ' +
-        'if ($null -ne $nsExit) { exit $nsExit }; if (-not $nsOk) { exit 1 } }'
     $fileName = 'powershell.exe'
-    $arguments.Add('-NoProfile')
-    $arguments.Add('-NonInteractive')
-    $arguments.Add('-ExecutionPolicy')
-    $arguments.Add('Bypass')
-    $arguments.Add('-Command')
-    $arguments.Add($invocation)
 
     $oldProject = if ($HostName -eq 'claude') { $env:CLAUDE_PROJECT_DIR } elseif ($HostName -eq 'cursor') { $env:CURSOR_PROJECT_DIR } else { $env:CODEX_PROJECT_DIR }
     $oldRevival = $env:NIGHTSHIFT_REVIVAL
@@ -627,19 +673,51 @@ function Start-NSAgent {
         $env:NIGHTSHIFT_REVIVAL = '1'
         $env:NIGHTSHIFT_LEASE_GENERATION = [string]$lease.Generation
         $env:NIGHTSHIFT_LEASE_NONCE = $lease.Nonce
-        $argumentLine = (($arguments | ForEach-Object { Quote-NSWindowsArgument $_ }) -join ' ')
+        $argumentLine = Get-NSAgentArgumentLine $commandName $commandArguments
         try {
             $process = Start-Process -FilePath $fileName -ArgumentList $argumentLine `
                 -WorkingDirectory $workTarget -WindowStyle Hidden -PassThru -ErrorAction Stop
         }
         catch {
             Write-NSLogLine ('watchman: spawn failed: ' + $_.Exception.Message)
+            if ($freshCursorWorker) { Remove-NSFreshCursorWorker $sessionId }
             return $false
         }
         $start = Get-NSProcessStart $process.Id
         $null = Attach-NSLeaseProcess $ns $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start
         $process.WaitForExit()
-        return (Test-NSWatchmanRevivalProved -NightshiftDir $ns -Sentinel '' -IntervalMinutes $IntervalMinutes -OpenBefore $openBefore)
+        if (-not (Test-NSWatchmanRevivalProved -NightshiftDir $ns -Sentinel '' -IntervalMinutes $IntervalMinutes -OpenBefore $openBefore)) {
+            return $false
+        }
+        # A headless `agent -p` worker runs no stop hook, so the clock-out gate cannot hold it: it
+        # exits when its turn ends, open boxes or not. A run that ticked a box earns the next one.
+        if ($HostName -eq 'cursor') {
+            $commandArguments[$commandArguments.Count - 1] = $revivalPrompt
+            $argumentLine = Get-NSAgentArgumentLine $commandName $commandArguments
+            while (Test-NSCursorRelaunchDue $openBefore) {
+                $openBefore = [int](Get-NSBoxCounts $punch).Open
+                Write-NSLogLine "watchman: CLI worker $sessionId exited with $openBefore open $([char]0x2014) relaunching it"
+                $lease = Takeover-NSLease $ns $sessionId $HostName
+                if ($null -eq $lease) {
+                    Write-NSLogLine 'watchman: process lease transfer failed - not spawning beside an unfenced session'
+                    break
+                }
+                $env:NIGHTSHIFT_LEASE_GENERATION = [string]$lease.Generation
+                $env:NIGHTSHIFT_LEASE_NONCE = $lease.Nonce
+                try {
+                    $process = Start-Process -FilePath $fileName -ArgumentList $argumentLine `
+                        -WorkingDirectory $workTarget -WindowStyle Hidden -PassThru -ErrorAction Stop
+                }
+                catch {
+                    Write-NSLogLine ('watchman: spawn failed: ' + $_.Exception.Message)
+                    break
+                }
+                $start = Get-NSProcessStart $process.Id
+                $null = Attach-NSLeaseProcess $ns $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start
+                $process.WaitForExit()
+            }
+        }
+        return $true
     }
     finally {
         if ($HostName -eq 'claude') {
@@ -953,6 +1031,10 @@ try {
                 Write-NSLogLine "watchman: site dead quiet with open boxes - resume attempt $attempt"
                 if (Start-NSAgent $attempt $totalAttempts) {
                     $revived = $true
+                    break
+                }
+                if ($script:MintHeld) {
+                    $aborted = 'session activity'
                     break
                 }
                 Set-NSTranscriptBaseline

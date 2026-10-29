@@ -88,7 +88,7 @@ if ($HostName -eq 'cursor' -and (Test-Path -LiteralPath $workerPath -PathType Le
         $worker = ''
     }
 }
-if (-not [string]::IsNullOrEmpty($worker)) {
+if (-not [string]::IsNullOrEmpty($worker) -and (Test-NSCursorWorkerRan $ns)) {
     if ($sessionId -ne $worker) { exit 0 }
 }
 elseif ($null -ne $session -and -not [string]::IsNullOrEmpty($session.SessionId) -and $session.SessionId -ne $sessionId) {

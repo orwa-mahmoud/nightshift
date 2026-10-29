@@ -182,3 +182,109 @@ stale_pulse() {
   [ "$(sed -n 1p "$P/.nightshift/.watch-reason" | tr -d '[:space:]')" = "owner-disarm" ]
   [ ! -e "$P/.nightshift/.shift-armed" ]
 }
+
+# A site that inherits a recorded scope it cannot read refuses before it mints: a chat no
+# revival runs must not be recorded as the worker the origin tab is pointed at.
+@test "an unavailable launch scope refuses without minting or recording a worker" {
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  stale_pulse
+  AGENT_LOG="$P/.nightshift/agent-argv"
+  run env PATH="$BIN:$PATH" AGENT_LOG="$AGENT_LOG" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'Recovery cannot restore this configured scope' "$P/.nightshift/shift-log.md"
+  [ ! -e "$P/.nightshift/.shift-worker" ]
+  [ ! -e "$AGENT_LOG" ]
+}
+
+@test "a host-default launch scope mints, records the worker, and launches it" {
+  stale_pulse
+  AGENT_LOG="$P/.nightshift/agent-argv"
+  run env PATH="$BIN:$PATH" AGENT_LOG="$AGENT_LOG" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'reviving under launch scope host-default' "$P/.nightshift/shift-log.md"
+  grep -q '^create-chat' "$AGENT_LOG"
+  grep -q 'resume=minted-from-agent' "$AGENT_LOG"
+}
+
+# The origin tab can come back while create-chat runs; a revival launched then would fence it.
+@test "a session that comes back while the worker is minted is not revived over" {
+  stale_pulse
+  cat >"$BIN/agent" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$P/.nightshift/agent-argv"
+if [ "\$1" = "create-chat" ]; then
+  printf '%s origin-ide\n' "\$(date +%s)" >"$P/.nightshift/.shift-pulse"
+  printf 'minted-late\n'
+fi
+exit 0
+STUB
+  run env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'session activity while the CLI worker was minted' "$P/.nightshift/shift-log.md"
+  [ ! -e "$P/.nightshift/.shift-worker" ]
+  if grep -q -- '--resume' "$P/.nightshift/agent-argv"; then
+    return 1
+  fi
+  [ "$(grep -c 'resume attempt' "$P/.nightshift/shift-log.md")" -eq 1 ]
+}
+
+@test "a fresh worker id is dropped when its revival cannot take the lease" {
+  stale_pulse
+  printf 'not a lease\n' >"$P/.nightshift/.shift-lease"
+  run watch --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'process lease transfer failed' "$P/.nightshift/shift-log.md"
+  [ ! -e "$P/.nightshift/.shift-worker" ]
+  [ "$(calls)" -eq 0 ]
+}
+
+
+
+# `agent -p` runs no stop hook, so the gate never holds a headless worker: it exits when its
+# turn ends. The watchman relaunches it while each run ticks a box.
+@test "a headless worker that exits with open boxes is relaunched while it makes progress" {
+  printf '## Items\n- [ ] **1.**\n- [ ] **2.**\n- [ ] **3.**\n' >"$P/.nightshift/punch-list.md"
+  stale_pulse
+  run watch --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 3 ]
+  [ "$(grep -c 'exited with .* open — relaunching it' "$P/.nightshift/shift-log.md")" -eq 2 ]
+  [ "$(grep -c '^- \[ \]' "$P/.nightshift/punch-list.md")" -eq 0 ]
+}
+
+@test "a relaunched worker that ticks nothing hands the site back to the wake cycle" {
+  printf '## Items\n- [ ] **1.**\n- [ ] **2.**\n- [ ] **3.**\n' >"$P/.nightshift/punch-list.md"
+  cat >"$BIN/once.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "called" >>.nightshift/agent-calls
+[ "$(grep -c called .nightshift/agent-calls)" -eq 1 ] || exit 0
+awk 'BEGIN{d=0} !d && /^- \[ \]/{sub(/\[ \]/,"[x]");d=1} {print}' .nightshift/punch-list.md >.nightshift/pl.tmp
+mv .nightshift/pl.tmp .nightshift/punch-list.md
+STUB
+  chmod +x "$BIN/once.sh"
+  stale_pulse
+  run watch --agent "bash $BIN/once.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 2 ]
+  [ "$(grep -c 'relaunching it' "$P/.nightshift/shift-log.md")" -eq 1 ]
+}
+
+@test "a stop-work order ends the relaunches" {
+  printf '## Items\n- [ ] **1.**\n- [ ] **2.**\n- [ ] **3.**\n' >"$P/.nightshift/punch-list.md"
+  cat >"$BIN/stop.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "called" >>.nightshift/agent-calls
+awk 'BEGIN{d=0} !d && /^- \[ \]/{sub(/\[ \]/,"[x]");d=1} {print}' .nightshift/punch-list.md >.nightshift/pl.tmp
+mv .nightshift/pl.tmp .nightshift/punch-list.md
+printf 'owner\n' >.nightshift/STOP
+STUB
+  chmod +x "$BIN/stop.sh"
+  stale_pulse
+  run watch --agent "bash $BIN/stop.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 1 ]
+}

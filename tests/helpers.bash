@@ -167,6 +167,13 @@ lease_record() {
   chmod 600 "$f"
 }
 
+# cursor_worker_ran <project> <worker> — a CLI worker a revival actually ran: the worker record
+# and the recovery lease that revival took for its process.
+cursor_worker_ran() {
+  printf '%s\n' "$2" >"$1/.nightshift/.shift-worker"
+  lease_record "$1" origin-ide cursor 2 cursor.2.1.1.1 "$(reaped_pid)" ""
+}
+
 lease_scope()      { sed -n 1p "$1/.nightshift/.shift-lease"; }
 lease_generation() { sed -n 3p "$1/.nightshift/.shift-lease"; }
 lease_nonce()      { sed -n 4p "$1/.nightshift/.shift-lease"; }

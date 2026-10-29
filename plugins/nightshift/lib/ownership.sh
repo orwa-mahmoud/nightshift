@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
 # Session, lease, and shift-ownership fencing shared by Nightshift hooks.
 
-# Cross-session mutex over one .nightshift/ — mkdir is the one atomic primitive every platform
-# here ships (macOS has no flock). The holder writes its pid inside; a lock whose holder is
-# provably dead is broken on sight, a mid-claim lock (no pid yet) is waited on, never stolen.
-# The wait is bounded because a Stop hook must never hang a session over bookkeeping: on
-# timeout the caller proceeds without the lock, and the race window is merely what it was
-# before locks existed.
+# Cross-session mutex over one .nightshift/. The claim is the holder's pid file, created with the
+# shell's noclobber redirection: an exclusive create in bash itself, on every platform here (macOS
+# has no flock, and a coreutils mkdir is not atomic everywhere — uutils' is not). A lock whose
+# holder is provably dead is broken on sight. The wait is bounded because a Stop hook must never
+# hang a session over bookkeeping: on timeout the caller proceeds without the lock, and the race
+# window is merely what it was before locks existed.
+_ns_lock_claim() { # $1 = the lock dir
+  mkdir -p "$1" 2>/dev/null || return 1
+  (set -o noclobber; printf '%s' "$$" >"$1/pid") 2>/dev/null
+}
+
 ns_lock() { # $1 = the .nightshift dir; bounded ~2s wait
   local dir holder _
   ns_layout_set dir "$1" lock
   mkdir -p "${dir%/*}" 2>/dev/null || :
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if mkdir "$dir" 2>/dev/null; then
-      printf '%s' "$$" >"$dir/pid" 2>/dev/null || true
-      return 0
-    fi
+    _ns_lock_claim "$dir" && return 0
     holder="$(cat "$dir/pid" 2>/dev/null)"
     case "$holder" in
       '' | *[!0-9]*) ;;
@@ -38,10 +40,7 @@ ns_lease_lock() { # $1 = the .nightshift dir; bounded ~2s wait
   ns_layout_set dir "$1" lease-lock
   mkdir -p "${dir%/*}" 2>/dev/null || :
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    if mkdir "$dir" 2>/dev/null; then
-      printf '%s' "$$" >"$dir/pid" 2>/dev/null || true
-      return 0
-    fi
+    _ns_lock_claim "$dir" && return 0
     holder="$(cat "$dir/pid" 2>/dev/null)"
     case "$holder" in
       '' | *[!0-9]*) ;;
@@ -924,13 +923,23 @@ ns_cursor_store_kind() { # <transcript-path>
   esac
 }
 
+# A recorded worker holds the shift only once a revival ran it: the lease carries a recovery
+# nonce and the process that revival fenced the site for. An id with no such run behind it names
+# a chat that never started, and the origin tab still owns the shift.
+ns_cursor_worker_ran() { # <ns>
+  [ -n "$(ns_cursor_worker_id "$1")" ] || return 1
+  ns_lease_valid "$1" || return 1
+  [ "$NS_LEASE_HOST" = cursor ] && [ -n "$NS_LEASE_NONCE" ] && [ -n "$NS_LEASE_PID" ]
+}
+
 # Origin IDE tab while a different CLI worker holds the shift.
 ns_cursor_stale_origin() { # <ns> <sid>
   local rec worker
   rec="$(ns_session_line "$1" 1)"
   worker="$(ns_cursor_worker_id "$1")"
   [ -n "$rec" ] && [ -n "$worker" ] && [ -n "${2:-}" ] \
-    && [ "$2" = "$rec" ] && [ "$2" != "$worker" ]
+    && [ "$2" = "$rec" ] && [ "$2" != "$worker" ] \
+    && ns_cursor_worker_ran "$1"
 }
 
 ns_cursor_resume_command() { # <ns> <workspace>

@@ -32,7 +32,7 @@ cursor_session_end() {
   p="$(new_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
-  printf 'live-cli-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_worker_ran "$p" live-cli-worker
   cursor_session_end "$p" origin-ide user_close
   [ ! -f "$p/.nightshift/.session-end" ]
 }
@@ -44,4 +44,13 @@ cursor_session_end() {
   printf 'right-id\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   cursor_session_end "$p" right-id user_close
   [ ! -f "$p/.nightshift/.session-end" ]
+}
+
+@test "cursor session-end honours the origin tab while the recorded worker never ran" {
+  p="$(new_project)"
+  punch_open "$p"
+  printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
+  printf 'never-ran-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_session_end "$p" origin-ide user_close
+  grep -q 'clean session end (user_close)' "$p/.nightshift/.session-end"
 }

@@ -59,6 +59,26 @@ try {
     Remove-Item Env:CURSOR_PROJECT_DIR
     Expect-True ((Get-NSUsageTotal $oneNs) -ceq 'input=700,output=30') "the Cursor copy records its turn ($(Get-NSUsageTotal $oneNs))"
 
+    # A recorded worker that no revival ran leaves the origin tab the shift's pulse; one that ran takes it.
+    $workerWs = Join-Path $root 'worker'
+    $workerNs = Join-Path $workerWs '.nightshift'
+    $null = New-Item -ItemType Directory -Path $workerNs -Force
+    [IO.File]::WriteAllText((Join-Path $workerNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $workerNs '.shift-armed'), '', $utf8)
+    [IO.File]::WriteAllText((Join-Path $workerNs '.shift-session'), "origin-ide`n`n`n`ncursor`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $workerNs '.shift-worker'), "never-ran-worker`n", $utf8)
+    $workerPulse = Get-NSLayoutPath $workerNs 'pulse'
+    $originPayload = (@{ conversation_id = 'origin-ide'; cwd = $workerWs; tool_name = 'Read' } | ConvertTo-Json -Compress)
+    $env:CURSOR_PROJECT_DIR = $workerWs
+    $null = $originPayload | & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName cursor
+    Expect-True ((Test-Path -LiteralPath $workerPulse) -and ([IO.File]::ReadAllText($workerPulse) -match ' origin-ide')) `
+        'the origin tab keeps the pulse while the recorded worker never ran'
+    Remove-Item -LiteralPath $workerPulse -Force
+    [IO.File]::WriteAllText((Join-Path $workerNs '.shift-lease'), "origin-ide`ncursor`n2`ncursor.2.1.1.1`n4242`n`n", $utf8)
+    $null = $originPayload | & $hostExecutable -NoProfile -NonInteractive -File $pulseScript -HostName cursor
+    Remove-Item Env:CURSOR_PROJECT_DIR
+    Expect-True (-not (Test-Path -LiteralPath $workerPulse)) 'the origin tab stops pulsing once a revival ran the worker'
+
     $tickWs = Join-Path $root 'tick'
     $tickNs = Join-Path $tickWs '.nightshift'
     $null = New-Item -ItemType Directory -Path $tickNs -Force

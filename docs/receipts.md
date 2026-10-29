@@ -20,7 +20,9 @@ and evidence summary, linked from the top of the index. The
 The hooks read the host's records and write a Tokens table and a Time table at the top of the
 item's receipt at its tick. The agent does not estimate its own consumption. Accounting boundaries follow ticks: work
 between two ticks belongs to the item closed by the second, including its verification. This is
-useful attribution, not a profiler of individual edits; items ticked together can share a reading.
+useful attribution, not a profiler of individual edits. Cursor reports usage once per agent turn, and a
+turn that covers several items is one shared reading: each of their receipts lists it once, their
+own figures read `not attributable`, and the index counts it once.
 Duration is working time first: wall clock minus pauses the runtime recorded (owner stop, Esc, a
 usage-limit wait, a session that ended and was revived). The wall span, the pauses, and the from/to
 times stay listed so the subtraction is checkable. The index Usage column lists input, cache write,
@@ -30,7 +32,7 @@ cache read, output, and reasoning. Time lists working and paused time; the total
 | --- | --- | --- |
 | Claude Code | Session transcript | Repeated response records are deduplicated. Cache reads and cache writes are separate from input. |
 | Codex | Rollout token counter | Cached input is already included in input; reasoning is already included in output. |
-| Cursor | IDE stop payload | Input overlaps cache figures. Reasoning and subagent usage are not reported; recovered CLI segments have no per-turn usage source. |
+| Cursor | IDE stop payload, once per agent turn | Input overlaps cache figures. A turn covering several items is shared, not split. Reasoning and subagent usage are not reported; recovered CLI segments have no per-turn usage source. |
 
 Input, output, cache reads, cache writes, and reasoning retain their names and host-specific
 meaning. Missing measurements are marked `unavailable`. Recovery, model changes, and counter

@@ -24,7 +24,7 @@ cursor_pulse() {
   p="$(new_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
-  printf 'live-cli-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_worker_ran "$p" live-cli-worker
   cursor_pulse "$p" origin-ide
   [ ! -f "$p/.nightshift/.shift-pulse" ]
   cursor_pulse "$p" live-cli-worker
@@ -53,4 +53,13 @@ cursor_pulse() {
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_PULSE")"
   printf '%s' "$out" | grep -qF 'additional_context'
   printf '%s' "$out" | grep -qF 'receipts: item'
+}
+
+@test "cursor origin keeps writing the pulse while the recorded worker never ran" {
+  p="$(new_project)"
+  punch_open "$p"
+  printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
+  printf 'never-ran-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_pulse "$p" origin-ide
+  grep -qE '^[0-9]+ origin-ide$' "$p/.nightshift/.shift-pulse"
 }

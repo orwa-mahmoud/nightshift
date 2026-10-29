@@ -3,8 +3,8 @@
 #
 # Cursor documents reason: completed | aborted | error | window_close | user_close.
 # Owner hand on the door: aborted or user_close. Those write .session-end so the
-# Cursor watchman can stand down. Closing the origin IDE tab while a CLI worker is
-# recorded is not a clean close — the worker still owns the night.
+# Cursor watchman can stand down. Closing the origin IDE tab after a revival ran the
+# recorded CLI worker is not a clean close — the worker still owns the night.
 # Inert outside an active shift. Never arms Claude or Codex watchmen.
 set -u
 
@@ -47,7 +47,7 @@ REASON="${CURSOR_SESSION_END_REASON:-unknown}"
 if [ -f "$SESSION" ] && [ ! -L "$SESSION" ]; then
   REC="$(sed -n 1p "$SESSION" 2>/dev/null)"
   WORKER="$(ns_cursor_worker_id "$NS")"
-  if [ -n "$WORKER" ]; then
+  if [ -n "$WORKER" ] && ns_cursor_worker_ran "$NS"; then
     [ -n "$SID" ] && [ "$SID" = "$WORKER" ] || exit 0
   else
     [ -n "$REC" ] && [ -n "$SID" ] && [ "$SID" != "$REC" ] && exit 0
