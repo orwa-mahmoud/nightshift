@@ -21,7 +21,7 @@ def norm: gsub("[ \\t\\n\\x0b\\f\\r]+"; " ") | sub("^ +"; "") | sub(" +$"; "");
 def jn($p; $k): if $p == "." then $k else $p + "." + $k end;
 def ty($p): "ty\t" + $p + "\t" + type;
 def ks($p): if type == "object" then (keys_unsorted[] | "k\t" + $p + "\t" + scrub) else empty end;
-def sc($p; $names): . as $o | $names[] as $k | "j\t" + jn($p; $k) + "\t" + ($o | obj | .[$k] | tojson);
+def sc($p; $names): . as $o | $names[] as $k | "j\t" + jn($p; $k) + "\t" + (reduce ($k | split("."))[] as $part ($o; obj | .[$part]) | tojson);
 def cnt($p): "n\t" + $p + "\t" + (if type == "array" then length else -1 end | tostring);
 
 def rules:
@@ -71,8 +71,8 @@ def PREF: {
   "recovery": ["launchScope"],
   "handoff":  ["detail", "enabled", "language", "sections", "templatePath", "view"],
   "archive":  ["automatic", "layout", "root", "templatePath"],
-  "receipts": ["duration", "enabled", "progressMinutes", "progressMode",
-               "progressTokens", "templatePath", "usage"]
+  "receipts": ["duration", "enabled", "evidence.architecture", "evidence.default", "evidence.fileMap",
+               "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"]
 };
 
 def shift_policy:

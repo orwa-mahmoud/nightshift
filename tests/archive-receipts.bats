@@ -550,6 +550,59 @@ closed() { # <project> — the shift ended
   ! grep -qF 'morning-2026-09-05-abc.md' "$r/README.md" || false
 }
 
+@test "a ticked item's evidence folder is filed beside its receipt, and an open item's stays live" {
+  p="$(new_project evidence-folder)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r/1-restyle-the-page/shots" "$r/2-trim-the-bundle"
+  printf 'Date: 2026-09-05\n\n## Items\n- [x] **1. Restyle the page.**\n  - Evidence: before/after screenshots\n- [ ] **2. Trim the bundle.**\n' \
+    >"$p/.nightshift/punch-list.md"
+  printf '# 1. Restyle the page.\n\n## Evidence\n\n![before](./1-restyle-the-page/before.png)\n![after](1-restyle-the-page/shots/after.png)\n- Recording: unavailable — no screen recorder on this machine\n' \
+    >"$r/1-restyle-the-page.md"
+  printf 'PNG-before' >"$r/1-restyle-the-page/before.png"
+  printf 'PNG-after' >"$r/1-restyle-the-page/shots/after.png"
+  printf '# 2. Trim the bundle.\n\nIn progress.\n' >"$r/2-trim-the-bundle.md"
+  printf 'sizes\n' >"$r/2-trim-the-bundle/sizes.txt"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  d="$p/.nightshift/archive/2026-09-05/receipts"
+  [ "$(cat "$d/1-restyle-the-page/before.png")" = PNG-before ]
+  [ "$(cat "$d/1-restyle-the-page/shots/after.png")" = PNG-after ]
+  # Every link the filed receipt makes into its folder resolves from where the receipt now sits.
+  grep -qF '](./1-restyle-the-page/before.png)' "$d/1-restyle-the-page.md"
+  grep -qF '](1-restyle-the-page/shots/after.png)' "$d/1-restyle-the-page.md"
+  for link in ./1-restyle-the-page/before.png 1-restyle-the-page/shots/after.png; do [ -f "$d/$link" ]; done
+  grep -qF 'Recording: unavailable — no screen recorder on this machine' "$d/1-restyle-the-page.md"
+  # It retires with its receipt; the open item keeps its folder live, unfiled.
+  [ ! -e "$r/1-restyle-the-page.md" ]
+  [ ! -e "$r/1-restyle-the-page" ]
+  [ -f "$r/2-trim-the-bundle/sizes.txt" ]
+  [ ! -e "$d/2-trim-the-bundle" ]
+  # Each index links the evidence its own folder holds.
+  grep -qF '| [./1-restyle-the-page.md](./1-restyle-the-page.md) · [evidence](./1-restyle-the-page/) |' "$d/README.md"
+  grep -qF '| [./2-trim-the-bundle.md](./2-trim-the-bundle.md) · [evidence](./2-trim-the-bundle/) |' "$r/README.md"
+}
+
+@test "an evidence folder that cannot be filed whole stays live with its receipt's copy filed" {
+  p="$(new_project evidence-partial)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r/1-restyle-the-page"
+  printf 'Date: 2026-09-05\n\n## Items\n- [x] **1. Restyle the page.**\n' >"$p/.nightshift/punch-list.md"
+  printf '# 1. Restyle the page.\n\n![before](./1-restyle-the-page/before.png)\n' >"$r/1-restyle-the-page.md"
+  printf 'PNG-before' >"$r/1-restyle-the-page/before.png"
+  printf 'outside\n' >"$BATS_TEST_TMPDIR/outside.txt"
+  ln -s "$BATS_TEST_TMPDIR/outside.txt" "$r/1-restyle-the-page/linked.txt"
+  closed "$p"
+  run bash "$ARCHIVE_SH" --project "$p" --date 2026-09-05
+  [ "$status" -eq 0 ]
+  d="$p/.nightshift/archive/2026-09-05/receipts"
+  [ -f "$d/1-restyle-the-page/before.png" ]
+  [ ! -e "$d/1-restyle-the-page/linked.txt" ]
+  # A link is never followed, so the folder is not whole and nothing in it is lost.
+  [ -f "$r/1-restyle-the-page/before.png" ]
+  [[ "$output" == *'1-restyle-the-page/ (not every file in it could be filed)'* ]] || { printf '%s\n' "$output"; return 1; }
+}
+
 @test "the live index goes away when nothing is left to list" {
   p="$(new_project rot-index-gone)"
   r="$p/.nightshift/receipts"

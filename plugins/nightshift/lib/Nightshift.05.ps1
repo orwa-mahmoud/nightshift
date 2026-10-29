@@ -29,7 +29,6 @@ function Write-NSReceiptsIndex {
             $state = $row.State
             $label = $row.Label
             $base = Get-NSReceiptBase $Workspace $label $row.Id
-            $file = './' + $base + '.md'
             $path = Join-Path $dir ($base + '.md')
             if ($Remaining -and $state -ceq 'ticked' -and
                 -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
@@ -39,8 +38,8 @@ function Write-NSReceiptsIndex {
             $twork += [long]$cells['Work']; $tpause += [long]$cells['Pause']
             if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
             if ($cells['Time'] -ceq 'off') { $offTime = $true }
-            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [{4}]({4}) |' -f
-                $label, $state, $cells['Tokens'], $cells['Time'], $file))
+            $rows.Add(('| {0} | {1} | **{2}** | **{3}** | {4} |' -f
+                $label, $state, $cells['Tokens'], $cells['Time'], (Get-NSReceiptCell $dir ($base + '.md'))))
         }
     }
     if ($Remaining -and $rows.Count -eq 0) {
@@ -52,7 +51,7 @@ function Write-NSReceiptsIndex {
         (Get-NSReceiptsIndexPage -Date (Get-NSReceiptsShiftDate $Workspace) -Rows $rows.ToArray() `
             -UsageTotal (Get-NSIndexTotal (Get-NSIndexUsageTotalCell $usageTotal) $offUsage) `
             -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
-            -Morning (Get-NSReceiptsMorningNames $dir)), $utf8)
+            -Morning (Get-NSReceiptsMorningNames $dir) -ShiftMap:(Test-NSShiftMapPage $dir)), $utf8)
 }
 
 # Get-NSIndexTotal <cell> <any-off> - a totals cell: off when nothing was measured because a row's
@@ -133,12 +132,6 @@ function Get-NSUsageScale {
         $tenths = [long][math]::Floor(([decimal]$n * 10 + $units[$i] / 2) / $units[$i])
     }
     return ('{0}.{1}{2}' -f [long][math]::Floor([decimal]$tenths / 10), ($tenths % 10), $suffixes[$i])
-}
-
-# Get-NSReportPath kept as the receipts folder path only for callers not yet moved.
-function Get-NSReportPath {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    return (Get-NSReceiptsDir $Workspace)
 }
 
 # Get-NSPolicyHostName - which host this session is, from what the host itself sets.
@@ -443,14 +436,17 @@ function Get-NSPolicyGroupSetting {
         elseif ($Name -ceq 'archive.layout') { $ended = Get-NSEndedField $Workspace 'archiveLayout' }
         if (-not [string]::IsNullOrEmpty($ended)) { return (New-NSPolicySetting $ended 'one-shift' 'shift') }
     }
+    # A field one level down, receipts.evidence.fileMap, is read through its own object.
+    $parts = $key.Split('.')
     if ($state['state'] -ceq 'valid') {
-        $frozen = Get-NSMapValue $state['policy'] $block
-        if ($frozen -is [Collections.IDictionary] -and $frozen.Contains($key)) {
-            $value = $frozen[$key]
-            if ($null -ne $value) {
-                if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'one-shift' 'shift') }
-                return (New-NSPolicySetting $value 'one-shift' 'shift')
-            }
+        $node = Get-NSMapValue $state['policy'] $block
+        foreach ($part in $parts) {
+            if ($node -is [Collections.IDictionary] -and $node.Contains($part)) { $node = $node[$part] }
+            else { $node = $null; break }
+        }
+        if ($null -ne $node) {
+            if ($node -is [Array]) { return (New-NSPolicySetting ([object[]]@($node)) 'one-shift' 'shift') }
+            return (New-NSPolicySetting $node 'one-shift' 'shift')
         }
     }
 
@@ -458,7 +454,12 @@ function Get-NSPolicyGroupSetting {
     if ($null -eq $rules) { return (New-NSPolicySetting $fallback 'built-in' '-') }
     $property = $rules.PSObject.Properties[$block]
     if ($null -eq $property -or $null -eq $property.Value) { return (New-NSPolicySetting $fallback 'built-in' '-') }
-    $inner = $property.Value.PSObject.Properties[$key]
+    $inner = $property
+    foreach ($part in $parts) {
+        if ($null -eq $inner.Value -or $inner.Value -isnot [Management.Automation.PSCustomObject]) { $inner = $null; break }
+        $inner = $inner.Value.PSObject.Properties[$part]
+        if ($null -eq $inner) { break }
+    }
     if ($null -eq $inner) { return (New-NSPolicySetting $fallback 'built-in' '-') }
     $value = $inner.Value
     if ($value -is [Array]) { return (New-NSPolicySetting ([object[]]@($value)) 'rules' 'permanent') }
@@ -635,19 +636,6 @@ function Resolve-NSPolicy {
     $document['schemaVersion'] = 1
     $document['settings'] = $resolution['settings']
     return (ConvertTo-NSCanonicalJson $document -Compact)
-}
-
-# The gate honours the earlier of the two, so a deadline file that drifts from
-# the policy shortens the night rather than extending it.
-function Get-NSPolicyDeadlineEpoch {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $resolution = Get-NSPolicyResolution $Workspace
-    $file = $resolution['deadlineFile']
-    $fromPolicy = $resolution['deadlinePolicy']
-    if ($null -eq $file) { return $fromPolicy }
-    if ($null -eq $fromPolicy) { return $file }
-    if ([long]$file -lt [long]$fromPolicy) { return [long]$file }
-    return [long]$fromPolicy
 }
 
 # 0 allow - 1 deny - 2 the category is denied and no exact plan covers this
@@ -1376,13 +1364,6 @@ function Get-NSProvisionByteSha256 {
     $builder = New-Object Text.StringBuilder
     foreach ($byte in $hash) { $null = $builder.Append($byte.ToString('x2')) }
     return $builder.ToString()
-}
-
-# The blob file name is the digest of the normalized relative path, so the store
-# is addressable without reading the transaction.
-function Get-NSProvisionBlobId {
-    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Rel)
-    return (Get-NSTextSha256 (Get-NSProvisionRelPath $Rel))
 }
 
 # Every path the engine touches is relative, inside the work target, and never an

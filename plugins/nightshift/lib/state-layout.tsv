@@ -23,6 +23,8 @@ receipt-template	0	receipt-item.md	stray
 shift-defaults	0	shift-defaults.json	file
 receipts	0	receipts	dir
 receipts-index	0	receipts/README.md	file
+shift-map	0	receipts/shift-map.md	file
+architecture	0	receipts/architecture.md	file
 previous-report	0	shift-report.md	file
 previous-report	1	receipts/previous-report.md	file
 archive	0	archive	dir
@@ -63,6 +65,10 @@ capabilities	0	capabilities.json	file
 capabilities	2	run/capabilities.json	file
 deadline	0	deadline	file
 deadline	2	run/deadline	file
+file-map	0	file-map	file
+file-map	2	run/file-map	file
+architecture-state	0	architecture-state	file
+architecture-state	2	run/architecture	file
 usage	0	usage	dir
 usage	2	run/usage	dir
 usage-shift	0	usage-*	dir

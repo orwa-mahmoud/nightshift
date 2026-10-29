@@ -36,7 +36,8 @@ carries its `handoff.sections` id in brackets.
 
 1. **How it ended** (`shift`) — the shift id, host, and work target; when it started and ended, both
    in UTC with the zone written out; how it ended (done, a stop-work order, quitting time, or a
-   stall); how many items were open versus ticked; commits or artifact receipts; and the policy
+   stall); how many items were open versus ticked; commits or artifact receipts; with
+   `receipts.evidence.fileMap` on, a `Files:` line with the shift map's totals; and the policy
    that actually ran — verification level, tooling policy, and every elevation allowance with its
    provenance. The start is the arming mark, or the policy's `createdAt` when the shift kept no
    usage marks, and commits are counted from that moment; the end is when the clock-out gate
@@ -83,10 +84,13 @@ carries its `handoff.sections` id in brackets.
    human-only, then one line per fix naming the item, its commit or receipt, how to re-verify it,
    and what the same source reported afterward. A tool that failed or went unavailable mid-shift is
    reported exactly that way — never folded into the cleared count.
-10. **Unsupported / unmeasured** (`unsupported`) — surfaces the ledger could not put through the
+10. **Architecture** (`architecture`) — with `receipts.evidence.architecture` on, the shift's
+    diagram as it was left, linked, and each item whose receipt says `Diagram: updated — …`, with
+    what it changed.
+11. **Unsupported / unmeasured** (`unsupported`) — surfaces the ledger could not put through the
     usual pass/fail path: human-only judgment calls, unsupported checks, and anything left
     unmeasured.
-11. **Next step** (`next`) — the open items, the single opportunity marked `Status: building`
+12. **Next step** (`next`) — the open items, the single opportunity marked `Status: building`
     during a product-evolution or owner-walkthrough shift, and the exact next action from the last
     handover line in the shift log.
 
@@ -98,12 +102,13 @@ checks is stated, not implied by a missing section.
 ## Which view is for whom
 
 - **owner** (the default) — every section above, in that order. Read this one first.
-- **reviewer** — Review first, Baseline and What changed, with every locator intact, for someone
-  re-running the verification rather than trusting the tick.
+- **reviewer** — Review first, Baseline, What changed and Architecture, with every locator
+  intact, for someone re-running the verification rather than trusting the tick.
 - **release** — How it ended plus a What changed narrowed to regressions: a release decision needs
   to see the regression count confirmed at zero, not infer it from an empty table.
-- **artifact** — every section except Baseline and What changed, for a persistent-folder shift with
-  no repository behind it. Commits become receipts and no git terminology appears.
+- **artifact** — every section except Baseline, What changed and Architecture, for a
+  persistent-folder shift with no repository behind it. Commits become receipts and
+  no git terminology appears.
 
 `handoff.sections` picks and orders sections by the ids above for any view; an empty list keeps
 the view's own order. All four views read the same underlying records, so none of them can

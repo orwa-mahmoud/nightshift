@@ -58,8 +58,8 @@ ns_pulse_usage() {
   ns_layout_set armed "$ns" armed
   [ -f "$armed" ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
-  ns_report_enabled "${ns%/.nightshift}" || return 0
-  [ "$(ns_report "${ns%/.nightshift}" usage)" != off ] || return 0
+  ns_receipts_enabled "${ns%/.nightshift}" || return 0
+  [ "$(ns_receipts "${ns%/.nightshift}" usage)" != off ] || return 0
   # The shift's own start, stood up before the first reading so it sits at zero. A baseline taken
   # after spend had already accrued would swallow the first item's cost. The transcripts go with
   # it: whatever the setting-up conversation already wrote is where reading begins, not byte zero.
@@ -182,22 +182,44 @@ ns_pulse_receipts_basename() {
   ns_receipt_base "$1" "$2"
 }
 
-# ns_pulse_receipts_sections <project> — the approach clause on an item-start notice.
+# ns_pulse_receipts_sections <project> <label> — the approach clause on an item-start notice. An
+# item that asks for evidence, or a shift that asks it of every item, gets an Evidence section and
+# the folder its large files go in.
 ns_pulse_receipts_sections() {
-  local path
+  local path folder="" shift_default=""
+  if ns_item_evidence_asked "$(ns_layout_path "$1/.nightshift" punch-list)" "$2"; then
+    folder="$(ns_layout_name "$1/.nightshift" receipts)/$(ns_pulse_receipts_basename "$1" "$2")/"
+  else
+    shift_default="$(ns_receipts "$1" evidence.default 2>/dev/null)" || shift_default=""
+    [ -z "$shift_default" ] ||
+      folder="$(ns_layout_name "$1/.nightshift" receipts)/$(ns_pulse_receipts_basename "$1" "$2")/"
+  fi
   path="$(ns_receipts "$1" templatePath 2>/dev/null)" || path=""
   if [ -n "$path" ]; then
     printf 'follow the owner'\''s template at %s' "$path"
+    [ -n "$folder" ] || return 0
+    printf ', with an Evidence section'
+  elif [ -n "$folder" ]; then
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Evidence · Outputs · Parked decisions and snags'
+  else
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
     return 0
   fi
-  printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+  [ -z "$shift_default" ] || printf '; the shift asks every item for this evidence: %s' "$shift_default"
+  printf '; short evidence inline, large files in %s linked relatively, and evidence that could not be produced written as %s.' \
+    "$folder" "\`unavailable — <reason>\`"
 }
 
-# ns_pulse_receipts_start_line <project> <label>
+# ns_pulse_receipts_start_line <project> <label> — with the architecture diagram on, the notice also
+# carries the step the item owes it.
 ns_pulse_receipts_start_line() {
+  local sections diagram
+  sections="$(ns_pulse_receipts_sections "$1" "$2")"
+  diagram="$(ns_architecture_notice "$1")"
+  [ -z "$diagram" ] || sections="${sections%.}; $diagram."
   printf 'receipts: item %s started — open %s/%s.md with one paragraph on the approach; %s' \
     "$2" "$(ns_layout_name "$1/.nightshift" receipts)" "$(ns_pulse_receipts_basename "$1" "$2")" \
-    "$(ns_pulse_receipts_sections "$1")"
+    "$sections"
 }
 
 # ns_pulse_receipts_tick_line <project> <label>
@@ -406,7 +428,7 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   # the report on. Anything else is a to-do list in a folder, and it is not billed.
   [ -f "$(ns_layout_path "$ns" armed)" ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
-  ns_report_enabled "$project" || return 0
+  ns_receipts_enabled "$project" || return 0
   ns_layout_set punch "$ns" punch-list
   [ -f "$punch" ] || return 0
   # This file's own directory, never the caller's. The Codex and Cursor pulses source this file and

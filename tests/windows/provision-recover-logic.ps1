@@ -315,7 +315,7 @@ function New-TestBaselineExisted {
         $meta['blob'] = $null
     }
     else {
-        $meta['blob'] = Get-NSProvisionBlobId $Rel
+        $meta['blob'] = (Get-NSTextSha256 (Get-NSProvisionRelPath $Rel))
     }
     if ($NoContent.IsPresent) {
         $meta['content'] = $null
@@ -342,7 +342,7 @@ function Write-TestBlob {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text
     )
     $null = New-Item -ItemType Directory -Path $Store -Force
-    [IO.File]::WriteAllBytes((Join-Path $Store (Get-NSProvisionBlobId $Rel)), $utf8.GetBytes($Text))
+    [IO.File]::WriteAllBytes((Join-Path $Store ((Get-NSTextSha256 (Get-NSProvisionRelPath $Rel)))), $utf8.GetBytes($Text))
 }
 
 function Get-TestFileText {

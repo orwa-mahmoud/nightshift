@@ -35,11 +35,20 @@ $expected = @{
         'line 29: a checkbox outside an item line counts as an open item',
         'checked 5 items: 5 with findings, 2 stray checkboxes')
     'mixed' = @('**1. Ship the site.**: ok', '**2. Write the about page.**: no Commit: line', 'checked 2 items: 1 with findings')
+    'evidence' = @('**1. No evidence line.**: ok', '**2. Evidence on one line.**: ok', '**3. Evidence as a list.**: ok',
+        '**4. Evidence that names nothing.**: Evidence: names nothing',
+        '**5. Evidence that names nothing, last.**: Evidence: names nothing',
+        'checked 5 items: 2 with findings')
 }
-foreach ($name in @('well-formed', 'defects', 'mixed')) {
+foreach ($name in @('well-formed', 'defects', 'mixed', 'evidence')) {
     $run = Invoke-Check (Join-Path $fixtures ($name + '.md'))
     Expect-True ($run.Code -eq 0 -and $run.Text -ceq ($expected[$name] -join "`n")) "${name}: $($run.Text)"
 }
+$blank = Join-Path ([IO.Path]::GetTempPath()) ('check-items-blank-' + [guid]::NewGuid().ToString('N') + '.md')
+[IO.File]::WriteAllText($blank, "- [ ] **1. Blank evidence.**`n  - Verify: ``true```n  - Evidence:   `n  - Commit: ``feat: x```n")
+$run = Invoke-Check $blank
+Remove-Item -LiteralPath $blank -Force
+Expect-True ($run.Code -eq 0 -and ($run.Text -split "`n") -ccontains '**1. Blank evidence.**: Evidence: names nothing') "blank evidence: $($run.Text)"
 $missing = Invoke-Check (Join-Path $fixtures 'not-there.md')
 Expect-True ($missing.Code -eq 0 -and $missing.Text.StartsWith('no items to check')) "missing file: $($missing.Text)"
 

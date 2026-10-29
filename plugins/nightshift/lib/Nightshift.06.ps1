@@ -268,12 +268,13 @@ $script:NSReceiptSectionTitle['parked'] = '## Decisions for you'
 $script:NSReceiptSectionTitle['snags'] = '## Found but not fixed'
 $script:NSReceiptSectionTitle['baseline'] = '## Baseline'
 $script:NSReceiptSectionTitle['changed'] = '## What changed'
+$script:NSReceiptSectionTitle['architecture'] = '## Architecture'
 $script:NSReceiptSectionTitle['unsupported'] = '## Unsupported / unmeasured'
 $script:NSReceiptSectionTitle['next'] = '## Next step'
 
 $script:NSReceiptViewSections = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
-$script:NSReceiptViewSections['owner'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'baseline', 'changed', 'unsupported', 'next')
-$script:NSReceiptViewSections['reviewer'] = @('review', 'baseline', 'changed')
+$script:NSReceiptViewSections['owner'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'baseline', 'changed', 'architecture', 'unsupported', 'next')
+$script:NSReceiptViewSections['reviewer'] = @('review', 'baseline', 'changed', 'architecture')
 $script:NSReceiptViewSections['release'] = @('shift', 'changed')
 $script:NSReceiptViewSections['artifact'] = @('shift', 'usage', 'items', 'review', 'interruptions', 'parked', 'snags', 'unsupported', 'next')
 
@@ -296,6 +297,7 @@ $script:NSReceiptLabels['ending'] = 'Ending'
 $script:NSReceiptLabels['items'] = 'Items'
 $script:NSReceiptLabels['commits'] = 'Commits'
 $script:NSReceiptLabels['receipts'] = 'Receipts'
+$script:NSReceiptLabels['files'] = 'Files'
 $script:NSReceiptLabels['policy'] = 'Policy'
 $script:NSReceiptLabels['allowance'] = 'Allowance'
 $script:NSReceiptLabels['gates'] = 'Gates'
@@ -1465,6 +1467,8 @@ function Get-NSReceiptShiftLines {
         # read as a night that committed nothing.
         Add-NSReceiptField $lines 'commits' (Get-NSReceiptCommitCount -Target ([string]$Context['workTarget']) -Since ([string]$Context['since']))
     }
+    $filesSummary = Get-NSFileMapSummary (Get-NSLayoutPath (Join-Path ([string]$Context['workspace']) '.nightshift') 'shift-map')
+    if ($filesSummary.Length -gt 0) { Add-NSReceiptField $lines 'files' ($filesSummary + ' ([shift-map.md](./shift-map.md))') }
     $profile = [string]$Context['profile']
     if ($profile.Length -eq 0) { $profile = $script:NSReceiptNone }
     Add-NSReceiptField $lines 'policy' ($script:NSReceiptPolicyFormat -f $profile, ([string]$Context['verificationLevel']), ([string]$Context['toolingPolicy']))
@@ -1869,6 +1873,40 @@ function Get-NSReceiptNextLines {
     return , $lines.ToArray()
 }
 
+# Get-NSReceiptArchitectureLines <context> - the diagram as the shift left it, and the items that
+# changed it. Only while receipts.evidence.architecture is on and the diagram exists. Mirrors
+# _lines_architecture.
+function Get-NSReceiptArchitectureLines {
+    param($Context)
+    $lines = New-Object Collections.Generic.List[string]
+    $workspace = [string]$Context['workspace']
+    if (-not (Test-NSArchitectureEnabled $workspace)) { return , $lines.ToArray() }
+    $page = Get-NSLayoutPath ([string]$Context['ns']) 'architecture'
+    if (-not (Test-Path -LiteralPath $page -PathType Leaf) -or (Test-NSReparsePoint $page)) { return , $lines.ToArray() }
+    $lines.Add('[architecture.md](./architecture.md), as the shift left it:')
+    $lines.Add('')
+    $started = $false
+    foreach ($raw in [IO.File]::ReadAllLines($page)) {
+        $line = $raw.TrimEnd("`r")
+        if (-not $started) {
+            if ($line.StartsWith('# ', [StringComparison]::Ordinal) -or $line.Length -eq 0) { continue }
+            $started = $true
+        }
+        $lines.Add($line)
+    }
+    while ($lines.Count -gt 1 -and $lines[$lines.Count - 1].Length -eq 0) { $lines.RemoveAt($lines.Count - 1) }
+    $lines.Add('')
+    $changes = Get-NSArchitectureChanges $workspace
+    if ($changes.Count -gt 0) {
+        $lines.Add('Changed by:')
+        foreach ($change in $changes) { $lines.Add('- ' + $change.Label + ' ' + (Get-NSEvidenceDash) + ' ' + $change.What) }
+    }
+    else {
+        $lines.Add('Changed by: no item this shift.')
+    }
+    return , $lines.ToArray()
+}
+
 function Get-NSReceiptSectionLines {
     param([Parameter(Mandatory = $true)][string]$Key, $Context)
     switch ($Key) {
@@ -1881,6 +1919,7 @@ function Get-NSReceiptSectionLines {
         'snags' { return (Get-NSReceiptSnagLines $Context) }
         'baseline' { return (Get-NSReceiptBaselineLines $Context) }
         'changed' { return (Get-NSReceiptChangedLines $Context) }
+        'architecture' { return (Get-NSReceiptArchitectureLines $Context) }
         'unsupported' { return (Get-NSReceiptUnsupportedLines $Context) }
         'next' { return (Get-NSReceiptNextLines $Context) }
     }

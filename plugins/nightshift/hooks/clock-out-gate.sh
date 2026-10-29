@@ -181,7 +181,7 @@ render_morning_receipt() {
   fi
   if err="$(bash "$renderer" --project "$PROJECT_DIR" --out "$out" 2>&1)"; then
     # The receipts index links the page it now has.
-    if ns_report_enabled "$PROJECT_DIR"; then ns_receipts_write_index "$PROJECT_DIR"; fi
+    if ns_receipts_enabled "$PROJECT_DIR"; then ns_receipts_write_index "$PROJECT_DIR"; fi
     return 0
   fi
   log_line "morning receipt render failed: $(printf '%s' "$err" | head -n1)"

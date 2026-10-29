@@ -151,7 +151,6 @@ new_artifact() {
     return 1
   fi
   [ "$(bash -c '. "$1"; ns_receipts_count "$2"' _ "$LIB" "$a")" = 0 ]
-  [ "$(bash -c '. "$1"; ns_receipts_fingerprint "$2"' _ "$LIB" "$a")" = none ]
   run bash "$DOCTOR" --project "$a"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'artifact receipts 0'
@@ -459,4 +458,16 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'ns_gate_progress_token' "$CORE"
   grep -qF 'ns_gate_progress_token' "$GATE"
   grep -qF 'ns_gate_progress_token' "$CODEX_GATE"
+}
+
+@test "a receipt's evidence: a section when asked, a folder beside it, and a gap written, never a held tick" {
+  flat() { tr '\n' ' ' <"$1" | tr -s ' '; }
+  flat "$NIGHTSHIFT" | grep -qF 'An item with an `Evidence:` line also gets an `## Evidence` section after Verification.'
+  flat "$NIGHTSHIFT" | grep -qF 'could not be produced is written as `unavailable — <reason>`, never left out. Evidence never holds a tick.'
+  flat "$NIGHTSHIFT" | grep -qF 'a folder named after the receipt, beside it, linked relatively'
+  receipt="$SKILLS/nightshift/references/templates/receipt-item.md"
+  grep -qx '## Evidence' "$receipt"
+  flat "$receipt" | grep -qF '`unavailable — <reason>`'
+  # The section sits between Verification and Outputs.
+  [ "$(grep -n '^## ' "$receipt" | sed 's/^[0-9]*:## //' | tr '\n' '|')" = 'What was delivered|Why|Tried and rejected|Verification|Evidence|Outputs|Parked decisions and snags|' ]
 }

@@ -1721,19 +1721,6 @@ function Convert-NSTokenizedText {
     return $out
 }
 
-function Convert-NSSanitizedLine {
-    param(
-        [AllowEmptyString()][string]$Text,
-        [AllowEmptyString()][string]$HomeRoot = '',
-        [AllowEmptyString()][string]$Workspace = '',
-        [AllowEmptyString()][string]$Target = ''
-    )
-    if (Test-NSSecretLine $Text) {
-        return $null
-    }
-    return Convert-NSTokenizedText $Text $HomeRoot $Workspace $Target
-}
-
 function Expand-NSInjectedPaths {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,

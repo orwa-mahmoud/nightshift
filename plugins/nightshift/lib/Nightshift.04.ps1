@@ -1318,6 +1318,9 @@ function Rename-NSReceipts {
         $want = (Get-NSReceiptWant $Workspace $row.Label $row.Id) + '.md'
         if ($name -ceq $want) { continue }
         if (Test-Path -LiteralPath (Join-Path $dir $want)) { continue }
+        # The evidence folder moves with its receipt, so a name its folder cannot take is not taken.
+        if ((Test-Path -LiteralPath (Join-Path $dir $name.Substring(0, $name.Length - 3)) -PathType Container) -and
+            (Test-Path -LiteralPath (Join-Path $dir $want.Substring(0, $want.Length - 3)))) { continue }
         try {
             $old = Join-Path $dir $name
             Sync-NSReceiptSessions $old
@@ -1325,6 +1328,7 @@ function Rename-NSReceipts {
             if (Test-Path -LiteralPath (Get-NSReceiptSessionFile $old) -PathType Leaf) { Set-NSReceiptSessions $new (Get-NSReceiptSessionData $old) }
             [IO.File]::Move($old, $new)
             Remove-NSReceiptSessions $old
+            Move-NSReceiptEvidence $dir $name $want
             Update-NSReceiptLinks $dir $name $want
         }
         catch {
@@ -1335,17 +1339,116 @@ function Rename-NSReceipts {
     return $ok
 }
 
-# Update-NSReceiptLinks <receipts-dir> <old-name> <new-name> - a morning page links each receipt by its
-# file name, so after a rename the pages in the folder link the new name. Mirrors ns_receipts_relink.
+# Update-NSReceiptLinks <receipts-dir> <old-name> <new-name> - a morning page links each receipt, and
+# its evidence folder, by name, so after a rename the pages in the folder link the new names.
+# Mirrors ns_receipts_relink.
 function Update-NSReceiptLinks {
     param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$OldName,
           [Parameter(Mandatory = $true)][string]$NewName)
-    foreach ($page in @(Get-ChildItem -LiteralPath $Directory -Filter 'morning-*.md' -File -ErrorAction SilentlyContinue)) {
+    $oldStem = $OldName -creplace '\.md$', ''
+    $newStem = $NewName -creplace '\.md$', ''
+    foreach ($page in @(Get-ChildItem -LiteralPath $Directory -Filter '*.md' -File -ErrorAction SilentlyContinue)) {
         if (Test-NSReparsePoint $page.FullName) { continue }
         $text = [IO.File]::ReadAllText($page.FullName)
-        $relinked = $text.Replace('(./' + $OldName + ')', '(./' + $NewName + ')')
-        if ($relinked -cne $text) { [IO.File]::WriteAllText($page.FullName, $relinked, (New-Object Text.UTF8Encoding($false))) }
+        $relinked = $text
+        if ($page.Name.StartsWith('morning-', [StringComparison]::Ordinal)) {
+            $relinked = $relinked.Replace('(./' + $OldName + ')', '(./' + $NewName + ')')
+        }
+        $relinked = $relinked.Replace('(./' + $oldStem + '/', '(./' + $newStem + '/')
+        if ($relinked -cne $text) {
+            $stamp = [IO.File]::GetLastWriteTimeUtc($page.FullName)
+            [IO.File]::WriteAllText($page.FullName, $relinked, (New-Object Text.UTF8Encoding($false)))
+            [IO.File]::SetLastWriteTimeUtc($page.FullName, $stamp)
+        }
     }
+}
+
+# Write-NSReceiptBlock <receipt> <name> <body> - a block the runtime generates in a receipt, between
+# `<!-- nightshift:<name> -->` and its closing comment: replaced where it stands, or added at the end
+# the first time. The receipt keeps its time. Mirrors ns_receipt_write_block.
+function Write-NSReceiptBlock {
+    param([Parameter(Mandatory = $true)][string]$Receipt, [Parameter(Mandatory = $true)][string]$Name,
+          [Parameter(Mandatory = $true)][string]$Body)
+    if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return }
+    $first = '<!-- nightshift:' + $Name + ' -->'
+    $last = '<!-- /nightshift:' + $Name + ' -->'
+    $block = $first + "`n" + $Body + $last + "`n"
+    $stamp = [IO.File]::GetLastWriteTimeUtc($Receipt)
+    $all = [IO.File]::ReadAllText($Receipt).Split("`n")
+    $count = $all.Count
+    if ($count -gt 0 -and $all[$count - 1].Length -eq 0) { $count-- }
+    $present = $false
+    for ($i = 0; $i -lt $count; $i++) { if ($all[$i].TrimEnd("`r") -ceq $first) { $present = $true; break } }
+    $out = New-Object Text.StringBuilder
+    $kept = New-Object Collections.Generic.List[string]
+    $skip = $false
+    $done = $false
+    for ($i = 0; $i -lt $count; $i++) {
+        $raw = $all[$i]
+        $line = $raw.TrimEnd("`r")
+        if ($line -ceq $first) {
+            if (-not $done) { $null = $out.Append($block) }
+            $done = $true; $skip = $true; continue
+        }
+        if ($skip -and $line -ceq $last) { $skip = $false; continue }
+        if ($skip) { continue }
+        if ($present) { $null = $out.Append($raw).Append("`n") } else { $kept.Add($raw) }
+    }
+    if (-not $present) {
+        while ($kept.Count -gt 0 -and $kept[$kept.Count - 1] -cmatch '^[ \t\f\v\r]*$') { $kept.RemoveAt($kept.Count - 1) }
+        foreach ($l in $kept) { $null = $out.Append($l).Append("`n") }
+        if ($kept.Count -gt 0) { $null = $out.Append("`n") }
+        $null = $out.Append($block)
+    }
+    [IO.File]::WriteAllText($Receipt, $out.ToString(), (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::SetLastWriteTimeUtc($Receipt, $stamp)
+}
+
+# Get-NSReceiptEvidenceDir <receipts-dir> <receipt-name> - an item's evidence folder: the folder named
+# after its receipt, beside it, returned only when it is a real folder holding at least one file.
+# Mirrors ns_receipt_evidence_dir.
+function Get-NSReceiptEvidenceDir {
+    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$Name)
+    $folder = Join-Path $Directory ($Name -creplace '\.md$', '')
+    if (-not (Test-Path -LiteralPath $folder -PathType Container) -or (Test-NSReparsePoint $folder)) { return '' }
+    $any = @(Get-ChildItem -LiteralPath $folder -File -Recurse -Force -ErrorAction SilentlyContinue |
+        Where-Object { -not $_.Name.StartsWith('.') } | Select-Object -First 1)
+    if ($any.Count -eq 0) { return '' }
+    return $folder
+}
+
+# Move-NSReceiptEvidence <receipts-dir> <old-name> <new-name> - after a receipt is renamed, carry its
+# evidence folder to the new name and repoint the receipt's links into it. The receipt keeps its
+# modification time. Mirrors ns_receipt_evidence_move.
+function Move-NSReceiptEvidence {
+    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$OldName,
+          [Parameter(Mandatory = $true)][string]$NewName)
+    $old = $OldName -creplace '\.md$', ''
+    $new = $NewName -creplace '\.md$', ''
+    $from = Join-Path $Directory $old
+    if (-not (Test-Path -LiteralPath $from -PathType Container) -or (Test-NSReparsePoint $from)) { return }
+    $to = Join-Path $Directory $new
+    if (Test-Path -LiteralPath $to) { throw ('evidence folder ' + $new + ' is already there') }
+    [IO.Directory]::Move($from, $to)
+    $receipt = Join-Path $Directory ($new + '.md')
+    if (-not (Test-Path -LiteralPath $receipt -PathType Leaf) -or (Test-NSReparsePoint $receipt)) { return }
+    $text = [IO.File]::ReadAllText($receipt)
+    $relinked = $text.Replace('](./' + $old + '/', '](./' + $new + '/').Replace('](' + $old + '/', '](' + $new + '/')
+    if ($relinked -ceq $text) { return }
+    $stamp = [IO.File]::GetLastWriteTimeUtc($receipt)
+    [IO.File]::WriteAllText($receipt, $relinked, (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::SetLastWriteTimeUtc($receipt, $stamp)
+}
+
+# Get-NSReceiptCell <receipts-dir> <receipt-name> - an index row's Receipt cell: the receipt, and its
+# evidence folder when it holds anything. Mirrors ns_receipt_cell.
+function Get-NSReceiptCell {
+    param([Parameter(Mandatory = $true)][string]$Directory, [Parameter(Mandatory = $true)][string]$Name)
+    $cell = '[./{0}](./{0})' -f $Name
+    if ((Get-NSReceiptEvidenceDir $Directory $Name).Length -gt 0) {
+        $cell += (' ' + [string][char]0x00B7 + ' [evidence](./{0}/)' -f ($Name -creplace '\.md$', ''))
+    }
+    return $cell
 }
 
 function Get-NSReceiptPath {
@@ -2219,6 +2322,13 @@ function Get-NSReceiptsMorningNames {
     return , $sorted
 }
 
+# Test-NSShiftMapPage <receipts-dir> - true when the folder holds the shift's file map.
+function Test-NSShiftMapPage {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+    $page = Join-Path $Directory 'shift-map.md'
+    return ((Test-Path -LiteralPath $page -PathType Leaf) -and -not (Test-NSReparsePoint $page))
+}
+
 function Get-NSReceiptsIndexPage {
     param(
         [Parameter(Mandatory = $true)][string]$Date,
@@ -2226,7 +2336,8 @@ function Get-NSReceiptsIndexPage {
         [string]$UsageTotal = '',
         [string]$TimeTotal = '',
         [long]$TokenTotal = 0,
-        [AllowEmptyCollection()][string[]]$Morning = @()
+        [AllowEmptyCollection()][string[]]$Morning = @(),
+        [switch]$ShiftMap
     )
     $dash = [string][char]0x2014
     $tokCell = $(if (-not [string]::IsNullOrEmpty($UsageTotal)) { $UsageTotal }
@@ -2238,6 +2349,10 @@ function Get-NSReceiptsIndexPage {
     $lines.Add('')
     foreach ($name in $Morning) {
         $lines.Add(('Shift summary: [{0}](./{0})' -f $name))
+        $lines.Add('')
+    }
+    if ($ShiftMap) {
+        $lines.Add('Shift file map: [shift-map.md](./shift-map.md)')
         $lines.Add('')
     }
     $lines.Add('| Item | State | **Usage** | **Time** | Receipt |')
@@ -2328,7 +2443,7 @@ function Write-NSArchiveReceiptsIndex {
         if ($name -ceq 'README.md' -or
             $name.StartsWith('morning-', [StringComparison]::Ordinal) -or
             $name.StartsWith('x-', [StringComparison]::Ordinal) -or
-            $name.EndsWith('.original.md', [StringComparison]::Ordinal)) { continue }
+            $name.EndsWith('.original.md', [StringComparison]::Ordinal) -or $name -ceq 'shift-map.md' -or $name -ceq 'architecture.md') { continue }
         $label = ''
         foreach ($line in [IO.File]::ReadAllLines($file.FullName)) {
             if ($line -cmatch '^# (.+)$') { $label = $Matches[1]; break }
@@ -2362,8 +2477,8 @@ function Write-NSArchiveReceiptsIndex {
         if ($cells['Tokens'] -ceq 'off') { $offUsage = $true }
         if ($cells['Time'] -ceq 'off') { $offTime = $true }
         $state = $(if ($OpenNames -ccontains $name) { 'open' } else { 'ticked' })
-        $rows.Add(('| {0} | {1} | **{2}** | **{3}** | [./{4}](./{4}) |' -f
-            $label, $state, $cells['Tokens'], $cells['Time'], $name))
+        $rows.Add(('| {0} | {1} | **{2}** | **{3}** | {4} |' -f
+            $label, $state, $cells['Tokens'], $cells['Time'], (Get-NSReceiptCell $Directory $name)))
     }
     if ($rows.Count -eq 0) { return }
     $utf8 = New-Object Text.UTF8Encoding($false)
@@ -2371,6 +2486,6 @@ function Write-NSArchiveReceiptsIndex {
         (Get-NSReceiptsIndexPage -Date $Date -Rows $rows.ToArray() `
             -UsageTotal (Get-NSIndexTotal (Get-NSIndexUsageTotalCell $usageTotal) $offUsage) `
             -TimeTotal (Get-NSIndexTotal (Get-NSReceiptsTimeTotalCell $twork $tpause) $offTime) `
-            -Morning (Get-NSReceiptsMorningNames $Directory)), $utf8)
+            -Morning (Get-NSReceiptsMorningNames $Directory) -ShiftMap:(Test-NSShiftMapPage $Directory)), $utf8)
 }
 

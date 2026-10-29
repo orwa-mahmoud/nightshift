@@ -361,7 +361,7 @@ function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
   fields["recovery"] = "launchScope"
   fields["handoff"] = "detail enabled language sections templatePath view"
   fields["archive"] = "automatic layout root templatePath"
-  fields["receipts"] = "duration enabled progressMinutes progressMode progressTokens templatePath usage"
+  fields["receipts"] = "duration enabled evidence.architecture evidence.default evidence.fileMap progressMinutes progressMode progressTokens templatePath usage"
   for (j = 1; j <= count; j++) {
     put("ty\t" blocks[j] "\t" ptype(blocks[j]))
     if (!(blocks[j] in V_TYPE)) {
@@ -1196,7 +1196,7 @@ function parse_top_value(key,    c) {
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
         key == "receipts" || key == "planRoom") {
       emit(key, "", "", "o", "")
-      parse_settings_object(key)
+      parse_settings_object(key, "")
       return
     }
     fail("unexpected nesting")
@@ -1388,7 +1388,9 @@ function parse_null() {
 # A settings block: one level of named values, each a string, integer, bool, null,
 # or the string array the schema declares. Deeper nesting still fails closed - this
 # reads the shape the schema describes, never arbitrary JSON.
-function parse_settings_object(p1,    c, key, first) {
+# parse_settings_object <block> <prefix> — one preference block. The receipts block holds one object
+# of its own, evidence, read one level deep as `evidence.<key>`; nothing else nests.
+function parse_settings_object(p1, prefix,    c, key, first) {
   i++
   skip_ws()
   if (peek() == "}") {
@@ -1423,16 +1425,19 @@ function parse_settings_object(p1,    c, key, first) {
     c = peek()
     if (c == "\"") {
       parse_string_raw()
-      emit(p1, key, "", "s", jenc(decoded))
+      emit(p1, prefix key, "", "s", jenc(decoded))
     } else if (c == "t" || c == "f") {
-      emit(p1, key, "", "b", parse_bool())
+      emit(p1, prefix key, "", "b", parse_bool())
     } else if (c >= "0" && c <= "9") {
-      emit(p1, key, "", "n", parse_number())
+      emit(p1, prefix key, "", "n", parse_number())
     } else if (c == "n") {
       parse_null()
-      emit(p1, key, "", "z", "null")
+      emit(p1, prefix key, "", "z", "null")
     } else if (c == "[") {
-      parse_settings_array(p1, key)
+      parse_settings_array(p1, prefix key)
+    } else if (c == "{" && p1 == "receipts" && prefix == "" && key == "evidence") {
+      emit(p1, key, "", "o", "")
+      parse_settings_object(p1, key ".")
     } else {
       fail("unexpected nesting")
     }

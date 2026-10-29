@@ -8,10 +8,10 @@
 # that stays live is repointed back to it in the filed page, which is the only copy filed.
 #
 # Only what is closed is filed, and each record lives in one place: the punch list's ticked items
-# with its contract, the receipts of ticked items, and the parking lot's and snag log's entries
-# that carry a disposition. The live side keeps what is still open: the contract and the open
-# items, their receipts, and the entries with no disposition, plus one Filed: pointer to the filed
-# copy. A record leaves live storage only once its filed copy reads back. Once the shift has ended, its shift log moves and starts again,
+# with its contract, the receipts of ticked items with their evidence folders, and the parking
+# lot's and snag log's entries that carry a disposition. The live side keeps what is still open:
+# the contract and the open items, their receipts, and the entries with no disposition, plus one
+# Filed: pointer to the filed copy. A record leaves live storage only once its filed copy reads back. Once the shift has ended, its shift log moves and starts again,
 # its usage readings and a policy of that shift still live move too, and a usage-<id>/ folder the
 # Start preflight retired moves into the folder of the shift it belongs to. While a shift is armed,
 # or before it has ended, nothing leaves live storage. A leftover shift report leaves only when
@@ -309,6 +309,47 @@ FIND
   fi
 }
 
+# file_evidence <live-dir> <archived-dir> <receipt> — an item's evidence folder, filed beside its
+# receipt file by file, and removed from live storage only once the receipt itself was and every
+# file in it was filed.
+file_evidence() {
+  local live="$1" to="$2" receipt="$3" name="${1##*/}/" whole=1 rel f sub
+  if [ -L "$live" ]; then
+    kept="$kept$name (a link, not a folder of evidence)
+"
+    return 0
+  fi
+  while IFS= read -r rel; do
+    [ -n "$rel" ] || continue
+    rel="${rel#./}"
+    f="$live/$rel"
+    sub="$to"
+    case "$rel" in */*) sub="$to/${rel%/*}" ;; esac
+    if [ -f "$f" ] && [ ! -L "$f" ]; then
+      file_one "$f" "$sub" keep
+      [ "$FILE_ONE_FILED" -eq 1 ] || whole=0
+    else
+      whole=0
+    fi
+  done <<FIND
+$(cd "$live" 2>/dev/null && find . -mindepth 1 ! -type d ! -path '*/.*' 2>/dev/null | LC_ALL=C sort)
+FIND
+  if [ "$whole" -eq 0 ]; then
+    kept="$kept$name (not every file in it could be filed)
+"
+    return 0
+  fi
+  [ "$ROTATE" -eq 1 ] || return 0
+  # A receipt that stayed live keeps its evidence beside it.
+  [ ! -e "$receipt" ] || return 0
+  if rm -rf "$live" 2>/dev/null && [ ! -e "$live" ]; then
+    removed=$((removed + 1))
+  else
+    kept="$kept$name (could not be removed from live storage)
+"
+  fi
+}
+
 if [ -d "$src" ]; then
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -321,6 +362,8 @@ if [ -d "$src" ]; then
     # An open item's receipt stays live only, until its item is ticked.
     in_list "$base" "$OPEN_NAMES" && continue
     file_one "$f" "$dest" closed
+    [ "$FILE_ONE_FILED" -eq 1 ] || continue
+    if [ -d "${f%.md}" ] || [ -L "${f%.md}" ]; then file_evidence "${f%.md}" "$dest/${base%.md}" "$f"; fi
   done <<FIND
 $(find "$src" -maxdepth 1 -type f ! -name '.*' 2>/dev/null)
 FIND

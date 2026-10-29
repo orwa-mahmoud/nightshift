@@ -152,6 +152,47 @@ write_policy() { # <project> [extra JSON]
   check 'allowances[0].plan.commands' '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"x","source":"composition","verificationLevel":"final","toolingPolicy":"auto-add","allowances":[{"category":"sudo","scope":"exact-plan","provenance":"one-shift","plan":{"commands":[],"workTarget":"/w","digest":"3b1c9a5e77d0426f8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"}}]}'
 }
 
+@test "the evidence settings are off by default, fixed per shift, shown by Status, and a bad value is named" {
+  p="$(unarmed sp-evidence)"
+  # Off by default: the shipped rules carry the block with everything off, and the view says so.
+  run sp "$p" resolve --table
+  printf '%s\n' "$output" | grep -qxF 'receipts.evidence.architecture=off (rules, permanent)'
+  printf '%s\n' "$output" | grep -qxF 'receipts.evidence.default= (rules, permanent)'
+  printf '%s\n' "$output" | grep -qxF 'receipts.evidence.fileMap=off (rules, permanent)'
+  # Start freezes the block as the owner's file holds it, one level down.
+  [ "$(bash -c '. "$1"; ns_policy_freeze_pref "$2" receipts' _ "$LIB" "$p" | jq -c .evidence)" = \
+    '{"architecture":"off","default":"","fileMap":"off"}' ]
+  # One shift turns the file map on. Status shows it, and the snapshot validates.
+  write_policy "$p" '"receipts":{"evidence":{"fileMap":"on"}}'
+  run sp "$p" set --from-json "$p/.nightshift/shift-policy.json"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  python3 "$VALIDATOR" "$SCHEMAS/shift-policy.json" "$p/.nightshift/shift-policy.json"
+  run bash "$ROOT/plugins/nightshift/runtime/status.sh" --project "$p"
+  printf '%s\n' "$output" | grep -qF 'receipts.evidence.fileMap=on (one-shift, shift)' || { printf '%s\n' "$output"; return 1; }
+  # Once that shift's policy is filed away, the next shift reads the rules default again.
+  rm -f "$p/.nightshift/shift-policy.json"
+  run sp "$p" resolve --table
+  printf '%s\n' "$output" | grep -qxF 'receipts.evidence.fileMap=off (rules, permanent)'
+  # A value outside off and on is refused with the key named, by the helper and by the schema.
+  write_policy "$p" '"receipts":{"evidence":{"fileMap":"maybe"}}'
+  mv "$p/.nightshift/shift-policy.json" "$p/bad.json"
+  run sp "$p" set --from-json "$p/bad.json"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'receipts.evidence.fileMap'* ]] || { printf '%s\n' "$output"; return 1; }
+  [ ! -e "$p/.nightshift/shift-policy.json" ]
+  run python3 "$VALIDATOR" "$SCHEMAS/shift-policy.json" "$p/bad.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'fileMap'* ]] || { printf '%s\n' "$output"; return 1; }
+  # The same in the owner's rules file: Doctor names it, and so does the rules schema.
+  jq '.receipts.evidence.architecture = "sometimes"' "$p/.nightshift/rules.json" >"$p/rules.next"
+  mv "$p/rules.next" "$p/.nightshift/rules.json"
+  run bash "$ROOT/plugins/nightshift/runtime/doctor.sh" --project "$p"
+  [[ "$output" == *'rules.json receipts.evidence.architecture is "sometimes"; it must be off or on'* ]] || { printf '%s\n' "$output"; return 1; }
+  run python3 "$VALIDATOR" "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json" "$p/.nightshift/rules.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'architecture'* ]] || { printf '%s\n' "$output"; return 1; }
+}
+
 @test "a policy that is not JSON, or not an object, is refused without touching the file" {
   p="$(unarmed sp-nonjson)"
   printf '{ truncated\n' >"$p/bad.json"

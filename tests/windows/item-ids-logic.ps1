@@ -162,6 +162,51 @@ try {
     $morningText = [IO.File]::ReadAllText($morningPage)
     Expect-True ($morningText.Contains('(./12-keep-the-receipt-changes-bbhb.md)') -and -not $morningText.Contains('(./12-keep-the-receipt-chan-bbhb.md)')) "the morning page follows the rename: $morningText"
 
+    # A renamed receipt takes its evidence folder along, and every link into it follows.
+    $evidenceWs = Join-Path $root 'evidence-rename'
+    $evidenceNs = New-Workspace $evidenceWs "## Items`n- [x] **12. Keep the receipt changes.** <!-- id: bbhb -->`n"
+    $oldStem = '12-keep-the-receipt-chan-bbhb'
+    $newStem = '12-keep-the-receipt-changes-bbhb'
+    $evRec = Join-Path $evidenceNs 'receipts'
+    $null = New-Item -ItemType Directory -Path (Join-Path $evRec $oldStem) -Force
+    [IO.File]::WriteAllText((Join-Path $evRec ($oldStem + '.md')),
+        "# 12. Keep the receipt changes.`n`n## Evidence`n`n![shot](./$oldStem/shot.png)`n[data]($oldStem/data.csv)`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $evRec ($oldStem + '/shot.png')), 'png', $utf8)
+    [IO.File]::WriteAllText((Join-Path $evRec ($oldStem + '/data.csv')), 'csv', $utf8)
+    $evMorning = Join-Path $evRec 'morning-2026-10-09-0123456789abcdef.md'
+    [IO.File]::WriteAllText($evMorning, "# Morning`n`n- [12.](./$oldStem.md) ![shot](./$oldStem/shot.png)`n", $utf8)
+    $evStamp = [DateTime]::new(2026, 9, 24, 1, 1, 0, [DateTimeKind]::Utc)
+    [IO.File]::SetLastWriteTimeUtc((Join-Path $evRec ($oldStem + '.md')), $evStamp)
+    $null = Rename-NSReceipts $evidenceWs
+    $evReceipt = Join-Path $evRec ($newStem + '.md')
+    Expect-True ((Test-Path -LiteralPath (Join-Path $evRec ($newStem + '/shot.png'))) -and
+        (Test-Path -LiteralPath (Join-Path $evRec ($newStem + '/data.csv'))) -and
+        -not (Test-Path -LiteralPath (Join-Path $evRec $oldStem))) 'the evidence folder follows its receipt'
+    $evText = [IO.File]::ReadAllText($evReceipt)
+    Expect-True ($evText.Contains("](./$newStem/shot.png)") -and $evText.Contains("]($newStem/data.csv)") -and
+        -not $evText.Contains($oldStem)) "the receipt links its folder's new name: $evText"
+    Expect-True ([IO.File]::GetLastWriteTimeUtc($evReceipt) -eq $evStamp) 'the relinked receipt keeps its time'
+    $evMorningText = [IO.File]::ReadAllText($evMorning)
+    Expect-True ($evMorningText.Contains("(./$newStem.md)") -and $evMorningText.Contains("(./$newStem/shot.png)")) `
+        "the morning page follows the folder: $evMorningText"
+    Write-NSReceiptsIndex -Workspace $evidenceWs
+    Expect-True ([IO.File]::ReadAllText((Join-Path $evRec 'README.md')).Contains("[./$newStem.md](./$newStem.md) $([char]0x00B7) [evidence](./$newStem/)")) `
+        'the index links the evidence folder'
+
+    # A receipt stays put when its evidence folder's new name is already taken.
+    $takenWs = Join-Path $root 'evidence-taken'
+    $takenNs = New-Workspace $takenWs "## Items`n- [ ] **3. Held.** <!-- id: ef56 -->`n"
+    $takenRec = Join-Path $takenNs 'receipts'
+    $null = New-Item -ItemType Directory -Path (Join-Path $takenRec 'ef56-held') -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $takenRec '03-held-ef56') -Force
+    [IO.File]::WriteAllText((Join-Path $takenRec 'ef56-held.md'), "the receipt`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $takenRec 'ef56-held/shot.png'), "mine`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $takenRec '03-held-ef56/other.png'), "theirs`n", $utf8)
+    $null = Rename-NSReceipts $takenWs
+    Expect-True ((Test-Path -LiteralPath (Join-Path $takenRec 'ef56-held.md')) -and
+        -not (Test-Path -LiteralPath (Join-Path $takenRec '03-held-ef56.md')) -and
+        ([IO.File]::ReadAllText((Join-Path $takenRec '03-held-ef56/other.png')) -ceq "theirs`n")) 'a taken folder name keeps the receipt where it is'
+
     # A receipt never moves onto a link planted at its new name.
     if (-not (Test-NSWindows)) {
         $linked = Join-Path $root 'linked'

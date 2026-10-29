@@ -475,6 +475,44 @@ finally {
     Remove-Item -LiteralPath $openWork -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# A ticked item's evidence folder is filed beside its receipt and retires with it; an open item's
+# folder stays live, unfiled; each index links the evidence its folder holds.
+$evidenceWork = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-evidence-" + [guid]::NewGuid().ToString('N'))
+try {
+    $ns = Join-Path $evidenceWork '.nightshift'
+    $recv = Join-Path $ns 'receipts'
+    $null = New-Item -ItemType Directory -Path (Join-Path $recv '1-restyle-the-page/shots') -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $recv '2-trim-the-bundle') -Force
+    [IO.File]::WriteAllText((Join-Path $ns 'work-mode'), "artifact`n")
+    [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), ("Date: 2026-09-05`n`n## Items`n" +
+        "- [x] **1. Restyle the page.**`n  - Evidence: before/after screenshots`n- [ ] **2. Trim the bundle.**`n"))
+    [IO.File]::WriteAllText((Join-Path $recv '1-restyle-the-page.md'), ("# 1. Restyle the page.`n`n## Evidence`n`n" +
+        "![before](./1-restyle-the-page/before.png)`n![after](1-restyle-the-page/shots/after.png)`n"))
+    [IO.File]::WriteAllText((Join-Path $recv '1-restyle-the-page/before.png'), 'PNG-before')
+    [IO.File]::WriteAllText((Join-Path $recv '1-restyle-the-page/shots/after.png'), 'PNG-after')
+    [IO.File]::WriteAllText((Join-Path $recv '2-trim-the-bundle.md'), "# 2. Trim the bundle.`n`nIn progress.`n")
+    [IO.File]::WriteAllText((Join-Path $recv '2-trim-the-bundle/sizes.txt'), "sizes`n")
+    [IO.File]::WriteAllText((Join-Path $ns '.ended'), '')
+    $run = Invoke-ArchiveReceipts $evidenceWork @('-Date', '2026-09-05')
+    Expect-True ($run.ExitCode -eq 0) "evidence filing exits 0 (got $($run.ExitCode) $($run.Stderr))"
+    $d = Join-Path $ns 'archive/2026-09-05/receipts'
+    Expect-True ((Test-Path -LiteralPath (Join-Path $d '1-restyle-the-page/before.png') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $d '1-restyle-the-page/shots/after.png') -PathType Leaf)) 'the evidence folder is filed beside its receipt'
+    $filed = [IO.File]::ReadAllText((Join-Path $d '1-restyle-the-page.md'))
+    Expect-True ($filed.Contains('](./1-restyle-the-page/before.png)') -and $filed.Contains('](1-restyle-the-page/shots/after.png)')) `
+        "the filed receipt's links still reach its folder: $filed"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $recv '1-restyle-the-page'))) 'the evidence folder retires with its receipt'
+    Expect-True ((Test-Path -LiteralPath (Join-Path $recv '2-trim-the-bundle/sizes.txt')) -and
+        -not (Test-Path -LiteralPath (Join-Path $d '2-trim-the-bundle'))) "an open item's folder stays live, unfiled"
+    Expect-True ([IO.File]::ReadAllText((Join-Path $d 'README.md')).Contains('| [./1-restyle-the-page.md](./1-restyle-the-page.md) ' + $dot + ' [evidence](./1-restyle-the-page/) |')) `
+        'the archived index links the filed evidence'
+    Expect-True ([IO.File]::ReadAllText((Join-Path $recv 'README.md')).Contains('| [./2-trim-the-bundle.md](./2-trim-the-bundle.md) ' + $dot + ' [evidence](./2-trim-the-bundle/) |')) `
+        'the live index links the evidence still live'
+}
+finally {
+    Remove-Item -LiteralPath $evidenceWork -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # Receipts link to each other by bare name, because they were written side by side. Filed, they are
 # still side by side, the open item's copy included; a record that was not filed has to be reached
 # back through the archive.

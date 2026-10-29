@@ -328,7 +328,7 @@ cannot turn an unavailable check into a passed one.
 | `view` | `owner` | `owner`, `reviewer`, `release`, `artifact` |
 | `language` | `auto` | Follows the language of the conversation that ran the shift. Paths, commands and identifiers are never translated |
 | `detail` | `concise` | `concise` or `detailed` |
-| `sections` | `[]` | Any of `shift`, `usage`, `items`, `review`, `interruptions`, `parked`, `snags`, `baseline`, `changed`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view; [the morning receipt](morning-receipt.md) says what each one holds |
+| `sections` | `[]` | Any of `shift`, `usage`, `items`, `review`, `interruptions`, `parked`, `snags`, `baseline`, `changed`, `architecture`, `unsupported`, `next`, in the order you want them. Empty means the built-in order for the view; [the morning receipt](morning-receipt.md) says what each one holds |
 | `templatePath` | `""` | A Markdown template, relative to the workspace. It carries wording, never policy |
 
 `handoff.enabled` and `receipts.enabled` are separate switches. What each combination writes under
@@ -356,6 +356,12 @@ plus a runtime-written index. It never reaches a public commit message.
 | `usage` | `when-available` | Record the tokens each item cost, from the numbers your host already exposes. `off` records none, and the receipt and index say `off`. Input, output, cache reads, cache writes and reasoning output are reported separately by name; a dimension the host does not report reads `unavailable`, never zero, and one it has no concept of is left out. Controls tokens only: the Time table and the progress cadence have settings of their own |
 | `duration` | `on` | Record how long each item took: the Time table and the Working column of the Sessions table. `off` writes neither, and they say `off`. Controls time only |
 | `templatePath` | `""` | A Markdown template for each item receipt, on the same terms as the handoff template: wording only |
+| `evidence.default` | `""` | Evidence every item should carry when its own `Evidence:` line says nothing, such as `before/after screenshots for UI items`. Empty asks for none |
+| `evidence.fileMap` | `off` | `on` writes, at each tick, the item's changed files as a tree in its receipt and the whole shift's in `.nightshift/receipts/shift-map.md`, built from git |
+| `evidence.architecture` | `off` | `on` keeps one diagram of the components the shift touched, `.nightshift/receipts/architecture.md`, updated by the item that changes the structure |
+
+With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
+would be without these settings. A shift policy can turn any of them on for one shift.
 
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks

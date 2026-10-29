@@ -188,6 +188,49 @@ ids() { sed -n 's/^- \[[ xX]\].*<!-- id: \([a-z0-9]*\) -->$/\1/p' "$1/.nightshif
   [ "$status" -ne 0 ]
 }
 
+@test "a renamed receipt takes its evidence folder along, and every link into it follows" {
+  p="$(new_project ids-rename-evidence)"
+  r="$p/.nightshift/receipts"
+  old=12-keep-the-receipt-chan-bbhb new=12-keep-the-receipt-changes-bbhb
+  mkdir -p "$r/$old"
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '## Items\n- [x] **12. Keep the receipt changes.** <!-- id: bbhb -->\n' >"$p/.nightshift/punch-list.md"
+  printf '# 12. Keep the receipt changes.\n\n## Evidence\n\n![shot](./%s/shot.png)\n[data](%s/data.csv)\n' "$old" "$old" >"$r/$old.md"
+  printf 'png' >"$r/$old/shot.png"
+  printf 'csv' >"$r/$old/data.csv"
+  printf '# Morning\n\n- [12.](./%s.md) ![shot](./%s/shot.png)\n' "$old" "$old" >"$r/morning-2026-10-09-0123456789abcdef.md"
+  touch -t 202609240101 "$r/$old.md"
+  lib ns_receipts_rename "$p"
+  [ "$(cat "$r/$new/shot.png")" = png ] && [ "$(cat "$r/$new/data.csv")" = csv ]
+  [ ! -e "$r/$old" ] && [ ! -e "$r/$old.md" ]
+  grep -qF "](./$new/shot.png)" "$r/$new.md"
+  grep -qF "]($new/data.csv)" "$r/$new.md"
+  ! grep -qF "$old" "$r/$new.md" || false
+  # The runtime's rewrite keeps the receipt's time, so it does not read as the model's writing.
+  [ -z "$(find "$r/$new.md" -newermt '2026-09-24 01:02' 2>/dev/null)" ]
+  grep -qF "(./$new.md)" "$r/morning-2026-10-09-0123456789abcdef.md"
+  grep -qF "(./$new/shot.png)" "$r/morning-2026-10-09-0123456789abcdef.md"
+  # The index links the folder under its new name.
+  lib ns_receipts_write_index "$p"
+  grep -qF "[./$new.md](./$new.md) · [evidence](./$new/)" "$r/README.md"
+}
+
+@test "a receipt stays put when its evidence folder's new name is already taken" {
+  p="$(new_project ids-rename-evidence-taken)"
+  r="$p/.nightshift/receipts"
+  mkdir -p "$r/ef56-held" "$r/03-held-ef56"
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '## Items\n- [ ] **3. Held.** <!-- id: ef56 -->\n' >"$p/.nightshift/punch-list.md"
+  printf 'the receipt\n' >"$r/ef56-held.md"
+  printf 'mine\n' >"$r/ef56-held/shot.png"
+  printf 'theirs\n' >"$r/03-held-ef56/other.png"
+  lib ns_receipts_rename "$p"
+  [ "$(cat "$r/ef56-held.md")" = 'the receipt' ]
+  [ "$(cat "$r/ef56-held/shot.png")" = mine ]
+  [ "$(cat "$r/03-held-ef56/other.png")" = theirs ]
+  [ ! -e "$r/03-held-ef56.md" ]
+}
+
 @test "a receipt never moves onto a link planted at its new name" {
   p="$(new_project ids-rename-link)"
   r="$p/.nightshift/receipts"

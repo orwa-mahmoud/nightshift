@@ -8,7 +8,10 @@
 # it reports what the gate and the item's own definition of done would trip over:
 #
 #   no Verify: line · a Verify: that names no command and no WHEN/THEN scenario · no Commit: line
-#   (or Receipt: in artifact mode) · a Budget: line that does not parse · a nested checkbox
+#   (or Receipt: in artifact mode) · an Evidence: line that names nothing · a Budget: line that
+#   does not parse · a nested checkbox
+#
+# Evidence: is optional; an item without it reads exactly as one written before the line existed.
 #
 # and, anywhere in that part of the file, a checkbox outside an item line, which the gate would count
 # as an open item. It checks the shape of the plan, never the work behind a tick, and refuses
@@ -81,6 +84,7 @@ EVENTS="$(awk '
     if (!verify) print "find\tno Verify: line"
     else if (!concrete) print "find\tVerify: names no command and no WHEN/THEN scenario"
     if (!commit) print "find\tno Commit: line"
+    if (evidence && !evidencetext) print "find\tEvidence: names nothing"
     if (budget != "") print "budget\t" budgettext
     for (i = 1; i <= nested; i++) print "find\tline " nestedat[i] ": a nested checkbox; only the item line may be a box"
     open = 0
@@ -118,10 +122,11 @@ EVENTS="$(awk '
     sub(/[[:space:]]*<!--.*-->[[:space:]]*$/, "", label)
     print "item\t" label
     open = 1; verify = 0; concrete = 0; commit = 0; budget = ""; budgettext = ""; nested = 0; inverify = 0
+    evidence = 0; evidencetext = 0; inevidence = 0
     next
   }
 
-  /^[[:space:]]*$/ { inverify = 0; next }
+  /^[[:space:]]*$/ { inverify = 0; inevidence = 0; next }
 
   open && /^[[:space:]]+/ {
     indent = match($0, /[^[:space:]]/) - 1
@@ -129,7 +134,8 @@ EVENTS="$(awk '
       if ($0 ~ /`[^`]+`/ || $0 ~ /WHEN .*THEN /) concrete = 1
       next
     }
-    inverify = 0
+    if (inevidence && indent > evidenceindent) { evidencetext = 1; next }
+    inverify = 0; inevidence = 0
     if ($0 ~ /^[[:space:]]*-[[:space:]]*\[.\]/) { nestedat[++nested] = FNR; next }
     if ($0 ~ /^[[:space:]]*- Verify:/) {
       verify = 1; inverify = 1; verifyindent = indent
@@ -137,6 +143,11 @@ EVENTS="$(awk '
       next
     }
     if ($0 ~ /^[[:space:]]*- (Commit|Receipt):/) { commit = 1; next }
+    if ($0 ~ /^[[:space:]]*- Evidence:/) {
+      evidence = 1; inevidence = 1; evidenceindent = indent
+      if ($0 !~ /^[[:space:]]*- Evidence:[[:space:]]*$/) evidencetext = 1
+      next
+    }
     if ($0 ~ /^[[:space:]]*- Budget:/) {
       budget = "yes"
       budgettext = $0
