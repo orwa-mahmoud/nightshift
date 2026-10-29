@@ -188,6 +188,10 @@ transcript_grew() {
   [ -n "$TRANSCRIPT_SEEN" ] && [ "$now" != "$TRANSCRIPT_SEEN" ]
 }
 
+site_alive() {
+  recorded_process_alive || transcript_grew || lease_pid_live || pulse_alive
+}
+
 # Resolve the CLI worker id into WORKER without recording it; WORKER_FRESH=1 when the site has
 # none yet. Never the origin IDE conversation_id unless that id already lives in the CLI store
 # (Start from agent). .shift-worker is written only when a revival launches under the id.
@@ -243,6 +247,7 @@ launch_worker() { # <prompt>
 }
 
 # $1 = 1 resume the stored CLI worker · 2 fresh prompt to the same worker
+# Returns 0 revived · 1 failed · 2 the session came back while the worker was minted.
 spawn() {
   local prompt rc scope open_before
   ns_ensure_work_target_link "$PROJECT" || true
@@ -259,6 +264,11 @@ spawn() {
     esac
   fi
   resolve_worker || return 1
+  # Minting has no deadline of its own, and the tab it replaces can come back meanwhile.
+  if [ "$WORKER_FRESH" -eq 1 ] && site_alive; then
+    log_line "watchman: session activity while the CLI worker was minted — not reviving"
+    return 2
+  fi
   if [ "$WORKER_FRESH" -eq 1 ] || [ "$1" -ge 2 ]; then
     prompt="$PROMPT_FRESH"
   else
@@ -399,12 +409,13 @@ while :; do
 
   attempt=0
   revived=1
+  held=0
   # shellcheck disable=SC2086
   set -- $RETRY_SPACING
   total=$(( $# + 1 ))
   for gap in 0 $RETRY_SPACING; do
     [ "$gap" -gt 0 ] && sleep "$gap"
-    if recorded_process_alive || transcript_grew || lease_pid_live || pulse_alive; then
+    if site_alive; then
       note silent-standby
       log_line "watchman: session activity during retries — holding the remaining attempts"
       break
@@ -416,7 +427,9 @@ while :; do
     else
       log_line "watchman: site dead quiet mid-shift — resume attempt $attempt (minting a CLI worker)"
     fi
-    if spawn "$attempt"; then
+    spawn "$attempt"
+    spawn_rc=$?
+    if [ "$spawn_rc" -eq 0 ]; then
       revived=0
       if [ "$attempt" -ge 2 ]; then
         note fresh-fallback
@@ -426,9 +439,14 @@ while :; do
       notice_revival
       break
     fi
+    if [ "$spawn_rc" -eq 2 ]; then
+      held=1
+      note silent-standby
+      break
+    fi
     baseline_transcript
   done
-  if [ "$revived" -eq 1 ] && [ "$attempt" -gt 0 ]; then
+  if [ "$revived" -eq 1 ] && [ "$attempt" -gt 0 ] && [ "$held" -eq 0 ]; then
     note exhausted-retry
     # Every attempt took the lease for its own worker. A ladder that revived nothing hands it
     # back, so the recorded conversation is not left waiting on a generation nobody holds.

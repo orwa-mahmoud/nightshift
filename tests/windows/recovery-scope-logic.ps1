@@ -165,11 +165,12 @@ Expect-True (-not $resolveBody.Contains('Write-NSCursorWorkerId')) 'resolving th
 $agentBody = $watchman.Substring($watchman.IndexOf('function Start-NSAgent {'))
 $scopeAt = $agentBody.IndexOf('Get-NSRecoveryEffectiveScope')
 $resolveAt = $agentBody.IndexOf('Resolve-NSCursorWorkerId')
+$heldAt = $agentBody.IndexOf('session activity while the CLI worker was minted')
 $writeAt = $agentBody.IndexOf('Write-NSCursorWorkerId $sessionId')
 $takeoverAt = $agentBody.IndexOf('Takeover-NSLease')
 Expect-True ($scopeAt -ge 0 -and $resolveAt -gt $scopeAt) 'the launch scope is resolved before a Cursor worker is minted'
-Expect-True ($writeAt -gt $resolveAt -and $takeoverAt -gt $writeAt) `
-    'the Cursor worker is recorded just before the lease is taken'
+Expect-True ($heldAt -gt $resolveAt -and $writeAt -gt $heldAt -and $takeoverAt -gt $writeAt) `
+    'the Cursor worker is recorded after the liveness re-check and just before the lease is taken'
 
 if ($failures.Count -gt 0) {
     Write-Host ("recovery-scope-logic failed ($($failures.Count)):")

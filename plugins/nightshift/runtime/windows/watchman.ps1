@@ -179,6 +179,7 @@ function Test-NSApiFailureEvidence {
 
 $script:TranscriptStamp = ''
 $script:WedgeSeen = [long]-1
+$script:MintHeld = $false
 function Set-NSTranscriptBaseline {
     $transcript = Get-NSTranscript
     if ([string]::IsNullOrEmpty($transcript)) {
@@ -505,6 +506,7 @@ function Start-NSAgent {
         [Parameter(Mandatory = $true)][int]$Attempt,
         [Parameter(Mandatory = $true)][int]$TotalAttempts
     )
+    $script:MintHeld = $false
     # The permission scope a revived session starts under is the owner's, and it never widens
     # between rungs: a failed revival is retried at the same scope, never a broader one. A scope
     # that cannot be restored refuses before a Cursor worker is minted.
@@ -527,6 +529,12 @@ function Start-NSAgent {
         }
         $sessionId = $workerId
         $freshCursorWorker = -not $hadCursorWorker
+        # Minting has no deadline of its own, and the tab it replaces can come back meanwhile.
+        if ($freshCursorWorker -and (Get-NSSiteVerdict) -ne 'dead') {
+            Write-NSLogLine 'watchman: session activity while the CLI worker was minted - not reviving'
+            $script:MintHeld = $true
+            return $false
+        }
     }
     $null = Confirm-NSWorkTargetLink $workspace
     $openBefore = [int](Get-NSBoxCounts $punch).Open
@@ -968,6 +976,10 @@ try {
                 Write-NSLogLine "watchman: site dead quiet with open boxes - resume attempt $attempt"
                 if (Start-NSAgent $attempt $totalAttempts) {
                     $revived = $true
+                    break
+                }
+                if ($script:MintHeld) {
+                    $aborted = 'session activity'
                     break
                 }
                 Set-NSTranscriptBaseline

@@ -209,6 +209,28 @@ stale_pulse() {
   grep -q 'resume=minted-from-agent' "$AGENT_LOG"
 }
 
+# The origin tab can come back while create-chat runs; a revival launched then would fence it.
+@test "a session that comes back while the worker is minted is not revived over" {
+  stale_pulse
+  cat >"$BIN/agent" <<STUB
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$P/.nightshift/agent-argv"
+if [ "\$1" = "create-chat" ]; then
+  printf '%s origin-ide\n' "\$(date +%s)" >"$P/.nightshift/.shift-pulse"
+  printf 'minted-late\n'
+fi
+exit 0
+STUB
+  run env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'session activity while the CLI worker was minted' "$P/.nightshift/shift-log.md"
+  [ ! -e "$P/.nightshift/.shift-worker" ]
+  if grep -q -- '--resume' "$P/.nightshift/agent-argv"; then
+    return 1
+  fi
+  [ "$(grep -c 'resume attempt' "$P/.nightshift/shift-log.md")" -eq 1 ]
+}
 
 @test "a fresh worker id is dropped when its revival cannot take the lease" {
   stale_pulse
