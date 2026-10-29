@@ -354,6 +354,27 @@ STUB
   sed -n 5p "$p/.nightshift/.shift-lease" | grep -qE '^[0-9]+$'
 }
 
+@test "a held lock refuses a second claimant even where mkdir is not exclusive" {
+  p="$(new_project)"
+  # A mkdir that succeeds on a directory that already exists, as uutils' does under contention.
+  stub="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$stub"
+  printf '#!/bin/sh\nfor a; do case "$a" in -*) ;; *) /bin/mkdir -p "$a" ;; esac; done\nexit 0\n' >"$stub/mkdir"
+  chmod +x "$stub/mkdir"
+  for lock in ns_lock ns_lease_lock; do
+    bash -c '. "$1"; "$2" "$3" || exit 1; touch "$4/held"; while [ ! -f "$4/release" ]; do sleep 0.05; done' \
+      _ "$LIB" "$lock" "$p/.nightshift" "$BATS_TEST_TMPDIR" &
+    holder=$!
+    while [ ! -f "$BATS_TEST_TMPDIR/held" ]; do sleep 0.05; done
+    run env PATH="$stub:$PATH" bash -c '. "$1"; "$2" "$3"' _ "$LIB" "$lock" "$p/.nightshift"
+    touch "$BATS_TEST_TMPDIR/release"
+    wait "$holder"
+    [ "$status" -ne 0 ]
+    rm -f "$BATS_TEST_TMPDIR/held" "$BATS_TEST_TMPDIR/release"
+    rm -rf "$p/.nightshift/.lock.d" "$p/.nightshift/.lease-lock.d"
+  done
+}
+
 @test "racing lease transfers publish one whole winning generation" {
   p="$(new_project)"
   punch_open "$p"
