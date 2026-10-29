@@ -3,6 +3,19 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.30.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.29.2...v0.30.0) (2026-10-29)
+
+
+### Features
+
+* add an evidence catalog and an optional Evidence line for items ([6f57acc](https://github.com/orwa-mahmoud/nightshift/commit/6f57acc2eabd9da2464cefc17557832393f3b652))
+* add item and shift file maps to receipts ([86e0dde](https://github.com/orwa-mahmoud/nightshift/commit/86e0ddef915d9bfc4cfa0f395c438eadae9a9460))
+* add shift-wide evidence settings for receipts ([bd4ab0f](https://github.com/orwa-mahmoud/nightshift/commit/bd4ab0f7fb147ce61a654a277f5c1185dfba2ec9))
+* carry item evidence in receipts and file it with them ([5af0dd5](https://github.com/orwa-mahmoud/nightshift/commit/5af0dd5a4bf3d9e8ae5c8dabc1d56b788895d3bb))
+* keep a shift architecture diagram current at every tick ([a203c28](https://github.com/orwa-mahmoud/nightshift/commit/a203c28a29f01915acad9a68626334463319ea3f))
+* offer a pre-mortem and an ordering check when planning ([8cf10ca](https://github.com/orwa-mahmoud/nightshift/commit/8cf10ca402283973ac2635a692c6257bd27c56fe))
+* offer an edge-case pass from a catalog when planning ([ab0f67e](https://github.com/orwa-mahmoud/nightshift/commit/ab0f67ec8f4604654454ddd975e7a7d6c6d570f0))
+
 ## [0.29.2](https://github.com/orwa-mahmoud/nightshift/compare/v0.29.1...v0.29.2) (2026-10-29)
 
 
