@@ -170,28 +170,16 @@ Estimate: <the shift-estimate figures for these items, or "no history yet">
   indented bullets, never a nested checkbox — a nested box counts as an open item once the item is
   promoted.
 - In artifact mode, an item names its receipt instead of a `Commit:` line.
-- **Offer evidence lines once, never add them unasked.** With the items drafted, before the
-  capture question, ask one line: "Want evidence lines suggested for these items?" The default is
-  no, and no `Evidence:` line is written. Only on a yes, read
-  `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/catalog.md` and suggest one line
-  per item; the owner keeps, edits or drops each. Record the answer in the plan record
-  (`Decided: evidence lines — declined`, or the lines kept) and do not offer again for that plan.
-  Evidence shows the work; it never gates a tick.
-- **Offer an edge-case pass once, never run it unasked.** With the items drafted, before the
-  capture question, ask one line: "Want an edge-case pass on these items before I write them? It
-  adds a few minutes." The default is no, and plain planning stays as fast as it was. Only on a
-  yes, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/plan/edge-cases.md` and propose
-  WHEN/THEN lines per item for the cases that apply, never every case for every item; the owner
-  keeps, edits or drops each, and only the kept lines reach the drafting table. Record the answer
-  in the plan record (`Decided: edge-case pass — declined`, or the cases kept) and do not offer
-  again for that plan.
-- **Shift-wide evidence rides in the same offer.** Evidence every item should carry, a file map on
-  every receipt, or an architecture diagram kept current is one question for the whole plan, not a
-  line per item: for example "Include the file map on every receipt?" All of it is off unless the
-  owner says yes. The room cannot write `rules.json` or the shift policy, so record the yes in the
-  plan record and give the owner the setting to apply: `receipts.evidence.default`,
-  `receipts.evidence.fileMap` or `receipts.evidence.architecture` in their rules file, or Hunt
-  for one shift.
+- **Offer one planning menu, once, and run nothing unasked.** With the items drafted, before the
+  capture question, ask one question: "Before I write these, want any of: evidence lines, an
+  edge-case pass, a pre-mortem, an ordering and risk check, or research? The default is none."
+  Take one answer and do not follow up. With none picked, the plan is captured exactly as it would
+  be without the menu. For the options picked, read
+  `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/plan/menu.md` and run only those; the
+  owner keeps, edits or drops every line they propose. Record each choice and its outcome in the
+  plan record (`Decided: planning menu — none`, or one `Decided:` line per option with what was
+  kept) and do not offer the menu again for that plan. Evidence shows the work; it never gates a
+  tick.
 - **Size it from the owner's history.** Before asking for the yes, run
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-estimate --items <N>` for the N items drafted. It reads
   the Time and Tokens totals of past ticked receipts and prints per-item figures, a total, a suggested

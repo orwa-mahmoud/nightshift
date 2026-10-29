@@ -186,20 +186,12 @@ of the resolved workspace and work target, the shift policy, why each entry serv
 objective, overlaps removed, rejected alternatives, and the stopping rule.
 This is the last look before anything is armed. Write nothing before approval.
 
-With the preview, ask one line: "Want evidence lines suggested for these items?" The default is no.
-Only on a yes, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/catalog.md` and
-suggest one `Evidence:` line per item, beside its Verify; the owner keeps, edits or drops each, and
-the kept lines are written into the order. Ask once per compose, and never in run directly, where
-items carry no evidence line unless the owner's sentence asked for one. Evidence never gates a tick.
-The same offer covers the shift-wide settings, once, not per item: evidence every item should
-carry (`receipts.evidence.default`), a file map on every receipt (`receipts.evidence.fileMap`), and
-an architecture diagram kept current (`receipts.evidence.architecture`). Each is off unless the
-owner says yes, and a yes goes into tonight's policy under `receipts.evidence` with the rest of it.
-
-Offer the edge-case pass the same way, once per compose and never in run directly: "Want an
-edge-case pass on these items before I write them? It adds a few minutes." The default is no.
-Only on a yes, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/plan/edge-cases.md`,
-propose WHEN/THEN lines for the cases each item can meet, and write only the lines the owner keeps.
+With the preview, ask the same one planning-menu question the plan room asks: "Before I write
+these, want any of: evidence lines, an edge-case pass, a pre-mortem, an ordering and risk check, or
+research? The default is none." Ask once per compose, never in run directly, and take one answer.
+For the options picked, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/plan/menu.md`
+and run only those; the order holds only the lines the owner keeps. A yes to shift-wide evidence
+goes into tonight's policy under `receipts.evidence`. Evidence never gates a tick.
 
 In **run directly**, do not ask again: write the order and immediately cut it into the active
 shift. Record significant discovery and selection decisions in `$NS/inbox/parking-lot.md`.
