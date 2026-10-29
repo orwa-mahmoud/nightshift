@@ -241,3 +241,50 @@ STUB
   [ ! -e "$P/.nightshift/.shift-worker" ]
   [ "$(calls)" -eq 0 ]
 }
+
+
+
+# `agent -p` runs no stop hook, so the gate never holds a headless worker: it exits when its
+# turn ends. The watchman relaunches it while each run ticks a box.
+@test "a headless worker that exits with open boxes is relaunched while it makes progress" {
+  printf '## Items\n- [ ] **1.**\n- [ ] **2.**\n- [ ] **3.**\n' >"$P/.nightshift/punch-list.md"
+  stale_pulse
+  run watch --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 3 ]
+  [ "$(grep -c 'exited with .* open — relaunching it' "$P/.nightshift/shift-log.md")" -eq 2 ]
+  [ "$(grep -c '^- \[ \]' "$P/.nightshift/punch-list.md")" -eq 0 ]
+}
+
+@test "a relaunched worker that ticks nothing hands the site back to the wake cycle" {
+  printf '## Items\n- [ ] **1.**\n- [ ] **2.**\n- [ ] **3.**\n' >"$P/.nightshift/punch-list.md"
+  cat >"$BIN/once.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "called" >>.nightshift/agent-calls
+[ "$(grep -c called .nightshift/agent-calls)" -eq 1 ] || exit 0
+awk 'BEGIN{d=0} !d && /^- \[ \]/{sub(/\[ \]/,"[x]");d=1} {print}' .nightshift/punch-list.md >.nightshift/pl.tmp
+mv .nightshift/pl.tmp .nightshift/punch-list.md
+STUB
+  chmod +x "$BIN/once.sh"
+  stale_pulse
+  run watch --agent "bash $BIN/once.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 2 ]
+  [ "$(grep -c 'relaunching it' "$P/.nightshift/shift-log.md")" -eq 1 ]
+}
+
+@test "a stop-work order ends the relaunches" {
+  printf '## Items\n- [ ] **1.**\n- [ ] **2.**\n- [ ] **3.**\n' >"$P/.nightshift/punch-list.md"
+  cat >"$BIN/stop.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "called" >>.nightshift/agent-calls
+awk 'BEGIN{d=0} !d && /^- \[ \]/{sub(/\[ \]/,"[x]");d=1} {print}' .nightshift/punch-list.md >.nightshift/pl.tmp
+mv .nightshift/pl.tmp .nightshift/punch-list.md
+printf 'owner\n' >.nightshift/STOP
+STUB
+  chmod +x "$BIN/stop.sh"
+  stale_pulse
+  run watch --agent "bash $BIN/stop.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 1 ]
+}

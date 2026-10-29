@@ -7,9 +7,9 @@
 # Those ids are not interchangeable: this watchman never passes the IDE id to --resume.
 #
 # First wake after an IDE death mints a CLI chat (agent create-chat), records it in
-# .shift-worker as the revival launches, and resumes that id with freshRevivalPrompt. Later
-# wakes resume the same CLI id with revivalPrompt. A CLI-started shift's own id is the worker
-# from the first wake.
+# .shift-worker as the revival launches, and resumes it with freshRevivalPrompt; a worker that
+# exits having ticked a box is relaunched with revivalPrompt. A CLI-started shift's own id is
+# the worker from the first wake.
 #
 #   watchman.sh [--project DIR] [--interval MIN] [--agent CMD] [--max-wakes N]
 #
@@ -246,6 +246,24 @@ launch_worker() { # <prompt>
   fi
 }
 
+# A headless `agent -p` worker runs no stop hook, so the clock-out gate cannot hold it: it exits
+# when its turn ends, open boxes or not. A run that ticked a box earns the next one; a run that
+# ticked nothing, or a shift that ended, stopped, or was taken back, returns to the wake cycle.
+relaunch_due() { # <open-before-the-run>
+  local now dl
+  armed && [ ! -f "$STOP" ] && [ -f "$PUNCH" ] || return 1
+  { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; } && return 1
+  { [ -f "$SESSION_END" ] && [ ! -L "$SESSION_END" ]; } && return 1
+  if [ -f "$DEADLINE" ] && [ ! -L "$DEADLINE" ]; then
+    dl="$(tr -d '[:space:]' <"$DEADLINE" 2>/dev/null)"
+    printf '%s' "$dl" | grep -qE '^[0-9]+$' && [ "$(date +%s)" -ge "$dl" ] && return 1
+  fi
+  now="$(ns_open_boxes "$PUNCH")" || return 1
+  [ "$now" -gt 0 ] && [ "$now" -lt "$1" ] || return 1
+  ns_lease_valid "$NS" && [ -n "$NS_LEASE_NONCE" ] || return 1
+  ! lease_pid_live
+}
+
 # $1 = 1 resume the stored CLI worker · 2 fresh prompt to the same worker
 # Returns 0 revived · 1 failed · 2 the session came back while the worker was minted.
 spawn() {
@@ -289,6 +307,15 @@ spawn() {
     log_line "watchman: revival child returned without moving the shift — not counting it as a resume"
     return 1
   fi
+  while relaunch_due "$open_before"; do
+    open_before="$(ns_open_boxes "$PUNCH")"
+    log_line "watchman: CLI worker $WORKER exited with $open_before open — relaunching it"
+    launch_worker "$PROMPT_RESUME"
+    if [ "$?" -eq 3 ]; then
+      log_line "watchman: process lease transfer failed — not spawning beside an unfenced session"
+      break
+    fi
+  done
   return 0
 }
 

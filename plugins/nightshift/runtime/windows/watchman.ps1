@@ -501,6 +501,43 @@ function Quote-NSPowerShellLiteral {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 
+# The powershell.exe argument line that runs one agent command and passes its exit code back.
+function Get-NSAgentArgumentLine {
+    param(
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][Collections.Generic.List[string]]$CommandArguments
+    )
+    $invocation = '& { & ' + (Quote-NSPowerShellLiteral $CommandName)
+    foreach ($argument in $CommandArguments) {
+        $invocation += ' ' + (Quote-NSPowerShellLiteral $argument)
+    }
+    $invocation += '; $nsOk = $?; $nsExit = $LASTEXITCODE; ' +
+        'if ($null -ne $nsExit) { exit $nsExit }; if (-not $nsOk) { exit 1 } }'
+    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $invocation)
+    return (($arguments | ForEach-Object { Quote-NSWindowsArgument $_ }) -join ' ')
+}
+
+# A Cursor worker that exited after ticking a box is relaunched, unless the shift ended, stopped,
+# passed its deadline, was closed by the owner, or was taken back by another session.
+function Test-NSCursorRelaunchDue {
+    param([Parameter(Mandatory = $true)][int]$OpenBefore)
+    if (-not (Test-Path -LiteralPath $armedMarker -PathType Leaf) `
+        -or (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) `
+        -or -not (Test-Path -LiteralPath $punch -PathType Leaf) `
+        -or (Test-NSRealEnded) -or (Test-NSRealSessionEnd) -or (Test-NSDeadlinePassed)) {
+        return $false
+    }
+    $open = [int](Get-NSBoxCounts $punch).Open
+    if ($open -le 0 -or $open -ge $OpenBefore) {
+        return $false
+    }
+    $lease = Read-NSLease $ns
+    if ($null -eq $lease -or [string]::IsNullOrEmpty($lease.Nonce)) {
+        return $false
+    }
+    return -not (Test-NSLeasePidLive $ns)
+}
+
 function Start-NSAgent {
     param(
         [Parameter(Mandatory = $true)][int]$Attempt,
@@ -556,7 +593,6 @@ function Start-NSAgent {
 
     $commandName = ''
     $commandArguments = New-Object Collections.Generic.List[string]
-    $arguments = New-Object Collections.Generic.List[string]
     if (-not [string]::IsNullOrEmpty($Agent)) {
         if (Test-Path -LiteralPath $Agent.Trim("'`"") -PathType Leaf) {
             $commandName = $Agent.Trim("'`"")
@@ -618,19 +654,7 @@ function Start-NSAgent {
             $commandArguments.Add($freshPrompt)
         }
     }
-    $invocation = '& { & ' + (Quote-NSPowerShellLiteral $commandName)
-    foreach ($argument in $commandArguments) {
-        $invocation += ' ' + (Quote-NSPowerShellLiteral $argument)
-    }
-    $invocation += '; $nsOk = $?; $nsExit = $LASTEXITCODE; ' +
-        'if ($null -ne $nsExit) { exit $nsExit }; if (-not $nsOk) { exit 1 } }'
     $fileName = 'powershell.exe'
-    $arguments.Add('-NoProfile')
-    $arguments.Add('-NonInteractive')
-    $arguments.Add('-ExecutionPolicy')
-    $arguments.Add('Bypass')
-    $arguments.Add('-Command')
-    $arguments.Add($invocation)
 
     $oldProject = if ($HostName -eq 'claude') { $env:CLAUDE_PROJECT_DIR } elseif ($HostName -eq 'cursor') { $env:CURSOR_PROJECT_DIR } else { $env:CODEX_PROJECT_DIR }
     $oldRevival = $env:NIGHTSHIFT_REVIVAL
@@ -649,7 +673,7 @@ function Start-NSAgent {
         $env:NIGHTSHIFT_REVIVAL = '1'
         $env:NIGHTSHIFT_LEASE_GENERATION = [string]$lease.Generation
         $env:NIGHTSHIFT_LEASE_NONCE = $lease.Nonce
-        $argumentLine = (($arguments | ForEach-Object { Quote-NSWindowsArgument $_ }) -join ' ')
+        $argumentLine = Get-NSAgentArgumentLine $commandName $commandArguments
         try {
             $process = Start-Process -FilePath $fileName -ArgumentList $argumentLine `
                 -WorkingDirectory $workTarget -WindowStyle Hidden -PassThru -ErrorAction Stop
@@ -662,7 +686,38 @@ function Start-NSAgent {
         $start = Get-NSProcessStart $process.Id
         $null = Attach-NSLeaseProcess $ns $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start
         $process.WaitForExit()
-        return (Test-NSWatchmanRevivalProved -NightshiftDir $ns -Sentinel '' -IntervalMinutes $IntervalMinutes -OpenBefore $openBefore)
+        if (-not (Test-NSWatchmanRevivalProved -NightshiftDir $ns -Sentinel '' -IntervalMinutes $IntervalMinutes -OpenBefore $openBefore)) {
+            return $false
+        }
+        # A headless `agent -p` worker runs no stop hook, so the clock-out gate cannot hold it: it
+        # exits when its turn ends, open boxes or not. A run that ticked a box earns the next one.
+        if ($HostName -eq 'cursor') {
+            $commandArguments[$commandArguments.Count - 1] = $revivalPrompt
+            $argumentLine = Get-NSAgentArgumentLine $commandName $commandArguments
+            while (Test-NSCursorRelaunchDue $openBefore) {
+                $openBefore = [int](Get-NSBoxCounts $punch).Open
+                Write-NSLogLine "watchman: CLI worker $sessionId exited with $openBefore open $([char]0x2014) relaunching it"
+                $lease = Takeover-NSLease $ns $sessionId $HostName
+                if ($null -eq $lease) {
+                    Write-NSLogLine 'watchman: process lease transfer failed - not spawning beside an unfenced session'
+                    break
+                }
+                $env:NIGHTSHIFT_LEASE_GENERATION = [string]$lease.Generation
+                $env:NIGHTSHIFT_LEASE_NONCE = $lease.Nonce
+                try {
+                    $process = Start-Process -FilePath $fileName -ArgumentList $argumentLine `
+                        -WorkingDirectory $workTarget -WindowStyle Hidden -PassThru -ErrorAction Stop
+                }
+                catch {
+                    Write-NSLogLine ('watchman: spawn failed: ' + $_.Exception.Message)
+                    break
+                }
+                $start = Get-NSProcessStart $process.Id
+                $null = Attach-NSLeaseProcess $ns $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start
+                $process.WaitForExit()
+            }
+        }
+        return $true
     }
     finally {
         if ($HostName -eq 'claude') {
