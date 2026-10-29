@@ -421,9 +421,14 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   fi
   ticked="$(ns_ticked_boxes "$punch" 2>/dev/null)" || return 0
   case "$ticked" in '' | *[!0-9]*) return 0 ;; esac
+  # Marks are read-modify-write: two pulses deciding at once that the same box is unmarked would both
+  # mark it, and the second mark closes an empty span. They are written under the site lock; a pulse
+  # that cannot take it leaves the marks to the holder, and the gate catches up on its next stop.
+  ns_lock "$ns" || return 0
   ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || :
   # Then follow the item being worked, so a stretch spent on one item is not charged to another.
   ns_gate_usage_switch "$ns" "$project" "$(ns_pulse_active_item "$project")"
+  ns_unlock "$ns"
 }
 
 # Executed as the Claude wrapper: parse stdin, emit, stay silent.

@@ -156,6 +156,29 @@ try {
     Expect-True ($r.Contains('| input | 0 |') -and $r.Contains('| output | 0 |')) 'a reading of zero is zero'
     Expect-True $r.Contains('<!-- tokens 0 - - 0 - -->') 'the marker keeps the measured zero'
 
+    # A pulse that cannot take the site lock leaves the marks to the holder.
+    $w = Join-Path $root 'marks-lock'
+    $ns = New-Workspace $w "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n"
+    $null = Write-NSUsageMarkArm $ns
+    $holder = [powershell]::Create()
+    $null = $holder.AddScript({
+            param($Module, $Dir)
+            Import-Module $Module -Force -DisableNameChecking
+            $m = Enter-NSMutex $Dir '.lock.d'
+            Start-Sleep -Seconds 4
+            Exit-NSMutex $m
+        }).AddArgument((Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1')).AddArgument($ns)
+    $held = $holder.BeginInvoke()
+    Start-Sleep -Seconds 1
+    $null = Invoke-NSPulseMarks $ns $w
+    $labels = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns)) | ForEach-Object { $_.Split("`t")[1] })
+    Expect-True (($labels -join ' ') -ceq 'arm') "a pulse without the lock writes no mark ($($labels -join ' '))"
+    $null = $holder.EndInvoke($held)
+    $holder.Dispose()
+    $null = Invoke-NSPulseMarks $ns $w
+    $null = Invoke-NSPulseMarks $ns $w
+    $labels = @([IO.File]::ReadAllLines((Get-NSUsageMarksPath $ns)) | ForEach-Object { $_.Split("`t")[1] })
+    Expect-True (($labels -join ' ') -ceq 'arm P01') "the lock's next taker marks the item once ($($labels -join ' '))"
 
     # A mixed host list joins each host and model once.
     $w = Join-Path $root 'host-join'

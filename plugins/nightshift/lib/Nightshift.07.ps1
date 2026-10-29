@@ -1812,9 +1812,16 @@ function Invoke-NSPulseMarks {
     if (-not $counts.Readable) { return $false }
     $transcripts = @()
     if (-not [string]::IsNullOrEmpty($Source) -and (Test-Path -LiteralPath $Source -PathType Leaf)) { $transcripts = @($Source) }
-    $synced = Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts
-    # Then follow the item being worked, so a stretch spent on one item is not charged to another.
-    Invoke-NSGateUsageSwitch $NightshiftDir $Project (Get-NSActiveItem $Project)
+    # Marks are written under the site lock: two pulses deciding at once that the same box is unmarked
+    # would both mark it. A pulse that cannot take the lock leaves the marks to the holder.
+    $mutex = Enter-NSMutex $NightshiftDir '.lock.d'
+    if ($null -eq $mutex) { return $false }
+    try {
+        $synced = Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts
+        # Then follow the item being worked, so a stretch spent on one item is not charged to another.
+        Invoke-NSGateUsageSwitch $NightshiftDir $Project (Get-NSActiveItem $Project)
+    }
+    finally { Exit-NSMutex $mutex }
     return $synced
 }
 

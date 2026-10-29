@@ -397,6 +397,26 @@ tick_to() {
   grep -qF '<!-- tokens 0 - - 0 - -->' "$r"
 }
 
+@test "a pulse that cannot take the site lock leaves the marks to the holder" {
+  p="$(cursor_project usage-marks-lock 1)"
+  lib ns_usage_mark_arm "$p/.nightshift"
+  sed -i.bak 's/- \[ \] \*\*P01 /- [x] **P01 /' "$p/.nightshift/punch-list.md"
+  lock="$(lib ns_layout_path "$p/.nightshift" lock)"
+  mkdir -p "$lock"
+  printf '%s' "$$" >"$lock/pid"
+  marks() {
+    bash -c '. "$1"; . "$2"; ns_pulse_marks "$3" "$4" c1' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
+      "$p/.nightshift" "$p"
+  }
+  marks
+  [ "$(cut -f2 "$p/.nightshift/usage/marks.tsv" | paste -sd' ' -)" = arm ]
+  rm -rf "$lock"
+  marks
+  marks
+  [ "$(cut -f2 "$p/.nightshift/usage/marks.tsv" | paste -sd' ' -)" = 'arm P01' ]
+  [ ! -e "$lock" ]
+}
+
 @test "a dimension the host does not report reads unavailable, never zero" {
   p="$(new_project usage-partial)"
   printf '## Items\n- [x] **P01 - first.**\n- [ ] **P02 - open.**\n' >"$p/.nightshift/punch-list.md"
