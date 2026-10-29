@@ -518,14 +518,14 @@ _ns_session_total() {
 }
 
 # _ns_session_shared <shared> <have> <total-cell> <total> — a total that a shared Cursor turn also
-# covers.
+# covers: what the item read on its own, and no figure for its part of the turn.
 _ns_session_shared() {
   if [ "$1" -eq 0 ]; then
     printf '%s' "$3"
   elif [ "$2" -eq 1 ] && [ "$4" -gt 0 ]; then
-    printf '%s + shared turn' "$3"
+    printf '%s + not attributable' "$3"
   else
-    printf 'shared turn'
+    printf 'not attributable'
   fi
 }
 
@@ -560,6 +560,21 @@ ns_receipt_decode() { printf '%s' "$1" | sed 's/%20/ /g; s/%09/	/g; s/%25/%/g'; 
 # nothing.
 ns_session_extra() {
   printf '%s\n' "$1" | awk -v k="$2" '{ for (i = 8; i <= NF; i++) if (index($i, k "=") == 1) { print substr($i, length(k) + 2); exit } }'
+}
+
+# ns_session_turns <session-line> — every Cursor turn the session carries, one value per line.
+ns_session_turns() {
+  printf '%s\n' "$1" | awk '{ for (i = 8; i <= NF; i++) if (index($i, "turn=") == 1) print substr($i, 6) }'
+}
+
+# _ns_turn_items_words <encoded-items> — a turn's items as a person reads them: `P02, P03, P04`.
+_ns_turn_items_words() {
+  local one out=""
+  while IFS= read -r one; do
+    [ -n "$one" ] || continue
+    out="$out${out:+, }$(ns_usage_turn_dec "$one")"
+  done < <(printf '%s\n' "$1" | tr ';' '\n')
+  printf '%s' "$out"
 }
 
 # ns_session_host_words <host/model+host/model> — the hosts a session ran on, as a person reads
@@ -735,7 +750,7 @@ ns_receipt_usage_section() {
   local data="$1" line sid start end work in out ended rest n=0 word dim v key
   local cw cr rea paused why host commits note prev_host="" prev_end="" prev_commits="" prev_note=""
   local twork=0 tpause=0 twall=0 first="" last="" last_why="" hosts_seen="" handoffs="" rows=""
-  local budget="" budget_events="" turn with shared_turns=""
+  local budget="" budget_events="" t tkey tfields titems with shared_list="" own shared_union d
   local -a tot have off miss shared
   local i
   for i in 0 1 2 3 4; do tot[i]=0; have[i]=0; off[i]=0; miss[i]=0; shared[i]=0; done
@@ -763,27 +778,49 @@ ns_receipt_usage_section() {
     done
     i=0
     local cells=""
-    turn="$(ns_session_extra "$line" turn)"
-    if [ -n "$turn" ]; then
-      with="$(ns_receipt_decode "$(ns_session_extra "$line" with)")"
-      shared_turns="$shared_turns- Session $n closed inside one Cursor agent turn"
-      [ -z "$with" ] || shared_turns="$shared_turns shared with $with"
-      shared_turns="$shared_turns. Cursor reports usage once per turn, so this is the whole turn's reading: $(ns_receipt_turn_words "$turn")."$'\n'
-    fi
+    own=""
+    shared_union=""
+    while IFS= read -r t; do
+      [ -n "$t" ] || continue
+      case "$t" in
+        */*/*)
+          tkey="${t%%/*}"; t="${t#*/}"; tfields="${t%%/*}"; titems="${t#*/}"
+          ;;
+        *)
+          # A session recorded before turns were attributed carries the turn's reading and the items
+          # that shared it, and no identity: it is one shared turn of its own.
+          tkey="legacy:$t"; tfields="$t"
+          with="$(ns_receipt_decode "$(ns_session_extra "$line" with)")"
+          titems=";$(printf '%s\n' "${with//; /$'\n'}" | while IFS= read -r d; do
+            [ -z "$d" ] || printf '%s;' "$(ns_usage_turn_enc "$d")"; done)"
+          titems="${titems%;}"
+          ;;
+      esac
+      case "$tkey:$titems" in
+        legacy:* | *';'*)
+          shared_union="$(ns_usage_add "$shared_union" "$tfields")"
+          if ! printf '%s\n' "$shared_list" | cut -f1 | grep -qxF -- "$tkey"; then
+            shared_list="$shared_list$tkey	$tfields	$titems"$'\n'
+          fi
+          ;;
+        *) own="$(ns_usage_add "$own" "$tfields")" ;;
+      esac
+    done < <(ns_session_turns "$line")
     for v in "$in" "$out" "$cw" "$cr" "$rea"; do
-      # A Cursor turn's reading arrives when the turn ends, after an item ticked inside it has
-      # closed. Where the session itself read nothing, the cell shows the turn's figure. It stays
-      # out of the item's totals: every item that shared the turn would count it again.
-      if [ -n "$turn" ] && dim="$(ns_usage_field "$turn" "$(_ns_session_dim "$i")")" && [ -n "$dim" ]; then
+      dim="$(_ns_session_dim "$i")"
+      # A Cursor turn that covered only this item is its own reading.
+      if [ "$v" != off ] && d="$(ns_usage_field "$own" "$dim")" && [ -n "$d" ]; then
+        case "$v" in '' | *[!0-9]*) v="$d" ;; *) v=$((v + d)) ;; esac
+      fi
+      # One that covered several is shared: this item's part of it has no figure.
+      if [ "$v" != off ] && d="$(ns_usage_field "$shared_union" "$dim")" && [ -n "$d" ]; then
         shared[i]=1
         case "$v" in
-          off) ;;
-          '' | 0 | *[!0-9]* | -)
-            cells="$cells | turn $(ns_usage_scale "$dim")"
-            i=$((i + 1))
-            continue
-            ;;
+          '' | *[!0-9]* | 0) cells="$cells | not attributable" ;;
+          *) tot[i]=$((tot[i] + v)); have[i]=1; cells="$cells | $(ns_usage_scale "$v") + not attributable" ;;
         esac
+        i=$((i + 1))
+        continue
       fi
       case "$v" in
         off) off[i]=1; cells="$cells | off" ;;
@@ -845,12 +882,24 @@ EOF
       label="$(ns_usage_dim_label "${dim%%:*}")"
       printf '| %s | %s |\n' "$label" \
         "$(_ns_session_shared "${shared[j]}" "${have[j]}" "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")" "${tot[j]}")"
-      comment="$comment${comment:+ }${tot[j]}"
+      if [ "${have[j]}" -eq 1 ]; then v="${tot[j]}"; else v=-; fi
+      comment="$comment${comment:+ }$v"
     done
     hostline="$(printf '%s\n' "$hosts_seen" | sed '/^$/d; s/\// /; s/ -$//' | awk 'NF { printf "%s%s", s, $0; s = "; " }')"
     word=sessions
     [ "$n" -ne 1 ] || word=session
-    printf '\n<!-- tokens %s -->\n%s · %s %s. %s\n' "$comment" "${hostline:-unknown}" "$n" "$word" \
+    printf '\n<!-- tokens %s -->\n' "$comment"
+    while IFS=$'\t' read -r tkey tfields titems; do
+      # A legacy turn's reading is already inside another session's own figure.
+      case "$tkey" in '' | legacy:*) continue ;; esac
+      comment=""
+      for dim in input cache_write cache_read output reasoning; do
+        v="$(ns_usage_field "$tfields" "$dim")" || v=-
+        comment="$comment${comment:+ }${v:--}"
+      done
+      printf '<!-- shared %s %s -->\n' "$(ns_usage_turn_enc "$tkey")" "$comment"
+    done <<<"$shared_list"
+    printf '%s · %s %s. %s\n' "${hostline:-unknown}" "$n" "$word" \
       "$(ns_usage_overlap "$(printf '%s' "${hostline:-unknown}" | cut -d' ' -f1)")"
   fi
   printf '\n'
@@ -884,8 +933,20 @@ EOF
     printf ' | **%s**' "$(_ns_session_shared "${shared[j]}" "${have[j]}" "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")" "${tot[j]}")"
   done
   printf ' |  |\n'
-  if [ -n "$shared_turns" ]; then
-    printf '\n**Shared turn**\n\n%s' "$shared_turns"
+  if [ -n "$shared_list" ]; then
+    printf '\n**Shared turn**\n\nCursor reports usage once per agent turn. A turn that covers several items is one reading: it is shown on each of their receipts, not split between them, and counted once in the receipts index.\n\n'
+    while IFS=$'\t' read -r tkey tfields titems; do
+      [ -n "$tkey" ] || continue
+      case "$tkey" in
+        legacy:*)
+          titems="$(_ns_turn_items_words "${titems#;}")"
+          printf -- '- %s across this item%s, not split by item.\n' "$(ns_receipt_turn_words "$tfields")" \
+            "${titems:+ and $titems}"
+          ;;
+        *) printf -- '- %s across items %s, not split by item.\n' "$(ns_receipt_turn_words "$tfields")" \
+          "$(_ns_turn_items_words "$titems")" ;;
+      esac
+    done <<<"$shared_list"
   fi
   if [ -n "$handoffs" ]; then
     printf '\n**Handoffs**\n\n%s' "$handoffs"
@@ -930,23 +991,23 @@ ns_receipt_add_session() {
   [ -z "$file" ] || rm -f "$file.pending"
 }
 
-# ns_receipt_share_turn <receipt> <label> <mark-number> <turn-fields> [items] — mark the session
-# that closed at that mark as one inside a Cursor agent turn: the turn's reading, and the other items
-# that closed or ran inside it, `; `-joined. Marking it again replaces both.
-ns_receipt_share_turn() {
+# ns_receipt_set_turns <receipt> <label> <checkpoint> <turns> — give the session that closed at
+# <checkpoint> the Cursor turns that cover it, one ns_usage_turns_for value per line. Setting them
+# again replaces them, so a turn read twice is never counted twice.
+ns_receipt_set_turns() {
   local f="$1" label="$2" data new file
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
   data="$(ns_receipt_session_data "$f")" || return 1
   [ -n "$data" ] || return 0
-  new="$(printf '%s\n' "$data" | awk -v nr="$3" -v turn="$4" -v with="$(ns_receipt_encode "${5:-}")" '
+  new="$(printf '%s\n' "$data" | awk -v cp="checkpoint=$3" -v turns="$(printf '%s' "$4" | tr '\n' ' ')" '
     {
       n = split($0, f, " "); hit = 0
-      for (i = 8; i <= n; i++) if (f[i] ~ ("^checkpoint=.*:" nr "$")) hit = 1
+      for (i = 8; i <= n; i++) if (f[i] == cp) hit = 1
       if (!hit) { print; next }
       out = f[1]
-      for (i = 2; i <= n; i++) if (f[i] !~ /^(turn|with)=/) out = out " " f[i]
-      out = out " turn=" turn
-      if (with != "") out = out " with=" with
+      for (i = 2; i <= n; i++) if (i < 8 || f[i] !~ /^(turn|with)=/) out = out " " f[i]
+      m = split(turns, t, " ")
+      for (i = 1; i <= m; i++) out = out " turn=" t[i]
       print out
     }')"
   [ "$new" != "$data" ] || return 0
@@ -1147,8 +1208,9 @@ EOF
   elif [ "$timeoff" -gt 0 ]; then
     time=off
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$((in + out))"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$((in + out))" \
+    "$(if [ "$tokens" -gt 0 ]; then printf 11111; else printf 00000; fi)"
 }
 
 # ns_receipt_usage_cells <file> — input, cache_write, cache_read, output, reasoning, work
@@ -1161,7 +1223,7 @@ EOF
 # the ones that are sessions of their own and skipping the ones a newer block already holds.
 ns_receipt_usage_cells() {
   local f="$1" dir base sidecar exact comment in=0 cw=0 cr=0 out=0 rea=0 tok_sum=0
-  local usage='—' time='—' work=0 pause=0 raw work_s pause_s section="" legacy=""
+  local usage='—' time='—' work=0 pause=0 raw work_s pause_s section="" legacy="" measured=00000 _
   dir="${f%/*}"
   base="${f##*/}"
   if [ -f "$f" ] && { grep -q 'exact:' "$f" 2>/dev/null || grep -q '<!-- tokens ' "$f" 2>/dev/null; }; then
@@ -1187,17 +1249,18 @@ ns_receipt_usage_cells() {
     comment="$(sed -n 's/^<!--[[:space:]]*tokens[[:space:]]\{1,\}\(.*\)-->/\1/p' "$f" | head -n1)"
     comment="${comment%"${comment##*[![:space:]]}"}"
     if [ -n "$comment" ]; then
-      in="${comment%% *}"; comment="${comment#* }"
-      cw="${comment%% *}"; comment="${comment#* }"
-      cr="${comment%% *}"; comment="${comment#* }"
-      out="${comment%% *}"; rea="${comment#* }"
+      read -r in cw cr out rea _ <<<"$comment"
+      usage="$(_ns_receipt_usage_words "$in" "$cw" "$cr" "$out" "$rea" \
+        "$(ns_receipt_shared_readings "$f" | awk '{ for (i = 2; i <= 6; i++) if ($i ~ /^[0-9]+$/) s[i] = 1 }
+          END { for (i = 2; i <= 6; i++) printf "%s", (s[i] ? 1 : 0) }')")"
+      measured="${usage##*$'\t'}"
+      usage="${usage%$'\t'*}"
       case "$in" in '' | *[!0-9]*) in=0 ;; esac
       case "$cw" in '' | *[!0-9]*) cw=0 ;; esac
       case "$cr" in '' | *[!0-9]*) cr=0 ;; esac
       case "$out" in '' | *[!0-9]*) out=0 ;; esac
       case "$rea" in '' | *[!0-9]*) rea=0 ;; esac
       tok_sum=$((in + out))
-      usage="input $(ns_usage_scale "$in") · cache_write $(ns_usage_scale "$cw") · cache_read $(ns_usage_scale "$cr") · output $(ns_usage_scale "$out") · reasoning $(ns_usage_scale "$rea")"
     else
       exact="$(sed -n 's/.*exact:[[:space:]]*\([0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]* \/ [0-9][0-9]*\).*/\1/p' "$f" | head -n1)"
       if [ -n "$exact" ]; then
@@ -1206,6 +1269,7 @@ ns_receipt_usage_cells() {
         cr="${exact%% /*}"; exact="${exact#* / }"
         out="${exact%% /*}"; rea="${exact#* / }"
         tok_sum=$((in + out))
+        measured=11111
         usage="input $(ns_usage_scale "$in") · cache_write $(ns_usage_scale "$cw") · cache_read $(ns_usage_scale "$cr") · output $(ns_usage_scale "$out") · reasoning $(ns_usage_scale "$rea")"
       fi
     fi
@@ -1244,14 +1308,57 @@ ns_receipt_usage_cells() {
         time="$(ns_receipts_time_cell "$work" "$pause")"
       fi
     fi
-    if grep -qE '^\| (input|output) \| unavailable \|' "$f"; then usage='—'; fi
+    if grep -qE '^\| (input|output) \| unavailable \|' "$f" && [ "$measured" = 11111 ]; then
+      usage=unavailable
+      measured=00000
+    fi
     # A measurement the owner turned off says so, rather than reading as one nobody reported.
     grep -qx '\*\*Tokens:\*\* off' "$f" 2>/dev/null && usage=off
     grep -qx '\*\*Time:\*\* off' "$f" 2>/dev/null && time=off
   fi
   [ -z "$section" ] || rm -f "$section"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$tok_sum"
+  [ "$usage" != off ] || measured=00000
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$in" "$cw" "$cr" "$out" "$rea" "$work" "$pause" "$usage" "$time" "$tok_sum" "$measured"
+}
+
+# _ns_receipt_usage_words <in> <cw> <cr> <out> <rea> <shared-flags> — an index row's usage cell
+# from a receipt's tokens marker, and which dimensions it measured, tab separated. A dimension
+# nothing measured is unavailable, never zero; one a shared Cursor turn covers has no figure of its
+# own for this item.
+_ns_receipt_usage_words() {
+  local flags="$6" out="" measured="" j=0 dim v s word
+  for dim in input cache_write cache_read output reasoning; do
+    j=$((j + 1))
+    v="${!j}"
+    s="${flags:$((j - 1)):1}"
+    case "$v" in
+      '' | *[!0-9]*)
+        measured="${measured}0"
+        if [ "$s" = 1 ]; then word='not attributable'; else word=unavailable; fi
+        ;;
+      *)
+        measured="${measured}1"
+        word="$(ns_usage_scale "$v")"
+        [ "$s" != 1 ] || word="$word + not attributable"
+        ;;
+    esac
+    out="$out${out:+ · }$dim $word"
+  done
+  [ "$measured" != 00000 ] || [ "$flags" != 00000 ] || out=unavailable
+  printf '%s\t%s' "$out" "$measured"
+}
+
+# ns_receipt_shared_readings <file> — the shared Cursor turns a receipt's runtime section lists, one
+# `<identity> <input> <cache-write> <cache-read> <output> <reasoning>` line each, `-` for a dimension
+# the turn did not report.
+ns_receipt_shared_readings() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  # A file holding only the section, as ns_receipt_usage_cells reads it, is read whole.
+  awk 'FNR == NR { if (/^<!-- usage -->/) gated = 1; next }
+    FNR == 1 { on = !gated }
+    /^<!-- usage -->/ { on = 1; next } /^<!-- \/usage -->/ { on = 0 }
+    on && /^<!-- shared [^ ]+( [0-9-]+)+ -->$/ && NF == 9 { print $3, $4, $5, $6, $7, $8 }' "$1" "$1"
 }
 
 # ns_usage_parse_seconds <1h 25m|11m 35s|45s> — integer seconds, or 0.
@@ -1305,15 +1412,47 @@ ns_receipts_index_totals() {
   printf '| **Totals** |  | **%s** | **%s** |  |\n' "${1:-—}" "${2:-—}"
 }
 
-ns_receipts_usage_total_cell() {
-  local in="$1" cw="$2" cr="$3" out="$4" rea="$5"
-  if [ "$((in + cw + cr + out + rea))" -eq 0 ]; then
+# _ns_flags_or <flags> <flags> — two measured-dimension strings, `1` wherever either has one.
+_ns_flags_or() {
+  local a="$1" b="$2" out="" j
+  for j in 0 1 2 3 4; do
+    if [ "${a:$j:1}" = 1 ] || [ "${b:$j:1}" = 1 ]; then out="${out}1"; else out="${out}0"; fi
+  done
+  printf '%s' "$out"
+}
+
+# _ns_index_usage_total <in> <cw> <cr> <out> <rea> <measured> <any-usage> <shared-readings> — the
+# totals cell of an index page: every item's own reading, and each shared Cursor turn once however
+# many items it covered. A dimension nothing measured is unavailable, never zero.
+_ns_index_usage_total() {
+  local -a tot=("$1" "$2" "$3" "$4" "$5")
+  local measured="$6" key a j v out=""
+  while read -r key a; do
+    [ -n "$key" ] || continue
+    j=0
+    for v in $a; do
+      case "$v" in
+        '' | *[!0-9]*) ;;
+        *) tot[j]=$((tot[j] + v)); measured="${measured:0:$j}1${measured:$((j + 1))}" ;;
+      esac
+      j=$((j + 1))
+    done
+  done < <(printf '%s\n' "$8" | awk 'NF && !seen[$1]++')
+  if [ "$7" -eq 0 ] && [ "$measured" = 00000 ]; then
     printf '%s' '—'
     return 0
   fi
-  printf 'input %s · cache_write %s · cache_read %s · output %s · reasoning %s' \
-    "$(ns_usage_scale "$in")" "$(ns_usage_scale "$cw")" "$(ns_usage_scale "$cr")" \
-    "$(ns_usage_scale "$out")" "$(ns_usage_scale "$rea")"
+  if [ "$measured" = 00000 ]; then
+    printf 'unavailable'
+    return 0
+  fi
+  j=0
+  for key in input cache_write cache_read output reasoning; do
+    if [ "${measured:$j:1}" = 1 ]; then v="$(ns_usage_scale "${tot[j]}")"; else v=unavailable; fi
+    out="$out${out:+ · }$key $v"
+    j=$((j + 1))
+  done
+  printf '%s' "$out"
 }
 
 ns_receipts_time_cell() {
@@ -1406,8 +1545,8 @@ _ns_archive_receipt_headings() {
 # siblings, because the receipts it lists are in that directory too.
 ns_receipts_write_archive_index() {
   local dir="$1" date_s="$2" open="${3:-}" index rows f base label cells state
-  local in cw cr out rea work pause usage time _sum
-  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
+  local in cw cr out rea work pause usage time _sum measured
+  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0 tmeasured=00000 anyu=0 turns=""
   { [ -d "$dir" ] && [ ! -L "$dir" ]; } || return 0
   index="$dir/README.md"
   [ -L "$index" ] && return 0
@@ -1417,12 +1556,14 @@ ns_receipts_write_archive_index() {
     [ -n "$f" ] || continue
     base="${f##*/}"
     cells="$(ns_receipt_usage_cells "$f")"
-    IFS=$'\t' read -r in cw cr out rea work pause usage time _sum <<EOF
+    IFS=$'\t' read -r in cw cr out rea work pause usage time _sum measured <<EOF
 $cells
 EOF
     tin=$((tin + in)); tcw=$((tcw + cw)); tcr=$((tcr + cr))
     tout=$((tout + out)); trea=$((trea + rea)); twork=$((twork + work)); tpause=$((tpause + pause))
-    [ "$usage" != off ] || offu=1
+    tmeasured="$(_ns_flags_or "$tmeasured" "${measured:-00000}")"
+    case "$usage" in off) offu=1 ;; '—') ;; *) anyu=1 ;; esac
+    turns="$turns$(ns_receipt_shared_readings "$f")"$'\n'
     [ "$time" != off ] || offt=1
     case $'\n'"$open"$'\n' in
       *$'\n'"$base"$'\n'*) state=open ;;
@@ -1441,7 +1582,7 @@ FIND
     ns_receipts_index_head "$date_s" "$dir"
     cat "$rows"
     ns_receipts_index_totals \
-      "$(_ns_index_total "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" "$offu")" \
+      "$(_ns_index_total "$(_ns_index_usage_total "$tin" "$tcw" "$tcr" "$tout" "$trea" "$tmeasured" "$anyu" "$turns")" "$offu")" \
       "$(_ns_index_total "$(ns_receipts_time_total_cell "$twork" "$tpause")" "$offt")"
   } >"$index" 2>/dev/null || :
   rm -f "$rows"
@@ -1453,8 +1594,8 @@ FIND
 ns_receipts_write_index() {
   local project="$1" mode="${2:-}" punch
   local dir index date_s state base file cells
-  local in cw cr out rea work pause usage time _sum
-  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0
+  local in cw cr out rea work pause usage time _sum measured
+  local tin=0 tcw=0 tcr=0 tout=0 trea=0 twork=0 tpause=0 offu=0 offt=0 tmeasured=00000 anyu=0 turns=""
   local label id items rows armed read_failed=0
   ns_layout_set punch "$project/.nightshift" punch-list
   dir="$(ns_receipts_dir "$project")"
@@ -1490,12 +1631,14 @@ ns_receipts_write_index() {
       read_failed=1
       break
     fi
-    IFS=$'\t' read -r in cw cr out rea work pause usage time _sum <<EOF
+    IFS=$'\t' read -r in cw cr out rea work pause usage time _sum measured <<EOF
 $cells
 EOF
     tin=$((tin + in)); tcw=$((tcw + cw)); tcr=$((tcr + cr))
     tout=$((tout + out)); trea=$((trea + rea)); twork=$((twork + work)); tpause=$((tpause + pause))
-    [ "$usage" != off ] || offu=1
+    tmeasured="$(_ns_flags_or "$tmeasured" "${measured:-00000}")"
+    case "$usage" in off) offu=1 ;; '—') ;; *) anyu=1 ;; esac
+    turns="$turns$(ns_receipt_shared_readings "$dir/${base}.md")"$'\n'
     [ "$time" != off ] || offt=1
     printf '| %s | %s | **%s** | **%s** | [%s](%s) |\n' \
       "$label" "$state" "$usage" "$time" "$file" "$file" >>"$rows"
@@ -1509,7 +1652,7 @@ EOF
     ns_receipts_index_head "$date_s" "$dir"
     cat "$rows"
     ns_receipts_index_totals \
-      "$(_ns_index_total "$(ns_receipts_usage_total_cell "$tin" "$tcw" "$tcr" "$tout" "$trea")" "$offu")" \
+      "$(_ns_index_total "$(_ns_index_usage_total "$tin" "$tcw" "$tcr" "$tout" "$trea" "$tmeasured" "$anyu" "$turns")" "$offu")" \
       "$(_ns_index_total "$(ns_receipts_time_total_cell "$twork" "$tpause")" "$offt")"
   } >"$index" 2>/dev/null || :
   rm -f "$items" "$rows"

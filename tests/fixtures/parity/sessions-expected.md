@@ -9,7 +9,7 @@
 | output | 1.2k (partial) |
 | reasoning | unavailable |
 
-<!-- tokens 1012345 0 0 1244 0 -->
+<!-- tokens 1012345 - - 1244 - -->
 unknown · 5 sessions. Overlap between the dimensions is unknown for this host.
 
 | Time | |

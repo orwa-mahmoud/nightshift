@@ -102,31 +102,39 @@ ns_pulse_usage() {
       [ -z "$generation" ] || [ "$generation" = 0 ] || identity="$identity:$generation"
       ns_usage_record "$ns" cursor "$(printf '%s' "$reading" | cut -f3)" stop-payload \
         "$identity" 0 "$(printf '%s' "$reading" | cut -f1)" || return 0
-      ns_pulse_turn_shared "$ns" "$identity" "$(printf '%s' "$reading" | cut -f1)"
+      ns_pulse_turn "$ns" "$identity" "$(printf '%s' "$reading" | cut -f1)"
       ;;
     *) return 0 ;;
   esac
   return 0
 }
 
-# ns_pulse_turn_shared <ns> <turn-identity> <turn-fields> — give the items ticked inside this Cursor
-# turn the turn's reading. Their spans closed before it arrived, so without it they read nothing
-# spent; with it each receipt shows the turn's reading and names the items that shared it.
-ns_pulse_turn_shared() {
-  local ns="$1" project="${1%/.nightshift}" ticks names active label nr others
+# ns_pulse_turn <ns> <turn-identity> <turn-fields> — record which items this Cursor turn covered: the
+# items ticked inside it, whose sessions closed before its reading arrived, and the item still being
+# worked. The closed sessions take the reading now; the open one takes it when it closes.
+ns_pulse_turn() {
+  local ns="$1" project="${1%/.nightshift}" ticks active covered="" label nr entry generation
   ticks="$(ns_usage_cursor_turn "$ns" "$2")"
-  [ -n "$ticks" ] || return 0
-  names="$(printf '%s\n' "$ticks" | cut -f1 | awk 'NF && !seen[$0]++')"
-  active="$(ns_usage_active "$ns")"
-  if [ -n "$active" ] && ! printf '%s\n' "$names" | grep -qxF -- "$active"; then
-    names="$names"$'\n'"$active"
-  fi
   while IFS=$'\t' read -r label nr; do
     [ -n "$label" ] || continue
-    others="$(printf '%s\n' "$names" | grep -vxF -- "$label" | awk 'NF { printf "%s%s", s, $0; s = "; " }')"
-    ns_receipt_share_turn "$(ns_receipt_path "$project" "$label")" "$label" "$nr" "$3" "$others" || :
+    covered="$covered${covered:+;}$(ns_usage_turn_enc "$label")@$nr"
   done <<<"$ticks"
-  ns_receipts_write_index "$project" || :
+  active="$(ns_usage_active "$ns")"
+  if [ -n "$active" ] && ! printf '%s\n' "$ticks" | cut -f1 | grep -qxF -- "$active"; then
+    covered="$covered${covered:+;}$(ns_usage_turn_enc "$active")@open"
+  fi
+  ns_usage_turn_note "$ns" "$2" "$3" "$covered" || return 0
+  covered="$(ns_usage_turn_covered "$ns" "$2")"
+  generation="$(ns_usage_generation "$ns" "$(ns_policy_shift_id "$project" 2>/dev/null)")"
+  label=""
+  while IFS= read -r entry; do
+    nr="${entry##*@}"
+    case "$nr" in '' | *[!0-9]*) continue ;; esac
+    label="$(ns_usage_turn_dec "${entry%@*}")"
+    ns_receipt_set_turns "$(ns_receipt_path "$project" "$label")" "$label" "$generation:$nr" \
+      "$(ns_usage_turns_for "$ns" "$label" "$nr")" || :
+  done < <(printf '%s\n' "$covered" | tr ';' '\n')
+  [ -z "$label" ] || ns_receipts_write_index "$project" || :
 }
 
 # ns_usage_carry <nightshift-dir> <id> — the last response identity counted for this transcript.

@@ -73,9 +73,13 @@ while IFS= read -r line; do
   where="${line%% *}"
   file="${line#* }"
   cells="$(ns_receipt_usage_cells "$file")"
-  IFS=$'\t' read -r in _cw _cr out _rea work _pause usage time <<<"$cells"
+  IFS=$'\t' read -r in _cw _cr out _rea work _pause usage time _sum measured <<<"$cells"
   if [ "$time" = '—' ] || [ "${work:-0}" -eq 0 ] 2>/dev/null; then work=-; fi
-  if [ "$usage" = '—' ] || [ "$usage" = off ]; then tokens=-; else tokens=$((in + out)); fi
+  # An item's tokens are a sample only when its own input and output were both measured.
+  case "$usage:${measured:-11111}" in
+    '—':* | off:* | *'not attributable'*:* | *:0???? | *:???0?) tokens=- ;;
+    *) tokens=$((in + out)) ;;
+  esac
   SAMPLES="$SAMPLES$work $tokens
 "
   if [ "$where" = live ]; then LIVE=$((LIVE + 1)); else ARCHIVED=$((ARCHIVED + 1)); fi

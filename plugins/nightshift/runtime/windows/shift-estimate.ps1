@@ -68,7 +68,12 @@ $tokens = New-Object Collections.Generic.List[long]
 foreach ($pair in $files) {
     $cells = Get-NSReceiptUsageCells $pair[1]
     if ($cells.Time -cne $dash -and [long]$cells.Work -gt 0) { $times.Add([long]$cells.Work) }
-    if ($cells.Tokens -cne $dash -and $cells.Tokens -cne 'off') { $tokens.Add([long]$cells.In + [long]$cells.Out) }
+    # An item's tokens are a sample only when its own input and output were both measured.
+    $measured = [string]$cells.Measured
+    if ($cells.Tokens -cne $dash -and $cells.Tokens -cne 'off' -and -not $cells.Tokens.Contains('not attributable') -and
+        $measured.Length -eq 5 -and $measured[0] -eq [char]'1' -and $measured[3] -eq [char]'1') {
+        $tokens.Add([long]$cells.In + [long]$cells.Out)
+    }
     if ($pair[0] -ceq 'live') { $live++ } else { $archived++ }
 }
 $total = $live + $archived

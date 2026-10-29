@@ -377,8 +377,10 @@ Where each host's figures come from, and what each one leaves out:
   than rearranging the numbers.
 - **Cursor** — the stop payload, which is the only place the figures appear; the local agent
   transcripts carry none. Input overlaps the cache figures, and Cursor reports no reasoning and no
-  subagent tokens. The Cursor CLI the watchman revives into has no per-turn source at all, so a
-  revived segment there is `unavailable`.
+  subagent tokens. A turn's reading goes to the items it covered: the item it ran alone is that
+  item's figure, and a turn across several items is listed on each of their receipts as one shared
+  reading, `not attributable` to any one of them. The Cursor CLI the watchman revives into has no
+  per-turn source at all, so a revived segment there is `unavailable`.
 
 A dimension a host does not report reads `unavailable` — never zero, because zero is a
 measurement and silence is not. Totals are never summed across hosts, and no token count is ever
