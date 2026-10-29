@@ -105,6 +105,26 @@ EOF
   printf '%s\n' "$output" | grep -qF 'open plan: - **Retry budget**'
 }
 
+@test "evidence lines are offered once, opt-in, from the catalog, and the answer is recorded" {
+  local plan="$PLUGIN/skills/plan/SKILL.md" hunt="$PLUGIN/skills/hunt/SKILL.md"
+  local catalog="$PLUGIN/skills/nightshift/references/evidence/catalog.md"
+  # Prose wraps, so read each skill as one line.
+  flat() { tr '\n' ' ' <"$1" | tr -s ' '; }
+  for f in "$plan" "$hunt"; do
+    flat "$f" | grep -qF 'Want evidence lines suggested for these items?'
+    flat "$f" | grep -qF 'The default is no'
+    flat "$f" | grep -qF 'skills/nightshift/references/evidence/catalog.md'
+    flat "$f" | grep -qF 'never gates a tick'
+  done
+  flat "$plan" | grep -qF 'Decided: evidence lines — declined'
+  flat "$plan" | grep -qF 'do not offer again for that plan'
+  flat "$hunt" | grep -qF 'never in run directly'
+  for kind in UI Performance Tests 'API or contract' Docs 'Data or migration' Security Refactor; do
+    grep -qF "| $kind |" "$catalog" || { echo "catalog lacks $kind"; return 1; }
+  done
+  grep -qF 'Read this only after the owner says yes' "$catalog"
+}
+
 @test "the PowerShell half reads the same record and runs in the Windows suite" {
   grep -qF 'Get-NSPlanRecordOpen' "$BATS_TEST_DIRNAME/windows/plan-room-logic.ps1"
   command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'

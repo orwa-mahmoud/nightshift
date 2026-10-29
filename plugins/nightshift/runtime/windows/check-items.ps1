@@ -56,6 +56,7 @@ function Close-Item {
     if (-not $state.Verify) { $events.Add(@('find', 'no Verify: line')) }
     elseif (-not $state.Concrete) { $events.Add(@('find', 'Verify: names no command and no WHEN/THEN scenario')) }
     if (-not $state.Commit) { $events.Add(@('find', 'no Commit: line')) }
+    if ($state.Evidence -and -not $state.EvidenceText) { $events.Add(@('find', 'Evidence: names nothing')) }
     if ($state.Budget) { $events.Add(@('budget', $state.BudgetText)) }
     foreach ($n in $state.Nested) { $events.Add(@('find', "line ${n}: a nested checkbox; only the item line may be a box")) }
     $state.Open = $false
@@ -66,6 +67,8 @@ $fence = $false
 $comment = $false
 $inVerify = $false
 $verifyIndent = 0
+$inEvidence = $false
+$evidenceIndent = 0
 for ($i = 0; $i -lt $lines.Count; $i++) {
     $line = $lines[$i]
     $number = $i + 1
@@ -103,12 +106,13 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
         $label = $label -creplace '[ \t]*<!--.*-->[ \t]*$', ''
         $events.Add(@('item', $label))
         $state = @{ Open = $true; Verify = $false; Concrete = $false; Commit = $false; Budget = $false; BudgetText = ''
-            Nested = (New-Object Collections.Generic.List[int]) }
+            Evidence = $false; EvidenceText = $false; Nested = (New-Object Collections.Generic.List[int]) }
         $inVerify = $false
+        $inEvidence = $false
         continue
     }
 
-    if ($line.Trim().Length -eq 0) { $inVerify = $false; continue }
+    if ($line.Trim().Length -eq 0) { $inVerify = $false; $inEvidence = $false; continue }
 
     if ($state.Open -and $line -cmatch '^[ \t]+') {
         $indent = $line.Length - $line.TrimStart(' ', "`t").Length
@@ -116,7 +120,9 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($line -cmatch $concretePattern) { $state.Concrete = $true }
             continue
         }
+        if ($inEvidence -and $indent -gt $evidenceIndent) { $state.EvidenceText = $true; continue }
         $inVerify = $false
+        $inEvidence = $false
         if ($line -cmatch '^[ \t]*-[ \t]*\[.\]') { $state.Nested.Add($number); continue }
         if ($line -cmatch '^[ \t]*- Verify:') {
             $state.Verify = $true
@@ -126,6 +132,13 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
             continue
         }
         if ($line -cmatch '^[ \t]*- (Commit|Receipt):') { $state.Commit = $true; continue }
+        if ($line -cmatch '^[ \t]*- Evidence:') {
+            $state.Evidence = $true
+            $inEvidence = $true
+            $evidenceIndent = $indent
+            if ($line -cnotmatch '^[ \t]*- Evidence:[ \t]*$') { $state.EvidenceText = $true }
+            continue
+        }
         if ($line -cmatch '^[ \t]*- Budget:') {
             $state.Budget = $true
             $state.BudgetText = $line -creplace '^[ \t]*- Budget:[ \t]*', ''

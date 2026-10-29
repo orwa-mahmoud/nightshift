@@ -186,6 +186,12 @@ of the resolved workspace and work target, the shift policy, why each entry serv
 objective, overlaps removed, rejected alternatives, and the stopping rule.
 This is the last look before anything is armed. Write nothing before approval.
 
+With the preview, ask one line: "Want evidence lines suggested for these items?" The default is no.
+Only on a yes, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/catalog.md` and
+suggest one `Evidence:` line per item, beside its Verify; the owner keeps, edits or drops each, and
+the kept lines are written into the order. Ask once per compose, and never in run directly, where
+items carry no evidence line unless the owner's sentence asked for one. Evidence never gates a tick.
+
 In **run directly**, do not ask again: write the order and immediately cut it into the active
 shift. Record significant discovery and selection decisions in `$NS/inbox/parking-lot.md`.
 

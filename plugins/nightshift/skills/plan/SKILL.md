@@ -157,6 +157,7 @@ Estimate: <the shift-estimate figures for these items, or "no history yet">
     - WHEN <situation> THEN <observable result>
     - WHEN <edge or failure case> THEN <observable result>
     - <the commands that check them>
+  - Evidence: <only when the owner takes evidence lines: what shows the work at a glance>
   - Commit: `<type: message>`
 ```
 
@@ -169,6 +170,13 @@ Estimate: <the shift-estimate figures for these items, or "no history yet">
   indented bullets, never a nested checkbox — a nested box counts as an open item once the item is
   promoted.
 - In artifact mode, an item names its receipt instead of a `Commit:` line.
+- **Offer evidence lines once, never add them unasked.** With the items drafted, before the
+  capture question, ask one line: "Want evidence lines suggested for these items?" The default is
+  no, and no `Evidence:` line is written. Only on a yes, read
+  `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/evidence/catalog.md` and suggest one line
+  per item; the owner keeps, edits or drops each. Record the answer in the plan record
+  (`Decided: evidence lines — declined`, or the lines kept) and do not offer again for that plan.
+  Evidence shows the work; it never gates a tick.
 - **Size it from the owner's history.** Before asking for the yes, run
   `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-estimate --items <N>` for the N items drafted. It reads
   the Time and Tokens totals of past ticked receipts and prints per-item figures, a total, a suggested
@@ -181,8 +189,9 @@ Archive files it with the shift. The record sits beside the drafting table in ev
 `Record:` link's target is `plan-record.md`.
 
 Before offering promotion, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-items`. It reads the
-drafting table and names, per item, a missing or empty `Verify:`, a missing `Commit:`, a `Budget:`
-that does not parse, a nested checkbox, and any checkbox no item owns. Show the owner every finding.
+drafting table and names, per item, a missing or empty `Verify:`, a missing `Commit:`, an
+`Evidence:` that names nothing, a `Budget:` that does not parse, a nested checkbox, and any
+checkbox no item owns. Show the owner every finding.
 Correct one in the plan you just wrote only with their yes. The check refuses nothing: whether to
 promote is the owner's call.
 

@@ -35,6 +35,24 @@ EOF
 )" ] || { printf '%s\n' "$output"; return 1; }
 }
 
+@test "an Evidence: line is optional, and only one that names nothing is reported" {
+  run bash "$CHECK" --project "$BATS_TEST_TMPDIR" --file "$FIX/evidence.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(cat <<'EOF'
+**1. No evidence line.**: ok
+**2. Evidence on one line.**: ok
+**3. Evidence as a list.**: ok
+**4. Evidence that names nothing.**: Evidence: names nothing
+**5. Evidence that names nothing, last.**: Evidence: names nothing
+checked 5 items: 2 with findings
+EOF
+)" ] || { printf '%s\n' "$output"; return 1; }
+  # Trailing blanks after the colon are still nothing.
+  printf -- '- [ ] **1. Blank evidence.**\n  - Verify: `true`\n  - Evidence:   \n  - Commit: `feat: x`\n' >"$BATS_TEST_TMPDIR/blank.md"
+  run bash "$CHECK" --project "$BATS_TEST_TMPDIR" --file "$BATS_TEST_TMPDIR/blank.md"
+  printf '%s\n' "$output" | grep -qxF '**1. Blank evidence.**: Evidence: names nothing'
+}
+
 @test "a punch list is read under its Items heading only, and a receipt stands in for a commit" {
   run bash "$CHECK" --project "$BATS_TEST_TMPDIR" --file "$FIX/mixed.md"
   [ "$status" -eq 0 ]
@@ -83,7 +101,7 @@ EOF
 @test "native Windows prints the same findings, and its suite is registered" {
   grep -qF 'check-items-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
   command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
-  for f in well-formed defects mixed; do
+  for f in well-formed defects mixed evidence; do
     want="$(bash "$CHECK" --project "$BATS_TEST_TMPDIR" --file "$FIX/$f.md")"
     got="$(pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/check-items.ps1" -Project "$BATS_TEST_TMPDIR" -File "$FIX/$f.md")"
     [ "$got" = "$want" ] || { echo "$f"; echo "bash:"; echo "$want"; echo "PowerShell:"; echo "$got"; return 1; }
