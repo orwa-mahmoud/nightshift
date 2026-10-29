@@ -3,7 +3,7 @@
 #
 # Host wrappers parse stdin, then call ns_pulse_emit with the bound session id.
 # One line: epoch<space>session-id. Identity check, not the lease: helpers never
-# write; Cursor origin IDE stops writing once .shift-worker exists.
+# write; Cursor origin IDE stops writing once a recorded CLI worker has run.
 # Inert outside an active shift (same as session-end). Silent stdout.
 #
 # When executed (Claude PostToolUse), parse session_id from stdin and CLAUDE_PROJECT_DIR.
@@ -13,8 +13,8 @@ ns_pulse_owner_ok() { # <ns> <sid>
   [ -n "${2:-}" ] || return 1
   worker="$(ns_cursor_worker_id "$1")"
   if [ -n "$worker" ]; then
-    [ "$2" = "$worker" ]
-    return
+    [ "$2" = "$worker" ] && return 0
+    ns_cursor_worker_ran "$1" && return 1
   fi
   rec="$(ns_session_line "$1" 1)"
   [ -n "$rec" ] && [ "$2" = "$rec" ]

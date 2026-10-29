@@ -85,7 +85,7 @@ is_cursor_deny() {
   p="$(new_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
-  printf 'live-cli-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_worker_ran "$p" live-cli-worker
   jq -nc --arg p "$p" \
     '{tool_name:"Shell",conversation_id:"origin-ide",transcript_path:"",cwd:$p,tool_input:{command:"echo hi"}}' \
     >"$BATS_TEST_TMPDIR/origin-shell.json"
@@ -102,7 +102,7 @@ is_cursor_deny() {
   p="$(new_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
-  printf 'live-cli-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_worker_ran "$p" live-cli-worker
   plugin="$BATS_TEST_DIRNAME/../../plugins/nightshift"
   jq -nc --arg p "$p" --arg cmd "bash $plugin/runtime/stop-shift.sh --project $p" \
     '{tool_name:"Shell",conversation_id:"origin-ide",transcript_path:"",cwd:$p,tool_input:{command:$cmd}}' \
@@ -116,7 +116,7 @@ is_cursor_deny() {
   p="$(new_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
-  printf 'live-cli-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_worker_ran "$p" live-cli-worker
   out="$(jq -nc --arg p "$p" \
     '{tool_name:"Shell",conversation_id:"helper-tab",transcript_path:"",cwd:$p,tool_input:{command:"git push origin main"}}' |
     env NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push' CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/hardhat.sh")"
@@ -357,4 +357,17 @@ CMDS
   bind_session "$p" cursor-tab cursor
   run cursor_sid_shell "$p" cursor-tab "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json"
   is_cursor_deny
+}
+
+@test "origin tab keeps its tools when the recorded worker never ran" {
+  p="$(new_project)"
+  punch_open "$p"
+  printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
+  printf 'never-ran-worker\n' >"$p/.nightshift/.shift-worker"
+  jq -nc --arg p "$p" \
+    '{tool_name:"Shell",conversation_id:"origin-ide",transcript_path:"",cwd:$p,tool_input:{command:"echo hi"}}' \
+    >"$BATS_TEST_TMPDIR/origin-shell.json"
+  run env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/hardhat.sh" <"$BATS_TEST_TMPDIR/origin-shell.json"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }

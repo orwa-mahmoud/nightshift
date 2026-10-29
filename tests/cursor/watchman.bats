@@ -182,3 +182,40 @@ stale_pulse() {
   [ "$(sed -n 1p "$P/.nightshift/.watch-reason" | tr -d '[:space:]')" = "owner-disarm" ]
   [ ! -e "$P/.nightshift/.shift-armed" ]
 }
+
+# A site that inherits a recorded scope it cannot read refuses before it mints: a chat no
+# revival runs must not be recorded as the worker the origin tab is pointed at.
+@test "an unavailable launch scope refuses without minting or recording a worker" {
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  stale_pulse
+  AGENT_LOG="$P/.nightshift/agent-argv"
+  run env PATH="$BIN:$PATH" AGENT_LOG="$AGENT_LOG" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'Recovery cannot restore this configured scope' "$P/.nightshift/shift-log.md"
+  [ ! -e "$P/.nightshift/.shift-worker" ]
+  [ ! -e "$AGENT_LOG" ]
+}
+
+@test "a host-default launch scope mints, records the worker, and launches it" {
+  stale_pulse
+  AGENT_LOG="$P/.nightshift/agent-argv"
+  run env PATH="$BIN:$PATH" AGENT_LOG="$AGENT_LOG" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'reviving under launch scope host-default' "$P/.nightshift/shift-log.md"
+  grep -q '^create-chat' "$AGENT_LOG"
+  grep -q 'resume=minted-from-agent' "$AGENT_LOG"
+}
+
+
+@test "a fresh worker id is dropped when its revival cannot take the lease" {
+  stale_pulse
+  printf 'not a lease\n' >"$P/.nightshift/.shift-lease"
+  run watch --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q 'process lease transfer failed' "$P/.nightshift/shift-log.md"
+  [ ! -e "$P/.nightshift/.shift-worker" ]
+  [ "$(calls)" -eq 0 ]
+}

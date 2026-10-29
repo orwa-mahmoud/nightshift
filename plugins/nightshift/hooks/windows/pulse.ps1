@@ -101,10 +101,11 @@ if ((Test-Path -LiteralPath $workerPath -PathType Leaf) -and -not (Test-NSRepars
         $worker = ''
     }
 }
-if (-not [string]::IsNullOrEmpty($worker)) {
-    if ($sessionId -ne $worker) { exit 0 }
+if (-not [string]::IsNullOrEmpty($worker) -and $sessionId -ne $worker -and (Test-NSCursorWorkerRan $ns)) {
+    exit 0
 }
-elseif ($null -eq $session -or [string]::IsNullOrEmpty($session.SessionId) -or $session.SessionId -ne $sessionId) {
+if (([string]::IsNullOrEmpty($worker) -or $sessionId -ne $worker) `
+    -and ($null -eq $session -or [string]::IsNullOrEmpty($session.SessionId) -or $session.SessionId -ne $sessionId)) {
     exit 0
 }
 

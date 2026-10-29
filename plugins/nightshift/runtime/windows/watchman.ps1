@@ -261,6 +261,8 @@ function Write-NSCursorWorkerId {
     }
 }
 
+# The CLI worker id a revival resumes, without recording it: .shift-worker is written only when a
+# revival launches under the id.
 function Resolve-NSCursorWorkerId {
     $existing = Get-NSCursorWorkerId
     if (-not [string]::IsNullOrEmpty($existing)) {
@@ -272,17 +274,13 @@ function Resolve-NSCursorWorkerId {
     $transcript = Get-NSSessionValue 'Transcript'
     $origin = Get-NSSessionValue 'SessionId'
     if ($transcript -match '[/\\]\.cursor[/\\]chats([/\\]|$)' -and -not [string]::IsNullOrEmpty($origin)) {
-        if (Write-NSCursorWorkerId $origin) { return $origin }
-        return ''
+        return $origin
     }
     if (-not [string]::IsNullOrEmpty($Agent)) {
-        $minted = if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_CURSOR_TEST_WORKER)) {
-            $env:NIGHTSHIFT_CURSOR_TEST_WORKER
-        } else {
-            'minted-cli-worker'
+        if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_CURSOR_TEST_WORKER)) {
+            return $env:NIGHTSHIFT_CURSOR_TEST_WORKER
         }
-        if (Write-NSCursorWorkerId $minted) { return $minted }
-        return ''
+        return 'minted-cli-worker'
     }
     try {
         $minted = (& agent create-chat 2>$null | Out-String).Trim()
@@ -295,8 +293,17 @@ function Resolve-NSCursorWorkerId {
         Write-NSMintFailed
         return ''
     }
-    if (Write-NSCursorWorkerId $minted) { return $minted }
-    return ''
+    return $minted
+}
+
+# An id this wake recorded for a revival that never launched goes again, so the origin tab is not
+# pointed at an empty chat. An id an earlier revival ran under stays.
+function Remove-NSFreshCursorWorker {
+    param([Parameter(Mandatory = $true)][string]$WorkerId)
+    if ((Get-NSCursorWorkerId) -ne $WorkerId) {
+        return
+    }
+    Remove-Item -LiteralPath (Get-NSLayoutPath $ns 'worker') -Force -ErrorAction SilentlyContinue
 }
 
 function Get-NSHostProcessState {
@@ -498,8 +505,19 @@ function Start-NSAgent {
         [Parameter(Mandatory = $true)][int]$Attempt,
         [Parameter(Mandatory = $true)][int]$TotalAttempts
     )
+    # The permission scope a revived session starts under is the owner's, and it never widens
+    # between rungs: a failed revival is retried at the same scope, never a broader one. A scope
+    # that cannot be restored refuses before a Cursor worker is minted.
+    $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
+    if ($launchScope -clike 'unavailable:*') {
+        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Recovery cannot restore this configured scope.')
+        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules')."
+        Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
+        return $false
+    }
     $sessionId = Get-NSSessionValue 'SessionId'
     $hadCursorWorker = $false
+    $freshCursorWorker = $false
     if ($HostName -eq 'cursor') {
         $hadCursorWorker = -not [string]::IsNullOrEmpty((Get-NSCursorWorkerId))
         $workerId = Resolve-NSCursorWorkerId
@@ -508,27 +526,23 @@ function Start-NSAgent {
             return $false
         }
         $sessionId = $workerId
+        $freshCursorWorker = -not $hadCursorWorker
     }
     $null = Confirm-NSWorkTargetLink $workspace
     $openBefore = [int](Get-NSBoxCounts $punch).Open
     $fresh = $Attempt -ge $TotalAttempts -and $TotalAttempts -gt 1
-    # The permission scope a revived session starts under is the owner's, and it never widens
-    # between rungs: a failed revival is retried at the same scope, never a broader one.
-    $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
-    if ($launchScope -clike 'unavailable:*') {
-        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Recovery cannot restore this configured scope.')
-        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules')."
-        Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
-        return $false
-    }
     Write-NSLogLine ('watchman: reviving under launch scope ' + $launchScope)
     $prompt = if ($fresh) { $freshPrompt } else { $revivalPrompt }
     if ($HostName -eq 'cursor' -and -not $hadCursorWorker) {
         $prompt = $freshPrompt
     }
+    if ($freshCursorWorker -and -not (Write-NSCursorWorkerId $sessionId)) {
+        return $false
+    }
     $lease = Takeover-NSLease $ns $sessionId $HostName
     if ($null -eq $lease) {
         Write-NSLogLine 'watchman: process lease transfer failed - not spawning beside an unfenced session'
+        if ($freshCursorWorker) { Remove-NSFreshCursorWorker $sessionId }
         return $false
     }
 
@@ -634,6 +648,7 @@ function Start-NSAgent {
         }
         catch {
             Write-NSLogLine ('watchman: spawn failed: ' + $_.Exception.Message)
+            if ($freshCursorWorker) { Remove-NSFreshCursorWorker $sessionId }
             return $false
         }
         $start = Get-NSProcessStart $process.Id

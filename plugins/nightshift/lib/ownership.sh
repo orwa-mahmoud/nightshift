@@ -924,13 +924,23 @@ ns_cursor_store_kind() { # <transcript-path>
   esac
 }
 
+# A recorded worker holds the shift only once a revival ran it: the lease carries a recovery
+# nonce and the process that revival fenced the site for. An id with no such run behind it names
+# a chat that never started, and the origin tab still owns the shift.
+ns_cursor_worker_ran() { # <ns>
+  [ -n "$(ns_cursor_worker_id "$1")" ] || return 1
+  ns_lease_valid "$1" || return 1
+  [ "$NS_LEASE_HOST" = cursor ] && [ -n "$NS_LEASE_NONCE" ] && [ -n "$NS_LEASE_PID" ]
+}
+
 # Origin IDE tab while a different CLI worker holds the shift.
 ns_cursor_stale_origin() { # <ns> <sid>
   local rec worker
   rec="$(ns_session_line "$1" 1)"
   worker="$(ns_cursor_worker_id "$1")"
   [ -n "$rec" ] && [ -n "$worker" ] && [ -n "${2:-}" ] \
-    && [ "$2" = "$rec" ] && [ "$2" != "$worker" ]
+    && [ "$2" = "$rec" ] && [ "$2" != "$worker" ] \
+    && ns_cursor_worker_ran "$1"
 }
 
 ns_cursor_resume_command() { # <ns> <workspace>

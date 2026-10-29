@@ -93,7 +93,7 @@ cursor_gate() {
   p="$(new_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
-  printf 'live-cli-worker\n' >"$p/.nightshift/.shift-worker"
+  cursor_worker_ran "$p" live-cli-worker
   printf 'stopped by owner\n' >"$p/.nightshift/STOP"
   jq -nc --arg p "$p" \
     '{conversation_id:"origin-ide",session_id:"origin-ide",cwd:$p,hook_event_name:"stop",status:"completed",loop_count:0}' \

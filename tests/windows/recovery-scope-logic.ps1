@@ -157,6 +157,20 @@ if ($watchman.Contains("if (`$launchScope -ne 'host-default')")) {
 
 Expect-True ($watchman -notmatch '--dangerously-skip-permissions|--yolo|--trust|danger-full-access') 'watchman never adds bypass grants'
 
+# A refused scope must not leave a Cursor worker behind: the refusal comes before the mint, the
+# mint records nothing, and the worker is written only once the revival is about to launch.
+$resolveBody = $watchman.Substring($watchman.IndexOf('function Resolve-NSCursorWorkerId {'))
+$resolveBody = $resolveBody.Substring(0, $resolveBody.IndexOf("`nfunction ", 1))
+Expect-True (-not $resolveBody.Contains('Write-NSCursorWorkerId')) 'resolving the Cursor worker records nothing'
+$agentBody = $watchman.Substring($watchman.IndexOf('function Start-NSAgent {'))
+$scopeAt = $agentBody.IndexOf('Get-NSRecoveryEffectiveScope')
+$resolveAt = $agentBody.IndexOf('Resolve-NSCursorWorkerId')
+$writeAt = $agentBody.IndexOf('Write-NSCursorWorkerId $sessionId')
+$takeoverAt = $agentBody.IndexOf('Takeover-NSLease')
+Expect-True ($scopeAt -ge 0 -and $resolveAt -gt $scopeAt) 'the launch scope is resolved before a Cursor worker is minted'
+Expect-True ($writeAt -gt $resolveAt -and $takeoverAt -gt $writeAt) `
+    'the Cursor worker is recorded just before the lease is taken'
+
 if ($failures.Count -gt 0) {
     Write-Host ("recovery-scope-logic failed ($($failures.Count)):")
     foreach ($failure in $failures) { Write-Host " - $failure" }

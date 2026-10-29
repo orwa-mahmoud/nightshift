@@ -315,6 +315,15 @@ function Test-NSPulseStale {
     return ($now - $Clock) -ge $window
 }
 
+# A recorded Cursor worker holds the shift only once a revival ran it: the lease carries a recovery
+# nonce and the process that revival fenced the site for. Mirrors ns_cursor_worker_ran.
+function Test-NSCursorWorkerRan {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $lease = Read-NSLease $NightshiftDir
+    return ($null -ne $lease -and $lease.HostName -eq 'cursor' `
+        -and -not [string]::IsNullOrEmpty($lease.Nonce) -and -not [string]::IsNullOrEmpty([string]$lease.ProcessId))
+}
+
 function Test-NSLeasePidLive {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $lease = Read-NSLease $NightshiftDir
