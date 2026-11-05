@@ -282,8 +282,9 @@ function Get-NSShiftBlock {
     return $block
 }
 
-# Set-NSShiftBlock <workspace> <block> - the owner file with its shift block replaced. Every other
-# key survives, including one a later version added.
+# Set-NSShiftBlock <workspace> <block> - the owner file with those keys set inside its shift
+# block. Every other key of the block survives, including one this version does not know. An
+# absent shift block is created. Every key outside shift survives too.
 function Set-NSShiftBlock {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -306,7 +307,21 @@ function Set-NSShiftBlock {
         Write-NSPolicyError ('shift-policy: ' + $path + ' is not a JSON object')
         return 2
     }
-    $document['shift'] = $Block
+    if ($Block -is [Collections.IDictionary] -and $document.Contains('shift') -and $document['shift'] -is [Collections.IDictionary]) {
+        $merged = $document['shift']
+        foreach ($key in @($Block.Keys)) {
+            $name = [string]$key
+            if ($merged.Contains($name)) {
+                [void]$merged.Remove($name)
+            }
+            # Add, not the indexer: a null value is a remembered hours, and the indexer drops it.
+            [void]$merged.Add($name, $Block[$key])
+        }
+        $document['shift'] = $merged
+    }
+    else {
+        $document['shift'] = $Block
+    }
     Write-NSEvidenceFileAtomic -Path $path -Text ((ConvertTo-NSCanonicalJson $document) + "`n")
     return 0
 }

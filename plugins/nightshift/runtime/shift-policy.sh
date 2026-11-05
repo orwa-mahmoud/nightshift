@@ -309,7 +309,7 @@ cmd_defaults_set() {
     "$NS_POLICY_DEF_EXECUTION" "$NS_POLICY_DEF_TOOLING")"
   tmpd="$(mktemp -d "${TMPDIR:-/tmp}/nightshift-defaults.XXXXXX")" ||
     die 'no writable temporary directory' 2
-  ns_rules_set_block "$RULES" shift "$block" >"$tmpd/next.json" || {
+  ns_rules_merge_block "$RULES" shift "$block" >"$tmpd/next.json" || {
     rm -rf "$tmpd"
     die 'cannot write the shift block' 2
   }
@@ -478,7 +478,7 @@ cmd_migrate() {
 
   tmpd="$(mktemp -d "${TMPDIR:-/tmp}/nightshift-migrate.XXXXXX")" ||
     die 'no writable temporary directory' 2
-  ns_rules_set_block "$RULES" shift "{$block}" >"$tmpd/next.json" || {
+  ns_rules_merge_block "$RULES" shift "{$block}" >"$tmpd/next.json" || {
     rm -rf "$tmpd"
     die 'cannot compose the migrated file' 2
   }

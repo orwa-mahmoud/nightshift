@@ -248,6 +248,70 @@ write_policy() { # <project> [extra JSON]
   printf '%s\n' "$output" | grep -qF hours
 }
 
+# The four remembered choices are fields of the shift block, not the block. Writing them
+# replaces none of the rest: isolation, the worktree settings, a budget, or a key this
+# version has never heard of.
+@test "defaults-set and migrate keep every other key in the shift block" {
+  p="$(unarmed sp-keep)"
+  jq '
+    .shift.isolation = "worktree"
+    | .shift.prepare = "printf ready"
+    | .shift.copyIn = [".env.test"]
+    | .shift.itemBudget = "soft 30m / 1M tokens, hard 45m / 2M tokens"
+    | .shift.worktreeRoot = ".nightshift/custom-trees"
+    | .shift.futureKnob = "kept"
+  ' "$p/.nightshift/rules.json" >"$p/rules.tmp"
+  mv "$p/rules.tmp" "$p/.nightshift/rules.json"
+  kept="$(jq -cS '.shift | {isolation, prepare, copyIn, itemBudget, worktreeRoot, futureKnob}' \
+    "$p/.nightshift/rules.json")"
+  run sp "$p" defaults-set --verificationProfile strict --hours 8 --execution run-direct \
+    --toolingPolicy auto-add
+  [ "$status" -eq 0 ]
+  [ "$(jq -cS '.shift | {isolation, prepare, copyIn, itemBudget, worktreeRoot, futureKnob}' \
+    "$p/.nightshift/rules.json")" = "$kept" ]
+  jq -e '
+    .shift.verificationProfile == "strict"
+    and .shift.hours == 8
+    and .shift.execution == "run-direct"
+    and .shift.toolingPolicy == "auto-add"
+  ' "$p/.nightshift/rules.json" >/dev/null
+
+  m="$(unarmed sp-keep-mig)"
+  jq '
+    .shift |= del(.verificationProfile, .hours, .execution, .toolingPolicy)
+    | .shift.isolation = "worktree"
+    | .shift.prepare = "printf ready"
+    | .shift.copyIn = [".env.test"]
+    | .shift.itemBudget = "soft 30m / 1M tokens, hard 45m / 2M tokens"
+    | .shift.worktreeRoot = ".nightshift/custom-trees"
+    | .shift.futureKnob = "kept"
+  ' "$m/.nightshift/rules.json" >"$m/rules.tmp"
+  mv "$m/rules.tmp" "$m/.nightshift/rules.json"
+  kept="$(jq -cS '.shift | {isolation, prepare, copyIn, itemBudget, worktreeRoot, futureKnob}' \
+    "$m/.nightshift/rules.json")"
+  printf '%s\n' \
+    '{"schemaVersion":1,"verificationProfile":"strict","hours":6,"toolingPolicy":"review-missing","execution":"review-first","updatedAt":"2026-09-05T10:42:17Z"}' \
+    >"$m/.nightshift/shift-defaults.json"
+  run sp "$m" migrate
+  [ "$status" -eq 0 ]
+  [ "$(jq -cS '.shift | {isolation, prepare, copyIn, itemBudget, worktreeRoot, futureKnob}' \
+    "$m/.nightshift/rules.json")" = "$kept" ]
+  jq -e '
+    .shift.verificationProfile == "strict"
+    and .shift.hours == 6
+    and .shift.execution == "review-first"
+    and .shift.toolingPolicy == "review-missing"
+  ' "$m/.nightshift/rules.json" >/dev/null
+
+  q="$(unarmed sp-noshift)"
+  jq 'del(.shift)' "$q/.nightshift/rules.json" >"$q/rules.tmp"
+  mv "$q/rules.tmp" "$q/.nightshift/rules.json"
+  run sp "$q" defaults-set --hours 4
+  [ "$status" -eq 0 ]
+  jq -e '.shift.hours == 4 and .shift.verificationProfile == "fast"' \
+    "$q/.nightshift/rules.json" >/dev/null
+}
+
 @test "archive files the snapshot into the shift's folder at its live path, and get goes quiet" {
   p="$(unarmed sp-archive)"
   policy_json >"$p/candidate.json"

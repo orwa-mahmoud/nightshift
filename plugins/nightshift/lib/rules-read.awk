@@ -10,6 +10,8 @@
 #   canon    one JSON document as compact canonical JSON: sorted keys, one line
 #   pretty   the same document sorted and indented, for a file the owner reads
 #   setblock the same, with one top-level key set to -v value; every other key survives
+#   mergeblock the same, with the keys of the object in -v value set inside -v key; every
+#              other key of that object survives, and an absent object is created
 #   canonat  the compact canonical JSON of the value at dotted path -v key, or nothing when absent
 #   renamekey the document with top-level key -v key renamed to -v value, sorted and indented
 #   dropkey  the document without the value at dotted path -v key, sorted and indented
@@ -35,8 +37,8 @@ END {
   if (i > n) {
     fail("empty document")
   }
-  if (mode == "canon" || mode == "pretty" || mode == "setblock" || mode == "canonat" ||
-      mode == "renamekey" || mode == "dropkey") {
+  if (mode == "canon" || mode == "pretty" || mode == "setblock" || mode == "mergeblock" ||
+      mode == "canonat" || mode == "renamekey" || mode == "dropkey") {
     jparse(".")
     skip_ws()
     if (i <= n) {
@@ -63,6 +65,12 @@ END {
         fail("setblock needs a key")
       }
       setblock(key, value)
+      printf "%s\n", pretty(".", "")
+    } else if (mode == "mergeblock") {
+      if (key == "") {
+        fail("mergeblock needs a key")
+      }
+      mergeblock(key, value)
       printf "%s\n", pretty(".", "")
     } else if (mode == "pretty") {
       printf "%s\n", pretty(".", "")
@@ -591,6 +599,102 @@ function cenc(s,    j, c, o, b, cb, code, len, k, ok, hi, lo) {
 
 # pretty(path, indent) — the same sorted document a person reads: two spaces a level, one entry
 # a line, and a string left as the UTF-8 it arrived as.
+# copy_subtree(from, to) — the value at `from`, and everything it owns, also at `to`.
+function copy_subtree(from, to,    path, npath, list, n, j, paths) {
+  list = ""
+  for (path in V_TYPE) {
+    if (path == from || substr(path, 1, length(from) + 1) == from "." ||
+        substr(path, 1, length(from) + 1) == from "[") {
+      list = list path "\n"
+    }
+  }
+  n = split(list, paths, "\n")
+  for (j = 1; j <= n; j++) {
+    path = paths[j]
+    if (path == "") {
+      continue
+    }
+    npath = to substr(path, length(from) + 1)
+    V_TYPE[npath] = V_TYPE[path]
+    if (path in V_RAW) {
+      V_RAW[npath] = V_RAW[path]
+    }
+    if (path in V_STR) {
+      V_STR[npath] = V_STR[path]
+    }
+    if (path in V_KEYS) {
+      V_KEYS[npath] = V_KEYS[path]
+    }
+    if (path in V_LEN) {
+      V_LEN[npath] = V_LEN[path]
+    }
+  }
+}
+
+# ensure_child(parent, leaf) — `leaf` is one key of the object at `parent`.
+function ensure_child(parent, leaf,    keys, count, j) {
+  count = split(V_KEYS[parent], keys, "\t")
+  if (V_KEYS[parent] == "") {
+    count = 0
+  }
+  for (j = 1; j <= count; j++) {
+    if (keys[j] == leaf) {
+      return
+    }
+  }
+  if (count == 0) {
+    V_KEYS[parent] = leaf
+  } else {
+    V_KEYS[parent] = V_KEYS[parent] "\t" leaf
+  }
+}
+
+# mergeblock(k, text) — set each key of the object `text` holds inside the object at `k`.
+# Every other key of that object stays, including one this version has never heard of.
+# An absent key, or one that is not an object, becomes the object `text` holds.
+function mergeblock(k, text,    save_src, save_n, save_i, tmp, keys, count, j, leaf, from, to) {
+  tmp = "\034nsmerge"
+  save_src = src
+  save_n = n
+  save_i = i
+  src = text
+  n = length(src)
+  i = 1
+  jparse(tmp)
+  skip_ws()
+  if (i <= n) {
+    fail("the replacement value is not one JSON document")
+  }
+  if (V_TYPE[tmp] != "object") {
+    fail("mergeblock needs an object")
+  }
+  src = save_src
+  n = save_n
+  i = save_i
+  if (!(k in V_TYPE) || V_TYPE[k] != "object") {
+    drop_subtree(tmp)
+    setblock(k, text)
+    return
+  }
+  count = split(V_KEYS[tmp], keys, "\t")
+  if (V_KEYS[tmp] == "") {
+    count = 0
+  }
+  for (j = 1; j <= count; j++) {
+    leaf = keys[j]
+    from = tmp "." leaf
+    if (k == ".") {
+      to = leaf
+    } else {
+      to = k "." leaf
+    }
+    drop_subtree(to)
+    copy_subtree(from, to)
+    ensure_child(k, leaf)
+  }
+  drop_subtree(tmp)
+}
+
 # setblock(k, text) — replace one top-level key with the document `text` holds, adding the key
 # when the file does not carry it. Every other key keeps its own value, including one this
 # version has never heard of: a plugin update fills settings in, it never takes them away.

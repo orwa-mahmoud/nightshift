@@ -722,6 +722,78 @@ try {
     Expect-True $getRun.StdoutText.Contains('"toolingPolicy": "auto-add"') `
         'defaults-get reads the block defaults-set wrote'
 
+    # Writing the four remembered choices fills those keys in. It does not replace the block,
+    # so a worktree choice, a budget, and a key this version does not know all survive.
+    $keepProject = Join-Path $root 'keep-shift'
+    $keepNs = New-PolicyProject $keepProject
+    $keepPath = Join-Path $keepNs 'rules.json'
+    $keepDoc = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($keepPath, $utf8))
+    $keepDoc['shift']['isolation'] = 'worktree'
+    $keepDoc['shift']['prepare'] = 'printf ready'
+    $keepDoc['shift']['copyIn'] = @('.env.test')
+    $keepDoc['shift']['itemBudget'] = 'soft 30m / 1M tokens, hard 45m / 2M tokens'
+    $keepDoc['shift']['worktreeRoot'] = '.nightshift/custom-trees'
+    $keepDoc['shift']['futureKnob'] = 'kept'
+    Write-JsonFile $keepPath $keepDoc
+    $keptNames = @('isolation', 'prepare', 'copyIn', 'itemBudget', 'worktreeRoot', 'futureKnob')
+    $keptBefore = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($keepPath, $utf8))
+    $keepSet = Invoke-Helper @('-Project', $keepProject, '-Command', 'defaults-set',
+        '-VerificationProfile', 'strict', '-Hours', '8', '-Execution', 'run-direct', '-ToolingPolicy', 'auto-add')
+    Expect-Equal 0 $keepSet.ExitCode "defaults-set keeps the rest of the shift block ($($keepSet.StderrText))"
+    $keptAfter = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($keepPath, $utf8))
+    foreach ($name in $keptNames) {
+        Expect-Equal (ConvertTo-NSCanonicalJson @{ v = $keptBefore['shift'][$name] }) `
+            (ConvertTo-NSCanonicalJson @{ v = $keptAfter['shift'][$name] }) `
+            "defaults-set leaves shift.$name byte for byte"
+    }
+    Expect-Equal 'strict' ([string]$keptAfter['shift']['verificationProfile']) 'defaults-set writes the profile'
+    Expect-Equal '8' ([string]$keptAfter['shift']['hours']) 'defaults-set writes the hours'
+    Expect-Equal 'run-direct' ([string]$keptAfter['shift']['execution']) 'defaults-set writes execution'
+    Expect-Equal 'auto-add' ([string]$keptAfter['shift']['toolingPolicy']) 'defaults-set writes the tooling policy'
+
+    $migProject = Join-Path $root 'keep-migrate'
+    $migNs = New-PolicyProject $migProject
+    $migPath = Join-Path $migNs 'rules.json'
+    $migDoc = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($migPath, $utf8))
+    foreach ($name in @('verificationProfile', 'hours', 'execution', 'toolingPolicy')) {
+        [void]$migDoc['shift'].Remove($name)
+    }
+    $migDoc['shift']['isolation'] = 'worktree'
+    $migDoc['shift']['prepare'] = 'printf ready'
+    $migDoc['shift']['copyIn'] = @('.env.test')
+    $migDoc['shift']['itemBudget'] = 'soft 30m / 1M tokens, hard 45m / 2M tokens'
+    $migDoc['shift']['worktreeRoot'] = '.nightshift/custom-trees'
+    $migDoc['shift']['futureKnob'] = 'kept'
+    Write-JsonFile $migPath $migDoc
+    $migBefore = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($migPath, $utf8))
+    [IO.File]::WriteAllText((Join-Path $migNs 'shift-defaults.json'),
+        '{"schemaVersion":1,"verificationProfile":"strict","hours":6,"toolingPolicy":"review-missing","execution":"review-first","updatedAt":"2026-09-05T10:42:17Z"}' + "`n",
+        $utf8)
+    $migRun = Invoke-Helper @('-Project', $migProject, '-Command', 'migrate')
+    Expect-Equal 0 $migRun.ExitCode "migrate keeps the rest of the shift block ($($migRun.StderrText))"
+    $migAfter = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($migPath, $utf8))
+    foreach ($name in $keptNames) {
+        Expect-Equal (ConvertTo-NSCanonicalJson @{ v = $migBefore['shift'][$name] }) `
+            (ConvertTo-NSCanonicalJson @{ v = $migAfter['shift'][$name] }) `
+            "migrate leaves shift.$name byte for byte"
+    }
+    Expect-Equal 'strict' ([string]$migAfter['shift']['verificationProfile']) 'migrate writes the legacy profile'
+    Expect-Equal '6' ([string]$migAfter['shift']['hours']) 'migrate writes the legacy hours'
+    Expect-Equal 'review-first' ([string]$migAfter['shift']['execution']) 'migrate writes the legacy execution'
+    Expect-Equal 'review-missing' ([string]$migAfter['shift']['toolingPolicy']) 'migrate writes the legacy tooling policy'
+
+    $noneProject = Join-Path $root 'no-shift'
+    $noneNs = New-PolicyProject $noneProject
+    $nonePath = Join-Path $noneNs 'rules.json'
+    $noneDoc = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($nonePath, $utf8))
+    [void]$noneDoc.Remove('shift')
+    Write-JsonFile $nonePath $noneDoc
+    $noneSet = Invoke-Helper @('-Project', $noneProject, '-Command', 'defaults-set', '-Hours', '4')
+    Expect-Equal 0 $noneSet.ExitCode "defaults-set creates a shift block when the file has none ($($noneSet.StderrText))"
+    $noneAfter = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($nonePath, $utf8))
+    Expect-Equal '4' ([string]$noneAfter['shift']['hours']) 'a missing shift block still receives the hours'
+    Expect-Equal 'fast' ([string]$noneAfter['shift']['verificationProfile']) 'a missing shift block still receives the profile'
+
     # === the evidence settings: off by default, fixed per shift, and a bad value named ===
     $evidence = Join-Path $root 'evidence'
     $evidenceNs = New-PolicyProject $evidence

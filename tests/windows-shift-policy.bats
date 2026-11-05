@@ -91,6 +91,12 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
   fi
 }
 
+@test "Windows shift-policy logic keeps the rest of the shift block" {
+  grep -qF 'defaults-set keeps the rest of the shift block' "$LOGIC"
+  grep -qF 'migrate keeps the rest of the shift block' "$LOGIC"
+  grep -qF 'defaults-set creates a shift block when the file has none' "$LOGIC"
+}
+
 @test "Windows shift-policy logic passes when pwsh is present" {
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh not installed'
