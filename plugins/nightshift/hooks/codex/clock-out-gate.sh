@@ -20,6 +20,9 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# shellcheck source=plugins/nightshift/lib/ownership.sh
+. "$_here/../../lib/ownership.sh"
+ns_copy_serves_host "$_here/../.." codex || exit 0
 NS_COLD_STOP_HOST=codex
 # shellcheck source=plugins/nightshift/hooks/shared/cold-stop.sh
 . "$_here/../shared/cold-stop.sh"

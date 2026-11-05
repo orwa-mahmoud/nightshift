@@ -20,6 +20,9 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# shellcheck source=plugins/nightshift/lib/ownership.sh
+. "$_here/../../lib/ownership.sh"
+ns_copy_serves_host "$_here/../.." cursor || exit 0
 NS_COLD_STOP_HOST=cursor
 # shellcheck source=plugins/nightshift/hooks/shared/cold-stop.sh
 . "$_here/../shared/cold-stop.sh"
@@ -47,6 +50,7 @@ case "$STATE_KIND" in
     ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
+ns_hook_copy_note "$NS" cursor "${SID:-}" "$_here/../.."
 declare PUNCH STOP DEADLINE STALL NOTIFIED ENDED ARMED POLICY LOG
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set STOP "$NS" stop

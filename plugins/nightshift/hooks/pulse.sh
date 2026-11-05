@@ -462,6 +462,9 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -u
   _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+  # shellcheck source=plugins/nightshift/lib/ownership.sh
+  . "$_here/../lib/ownership.sh"
+  ns_copy_serves_host "$_here/.." claude || exit 0
   # shellcheck source=plugins/nightshift/hooks/shared/idle.sh
   . "$_here/shared/idle.sh"
   # shellcheck source=plugins/nightshift/lib/lib.sh

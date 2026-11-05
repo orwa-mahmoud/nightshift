@@ -19,6 +19,7 @@ if ($env:NIGHTSHIFT_REVIVAL -eq '1') {
 
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 
 if (Test-NSHookIdle) { exit 0 }
 

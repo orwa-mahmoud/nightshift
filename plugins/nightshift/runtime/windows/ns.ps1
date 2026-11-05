@@ -38,14 +38,46 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 # The verbs that change something on disk. Identical in the POSIX dispatcher.
 $NSWritingVerbs = @('scaffold', 'archive-receipts', 'stop-shift', 'link-workspace',
     'evidence-archive', 'migrate-state', 'apply-profile', 'plan-enter', 'plan-exit')
+# Verbs that answer from any copy. Identical in the POSIX dispatcher.
+$NSReadOnlyVerbs = @('help', 'bind', 'path', 'status', 'doctor')
+
+function Test-NSEnvNamesHost {
+    param([Parameter(Mandatory = $true)][string]$Name)
+    switch ($Name) {
+        'cursor' {
+            return -not [string]::IsNullOrEmpty([string]$env:CURSOR_AGENT + [string]$env:CURSOR_PROJECT_DIR + [string]$env:CURSOR_PLUGIN_ROOT + [string]$env:CURSOR_VERSION + [string]$env:CURSOR_TRACE_ID)
+        }
+        'claude' {
+            return -not [string]::IsNullOrEmpty([string]$env:CLAUDE_PROJECT_DIR + [string]$env:CLAUDECODE + [string]$env:CLAUDE_PLUGIN_ROOT)
+        }
+        'codex' {
+            return -not [string]::IsNullOrEmpty([string]$env:CODEX_PROJECT_DIR + [string]$env:CODEX_HOME + [string]$env:CODEX_SANDBOX)
+        }
+        default { return $false }
+    }
+}
 
 # The host, from the environment the hooks already read. Never from searching.
+# A Cursor session is never reported as Claude Code. When the environment names more than
+# one host, this copy's installing host breaks the tie. Mirrors ns_dispatch_host.
 function Get-NSDispatchHost {
     if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_HOST)) { return $env:NIGHTSHIFT_HOST }
-    if (-not [string]::IsNullOrEmpty($env:CLAUDE_PROJECT_DIR + $env:CLAUDECODE + $env:CLAUDE_PLUGIN_ROOT)) { return 'claude' }
-    if (-not [string]::IsNullOrEmpty($env:CODEX_PROJECT_DIR + $env:CODEX_HOME + $env:CODEX_SANDBOX)) { return 'codex' }
-    if (-not [string]::IsNullOrEmpty($env:CURSOR_PROJECT_DIR + $env:CURSOR_PLUGIN_ROOT + $env:CURSOR_TRACE_ID)) { return 'cursor' }
-    return 'unknown'
+    $hosts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($name in @('claude', 'codex', 'cursor')) {
+        if (-not (Test-NSEnvNamesHost $name)) { continue }
+        if ($name -ceq 'claude' -and (Test-NSEnvNamesHost 'cursor')) { continue }
+        $hosts.Add($name)
+    }
+    if ($hosts.Count -eq 0) { return 'unknown' }
+    if ($hosts.Count -eq 1) { return $hosts[0] }
+    $owner = Get-NSInstallingHost $pluginRoot
+    foreach ($name in $hosts) {
+        if ($name -ceq $owner) { return $owner }
+    }
+    foreach ($name in $hosts) {
+        if ($name -ceq 'cursor') { return 'cursor' }
+    }
+    return $hosts[0]
 }
 
 # Every verb this host can run, derived from what is on disk so it cannot drift.
@@ -114,6 +146,14 @@ function Resolve-NSFlagName {
 }
 
 $hostName = Get-NSDispatchHost
+
+# A copy installed for one host does not change state for another. Read-only verbs still answer.
+if ($NSReadOnlyVerbs -cnotcontains $Verb) {
+    if (-not (Test-NSCopyServesHost $pluginRoot $hostName)) {
+        Write-NSOwnershipRefusal $pluginRoot $hostName
+        exit 2
+    }
+}
 
 # The workspace, by the one rule the skills already state. A shell standing inside the state
 # folder means the workspace that owns it. An invalid link refuses in the Start preflight's format

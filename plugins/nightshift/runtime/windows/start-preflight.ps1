@@ -122,7 +122,7 @@ if ($Phase -eq 'bind') {
     if ($copies.Count -gt 1) {
         $named = ($copies | ForEach-Object { $f = $_.Split("`t"); $f[0] + ' (' + $f[1] + ')' }) -join ' and '
         Write-Refuse ("copies {0} Nightshift copies answer this {1} session: {2} - each writes every usage mark and receipt again" -f $copies.Count, $recordedHost, $named)
-        Write-Repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable all but one Nightshift copy in the host's plugin settings, start a new conversation, and run Start again"
+        Write-Repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable the extra copy in this host's plugin settings and leave copies installed by another host enabled, start a new conversation, and run Start again"
         exit 1
     }
     if ($recordedHost -ne 'codex') {

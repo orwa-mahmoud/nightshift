@@ -720,6 +720,65 @@ ns_lease_reset_stale() { # $1 = .nightshift; caller has proved no process or wat
   return "$rc"
 }
 
+# ns_installing_host <plugin-root> — claude, cursor, codex, or any.
+# A copy whose resolved root sits under the user profile's .claude/plugins, .cursor/plugins,
+# or .codex/plugins (Windows: the same folders under the user profile) was installed by that
+# host. A checkout, a --plugin-dir load, and any other root serve every host.
+ns_installing_host() {
+  local root home name base
+  root="$1"
+  if [ -d "$root" ]; then
+    root="$(cd -P "$root" 2>/dev/null && pwd)" || root="$1"
+  fi
+  case "$root" in
+    */) root="${root%/}" ;;
+  esac
+  home="${HOME:-${USERPROFILE:-}}"
+  if [ -n "$home" ] && [ -d "$home" ]; then
+    home="$(cd -P "$home" 2>/dev/null && pwd)" || home="${HOME:-${USERPROFILE:-}}"
+  fi
+  case "$home" in
+    */) home="${home%/}" ;;
+  esac
+  if [ -n "$home" ]; then
+    for name in claude cursor codex; do
+      base="$home/.$name/plugins"
+      case "$root" in
+        "$base" | "$base"/*)
+          printf '%s' "$name"
+          return 0
+          ;;
+      esac
+    done
+  fi
+  printf 'any'
+}
+
+# ns_copy_serves_host <plugin-root> <host> — true when this copy may answer <host>.
+ns_copy_serves_host() {
+  local owner
+  owner="$(ns_installing_host "$1")"
+  [ "$owner" = any ] || [ "$owner" = "$2" ]
+}
+
+# ns_ownership_refuse <plugin-root> <host> — the refusal a state-changing verb prints.
+# Names the copy to use instead. Exit status is the caller's.
+ns_ownership_refuse() {
+  local owner root
+  owner="$(ns_installing_host "$1")"
+  if [ -d "$1" ]; then
+    root="$(cd -P "$1" 2>/dev/null && pwd)" || root="$1"
+  else
+    root="$1"
+  fi
+  printf 'refuse ownership this copy was installed for %s (%s); this session is %s\n' "$owner" "$root" "$2"
+  if [ "$2" = unknown ]; then
+    printf 'repair Run this from a checkout, or from the copy installed for the host this session is. This session was not identified as claude, codex, or cursor.\n'
+  else
+    printf 'repair Use the copy installed for %s, under the user profile'"'"'s .%s/plugins directory.\n' "$2" "$2"
+  fi
+}
+
 # Every tool that speaks Claude Code's plugin interface executes these same hooks, so a hook
 # cannot assume Claude is the host it runs in. The transcript path names the writer: Cursor
 # keeps its conversations under ~/.cursor, and a record claimed from one belongs to Cursor —

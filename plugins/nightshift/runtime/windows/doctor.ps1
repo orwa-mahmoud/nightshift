@@ -144,7 +144,7 @@ foreach ($copyHost in @('claude', 'codex', 'cursor')) {
     $copies = @(Get-NSHookCopies $ns $copyHost 86400)
     if ($copies.Count -gt 1) {
         $named = ($copies | ForEach-Object { $f = $_.Split("`t"); $f[0] + ' (' + $f[1] + ')' }) -join ' and '
-        Add-NSWarn ("{0} Nightshift copies answered one {1} session: {2} - disable all but one in the host's plugin settings" -f $copies.Count, $copyHost, $named)
+        Add-NSWarn ("{0} Nightshift copies answered one {1} session: {2} - disable the extra copy in this host's plugin settings and leave copies installed by another host enabled" -f $copies.Count, $copyHost, $named)
     }
 }
 

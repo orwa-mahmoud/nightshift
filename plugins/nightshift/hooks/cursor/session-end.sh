@@ -9,6 +9,9 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# shellcheck source=plugins/nightshift/lib/ownership.sh
+. "$_here/../../lib/ownership.sh"
+ns_copy_serves_host "$_here/../.." cursor || exit 0
 # shellcheck source=plugins/nightshift/hooks/shared/idle.sh
 . "$_here/../shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
@@ -26,6 +29,7 @@ case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
+ns_hook_copy_note "$NS" cursor "${CURSOR_SESSION_ID:-}" "$_here/../.."
 declare PUNCH ARMED ENDED SESSION SESSION_END
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set ARMED "$NS" armed

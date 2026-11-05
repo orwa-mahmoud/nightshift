@@ -667,6 +667,10 @@ try {
     $startPreflightLogicRun = Invoke-TestScript $startPreflightLogic
     Assert-Equal 0 $startPreflightLogicRun.ExitCode `
         "Start preflight verdicts: $($startPreflightLogicRun.Stdout) $($startPreflightLogicRun.Stderr)"
+    $ownershipHostLogic = Join-Path $PSScriptRoot 'ownership-host-logic.ps1'
+    $ownershipHostLogicRun = Invoke-TestScript $ownershipHostLogic
+    Assert-Equal 0 $ownershipHostLogicRun.ExitCode `
+        "installing host and foreign copies: $($ownershipHostLogicRun.Stdout) $($ownershipHostLogicRun.Stderr)"
     $normalizeOutputLogic = Join-Path $PSScriptRoot 'normalize-output-logic.ps1'
     $normalizeOutputLogicRun = Invoke-TestScript $normalizeOutputLogic
     Assert-Equal 0 $normalizeOutputLogicRun.ExitCode `

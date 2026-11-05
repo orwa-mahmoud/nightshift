@@ -16,6 +16,7 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 
 # The reason a block carries: the whole contract, or one line when the gate positively knows
 # nothing has moved. The decision is the shared one; only the shape around it is this host's.

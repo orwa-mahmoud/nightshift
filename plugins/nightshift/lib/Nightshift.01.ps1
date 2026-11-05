@@ -1723,6 +1723,66 @@ function Test-NSClaudeForeignCursorSurface {
     return ($null -ne $session -and $session.HostName -eq 'cursor')
 }
 
+# Get-NSInstallingHost <plugin-root> - claude, cursor, codex, or any.
+# A copy whose resolved root sits under the user profile's .claude/plugins, .cursor/plugins,
+# or .codex/plugins was installed by that host. Anything else serves every host.
+# Mirrors ns_installing_host.
+function Get-NSInstallingHost {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$PluginRoot)
+    if ([string]::IsNullOrWhiteSpace($PluginRoot)) { return 'any' }
+    $root = $PluginRoot
+    if (Test-Path -LiteralPath $PluginRoot) {
+        try { $root = (Resolve-Path -LiteralPath $PluginRoot -ErrorAction Stop).ProviderPath } catch { }
+    }
+    $root = $root.TrimEnd('\', '/')
+    $home = $env:USERPROFILE
+    if ([string]::IsNullOrEmpty($home)) { $home = $env:HOME }
+    if ([string]::IsNullOrEmpty($home)) { return 'any' }
+    if (Test-Path -LiteralPath $home) {
+        try { $home = (Resolve-Path -LiteralPath $home -ErrorAction Stop).ProviderPath } catch { }
+    }
+    $home = $home.TrimEnd('\', '/')
+    foreach ($name in @('claude', 'cursor', 'codex')) {
+        $base = (Join-Path (Join-Path $home ".$name") 'plugins').TrimEnd('\', '/')
+        if ($root.Equals($base, [StringComparison]::OrdinalIgnoreCase)) { return $name }
+        if ($root.StartsWith($base + '\', [StringComparison]::OrdinalIgnoreCase)) { return $name }
+        if ($root.StartsWith($base + '/', [StringComparison]::OrdinalIgnoreCase)) { return $name }
+    }
+    return 'any'
+}
+
+# Test-NSCopyServesHost <plugin-root> <host> - true when this copy may answer <host>.
+# Mirrors ns_copy_serves_host.
+function Test-NSCopyServesHost {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$PluginRoot,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
+    )
+    $owner = Get-NSInstallingHost $PluginRoot
+    return ($owner -ceq 'any' -or $owner -ceq $HostName)
+}
+
+# Write-NSOwnershipRefusal <plugin-root> <host> - the refusal a state-changing verb prints.
+# Mirrors ns_ownership_refuse. The caller exits.
+function Write-NSOwnershipRefusal {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$PluginRoot,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$SessionHost
+    )
+    $owner = Get-NSInstallingHost $PluginRoot
+    $root = $PluginRoot
+    if (Test-Path -LiteralPath $PluginRoot) {
+        try { $root = (Resolve-Path -LiteralPath $PluginRoot -ErrorAction Stop).ProviderPath } catch { }
+    }
+    [Console]::Out.WriteLine("refuse ownership this copy was installed for $owner ($root); this session is $SessionHost")
+    if ($SessionHost -ceq 'unknown') {
+        [Console]::Out.WriteLine('repair Run this from a checkout, or from the copy installed for the host this session is. This session was not identified as claude, codex, or cursor.')
+    }
+    else {
+        [Console]::Out.WriteLine("repair Use the copy installed for $SessionHost, under the user profile's .$SessionHost/plugins directory.")
+    }
+}
+
 # Get-NSPluginVersion <plugin-root> - the version a plugin copy's own manifest declares, or 'unknown'.
 # Mirrors ns_plugin_version.
 function Get-NSPluginVersion {

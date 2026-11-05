@@ -444,7 +444,7 @@ probe_from() {
   printf '%s\n' "$output" | grep -qF "refuse copies 2 Nightshift copies answer this codex session: $a (0.25.3) and $b (0.28.0)"
   printf '%s\n' "$output" | grep -qF 'repair remove the markers this start created'
   run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh" --project "$p"
-  printf '%s\n' "$output" | grep -qF "2 Nightshift copies answered one codex session: $a (0.25.3) and $b (0.28.0) - disable all but one"
+  printf '%s\n' "$output" | grep -qF "2 Nightshift copies answered one codex session: $a (0.25.3) and $b (0.28.0) - disable the extra copy in this host's plugin settings"
 }
 
 @test "the preflight needs neither jq nor python3" {
