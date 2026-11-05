@@ -102,6 +102,43 @@ with open(p,"w") as f: json.dump(d,f)
   ' "$p/.nightshift/rules.json" >/dev/null
 }
 
+@test "fill keeps an owner's false and null and still adds a missing key" {
+  p="$(new_project)"
+  rm -f "$p/.nightshift/.shift-armed"
+  jq '
+    .watchAfterUsageLimit = false
+    | .notifyCommand = null
+    | del(.longUnitWarnMinutes)
+  ' "$p/.nightshift/rules.json" >"$p/rules.tmp"
+  mv "$p/rules.tmp" "$p/.nightshift/rules.json"
+  plugincopy="$BATS_TEST_TMPDIR/fill-presence"
+  mkdir -p "$plugincopy"
+  cp -R "$BATS_TEST_DIRNAME/../plugins" "$plugincopy/plugins"
+  cat >"$plugincopy/plugins/nightshift/skills/nightshift/references/profiles/presence.json" <<'JSON'
+{
+  "name": "presence",
+  "version": 2,
+  "risk": "low",
+  "use": "test",
+  "rules": {
+    "watchAfterUsageLimit": true,
+    "notifyCommand": "echo from-profile",
+    "longUnitWarnMinutes": 9
+  },
+  "shiftDefaults": null,
+  "gates": null
+}
+JSON
+  run bash "$plugincopy/plugins/nightshift/runtime/apply-profile.sh" --project "$p" \
+    --profile presence --mode fill --apply
+  [ "$status" -eq 0 ]
+  jq -e '
+    .watchAfterUsageLimit == false
+    and .notifyCommand == null
+    and .longUnitWarnMinutes == 9
+  ' "$p/.nightshift/rules.json" >/dev/null
+}
+
 @test "fill refuses an old file with no explicit Codex question policy" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"
