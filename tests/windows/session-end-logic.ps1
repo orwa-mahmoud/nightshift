@@ -33,6 +33,39 @@ function New-EndProject {
     return $path
 }
 
+function Set-ProcessArguments {
+    # Windows PowerShell 5.1 runs on .NET Framework, whose ProcessStartInfo has
+    # no ArgumentList. Quote into Arguments there, the way CommandLineToArgvW
+    # reads it back.
+    param(
+        [Parameter(Mandatory = $true)]$StartInfo,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+    if ($null -ne $StartInfo.PSObject.Properties['ArgumentList']) {
+        foreach ($argument in $Arguments) { $null = $StartInfo.ArgumentList.Add($argument) }
+        return
+    }
+    $quoted = New-Object Collections.Generic.List[string]
+    foreach ($argument in $Arguments) {
+        $escaped = $argument -replace '(\\*)"', '$1$1\"'
+        $escaped = $escaped -replace '(\\+)$', '$1$1'
+        $quoted.Add('"' + $escaped + '"')
+    }
+    $StartInfo.Arguments = ($quoted -join ' ')
+}
+
+function Set-ProcessEnvironment {
+    param(
+        [Parameter(Mandatory = $true)]$StartInfo,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+    foreach ($existing in @($StartInfo.EnvironmentVariables.Keys)) {
+        if ($existing -ieq $Name) { $null = $StartInfo.EnvironmentVariables.Remove($existing) }
+    }
+    $StartInfo.EnvironmentVariables.Add($Name, $Value)
+}
+
 function Invoke-End {
     param(
         [Parameter(Mandatory = $true)][string]$ForHost,
@@ -46,22 +79,17 @@ function Invoke-End {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
-    $null = $psi.ArgumentList.Add('-NoProfile')
-    $null = $psi.ArgumentList.Add('-NonInteractive')
-    $null = $psi.ArgumentList.Add('-File')
-    $null = $psi.ArgumentList.Add($hook)
-    $null = $psi.ArgumentList.Add('-HostName')
-    $null = $psi.ArgumentList.Add($ForHost)
-    $null = $psi.ArgumentList.Add('-HookJson')
-    $null = $psi.ArgumentList.Add($Json)
+    Set-ProcessArguments -StartInfo $psi -Arguments @(
+        '-NoProfile', '-NonInteractive', '-File', $hook, '-HostName', $ForHost, '-HookJson', $Json
+    )
     $dirName = switch ($ForHost) {
         'claude' { 'CLAUDE_PROJECT_DIR' }
         'codex' { 'CODEX_PROJECT_DIR' }
         'cursor' { 'CURSOR_PROJECT_DIR' }
     }
-    $psi.Environment[$dirName] = $Project
+    Set-ProcessEnvironment -StartInfo $psi -Name $dirName -Value $Project
     foreach ($name in $Environment.Keys) {
-        $psi.Environment[$name] = [string]$Environment[$name]
+        Set-ProcessEnvironment -StartInfo $psi -Name ([string]$name) -Value ([string]$Environment[$name])
     }
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $psi
