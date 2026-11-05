@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# session-end.sh — SessionEnd hook. A clean exit mid-shift is the owner's hand on the door.
+# session-end.sh — SessionEnd hook. Only the owner's own exit is a hand on the door.
 #
 # The night watchman (runtime/claude/watchman.sh) revives a session that dies mid-shift — but a session
-# the owner ended on purpose (/exit, a clean quit) must stay ended. Crashes, kills and API deaths
-# never reach this hook, which is exactly the tell: a marker present means a hand closed the
-# session, no marker means it died. The watchman stands down on the marker; Start and the Hunt cut
-# clear it, which is what re-arms the night.
+# the owner ended on purpose must stay ended. Claude Code's SessionEnd reason table names that hand:
+# prompt_input_exit, logout, clear, and resume. other, a missing reason, and anything the table does
+# not name write nothing, so a headless run that dies mid-shift leaves the watchman to revive it.
+# The watchman stands down on the marker; Start and the Hunt cut clear it, which is what re-arms the night.
 #
 # Inert outside an active shift: no punch list, no open box, or an already-ended shift writes
 # nothing, so ordinary sessions leave no residue.
@@ -16,6 +16,9 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
+ns_copy_serves_host "$_here/.." claude || exit 0
+# shellcheck source=plugins/nightshift/hooks/shared/session-end-reasons.sh
+. "$_here/shared/session-end-reasons.sh"
 
 # A watchman-spawned revival carries this mark. Its exit — finished, or dead on the API again —
 # is never the owner's hand on the door; writing the marker for it would stand the watchman down
@@ -77,6 +80,7 @@ else
   REASON="$(printf '%s' "$INPUT" | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   REASON="${REASON:-unknown}"
 fi
+ns_session_end_owner_reason claude "$REASON" || exit 0
 
 [ -L "$SESSION_END" ] && rm -f "$SESSION_END"
 printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$SESSION_END"

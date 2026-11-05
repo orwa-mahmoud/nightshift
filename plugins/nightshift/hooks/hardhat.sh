@@ -28,6 +28,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh" # pure-bash path: no dirname, so a hostile PATH cannot unsource the helpers
+ns_copy_serves_host "$_here/.." claude || exit 0
 # shellcheck source=plugins/nightshift/hooks/shared/hardhat-core.sh
 . "$_here/shared/hardhat-core.sh"
 

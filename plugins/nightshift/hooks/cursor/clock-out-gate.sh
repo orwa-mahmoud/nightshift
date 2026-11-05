@@ -25,6 +25,7 @@ NS_COLD_STOP_HOST=cursor
 . "$_here/../shared/cold-stop.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh" # pure-bash path: no dirname, so a hostile PATH cannot unsource the helpers
+ns_copy_serves_host "$_here/../.." cursor || exit 0
 # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
 . "$_here/../shared/gate-core.sh"
 # shellcheck source=plugins/nightshift/hooks/cursor/lib-io.sh
@@ -47,6 +48,7 @@ case "$STATE_KIND" in
     ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
+ns_hook_copy_note "$NS" cursor "${SID:-}" "$_here/../.."
 declare PUNCH STOP DEADLINE STALL NOTIFIED ENDED ARMED POLICY LOG
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set STOP "$NS" stop

@@ -25,8 +25,8 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
   windows_module_source | grep -qF "NSPolicyElevationPattern['daemons']"
   windows_module_source | grep -qF "NSPolicyElevationPattern['external-services']"
   windows_module_source | grep -qF 'sudo|d[o]as'
-  windows_module_source | grep -qF '(docker-compose)[[:space:]]+(up|run|start|build|down|create)'
-  windows_module_source | grep -qF '(docker|podman|nerdctl|colima)[[:space:]]+(run|create|start|build'
+  windows_module_source | grep -qF '(docker-compose)[[:space:]]+(up|run|exec|start|build|down|create)'
+  windows_module_source | grep -qF '(docker|podman|nerdctl|colima)[[:space:]]+(run|exec|create|start|build'
   windows_module_source | grep -qF 'gh[[:space:]]+auth[[:space:]]+login'
   windows_module_source | grep -qF 'Convert-NSPolicyErePattern'
 }

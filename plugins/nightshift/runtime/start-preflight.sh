@@ -159,7 +159,7 @@ if [ "$PHASE" = bind ]; then
   COPIES="$(ns_hook_copies "$NS" "$REC_HOST" 600)"
   if [ "$(printf '%s' "$COPIES" | grep -c .)" -gt 1 ]; then
     refuse "copies $(printf '%s' "$COPIES" | grep -c .) Nightshift copies answer this $REC_HOST session: $(printf '%s\n' "$COPIES" | awk -F '\t' 'NF { printf "%s%s (%s)", sep, $1, $2; sep = " and " }') - each writes every usage mark and receipt again"
-    repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable all but one Nightshift copy in the host's plugin settings, start a new conversation, and run Start again"
+    repair "remove the markers this start created (.shift-armed and its new .shift-session) and reset the lease in the same call, then disable the extra copy in this host's plugin settings and leave copies installed by another host enabled, start a new conversation, and run Start again"
     exit 1
   fi
   if [ "$REC_HOST" != codex ]; then

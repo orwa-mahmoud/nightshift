@@ -196,6 +196,15 @@ ns_rules_set_block() {
   LC_ALL=C "$bin" -v mode=setblock -v key="$2" -v value="$3" -f "$_NS_RULES_AWK_FILE" <"$1"
 }
 
+# ns_rules_merge_block <file> <key> <compact-json-object> — the same document with those
+# keys set inside the named object, sorted and indented, on stdout. Every other key of that
+# object survives, including one this version does not know. An absent object is created.
+ns_rules_merge_block() {
+  local bin
+  bin="$(ns_rules_awk_bin)" || return 1
+  LC_ALL=C "$bin" -v mode=mergeblock -v key="$2" -v value="$3" -f "$_NS_RULES_AWK_FILE" <"$1"
+}
+
 # ns_rules_get_in <file> <block> <key> — one field of a settings block, as the
 # effective scalar, null, or compact JSON for an array. Empty when absent.
 ns_rules_get_in() {

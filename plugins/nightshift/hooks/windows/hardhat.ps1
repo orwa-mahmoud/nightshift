@@ -15,6 +15,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 $script:cwd = ''
 $script:ns = ''
 
@@ -69,12 +70,7 @@ function Remove-NSCommitMessage {
         }
         return $match.Groups['option'].Value + $separator + 'MSG'
     })
-
-    $plainPattern = @'
-(?is)(?<!\S)(?<option>-m|--message)(?<separator>=|\s+)(?<value>[^\s'"]+)
-'@
-    $plain = [Text.RegularExpressions.Regex]::new($plainPattern)
-    return $plain.Replace($Command, '${option}${separator}MSG')
+    return $Command
 }
 
 function Get-NSNestedStrings {
@@ -910,6 +906,183 @@ function Get-NSProspectiveGitPaths {
     }
 }
 
+function Get-NSSubstitutions {
+    param([AllowEmptyString()][string]$Line)
+    $found = New-Object Collections.Generic.List[string]
+    $rest = $Line
+    while ($rest.Length -gt 0) {
+        $dollar = $rest.IndexOf('$(')
+        $tick = $rest.IndexOf([char]96)
+        if ($dollar -lt 0 -and $tick -lt 0) { break }
+        if ($dollar -ge 0 -and ($tick -lt 0 -or $dollar -lt $tick)) {
+            $close = $rest.IndexOf(')', $dollar + 2)
+            if ($close -lt 0) { break }
+            $found.Add($rest.Substring($dollar, $close - $dollar + 1))
+            $rest = $rest.Substring($close + 1)
+            continue
+        }
+        $close = $rest.IndexOf([char]96, $tick + 1)
+        if ($close -lt 0) { break }
+        $found.Add($rest.Substring($tick, $close - $tick + 1))
+        $rest = $rest.Substring($close + 1)
+    }
+    return ($found -join ' ')
+}
+
+function Test-NSHeredocDataWrite {
+    param([AllowEmptyString()][string]$Line)
+    if ([regex]::Matches($Line, '<<').Count -ne 1) { return $false }
+    if ($Line -match '[|;$()]') { return $false }
+    if ($Line.IndexOf([char]96) -ge 0) { return $false }
+    if ($Line.Contains('&')) { return $false }
+    $trim = $Line.TrimStart()
+    if ($trim.Length -eq 0) { return $false }
+    $word = ($trim -split '[ \t]', 2)[0]
+    return ($word -ceq 'cat' -or $word -ceq 'tee')
+}
+
+function Remove-NSDataHeredocs {
+    param([AllowEmptyString()][string]$Command)
+    if ($Command.IndexOf('<<') -lt 0) { return $Command }
+    $newline = "`n"
+    if ($Command.Contains("`r`n")) { $newline = "`r`n" }
+    $lines = [regex]::Split($Command, "`r?`n")
+    $out = New-Object Collections.Generic.List[string]
+    $open = $false
+    $delim = ''
+    $strip = $false
+    $keep = $false
+    foreach ($line in $lines) {
+        if ($open) {
+            $stripped = $line.TrimStart()
+            if ($stripped -ceq $delim -or $line -ceq $delim) {
+                $open = $false
+                $out.Add($line)
+                continue
+            }
+            if ($keep) {
+                $kept = Get-NSSubstitutions $line
+                if (-not [string]::IsNullOrEmpty($kept)) { $out.Add($kept) }
+            }
+            elseif (-not $strip) { $out.Add($line) }
+            continue
+        }
+        $out.Add($line)
+        $strip = $false
+        $keep = $false
+        $quoted = [regex]::Match($line, "<<-?[ \t]*'([^']*)'")
+        if (-not $quoted.Success) { $quoted = [regex]::Match($line, '<<-?[ \t]*"([^"]*)"') }
+        if ($quoted.Success) {
+            $delim = $quoted.Groups[1].Value
+            $open = $true
+            if (Test-NSHeredocDataWrite $line) {
+                $strip = $true
+                $out.Add('NIGHTSHIFT_HEREDOC_BODY')
+            }
+            continue
+        }
+        $bare = [regex]::Match($line, '<<-?[ \t]*([A-Za-z_][A-Za-z0-9_]*)')
+        if ($bare.Success -and (Test-NSHeredocDataWrite $line)) {
+            $delim = $bare.Groups[1].Value
+            $open = $true
+            $keep = $true
+        }
+    }
+    if ($open) { return $Command }
+    $text = $out -join $newline
+    if ($Command.EndsWith($newline) -and -not $text.EndsWith($newline)) { $text += $newline }
+    if (-not $Command.EndsWith($newline) -and $text.EndsWith($newline)) {
+        $text = $text.Substring(0, $text.Length - $newline.Length)
+    }
+    return $text
+}
+
+function Get-NSMaskDataLine {
+    param([AllowEmptyString()][string]$Line)
+    $tokens = New-Object Collections.Generic.List[string]
+    $tok = ''
+    $quote = ''
+    foreach ($c in $Line.ToCharArray()) {
+        if (-not [string]::IsNullOrEmpty($quote)) {
+            if ($c -ceq $quote) { $quote = '' } else { $tok += $c }
+            continue
+        }
+        if ($c -ceq "'" -or $c -ceq '"') { $quote = [string]$c; continue }
+        if ($c -ceq ' ' -or $c -ceq "`t") {
+            if ($tok.Length -gt 0) { $tokens.Add($tok); $tok = '' }
+            continue
+        }
+        $tok += $c
+    }
+    if (-not [string]::IsNullOrEmpty($quote)) { return $Line }
+    if ($tok.Length -gt 0) { $tokens.Add($tok) }
+    $out = New-Object Collections.Generic.List[string]
+    $data = $false
+    $redir = $false
+    foreach ($token in $tokens) {
+        if ($token -ceq '|' -or $token -ceq '||' -or $token -ceq ';' -or $token -ceq '&&' -or $token -ceq '&') {
+            $data = $false
+            $redir = $false
+            $out.Add($token)
+            continue
+        }
+        if ($redir) { $out.Add($token); $redir = $false; continue }
+        if ($token -ceq '>' -or $token -ceq '>>' -or $token -ceq '<' -or $token -ceq '<<' -or $token -ceq '<<-') {
+            $out.Add($token)
+            $redir = $true
+            continue
+        }
+        if ($data) {
+            if ($token.Contains('$(') -or $token.IndexOf([char]96) -ge 0) { $out.Add($token) }
+            continue
+        }
+        if ($token.Contains('=')) { $out.Add($token); continue }
+        $out.Add($token)
+        $base = $token
+        $slash = $token.LastIndexOf('/')
+        if ($slash -ge 0) { $base = $token.Substring($slash + 1) }
+        if ($base -ceq 'echo' -or $base -ceq 'printf' -or $base -ceq 'grep' -or $base -ceq 'rg' -or $base -ceq 'egrep' -or $base -ceq 'fgrep') {
+            $data = $true
+        }
+    }
+    return ($out -join ' ')
+}
+
+function Remove-NSDataCommandArguments {
+    param([AllowEmptyString()][string]$Command)
+    $newline = "`n"
+    if ($Command.Contains("`r`n")) { $newline = "`r`n" }
+    $lines = [regex]::Split($Command, "`r?`n")
+    $masked = New-Object Collections.Generic.List[string]
+    foreach ($line in $lines) { $masked.Add((Get-NSMaskDataLine $line)) }
+    $text = $masked -join $newline
+    if ($Command.EndsWith($newline) -and -not $text.EndsWith($newline)) { $text += $newline }
+    if (-not $Command.EndsWith($newline) -and $text.EndsWith($newline)) {
+        $text = $text.Substring(0, $text.Length - $newline.Length)
+    }
+    return $text
+}
+
+function Remove-NSProjectPip {
+    param([AllowEmptyString()][string]$Command)
+    $boundary = '(^|[;&|(`\s''"`])'
+    $text = [regex]::Replace($Command, ($boundary + '(\./)?(\.venv|venv)/bin/python[0-9.]*\s+-m\s+pip3?'), '${1}nsvenv')
+    $text = [regex]::Replace($text, ($boundary + '(\./)?(\.venv|venv)/bin/pip3?'), '${1}nsvenv')
+    return [regex]::Replace($text, ($boundary + 'uv\s+pip3?'), '${1}uv-tool')
+}
+
+function Convert-NSElevationText {
+    param([AllowEmptyString()][string]$Command)
+    return (Remove-NSProjectPip (Remove-NSDataCommandArguments (Remove-NSDataHeredocs $Command)))
+}
+
+function Remove-NSContainerPayload {
+    param([AllowEmptyString()][string]$Command)
+    $text = [regex]::Replace($Command, '(docker|podman|nerdctl)\s+(run|exec)\s+[^;&|]*', '$1 $2')
+    $text = [regex]::Replace($text, 'docker\s+compose\s+(run|exec)\s+[^;&|]*', 'docker compose $1')
+    return [regex]::Replace($text, 'docker-compose\s+(run|exec)\s+[^;&|]*', 'docker-compose $1')
+}
+
 # A simple quoted payload after eval or a shell -c. Hardening only: one pair of
 # quotes, no nested parser, not a sandbox.
 function Get-NSElevationInner {
@@ -936,9 +1109,12 @@ function Get-NSElevationDenyReason {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scrubbed,
         [Parameter(Mandatory = $true)][string]$Workspace
     )
-    $subject = $Scrubbed
-    $inner = Get-NSElevationInner $Scrubbed
-    if (-not [string]::IsNullOrEmpty($inner)) { $subject = "$Scrubbed $inner" }
+    $full = Convert-NSElevationText $Scrubbed
+    $free = Remove-NSContainerPayload $full
+    $inner = Get-NSElevationInner $free
+    if (-not [string]::IsNullOrEmpty($inner)) { $free = "$free $inner" }
+    $inner = Get-NSElevationInner $full
+    if (-not [string]::IsNullOrEmpty($inner)) { $full = "$full $inner" }
     foreach ($category in @('sudo', 'containers', 'global-packages', 'daemons', 'external-services')) {
         $pattern = [string](Get-NSElevationPattern -Workspace $Workspace -Category $category)
         if ([string]::IsNullOrEmpty($pattern)) { continue }
@@ -948,6 +1124,8 @@ function Get-NSElevationDenyReason {
         catch {
             return "BLOCKED: elevation.$category.pattern is not a valid extended regular expression, so the guard it configures cannot run. Fix the pattern in $(Get-NSLayoutName $script:ns 'rules')."
         }
+        $subject = $free
+        if ($category -ceq 'containers') { $subject = $full }
         if (-not $regex.IsMatch($subject)) { continue }
         $status = Test-NSPolicyAllowed -Workspace $Workspace -Category $category -Command $Scrubbed
         if ($status -eq 0) { continue }

@@ -7,6 +7,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/../shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh"
+ns_copy_serves_host "$_here/../.." cursor || exit 0
 # shellcheck source=plugins/nightshift/hooks/cursor/lib-io.sh
 . "$_here/lib-io.sh"
 # shellcheck source=plugins/nightshift/hooks/pulse.sh
@@ -15,6 +16,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 cursor_read_input "$@"
 HOST_DIR="$(cursor_project_dir)"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
+ns_hook_copy_note "$PROJECT_DIR/.nightshift" cursor "${CURSOR_SESSION_ID:-}" "$_here/../.."
 STATE_KIND="$(ns_state_kind "$PROJECT_DIR")"
 case "$STATE_KIND" in
   malformed | future) exit 0 ;;

@@ -25,6 +25,7 @@ NS_COLD_STOP_HOST=codex
 . "$_here/../shared/cold-stop.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh" # pure-bash path: no dirname, so a hostile PATH cannot unsource the helpers
+ns_copy_serves_host "$_here/../.." codex || exit 0
 # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
 . "$_here/../shared/gate-core.sh"
 # shellcheck source=plugins/nightshift/hooks/codex/lib-io.sh

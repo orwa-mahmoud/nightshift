@@ -187,6 +187,34 @@ want() { jq -r "$2" "$FIX/$1/expected.json"; }
   printf '%s' "$output" | jq -e '.toolingPolicy == "review-missing"' >/dev/null
 }
 
+@test "a verbatim shipped elevation pattern is updated and a custom pattern is not" {
+  p="$BATS_TEST_TMPDIR/elev-pattern"
+  mkdir -p "$p/.nightshift"
+  tpl="$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+  prev="$ROOT/plugins/nightshift/lib/shipped-elevation-previous.tsv"
+  jq '.elevation.daemons.pattern = "kept-by-owner"' "$tpl" >"$p/.nightshift/rules.json"
+  old="$(awk -F '\t' '$1 == "global-packages" { sub(/^[^\t]*\t/, ""); print }' "$prev")"
+  cur="$(jq -r '.elevation["global-packages"].pattern' "$p/.nightshift/rules.json")"
+  cur_esc="$(printf '%s' "$cur" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  python3 -c 'import pathlib, sys
+path, old, cur = sys.argv[1:]
+file = pathlib.Path(path)
+text = file.read_text()
+if cur not in text:
+    raise SystemExit("current pattern encoding is not in the file")
+file.write_text(text.replace(cur, old, 1))' \
+    "$p/.nightshift/rules.json" "$old" "$cur_esc"
+  migrate "$p"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'migrating shipped elevation patterns'
+  [ "$(jq -r '.elevation["global-packages"].pattern' "$p/.nightshift/rules.json")" = \
+    "$(jq -r '.elevation["global-packages"].pattern' "$tpl")" ]
+  [ "$(jq -r '.elevation.daemons.pattern' "$p/.nightshift/rules.json")" = kept-by-owner ]
+  migrate "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'no-op'
+}
+
 @test "the owner file wins over a legacy file that disagrees" {
   p="$BATS_TEST_TMPDIR/read-both"
   mkdir -p "$p/.nightshift"

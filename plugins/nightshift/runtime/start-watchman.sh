@@ -47,6 +47,12 @@ case "$HOST_NAME" in
   *) printf 'start-watchman: --host must be claude, codex or cursor\n' >&2; exit 1 ;;
 esac
 
+# A copy never starts a watchman for a host that did not install it.
+if ! ns_copy_serves_host "$_here/.." "$HOST_NAME"; then
+  ns_ownership_refuse "$_here/.." "$HOST_NAME"
+  exit 2
+fi
+
 WORKSPACE="$(ns_workspace_root "$(ns_state_dir_owner "$PROJECT")" 2>/dev/null)" || {
   printf 'start-watchman: invalid .nightshift-link at %s\n' "$PROJECT" >&2
   exit 1

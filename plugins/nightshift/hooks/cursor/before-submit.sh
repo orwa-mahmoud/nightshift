@@ -8,6 +8,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/../shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh"
+ns_copy_serves_host "$_here/../.." cursor || exit 0
 # shellcheck source=plugins/nightshift/hooks/cursor/lib-io.sh
 . "$_here/lib-io.sh"
 
@@ -16,6 +17,7 @@ SID="${CURSOR_SESSION_ID:-}"
 HOST_DIR="$(cursor_project_dir)"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
 NS="$PROJECT_DIR/.nightshift"
+ns_hook_copy_note "$NS" cursor "${SID:-}" "$_here/../.."
 
 # The owner's own /nightshift:plan-exit or /nightshift:start, as the first word typed, closes the
 # plan room. The model's own tool calls never pass through here.

@@ -64,6 +64,7 @@ set -u
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh" # pure-bash path — no dirname dependency
+ns_copy_serves_host "$_here/../.." codex || exit 0
 
 PROJECT="$PWD"
 INTERVAL_MIN="${NIGHTSHIFT_WATCH:-}"

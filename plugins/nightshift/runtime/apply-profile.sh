@@ -236,7 +236,7 @@ proposed="$(PROFILE_MODE="$MODE" jq -n --argjson cur "$current" \
     + (
         $p[0].rules
         | to_entries
-        | map(select(($cur[.key] | not)))
+        | map(select(.key as $k | $cur | has($k) | not))
         | from_entries
       );
   def replace:

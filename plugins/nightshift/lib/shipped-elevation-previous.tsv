@@ -1,0 +1,4 @@
+containers	(/var/run/docker\\.sock|unix://[^ \\t]*docker\\.sock|DOCKER_HOST=)|(^|[;&|(`]|[[:space:]]|'|\")(docker-compose)[[:space:]]+(up|run|start|build|down|create)|(^|[;&|(`]|[[:space:]]|'|\")(docker|podman|nerdctl|colima)[[:space:]]+(run|create|start|build|compose[[:space:]]+(up|run|start|build|down|create))
+global-packages	(^|[;&|(`]|[[:space:]]|'|\")(brew|apt|apt-get|dnf|yum|pacman|choco|winget|scoop)[[:space:]]+(install|upgrade|uninstall|remove|reinstall)|npm[[:space:]]+(i|install)[[:space:]]+(-g|--global)|pnpm[[:space:]]+add[[:space:]]+-g|yarn[[:space:]]+global|(pip3?|cargo|go)[[:space:]]+install
+daemons	(^|[;&|(`]|[[:space:]]|'|\")(systemctl|launchctl|service|brew[[:space:]]+services|pg_ctl|redis-server|mongod|mysqld)([[:space:]]|$)
+external-services	(^|[;&|(`]|[[:space:]]|'|\")(gh[[:space:]]+auth[[:space:]]+login|npm[[:space:]]+login|docker[[:space:]]+login|az[[:space:]]+login|gcloud[[:space:]]+auth|aws[[:space:]]+configure)([[:space:]]|$)

@@ -337,7 +337,7 @@ try {
     Expect-True ($copiesRun.Stdout.Contains("refuse copies 2 Nightshift copies answer this codex session: $($copyRoots[0]) (0.25.3) and $($copyRoots[1]) (0.28.0)")) "both copies are named: $($copiesRun.Stdout)"
     $doctorScript = Join-Path $repository 'plugins/nightshift/runtime/windows/doctor.ps1'
     $doctorOut = & $hostExecutable -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $doctorScript -Project $copies 2>&1 | Out-String
-    Expect-True ($doctorOut.Contains("2 Nightshift copies answered one codex session: $($copyRoots[0]) (0.25.3) and $($copyRoots[1]) (0.28.0) - disable all but one")) "Doctor names both copies: $doctorOut"
+    Expect-True ($doctorOut.Contains("2 Nightshift copies answered one codex session: $($copyRoots[0]) (0.25.3) and $($copyRoots[1]) (0.28.0) - disable the extra copy in this host's plugin settings")) "Doctor names both copies: $doctorOut"
 
     # The dry run reports and touches nothing.
     $dry = New-Site (Join-Path $root 'dry')

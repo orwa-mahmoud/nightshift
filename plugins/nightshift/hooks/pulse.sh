@@ -466,6 +466,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   . "$_here/shared/idle.sh"
   # shellcheck source=plugins/nightshift/lib/lib.sh
   . "$_here/../lib/lib.sh"
+  ns_copy_serves_host "$_here/.." claude || exit 0
   ns_hook_idle_exit
   INPUT="$(ns_read_stdin_bounded 2)"
   HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"

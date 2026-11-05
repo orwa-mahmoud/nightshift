@@ -268,6 +268,52 @@ finally {
     Remove-Item -LiteralPath $badRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# Fill mode keeps a key the owner set, including false and null, and adds one they never set.
+$presenceRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-apply-profile-presence-" + [guid]::NewGuid().ToString('N'))
+try {
+    $pluginCopy = Join-Path $presenceRoot 'plugincopy'
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins') (Join-Path $pluginCopy 'plugins') -Recurse
+    $profilesDir = Join-Path $pluginCopy 'plugins/nightshift/skills/nightshift/references/profiles'
+    $copiedHelper = Join-Path $pluginCopy 'plugins/nightshift/runtime/windows/apply-profile.ps1'
+    @'
+{
+  "name": "presence",
+  "version": 2,
+  "risk": "low",
+  "use": "test",
+  "rules": {
+    "watchAfterUsageLimit": true,
+    "notifyCommand": "echo from-profile",
+    "longUnitWarnMinutes": 9
+  },
+  "shiftDefaults": null,
+  "gates": null
+}
+'@ | Set-Content -NoNewline (Join-Path $profilesDir 'presence.json')
+
+    $proj = Join-Path $presenceRoot 'proj'
+    New-NSTestProject $proj
+    $rulesPath = Join-Path $proj '.nightshift/rules.json'
+    $owner = Get-Content -LiteralPath $rulesPath -Raw | ConvertFrom-Json
+    $owner.watchAfterUsageLimit = $false
+    $owner | Add-Member -NotePropertyName notifyCommand -NotePropertyValue $null -Force
+    $owner.PSObject.Properties.Remove('longUnitWarnMinutes')
+    $ownerJson = $owner | ConvertTo-Json -Depth 20
+    if (-not $ownerJson.EndsWith("`n")) { $ownerJson += "`n" }
+    [IO.File]::WriteAllText($rulesPath, ($ownerJson -replace "`r`n", "`n"), (New-Object Text.UTF8Encoding $false))
+
+    $presenceRun = Invoke-ApplyProfile $proj -Helper $copiedHelper -ProfileName 'presence' -ModeName 'fill' -Apply
+    Expect-True ($presenceRun.ExitCode -eq 0) "fill presence exits 0 (got $($presenceRun.ExitCode) $($presenceRun.Stderr))"
+    $after = Get-Content -LiteralPath $rulesPath -Raw | ConvertFrom-Json
+    Expect-True ($after.watchAfterUsageLimit -eq $false) 'fill leaves an owner false untouched'
+    Expect-True ($null -eq $after.notifyCommand -and $null -ne $after.PSObject.Properties['notifyCommand']) `
+        'fill leaves an owner null untouched'
+    Expect-True ($after.longUnitWarnMinutes -eq 9) 'fill adds a key the owner never set'
+}
+finally {
+    Remove-Item -LiteralPath $presenceRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "apply-profile-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

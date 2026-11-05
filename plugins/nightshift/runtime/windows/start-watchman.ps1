@@ -15,8 +15,12 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $watchman = Join-Path $PSScriptRoot 'watchman.ps1'
-$pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
+$pluginRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).ProviderPath
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) {
+    Write-NSOwnershipRefusal $pluginRoot $HostName
+    exit 2
+}
 $projectPath = Get-NSStateDirOwner (Resolve-Path -LiteralPath $Project -ErrorAction Stop).ProviderPath
 $workspace = Resolve-NSWorkspaceRoot $projectPath
 $ns = Join-Path $workspace '.nightshift'

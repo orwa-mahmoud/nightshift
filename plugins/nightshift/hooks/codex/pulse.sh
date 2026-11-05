@@ -7,6 +7,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/../shared/idle.sh"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh"
+ns_copy_serves_host "$_here/../.." codex || exit 0
 # shellcheck source=plugins/nightshift/hooks/codex/lib-io.sh
 . "$_here/lib-io.sh"
 # shellcheck source=plugins/nightshift/hooks/pulse.sh

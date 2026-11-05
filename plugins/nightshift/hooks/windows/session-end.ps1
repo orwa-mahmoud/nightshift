@@ -13,12 +13,27 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
     $PSNativeCommandUseErrorActionPreference = $false
 }
 
+# One list per host, the same words as hooks/shared/session-end-reasons.sh.
+# Claude's list is the SessionEnd reason table. Cursor's is aborted and user_close.
+function Test-NSSessionEndOwnerReason {
+    param(
+        [Parameter(Mandatory = $true)][string]$ForHost,
+        [AllowEmptyString()][string]$Reason
+    )
+    switch ($ForHost) {
+        'claude' { return ($Reason -in @('clear', 'resume', 'logout', 'prompt_input_exit')) }
+        'cursor' { return ($Reason -in @('aborted', 'user_close')) }
+        default { return $false }
+    }
+}
+
 if ($env:NIGHTSHIFT_REVIVAL -eq '1') {
     exit 0
 }
 
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 
 if (Test-NSHookIdle) { exit 0 }
 
@@ -96,7 +111,7 @@ elseif ($null -ne $session -and -not [string]::IsNullOrEmpty($session.SessionId)
 }
 
 $leasePath = Get-NSLayoutPath $ns 'lease'
-if ($HostName -ne 'codex' -and (Test-NSPathEntry $leasePath)) {
+if (Test-NSPathEntry $leasePath) {
     $hostProcess = Get-NSHostProcess $HostName
     $processId = if ($null -eq $hostProcess) { '' } else { [string]$hostProcess.Id }
     $processStart = if ($null -eq $hostProcess) { '' } else { [string]$hostProcess.Start }
@@ -113,10 +128,10 @@ $reason = if ($null -eq $payload.PSObject.Properties['reason']) {
     [string]$payload.reason
 }
 $reason = ($reason -replace '[\x00-\x1f]', '').Trim()
-if ($HostName -eq 'cursor') {
-    if ($reason -notin @('aborted', 'user_close')) {
-        exit 0
-    }
+# Codex keeps every reason: close, archive, and idle unload all arrive as other.
+# The lease above is what decides. Claude and Cursor write only for the owner's hand.
+if ($HostName -ne 'codex' -and -not (Test-NSSessionEndOwnerReason $HostName $reason)) {
+    exit 0
 }
 
 $line = '{0} {3} clean session end ({1}){2}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $reason, [Environment]::NewLine, [char]0x00B7

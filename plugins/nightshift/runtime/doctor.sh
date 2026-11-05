@@ -144,7 +144,7 @@ fi
 for COPY_HOST in claude codex cursor; do
   COPIES="$(ns_hook_copies "$NS" "$COPY_HOST" 86400)"
   if [ "$(printf '%s' "$COPIES" | grep -c .)" -gt 1 ]; then
-    warn "$(printf '%s' "$COPIES" | grep -c .) Nightshift copies answered one $COPY_HOST session: $(printf '%s\n' "$COPIES" | awk -F '\t' 'NF { printf "%s%s (%s)", sep, $1, $2; sep = " and " }') - disable all but one in the host's plugin settings"
+    warn "$(printf '%s' "$COPIES" | grep -c .) Nightshift copies answered one $COPY_HOST session: $(printf '%s\n' "$COPIES" | awk -F '\t' 'NF { printf "%s%s (%s)", sep, $1, $2; sep = " and " }') - disable the extra copy in this host's plugin settings and leave copies installed by another host enabled"
   fi
 done
 if TARGET="$(ns_work_target "$WORKSPACE" 2>/dev/null)"; then
