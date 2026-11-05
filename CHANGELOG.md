@@ -3,6 +3,16 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.30.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.0...v0.30.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* answer only the host that installed each plugin copy ([84048c4](https://github.com/orwa-mahmoud/nightshift/commit/84048c477870ad02dd83eb5cc492ad45baf8da76))
+* block only host-changing commands in the elevation guard ([56118d1](https://github.com/orwa-mahmoud/nightshift/commit/56118d1273d382fb3c68296a0cc67a14cb0d16e7))
+* keep the rest of the shift block when writing remembered defaults ([4ce2de6](https://github.com/orwa-mahmoud/nightshift/commit/4ce2de6cf382073d9cdd99a63e55ba71d323bbd4))
+* stand the watchman down only when the owner ends the session ([759e554](https://github.com/orwa-mahmoud/nightshift/commit/759e55476dc4dacaafc4f06962926333b3b5823f))
+
 ## [0.30.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.29.2...v0.30.0) (2026-10-29)
 
 
