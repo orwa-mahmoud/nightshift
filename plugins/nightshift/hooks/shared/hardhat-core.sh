@@ -980,6 +980,188 @@ ns_hardhat_is_commit() {
   ns_hardhat_git_verb "$1" commit
 }
 
+# Print command substitutions and backtick substitutions from one line, space-separated.
+# One level, no nesting. What remains of a data body is the part the shell actually runs.
+ns_hardhat_substitutions() {
+  local line="$1" out="" inner prefix bt='`'
+  while [ -n "$line" ]; do
+    # shellcheck disable=SC2016 # a literal command substitution, not a bash expansion
+    case "$line" in
+      *'$('*)
+        prefix=${line%%'$('*}
+        line=${line#"$prefix"}
+        line=${line#'$('}
+        inner=${line%%')'*}
+        [ "$inner" != "$line" ] || break
+        out="${out:+$out }\$($inner)"
+        line=${line#"$inner"}
+        line=${line#')'}
+        ;;
+      *"$bt"*)
+        prefix=${line%%"$bt"*}
+        line=${line#"$prefix"}
+        line=${line#"$bt"}
+        inner=${line%%"$bt"*}
+        [ "$inner" != "$line" ] || break
+        out="${out:+$out }${bt}${inner}${bt}"
+        line=${line#"$inner"}
+        line=${line#"$bt"}
+        ;;
+      *) break ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# ns_hardhat_reduce_data_heredocs <command> — a cat or tee write keeps its target and loses
+# the body. A quoted body is data. An unquoted body is data except the substitutions the
+# shell expands. Anything else, including an unterminated body, is left under inspection.
+ns_hardhat_reduce_data_heredocs() {
+  local input="$1" out="" line delim="" body_open=0 strip_body=0 keep_subs=0 found kept stripped
+  case "$input" in
+    *'<<'*) ;;
+    *) printf '%s' "$input"; return 0 ;;
+  esac
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$body_open" -eq 1 ]; then
+      stripped="${line#"${line%%[! 	]*}"}"
+      if [ "$stripped" = "$delim" ] || [ "$line" = "$delim" ]; then
+        body_open=0
+        out="$out$line$NS_HARDHAT_NL"
+        continue
+      fi
+      if [ "$keep_subs" -eq 1 ]; then
+        kept="$(ns_hardhat_substitutions "$line")"
+        [ -z "$kept" ] || out="$out$kept$NS_HARDHAT_NL"
+      elif [ "$strip_body" -eq 0 ]; then
+        out="$out$line$NS_HARDHAT_NL"
+      fi
+      continue
+    fi
+    out="$out$line$NS_HARDHAT_NL"
+    found="$(printf '%s' "$line" | sed -n \
+      -e "s/.*<<-\{0,1\}[[:space:]]*'\([^']*\)'.*/\1/p" \
+      -e 's/.*<<-\{0,1\}[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    keep_subs=0
+    strip_body=0
+    if [ -n "$found" ]; then
+      delim="$found"
+      body_open=1
+      if ns_hardhat_heredoc_is_data_write "$line"; then
+        strip_body=1
+        out="${out}NIGHTSHIFT_HEREDOC_BODY$NS_HARDHAT_NL"
+      fi
+      continue
+    fi
+    found="$(printf '%s' "$line" | sed -n \
+      's/.*<<-\{0,1\}[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\).*/\1/p' | head -n1)"
+    if [ -n "$found" ] && ns_hardhat_heredoc_is_data_write "$line"; then
+      delim="$found"
+      body_open=1
+      keep_subs=1
+    fi
+  done <<NS_ELEV_HEREDOC
+$input
+NS_ELEV_HEREDOC
+  if [ "$body_open" -eq 1 ]; then
+    printf '%s' "$input"
+    return 0
+  fi
+  case "$input" in
+    *"$NS_HARDHAT_NL") printf '%s' "$out" ;;
+    *) printf '%s' "${out%"$NS_HARDHAT_NL"}" ;;
+  esac
+}
+
+# Drop the literal arguments of a command that prints or searches. Substitutions and
+# redirections stay. A later command on the same line, after a separator, is itself again.
+ns_hardhat_mask_data_line() {
+  local line="$1" out="" tok data=0 redir=0 base
+  ns_hardhat_split_tokens "$line" || { printf '%s' "$line"; return 0; }
+  for tok in "${__ns_hh_tok[@]}"; do
+    case "$tok" in
+      '|' | '||' | ';' | '&&' | '&')
+        data=0
+        redir=0
+        out="${out:+$out }$tok"
+        continue
+        ;;
+    esac
+    if [ "$redir" -eq 1 ]; then
+      out="${out:+$out }$tok"
+      redir=0
+      continue
+    fi
+    case "$tok" in
+      '>' | '>>' | '<' | '<<' | '<<-')
+        out="${out:+$out }$tok"
+        redir=1
+        continue
+        ;;
+    esac
+    if [ "$data" -eq 1 ]; then
+      # shellcheck disable=SC2016 # a literal command substitution, not a bash expansion
+      case "$tok" in
+        *'$('* | *'`'*) out="${out:+$out }$tok" ;;
+      esac
+      continue
+    fi
+    case "$tok" in
+      *=*)
+        out="${out:+$out }$tok"
+        continue
+        ;;
+    esac
+    out="${out:+$out }$tok"
+    base="${tok##*/}"
+    case "$base" in
+      echo | printf | grep | rg | egrep | fgrep) data=1 ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+ns_hardhat_mask_data_words() {
+  local input="$1" out="" line masked
+  while IFS= read -r line || [ -n "$line" ]; do
+    masked="$(ns_hardhat_mask_data_line "$line")"
+    out="$out$masked$NS_HARDHAT_NL"
+  done <<NS_ELEV_MASK
+$input
+NS_ELEV_MASK
+  case "$input" in
+    *"$NS_HARDHAT_NL") printf '%s' "$out" ;;
+    *) printf '%s' "${out%"$NS_HARDHAT_NL"}" ;;
+  esac
+}
+
+# A project install is not a global one: uv pip, and pip or python -m pip under .venv or venv.
+ns_hardhat_elevation_exempt_project_pip() {
+  printf '%s' "$1" | sed -E \
+    -e 's#(^|[;&|([:space:]])(\./)?(\.venv|venv)/bin/python[0-9.]*[[:space:]]+-m[[:space:]]+pip3?#\1nsvenv#g' \
+    -e 's#(^|[;&|([:space:]])(\./)?(\.venv|venv)/bin/pip3?#\1nsvenv#g' \
+    -e 's#(^|[;&|([:space:]])uv[[:space:]]+pip3?#\1uv-tool#g'
+}
+
+# The text the elevation patterns see: data bodies and data arguments removed, project
+# installs renamed so a global-install pattern cannot claim them.
+ns_hardhat_elevation_prepare() {
+  local text
+  text="$(ns_hardhat_reduce_data_heredocs "$1")"
+  text="$(ns_hardhat_mask_data_words "$text")"
+  ns_hardhat_elevation_exempt_project_pip "$text"
+}
+
+# A container payload is the containers category's business. The outer verb stays so that
+# category still matches; the words inside run or exec do not reach the others.
+# sh -c and eval outside a payload are left for ns_hardhat_elevation_inner.
+ns_hardhat_elevation_without_payload() {
+  printf '%s' "$1" | sed -E \
+    -e 's/(docker|podman|nerdctl)[[:space:]]+(run|exec)[[:space:]][^;&|]*/\1 \2/g' \
+    -e 's/docker[[:space:]]+compose[[:space:]]+(run|exec)[[:space:]][^;&|]*/docker compose \1/g' \
+    -e 's/docker-compose[[:space:]]+(run|exec)[[:space:]][^;&|]*/docker-compose \1/g'
+}
+
 # Print a simple quoted payload after eval or a shell -c, or nothing.
 # Hardening only: one pair of quotes, no nested parser, not a sandbox.
 ns_hardhat_elevation_inner() {
@@ -1008,10 +1190,13 @@ ns_hardhat_elevation_inner() {
 # A simple eval / sh -c quoted payload is matched as well as the outer text; that is hardening,
 # not isolation — a determined rewrite still gets through.
 ns_hardhat_elevation_reason() {
-  local _cat _pat _rc _reason _patterns _subject _inner
-  _subject="$SCRUBBED"
-  _inner="$(ns_hardhat_elevation_inner "$SCRUBBED" || true)"
-  [ -n "$_inner" ] && _subject="$SCRUBBED $_inner"
+  local _cat _pat _rc _reason _patterns _subject _inner _full _free
+  _full="$(ns_hardhat_elevation_prepare "$SCRUBBED")"
+  _free="$(ns_hardhat_elevation_without_payload "$_full")"
+  _inner="$(ns_hardhat_elevation_inner "$_free" || true)"
+  [ -n "$_inner" ] && _free="$_free $_inner"
+  _inner="$(ns_hardhat_elevation_inner "$_full" || true)"
+  [ -n "$_inner" ] && _full="$_full $_inner"
   # One parse of the rules for all five categories; each line is category<TAB>pattern.
   _patterns="$(ns_policy_elevation_patterns "$PROJECT_DIR")" || return 1
   while IFS="$(printf '\t')" read -r _cat _pat; do
@@ -1022,6 +1207,11 @@ ns_hardhat_elevation_reason() {
       printf '%s' "BLOCKED: elevation.$_cat.pattern is not a valid extended regular expression, so the guard it configures cannot run. Fix the pattern in $(ns_hardhat_state_name rules)."
       return 0
     }
+    if [ "$_cat" = containers ]; then
+      _subject="$_full"
+    else
+      _subject="$_free"
+    fi
     printf '%s' "$_subject" | grep -qE "$_pat" || continue
     ns_policy_allowed "$PROJECT_DIR" "$_cat" "$SCRUBBED"
     _rc=$?

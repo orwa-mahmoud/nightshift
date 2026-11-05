@@ -681,6 +681,39 @@ try {
     Expect-Equal 0 $againRun.ExitCode 'a migration that already ran is a no-op'
     Expect-True $againRun.StdoutText.Contains('no-op') 'the second run says it did nothing'
 
+    $patternProject = Join-Path $root 'elev-pattern'
+    $patternNs = Join-Path $patternProject '.nightshift'
+    $null = New-Item -ItemType Directory -Force -Path $patternNs
+    $patternTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $patternText = [IO.File]::ReadAllText($patternTemplate, $utf8)
+    $patternDoc = ConvertFrom-NSJsonText $patternText
+    $currentPattern = [string]$patternDoc['elevation']['global-packages']['pattern']
+    $encodedPattern = $currentPattern.Replace('\', '\\').Replace('"', '\"')
+    $previousTable = Join-Path $repository 'plugins/nightshift/lib/shipped-elevation-previous.tsv'
+    $oldPattern = ''
+    foreach ($line in [IO.File]::ReadAllLines($previousTable)) {
+        $prefix = "global-packages`t"
+        if ($line.StartsWith($prefix)) { $oldPattern = $line.Substring($prefix.Length) }
+    }
+    Expect-True ($patternText.Contains($encodedPattern)) 'the template carries the current pattern encoding'
+    Expect-True (-not [string]::IsNullOrEmpty($oldPattern)) 'a previous global-packages pattern is on record'
+    $patternText = $patternText.Replace($encodedPattern, $oldPattern)
+    $daemonPattern = [string]$patternDoc['elevation']['daemons']['pattern']
+    $encodedDaemon = $daemonPattern.Replace('\', '\\').Replace('"', '\"')
+    $patternText = $patternText.Replace($encodedDaemon, 'kept-by-owner')
+    [IO.File]::WriteAllText((Join-Path $patternNs 'rules.json'), $patternText, $utf8)
+    $patternRun = Invoke-Script -Path $helper -Arguments @('-Project', $patternProject, '-Command', 'migrate')
+    Expect-Equal 0 $patternRun.ExitCode "a shipped elevation pattern migrates ($($patternRun.StderrText))"
+    Expect-True $patternRun.StdoutText.Contains('migrating shipped elevation patterns') `
+        'the migration names the elevation update'
+    $patternAfter = ConvertFrom-NSJsonText ([IO.File]::ReadAllText((Join-Path $patternNs 'rules.json'), $utf8))
+    Expect-Equal $currentPattern ([string]$patternAfter['elevation']['global-packages']['pattern']) `
+        'a verbatim shipped pattern becomes the current one'
+    Expect-Equal 'kept-by-owner' ([string]$patternAfter['elevation']['daemons']['pattern']) `
+        'a pattern the owner edited is left untouched'
+    $patternAgain = Invoke-Script -Path $helper -Arguments @('-Project', $patternProject, '-Command', 'migrate')
+    Expect-True $patternAgain.StdoutText.Contains('no-op') 'the elevation migration does not run twice'
+
     # What defaults-set writes is what defaults-get reads, because there is one place for it.
     $setRun = Invoke-Script -Path $helper -Arguments @('-Project', $movedPath, '-Command', 'defaults-set',
         '-ToolingPolicy', 'auto-add')

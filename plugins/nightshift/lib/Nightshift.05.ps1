@@ -1064,6 +1064,30 @@ function Invoke-NSShiftPolicyArchive {
     return 0
 }
 
+# The file text with a verbatim previous shipped elevation pattern replaced by the current one,
+# or $null when nothing in it is a previous shipped pattern. An owner edit is not that text.
+function Get-NSShippedElevationRefresh {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if ([string]::IsNullOrEmpty($script:NSElevationPreviousTable)) { return $null }
+    if (-not (Test-Path -LiteralPath $script:NSElevationPreviousTable -PathType Leaf)) { return $null }
+    $text = [IO.File]::ReadAllText($Path, $script:NSUtf8NoBom)
+    $original = $text
+    foreach ($line in [IO.File]::ReadAllLines($script:NSElevationPreviousTable)) {
+        if ([string]::IsNullOrEmpty($line)) { continue }
+        $tab = $line.IndexOf("`t")
+        if ($tab -lt 1) { continue }
+        $category = $line.Substring(0, $tab)
+        $old = $line.Substring($tab + 1)
+        if (-not $text.Contains($old)) { continue }
+        if (-not $script:NSPolicyElevationPattern.Contains($category)) { continue }
+        $current = [string]$script:NSPolicyElevationPattern[$category]
+        $encoded = $current.Replace('\', '\\').Replace('"', '\"')
+        $text = $text.Replace($old, $encoded)
+    }
+    if ($text -ceq $original) { return $null }
+    return $text
+}
+
 # The migration onto the one-file shape. Same contract as the POSIX helper: refuse while armed,
 # name an invalid value by its key, validate the destination before replacing one that loads,
 # keep a lossless backup, do nothing the second time, and refuse a disagreeing pair by naming
@@ -1133,6 +1157,17 @@ function Invoke-NSPolicyMigrate {
     }
 
     if (-not (Test-Path -LiteralPath $legacy -PathType Leaf) -and $null -ne $canonical) {
+        $refreshed = Get-NSShippedElevationRefresh -Path $rules
+        if ($null -ne $refreshed) {
+            Write-NSPolicyOut ('migrating shipped elevation patterns into ' + $rules)
+            if ($DryRun) {
+                Write-NSPolicyOut 'dry run: nothing was written'
+                return 0
+            }
+            [IO.File]::WriteAllText($rules, $refreshed, $script:NSUtf8NoBom)
+            Write-NSPolicyOut $rules
+            return 0
+        }
         Write-NSPolicyOut ('no-op: every remembered choice already lives in ' + $rules)
         return 0
     }
@@ -1150,6 +1185,10 @@ function Invoke-NSPolicyMigrate {
     }
     $rc = Set-NSShiftBlock -Workspace $Workspace -Block $block
     if ($rc -ne 0) { return $rc }
+    $refreshed = Get-NSShippedElevationRefresh -Path $rules
+    if ($null -ne $refreshed) {
+        [IO.File]::WriteAllText($rules, $refreshed, $script:NSUtf8NoBom)
+    }
     Remove-Item -LiteralPath $legacy -Force -ErrorAction SilentlyContinue
     Write-NSPolicyOut $rules
     return 0

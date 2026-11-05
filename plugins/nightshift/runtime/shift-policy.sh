@@ -453,6 +453,25 @@ cmd_migrate() {
 
 
   if [ ! -f "$DEFAULTS" ] && [ -n "$(ns_rules_get "$RULES" shift)" ]; then
+    tmpd="$(mktemp -d "${TMPDIR:-/tmp}/nightshift-migrate.XXXXXX")" ||
+      die 'no writable temporary directory' 2
+    if ns_policy_refresh_elevation "$RULES" >"$tmpd/next.json"; then
+      printf 'migrating shipped elevation patterns into %s\n' "$RULES"
+      if [ "$DRY_RUN" -eq 1 ]; then
+        printf 'dry run: nothing was written\n'
+        rm -rf "$tmpd"
+        return 0
+      fi
+      why="$(ns_rules_load "$tmpd/next.json" 2>&1)" || {
+        rm -rf "$tmpd"
+        die "the migrated file would not load: $why" 2
+      }
+      atomic_write "$RULES" <"$tmpd/next.json"
+      rm -rf "$tmpd"
+      printf '%s\n' "$RULES"
+      return 0
+    fi
+    rm -rf "$tmpd"
     printf 'no-op: every remembered choice already lives in %s\n' "$RULES"
     return 0
   fi
@@ -463,6 +482,11 @@ cmd_migrate() {
     rm -rf "$tmpd"
     die 'cannot compose the migrated file' 2
   }
+  if ns_policy_refresh_elevation "$tmpd/next.json" >"$tmpd/next-elev.json"; then
+    mv "$tmpd/next-elev.json" "$tmpd/next.json"
+  else
+    rm -f "$tmpd/next-elev.json"
+  fi
   # The complete destination must load before it replaces one that already does.
   why="$(ns_rules_load "$tmpd/next.json" 2>&1)" || {
     rm -rf "$tmpd"

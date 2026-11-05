@@ -346,6 +346,56 @@ try {
         Expect-True ($reason -match 'needs allowance: sudo') "heredoc into an interpreter: $reason"
     }
 
+    $allowedData = @(
+        "printf 'RUN pip install -r r.txt' > Dockerfile",
+        "echo 'run sudo make install later' > NOTES.md",
+        "grep -rn 'pip install' docs/",
+        'grep -rn service src/',
+        'grep DOCKER_HOST= .env.example',
+        "rg 'sudo' docs/",
+        'systemctl status nginx',
+        'launchctl list',
+        'brew services list',
+        'service --status-all',
+        'gcloud auth list',
+        'aws configure list',
+        'uv pip install -r requirements.txt',
+        '.venv/bin/pip install x',
+        'venv/bin/pip install x',
+        '.venv/bin/python -m pip install x',
+        'venv/bin/python3 -m pip install x',
+        "cat > Dockerfile <<EOF`nRUN pip install -r r.txt`nEOF"
+    )
+    foreach ($command in $allowedData) {
+        $reason = Get-ElevationReason $command
+        Expect-True ([string]::IsNullOrEmpty($reason)) "data is not elevation: $command -> $reason"
+    }
+    $stillDenied = @{
+        'global-packages' = @('pip install x', 'pip3 install x', 'python -m pip install x', 'pip install --user x', 'cargo install x', 'go install x', 'brew install x', 'npm i -g x')
+        'daemons' = @('systemctl start nginx', 'systemctl stop nginx', 'systemctl restart nginx', 'systemctl enable nginx', 'launchctl load x', 'launchctl bootstrap x', 'brew services start nginx')
+        'external-services' = @('gh auth login', 'docker login', 'gcloud auth login', 'aws configure')
+        'sudo' = @('sudo x', '/usr/bin/sudo x')
+        'containers' = @('docker run x', 'DOCKER_HOST=tcp://1 docker ps')
+    }
+    foreach ($category in @('global-packages', 'daemons', 'external-services', 'sudo', 'containers')) {
+        $expected = "BLOCKED: this command needs the '$category' elevation category, which is denied for this shift. The owner allows it in .nightshift/rules.json (elevation.$category.policy) or for one shift in shift-policy.json before arming. Park the item in .nightshift/parking-lot.md as `"needs allowance: $category`" and keep working."
+        foreach ($command in $stillDenied[$category]) {
+            $reason = Get-ElevationReason $command
+            Expect-True ($reason -ceq $expected) "verb stays denied ($command): $reason"
+        }
+    }
+    $payload = Get-ElevationReason 'docker run --rm python:3.12 pip install x'
+    Expect-True ($payload -match "needs the 'containers' elevation category") "a container payload is containers: $payload"
+    $rules = Get-Content -LiteralPath $rulesPath -Raw | ConvertFrom-Json
+    $rules.elevation.containers.policy = 'allow'
+    [IO.File]::WriteAllText($rulesPath, ($rules | ConvertTo-Json -Depth 10))
+    Expect-True ([string]::IsNullOrEmpty((Get-ElevationReason 'docker run --rm python:3.12 pip install x'))) `
+        'an allowed container does not also deny the payload'
+    $rules.elevation.containers.policy = 'deny'
+    [IO.File]::WriteAllText($rulesPath, ($rules | ConvertTo-Json -Depth 10))
+    $inner = Get-ElevationReason "sh -c 'pip install x'"
+    Expect-True ($inner -match "needs the 'global-packages' elevation category") "sh -c stays inspected: $inner"
+
     $messageOnly = Get-ElevationReason "git commit -m 'sudo apt-get install jq and docker compose up'"
     Expect-True ([string]::IsNullOrEmpty($messageOnly)) "a commit message names no category: $messageOnly"
 

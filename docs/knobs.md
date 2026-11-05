@@ -97,9 +97,9 @@ the guard and the preflight can never disagree about what a command needs:
 | --- | --- |
 | `sudo` | `sudo` and `doas`, including a path prefix and one layer of quoting |
 | `containers` | The Docker socket, `DOCKER_HOST=`, and the create-state verbs: `run`, `create`, `start`, `build`, `compose up` |
-| `global-packages` | System and global installs — `brew`, `apt`, `dnf`, `winget`, `npm i -g`, `pip install`, `cargo install`, `go install` |
-| `daemons` | `systemctl`, `launchctl`, `service`, `brew services`, `pg_ctl`, and the database servers |
-| `external-services` | Interactive logins: `gh auth login`, `npm login`, `docker login`, `az login`, `gcloud auth`, `aws configure` |
+| `global-packages` | System and global installs — `brew`, `apt`, `dnf`, `winget`, `npm i -g`, `pip install`, `python -m pip`, `cargo install`, `go install`. A project `venv` or `.venv`, and `uv pip`, are not this category |
+| `daemons` | Starting or stopping a service: `systemctl start`, `launchctl load`, `brew services start`, `pg_ctl start`, and the database servers. Status and list are not elevation |
+| `external-services` | Interactive logins: `gh auth login`, `npm login`, `docker login`, `az login`, `gcloud auth login`, `aws configure`. A list subcommand is not elevation |
 
 **Elevation gates creating system state, never using what already exists.** Connecting to a running
 database, calling a local API, and running migrations or tests against your dev stack are not

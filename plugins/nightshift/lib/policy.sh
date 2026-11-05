@@ -102,19 +102,50 @@ ns_policy_default_pattern() {
       printf '%s' '(^|[;&|(`]|[[:space:]]|'\''|")(/[A-Za-z0-9._-]+)*/*(sudo|d[o]as)([[:space:]]|[;&|)'\''"`]|$)'
       ;;
     containers)
-      printf '%s' '(/var/run/docker\.sock|unix://[^ \t]*docker\.sock|DOCKER_HOST=)|(^|[;&|(`]|[[:space:]]|'\''|")(docker-compose)[[:space:]]+(up|run|start|build|down|create)|(^|[;&|(`]|[[:space:]]|'\''|")(docker|podman|nerdctl|colima)[[:space:]]+(run|create|start|build|compose[[:space:]]+(up|run|start|build|down|create))'
+      printf '%s' '(/var/run/docker\.sock|unix://[^ \t]*docker\.sock|DOCKER_HOST=)|(^|[;&|(`]|[[:space:]]|'\''|")(docker-compose)[[:space:]]+(up|run|exec|start|build|down|create)|(^|[;&|(`]|[[:space:]]|'\''|")(docker|podman|nerdctl|colima)[[:space:]]+(run|exec|create|start|build|compose[[:space:]]+(up|run|exec|start|build|down|create))'
       ;;
     global-packages)
-      printf '%s' '(^|[;&|(`]|[[:space:]]|'\''|")(brew|apt|apt-get|dnf|yum|pacman|choco|winget|scoop)[[:space:]]+(install|upgrade|uninstall|remove|reinstall)|npm[[:space:]]+(i|install)[[:space:]]+(-g|--global)|pnpm[[:space:]]+add[[:space:]]+-g|yarn[[:space:]]+global|(pip3?|cargo|go)[[:space:]]+install'
+      printf '%s' '(^|[;&|(`]|[[:space:]]|'\''|")(brew|apt|apt-get|dnf|yum|pacman|choco|winget|scoop)[[:space:]]+(install|upgrade|uninstall|remove|reinstall)|npm[[:space:]]+(i|install)[[:space:]]+(-g|--global)|pnpm[[:space:]]+add[[:space:]]+-g|yarn[[:space:]]+global|(^|[;&|(`]|[[:space:]]|'\''|")([A-Za-z0-9._/-]+/)?(pip3?|cargo|go)[[:space:]]+install|(^|[;&|(`]|[[:space:]]|'\''|")([A-Za-z0-9._/-]+/)?python[0-9.]*[[:space:]]+-m[[:space:]]+pip3?[[:space:]]+install'
       ;;
     daemons)
-      printf '%s' '(^|[;&|(`]|[[:space:]]|'\''|")(systemctl|launchctl|service|brew[[:space:]]+services|pg_ctl|redis-server|mongod|mysqld)([[:space:]]|$)'
+      printf '%s' '(^|[;&|(`]|[[:space:]]|'\''|")(systemctl[[:space:]]+(start|stop|restart|reload|enable|disable)|service[[:space:]]+(start|stop|restart|reload|enable|disable)|launchctl[[:space:]]+(load|bootstrap|bootout|unload)|brew[[:space:]]+services[[:space:]]+(start|stop|restart)|pg_ctl[[:space:]]+(start|stop|restart)|redis-server|mongod|mysqld)([[:space:]]|$)'
       ;;
     external-services)
-      printf '%s' '(^|[;&|(`]|[[:space:]]|'\''|")(gh[[:space:]]+auth[[:space:]]+login|npm[[:space:]]+login|docker[[:space:]]+login|az[[:space:]]+login|gcloud[[:space:]]+auth|aws[[:space:]]+configure)([[:space:]]|$)'
+      printf '%s' '(^|[;&|(`]|[[:space:]]|'\''|")(gh[[:space:]]+auth[[:space:]]+login|npm[[:space:]]+login|docker[[:space:]]+login|az[[:space:]]+login|gcloud[[:space:]]+auth[[:space:]]+login)([[:space:]]|$)|(^|[;&|(`]|[[:space:]]|'\''|")aws[[:space:]]+configure([[:space:]]*([;&|)]|$)|[[:space:]]+(set|get|add)([^A-Za-z0-9]|$))'
       ;;
     *) return 1 ;;
   esac
+}
+
+# ns_policy_refresh_elevation <file> — the file with a verbatim previous shipped elevation
+# pattern replaced by the current one. A pattern the owner edited is not that text, so it stays.
+# Status 0 when the text changed, 1 when it did not. The bytes are written by the caller.
+ns_policy_refresh_elevation() {
+  local text cat old new changed=1
+  text="$(cat "$1")" || return 1
+  while IFS="$NS_POLICY_TAB" read -r cat old || [ -n "${cat:-}" ]; do
+    [ -n "${cat:-}" ] || continue
+    new="$(ns_policy_default_pattern "$cat" | sed 's/\\/\\\\/g; s/"/\\"/g')" || return 1
+    case "$text" in
+      *"$old"*)
+        # A slash in the replacement is data. Parameter expansion would treat a
+        # backslash as an escape and produce JSON that does not load.
+        text="$(printf '%s' "$text" | NS_ELEV_OLD="$old" NS_ELEV_NEW="$new" awk '
+          BEGIN { old = ENVIRON["NS_ELEV_OLD"]; new = ENVIRON["NS_ELEV_NEW"] }
+          {
+            rest = $0
+            while ((i = index(rest, old)) > 0) {
+              printf "%s%s", substr(rest, 1, i - 1), new
+              rest = substr(rest, i + length(old))
+            }
+            print rest
+          }')"
+        changed=0
+        ;;
+    esac
+  done <"${NS_POLICY_EMIT_JQ%/*}/shipped-elevation-previous.tsv"
+  printf '%s' "$text"
+  return "$changed"
 }
 
 # ns_policy_builtin <setting> — the lowest-precedence value, as compact JSON. Nothing decides

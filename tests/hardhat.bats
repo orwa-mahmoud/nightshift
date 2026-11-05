@@ -1381,6 +1381,86 @@ hd() {
   is_deny "$output"
 }
 
+@test "a data word is not an elevation command" {
+  p="$(new_project elev-data)"
+  punch_open "$p"
+  while IFS= read -r command; do
+    [ -n "$command" ] || continue
+    run hardhat_bash "$p" "$command"
+    is_allow || { echo "denied: $command -> $output"; return 1; }
+  done <<'CMDS'
+printf 'RUN pip install -r r.txt' > Dockerfile
+echo 'run sudo make install later' > NOTES.md
+grep -rn 'pip install' docs/
+grep -rn service src/
+grep DOCKER_HOST= .env.example
+rg 'sudo' docs/
+systemctl status nginx
+launchctl list
+brew services list
+service --status-all
+gcloud auth list
+aws configure list
+uv pip install -r requirements.txt
+.venv/bin/pip install x
+venv/bin/pip install x
+.venv/bin/python -m pip install x
+venv/bin/python3 -m pip install x
+CMDS
+  run hardhat_bash "$p" "$(printf 'cat > Dockerfile <<EOF\nRUN pip install -r r.txt\nEOF')"
+  is_allow || { echo "denied unquoted heredoc: $output"; return 1; }
+}
+
+@test "a state-changing elevation command stays denied" {
+  p="$(new_project elev-verbs)"
+  punch_open "$p"
+  while IFS='|' read -r category command; do
+    [ -n "$category" ] || continue
+    run hardhat_bash "$p" "$command"
+    is_deny "$output" || { echo "allowed: $command"; return 1; }
+    [ "$(deny_reason "$output")" = "$(elevation_message "$p" "$category")" ] \
+      || { echo "wrong message for $command: $(deny_reason "$output")"; return 1; }
+  done <<'ROWS'
+global-packages|pip install x
+global-packages|pip3 install x
+global-packages|python -m pip install x
+global-packages|pip install --user x
+global-packages|cargo install x
+global-packages|go install x
+global-packages|brew install x
+global-packages|npm i -g x
+daemons|systemctl start nginx
+daemons|systemctl stop nginx
+daemons|systemctl restart nginx
+daemons|systemctl enable nginx
+daemons|launchctl load x
+daemons|launchctl bootstrap x
+daemons|brew services start nginx
+external-services|gh auth login
+external-services|docker login
+external-services|gcloud auth login
+external-services|aws configure
+sudo|sudo x
+sudo|/usr/bin/sudo x
+containers|docker run x
+containers|DOCKER_HOST=tcp://1 docker ps
+ROWS
+}
+
+@test "a container payload is judged only as containers" {
+  p="$(new_project elev-payload)"
+  punch_open "$p"
+  run hardhat_bash "$p" "docker run --rm python:3.12 pip install x"
+  is_deny "$output"
+  printf '%s' "$output" | grep -qF "needs the 'containers' elevation category"
+  rules_elevation "$p" containers allow
+  run hardhat_bash "$p" "docker run --rm python:3.12 pip install x"
+  is_allow || { echo "allowed containers still denied the payload: $output"; return 1; }
+  run hardhat_bash "$p" "sh -c 'pip install x'"
+  is_deny "$output"
+  printf '%s' "$output" | grep -qF "needs the 'global-packages' elevation category"
+}
+
 @test "an unterminated quoted heredoc is never treated as data" {
   p="$(new_project hd-unterminated)"
   punch_open "$p"
