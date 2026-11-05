@@ -113,7 +113,7 @@ scaffold() { # <workspace> — the files setup copies, via the shipped templates
   scaffold "$p"
   printf '## Items\n- [ ] **1. real work.**\n' >"$p/.nightshift/punch-list.md"
   : >"$p/.nightshift/.shift-armed"
-  printf '{"reason":"exit","session_id":"fixture-session"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  printf '{"reason":"prompt_input_exit","session_id":"fixture-session"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
   [ -f "$p/.nightshift/.session-end" ]
 
   BIN="$BATS_TEST_TMPDIR/bin"

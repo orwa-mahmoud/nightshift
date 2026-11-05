@@ -667,6 +667,10 @@ try {
     $startPreflightLogicRun = Invoke-TestScript $startPreflightLogic
     Assert-Equal 0 $startPreflightLogicRun.ExitCode `
         "Start preflight verdicts: $($startPreflightLogicRun.Stdout) $($startPreflightLogicRun.Stderr)"
+    $sessionEndLogic = Join-Path $PSScriptRoot 'session-end-logic.ps1'
+    $sessionEndLogicRun = Invoke-TestScript $sessionEndLogic
+    Assert-Equal 0 $sessionEndLogicRun.ExitCode `
+        "session-end owner reasons and the Codex lease: $($sessionEndLogicRun.Stdout) $($sessionEndLogicRun.Stderr)"
     $ownershipHostLogic = Join-Path $PSScriptRoot 'ownership-host-logic.ps1'
     $ownershipHostLogicRun = Invoke-TestScript $ownershipHostLogic
     Assert-Equal 0 $ownershipHostLogicRun.ExitCode `
@@ -979,7 +983,7 @@ try {
         $dispatchEndPayload = @{
             session_id = $dispatchSession
             cwd = $dispatchWorkspace
-            reason = 'exit'
+            reason = 'prompt_input_exit'
         } | ConvertTo-Json -Compress
         $dispatchEnd = Invoke-TestScript $claudeSessionEndDispatch @() $dispatchEndPayload $dispatchEnvironment
         Assert-Equal 0 $dispatchEnd.ExitCode "Claude SessionEnd dispatcher exits cleanly: $($dispatchEnd.Stderr)"

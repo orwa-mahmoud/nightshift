@@ -119,7 +119,7 @@ CODEX_HOOKS="$HOOKS/codex"
   punch_open "$workspace"
   printf 'linked-session\n\n\n\nclaude\n' >"$workspace/.nightshift/.shift-session"
   bash "$RUNTIME/link-workspace.sh" --host-root "$host" --workspace "$workspace" >/dev/null
-  jq -nc '{session_id:"linked-session",reason:"exit"}' |
+  jq -nc '{session_id:"linked-session",reason:"prompt_input_exit"}' |
     env CLAUDE_PROJECT_DIR="$host" bash "$HOOKS/session-end.sh"
   grep -q 'clean session end' "$workspace/.nightshift/.session-end"
 }

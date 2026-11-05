@@ -18,6 +18,8 @@ ns_copy_serves_host "$_here/../.." cursor || exit 0
 . "$_here/../../lib/lib.sh"
 # shellcheck source=plugins/nightshift/hooks/cursor/lib-io.sh
 . "$_here/lib-io.sh"
+# shellcheck source=plugins/nightshift/hooks/shared/session-end-reasons.sh
+. "$_here/../shared/session-end-reasons.sh"
 
 [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || exit 0
 
@@ -60,10 +62,7 @@ if [ -f "$SESSION" ] && [ ! -L "$SESSION" ]; then
   [ -z "$HOST_LINE" ] || [ "$HOST_LINE" = "cursor" ] || exit 0
 fi
 
-case "$REASON" in
-  aborted | user_close) ;;
-  *) exit 0 ;;
-esac
+ns_session_end_owner_reason cursor "$REASON" || exit 0
 
 [ -L "$SESSION_END" ] && rm -f "$SESSION_END"
 printf '%s · clean session end (%s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$REASON" >"$SESSION_END"

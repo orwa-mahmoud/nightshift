@@ -96,7 +96,7 @@ recorded_read() {
 }
 
 @test "a clean session end stands it down — the owner closed it on purpose" {
-  echo 'clean session end (exit)' >"$P/.nightshift/.session-end"
+  echo 'clean session end (prompt_input_exit)' >"$P/.nightshift/.session-end"
   run watch --agent "bash $BIN/tick.sh" --max-wakes 3
   [ "$status" -eq 0 ]
   grep -q 'the owner closed it' "$P/.nightshift/shift-log.md"
@@ -264,8 +264,37 @@ STUB
 @test "session-end hook writes the marker only during an active shift" {
   p="$(new_project)"
   punch_open "$p"
-  printf '{"reason":"exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
-  grep -q 'clean session end (exit)' "$p/.nightshift/.session-end"
+  printf '{"reason":"prompt_input_exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  grep -q 'clean session end (prompt_input_exit)' "$p/.nightshift/.session-end"
+}
+
+@test "session-end writes the marker only for an owner reason" {
+  p="$(new_project)"
+  punch_open "$p"
+  for reason in prompt_input_exit logout clear resume; do
+    rm -f "$p/.nightshift/.session-end"
+    printf '{"reason":"%s"}' "$reason" | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+    grep -q "clean session end ($reason)" "$p/.nightshift/.session-end"
+  done
+  for reason in other unknown exit bypass_permissions_disabled; do
+    rm -f "$p/.nightshift/.session-end"
+    printf '{"reason":"%s"}' "$reason" | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+    [ ! -f "$p/.nightshift/.session-end" ]
+  done
+  rm -f "$p/.nightshift/.session-end"
+  printf '{"session_id":"no-reason"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  [ ! -f "$p/.nightshift/.session-end" ]
+}
+
+@test "an other session end leaves a dead shift to be revived" {
+  printf '{"reason":"other"}' | CLAUDE_PROJECT_DIR="$P" bash "$SESSION_END"
+  [ ! -f "$P/.nightshift/.session-end" ]
+  run watch --agent "bash $BIN/tick.sh" --max-wakes 3
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -ge 1 ]
+  if grep -q 'the owner closed it' "$P/.nightshift/shift-log.md"; then
+    return 1
+  fi
 }
 
 @test "session-end hook replaces a symlink marker with a regular file" {
@@ -273,17 +302,17 @@ STUB
   punch_open "$p"
   printf 'plant\n' >"$p/.nightshift/session-end-plant"
   ln -s session-end-plant "$p/.nightshift/.session-end"
-  printf '{"reason":"exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  printf '{"reason":"prompt_input_exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
   [ -f "$p/.nightshift/.session-end" ]
   [ ! -L "$p/.nightshift/.session-end" ]
-  grep -q 'clean session end (exit)' "$p/.nightshift/.session-end"
+  grep -q 'clean session end (prompt_input_exit)' "$p/.nightshift/.session-end"
 }
 
 @test "session-end hook is inert while the shift is unarmed" {
   p="$(new_project)"
   punch_open "$p"
   rm "$p/.nightshift/.shift-armed"
-  printf '{"reason":"exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  printf '{"reason":"prompt_input_exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
   [ ! -f "$p/.nightshift/.session-end" ]
 }
 
@@ -291,17 +320,17 @@ STUB
   p="$(new_project)"
   touch "$p/.nightshift/.shift-armed"
   printf '%s\n' '- [ ] planning example' '## Items' '- [x] **1. done.**' >"$p/.nightshift/punch-list.md"
-  printf '{"reason":"exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  printf '{"reason":"prompt_input_exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
   [ ! -f "$p/.nightshift/.session-end" ]
 }
 
 @test "session-end hook is inert when the shift is done or absent" {
   p="$(new_project)"
   punch_done "$p"
-  printf '{"reason":"exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  printf '{"reason":"prompt_input_exit"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
   [ ! -f "$p/.nightshift/.session-end" ]
   q="$(new_project other)"
-  printf '{"reason":"exit"}' | CLAUDE_PROJECT_DIR="$q" bash "$SESSION_END"
+  printf '{"reason":"prompt_input_exit"}' | CLAUDE_PROJECT_DIR="$q" bash "$SESSION_END"
   [ ! -f "$q/.nightshift/.session-end" ]
 }
 
@@ -435,10 +464,10 @@ STUB
   p="$(new_project)"
   punch_open "$p"
   printf 'right-id\n\n' >"$p/.nightshift/.shift-session"
-  printf '{"reason":"exit","session_id":"wrong-id"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  printf '{"reason":"prompt_input_exit","session_id":"wrong-id"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
   [ ! -f "$p/.nightshift/.session-end" ]
-  printf '{"reason":"exit","session_id":"right-id"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
-  grep -q 'clean session end (exit)' "$p/.nightshift/.session-end"
+  printf '{"reason":"prompt_input_exit","session_id":"right-id"}' | CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
+  grep -q 'clean session end (prompt_input_exit)' "$p/.nightshift/.session-end"
 }
 
 # ---- v0.5.2: the liveness ladder — strong positive evidence of death, or stand by ----
@@ -789,7 +818,7 @@ STUB
   p="$(new_project)"
   punch_open "$p"
   printf 'right-id\n\n\n\n' >"$p/.nightshift/.shift-session"
-  printf '{"reason":"exit","session_id":"right-id"}' |
+  printf '{"reason":"prompt_input_exit","session_id":"right-id"}' |
     NIGHTSHIFT_REVIVAL=1 CLAUDE_PROJECT_DIR="$p" bash "$SESSION_END"
   [ ! -f "$p/.nightshift/.session-end" ]
 }
@@ -1050,7 +1079,7 @@ reason() { sed -n 1p "$P/.nightshift/.watch-reason" | tr -d '[:space:]'; }
 }
 
 @test "a clean session end records clean-session-end" {
-  echo 'clean session end (exit)' >"$P/.nightshift/.session-end"
+  echo 'clean session end (prompt_input_exit)' >"$P/.nightshift/.session-end"
   run watch --agent "bash $BIN/tick.sh" --max-wakes 3
   [ "$(reason)" = "clean-session-end" ]
 }

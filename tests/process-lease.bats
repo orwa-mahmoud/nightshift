@@ -238,7 +238,7 @@ lease_mode() {
   claude_bind "$p" shift-session
   take_lease "$p" shift-session claude >/dev/null
 
-  printf '{"reason":"exit","session_id":"shift-session"}' |
+  printf '{"reason":"prompt_input_exit","session_id":"shift-session"}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/session-end.sh"
   [ ! -e "$p/.nightshift/.session-end" ]
 }
@@ -258,7 +258,7 @@ esac
 STUB
   chmod +x "$stub/ps"
   payload="$BATS_TEST_TMPDIR/session-end.json"
-  printf '{"session_id":"shift-session","reason":"exit"}\n' >"$payload"
+  printf '{"session_id":"shift-session","reason":"prompt_input_exit"}\n' >"$payload"
   runner="$BATS_TEST_TMPDIR/session-end-runner"
   cat >"$runner" <<'RUNNER'
 #!/usr/bin/env bash

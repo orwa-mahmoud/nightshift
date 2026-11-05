@@ -29,6 +29,20 @@ codex_session_end() {
   [ ! -f "$p/.nightshift/.session-end" ]
 }
 
+@test "codex session-end writes the marker only for the process holding the lease" {
+  p="$(new_project)"
+  punch_open "$p"
+  printf 'right-id\n\n\n\ncodex\n' >"$p/.nightshift/.shift-session"
+  printf 'right-id\ncodex\n2\nrevival-nonce\n999999\nMon Jan  1 00:00:00 2026\n' \
+    >"$p/.nightshift/.shift-lease"
+  codex_session_end "$p" right-id other
+  [ ! -f "$p/.nightshift/.session-end" ]
+  jq -nc --arg p "$p" '{session_id:"right-id",cwd:$p,reason:"other"}' |
+    env CODEX_PROJECT_DIR="$p" NIGHTSHIFT_LEASE_NONCE=revival-nonce \
+      NIGHTSHIFT_LEASE_GENERATION=2 bash "$CODEX_HOOKS/session-end.sh"
+  grep -q 'clean session end (other)' "$p/.nightshift/.session-end"
+}
+
 @test "codex session-end records reason other even without a payload reason" {
   p="$(new_project)"
   punch_open "$p"

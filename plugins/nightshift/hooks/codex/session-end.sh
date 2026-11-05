@@ -29,11 +29,12 @@ case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
-declare PUNCH ARMED ENDED SESSION SESSION_END
+declare PUNCH ARMED ENDED SESSION LEASE SESSION_END
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set ARMED "$NS" armed
 ns_layout_set ENDED "$NS" ended
 ns_layout_set SESSION "$NS" session
+ns_layout_set LEASE "$NS" lease
 ns_layout_set SESSION_END "$NS" session-end
 
 if [ ! -f "$ARMED" ] || [ ! -f "$PUNCH" ] || { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; }; then
@@ -48,6 +49,19 @@ SID="${CODEX_SESSION_ID:-}"
 if [ -f "$SESSION" ] && [ ! -L "$SESSION" ]; then
   REC="$(sed -n 1p "$SESSION" 2>/dev/null)"
   [ -n "$REC" ] && [ "$SID" != "$REC" ] && exit 0
+fi
+
+# A revival moves the lease to the process it spawned. The original thread closing,
+# or idle-unloading, still fires SessionEnd with the same session id and must not
+# stand the watchman down while that revived worker holds the night. Only the
+# process holding the lease may write the marker. A missing lease keeps the
+# previous behavior, which is what a workspace that has not revived still does.
+if [ -e "$LEASE" ] || [ -L "$LEASE" ]; then
+  CURRENT_PID="$(ns_ancestor_pid codex "$$" 2>/dev/null || true)"
+  CURRENT_START=""
+  [ -z "$CURRENT_PID" ] || CURRENT_START="$(ns_process_start "$CURRENT_PID" 2>/dev/null || true)"
+  ns_lease_allows "$NS" "$SID" codex "$CURRENT_PID" "$CURRENT_START" \
+    "${NIGHTSHIFT_LEASE_NONCE:-}" "${NIGHTSHIFT_LEASE_GENERATION:-}" || exit 0
 fi
 
 if command -v jq >/dev/null 2>&1; then
