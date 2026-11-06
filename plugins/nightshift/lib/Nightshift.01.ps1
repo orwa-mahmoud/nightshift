@@ -2771,7 +2771,8 @@ function Get-NSCursorScanInstalls {
     if (-not (Test-Path -LiteralPath $Base -PathType Container)) { return '' }
     $best = ''
     $bestM = [datetime]::MinValue
-    $manifests = @(Get-ChildItem -LiteralPath $Base -Recurse -Filter plugin.json -File -ErrorAction SilentlyContinue)
+    # -Force: the cache is under a dot directory, which Get-ChildItem otherwise skips.
+    $manifests = @(Get-ChildItem -LiteralPath $Base -Recurse -Force -Filter plugin.json -File -ErrorAction SilentlyContinue)
     foreach ($manifest in $manifests) {
         $parentName = Split-Path -Leaf (Split-Path -Parent $manifest.FullName)
         if ($parentName -cne '.claude-plugin' -and $parentName -cne '.cursor-plugin' -and $parentName -cne '.codex-plugin') { continue }

@@ -21,6 +21,23 @@ function Add-NSAct {
     $null = $script:actions.Add("[$Kind] $Message")
 }
 
+function Add-NSCursorDuplicateHookWarnings {
+    $cursorInstall = Get-NSHostCurrentInstall 'cursor' 'cursor'
+    if ([string]::IsNullOrEmpty($cursorInstall)) { return }
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($root in @($hostPath, $workspace, $target)) {
+        if ([string]::IsNullOrEmpty($root)) { continue }
+        $hooksFile = Join-Path $root '.cursor/hooks.json'
+        if (-not (Test-Path -LiteralPath $hooksFile -PathType Leaf)) { continue }
+        try { $key = Resolve-NSCanonicalPath $hooksFile } catch { $key = $hooksFile }
+        if (-not $seen.Add([string]$key)) { continue }
+        try { $text = [IO.File]::ReadAllText($hooksFile) } catch { continue }
+        if ($text -notmatch 'hooks/cursor/(hardhat|pulse|clock-out-gate|session-end|before-submit)\.sh') { continue }
+        Add-NSWarn "project hooks file $key points at Nightshift's hook scripts while the Cursor plugin is installed; remove $key"
+        Add-NSAct confirm "remove $key; the installed Cursor plugin already runs these hooks, and Doctor does not delete the file"
+    }
+}
+
 try {
     $hostPath = Resolve-NSCanonicalPath $Project
 }
@@ -162,6 +179,7 @@ catch {
         Add-NSWarn 'work target could not be resolved; treating workspace as the code root'
     }
 }
+Add-NSCursorDuplicateHookWarnings
 
 # The one resolver renders the one view: every effective setting, where it came
 # from, and when it expires. Doctor reads it and never re-derives precedence.

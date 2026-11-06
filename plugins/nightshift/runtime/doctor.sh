@@ -44,6 +44,29 @@ act() { # safe|confirm|blocked  message
 }[$1] $2"
 }
 
+# A project hooks file that execs Nightshift's own Cursor scripts runs them again
+# on top of the installed plugin. Name the file; never delete it.
+ns_doctor_cursor_duplicate_hooks() {
+  local install="" root="" file="" key="" seen=""
+  install="$(ns_host_current_install cursor 2>/dev/null || true)"
+  [ -n "$install" ] || return 0
+  for root in "$HOST" "$WORKSPACE" "$TARGET"; do
+    [ -n "$root" ] || continue
+    file="$root/.cursor/hooks.json"
+    [ -f "$file" ] || continue
+    key="$(cd -P "${file%/*}" 2>/dev/null && pwd)/hooks.json" || key="$file"
+    if printf '%s\n' "$seen" | grep -Fxq "$key"; then
+      continue
+    fi
+    seen="$seen$key
+"
+    if grep -qE 'hooks/cursor/(hardhat|pulse|clock-out-gate|session-end|before-submit)\.sh' "$file" 2>/dev/null; then
+      warn "project hooks file $key points at Nightshift's hook scripts while the Cursor plugin is installed; remove $key"
+      act confirm "remove $key; the installed Cursor plugin already runs these hooks, and Doctor does not delete the file"
+    fi
+  done
+}
+
 FACTS=""
 WARNS=""
 ACTIONS=""
@@ -158,6 +181,7 @@ else
     warn "work target could not be resolved; treating workspace as the code root"
   fi
 fi
+ns_doctor_cursor_duplicate_hooks
 
 # The one resolver renders the one view: every effective setting, where it came from, and when
 # it expires. Doctor reads it and never re-derives precedence — same order and wording as the

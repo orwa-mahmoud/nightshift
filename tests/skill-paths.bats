@@ -126,13 +126,19 @@ PY
   grep -qF '`.lease-lock.d/`' "$SETUP"
 }
 
-@test "setup asks before writing Cursor CLI file hooks and defaults to skip" {
-  grep -qF 'Cursor CLI file hooks — ask, default no' "$SETUP"
-  grep -qF 'on anything but a clear yes, skip it' "$SETUP"
-  grep -qF '.cursor/hooks.json' "$SETUP"
-  grep -qF 'hooks/cursor/hooks.json' "$SETUP"
-  grep -qF 'a Cursor limitation, not a Nightshift skip' "$SETUP"
-  grep -qF 'Never create a second `.nightshift/`' "$SETUP"
+@test "setup does not offer a project Cursor hooks file" {
+  if grep -qF 'Cursor CLI file hooks' "$SETUP"; then
+    echo "setup still offers a project Cursor hooks file"
+    return 1
+  fi
+  if grep -qF 'write a project `.cursor/hooks.json`' "$SETUP"; then
+    echo "setup still offers to write .cursor/hooks.json"
+    return 1
+  fi
+  if grep -qF 'hooks/cursor/hooks.json' "$SETUP"; then
+    echo "setup still copies the shipped Cursor hooks file"
+    return 1
+  fi
 }
 
 @test "setup refuses disposable ChatGPT scratch before writing" {
