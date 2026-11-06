@@ -72,6 +72,16 @@ doctor() {
   printf '%s' "$output" | grep -q 'Actions (Doctor does not perform these)'
 }
 
+@test "Doctor names a stuck unattended revival" {
+  p="$(new_project doctor-recovery-stuck)"
+  punch_open "$p"
+  printf 'recovery-stuck\nunavailable:unrecorded\n' >"$p/.nightshift/.watch-reason"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'unattended revival and watchman clock-out are stuck'
+  printf '%s\n' "$output" | grep -qF 'nothing to inherit'
+}
+
 @test "Doctor names each snag entry that carries no disposition, by line" {
   p="$(new_project doctor-snags)"
   punch_open "$p"

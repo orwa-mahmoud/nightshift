@@ -185,6 +185,30 @@ stale_pulse() {
 
 # A site that inherits a recorded scope it cannot read refuses before it mints: a chat no
 # revival runs must not be recorded as the worker the origin tab is pointed at.
+@test "an unrecorded Cursor scope is refused once, then left alone, including the clock-out" {
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  printf '## Items\n- [x] **1.**\n' >"$P/.nightshift/punch-list.md"
+  stale_pulse
+  run env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 2
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'Recovery cannot restore this configured scope' "$P/.nightshift/shift-log.md")" -eq 1 ]
+  [ "$(grep -c 'unattended revival and watchman clock-out are stuck' "$P/.nightshift/parking-lot.md")" -eq 1 ]
+  [ "$(sed -n 1p "$P/.nightshift/.watch-reason" | tr -d '[:space:]')" = recovery-stuck ]
+  if grep -q 'spawning the clock-out' "$P/.nightshift/shift-log.md"; then return 1; fi
+  [ ! -e "$P/.nightshift/.shift-worker" ]
+}
+
+@test "a mid-shift host-default clears a stuck Cursor revival" {
+  printf 'recovery-stuck\nunavailable:unrecorded\n' >"$P/.nightshift/.watch-reason"
+  run env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=0 \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p "$P/.nightshift/.watch-reason" | tr -d '[:space:]')" != recovery-stuck ]
+  if grep -q 'stay refused until recovery.launchScope changes' "$P/.nightshift/shift-log.md"; then return 1; fi
+}
+
 @test "an unavailable launch scope refuses without minting or recording a worker" {
   jq '.recovery.launchScope = "inherit-recorded-scope"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
   mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"

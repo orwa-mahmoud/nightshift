@@ -265,6 +265,46 @@ function Get-NSRecoveryRepair {
     return ('Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in ' + $rules)
 }
 
+function Test-NSRecoveryTerminal {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope)
+    return ($Scope -ceq 'unavailable:unrecorded' -or $Scope -clike 'unavailable:unsupported:*')
+}
+
+# Invoke-NSWatchmanRecoveryHold - quiet when already stuck, the scope token when newly stuck,
+# clear when revival may proceed. A previous stuck marker is removed on clear.
+function Invoke-NSWatchmanRecoveryHold {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
+    )
+    $scope = Get-NSRecoveryEffectiveScope $Workspace $HostName
+    $code = [string](Get-NSReasonCode $NightshiftDir)
+    $detail = [string](Get-NSReasonDetail $NightshiftDir)
+    if (Test-NSRecoveryTerminal $scope) {
+        if ($code -ceq 'recovery-stuck' -and $detail -ceq $scope) { return 'quiet' }
+        Write-NSReason -NightshiftDir $NightshiftDir -Code 'recovery-stuck' -Detail $scope
+        $sentence = Get-NSRecoveryRefusal $scope
+        Add-NSWatchmanNotice $NightshiftDir ('unattended revival and watchman clock-out are stuck: ' + $sentence + '. ' + (Get-NSRecoveryRepair $Workspace $scope))
+        return $scope
+    }
+    if ($code -ceq 'recovery-stuck') {
+        $path = Get-NSLayoutPath $NightshiftDir 'watch-reason'
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Force
+        }
+    }
+    return 'clear'
+}
+
+function Get-NSRecoveryStuckSentence {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    if ((Get-NSReasonCode $NightshiftDir) -cne 'recovery-stuck') { return '' }
+    $sentence = Get-NSRecoveryRefusal (Get-NSReasonDetail $NightshiftDir)
+    if ([string]::IsNullOrEmpty($sentence)) { return '' }
+    return ('unattended revival and watchman clock-out are stuck: ' + $sentence)
+}
+
 # Get-NSPolicyLaunch <workspace> <scope|provenance> - what the snapshot recorded about the scope
 # the shift was started under. A field the snapshot never carried is empty, never a guess.
 function Get-NSPolicyLaunch {

@@ -1512,6 +1512,19 @@ STUB
   [ "$output" = host-default ]
 }
 
+@test "a mid-shift rules.json change of recovery.launchScope is what the next wake reads" {
+  p="$(new_project watch-scope-live)"
+  # The snapshot froze inherit. The owner's file is the one they can change while the shift runs.
+  jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
+          source: "composition", verificationLevel: "none", toolingPolicy: "existing-tools",
+          recovery: {launchScope: "inherit-recorded-scope"}}' \
+    >"$p/.nightshift/shift-policy.json"
+  jq '.recovery.launchScope = "host-default"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" cursor' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-default ]
+}
+
 @test "a workspace that predates the setting is not read as having chosen the broad grant" {
   p="$(new_project watch-scope-legacy)"
   # A rules file from before recovery.launchScope existed. Its old behaviour was the built-in

@@ -703,6 +703,11 @@ $rcode = Get-NSReasonCode $ns
 if (-not [string]::IsNullOrEmpty($rcode)) {
     Add-NSFact "watchman reason $rcode ($(Get-NSReasonLabel $rcode))"
 }
+$stuck = ''
+try { $stuck = [string](Get-NSRecoveryStuckSentence $ns) } catch { $stuck = '' }
+if (-not [string]::IsNullOrEmpty($stuck)) {
+    Add-NSWarn $stuck
+}
 
 # An armed shift with work left and nothing watching it is not revived after a crash or a usage
 # limit. Only watchMinutes 0 means that on purpose; a missing or unreadable value stops the watchman

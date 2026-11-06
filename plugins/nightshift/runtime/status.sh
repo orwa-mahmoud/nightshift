@@ -180,6 +180,10 @@ fact "watchman" "$WATCHMAN_STATE"
 if [ -n "${WATCHMAN_REMOVED:-}" ]; then
   fact "watchman warning" "$WATCHMAN_REMOVED"
 fi
+STUCK="$(ns_recovery_stuck_sentence "$NS" 2>/dev/null || true)"
+if [ -n "$STUCK" ]; then
+  fact "watchman warning" "$STUCK"
+fi
 case "$WATCHMAN_STATE" in
   alive* | "not a usable file" | running*) ;;
   *)

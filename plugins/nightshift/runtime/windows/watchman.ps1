@@ -982,6 +982,21 @@ try {
             exit 0
         }
 
+        # An unrecorded or unsupported scope cannot change until the owner edits recovery.launchScope.
+        # Say so once, then wake without spawning a revival or a clock-out.
+        if ([string]::IsNullOrEmpty($Agent)) {
+            $hold = Invoke-NSWatchmanRecoveryHold -Workspace $workspace -NightshiftDir $ns -HostName $HostName
+            if ($hold -clike 'unavailable:*') {
+                Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $hold) + '. Recovery cannot restore this configured scope.')
+                Write-NSLogLine ('watchman: the work is untouched. ' + (Get-NSRecoveryRepair $workspace $hold))
+                Write-NSLogLine 'watchman: unattended revival and clock-out stay refused until recovery.launchScope changes'
+            }
+            if ($hold -cne 'clear') {
+                if ($MaxWakes -gt 0 -and $wake -ge $MaxWakes) { exit 0 }
+                continue
+            }
+        }
+
         $counts = Get-NSBoxCounts $punch
         if ($counts.Open -eq 0 -or (Test-NSDeadlinePassed)) {
             $label = if ($counts.Open -eq 0) { 'every box is ticked' } else { 'quitting time passed' }

@@ -250,6 +250,15 @@ MAP
   fact_of "$p" 'watch reason' | grep -qF 'the watchman that recorded it is not running'
 }
 
+@test "a stuck revival is a warning, not a watchman that is merely alive" {
+  p="$(new_project status-recovery-stuck)"
+  printf 'recovery-stuck\nunavailable:unrecorded\n' >"$p/.nightshift/.watch-reason"
+  fact_of "$p" 'watch reason' | grep -qF 'recovery-stuck'
+  fact_of "$p" 'watch reason' | grep -qF 'unattended revival is stuck'
+  fact_of "$p" 'watchman warning' | grep -qF 'unattended revival and watchman clock-out are stuck'
+  fact_of "$p" 'watchman warning' | grep -qF 'nothing to inherit'
+}
+
 @test "a transition is a line whose subject is the shift changing hands" {
   p="$(new_project status-transitions)"
   cat >"$p/.nightshift/shift-log.md" <<'LOG'

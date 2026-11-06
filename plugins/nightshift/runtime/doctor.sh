@@ -612,6 +612,10 @@ RCODE="$(ns_reason_code "$NS")"
 if [ -n "$RCODE" ]; then
   fact "watchman reason $RCODE ($(ns_reason_label "$RCODE"))"
 fi
+STUCK="$(ns_recovery_stuck_sentence "$NS" 2>/dev/null || true)"
+if [ -n "$STUCK" ]; then
+  warn "$STUCK"
+fi
 
 # An armed shift with work left and nothing watching it is not revived after a crash or a usage
 # limit. Only watchMinutes 0 means that on purpose; a missing or unreadable value stops the watchman

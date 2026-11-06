@@ -378,6 +378,23 @@ while :; do
     continue
   fi
 
+  # An unrecorded or unsupported scope cannot change until the owner edits recovery.launchScope.
+  # Say so once, then wake without spawning a revival or a clock-out.
+  if [ -z "$AGENT" ]; then
+    ns_watchman_recovery_hold "$NS" "$PROJECT" cursor
+    hold_rc=$?
+    if [ "$hold_rc" -eq 2 ]; then
+      hold_scope="$(ns_reason_detail "$NS")"
+      log_line "watchman: $(ns_recovery_refusal "$hold_scope"). Recovery cannot restore this configured scope."
+      log_line "watchman: the work is untouched. $(ns_recovery_repair "$PROJECT" "$hold_scope")"
+      log_line "watchman: unattended revival and clock-out stay refused until recovery.launchScope changes"
+    fi
+    if [ "$hold_rc" -ne 1 ]; then
+      if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+      continue
+    fi
+  fi
+
   if [ "$(open_boxes)" -eq 0 ]; then
     log_line "watchman: every box ticked but the shift never clocked out — spawning the clock-out (attempt 1/1)"
     spawn 1 || true

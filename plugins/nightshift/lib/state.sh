@@ -2462,34 +2462,37 @@ ns_handoff_view() {
   esac
 }
 
-# ns_recovery_launch_scope <project-dir> — the owner's recovery preference. Legacy host-grant
-# remains readable so the resolver can refuse it explicitly; a missing or unrecognised value
-# inherits. A Nightshift file that could not be opened is unavailable:missing-file — that is a
-# failure to read the setting, not a default, and NS_RECOVERY_MISSING_FILE names the file.
+# ns_recovery_launch_scope <project-dir> — the owner's recovery preference, read from the rules
+# file on every call. A shift snapshot freezes every other preference, but this one is how the
+# owner authorizes revival of the night already running, so a change is visible on the next wake.
+# Legacy host-grant remains readable so the resolver can refuse it explicitly; a missing or
+# unrecognised value inherits. A Nightshift file that could not be opened is
+# unavailable:missing-file — that is a failure to read the setting, not a default, and
+# NS_RECOVERY_MISSING_FILE names the file.
 ns_recovery_launch_scope() {
-  local v="" pref_out=""
+  local v="" pref_out="" rules=""
   NS_RECOVERY_MISSING_FILE=""
   if [ -n "${NIGHTSHIFT_LAUNCH_SCOPE:-}" ]; then
     v="$NIGHTSHIFT_LAUNCH_SCOPE"
   else
     # Redirect, do not capture in a subshell: a missing Nightshift file is recorded in
-    # NS_RULES_ERR and NS_POLICY_SHIFT_STATE, which a command substitution would discard.
+    # NS_RULES_ERR, which a command substitution would discard.
+    ns_layout_set rules "$1/.nightshift" rules || rules=""
     pref_out="$(mktemp "${TMPDIR:-/tmp}/ns-scope.XXXXXX")" || pref_out=""
     if [ -n "$pref_out" ]; then
-      ns_policy_pref "$1" recovery launchScope >"$pref_out" || true
+      if [ -n "$rules" ] && [ -f "$rules" ]; then
+        ns_rules_get_in "$rules" recovery launchScope >"$pref_out" || true
+      fi
       v="$(tr -d '\r\n' <"$pref_out")"
       rm -f "$pref_out"
-    else
-      v="$(ns_policy_pref "$1" recovery launchScope)" || v=""
+    elif [ -n "$rules" ] && [ -f "$rules" ]; then
+      v="$(ns_rules_get_in "$rules" recovery launchScope)" || v=""
     fi
     case "$NS_RULES_ERR" in
       "Nightshift file missing: "*)
         NS_RECOVERY_MISSING_FILE="${NS_RULES_ERR#Nightshift file missing: }"
         ;;
     esac
-    if [ -z "$v" ] && [ "$NS_POLICY_SHIFT_STATE" = missing-file ] && [ -n "${NS_POLICY_MISSING_FILE:-}" ]; then
-      NS_RECOVERY_MISSING_FILE="$NS_POLICY_MISSING_FILE"
-    fi
   fi
   case "$v" in
     host-default) printf 'host-default'; return 0 ;;
@@ -2672,6 +2675,57 @@ ns_recovery_repair() {
   esac
 }
 
+# ns_recovery_is_terminal <effective-scope> — unrecorded and unsupported stay refused until the
+# owner changes recovery.launchScope. Other refusals can clear on their own.
+ns_recovery_is_terminal() {
+  case "$1" in
+    unavailable:unrecorded | unavailable:unsupported:*) return 0 ;;
+  esac
+  return 1
+}
+
+ns_reason_detail() {
+  sed -n '2p' "$(ns_layout_path "$1" watch-reason)" 2>/dev/null | tr -d '\r'
+}
+
+# ns_watchman_recovery_hold <ns> <project> <host>
+# 0 already stuck, stay quiet · 2 newly stuck (reason and one notice written; the scope is the
+# reason detail) · 1 not terminal, and a previous stuck marker is cleared.
+ns_watchman_recovery_hold() {
+  local ns="$1" project="$2" host="$3" scope prev detail reason_file sentence
+  scope="$(ns_recovery_effective_scope "$project" "$host")"
+  prev="$(ns_reason_code "$ns" 2>/dev/null || true)"
+  reason_file="$(ns_layout_path "$ns" watch-reason 2>/dev/null || true)"
+  detail=""
+  if [ -n "$reason_file" ] && [ -f "$reason_file" ]; then
+    detail="$(ns_reason_detail "$ns")"
+  fi
+  if ns_recovery_is_terminal "$scope"; then
+    if [ "$prev" = recovery-stuck ] && [ "$detail" = "$scope" ]; then
+      return 0
+    fi
+    ns_record_reason "$ns" recovery-stuck "$scope"
+    sentence="$(ns_recovery_refusal "$scope")"
+    ns_watchman_park "$ns" "unattended revival and watchman clock-out are stuck: ${sentence}. $(ns_recovery_repair "$project" "$scope")"
+    return 2
+  fi
+  if [ "$prev" = recovery-stuck ] && [ -n "$reason_file" ]; then
+    rm -f "$reason_file"
+  fi
+  return 1
+}
+
+# ns_recovery_stuck_sentence <ns> — the status and Doctor line, or empty when revival is not stuck.
+ns_recovery_stuck_sentence() {
+  local code detail sentence
+  code="$(ns_reason_code "$1" 2>/dev/null || true)"
+  [ "$code" = recovery-stuck ] || return 0
+  detail="$(ns_reason_detail "$1")"
+  sentence="$(ns_recovery_refusal "$detail" 2>/dev/null || true)"
+  [ -n "$sentence" ] || return 0
+  printf 'unattended revival and watchman clock-out are stuck: %s' "$sentence"
+}
+
 # toolDeny requires exact key matching. The shipped reader accepts the template's
 # object-of-strings shape and nothing else. Malformed input fails closed.
 ns_tool_rules() { # $1 = project dir, $2 = session override
@@ -2775,6 +2829,7 @@ ns_reason_label() {
     install-pending) printf 'plugin install missing — confirming on the next wake' ;;
     install-removed) printf 'watchman stood down — no current plugin install' ;;
     install-mismatch) printf 'watchman stood down — the hooks copy of the plugin cannot be used' ;;
+    recovery-stuck) printf 'unattended revival is stuck — recorded scope cannot be restored' ;;
     *) printf 'unknown watchman outcome' ;;
   esac
 }
@@ -2783,7 +2838,7 @@ ns_record_reason() { # <nightshift-dir> <code> [detail]
   local dir="$1" code="$2" detail="${3:-}"
   [ -d "$dir" ] || return 1
   case "$code" in
-    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable|api-error|usage-limit|install-pending|install-removed|install-mismatch) ;;
+    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable|api-error|usage-limit|install-pending|install-removed|install-mismatch|recovery-stuck) ;;
     *) code="stand-down" ;;
   esac
   detail="$(printf '%s' "$detail" | tr -d '\000-\037' | sed 's/[[:space:]]*$//')"

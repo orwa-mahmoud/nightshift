@@ -242,7 +242,7 @@ function Write-NSReason {
         'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
         'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
         'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit',
-        'install-pending', 'install-removed', 'install-mismatch'
+        'install-pending', 'install-removed', 'install-mismatch', 'recovery-stuck'
     )
     if ($Code -notin $allowed) {
         $Code = 'stand-down'
@@ -1461,6 +1461,22 @@ function Get-NSReasonCode {
     }
 }
 
+function Get-NSReasonDetail {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $path = Get-NSLayoutPath $NightshiftDir 'watch-reason'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return ''
+    }
+    try {
+        $lines = @([IO.File]::ReadAllLines($path))
+        if ($lines.Count -lt 2) { return '' }
+        return ([string]$lines[1]).Trim()
+    }
+    catch {
+        return ''
+    }
+}
+
 function Get-NSReasonLabel {
     param([AllowEmptyString()][string]$Code)
     switch ($Code) {
@@ -1490,6 +1506,7 @@ function Get-NSReasonLabel {
         'install-pending' { return ('plugin install missing ' + [char]0x2014 + ' confirming on the next wake') }
         'install-removed' { return ('watchman stood down ' + [char]0x2014 + ' no current plugin install') }
         'install-mismatch' { return ('watchman stood down ' + [char]0x2014 + ' the hooks copy of the plugin cannot be used') }
+        'recovery-stuck' { return ('unattended revival is stuck ' + [char]0x2014 + ' recorded scope cannot be restored') }
         default { return 'unknown watchman outcome' }
     }
 }

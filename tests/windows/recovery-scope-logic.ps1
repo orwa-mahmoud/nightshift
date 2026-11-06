@@ -190,6 +190,30 @@ Expect-True ($scopeAt -ge 0 -and $resolveAt -gt $scopeAt) 'the launch scope is r
 Expect-True ($heldAt -gt $resolveAt -and $writeAt -gt $heldAt -and $takeoverAt -gt $writeAt) `
     'the Cursor worker is recorded after the liveness re-check and just before the lease is taken'
 
+# An unrecorded scope is final: one notice, then silence, until the rules file changes.
+$holdWorkspace = New-Workspace
+try {
+    $holdNs = Join-Path $holdWorkspace '.nightshift'
+    $first = Invoke-NSWatchmanRecoveryHold -Workspace $holdWorkspace -NightshiftDir $holdNs -HostName 'cursor'
+    Expect-Equal 'unavailable:unrecorded' $first 'the first unrecorded wake sticks'
+    $second = Invoke-NSWatchmanRecoveryHold -Workspace $holdWorkspace -NightshiftDir $holdNs -HostName 'cursor'
+    Expect-Equal 'quiet' $second 'the next wake does not say it again'
+    $lot = Get-NSLayoutPath $holdNs 'parking-lot'
+    $notices = @(Select-String -LiteralPath $lot -Pattern 'unattended revival and watchman clock-out are stuck' -SimpleMatch)
+    Expect-Equal 1 $notices.Count 'one parking notice for a stuck revival'
+    Set-Rules $holdWorkspace 'host-default'
+    $cleared = Invoke-NSWatchmanRecoveryHold -Workspace $holdWorkspace -NightshiftDir $holdNs -HostName 'cursor'
+    Expect-Equal 'clear' $cleared 'host-default in the rules file clears the stuck revival'
+    Expect-Equal '' (Get-NSReasonCode $holdNs) 'the stuck reason is gone once revival can proceed'
+    $sentence = Get-NSRecoveryStuckSentence $holdNs
+    Expect-Equal '' $sentence 'status has nothing to warn once the reason is gone'
+}
+finally {
+    Remove-Item -LiteralPath $holdWorkspace -Recurse -Force
+}
+
+Expect-True ($watchman.Contains('Invoke-NSWatchmanRecoveryHold')) 'the Windows watchman holds a terminal scope'
+
 if ($failures.Count -gt 0) {
     Write-Host ("recovery-scope-logic failed ($($failures.Count)):")
     foreach ($failure in $failures) { Write-Host " - $failure" }

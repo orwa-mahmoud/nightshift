@@ -698,6 +698,20 @@ if ($open -eq 0) {
     }
 }
 
+# Whether an unattended revival could happen at all, said before the night rather than discovered
+# after it. Cursor records no permission mode, so inheriting leaves nothing to restore.
+$recoveryScope = ''
+try { $recoveryScope = [string](Get-NSRecoveryEffectiveScope $workspace $HostName) } catch { $recoveryScope = '' }
+if ($recoveryScope -ceq 'unavailable:unrecorded' -and $HostName -eq 'cursor') {
+    Write-Warn ("recovery Cursor records no launch scope, so under inherit-recorded-scope an unattended revival and a watchman clock-out are impossible. Set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules') to allow them.")
+}
+elseif ($recoveryScope -clike 'unavailable:*') {
+    Write-Warn ("recovery $(Get-NSRecoveryRefusal $recoveryScope) - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Configure permissions directly in the host and set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules') to authorize one.")
+}
+elseif (-not [string]::IsNullOrEmpty($recoveryScope)) {
+    Write-Ok "recovery revival scope $recoveryScope"
+}
+
 # A shift that asked for filing at clock-out and ended before it could. The next explicit Archive
 # is where it gets picked up; Start neither files nor clears it.
 $pendingFiling = Get-NSLayoutPath $ns 'pending-filing'

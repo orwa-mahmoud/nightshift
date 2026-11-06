@@ -603,6 +603,11 @@ function Write-NSStatusReport {
     if ($watchmanState.StartsWith('running from a removed install', [StringComparison]::Ordinal)) {
         Fact 'watchman warning' (Get-NSWatchmanRemovedSentence $ns $watchmanPath $watchmanPid 'windows')
     }
+    $stuck = ''
+    try { $stuck = [string](Get-NSRecoveryStuckSentence $ns) } catch { $stuck = '' }
+    if (-not [string]::IsNullOrEmpty($stuck)) {
+        Fact 'watchman warning' $stuck
+    }
     $watchMinutesRaw = ''
     try { $watchMinutesRaw = [string](Get-NSRule $Workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH)) } catch { $watchMinutesRaw = '' }
     if ($armed -and $open -gt 0 -and $watchMinutesRaw -cne '0' -and
