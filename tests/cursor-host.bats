@@ -206,6 +206,34 @@ cursor_pulse() {
   [ ! -f "$p/.nightshift/.watchman" ]
 }
 
+@test "a Cursor hook records the model and freezes the permission flags" {
+  p="$(new_project cursor-launch-note)"
+  printf '## Items\n- [ ] **1.**\n' >"$p/.nightshift/punch-list.md"
+  : >"$p/.nightshift/.shift-armed"
+  printf 'conv-1\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
+  jq '.recovery.cursorFlags = ["--force", "--yolo", "--trust", "--sandbox"]' \
+    "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  hook_payload "$(jq -nc --arg w "$p" \
+    '{hook_event_name:"postToolUse",conversation_id:"conv-1",cwd:$w}')" \
+    env CURSOR_PROJECT_DIR="$p" bash "$CURSOR/pulse.sh"
+  grep -qxF 'model=' "$p/.nightshift/.cursor-launch"
+  grep -qxF 'force=1' "$p/.nightshift/.cursor-launch"
+  grep -qxF 'trust=1' "$p/.nightshift/.cursor-launch"
+  hook_payload "$(jq -nc --arg w "$p" \
+    '{hook_event_name:"postToolUse",conversation_id:"conv-1",cwd:$w,model_id:"composer-2",model:"other"}')" \
+    env CURSOR_PROJECT_DIR="$p" bash "$CURSOR/pulse.sh"
+  grep -qxF 'model=composer-2' "$p/.nightshift/.cursor-launch"
+  jq '.recovery.cursorFlags = []' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  hook_payload "$(jq -nc --arg w "$p" \
+    '{hook_event_name:"postToolUse",conversation_id:"conv-1",cwd:$w,model_id:"other-model"}')" \
+    env CURSOR_PROJECT_DIR="$p" bash "$CURSOR/pulse.sh"
+  grep -qxF 'model=composer-2' "$p/.nightshift/.cursor-launch"
+  grep -qxF 'force=1' "$p/.nightshift/.cursor-launch"
+  if grep -q 'sandbox' "$p/.nightshift/.cursor-launch"; then return 1; fi
+}
+
 @test "the Cursor gate holds an ended shift once so the model can file it" {
   p="$(new_project cursor-auto-file)"
   printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"

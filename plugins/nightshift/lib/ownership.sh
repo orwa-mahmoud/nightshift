@@ -1001,6 +1001,116 @@ ns_cursor_stale_origin() { # <ns> <sid>
     && ns_cursor_worker_ran "$1"
 }
 
+# A model id Cursor will accept as --model. Anything else is not passed.
+ns_cursor_model_safe() {
+  case "$1" in
+    '' | -*) return 1 ;;
+  esac
+  case "$1" in
+    *[!A-Za-z0-9._:-]*) return 1 ;;
+  esac
+  [ "${#1}" -le 80 ]
+}
+
+# ns_cursor_payload_model <json> — model_id, else model, else empty. Hooks document both.
+ns_cursor_payload_model() {
+  local raw="$1" model=""
+  if command -v jq >/dev/null 2>&1; then
+    model="$(printf '%s' "$raw" | jq -r '.model_id // .model // empty' 2>/dev/null || true)"
+  else
+    model="$(printf '%s' "$raw" | sed -n 's/.*"model_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    [ -n "$model" ] || model="$(printf '%s' "$raw" | sed -n 's/.*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  fi
+  ns_cursor_model_safe "$model" || model=""
+  printf '%s' "$model"
+}
+
+# ns_cursor_rules_flags <ns> — force and trust from recovery.cursorFlags, one line "0|1<TAB>0|1".
+# --yolo is the documented alias of --force. Any other token is ignored.
+ns_cursor_rules_flags() {
+  local rules raw force=0 trust=0
+  ns_layout_set rules "$1" rules || { printf '0\t0'; return 0; }
+  [ -f "$rules" ] && [ ! -L "$rules" ] || { printf '0\t0'; return 0; }
+  raw="$(ns_rules_get_in "$rules" recovery cursorFlags 2>/dev/null || true)"
+  printf '%s' "$raw" | grep -qF '"--force"' && force=1
+  printf '%s' "$raw" | grep -qF '"--yolo"' && force=1
+  printf '%s' "$raw" | grep -qF '"--trust"' && trust=1
+  printf '%s\t%s' "$force" "$trust"
+}
+
+# ns_cursor_launch_read <ns> — model, force, trust. Missing file is an empty model and no flags.
+ns_cursor_launch_read() {
+  local f model="" force=0 trust=0 line key val
+  f="$(ns_layout_path "$1" cursor-launch 2>/dev/null || true)"
+  if [ -n "$f" ] && [ -f "$f" ] && [ ! -L "$f" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      key="${line%%=*}"
+      val="${line#*=}"
+      case "$key" in
+        model) ns_cursor_model_safe "$val" && model="$val" ;;
+        force) [ "$val" = 1 ] && force=1 ;;
+        trust) [ "$val" = 1 ] && trust=1 ;;
+      esac
+    done <"$f"
+  fi
+  printf '%s\t%s\t%s' "$model" "$force" "$trust"
+}
+
+_ns_cursor_launch_write() { # ns model force trust
+  local f dir tmp
+  ns_layout_parent "$1" cursor-launch || return 1
+  f="$(ns_layout_path "$1" cursor-launch)"
+  dir="${f%/*}"
+  tmp="$(mktemp "$dir/.cursor-launch.XXXXXX")" || return 1
+  printf 'model=%s\nforce=%s\ntrust=%s\n' "$2" "$3" "$4" >"$tmp"
+  mv -f "$tmp" "$f"
+}
+
+# ns_cursor_launch_note <ns> <json>
+# The first Cursor hook of the shift freezes the flags. A later hook may fill an empty model.
+# It never replaces a model and never adds a flag.
+ns_cursor_launch_note() {
+  local ns="$1" raw="$2" seen model flags force trust rest rec
+  [ -d "$ns" ] || return 0
+  rec="$(ns_layout_path "$ns" cursor-launch 2>/dev/null || true)"
+  [ -n "$rec" ] && [ ! -L "$rec" ] || return 0
+  seen="$(ns_cursor_launch_read "$ns")"
+  model="${seen%%$'\t'*}"
+  rest="${seen#*$'\t'}"
+  force="${rest%%$'\t'*}"
+  trust="${rest#*$'\t'}"
+  if [ ! -f "$rec" ]; then
+    flags="$(ns_cursor_rules_flags "$ns")"
+    force="${flags%%$'\t'*}"
+    trust="${flags#*$'\t'}"
+    model="$(ns_cursor_payload_model "$raw")"
+    _ns_cursor_launch_write "$ns" "$model" "$force" "$trust" || return 0
+    return 0
+  fi
+  [ -n "$model" ] && return 0
+  model="$(ns_cursor_payload_model "$raw")"
+  [ -n "$model" ] || return 0
+  _ns_cursor_launch_write "$ns" "$model" "$force" "$trust" || return 0
+}
+
+# ns_cursor_model_missing <model> — 0 when `agent --list-models` names a catalog that lacks it.
+# An empty or failed listing is not a reason to call the model unavailable.
+ns_cursor_model_missing() {
+  local model="$1" list line
+  [ -n "$model" ] || return 1
+  list="$(agent --list-models 2>/dev/null || true)"
+  [ -n "$(printf '%s' "$list" | tr -d '[:space:]')" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%$'\r'}"
+    case "$line" in
+      "$model" | "$model"[[:space:]]*) return 1 ;;
+    esac
+  done <<EOF
+$list
+EOF
+  return 0
+}
+
 ns_cursor_resume_command() { # <ns> <workspace>
   local worker workspace
   worker="$(ns_cursor_worker_id "$1")"

@@ -234,15 +234,30 @@ forget_fresh_worker() {
 }
 
 launch_worker() { # <prompt>
+  local prompt="$1" fields model force trust
   if [ -n "$AGENT" ]; then
     # shellcheck disable=SC2086
     ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$1"
-  else
-    ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" \
-      agent --resume="$WORKER" -p --workspace "$PROJECT" "$1"
+      CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$prompt"
+    return
   fi
+  fields="$(ns_cursor_launch_read "$NS")"
+  model="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  force="${fields%%$'\t'*}"
+  trust="${fields#*$'\t'}"
+  if [ -n "$model" ] && [ "${NS_CURSOR_MODEL_SAID:-}" != 1 ] && ns_cursor_model_missing "$model"; then
+    NS_CURSOR_MODEL_SAID=1
+    log_line "watchman: recorded model ${model} is not in the Cursor model list — not substituting another"
+    ns_watchman_park "$NS" "the Cursor model ${model} is not available; the revival still asks for it and does not switch models"
+  fi
+  set -- agent --resume="$WORKER" -p --workspace "$PROJECT"
+  [ -n "$model" ] && set -- "$@" --model "$model"
+  [ "$force" = 1 ] && set -- "$@" --force
+  [ "$trust" = 1 ] && set -- "$@" --trust
+  set -- "$@" "$prompt"
+  ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
+    CURSOR_PROJECT_DIR "$PROJECT" "$@"
 }
 
 # A headless `agent -p` worker runs no stop hook, so the clock-out gate cannot hold it: it exits

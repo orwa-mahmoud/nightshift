@@ -16,6 +16,7 @@ $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 $script:NSWatchmanHandoff = $false
+$script:NSCursorModelSaid = $false
 try { $script:NSWatchmanScript = (Resolve-Path -LiteralPath $PSCommandPath).ProviderPath } catch { $script:NSWatchmanScript = $PSCommandPath }
 $script:NSWatchmanSelfVersion = Get-NSPluginVersion $pluginRoot.ProviderPath
 
@@ -618,6 +619,13 @@ function Start-NSAgent {
         $commandArguments.Add('-p')
         $commandArguments.Add('--workspace')
         $commandArguments.Add($workspace)
+        $cursorLaunch = Get-NSCursorLaunch $ns
+        if (-not [string]::IsNullOrEmpty($cursorLaunch.Model) -and -not $script:NSCursorModelSaid -and (Test-NSCursorModelMissing $cursorLaunch.Model)) {
+            $script:NSCursorModelSaid = $true
+            Write-NSLogLine ('watchman: recorded model ' + $cursorLaunch.Model + ' is not in the Cursor model list - not substituting another')
+            Add-NSWatchmanNotice $ns ('the Cursor model ' + $cursorLaunch.Model + ' is not available; the revival still asks for it and does not switch models')
+        }
+        foreach ($extra in (Get-NSCursorLaunchArguments $ns)) { $commandArguments.Add([string]$extra) }
         $commandArguments.Add($prompt)
     }
     elseif ($HostName -eq 'claude') {

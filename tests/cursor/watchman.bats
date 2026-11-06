@@ -312,3 +312,82 @@ STUB
   [ "$status" -eq 0 ]
   [ "$(calls)" -eq 1 ]
 }
+
+@test "a revival and a relaunch pass the recorded model and flags" {
+  printf 'model=composer-2\nforce=1\ntrust=1\n' >"$P/.nightshift/.cursor-launch"
+  printf 'kept-cli-worker\n' >"$P/.nightshift/.shift-worker"
+  printf '## Items\n- [ ] **1.**\n- [ ] **2.**\n' >"$P/.nightshift/punch-list.md"
+  cat >"$BIN/agent" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${AGENT_LOG:-/tmp/agent-argv}"
+if [ "$1" = "--list-models" ]; then
+  printf 'composer-2\n'
+  exit 0
+fi
+awk 'BEGIN{d=0} !d && /^- \[ \]/{sub(/\[ \]/,"[x]");d=1} {print}' .nightshift/punch-list.md >.nightshift/pl.tmp
+mv .nightshift/pl.tmp .nightshift/punch-list.md
+exit 0
+STUB
+  chmod +x "$BIN/agent"
+  stale_pulse
+  AGENT_LOG="$P/.nightshift/agent-argv"
+  run env PATH="$BIN:$PATH" AGENT_LOG="$AGENT_LOG" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--resume=kept-cli-worker' "$AGENT_LOG")" -eq 2 ]
+  [ "$(grep -c -- '--model composer-2' "$AGENT_LOG")" -eq 2 ]
+  [ "$(grep -c -- '--force' "$AGENT_LOG")" -eq 2 ]
+  [ "$(grep -c -- '--trust' "$AGENT_LOG")" -eq 2 ]
+}
+
+@test "a shift with no recorded flags adds none" {
+  printf 'kept-cli-worker\n' >"$P/.nightshift/.shift-worker"
+  stale_pulse
+  AGENT_LOG="$P/.nightshift/agent-argv"
+  run env PATH="$BIN:$PATH" AGENT_LOG="$AGENT_LOG" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -q -- '--resume=kept-cli-worker' "$AGENT_LOG"
+  if grep -q -- '--model\|--force\|--trust' "$AGENT_LOG"; then return 1; fi
+}
+
+@test "an unavailable model is reported and not swapped" {
+  printf 'model=missing-model\nforce=0\ntrust=0\n' >"$P/.nightshift/.cursor-launch"
+  printf 'kept-cli-worker\n' >"$P/.nightshift/.shift-worker"
+  cat >"$BIN/agent" <<'STUB'
+#!/usr/bin/env bash
+if [ "$1" = "--list-models" ]; then
+  printf 'other-model\n'
+  exit 0
+fi
+printf '%s\n' "$*" >>"${AGENT_LOG:-/tmp/agent-argv}"
+exit 0
+STUB
+  chmod +x "$BIN/agent"
+  stale_pulse
+  AGENT_LOG="$P/.nightshift/agent-argv"
+  run env PATH="$BIN:$PATH" AGENT_LOG="$AGENT_LOG" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1
+  [ "$status" -eq 0 ]
+  grep -qF 'not substituting another' "$P/.nightshift/shift-log.md"
+  grep -qF 'missing-model is not available' "$P/.nightshift/parking-lot.md"
+  grep -qF -- '--model missing-model' "$AGENT_LOG"
+  if grep -q 'other-model' "$AGENT_LOG"; then return 1; fi
+}
+
+@test "watchAgent stays a verbatim command" {
+  printf 'model=composer-2\nforce=1\ntrust=1\n' >"$P/.nightshift/.cursor-launch"
+  printf 'kept-cli-worker\n' >"$P/.nightshift/.shift-worker"
+  cat >"$BIN/verbatim.sh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>.nightshift/agent-argv
+exit 0
+STUB
+  chmod +x "$BIN/verbatim.sh"
+  stale_pulse
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 1 --agent "bash $BIN/verbatim.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$P/.nightshift/agent-argv" ]
+  if grep -q -- '--model\|--force\|--trust' "$P/.nightshift/agent-argv"; then return 1; fi
+}

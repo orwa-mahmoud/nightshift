@@ -1876,3 +1876,143 @@ function Write-NSScaffoldFile {
     return "wrote $rel"
 }
 
+function Test-NSCursorModelSafe {
+    param([AllowEmptyString()][string]$Model)
+    if ([string]::IsNullOrEmpty($Model) -or $Model.StartsWith('-') -or $Model.Length -gt 80) { return $false }
+    return $Model -cmatch '^[A-Za-z0-9._:-]+$'
+}
+
+function Get-NSJsonFieldText {
+    param($Object, [Parameter(Mandatory = $true)][string]$Name)
+    if ($null -eq $Object) { return '' }
+    if ($Object -is [Collections.IDictionary]) {
+        if (-not $Object.Contains($Name) -or $null -eq $Object[$Name]) { return '' }
+        return [string]$Object[$Name]
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property -or $null -eq $property.Value) { return '' }
+    return [string]$property.Value
+}
+
+function Get-NSCursorLaunch {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $launch = [pscustomobject]@{ Model = ''; Force = $false; Trust = $false }
+    $path = Get-NSLayoutPath $NightshiftDir 'cursor-launch'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $launch }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        $eq = $line.IndexOf('=')
+        if ($eq -lt 1) { continue }
+        $key = $line.Substring(0, $eq)
+        $val = $line.Substring($eq + 1)
+        if ($key -ceq 'model' -and (Test-NSCursorModelSafe $val)) { $launch.Model = $val }
+        elseif ($key -ceq 'force' -and $val -ceq '1') { $launch.Force = $true }
+        elseif ($key -ceq 'trust' -and $val -ceq '1') { $launch.Trust = $true }
+    }
+    return $launch
+}
+
+function Get-NSCursorLaunchArguments {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $launch = Get-NSCursorLaunch $NightshiftDir
+    $extra = New-Object Collections.Generic.List[string]
+    if (-not [string]::IsNullOrEmpty($launch.Model)) {
+        $extra.Add('--model')
+        $extra.Add($launch.Model)
+    }
+    if ($launch.Force) { $extra.Add('--force') }
+    if ($launch.Trust) { $extra.Add('--trust') }
+    return $extra
+}
+
+function Get-NSCursorRulesFlags {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $flags = [pscustomobject]@{ Force = $false; Trust = $false }
+    $path = Get-NSLayoutPath $NightshiftDir 'rules'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $flags }
+    $document = $null
+    try { $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom)) }
+    catch { return $flags }
+    $block = $null
+    if ($document -is [Collections.IDictionary]) {
+        if ($document.Contains('recovery')) { $block = $document['recovery'] }
+    }
+    elseif ($null -ne $document) {
+        $property = $document.PSObject.Properties['recovery']
+        if ($null -ne $property) { $block = $property.Value }
+    }
+    if ($null -eq $block) { return $flags }
+    $listed = $null
+    if ($block -is [Collections.IDictionary]) {
+        if ($block.Contains('cursorFlags')) { $listed = $block['cursorFlags'] }
+    }
+    else {
+        $property = $block.PSObject.Properties['cursorFlags']
+        if ($null -ne $property) { $listed = $property.Value }
+    }
+    if ($listed -is [string]) { return $flags }
+    foreach ($flag in @($listed)) {
+        if ($flag -ceq '--force' -or $flag -ceq '--yolo') { $flags.Force = $true }
+        elseif ($flag -ceq '--trust') { $flags.Trust = $true }
+    }
+    return $flags
+}
+
+function Write-NSCursorLaunchFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [AllowEmptyString()][string]$Model,
+        [bool]$Force,
+        [bool]$Trust
+    )
+    $forceBit = if ($Force) { '1' } else { '0' }
+    $trustBit = if ($Trust) { '1' } else { '0' }
+    New-NSLayoutParent $NightshiftDir 'cursor-launch'
+    $null = Write-NSAtomicLines -Path (Get-NSLayoutPath $NightshiftDir 'cursor-launch') -Lines @(
+        ('model=' + $Model),
+        ('force=' + $forceBit),
+        ('trust=' + $trustBit)
+    )
+}
+
+function Add-NSCursorLaunchNote {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [AllowEmptyString()][string]$PayloadJson
+    )
+    $path = Get-NSLayoutPath $NightshiftDir 'cursor-launch'
+    if (Test-NSReparsePoint $path) { return }
+    $model = ''
+    if (-not [string]::IsNullOrWhiteSpace($PayloadJson)) {
+        try {
+            $payload = ConvertFrom-NSJsonText $PayloadJson
+            foreach ($key in @('model_id', 'model')) {
+                $candidate = Get-NSJsonFieldText $payload $key
+                if (Test-NSCursorModelSafe $candidate) { $model = $candidate; break }
+            }
+        }
+        catch { }
+    }
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        $existing = Get-NSCursorLaunch $NightshiftDir
+        if (-not [string]::IsNullOrEmpty($existing.Model) -or [string]::IsNullOrEmpty($model)) { return }
+        Write-NSCursorLaunchFile $NightshiftDir $model $existing.Force $existing.Trust
+        return
+    }
+    $flags = Get-NSCursorRulesFlags $NightshiftDir
+    Write-NSCursorLaunchFile $NightshiftDir $model $flags.Force $flags.Trust
+}
+
+function Test-NSCursorModelMissing {
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Model)
+    if ([string]::IsNullOrEmpty($Model)) { return $false }
+    $list = ''
+    try { $list = (& agent --list-models 2>$null | Out-String) } catch { return $false }
+    if ([string]::IsNullOrWhiteSpace($list)) { return $false }
+    foreach ($line in ($list -split '\r?\n')) {
+        if ($line -ceq $Model -or $line.StartsWith($Model + ' ', [StringComparison]::Ordinal) -or $line.StartsWith($Model + "`t", [StringComparison]::Ordinal)) {
+            return $false
+        }
+    }
+    return $true
+}
+

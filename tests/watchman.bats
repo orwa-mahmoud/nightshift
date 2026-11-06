@@ -1854,3 +1854,19 @@ wait_watchman_armed() {
   printf '%s\n' "$output" | grep -qF 'current install is none'
   printf '%s\n' "$output" | grep -qF 'kill 99'
 }
+
+@test "a Cursor launch record keeps the model and does not grow flags" {
+  p="$(new_project cursor-launch-record)"
+  jq '.recovery.cursorFlags = ["--trust", "--sandbox"]' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift" \
+    '{"model_id":"composer-2","model":"other"}'
+  [ "$output" = "$(printf 'composer-2\t0\t1')" ]
+  jq '.recovery.cursorFlags = ["--force", "--trust"]' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift" \
+    '{"model_id":"other-model"}'
+  [ "$output" = "$(printf 'composer-2\t0\t1')" ]
+}
