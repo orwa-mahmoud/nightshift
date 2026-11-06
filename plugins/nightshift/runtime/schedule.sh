@@ -228,7 +228,7 @@ if [ "$MODE" = "preflight" ]; then
     fail=1
   fi
 
-  ns_layout_set RULES "$PROJECT/.nightshift" rules
+  RULES="$(ns_layout_path "$PROJECT/.nightshift" rules)" || RULES=""
   if [ ! -f "$RULES" ]; then
     pf "FAIL rules.json is missing"
     fail=1
