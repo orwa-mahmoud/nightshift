@@ -207,6 +207,7 @@ function Get-NSRecoveryEffectiveScope {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$HostName
     )
     $configured = Get-NSRecoveryLaunchScope $Workspace
+    if ($configured -clike 'unavailable:missing-file:*') { return $configured }
     if ($configured -ceq 'host-grant') { return 'unavailable:host-grant' }
     if ($configured -ceq 'host-default') { return 'host-default' }
     $policyState = (Get-NSShiftPolicyState $Workspace)['state']
@@ -234,10 +235,34 @@ function Get-NSRecoveryRefusal {
     if ($Scope -ceq 'unavailable:unreadable') {
         return 'the policy that records the launch scope cannot be read, so what this shift was started under is unknown'
     }
+    if ($Scope -clike 'unavailable:missing-file:*') {
+        return ('Nightshift file missing: ' + $Scope.Substring('unavailable:missing-file:'.Length))
+    }
     if ($Scope -clike 'unavailable:unsupported:*') {
         return ("the shift was started under '" + $Scope.Substring('unavailable:unsupported:'.Length) + "', which Nightshift does not restore automatically")
     }
     return ''
+}
+
+# Get-NSRecoveryRepair <workspace> <effective-scope> - the second sentence after a refusal.
+# Never tells the owner to set a value the rules file already has, or one that could not be read.
+function Get-NSRecoveryRepair {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Scope
+    )
+    if ($Scope -clike 'unavailable:missing-file:*') {
+        return ('Nightshift file missing: ' + $Scope.Substring('unavailable:missing-file:'.Length))
+    }
+    $configured = Get-NSRecoveryLaunchScope $Workspace
+    $rules = Get-NSLayoutName (Join-Path $Workspace '.nightshift') 'rules'
+    if ($configured -ceq 'host-default') {
+        return ('recovery.launchScope is already host-default in ' + $rules)
+    }
+    if ($configured -clike 'unavailable:missing-file:*') {
+        return ('Nightshift file missing: ' + $configured.Substring('unavailable:missing-file:'.Length))
+    }
+    return ('Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in ' + $rules)
 }
 
 # Get-NSPolicyLaunch <workspace> <scope|provenance> - what the snapshot recorded about the scope

@@ -655,6 +655,7 @@ $wpid = ''
 $wstart = ''
 $watchmanUnusable = $false
 $watchmanAlive = $false
+$watchmanRemoved = $false
 $watchmanPath = Get-NSLayoutPath $ns 'watchman'
 if (Test-NSReparsePoint $watchmanPath) {
     Add-NSWarn 'watchman pidfile path is not a usable file'
@@ -674,8 +675,16 @@ elseif (Test-Path -LiteralPath $watchmanPath -PathType Leaf) {
 if ($wpid -match '^[0-9]+$') {
     $watchLive = Test-NSRecordedProcess $wpid $wstart
     if ($watchLive -eq 'Alive') {
-        Add-NSFact "watchman pid $wpid is alive"
-        $watchmanAlive = $true
+        $removed = Get-NSWatchmanRemovedSentence $ns $watchmanPath $wpid 'windows'
+        if (-not [string]::IsNullOrEmpty($removed)) {
+            Add-NSWarn $removed
+            $watchmanAlive = $false
+            $watchmanRemoved = $true
+        }
+        else {
+            Add-NSFact "watchman pid $wpid is alive"
+            $watchmanAlive = $true
+        }
     }
     else {
         Add-NSFact "watchman pid $wpid is stale"
@@ -699,7 +708,7 @@ if (-not [string]::IsNullOrEmpty($rcode)) {
 # limit. Only watchMinutes 0 means that on purpose; a missing or unreadable value stops the watchman
 # arming too, so it is flagged the same way.
 $watchMinutes = [string](Get-NSRule $workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH))
-if ($armed -eq 1 -and $open -gt 0 -and -not $watchmanAlive -and -not $watchmanUnusable -and $watchMinutes -cne '0') {
+if ($armed -eq 1 -and $open -gt 0 -and -not $watchmanAlive -and -not $watchmanUnusable -and -not $watchmanRemoved -and $watchMinutes -cne '0') {
     Add-NSWarn 'shift is armed with open boxes and no watchman - a crash or usage limit will not be revived'
     Add-NSAct confirm ("arm it again with ns start-watchman -HostName <this host>: it changes nothing else about the shift, and says why if it cannot arm (its output is in " +
         (Get-NSLayoutName $ns 'watchman-log') + '); or work the list in the live session')

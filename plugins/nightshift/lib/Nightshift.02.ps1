@@ -241,7 +241,8 @@ function Write-NSReason {
         'unknown-wedge', 'revived', 'stand-down', 'wrong-host', 'deadline',
         'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
         'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
-        'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit'
+        'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit',
+        'install-pending', 'install-removed', 'install-mismatch'
     )
     if ($Code -notin $allowed) {
         $Code = 'stand-down'
@@ -1486,6 +1487,9 @@ function Get-NSReasonLabel {
         'recovery-scope-unavailable' { return 'recorded launch scope cannot be requested on this host' }
         'process-evidence-unavailable' { return 'process evidence is unavailable' }
         'clock-out-failed' { return 'terminal clock-out failed without releasing the shift' }
+        'install-pending' { return ('plugin install missing ' + [char]0x2014 + ' confirming on the next wake') }
+        'install-removed' { return ('watchman stood down ' + [char]0x2014 + ' no current plugin install') }
+        'install-mismatch' { return ('watchman stood down ' + [char]0x2014 + ' the hooks copy of the plugin cannot be used') }
         default { return 'unknown watchman outcome' }
     }
 }

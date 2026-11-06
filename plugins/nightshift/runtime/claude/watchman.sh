@@ -117,6 +117,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+NS_WATCHMAN_SCRIPT="$_here/watchman.sh"
+case "$NS_WATCHMAN_SCRIPT" in
+  /*) ;;
+  *) NS_WATCHMAN_SCRIPT="$(pwd)/$NS_WATCHMAN_SCRIPT" ;;
+esac
+NS_WATCHMAN_SELF_VERSION="$(ns_plugin_version "$(ns_plugin_root_from_script "$NS_WATCHMAN_SCRIPT")")"
+
 cd "$PROJECT" 2>/dev/null || exit 1
 PROJECT="$PWD"
 WORK_TARGET="$(ns_work_target "$PROJECT" 2>/dev/null || true)"
@@ -213,13 +220,7 @@ holds_pidfile() {
 
 # One watchman per site. A stale pidfile (dead pid) is taken over silently.
 # A planted symlink is not a live owner — replace it rather than follow it.
-if [ -L "$PIDFILE" ]; then
-  rm -f "$PIDFILE"
-elif [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
-  printf 'watchman: already watching (pid %s)\n' "$(cat "$PIDFILE")" >&2
-  exit 1
-fi
-printf '%s\n' "$$" >"$PIDFILE"
+ns_watchman_claim "$PIDFILE" "$NS_WATCHMAN_SCRIPT" || exit 1
 trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
 
 # Counted below the `## Items` heading only, exactly as the gate counts them — a watchman that
@@ -301,7 +302,7 @@ spawn() { # $1 optionally overrides the agent for this one attempt; $2 the order
     unavailable:*)
       RECOVERY_REFUSED=1
       log_line "watchman: $(ns_recovery_refusal "$scope"). Recovery cannot restore this configured scope."
-      log_line "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules)."
+      log_line "watchman: the work is untouched. $(ns_recovery_repair "$PROJECT" "$scope")"
       note recovery-scope-unavailable
       return 1
       ;;
@@ -594,7 +595,11 @@ wake_wait() {
 }
 
 while :; do
-  sleep "$(wake_wait)"
+  if [ "${NIGHTSHIFT_WATCH_IMMEDIATE:-}" = 1 ]; then
+    unset NIGHTSHIFT_WATCH_IMMEDIATE
+  else
+    sleep "$(wake_wait)"
+  fi
   wake=$((wake + 1))
 
   armed || stand_down_disarmed
@@ -609,6 +614,12 @@ while :; do
     note wrong-host "$host"
     log_line "watchman: shift is owned by $host — standing down"
     exit 0
+  fi
+  ns_watchman_settle claude
+  settle_rc=$?
+  if [ "$settle_rc" -eq 1 ]; then
+    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+    continue
   fi
   if [ "$(open_boxes)" -eq 0 ]; then
     log_line "watchman: every box ticked but the shift never clocked out — spawning the clock-out (attempt 1/1)"

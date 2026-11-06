@@ -2617,3 +2617,360 @@ function Test-NSTrustedShiftControl {
     return $true
 }
 
+# A long-lived watchman loads its libraries once. When the host replaces that install, later
+# reads of those paths fail. Each wake re-runs from the copy the hooks are on, or from the
+# install the host itself records. The Windows script is runtime/windows/watchman.ps1.
+
+function Get-NSProfileHome {
+    if (-not [string]::IsNullOrEmpty([string]$env:USERPROFILE)) { return [string]$env:USERPROFILE }
+    if (-not [string]::IsNullOrEmpty([string]$env:HOME)) { return [string]$env:HOME }
+    return ''
+}
+
+function Get-NSWatchmanCanonDir {
+    param([AllowEmptyString()][string]$Path)
+    if ([string]::IsNullOrEmpty($Path)) { return '' }
+    if (Test-Path -LiteralPath $Path -PathType Container) {
+        try { return (Resolve-Path -LiteralPath $Path).ProviderPath } catch { return $Path }
+    }
+    return $Path
+}
+
+function Get-NSPluginRootFromScript {
+    param([Parameter(Mandatory = $true)][string]$ScriptPath)
+    $dir = Split-Path -Parent $ScriptPath
+    $dir = Split-Path -Parent $dir
+    $dir = Split-Path -Parent $dir
+    return (Get-NSWatchmanCanonDir $dir)
+}
+
+# Test-NSPluginInstallUsable <root> <runtime> - the directory can still run that runtime.
+# runtime is claude, codex, cursor, or windows.
+function Test-NSPluginInstallUsable {
+    param(
+        [AllowEmptyString()][string]$Root,
+        [Parameter(Mandatory = $true)][string]$Runtime
+    )
+    if ([string]::IsNullOrEmpty($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container)) { return $false }
+    $script = if ($Runtime -ceq 'windows') {
+        Join-Path $Root 'runtime/windows/watchman.ps1'
+    }
+    else {
+        Join-Path $Root ("runtime/$Runtime/watchman.sh")
+    }
+    foreach ($rel in @($script, (Join-Path $Root 'lib/lib.sh'), (Join-Path $Root 'lib/policy-emit.jq'), (Join-Path $Root 'lib/rules-read.awk'))) {
+        if (-not (Test-Path -LiteralPath $rel -PathType Leaf)) { return $false }
+    }
+    if ($Runtime -ceq 'windows' -and -not (Test-Path -LiteralPath (Join-Path $Root 'lib/Nightshift.psm1') -PathType Leaf)) {
+        return $false
+    }
+    return $true
+}
+
+function Get-NSHookCopyNewest {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$HostName
+    )
+    $path = Get-NSLayoutPath $NightshiftDir 'hook-copies'
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $best = [long]-1
+    $root = ''
+    $version = ''
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        $fields = $line.Split("`t")
+        if ($fields.Count -lt 5 -or $fields[1] -cne $HostName) { continue }
+        $epoch = 0L
+        [void][long]::TryParse($fields[0], [ref]$epoch)
+        if ($epoch -ge $best) {
+            $best = $epoch
+            $root = $fields[3]
+            $version = $fields[4]
+        }
+    }
+    if ([string]::IsNullOrEmpty($root)) { return $null }
+    return [pscustomobject]@{ Root = $root; Version = $version }
+}
+
+function Get-NSClaudePluginInstalls {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $found = New-Object Collections.Generic.List[string]
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $found }
+    $document = $null
+    try {
+        $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($Path, (New-Object Text.UTF8Encoding($false))))
+    }
+    catch {
+        return $found
+    }
+    if (-not ($document -is [Collections.IDictionary]) -or -not $document.Contains('plugins')) { return $found }
+    $plugins = $document['plugins']
+    if (-not ($plugins -is [Collections.IDictionary])) { return $found }
+    foreach ($key in @($plugins.Keys)) {
+        if ([string]$key -notlike 'nightshift@*') { continue }
+        $rows = @($plugins[$key])
+        foreach ($row in $rows) {
+            if ($row -is [Collections.IDictionary] -and -not [string]::IsNullOrEmpty([string]$row['installPath'])) {
+                $found.Add([string]$row['installPath'])
+            }
+        }
+    }
+    return $found
+}
+
+function Get-NSCodexEnabledMarkets {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $markets = New-Object Collections.Generic.List[string]
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $markets }
+    $market = ''
+    $enabled = $true
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ($line -match '^\[plugins\."nightshift@') {
+            if (-not [string]::IsNullOrEmpty($market) -and $enabled) { $markets.Add($market) }
+            $market = $line -replace '^\[plugins\."nightshift@', '' -replace '".*$', ''
+            $enabled = $true
+            continue
+        }
+        if ($line -match '^\[') {
+            if (-not [string]::IsNullOrEmpty($market) -and $enabled) { $markets.Add($market) }
+            $market = ''
+            continue
+        }
+        if (-not [string]::IsNullOrEmpty($market) -and $line -match '^\s*enabled\s*=\s*false\s*$') {
+            $enabled = $false
+        }
+    }
+    if (-not [string]::IsNullOrEmpty($market) -and $enabled) { $markets.Add($market) }
+    return $markets
+}
+
+function Get-NSNewestUsableChild {
+    param(
+        [Parameter(Mandatory = $true)][string]$Parent,
+        [Parameter(Mandatory = $true)][string]$Runtime
+    )
+    if (-not (Test-Path -LiteralPath $Parent -PathType Container)) { return '' }
+    $best = ''
+    $bestM = [datetime]::MinValue
+    foreach ($child in @(Get-ChildItem -LiteralPath $Parent -Directory -ErrorAction SilentlyContinue)) {
+        if (-not (Test-NSPluginInstallUsable $child.FullName $Runtime)) { continue }
+        if ($child.LastWriteTimeUtc -ge $bestM) {
+            $bestM = $child.LastWriteTimeUtc
+            $best = $child.FullName
+        }
+    }
+    if ([string]::IsNullOrEmpty($best)) { return '' }
+    return (Get-NSWatchmanCanonDir $best)
+}
+
+function Get-NSCursorScanInstalls {
+    param(
+        [Parameter(Mandatory = $true)][string]$Base,
+        [Parameter(Mandatory = $true)][string]$Runtime
+    )
+    if (-not (Test-Path -LiteralPath $Base -PathType Container)) { return '' }
+    $best = ''
+    $bestM = [datetime]::MinValue
+    $manifests = @(Get-ChildItem -LiteralPath $Base -Recurse -Filter plugin.json -File -ErrorAction SilentlyContinue)
+    foreach ($manifest in $manifests) {
+        $parentName = Split-Path -Leaf (Split-Path -Parent $manifest.FullName)
+        if ($parentName -cne '.claude-plugin' -and $parentName -cne '.cursor-plugin' -and $parentName -cne '.codex-plugin') { continue }
+        $root = Split-Path -Parent (Split-Path -Parent $manifest.FullName)
+        $name = ''
+        foreach ($line in [IO.File]::ReadAllLines($manifest.FullName)) {
+            if ($line -cmatch '^\s*"name"\s*:\s*"([^"]*)"') { $name = $Matches[1]; break }
+        }
+        if ($name -cne 'nightshift') { continue }
+        if (-not (Test-NSPluginInstallUsable $root $Runtime)) { continue }
+        if ($manifest.LastWriteTimeUtc -ge $bestM) {
+            $bestM = $manifest.LastWriteTimeUtc
+            $best = $root
+        }
+    }
+    if ([string]::IsNullOrEmpty($best)) { return '' }
+    return (Get-NSWatchmanCanonDir $best)
+}
+
+# Get-NSHostCurrentInstall <host> <runtime> - the install this host records, or empty.
+# runtime selects which watchman script has to be present (windows on the native runtime).
+function Get-NSHostCurrentInstall {
+    param(
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$Runtime
+    )
+    $home = Get-NSProfileHome
+    if ([string]::IsNullOrEmpty($home)) { return '' }
+    switch ($HostName) {
+        'claude' {
+            $root = if (-not [string]::IsNullOrEmpty([string]$env:CLAUDE_CODE_PLUGIN_CACHE_DIR)) {
+                [string]$env:CLAUDE_CODE_PLUGIN_CACHE_DIR
+            }
+            else {
+                Join-Path $home '.claude/plugins'
+            }
+            $last = ''
+            foreach ($install in @(Get-NSClaudePluginInstalls (Join-Path $root 'installed_plugins.json'))) {
+                if (Test-NSPluginInstallUsable $install $Runtime) { $last = $install }
+            }
+            if ([string]::IsNullOrEmpty($last)) { return '' }
+            return (Get-NSWatchmanCanonDir $last)
+        }
+        'codex' {
+            $root = if (-not [string]::IsNullOrEmpty([string]$env:CODEX_HOME)) { [string]$env:CODEX_HOME } else { Join-Path $home '.codex' }
+            $last = ''
+            foreach ($market in @(Get-NSCodexEnabledMarkets (Join-Path $root 'config.toml'))) {
+                $dir = Get-NSNewestUsableChild (Join-Path $root "plugins/cache/$market/nightshift") $Runtime
+                if (-not [string]::IsNullOrEmpty($dir)) { $last = $dir }
+            }
+            return $last
+        }
+        'cursor' {
+            $found = Get-NSCursorScanInstalls (Join-Path $home '.cursor/plugins/cache') $Runtime
+            if (-not [string]::IsNullOrEmpty($found)) { return $found }
+            return (Get-NSCursorScanInstalls (Join-Path $home '.cursor/plugins/local') $Runtime)
+        }
+        default { return '' }
+    }
+}
+
+function Get-NSWatchmanStartCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [AllowEmptyString()][string]$PluginRoot = ''
+    )
+    $bin = 'ns'
+    if (-not [string]::IsNullOrEmpty($PluginRoot)) {
+        $windows = Join-Path $PluginRoot 'runtime/windows/ns.ps1'
+        $posix = Join-Path $PluginRoot 'runtime/ns'
+        if (Test-Path -LiteralPath $windows -PathType Leaf) { $bin = $windows }
+        elseif (Test-Path -LiteralPath $posix -PathType Leaf) { $bin = $posix }
+    }
+    return ($bin + ' start-watchman --host ' + $HostName + ' --project ' + $Workspace)
+}
+
+function Add-NSWatchmanNotice {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+    $lot = Get-NSLayoutPath $NightshiftDir 'parking-lot'
+    $parent = Split-Path -Parent $lot
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+        $null = New-Item -ItemType Directory -Path $parent -Force
+    }
+    $line = '- [notice] ' + (Get-NSLocalNow -Seconds) + ' - ' + $Message
+    [IO.File]::AppendAllText($lot, $line + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
+}
+
+# Get-NSWatchmanInstallPlan - stay, reexec, pending, or stand-down.
+# A copy is its directory. The hooks' row wins when that directory differs and can still run.
+function Get-NSWatchmanInstallPlan {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$ScriptPath,
+        [AllowEmptyString()][string]$SelfVersion = '',
+        [ValidateSet('posix', 'windows')][string]$RuntimeKind = 'posix'
+    )
+    $runtime = if ($RuntimeKind -ceq 'windows') { 'windows' } else { $HostName }
+    $scriptName = if ($RuntimeKind -ceq 'windows') { 'runtime/windows/watchman.ps1' } else { "runtime/$HostName/watchman.sh" }
+    $plan = [pscustomobject]@{
+        Action = 'stay'
+        Target = ''
+        Message = ''
+        Reason = ''
+    }
+    $self = Get-NSPluginRootFromScript $ScriptPath
+    $selfVer = Get-NSPluginVersion $self
+    if ($selfVer -ceq 'unknown' -and -not [string]::IsNullOrEmpty($SelfVersion)) { $selfVer = $SelfVersion }
+    $selfUsable = Test-NSPluginInstallUsable $self $runtime
+    $hooks = Get-NSHookCopyNewest $NightshiftDir $HostName
+    $hooksRoot = ''
+    $hooksVer = ''
+    $hooksUsable = $false
+    if ($null -ne $hooks) {
+        $hooksRoot = [string]$hooks.Root
+        $hooksVer = [string]$hooks.Version
+        if (Test-NSPluginInstallUsable $hooksRoot $runtime) {
+            $hooksUsable = $true
+            $hooksRoot = Get-NSWatchmanCanonDir $hooksRoot
+        }
+    }
+    if ($hooksUsable -and $hooksRoot -cne $self) {
+        $plan.Action = 'reexec'
+        $plan.Target = Join-Path $hooksRoot $scriptName
+        $plan.Message = "watchman: install $selfVer at $self is not the hooks' copy $hooksVer at ${hooksRoot}; re-running from the hooks' copy"
+        return $plan
+    }
+    if ($selfUsable) { return $plan }
+    $reg = Get-NSHostCurrentInstall $HostName $runtime
+    if (-not [string]::IsNullOrEmpty($reg) -and $reg -cne $self -and (Test-NSPluginInstallUsable $reg $runtime)) {
+        $plan.Action = 'reexec'
+        $plan.Target = Join-Path $reg $scriptName
+        $plan.Message = "watchman: install $selfVer at $self is gone; re-running $(Get-NSPluginVersion $reg) at $reg"
+        return $plan
+    }
+    if (-not [string]::IsNullOrEmpty($hooksRoot) -and -not $hooksUsable) {
+        $plan.Reason = 'hooks-unusable'
+        $plan.Message = "watchman: the hooks' copy of the plugin at $hooksRoot cannot be used"
+    }
+    else {
+        $plan.Reason = 'no-install'
+        $plan.Message = 'watchman: no current install of the plugin'
+    }
+    $prev = ''
+    try { $prev = [string](Get-NSReasonCode $NightshiftDir) } catch { $prev = '' }
+    $detail = ''
+    $reasonFile = Get-NSLayoutPath $NightshiftDir 'watch-reason'
+    if (Test-Path -LiteralPath $reasonFile -PathType Leaf) {
+        try {
+            $reasonLines = @([IO.File]::ReadAllLines($reasonFile))
+            if ($reasonLines.Count -ge 2) { $detail = [string]$reasonLines[1] }
+        }
+        catch { $detail = '' }
+    }
+    if ($prev -ceq 'install-pending' -and $detail -ceq $plan.Reason) { $plan.Action = 'stand-down' }
+    else { $plan.Action = 'pending' }
+    return $plan
+}
+
+function Get-NSWatchmanPidLines {
+    param([AllowEmptyString()][string]$PidFile, [string]$Prefix)
+    if ([string]::IsNullOrEmpty($PidFile) -or -not (Test-Path -LiteralPath $PidFile -PathType Leaf) -or (Test-NSReparsePoint $PidFile)) {
+        return ''
+    }
+    foreach ($line in [IO.File]::ReadAllLines($PidFile)) {
+        if ($line.StartsWith($Prefix, [StringComparison]::Ordinal)) { return $line.Substring($Prefix.Length) }
+    }
+    return ''
+}
+
+# Get-NSWatchmanRemovedSentence <ns> <pidfile> <pid> <runtime> - the warning when a live
+# watchman's script is gone. Empty when the script is still there.
+function Get-NSWatchmanRemovedSentence {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [AllowEmptyString()][string]$PidFile,
+        [AllowEmptyString()][string]$ProcessId,
+        [ValidateSet('posix', 'windows')][string]$RuntimeKind = 'posix'
+    )
+    $script = Get-NSWatchmanPidLines $PidFile 'script:'
+    if ([string]::IsNullOrEmpty($script)) { return '' }
+    if (Test-Path -LiteralPath $script) { return '' }
+    $version = Get-NSWatchmanPidLines $PidFile 'version:'
+    if ([string]::IsNullOrEmpty($version)) { $version = 'unknown' }
+    $hostName = 'claude'
+    $session = Read-NSSession $NightshiftDir
+    if ($null -ne $session -and $session.HostName -in @('claude', 'codex', 'cursor')) { $hostName = $session.HostName }
+    $runtime = if ($RuntimeKind -ceq 'windows') { 'windows' } else { $hostName }
+    $current = Get-NSHostCurrentInstall $hostName $runtime
+    $workspace = Split-Path -Parent $NightshiftDir
+    if (-not [string]::IsNullOrEmpty($current)) {
+        $cmd = Get-NSWatchmanStartCommand $hostName $workspace $current
+        return ("watchman running from a removed install (version $version); current install is $(Get-NSPluginVersion $current) ($current). Replace it: kill $ProcessId; $cmd")
+    }
+    $cmd = Get-NSWatchmanStartCommand $hostName $workspace ''
+    return ("watchman running from a removed install (version $version); current install is none. Replace it: kill $ProcessId; $cmd")
+}
+

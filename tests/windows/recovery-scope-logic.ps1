@@ -119,6 +119,24 @@ try {
     try { Expect-Equal "read-only`tobserved" (Get-NSLaunchObserved 'codex') 'codex reports its sandbox' }
     finally { Remove-Item Env:CODEX_SANDBOX_MODE }
 
+    # A Nightshift file that cannot be opened is that file, not a silent inherit and not an
+    # unreadable policy. The test points the reader at a path that was never written.
+    Expect-True ((Get-NSRecoveryReaderPath) -like '*Nightshift.03.ps1') 'the recovery reader is the module file'
+    $missingReader = Join-Path ([IO.Path]::GetTempPath()) ('ns-missing-reader-' + [guid]::NewGuid().ToString('N'))
+    $env:NIGHTSHIFT_RECOVERY_READER = $missingReader
+    try {
+        $missingScope = Get-NSRecoveryEffectiveScope $workspace 'claude'
+        Expect-Equal ('unavailable:missing-file:' + $missingReader) $missingScope 'a missing Nightshift file is not inherited'
+        Expect-True ((Get-NSRecoveryRefusal $missingScope) -match 'Nightshift file missing:') 'the refusal names the missing file'
+        Expect-True ((Get-NSRecoveryRepair $workspace $missingScope) -notmatch 'set recovery.launchScope to host-default') 'a missing file is not repaired by setting a scope'
+    }
+    finally { Remove-Item Env:NIGHTSHIFT_RECOVERY_READER }
+
+    Set-Rules $workspace 'host-default'
+    Expect-True ((Get-NSRecoveryRepair $workspace 'unavailable:unrecorded') -match 'already host-default') 'repair does not ask for a scope that is already set'
+    Copy-Item $template (Join-Path $workspace '.nightshift/rules.json') -Force
+    Expect-True ((Get-NSRecoveryRepair $workspace 'unavailable:unrecorded') -match 'set recovery.launchScope to host-default') 'an unrecorded scope still names host-default'
+
     # And the writer records it, so the reader is not inheriting a field nobody wrote.
     $written = New-Workspace
     try {

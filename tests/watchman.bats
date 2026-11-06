@@ -1585,7 +1585,8 @@ STUB
   grep -qF 'unavailable:*' "$codex"
   grep -qF 'RECOVERY_REFUSED=1' "$codex"
   grep -qF 'recovery-scope-unavailable' "$codex"
-  grep -qF 'recovery.launchScope to host-default' "$codex"
+  grep -qF 'ns_recovery_repair' "$codex"
+  grep -qF 'recovery.launchScope to host-default' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/state.sh"
   if grep -qF 'danger-full-access' "$codex"; then return 1; fi
 }
 
@@ -1669,4 +1670,174 @@ STUB
   [ "$(calls)" -eq 0 ]
   [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = usage-limit ]
   [ "$(grep -c 'revival after a usage limit is off' "$P/.nightshift/shift-log.md")" -eq 1 ]
+}
+
+# A missing Nightshift program is that file, not an unreadable policy and not a silent inherit.
+@test "a missing jq filter is reported as a missing Nightshift file" {
+  copy="$BATS_TEST_TMPDIR/jq-missing"
+  cp -R "$BATS_TEST_DIRNAME/../plugins/nightshift" "$copy"
+  rm -f "$copy/lib/policy-emit.jq"
+  jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools"}' \
+    >"$P/.nightshift/shift-policy.json"
+  jq 'del(.recovery)' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" claude; printf "\n"; ns_recovery_refusal "$(ns_recovery_effective_scope "$2" claude)"' _ "$copy/lib/lib.sh" "$P"
+  printf '%s\n' "$output" | grep -qF 'Nightshift file missing:'
+  printf '%s\n' "$output" | grep -qF 'policy-emit.jq'
+  printf '%s\n' "$output" | grep -qv 'cannot be read'
+  printf '%s\n' "$output" | grep -qv 'inherit-recorded-scope'
+}
+
+@test "a host-default that cannot be read is not replaced by inherit-recorded-scope" {
+  copy="$BATS_TEST_TMPDIR/awk-missing"
+  cp -R "$BATS_TEST_DIRNAME/../plugins/nightshift" "$copy"
+  rm -f "$copy/lib/rules-read.awk"
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$copy/lib/lib.sh" "$P"
+  printf '%s\n' "$output" | grep -q '^unavailable:missing-file:'
+  printf '%s\n' "$output" | grep -qF 'rules-read.awk'
+  printf '%s\n' "$output" | grep -qv 'inherit-recorded-scope'
+  run bash -c '. "$1"; ns_recovery_effective_scope "$2" claude; ns_recovery_refusal "$(ns_recovery_effective_scope "$2" claude)"' _ "$copy/lib/lib.sh" "$P"
+  printf '%s\n' "$output" | grep -qF 'Nightshift file missing:'
+  printf '%s\n' "$output" | grep -qF 'rules-read.awk'
+  printf '%s\n' "$output" | grep -qv 'cannot be read'
+  printf '%s\n' "$output" | grep -qv 'set recovery.launchScope to host-default'
+}
+
+# Point the host's own plugin record at a replacement install.
+plant_host_install() { # host home root
+  case "$1" in
+    claude)
+      mkdir -p "$2/.claude/plugins"
+      jq -n --arg p "$3" '{version:2,plugins:{"nightshift@nightshift":[{installPath:$p}]}}' \
+        >"$2/.claude/plugins/installed_plugins.json"
+      ;;
+    codex)
+      mkdir -p "$2/.codex"
+      printf '[plugins."nightshift@nightshift"]\nenabled = true\n' >"$2/.codex/config.toml"
+      rm -rf "$2/.codex/plugins/cache/nightshift/nightshift/9.9.9"
+      mkdir -p "$2/.codex/plugins/cache/nightshift/nightshift"
+      cp -R "$3" "$2/.codex/plugins/cache/nightshift/nightshift/9.9.9"
+      ;;
+    cursor)
+      rm -rf "$2/.cursor/plugins/cache/fixture/nightshift/rev"
+      mkdir -p "$2/.cursor/plugins/cache/fixture/nightshift"
+      cp -R "$3" "$2/.cursor/plugins/cache/fixture/nightshift/rev"
+      ;;
+  esac
+}
+
+host_install_root() { # host home planted-root
+  case "$1" in
+    claude) printf '%s' "$3" ;;
+    codex) printf '%s' "$2/.codex/plugins/cache/nightshift/nightshift/9.9.9" ;;
+    cursor) printf '%s' "$2/.cursor/plugins/cache/fixture/nightshift/rev" ;;
+  esac
+}
+
+phys_dir() { (cd -P "$1" && pwd); }
+
+wait_watchman_armed() {
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50; do
+    if [ -f "$P/.nightshift/shift-log.md" ] && grep -q 'armed · every' "$P/.nightshift/shift-log.md"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  return 1
+}
+
+@test "a removed install re-runs from the host record and revives" {
+  src="$BATS_TEST_DIRNAME/../plugins/nightshift"
+  for host in claude codex cursor; do
+    rm -f "$P/.nightshift/agent-calls" "$P/.nightshift/shift-log.md" "$P/.nightshift/parking-lot.md" "$P/.nightshift/.watchman" "$P/.nightshift/.hook-copies" "$P/.nightshift/.ended" "$P/.nightshift/.session-end"
+    : >"$P/.nightshift/.shift-armed"
+    printf '%s sid\n' "$(($(date +%s) - 3000))" >"$P/.nightshift/.shift-pulse"
+    printf 'sid\n\n\n\n%s\n' "$host" >"$P/.nightshift/.shift-session"
+    printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+    old="$BATS_TEST_TMPDIR/old-$host"
+    new="$BATS_TEST_TMPDIR/new-$host"
+    home="$BATS_TEST_TMPDIR/home-$host"
+    rm -rf "$old" "$new" "$home"
+    cp -R "$src" "$old"
+    cp -R "$src" "$new"
+    sed 's/"version": "0.30.1"/"version": "9.9.9"/' "$new/.claude-plugin/plugin.json" >"$new/.claude-plugin/plugin.json.new"
+    mv "$new/.claude-plugin/plugin.json.new" "$new/.claude-plugin/plugin.json"
+    plant_host_install "$host" "$home" "$new"
+    current="$(phys_dir "$(host_install_root "$host" "$home" "$new")")"
+    env HOME="$home" NIGHTSHIFT_WATCH_SLEEP=2 NIGHTSHIFT_WATCH_RETRY="0 0" \
+      "$old/runtime/$host/watchman.sh" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 2 &
+    child=$!
+    wait_watchman_armed
+    rm -rf "$old"
+    wait "$child" || true
+    echo "host $host log:"
+    cat "$P/.nightshift/shift-log.md"
+    grep -qF "re-running 9.9.9 at $current" "$P/.nightshift/shift-log.md"
+    grep -qF '0.30.1' "$P/.nightshift/shift-log.md"
+    [ "$(calls)" -ge 1 ]
+    if [ -f "$P/.nightshift/parking-lot.md" ]; then
+      grep -qv 'no current install' "$P/.nightshift/parking-lot.md"
+    fi
+  done
+}
+
+@test "a hooks copy with a different version re-runs once from that copy" {
+  src="$BATS_TEST_DIRNAME/../plugins/nightshift"
+  old="$BATS_TEST_TMPDIR/hooks-old"
+  new="$BATS_TEST_TMPDIR/hooks-new"
+  rm -rf "$old" "$new"
+  cp -R "$src" "$old"
+  cp -R "$src" "$new"
+  sed 's/"version": "0.30.1"/"version": "9.9.9"/' "$new/.claude-plugin/plugin.json" >"$new/.claude-plugin/plugin.json.new"
+  mv "$new/.claude-plugin/plugin.json.new" "$new/.claude-plugin/plugin.json"
+  new="$(phys_dir "$new")"
+  printf 'sid\n\n\n\nclaude\n' >"$P/.nightshift/.shift-session"
+  printf '100\tclaude\tsid\t%s\t9.9.9\n' "$new" >"$P/.nightshift/.hook-copies"
+  rm -f "$P/.nightshift/agent-calls" "$P/.nightshift/shift-log.md" "$P/.nightshift/parking-lot.md"
+  printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+  env HOME="$BATS_TEST_TMPDIR/empty-home" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$old/runtime/claude/watchman.sh" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 2
+  grep -qF "is not the hooks' copy 9.9.9 at $new" "$P/.nightshift/shift-log.md"
+  [ "$(grep -c "re-running from the hooks' copy" "$P/.nightshift/shift-log.md")" -eq 1 ]
+  [ "$(calls)" -ge 1 ]
+  if [ -f "$P/.nightshift/parking-lot.md" ]; then
+    grep -qv 'cannot be used' "$P/.nightshift/parking-lot.md"
+  fi
+}
+
+@test "no current install stands down once after the confirming wake" {
+  src="$BATS_TEST_DIRNAME/../plugins/nightshift"
+  old="$BATS_TEST_TMPDIR/gone-old"
+  home="$BATS_TEST_TMPDIR/gone-home"
+  rm -rf "$old" "$home"
+  mkdir -p "$home"
+  cp -R "$src" "$old"
+  printf 'sid\n\n\n\nclaude\n' >"$P/.nightshift/.shift-session"
+  rm -f "$P/.nightshift/agent-calls" "$P/.nightshift/shift-log.md" "$P/.nightshift/parking-lot.md"
+  printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+  env HOME="$home" NIGHTSHIFT_WATCH_SLEEP=1 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$old/runtime/claude/watchman.sh" --project "$P" --interval 20 --max-wakes 4 &
+  child=$!
+  wait_watchman_armed
+  rm -rf "$old"
+  wait "$child" || true
+  [ "$(grep -c 'checking once more on the next wake' "$P/.nightshift/shift-log.md")" -eq 1 ]
+  [ "$(grep -c 'standing down' "$P/.nightshift/shift-log.md")" -eq 1 ]
+  [ "$(grep -c 'no current install' "$P/.nightshift/parking-lot.md")" -eq 1 ]
+  [ ! -f "$P/.nightshift/agent-calls" ]
+  grep -qv 'cannot be read' "$P/.nightshift/shift-log.md"
+}
+
+@test "a watchman whose script is gone names the removed install" {
+  mkdir -p "$BATS_TEST_TMPDIR/empty-home"
+  printf '99\nscript:%s/no/watchman.sh\nversion:0.30.1\n' "$BATS_TEST_TMPDIR" >"$P/.nightshift/.watchman"
+  printf 'sid\n\n\n\nclaude\n' >"$P/.nightshift/.shift-session"
+  run env HOME="$BATS_TEST_TMPDIR/empty-home" bash -c \
+    '. "$1"; ns_watchman_removed_sentence "$2" "$3" 99' _ \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$P/.nightshift" "$P/.nightshift/.watchman"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'watchman running from a removed install (version 0.30.1)'
+  printf '%s\n' "$output" | grep -qF 'current install is none'
+  printf '%s\n' "$output" | grep -qF 'kill 99'
 }

@@ -580,6 +580,7 @@ fi
 WPID=""
 WATCHMAN_UNUSABLE=0
 WATCHMAN_ALIVE=0
+WATCHMAN_REMOVED=0
 if [ -L "$WATCHMAN_FILE" ]; then
   warn "watchman pidfile path is not a usable file"
   WATCHMAN_UNUSABLE=1
@@ -588,8 +589,15 @@ elif [ -f "$WATCHMAN_FILE" ]; then
 fi
 if [ -n "$WPID" ] && printf '%s' "$WPID" | grep -qE '^[0-9]+$'; then
   if kill -0 "$WPID" 2>/dev/null; then
-    fact "watchman pid $WPID is alive"
-    WATCHMAN_ALIVE=1
+    removed="$(ns_watchman_removed_sentence "$NS" "$WATCHMAN_FILE" "$WPID" 2>/dev/null || true)"
+    if [ -n "$removed" ]; then
+      warn "$removed"
+      WATCHMAN_ALIVE=0
+      WATCHMAN_REMOVED=1
+    else
+      fact "watchman pid $WPID is alive"
+      WATCHMAN_ALIVE=1
+    fi
   else
     fact "watchman pid $WPID is stale"
     if [ "$ARMED" -eq 0 ]; then
@@ -610,7 +618,7 @@ fi
 # arming too, so it is flagged the same way.
 WATCH_MINUTES="$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")"
 if [ "$ARMED" -eq 1 ] && [ "$OPEN" -gt 0 ] && [ "$WATCHMAN_ALIVE" -eq 0 ] &&
-  [ "$WATCHMAN_UNUSABLE" -eq 0 ] && [ "$WATCH_MINUTES" != 0 ]; then
+  [ "$WATCHMAN_UNUSABLE" -eq 0 ] && [ "$WATCHMAN_REMOVED" -eq 0 ] && [ "$WATCH_MINUTES" != 0 ]; then
   warn "shift is armed with open boxes and no watchman — a crash or usage limit will not be revived"
   act confirm "arm it again with ns start-watchman --host <this host>: it changes nothing else about the shift, and says why if it cannot arm (its output is in $(ns_layout_name "$NS" watchman-log)); or work the list in the live session"
 fi

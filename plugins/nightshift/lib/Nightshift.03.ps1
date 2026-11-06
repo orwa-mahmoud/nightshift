@@ -1624,12 +1624,28 @@ function Merge-NSShiftBlockDefaults {
 #
 # Legacy host-grant remains readable so recovery can refuse it explicitly. host-default uses
 # independently configured host permissions; missing or invalid values inherit recorded scope.
+# A Nightshift file that could not be opened is unavailable:missing-file - that is a failure to
+# read the setting, not a default. The path is captured when this file loads, because a later
+# caller's $PSCommandPath is the caller.
+$script:NSRecoveryReaderPath = $PSCommandPath
+
+function Get-NSRecoveryReaderPath {
+    if (-not [string]::IsNullOrEmpty([string]$env:NIGHTSHIFT_RECOVERY_READER)) {
+        return [string]$env:NIGHTSHIFT_RECOVERY_READER
+    }
+    return [string]$script:NSRecoveryReaderPath
+}
+
 function Get-NSRecoveryLaunchScope {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_LAUNCH_SCOPE)) {
         if ($env:NIGHTSHIFT_LAUNCH_SCOPE -ceq 'host-default') { return 'host-default' }
         if ($env:NIGHTSHIFT_LAUNCH_SCOPE -ceq 'host-grant') { return 'host-grant' }
         return 'inherit-recorded-scope'
+    }
+    $reader = Get-NSRecoveryReaderPath
+    if ([string]::IsNullOrEmpty($reader) -or -not (Test-Path -LiteralPath $reader -PathType Leaf)) {
+        return ('unavailable:missing-file:' + $reader)
     }
     $path = (Get-NSPolicyPaths $Workspace)['rules']
     if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'inherit-recorded-scope' }

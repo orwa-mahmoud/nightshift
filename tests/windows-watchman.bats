@@ -55,8 +55,10 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 }
 
 @test "watchmen skip a symlink watchman pidfile" {
-  grep -qF '[ -L "$PIDFILE" ]' "$CLAUDE"
-  grep -qF '[ -L "$PIDFILE" ]' "$CODEX"
+  claim="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/watchman-install.sh"
+  grep -qF 'ns_watchman_claim' "$CLAUDE"
+  grep -qF 'ns_watchman_claim' "$CODEX"
+  grep -qF '[ -L "$pidfile" ]' "$claim"
   grep -qF 'Test-NSReparsePoint $pidFile' "$HELPER"
 }
 
