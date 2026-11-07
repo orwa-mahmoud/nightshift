@@ -89,6 +89,18 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
   fi
 }
 
+@test "Windows clocks out a finished Cursor shift without a stop hook" {
+  logic="$BATS_TEST_DIRNAME/windows/clock-out-logic.ps1"
+  [ -f "$logic" ]
+  grep -qF 'clock-out-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
+  grep -qF 'Invoke-NSWatchmanDirectClockOut' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/watchman.ps1"
+  if ! command -v pwsh >/dev/null 2>&1; then
+    return 0
+  fi
+  run pwsh -NoProfile -NonInteractive -File "$logic"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
 @test "Windows applies the same idle verdict, notice, and status line" {
   logic="$BATS_TEST_DIRNAME/windows/idle-logic.ps1"
   [ -f "$logic" ]

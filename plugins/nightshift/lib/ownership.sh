@@ -609,18 +609,32 @@ ns_shift_ownership() { # <host> <pid> <start> <mode:hardhat|gate>
 # Remaining arguments are the command line. Returns 3 when takeover fails.
 ns_watchman_run_child() { # <ns> <host> <sid> <work_target> <project_env> <project> <cmd...>
   local ns="$1" host="$2" sid="$3" work="$4" env_name="$5" project="$6"
-  local lease generation nonce child start rc
+  local lease generation nonce child start rc child_log
   shift 6
   lease="$(ns_lease_takeover "$ns" "$sid" "$host")" || return 3
   generation="${lease%% *}"
   nonce="${lease#* }"
+  child_log=""
+  if [ "$host" = cursor ]; then
+    child_log="$(ns_layout_path "$ns" shift-log)"
+    child_log="${child_log%/*}/worker-output.log"
+    mkdir -p "${child_log%/*}" 2>/dev/null || true
+  fi
   (
     cd "$work" || exit 1
-    env "${env_name}=${project}" \
-      NIGHTSHIFT_REVIVAL=1 \
-      NIGHTSHIFT_LEASE_GENERATION="$generation" \
-      NIGHTSHIFT_LEASE_NONCE="$nonce" \
-      "$@" >/dev/null 2>&1
+    if [ -n "$child_log" ]; then
+      env "${env_name}=${project}" \
+        NIGHTSHIFT_REVIVAL=1 \
+        NIGHTSHIFT_LEASE_GENERATION="$generation" \
+        NIGHTSHIFT_LEASE_NONCE="$nonce" \
+        "$@" >>"$child_log" 2>&1
+    else
+      env "${env_name}=${project}" \
+        NIGHTSHIFT_REVIVAL=1 \
+        NIGHTSHIFT_LEASE_GENERATION="$generation" \
+        NIGHTSHIFT_LEASE_NONCE="$nonce" \
+        "$@" >/dev/null 2>&1
+    fi
   ) &
   child=$!
   start="$(ns_process_start "$child" 2>/dev/null || true)"

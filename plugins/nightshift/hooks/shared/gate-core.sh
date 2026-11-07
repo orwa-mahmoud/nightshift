@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Shared clock-out decisions. Host wrappers own payload parsing and response emission.
 
+_ns_gate_core_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_gate_core_dir" != "${BASH_SOURCE[0]}" ] || _ns_gate_core_dir=.
+
 # ns_gate_boxes — set OPEN, TICKED, TOTAL from the punch list. Return 1 when
 # the file exists but cannot be read; then the counts are not a verdict and
 # the caller must not release as "0 open".
@@ -663,4 +666,119 @@ ns_gate_done_mismatch() {
   fi
   [ -n "$recorded" ] || return 1
   printf 'DO NOT STOP — %s is gone, but this shift armed with a punch list. Deleting the list does not finish its items. Restore it from the work-target history or the receipts, or issue a stop-work order to end the shift with its work unfinished.' "$list"
+}
+
+# The one terminal sequence. Every host gate and the Cursor watchman end a shift here:
+# .ended, disarm, lease release, morning receipt, policy and findings archive, receipts commit.
+# Later steps log and continue. The release stands once .ended is a real file and the armed
+# marker is gone. Returns 1 when that marker cannot be written. Does not hold the session.
+
+render_morning_receipt() { # <shift-id>
+  local project="$NS_SHIFT_END_PROJECT" ns="$NS_SHIFT_END_NS"
+  local renderer="$_ns_gate_core_dir/../../runtime/morning-receipt.sh" dir err out
+  ns_layout_set dir "$ns" receipts
+  if [ ! -f "$renderer" ]; then
+    ns_shift_log "$ns" "morning receipt skipped: runtime/morning-receipt.sh is not installed"
+    return 0
+  fi
+  if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
+    ns_shift_log "$ns" "morning receipt render failed: receipts path is not a directory"
+    return 0
+  fi
+  mkdir -p "$dir" 2>/dev/null || {
+    ns_shift_log "$ns" "morning receipt render failed: cannot create $dir"
+    return 0
+  }
+  out="$dir/morning-$(date '+%Y-%m-%d')${1:+-$1}.md"
+  if [ -e "$out" ] || [ -L "$out" ]; then
+    ns_shift_log "$ns" "morning receipt kept: $out already exists for this shift"
+    return 0
+  fi
+  if err="$(bash "$renderer" --project "$project" --out "$out" 2>&1)"; then
+    if ns_receipts_enabled "$project"; then ns_receipts_write_index "$project"; fi
+    return 0
+  fi
+  ns_shift_log "$ns" "morning receipt render failed: $(printf '%s' "$err" | head -n1)"
+}
+
+archive_shift_policy() {
+  local project="$NS_SHIFT_END_PROJECT" ns="$NS_SHIFT_END_NS" policy err
+  ns_layout_set policy "$ns" shift-policy
+  [ -f "$policy" ] && [ ! -L "$policy" ] || return 0
+  err="$(bash "$_ns_gate_core_dir/../../runtime/shift-policy.sh" --project "$project" archive 2>&1)" && return 0
+  ns_shift_log "$ns" "shift policy archive failed: $(printf '%s' "$err" | head -n1)"
+}
+
+archive_findings_ledger() { # <shift-id>
+  local project="$NS_SHIFT_END_PROJECT" ns="$NS_SHIFT_END_NS"
+  local archiver="$_ns_gate_core_dir/../../runtime/evidence-archive.sh" err
+  [ -f "$archiver" ] || {
+    ns_shift_log "$ns" "findings archive skipped: runtime/evidence-archive.sh is not installed"
+    return 0
+  }
+  err="$(bash "$archiver" --project "$project" --shift-id "$1" 2>&1)" && return 0
+  ns_shift_log "$ns" "findings archive failed: $(printf '%s' "$err" | head -n1)"
+}
+
+receipts_commit() { # <summary>
+  local project="$NS_SHIFT_END_PROJECT" ns="$NS_SHIFT_END_NS" err auto repo
+  ns_layout_set repo "$ns" receipts-repo
+  [ -d "$repo" ] || return 0
+  auto="$(rule "$project" receiptsAutoCommit "${NIGHTSHIFT_RECEIPTS_AUTO_COMMIT:-}")"
+  case "$auto" in true | TRUE | 1 | yes | YES) ;; *) return 0 ;; esac
+  git -C "$ns" add -A >/dev/null 2>&1 || true
+  err="$(git -C "$ns" -c user.name=nightshift -c user.email=nightshift@localhost \
+    -c commit.gpgsign=false commit -q -m "$1" 2>&1)" && return 0
+  case "$err" in
+    *"nothing to commit"* | *"nothing added"*) : ;;
+    *) ns_shift_log "$ns" "receipts commit failed: $(printf '%s' "$err" | head -n1)" ;;
+  esac
+}
+
+ns_shift_whistle() { # <summary>
+  local project="$NS_SHIFT_END_PROJECT" ns="$NS_SHIFT_END_NS" notify notified
+  notify="$(rule "$project" notifyCommand "${NIGHTSHIFT_NOTIFY_CMD:-}")"
+  [ -n "$notify" ] || return 0
+  ns_layout_set notified "$ns" notified
+  [ -L "$notified" ] && rm -f "$notified"
+  (set -C; : >"$notified") 2>/dev/null || return 0
+  NIGHTSHIFT_SUMMARY="$1" sh -c "$notify" nightshift "$1" >/dev/null 2>&1 || true
+}
+
+# ns_shift_end <project-dir> <summary>
+ns_shift_end() {
+  local project="$1" summary="${2:-}"
+  local ns ended armed shift_id pending
+  [ -n "$project" ] && [ -d "$project" ] || return 1
+  ns="${project%/}/.nightshift"
+  [ -d "$ns" ] || return 1
+  NS_SHIFT_END_PROJECT="$project"
+  NS_SHIFT_END_NS="$ns"
+  ns_layout_set ended "$ns" ended
+  ns_layout_set armed "$ns" armed
+  if [ -L "$ended" ]; then rm -f "$ended"; fi
+  if ! : >"$ended" 2>/dev/null; then
+    ns_shift_log "$ns" "clock-out refused: cannot write $(ns_layout_name "$ns" ended)"
+    return 1
+  fi
+  ns_gate_usage_flush "$ns" "$project"
+  rm -f "$armed"
+  ns_lease_release_retry "$ns" \
+    || ns_shift_log "$ns" "process lease release deferred: lease mutex remained busy"
+  shift_id="$(ns_policy_shift_id "$project" 2>/dev/null)" || shift_id=""
+  if ns_handoff_enabled "$project"; then
+    render_morning_receipt "$shift_id"
+  else
+    ns_shift_log "$ns" "morning receipt disabled by the owner (handoff.enabled) - every record stands"
+  fi
+  ns_gate_record_ending "$ns" "$project" "${shift_id:-unknown}"
+  archive_shift_policy
+  archive_findings_ledger "${shift_id:-unknown}"
+  receipts_commit "$summary"
+  ns_layout_set pending "$ns" pending-filing
+  if [ -f "$pending" ]; then
+    ns_shift_log "$ns" "archive.automatic is on - filing is due for this shift"
+  fi
+  ns_shift_whistle "$summary"
+  [ -f "$ended" ] && [ ! -L "$ended" ] && [ ! -e "$armed" ]
 }

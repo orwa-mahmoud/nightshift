@@ -419,7 +419,10 @@ Add the public GitHub repo as a Cursor marketplace source
 (`.cursor-plugin/marketplace.json` at the repo root, same role as the Claude
 marketplace file). Official marketplace listing waits on a
 verified Cursor shift with watchman recovery. The Cursor CLI (`agent`), including
-print mode (`agent -p`), runs the hooks shipped with an installed plugin. A project
+print mode (`agent -p`), runs the hooks shipped with an installed plugin. When every box is
+ticked, a stop-work order is present, or the deadline has passed, and the bound session is gone
+or idle, the Cursor watchman runs the same ending as the stop hook and does not wait on a
+headless turn to fire it. A project
 `.cursor/hooks.json` is a separate source and is not required. One that points at
 Nightshift's own hook scripts runs those hooks a second time, so Setup does not write
 that file. Remove it while the plugin is installed; Doctor names the file.

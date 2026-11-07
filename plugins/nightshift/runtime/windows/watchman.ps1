@@ -922,7 +922,7 @@ try {
             exit 0
         }
 
-        if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) {
+        if ($HostName -ne 'cursor' -and (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf)) {
             Write-NSReason $ns 'owner-stop'
             Write-NSLogLine 'watchman: stop-work order - standing down'
             exit 0
@@ -1005,7 +1005,27 @@ try {
         }
 
         $counts = Get-NSBoxCounts $punch
-        if ($counts.Open -eq 0 -or (Test-NSDeadlinePassed)) {
+        $stopPresent = (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf)
+        if ($HostName -eq 'cursor' -and ($stopPresent -or $counts.Open -eq 0 -or (Test-NSDeadlinePassed))) {
+            $clock = Invoke-NSWatchmanDirectClockOut -Workspace $workspace -HostName cursor -IntervalMinutes $IntervalMinutes
+            if ($clock.Released) {
+                if ($stopPresent) { $code = 'owner-stop' }
+                elseif ($counts.Open -eq 0) { $code = 'completed' }
+                else { $code = 'deadline' }
+                Write-NSReason $ns $code
+                exit 0
+            }
+            if ($clock.Waiting) {
+                Write-NSLogLine $clock.Reason
+                if ($MaxWakes -gt 0 -and $wake -ge $MaxWakes) { exit 0 }
+                continue
+            }
+            if ($clock.Reason -ne 'not due') {
+                Write-NSReason $ns 'clock-out-failed'
+                exit 0
+            }
+        }
+        if ($HostName -ne 'cursor' -and ($counts.Open -eq 0 -or (Test-NSDeadlinePassed))) {
             $label = if ($counts.Open -eq 0) { 'every box is ticked' } else { 'quitting time passed' }
             Write-NSLogLine "watchman: $label but the shift never clocked out - spawning the clock-out (attempt 1/1)"
             $null = Start-NSAgent 1 2

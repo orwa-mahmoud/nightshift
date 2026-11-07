@@ -579,6 +579,10 @@ try {
     $codexIdentityLogicRun = Invoke-TestScript $codexIdentityLogic
     Assert-Equal 0 $codexIdentityLogicRun.ExitCode `
         "Codex identity kinds: $($codexIdentityLogicRun.Stdout) $($codexIdentityLogicRun.Stderr)"
+    $clockOutLogic = Join-Path $PSScriptRoot 'clock-out-logic.ps1'
+    $clockOutLogicRun = Invoke-TestScript $clockOutLogic
+    Assert-Equal 0 $clockOutLogicRun.ExitCode `
+        "direct cursor clock-out: $($clockOutLogicRun.Stdout) $($clockOutLogicRun.Stderr)"
     $idleLogic = Join-Path $PSScriptRoot 'idle-logic.ps1'
     $idleLogicRun = Invoke-TestScript $idleLogic
     Assert-Equal 0 $idleLogicRun.ExitCode `

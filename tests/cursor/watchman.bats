@@ -375,6 +375,85 @@ STUB
   if grep -q 'other-model' "$AGENT_LOG"; then return 1; fi
 }
 
+noop_agent() {
+  cat >"$BIN/noop.sh" <<'STUB'
+#!/usr/bin/env bash
+echo called >>.nightshift/agent-calls
+exit 0
+STUB
+  chmod +x "$BIN/noop.sh"
+}
+
+morning_receipt() {
+  find "$P/.nightshift/receipts" -name 'morning-*.md' -type f 2>/dev/null | head -n 1
+}
+
+@test "a ticked shift whose worker ends without a stop hook clocks out on the next wake" {
+  noop_agent
+  printf '## Items\n- [x] **1.**\n' >"$P/.nightshift/punch-list.md"
+  stale_pulse
+  run watch --agent "bash $BIN/noop.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 0 ]
+  [ -f "$P/.nightshift/.ended" ]
+  [ ! -L "$P/.nightshift/.ended" ]
+  [ ! -e "$P/.nightshift/.shift-armed" ]
+  [ -n "$(morning_receipt)" ]
+  grep -qF 'watchman: clocking out' "$P/.nightshift/shift-log.md"
+  if grep -q 'spawning the clock-out' "$P/.nightshift/shift-log.md"; then return 1; fi
+}
+
+@test "a stop-work order clocks out when the session is gone" {
+  noop_agent
+  printf 'owner stop\n' >"$P/.nightshift/STOP"
+  stale_pulse
+  run watch --agent "bash $BIN/noop.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 0 ]
+  [ -f "$P/.nightshift/.ended" ]
+  [ ! -e "$P/.nightshift/.shift-armed" ]
+  [ -n "$(morning_receipt)" ]
+  grep -qF 'watchman: clocking out' "$P/.nightshift/shift-log.md"
+}
+
+@test "a clock-out that cannot take the site lock names the reason" {
+  noop_agent
+  printf '## Items\n- [x] **1.**\n' >"$P/.nightshift/punch-list.md"
+  stale_pulse
+  sleep 30 &
+  holder=$!
+  mkdir -p "$P/.nightshift/.lock.d"
+  printf '%s' "$holder" >"$P/.nightshift/.lock.d/pid"
+  run watch --agent "bash $BIN/noop.sh" --max-wakes 1
+  kill "$holder" 2>/dev/null || true
+  [ "$status" -eq 0 ]
+  [ ! -e "$P/.nightshift/.ended" ]
+  [ -f "$P/.nightshift/.shift-armed" ]
+  grep -qF 'clock-out refused: site lock' "$P/.nightshift/shift-log.md"
+  if grep -q 'returned without releasing' "$P/.nightshift/shift-log.md"; then return 1; fi
+}
+
+@test "an open shift is never clocked out by the direct path" {
+  noop_agent
+  stale_pulse
+  run watch --agent "bash $BIN/noop.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ ! -e "$P/.nightshift/.ended" ]
+  [ -f "$P/.nightshift/.shift-armed" ]
+  if grep -qF 'watchman: clocking out' "$P/.nightshift/shift-log.md"; then return 1; fi
+}
+
+@test "a ticked shift whose session is still working is not clocked out" {
+  noop_agent
+  printf '## Items\n- [x] **1.**\n' >"$P/.nightshift/punch-list.md"
+  printf '%s origin-ide\n' "$(date +%s)" >"$P/.nightshift/.shift-pulse"
+  run watch --agent "bash $BIN/noop.sh" --max-wakes 1
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 0 ]
+  [ ! -e "$P/.nightshift/.ended" ]
+  [ -f "$P/.nightshift/.shift-armed" ]
+}
+
 @test "watchAgent stays a verbatim command" {
   printf 'model=composer-2\nforce=1\ntrust=1\n' >"$P/.nightshift/.cursor-launch"
   printf 'kept-cli-worker\n' >"$P/.nightshift/.shift-worker"
