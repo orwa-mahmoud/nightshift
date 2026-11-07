@@ -235,7 +235,7 @@ forget_fresh_worker() {
 }
 
 launch_worker() { # <prompt>
-  local prompt="$1" fields model force trust
+  local prompt="$1" fields model force trust model_known force_known trust_known
   if [ -n "$AGENT" ]; then
     # shellcheck disable=SC2086
     ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
@@ -246,16 +246,28 @@ launch_worker() { # <prompt>
   model="${fields%%$'\t'*}"
   fields="${fields#*$'\t'}"
   force="${fields%%$'\t'*}"
-  trust="${fields#*$'\t'}"
-  if [ -n "$model" ] && [ "${NS_CURSOR_MODEL_SAID:-}" != 1 ] && ns_cursor_model_missing "$model"; then
+  fields="${fields#*$'\t'}"
+  trust="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  model_known="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  force_known="${fields%%$'\t'*}"
+  trust_known="${fields#*$'\t'}"
+  if [ "$model_known" != 1 ] || [ "$force_known" != 1 ] || [ "$trust_known" != 1 ]; then
+    if [ "${NS_CURSOR_LAUNCH_SAID:-}" != 1 ]; then
+      NS_CURSOR_LAUNCH_SAID=1
+      log_line "watchman: launch options that could not be read use the CLI default"
+    fi
+  fi
+  if [ "$model_known" = 1 ] && [ -n "$model" ] && [ "${NS_CURSOR_MODEL_SAID:-}" != 1 ] && ns_cursor_model_missing "$model"; then
     NS_CURSOR_MODEL_SAID=1
     log_line "watchman: recorded model ${model} is not in the Cursor model list — not substituting another"
     ns_watchman_park "$NS" "the Cursor model ${model} is not available; the revival still asks for it and does not switch models"
   fi
   set -- agent --resume="$WORKER" -p --workspace "$PROJECT"
-  [ -n "$model" ] && set -- "$@" --model "$model"
-  [ "$force" = 1 ] && set -- "$@" --force
-  [ "$trust" = 1 ] && set -- "$@" --trust
+  [ "$model_known" = 1 ] && [ -n "$model" ] && set -- "$@" --model "$model"
+  [ "$force_known" = 1 ] && [ "$force" = 1 ] && set -- "$@" --force
+  [ "$trust_known" = 1 ] && [ "$trust" = 1 ] && set -- "$@" --trust
   set -- "$@" "$prompt"
   ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
     CURSOR_PROJECT_DIR "$PROJECT" "$@"

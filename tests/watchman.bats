@@ -1859,18 +1859,44 @@ wait_watchman_armed() {
 
 @test "a Cursor launch record keeps the model and does not grow flags" {
   p="$(new_project cursor-launch-record)"
+  lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  out="$BATS_TEST_TMPDIR/launch-read"
+  donef="$BATS_TEST_TMPDIR/launch-done"
+  script="$BATS_TEST_TMPDIR/launch-note.sh"
   jq '.recovery.cursorFlags = ["--trust", "--sandbox"]' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
-  run bash -c '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift" \
-    '{"model_id":"composer-2","model":"other"}'
-  [ "$output" = "$(printf 'composer-2\t0\t1')" ]
+  rm -f "$out" "$donef"
+  cat >"$script" <<EOF
+#!/bin/bash
+. "$lib"
+ns_cursor_launch_note "$p/.nightshift" '{"model_id":"composer-2","model":"other"}'
+ns_cursor_launch_read "$p/.nightshift" >"$out"
+touch "$donef"
+EOF
+  chmod +x "$script"
+  python3 -c '
+import os, sys
+if os.fork() > 0:
+    os.wait()
+    raise SystemExit(0)
+if os.fork() > 0:
+    os._exit(0)
+os.setsid()
+os.execv(sys.argv[1], [sys.argv[1]])
+' "$script"
+  i=0
+  while [ ! -f "$donef" ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -f "$donef" ]
+  [ "$(head -n 1 "$out")" = "$(printf '\t0\t1\t0\t1\t1')" ]
+  if grep -q 'composer-2' "$p/.nightshift/.cursor-launch"; then return 1; fi
   jq '.recovery.cursorFlags = ["--force", "--trust"]' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash -c '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift" \
-    '{"model_id":"other-model"}'
-  [ "$output" = "$(printf 'composer-2\t0\t1')" ]
+    "$lib" "$p/.nightshift" '{"model_id":"other-model"}'
+  [ "$output" = "$(printf '\t0\t1\t0\t1\t1')" ]
 }
 
 LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"

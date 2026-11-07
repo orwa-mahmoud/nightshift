@@ -1026,85 +1026,173 @@ ns_cursor_model_safe() {
   [ "${#1}" -le 80 ]
 }
 
-# ns_cursor_payload_model <json> — model_id, else model, else empty. Hooks document both.
-ns_cursor_payload_model() {
-  local raw="$1" model=""
-  if command -v jq >/dev/null 2>&1; then
-    model="$(printf '%s' "$raw" | jq -r '.model_id // .model // empty' 2>/dev/null || true)"
-  else
-    model="$(printf '%s' "$raw" | sed -n 's/.*"model_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-    [ -n "$model" ] || model="$(printf '%s' "$raw" | sed -n 's/.*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-  fi
-  ns_cursor_model_safe "$model" || model=""
-  printf '%s' "$model"
-}
-
-# ns_cursor_rules_flags <ns> — force and trust from recovery.cursorFlags, one line "0|1<TAB>0|1".
-# --yolo is the documented alias of --force. Any other token is ignored.
-ns_cursor_rules_flags() {
+# ns_cursor_rules_override <ns> — "1<TAB>force<TAB>trust" when recovery.cursorFlags names a
+# permission flag, else "0<TAB>0<TAB>0". --yolo is the documented alias of --force.
+# An empty list is not an override: the process argv stands.
+ns_cursor_rules_override() {
   local rules raw force=0 trust=0
-  ns_layout_set rules "$1" rules || { printf '0\t0'; return 0; }
-  [ -f "$rules" ] && [ ! -L "$rules" ] || { printf '0\t0'; return 0; }
+  ns_layout_set rules "$1" rules || { printf '0\t0\t0'; return 0; }
+  [ -f "$rules" ] && [ ! -L "$rules" ] || { printf '0\t0\t0'; return 0; }
   raw="$(ns_rules_get_in "$rules" recovery cursorFlags 2>/dev/null || true)"
-  printf '%s' "$raw" | grep -qF '"--force"' && force=1
-  printf '%s' "$raw" | grep -qF '"--yolo"' && force=1
+  if ! printf '%s' "$raw" | grep -qE '"--(force|yolo|trust)"'; then
+    printf '0\t0\t0'
+    return 0
+  fi
+  printf '%s' "$raw" | grep -qE '"--(force|yolo)"' && force=1
   printf '%s' "$raw" | grep -qF '"--trust"' && trust=1
-  printf '%s\t%s' "$force" "$trust"
+  printf '1\t%s\t%s' "$force" "$trust"
 }
 
-# ns_cursor_launch_read <ns> — model, force, trust. Missing file is an empty model and no flags.
+# ns_cursor_args_parse <command-line> — 0 when this command is agent or cursor-agent.
+# Sets NS_CURSOR_ARG_MODEL, NS_CURSOR_ARG_FORCE, NS_CURSOR_ARG_TRUST, NS_CURSOR_ARG_MODEL_KNOWN.
+ns_cursor_args_parse() {
+  local tok base found=0 want="" model="" force=0 trust=0 seen=0 noglob=0
+  NS_CURSOR_ARG_MODEL=""
+  NS_CURSOR_ARG_FORCE=0
+  NS_CURSOR_ARG_TRUST=0
+  NS_CURSOR_ARG_MODEL_KNOWN=0
+  case $- in *f*) noglob=1 ;; esac
+  set -f
+  # shellcheck disable=SC2086 # ps prints one field per argv; models and flags have no spaces
+  set -- $1
+  [ "$noglob" -eq 1 ] || set +f
+  for tok in "$@"; do
+    if [ "$found" -eq 0 ]; then
+      base="${tok##*/}"
+      case "$base" in
+        agent | cursor-agent) found=1 ;;
+      esac
+      continue
+    fi
+    if [ "$want" = model ]; then
+      want=""
+      case "$tok" in
+        -*) ;;
+        *) ns_cursor_model_safe "$tok" && model="$tok" ;;
+      esac
+      continue
+    fi
+    case "$tok" in
+      --) break ;;
+      --model=*)
+        seen=1
+        base="${tok#--model=}"
+        ns_cursor_model_safe "$base" && model="$base"
+        ;;
+      --model) want=model; seen=1 ;;
+      --force | --yolo) force=1 ;;
+      --trust) trust=1 ;;
+    esac
+  done
+  [ "$found" -eq 1 ] || return 1
+  NS_CURSOR_ARG_MODEL="$model"
+  NS_CURSOR_ARG_FORCE=$force
+  NS_CURSOR_ARG_TRUST=$trust
+  if [ "$seen" -eq 0 ] || [ -n "$model" ]; then
+    NS_CURSOR_ARG_MODEL_KNOWN=1
+  fi
+  return 0
+}
+
+# ns_cursor_cli_observed [start-pid] — the nearest agent or cursor-agent ancestor. 1 when none
+# can be read. The hook payload is not a substitute: its model_id is the base model.
+ns_cursor_cli_observed() {
+  local start="${1:-$$}" p="" hops=0 args=""
+  ns_have_cmd ps || return 1
+  p="$start"
+  while [ "$hops" -lt 16 ]; do
+    case "$p" in '' | *[!0-9]*) return 1 ;; esac
+    [ "$p" -gt 1 ] || return 1
+    args="$(ps -ww -o args= -p "$p" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    if [ -n "$args" ] && ns_cursor_args_parse "$args"; then
+      return 0
+    fi
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d '[:space:]')"
+    hops=$((hops + 1))
+  done
+  return 1
+}
+
+# ns_cursor_launch_read <ns> — model, force, trust, then 1/0 for whether each field was recorded.
+# A missing file is an empty model, no flags, and nothing known.
 ns_cursor_launch_read() {
-  local f model="" force=0 trust=0 line key val
+  local f model="" force=0 trust=0 model_known=0 force_known=0 trust_known=0 line key val
   f="$(ns_layout_path "$1" cursor-launch 2>/dev/null || true)"
   if [ -n "$f" ] && [ -f "$f" ] && [ ! -L "$f" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       key="${line%%=*}"
       val="${line#*=}"
       case "$key" in
-        model) ns_cursor_model_safe "$val" && model="$val" ;;
-        force) [ "$val" = 1 ] && force=1 ;;
-        trust) [ "$val" = 1 ] && trust=1 ;;
+        model)
+          model_known=1
+          model=""
+          ns_cursor_model_safe "$val" && model="$val"
+          ;;
+        force)
+          force_known=1
+          force=0
+          [ "$val" = 1 ] && force=1
+          ;;
+        trust)
+          trust_known=1
+          trust=0
+          [ "$val" = 1 ] && trust=1
+          ;;
       esac
     done <"$f"
   fi
-  printf '%s\t%s\t%s' "$model" "$force" "$trust"
+  printf '%s\t%s\t%s\t%s\t%s\t%s' "$model" "$force" "$trust" "$model_known" "$force_known" "$trust_known"
 }
 
-_ns_cursor_launch_write() { # ns model force trust
+_ns_cursor_launch_write_body() { # ns body
   local f dir tmp
   ns_layout_parent "$1" cursor-launch || return 1
   f="$(ns_layout_path "$1" cursor-launch)"
   dir="${f%/*}"
   tmp="$(mktemp "$dir/.cursor-launch.XXXXXX")" || return 1
-  printf 'model=%s\nforce=%s\ntrust=%s\n' "$2" "$3" "$4" >"$tmp"
+  printf '%s' "$2" >"$tmp"
   mv -f "$tmp" "$f"
 }
 
 # ns_cursor_launch_note <ns> <json>
-# The first Cursor hook of the shift freezes the flags. A later hook may fill an empty model.
-# It never replaces a model and never adds a flag.
+# The first Cursor hook freezes the CLI ancestor's --model, --force and --trust. A non-empty
+# recovery.cursorFlags list replaces the two permission flags. The payload's model is never
+# recorded: model_id is the base model, and the variant is the --model the process was started
+# with. A field that cannot be read is omitted. A later hook changes nothing.
 ns_cursor_launch_note() {
-  local ns="$1" raw="$2" seen model flags force trust rest rec
+  local ns="$1" rec body="" over force=0 trust=0 model=""
+  local model_known=0 force_known=0 trust_known=0
+  : "${2:-}"
   [ -d "$ns" ] || return 0
   rec="$(ns_layout_path "$ns" cursor-launch 2>/dev/null || true)"
   [ -n "$rec" ] && [ ! -L "$rec" ] || return 0
-  seen="$(ns_cursor_launch_read "$ns")"
-  model="${seen%%$'\t'*}"
-  rest="${seen#*$'\t'}"
-  force="${rest%%$'\t'*}"
-  trust="${rest#*$'\t'}"
-  if [ ! -f "$rec" ]; then
-    flags="$(ns_cursor_rules_flags "$ns")"
-    force="${flags%%$'\t'*}"
-    trust="${flags#*$'\t'}"
-    model="$(ns_cursor_payload_model "$raw")"
-    _ns_cursor_launch_write "$ns" "$model" "$force" "$trust" || return 0
-    return 0
+  [ -f "$rec" ] && return 0
+  if ns_cursor_cli_observed "$$"; then
+    model="$NS_CURSOR_ARG_MODEL"
+    force="$NS_CURSOR_ARG_FORCE"
+    trust="$NS_CURSOR_ARG_TRUST"
+    model_known="$NS_CURSOR_ARG_MODEL_KNOWN"
+    force_known=1
+    trust_known=1
   fi
-  [ -n "$model" ] && return 0
-  model="$(ns_cursor_payload_model "$raw")"
-  [ -n "$model" ] || return 0
-  _ns_cursor_launch_write "$ns" "$model" "$force" "$trust" || return 0
+  over="$(ns_cursor_rules_override "$ns")"
+  if [ "${over%%$'\t'*}" = 1 ]; then
+    over="${over#*$'\t'}"
+    force="${over%%$'\t'*}"
+    trust="${over#*$'\t'}"
+    force_known=1
+    trust_known=1
+  fi
+  if [ "$model_known" = 1 ]; then
+    body="${body}model=${model}"$'\n'
+  fi
+  if [ "$force_known" = 1 ]; then
+    body="${body}force=${force}"$'\n'
+  fi
+  if [ "$trust_known" = 1 ]; then
+    body="${body}trust=${trust}"$'\n'
+  fi
+  _ns_cursor_launch_write_body "$ns" "$body" || return 0
 }
 
 # ns_cursor_model_missing <model> — 0 when `agent --list-models` names a catalog that lacks it.

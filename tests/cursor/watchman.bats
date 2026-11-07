@@ -349,6 +349,7 @@ STUB
   [ "$status" -eq 0 ]
   grep -q -- '--resume=kept-cli-worker' "$AGENT_LOG"
   if grep -q -- '--model\|--force\|--trust' "$AGENT_LOG"; then return 1; fi
+  grep -qF 'use the CLI default' "$P/.nightshift/shift-log.md"
 }
 
 @test "an unavailable model is reported and not swapped" {
