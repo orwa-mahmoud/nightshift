@@ -3,6 +3,16 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.30.3](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.2...v0.30.3) (2026-11-07)
+
+
+### Bug Fixes
+
+* clock out a finished Cursor shift without a stop hook ([db33434](https://github.com/orwa-mahmoud/nightshift/commit/db33434e93c1d4b91944e9c90c10dcf72fe18b86))
+* record the Cursor worker's real launch options ([1f5b2d3](https://github.com/orwa-mahmoud/nightshift/commit/1f5b2d3f6d1caf286d183623b905f3ffdf2f4c81))
+* revive a worker that is alive but idle ([039df24](https://github.com/orwa-mahmoud/nightshift/commit/039df2493857d221bbb6a7855231e31e544f7c24))
+* stop a running watchman whatever its pid file records ([ff1f33d](https://github.com/orwa-mahmoud/nightshift/commit/ff1f33da3ac2fba484bf95dfede6d774070eff5b))
+
 ## [0.30.2](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.1...v0.30.2) (2026-11-07)
 
 
