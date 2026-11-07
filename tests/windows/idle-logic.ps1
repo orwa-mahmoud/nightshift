@@ -62,7 +62,8 @@ try {
     $state.Evidence = 'pulse stale, transcript unchanged, cpu +0.00s, no busy child'
     Write-NSIdleState $ns $state
     $line = Get-NSIdleStatusSentence $ns
-    Expect-True ($line -eq 'worker alive but idle for 2 min — pulse stale, transcript unchanged, cpu +0.00s, no busy child') "status sentence was '$line'"
+    $expected = 'worker alive but idle for 2 min {0} pulse stale, transcript unchanged, cpu +0.00s, no busy child' -f [char]0x2014
+    Expect-True ($line -eq $expected) "status sentence was '$line'"
 
     $state = Read-NSIdleState $ns
     $state.Episode = 1

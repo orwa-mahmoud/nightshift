@@ -173,7 +173,7 @@ function Update-NSIdleAfterRevival {
         $state.Noticed = 1
         Write-NSIdleState $NightshiftDir $state
         Write-NSReason -NightshiftDir $NightshiftDir -Code 'idle-stuck' -Detail 'two recoveries failed'
-        Write-NSControlLog $NightshiftDir 'watchman: idle recovery failed twice — one notice, no further retries'
+        Write-NSControlLog $NightshiftDir ('watchman: idle recovery failed twice ' + [char]0x2014 + ' one notice, no further retries')
         Add-NSWatchmanNotice $NightshiftDir 'an idle worker was stopped and revival failed twice. The watchman will not try again until that worker is busy again or the shift is started again.'
         return 'stuck'
     }
@@ -200,7 +200,7 @@ function Get-NSIdleStatusSentence {
     if (-not $alive) { return '' }
     $mins = [int](([Math]::Floor(((Get-NSUnixTime) - [long]$state.Since) / 60)))
     if ($mins -lt 0) { return '' }
-    return ('worker alive but idle for {0} min — {1}' -f $mins, $state.Evidence)
+    return ('worker alive but idle for {0} min {1} {2}' -f $mins, [char]0x2014, $state.Evidence)
 }
 
 function Get-NSIdleProtected {
@@ -411,17 +411,17 @@ function Invoke-NSIdleTake {
                 $state.Evidence = 'pulse stale, transcript unchanged, no recorded process'
                 $state.Episode = 1
                 Write-NSIdleState $NightshiftDir $state
-                Write-NSControlLog $NightshiftDir ("watchman: worker quiet for $mins min — $($state.Evidence) — reviving")
+                Write-NSControlLog $NightshiftDir ("watchman: worker quiet for $mins min $([char]0x2014) $($state.Evidence) $([char]0x2014) reviving")
                 return 'revive'
             }
             $state.Evidence = "pulse stale, transcript unchanged, cpu $(Format-NSIdleCpu $delta), no busy child"
-            Write-NSControlLog $NightshiftDir ("watchman: worker alive but idle for $mins min — $($state.Evidence) — stopping it and reviving")
+            Write-NSControlLog $NightshiftDir ("watchman: worker alive but idle for $mins min $([char]0x2014) $($state.Evidence) $([char]0x2014) stopping it and reviving")
             if (Stop-NSIdleTree -ProcessIds @($ids.ToArray())) {
                 $state.Episode = 1
                 Write-NSIdleState $NightshiftDir $state
                 return 'revive'
             }
-            Write-NSControlLog $NightshiftDir 'watchman: idle worker could not be stopped — not reviving beside it'
+            Write-NSControlLog $NightshiftDir ('watchman: idle worker could not be stopped ' + [char]0x2014 + ' not reviving beside it')
             return 'hold'
         }
     }

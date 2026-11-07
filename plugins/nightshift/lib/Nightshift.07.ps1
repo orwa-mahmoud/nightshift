@@ -3607,7 +3607,7 @@ function Invoke-NSWatchmanDirectClockOut {
     $result = [pscustomobject]@{ Released = $false; Waiting = $false; Reason = '' }
     $ns = Join-Path $Workspace '.nightshift'
     if ($HostName -ne 'cursor') {
-        $result.Reason = 'clock-out refused: ownership — this watchman is not the Cursor one'
+        $result.Reason = 'clock-out refused: ownership ' + [char]0x2014 + ' this watchman is not the Cursor one'
         return $result
     }
     if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
@@ -3637,7 +3637,7 @@ function Invoke-NSWatchmanDirectClockOut {
     }
     $session = Read-NSSession $ns
     if ($null -ne $session -and -not [string]::IsNullOrEmpty([string]$session.HostName) -and $session.HostName -ne 'cursor') {
-        $result.Reason = "clock-out refused: ownership — shift is owned by $($session.HostName)"
+        $result.Reason = 'clock-out refused: ownership ' + [char]0x2014 + ' shift is owned by ' + $session.HostName
         Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
         return $result
     }
@@ -3648,7 +3648,7 @@ function Invoke-NSWatchmanDirectClockOut {
     if (Test-NSLeasePidLive $ns) { $live = $true }
     if (-not (Test-NSPulseStale $ns $IntervalMinutes) -or $live) {
         $result.Waiting = $true
-        $result.Reason = 'watchman: clock-out waits — session still working'
+        $result.Reason = 'watchman: clock-out waits ' + [char]0x2014 + ' session still working'
         return $result
     }
     if ($why -eq 'ticked') {
