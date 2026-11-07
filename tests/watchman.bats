@@ -1924,7 +1924,16 @@ begin_idle_worker() { # sleep | cpu | busy
       bash -c 'while :; do :; done' &
       ;;
     busy)
-      bash -c 'exec -a npm /bin/sleep 60 & echo $! >"$1"; wait' _ "$childf" &
+      # Linux reports the executable's name; macOS reports the name set with exec -a.
+      case "$(uname -s)" in
+        Linux)
+          cp /bin/sleep "$BATS_TEST_TMPDIR/npm"
+          bash -c '"$1" 60 & echo $! >"$2"; wait' _ "$BATS_TEST_TMPDIR/npm" "$childf" &
+          ;;
+        *)
+          bash -c 'exec -a npm /bin/sleep 60 & echo $! >"$1"; wait' _ "$childf" &
+          ;;
+      esac
       ;;
   esac
   IDLE_WORKER=$!
