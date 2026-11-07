@@ -150,7 +150,7 @@ try {
         'the launcher is not a watchman script'
 
     $scriptPath = Join-Path $watchRoot 'watchman.sh'
-    [IO.File]::WriteAllText($scriptPath, "#!/bin/sh`nsleep 300`n")
+    [IO.File]::WriteAllText($scriptPath, "#!/bin/sh`nwhile :; do :; done`n")
     & chmod +x $scriptPath
     $canon = Resolve-NSCanonicalPath $watchRoot
     $pidFile = Get-NSLayoutPath $watchNs 'watchman'

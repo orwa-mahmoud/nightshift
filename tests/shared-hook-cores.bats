@@ -79,7 +79,7 @@ CODEX_HOOKS="$HOOKS/codex"
   grep -qF 'ns_watchman_run_child' "$CURSOR_WM"
   grep -qF 'ns_watchman_clockout_pending' "$CLAUDE_WM"
   grep -qF 'ns_watchman_clockout_pending' "$CODEX_WM"
-  grep -qF 'ns_watchman_clockout_pending' "$CURSOR_WM"
+  grep -qF 'clock_out_direct' "$CURSOR_WM"
 }
 
 @test "host protocols remain in their wrappers" {
