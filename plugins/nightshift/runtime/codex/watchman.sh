@@ -31,19 +31,14 @@
 #
 # Evidence, conservative by construction — revive only on strong positive evidence of death:
 #   ALIVE (stand by), any of:
-#     · the recorded pid (line 3) exists and its start time matches line 4
-#     · any process whose executable is exactly `codex` has this project as its cwd
-#     · the recorded rollout (line 2) grew since the last wake
-#   DEAD (revive): none of the above, boxes open, and the site armed.
-# Evidence, conservative by construction — revive only on strong positive evidence of death:
-#   ALIVE (stand by), any of:
 #     · a fresh .shift-pulse (epoch within 2 * watchMinutes)
 #     · a missing pulse still inside the first two wake intervals after arm
-#     · the recorded pid (line 3) exists and its start time matches line 4
+#     · a live worker still inside idleWindowMinutes, or any busy signal
 #     · an empty recorded pid — empty pid never decides death unless the pulse is stale
-#     · any process whose executable is exactly `codex` has this project as its cwd
+#     · any `codex` process whose cwd is this project and which is outside the worker tree
 #     · the recorded rollout (line 2) grew since the last wake
-#   DEAD (revive): pulse stale, no rollout growth, no .session-end, boxes open, site armed.
+#   DEAD (revive): the idle window elapsed and the tree was stopped, or the process
+#     is already dead. Missing process evidence stands by.
 # Missing process evidence stands by. One signature overrides it: a turn that ended on an API
 # error. Codex closes that turn with `task_complete` carrying an `error` object and leaves the
 # session open and quiet, so a live process there is a wedge, not work. It is revived at once,
@@ -407,29 +402,60 @@ while :; do
   fi
 
   # Life, in evidence order: the recorded process, any codex in the project, the rollout pulse.
+  # A live recorded process is not life by itself: the shared idle rule stops it
+  # once the window is quiet. A codex outside that tree still means stand by.
   # Missing optional tools are not death — stand down rather than revive beside a living session.
   rec_rc=1
   if [ "$WEDGED" -eq 0 ] && [ -n "$(rec_pid)" ]; then
     recorded_process_alive
     rec_rc=$?
-    if [ "$rec_rc" -eq 0 ]; then
-      note silent-standby
-      baseline_rollout
-      : >"$TICK" 2>/dev/null || true
-      if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
-      continue
-    fi
   fi
   in_rc=1
   [ "$WEDGED" -eq 1 ] || { codex_in_project; in_rc=$?; }
-  if [ "$WEDGED" -eq 0 ] && { [ "$in_rc" -eq 0 ] || rollout_grew; }; then
+  if [ "$WEDGED" -eq 0 ] && { rollout_grew || pulse_alive; }; then
+    ns_idle_note_busy "$NS"
     note silent-standby
     baseline_rollout
     : >"$TICK" 2>/dev/null || true
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
     continue
   fi
-  if [ "$WEDGED" -eq 0 ] && pulse_alive; then
+  if [ "$WEDGED" -eq 0 ] && [ "$rec_rc" -eq 0 ]; then
+    # shellcheck disable=SC2086
+    if [ "$in_rc" -eq 0 ] && ns_idle_host_outside_tree codex "$PROJECT" "$(rec_pid)"; then
+      note silent-standby
+      baseline_rollout
+      : >"$TICK" 2>/dev/null || true
+      if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+      continue
+    fi
+    ns_idle_take "$NS" "$PROJECT" "$(rollout)" stale "$(rec_pid)"
+    idle_take=$?
+    case "$idle_take" in
+      10) rec_rc=1 ;;
+      12)
+        note process-evidence-unavailable
+        log_line "watchman: process evidence unavailable — standing down, not reviving"
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+      13)
+        note idle-stuck
+        baseline_rollout
+        : >"$TICK" 2>/dev/null || true
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+      *)
+        note silent-standby
+        baseline_rollout
+        : >"$TICK" 2>/dev/null || true
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+    esac
+  fi
+  if [ "$WEDGED" -eq 0 ] && [ "$in_rc" -eq 0 ]; then
     note silent-standby
     baseline_rollout
     : >"$TICK" 2>/dev/null || true
@@ -455,6 +481,14 @@ while :; do
     fi
   fi
 
+  if ns_idle_revival_blocked "$NS"; then
+    note idle-stuck
+    baseline_rollout
+    : >"$TICK" 2>/dev/null || true
+    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+    continue
+  fi
+
   # Dead quiet, mid-shift: revive. Attempts = watchRetrySeconds values + 1, re-checking
   # life between them — a site that comes back mid-wake cancels the rest.
   attempt=0
@@ -475,6 +509,7 @@ while :; do
     if [ "$RECOVERY_REFUSED" -eq 1 ]; then break; fi
     if spawn "$attempt"; then
       revived=0
+      ns_idle_after_revival "$NS" revived || true
       if [ "$attempt" -ge 2 ] || [ -z "$(sid)" ]; then
         note fresh-fallback
       else
@@ -486,7 +521,10 @@ while :; do
     baseline_rollout
   done
   if [ "$revived" -eq 1 ] && [ "$attempt" -gt 0 ]; then
-    note exhausted-retry
+    ns_idle_after_revival "$NS" failed
+    if [ "$?" -ne 2 ]; then
+      note exhausted-retry
+    fi
     # Every attempt took the lease for its own child. A ladder that revived nothing hands it
     # back, so the recorded conversation is not left waiting on a generation nobody holds.
     ns_lease_restore_interactive "$NS" || true

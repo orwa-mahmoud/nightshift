@@ -494,7 +494,7 @@ if (-not $DryRun) {
     $wasArmed = Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf
     $cleared = New-Object 'System.Collections.Generic.List[string]'
     foreach ($key in @('stop', 'stall', 'notified', 'ended', 'session-end', 'pulse',
-            'mint-failed', 'session', 'armed', 'watchman-tick', 'lock')) {
+            'mint-failed', 'session', 'armed', 'watchman-tick', 'lock', 'idle-watch')) {
         $marker = Get-NSLayoutPath $ns $key
         if (Test-NSPathEntry $marker) { $null = $cleared.Add((Split-Path -Leaf $marker)) }
     }

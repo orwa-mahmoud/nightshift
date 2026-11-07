@@ -894,7 +894,6 @@ try {
 
     $wake = 0
     $previousStandby = ''
-    $silentWakes = 0
     $armedMarker = Get-NSLayoutPath $ns 'armed'
     $immediateWake = [string]$env:NIGHTSHIFT_WATCH_IMMEDIATE -eq '1'
     if ($immediateWake) { Remove-Item Env:NIGHTSHIFT_WATCH_IMMEDIATE -ErrorAction SilentlyContinue }
@@ -1036,16 +1035,18 @@ try {
             }
             $verdict = 'usage-limit'
         }
-        if ($verdict -eq 'silent') {
-            $silentWakes++
-            if ($silentWakes -ge 2 -and (Test-NSPulseStale $ns $IntervalMinutes)) {
-                Write-NSLogLine 'watchman: silent too long with a stale pulse - treating as dead'
-                $verdict = 'dead'
-                $silentWakes = 0
-            }
+        if ($verdict -in @('alive', 'esc', 'tabs')) {
+            Clear-NSIdleWatch $ns
         }
-        else {
-            $silentWakes = 0
+        if ($verdict -eq 'silent') {
+            $pulseStale = Test-NSPulseStale $ns $IntervalMinutes $script:WatchStart
+            $take = Invoke-NSIdleTake -NightshiftDir $ns -Workspace $workspace -TranscriptPath (Get-NSTranscript) -PulseStale ([bool]$pulseStale) -HostName $HostName
+            switch ($take) {
+                'revive' { $verdict = 'dead' }
+                'unavailable' { $verdict = 'unavailable' }
+                'stuck' { $verdict = 'stuck' }
+                'hold' { $verdict = 'silent' }
+            }
         }
         if ($verdict -eq 'alive') {
             $previousStandby = ''
@@ -1068,6 +1069,13 @@ try {
                 Write-NSLogLine "watchman: live $HostName process evidence - standing by"
             }
             $previousStandby = $verdict
+        }
+        elseif ($verdict -eq 'stuck') {
+            Write-NSReason $ns 'idle-stuck' 'two recoveries failed'
+            if ($previousStandby -ne 'stuck') {
+                Write-NSLogLine 'watchman: idle recovery failed twice - not reviving again'
+            }
+            $previousStandby = 'stuck'
         }
         elseif ($verdict -eq 'unavailable') {
             Write-NSReason $ns 'process-evidence-unavailable'
@@ -1098,6 +1106,12 @@ try {
             }
             if ($verdict -eq 'wedge') {
                 Write-NSLogLine 'watchman: probable API wedge - reviving the recorded conversation'
+            }
+
+            if (Test-NSIdleRevivalBlocked $ns) {
+                Write-NSReason $ns 'idle-stuck' 'two recoveries failed'
+                if ($MaxWakes -gt 0 -and $wake -ge $MaxWakes) { exit 0 }
+                continue
             }
 
             $totalAttempts = $retryValues.Count + 1
@@ -1135,6 +1149,7 @@ try {
                 Set-NSTranscriptBaseline
             }
             if ($revived) {
+                $null = Update-NSIdleAfterRevival -NightshiftDir $ns -Result 'revived'
                 $currentIntervalMinutes = $IntervalMinutes
                 if ($totalAttempts -gt 1 -and $attempt -ge $totalAttempts) {
                     Write-NSReason $ns 'fresh-fallback'
@@ -1166,7 +1181,10 @@ try {
                 }
             }
             elseif ([string]::IsNullOrEmpty($aborted)) {
-                Write-NSReason $ns 'exhausted-retry'
+                $idleAfter = Update-NSIdleAfterRevival -NightshiftDir $ns -Result 'failed'
+                if ($idleAfter -ne 'stuck') {
+                    Write-NSReason $ns 'exhausted-retry'
+                }
                 if (Test-NSApiFailureEvidence) {
                     $currentIntervalMinutes = [Math]::Min($currentIntervalMinutes * 2, 60)
                     $null = Write-NSUsagePause $ns 'usage limit'

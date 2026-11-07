@@ -23,12 +23,12 @@
 #   ALIVE (stand by), any of:
 #     · a fresh .shift-pulse (epoch within 2 * watchMinutes)
 #     · a missing pulse still inside the first two wake intervals after arm
-#     · the recorded pid (line 3) exists and its start time matches line 4
-#     · an empty recorded pid — empty pid never decides death
 #     · the recorded transcript (line 2) grew since the last wake
-#     · a live .shift-lease pid+start (a recovered CLI that holds the lease)
-#   DEAD (mint/revive): pulse stale, no transcript growth, no .session-end, and
-#     the lease pid is missing or dead. Missing process evidence stands by.
+#     · a live worker still inside idleWindowMinutes, or any busy signal
+#     · an empty recorded pid — empty pid never decides death
+#     · a live .shift-lease holder still inside that same idle window
+#   DEAD (mint/revive): the idle window elapsed and the tree was stopped, or
+#     the process is already dead. Missing process evidence stands by.
 # There is no Esc / roster / wedge ladder on Cursor.
 #
 # Stand-down order, checked at every wake — never override a declared ending:
@@ -444,36 +444,55 @@ while :; do
   if [ -n "$(rec_pid)" ]; then
     recorded_process_alive
     rec_rc=$?
-    if [ "$rec_rc" -eq 0 ]; then
-      note silent-standby
-      baseline_transcript
-      : >"$TICK" 2>/dev/null || true
-      if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
-      continue
-    fi
   fi
-  if transcript_grew; then
+  lease_rc=1
+  lease_pid_live && lease_rc=0
+  # A fresh pulse or a growing transcript is work. Anything else a live process
+  # can still be is the shared idle rule: stop the tree, then revive as dead.
+  if transcript_grew || pulse_alive; then
+    ns_idle_note_busy "$NS"
     note silent-standby
     baseline_transcript
     : >"$TICK" 2>/dev/null || true
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
     continue
   fi
-  if lease_pid_live; then
-    note silent-standby
-    baseline_transcript
-    : >"$TICK" 2>/dev/null || true
-    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
-    continue
+  idle_pids=""
+  if [ "$rec_rc" -eq 0 ]; then
+    idle_pids="$(rec_pid)"
   fi
-  if pulse_alive; then
-    note silent-standby
-    baseline_transcript
-    : >"$TICK" 2>/dev/null || true
-    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
-    continue
+  if [ "$lease_rc" -eq 0 ] && [ "$NS_LEASE_PID" != "$idle_pids" ]; then
+    idle_pids="${idle_pids:+$idle_pids }$NS_LEASE_PID"
   fi
-  if [ "$rec_rc" -eq 3 ]; then
+  if [ -n "$idle_pids" ]; then
+    # shellcheck disable=SC2086
+    ns_idle_take "$NS" "$PROJECT" "$(transcript)" stale $idle_pids
+    idle_take=$?
+    case "$idle_take" in
+      10) ;;
+      12)
+        note process-evidence-unavailable
+        log_line "watchman: process evidence unavailable — standing down, not reviving"
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+      13)
+        note idle-stuck
+        baseline_transcript
+        : >"$TICK" 2>/dev/null || true
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+      *)
+        note silent-standby
+        baseline_transcript
+        : >"$TICK" 2>/dev/null || true
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+    esac
+  fi
+  if [ "$rec_rc" -eq 3 ] && [ "$lease_rc" -ne 0 ]; then
     note process-evidence-unavailable
     log_line "watchman: process evidence unavailable — standing down, not reviving"
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
@@ -481,6 +500,14 @@ while :; do
   fi
   if ! ns_cursor_worker_present "$NS" && [ -f "$MINT_FAILED" ] && [ ! -L "$MINT_FAILED" ]; then
     note silent-standby
+    baseline_transcript
+    : >"$TICK" 2>/dev/null || true
+    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+    continue
+  fi
+
+  if ns_idle_revival_blocked "$NS"; then
+    note idle-stuck
     baseline_transcript
     : >"$TICK" 2>/dev/null || true
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
@@ -511,6 +538,7 @@ while :; do
     spawn_rc=$?
     if [ "$spawn_rc" -eq 0 ]; then
       revived=0
+      ns_idle_after_revival "$NS" revived || true
       if [ "$attempt" -ge 2 ]; then
         note fresh-fallback
       else
@@ -521,13 +549,17 @@ while :; do
     fi
     if [ "$spawn_rc" -eq 2 ]; then
       held=1
+      ns_idle_note_busy "$NS"
       note silent-standby
       break
     fi
     baseline_transcript
   done
   if [ "$revived" -eq 1 ] && [ "$attempt" -gt 0 ] && [ "$held" -eq 0 ]; then
-    note exhausted-retry
+    ns_idle_after_revival "$NS" failed
+    if [ "$?" -ne 2 ]; then
+      note exhausted-retry
+    fi
     # Every attempt took the lease for its own worker. A ladder that revived nothing hands it
     # back, so the recorded conversation is not left waiting on a generation nobody holds.
     ns_lease_restore_interactive "$NS" || true

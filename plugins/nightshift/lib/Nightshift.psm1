@@ -9,5 +9,6 @@ Set-StrictMode -Version 2.0
 . (Join-Path $PSScriptRoot 'Nightshift.05.ps1')
 . (Join-Path $PSScriptRoot 'Nightshift.06.ps1')
 . (Join-Path $PSScriptRoot 'Nightshift.07.ps1')
+. (Join-Path $PSScriptRoot 'Nightshift.08.ps1')
 
 Export-ModuleMember -Function *

@@ -502,6 +502,8 @@ function Write-NSStatusReport {
         Say ('Plan room:   open, ' + $(if ($planBound.Length -gt 0) { 'bound to conversation ' + $planBound } else { 'waiting for its conversation' }))
     }
     Say ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
+    $idleLine = Get-NSIdleStatusSentence (Join-Path $Workspace '.nightshift')
+    if (-not [string]::IsNullOrEmpty($idleLine)) { Say $idleLine }
     $activity = Get-NSStatusLastActivity $Workspace
     Say ('last activity: ' + ($(if ($activity.Length -gt 0) { $activity } else { 'none' })))
     Say ('last checkpoint: ' + (Get-NSGateCheckpointToken $Workspace))

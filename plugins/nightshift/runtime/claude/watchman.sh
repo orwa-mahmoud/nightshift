@@ -571,7 +571,6 @@ log_line "watchman armed · every ${INTERVAL_MIN}m"
 wake=0
 standby_prev=""
 down_notified=0
-silent_wakes=0
 
 # NIGHTSHIFT_WATCH_SLEEP overrides the base sleep in seconds — the test suite's speed lever.
 BASE_SLEEP="${NIGHTSHIFT_WATCH_SLEEP:-$((INTERVAL_MIN * 60))}"
@@ -665,16 +664,31 @@ while :; do
     verdict="usage-limit"
   fi
   case "$verdict" in
-    silent)
-      silent_wakes=$((silent_wakes + 1))
-      if [ "$silent_wakes" -ge 2 ] && ns_pulse_stale "$NS" "$INTERVAL_MIN"; then
-        log_line "watchman: silent too long with a stale pulse — treating as dead"
-        verdict=dead
-        silent_wakes=0
-      fi
-      ;;
-    *) silent_wakes=0 ;;
+    alive | esc | tabs) ns_idle_note_busy "$NS" ;;
   esac
+  if [ "$verdict" = silent ]; then
+    idle_pids=""
+    if shift_process_alive; then
+      idle_pids="$(shift_pid)"
+    fi
+    if ns_lease_pid_live "$NS" && [ "$NS_LEASE_PID" != "$idle_pids" ]; then
+      idle_pids="${idle_pids:+$idle_pids }$NS_LEASE_PID"
+    fi
+    pulse_state=fresh
+    ns_pulse_stale "$NS" "$INTERVAL_MIN" && pulse_state=stale
+    if [ -n "$idle_pids" ]; then
+      # shellcheck disable=SC2086
+      ns_idle_take "$NS" "$PROJECT" "$(resolve_transcript)" "$pulse_state" $idle_pids
+    else
+      ns_idle_mark_quiet "$NS" "$PROJECT" "$(resolve_transcript)" "$pulse_state"
+    fi
+    case "$?" in
+      10) verdict=dead ;;
+      12) verdict=unavailable ;;
+      13) verdict=stuck ;;
+      11) verdict=silent ;;
+    esac
+  fi
   case "$verdict" in
       alive)
         standby_prev=""
@@ -717,7 +731,20 @@ while :; do
         standby_prev="unavailable"
         down_notified=0
         ;;
+      stuck)
+        note idle-stuck
+        [ "$standby_prev" = "stuck" ] || log_line "watchman: idle recovery failed twice — not reviving again"
+        standby_prev="stuck"
+        down_notified=0
+        ;;
       wedge | dead)
+        if ns_idle_revival_blocked "$NS"; then
+          note idle-stuck
+          standby_prev="stuck"
+          down_notified=0
+          if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+          continue
+        fi
         standby_prev=""
         sid="$(shift_session_id)"
         [ "$verdict" != "wedge" ] || log_line "watchman: probable wedge — a session sits at an errored prompt with nobody there; reviving its conversation"
@@ -758,11 +785,15 @@ while :; do
         if [ "$revived" -ne 0 ] && [ "$attempt" -gt 0 ]; then
           restore_recorded_lease || true
         fi
+        if [ -n "$aborted" ]; then
+          ns_idle_note_busy "$NS"
+        fi
         # A successful revival is morning news, not a page: it lands in the parking lot — the
         # file the owner reads — with the thread's handles. The page is reserved for the one
         # night event that needs the owner: a dead session no attempt could bring back, rung
         # once per outage, not once per wake.
         if [ "$revived" -eq 0 ]; then
+          ns_idle_after_revival "$NS" revived || true
           down_notified=0
           WAIT_MIN="$INTERVAL_MIN"
           if [ "$AGENT_IS_DEFAULT" -eq 1 ] && [ "$attempt" -ge "$total" ] && [ "$total" -gt 1 ]; then
@@ -785,7 +816,10 @@ while :; do
           # reason already says which, and overwriting it with a retry count would lose it.
           :
         elif [ -z "$aborted" ]; then
-          note exhausted-retry
+          ns_idle_after_revival "$NS" failed
+          if [ "$?" -ne 2 ]; then
+            note exhausted-retry
+          fi
           if api_limited_tail; then
             back_off
             ns_usage_pause "$NS" "usage limit" || true

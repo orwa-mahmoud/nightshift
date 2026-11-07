@@ -653,6 +653,8 @@ fi
 
 fact "evidence $(ns_evidence_counts "$WORKSPACE")"
 fact "liveness $(ns_status_liveness "$NS" "$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")")"
+IDLE_LINE="$(ns_idle_status_sentence "$NS" 2>/dev/null || true)"
+[ -z "$IDLE_LINE" ] || fact "$IDLE_LINE"
 activity="$(ns_status_last_activity "$NS")"
 if [ -n "$activity" ]; then
   fact "last activity epoch $activity"

@@ -287,6 +287,8 @@ catch {
     $watchMinutes = 0
 }
 $null = $lines.Add(('liveness: {0}' -f (Get-NSStatusLiveness $workspace $watchMinutes)))
+$idleLine = Get-NSIdleStatusSentence $ns
+if (-not [string]::IsNullOrEmpty($idleLine)) { $null = $lines.Add($idleLine) }
 $activity = Get-NSStatusLastActivity $workspace
 $null = $lines.Add(('last activity: {0}' -f $(if ($activity.Length -gt 0) { $activity } else { 'none' })))
 $null = $lines.Add(('last checkpoint: {0}' -f (Get-NSGateCheckpointToken $workspace)))

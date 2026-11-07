@@ -227,6 +227,8 @@ missing either native question policy. Replace starts from the complete shipped 
 the profile, and shows the full next file first. Apply only while unarmed. Native Windows uses
 PowerShell's JSON parser; it does not require `jq`.
 
+**Idle window.** `idleWindowMinutes` (shipped **30**, `NIGHTSHIFT_IDLE_WINDOW` for one session) is how long a live worker must stay quiet before the watchman stops its process tree and revives the shift. Quiet means a stale pulse, an unchanged transcript or rollout, under a second of CPU across that tree, and no build, test, or browser child. Any of those signals resets the window. Missing or unreadable is 30. Two failed revivals of that worker write one parking-lot notice and stop retrying until the worker is busy again or the next Start.
+
 **Two cadences have no env override.** `watchRetrySeconds` is the space-separated pause list
 between revival attempts in one wake (shipped `"30 120"`), and `longUnitWarnMinutes` is `0` by
 default — set it positive to have the shift log warn that a live unit has run that many minutes

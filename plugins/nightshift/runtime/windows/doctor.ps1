@@ -600,6 +600,8 @@ else {
         Add-NSWarn 'armed shift has no session record - a 500 can land before first work'
     }
 }
+$idleLine = Get-NSIdleStatusSentence $ns
+if (-not [string]::IsNullOrEmpty($idleLine)) { Add-NSFact $idleLine }
 
 $leaseState = 'absent'
 $leaseGeneration = ''

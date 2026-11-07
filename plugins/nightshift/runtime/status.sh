@@ -90,6 +90,8 @@ if ns_plan_room_open "$NS"; then
   emit "Plan room:   open, $([ -n "$PLAN_BOUND" ] && printf 'bound to conversation %s' "$PLAN_BOUND" || printf 'waiting for its conversation')"
 fi
 emit "liveness:    $(ns_status_liveness "$NS" "$WATCH")"
+IDLE_LINE="$(ns_idle_status_sentence "$NS" 2>/dev/null || true)"
+[ -z "$IDLE_LINE" ] || emit "$IDLE_LINE"
 activity="$(ns_status_last_activity "$NS")"
 emit "last activity: ${activity:-none}"
 emit "last checkpoint: $(ns_status_last_checkpoint "$WORKSPACE")"

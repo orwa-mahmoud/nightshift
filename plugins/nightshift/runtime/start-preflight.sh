@@ -504,7 +504,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
   WAS_ARMED=0
   [ -f "$ARMED" ] && WAS_ARMED=1
   CLEARED=""
-  for key in stop stall notified ended session-end pulse mint-failed session armed watchman-tick lock; do
+  for key in stop stall notified ended session-end pulse mint-failed session armed watchman-tick lock idle-watch; do
     ns_layout_set marker "$NS" "$key"
     if [ -e "$marker" ] || [ -L "$marker" ]; then
       CLEARED="${CLEARED}${CLEARED:+ }${marker##*/}"

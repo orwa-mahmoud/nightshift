@@ -192,7 +192,7 @@ ns_control_stop_watchman() { # <ns>
 
 ns_control_drop_runtime_markers() { # <ns>
   local ns="$1" key f session scope
-  for key in armed ended session-end pulse mint-failed session worker stall notified \
+  for key in armed ended session-end pulse mint-failed idle-watch session worker stall notified \
     watchman-tick mutex-scope lock; do
     ns_control_drop "$(ns_layout_path "$ns" "$key")"
   done

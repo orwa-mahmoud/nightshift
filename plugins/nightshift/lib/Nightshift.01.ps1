@@ -2414,7 +2414,7 @@ function Stop-NSWatchman {
 
 function Clear-NSRuntimeMarkers {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
-    foreach ($key in @('armed', 'ended', 'session-end', 'pulse', 'mint-failed', 'session', 'stall', 'notified', 'watchman-tick', 'mutex-scope')) {
+    foreach ($key in @('armed', 'ended', 'session-end', 'pulse', 'mint-failed', 'session', 'stall', 'notified', 'watchman-tick', 'mutex-scope', 'idle-watch')) {
         Remove-NSPath (Get-NSLayoutPath $NightshiftDir $key)
     }
     foreach ($key in @('session', 'mutex-scope')) {

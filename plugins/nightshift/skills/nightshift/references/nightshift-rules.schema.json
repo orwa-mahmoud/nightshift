@@ -192,6 +192,11 @@
       "minimum": 0,
       "description": "Minutes between watchman wakes. 0 disarms the watchman."
     },
+    "idleWindowMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How long a live worker must stay quiet before the watchman stops it and revives the shift. Quiet means a stale pulse, an unchanged transcript or rollout, under a second of CPU across the process tree, and no build, test, or browser child. Missing is 30, one wake longer than two default watch intervals, and well under a multi-hour stall. Any busy signal resets the window."
+    },
     "longUnitWarnMinutes": {
       "type": "integer",
       "minimum": 0,

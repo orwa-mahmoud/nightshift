@@ -242,7 +242,7 @@ function Write-NSReason {
         'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
         'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
         'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit',
-        'install-pending', 'install-removed', 'install-mismatch', 'recovery-stuck'
+        'install-pending', 'install-removed', 'install-mismatch', 'recovery-stuck', 'idle-stuck'
     )
     if ($Code -notin $allowed) {
         $Code = 'stand-down'
@@ -1507,6 +1507,7 @@ function Get-NSReasonLabel {
         'install-removed' { return ('watchman stood down ' + [char]0x2014 + ' no current plugin install') }
         'install-mismatch' { return ('watchman stood down ' + [char]0x2014 + ' the hooks copy of the plugin cannot be used') }
         'recovery-stuck' { return ('unattended revival is stuck ' + [char]0x2014 + ' recorded scope cannot be restored') }
+        'idle-stuck' { return ('idle worker revival is stuck ' + [char]0x2014 + ' two recoveries failed') }
         default { return 'unknown watchman outcome' }
     }
 }

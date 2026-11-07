@@ -16,7 +16,7 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
   control="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/control.sh"
   reported="$(grep -F 'for key in stop stall' "$pre")"
   dropped="$(awk '/^ns_control_drop_runtime_markers\(\)/,/^}/' "$control" | tr '\n\\' '  ')"
-  for key in stall notified ended session-end pulse mint-failed session watchman-tick lock; do
+  for key in stall notified ended session-end pulse mint-failed idle-watch session watchman-tick lock; do
     case " ${reported%%;*} " in *" $key "*) ;; *) echo "the preflight does not report $key"; return 1 ;; esac
     case "$dropped" in *" $key "* | *" $key;"*) ;; *) echo "the preflight does not clear $key"; return 1 ;; esac
   done

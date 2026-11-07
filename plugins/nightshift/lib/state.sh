@@ -2830,6 +2830,7 @@ ns_reason_label() {
     install-removed) printf 'watchman stood down — no current plugin install' ;;
     install-mismatch) printf 'watchman stood down — the hooks copy of the plugin cannot be used' ;;
     recovery-stuck) printf 'unattended revival is stuck — recorded scope cannot be restored' ;;
+    idle-stuck) printf 'idle worker revival is stuck — two recoveries failed' ;;
     *) printf 'unknown watchman outcome' ;;
   esac
 }
@@ -2838,7 +2839,7 @@ ns_record_reason() { # <nightshift-dir> <code> [detail]
   local dir="$1" code="$2" detail="${3:-}"
   [ -d "$dir" ] || return 1
   case "$code" in
-    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable|api-error|usage-limit|install-pending|install-removed|install-mismatch|recovery-stuck) ;;
+    completed|owner-stop|owner-disarm|stale-pid|invalid-session|exhausted-retry|unknown-wedge|revived|stand-down|wrong-host|deadline|clean-session-end|esc-standby|silent-standby|non-resumable-session|unreadable-rules|fresh-fallback|unsupported-state|process-evidence-unavailable|clock-out-failed|recovery-scope-unavailable|api-error|usage-limit|install-pending|install-removed|install-mismatch|recovery-stuck|idle-stuck) ;;
     *) code="stand-down" ;;
   esac
   detail="$(printf '%s' "$detail" | tr -d '\000-\037' | sed 's/[[:space:]]*$//')"

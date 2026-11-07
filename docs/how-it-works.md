@@ -278,8 +278,11 @@ acting.
 
 Codex SessionEnd stands the watchman down: closing, archiving, or an idle unload (about 30
 minutes with no client) is pause-recovery. The punch list stays; Start re-arms. A crash that
-never fires SessionEnd still revives. A fresh `.shift-pulse`, a live recorded process, or a
-growing rollout keeps the watchman standing by. Empty pid alone is not death.
+never fires SessionEnd still revives. A fresh `.shift-pulse` or a growing rollout keeps
+the watchman standing by. A live process that stays quiet for `idleWindowMinutes` (30 when
+that knob is absent) — stale pulse, unchanged transcript, under a second of CPU across its
+process tree, and no build, test, or browser child — is stopped and revived like a dead one.
+Empty pid alone is not death.
 
 A Codex turn that ends on an API error closes with `task_complete` carrying an `error` object and
 leaves the session open and quiet. Until the rollout moves again, the watchman treats that
