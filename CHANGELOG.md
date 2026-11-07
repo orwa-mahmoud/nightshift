@@ -3,6 +3,16 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.30.2](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.1...v0.30.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* keep the watchman working when the host replaces its plugin install ([c7f8f76](https://github.com/orwa-mahmoud/nightshift/commit/c7f8f76a885e23e9a5b156bd55b5c4b6a72ed1e1))
+* revive Cursor workers with the shift's model and permissions ([8b1099d](https://github.com/orwa-mahmoud/nightshift/commit/8b1099de621a9806edb431e90f41bca734c25f72))
+* stop offering a duplicate Cursor hooks file and warn when one exists ([d57b6fd](https://github.com/orwa-mahmoud/nightshift/commit/d57b6fda5c1e5d8145a08cb23e3475917c3be823))
+* stop retrying an unrecoverable Cursor revival and name the working fix ([49cf8d9](https://github.com/orwa-mahmoud/nightshift/commit/49cf8d9882e76576672b086b1e724ce53973987e))
+
 ## [0.30.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.0...v0.30.1) (2026-11-05)
 
 
