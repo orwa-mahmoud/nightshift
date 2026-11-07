@@ -320,7 +320,7 @@ function Stop-NSIdleTree {
     return $false
 }
 
-# standby · revive · hold · unavailable · stuck
+# standby, revive, hold, unavailable, stuck
 function Invoke-NSIdleTake {
     param(
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
