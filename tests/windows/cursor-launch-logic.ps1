@@ -101,7 +101,7 @@ Import-Module '$module' -Force -DisableNameChecking
 Add-NSCursorLaunchNote '$unreadNs' '{"model_id":"grok-4.7"}'
 Set-Content -LiteralPath '$unreadDone' -Value done
 "@)
-    if ($IsWindows) {
+    if ($env:OS -eq 'Windows_NT') {
         & pwsh -NoProfile -File $unreadNote
     }
     else {
