@@ -1924,11 +1924,10 @@ begin_idle_worker() { # sleep | cpu | busy
       bash -c 'while :; do :; done' &
       ;;
     busy)
-      # Linux reports the executable's name; macOS reports the name set with exec -a.
+      # Linux ps comm is the kernel name, and a renamed coreutils binary will not run.
       case "$(uname -s)" in
         Linux)
-          cp /bin/sleep "$BATS_TEST_TMPDIR/npm"
-          bash -c '"$1" 60 & echo $! >"$2"; wait' _ "$BATS_TEST_TMPDIR/npm" "$childf" &
+          bash -c 'printf %s npm >/proc/$$/comm; sleep 60 & echo $! >"$1"; wait' _ "$childf" &
           ;;
         *)
           bash -c 'exec -a npm /bin/sleep 60 & echo $! >"$1"; wait' _ "$childf" &
