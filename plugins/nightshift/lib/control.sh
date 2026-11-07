@@ -128,19 +128,21 @@ ns_control_start_refuse_reason() { # <ns>
   printf '%s\n' "paused shift deadline has expired — write a new UNIX epoch to $deadline, or run Reset then Start; refusing to invent a time budget"
 }
 
-ns_control_watchman_command_ok() { # <pid>
-  local args
+ns_control_watchman_command_ok() { # <pid> [script]
+  local args script="${2:-}"
   ns_have_cmd ps || return 1
-  args="$(ps -o command= -p "$1" 2>/dev/null || ps -o args= -p "$1" 2>/dev/null || true)"
+  args="$(ps -ww -o command= -p "$1" 2>/dev/null || ps -ww -o args= -p "$1" 2>/dev/null || true)"
   [ -n "$args" ] || return 1
-  printf '%s' "$args" | grep -qE 'watchman\.sh|watchman\.ps1|start-watchman'
+  printf '%s' "$args" | grep -qE 'watchman\.sh|watchman\.ps1|start-watchman' && return 0
+  [ -n "$script" ] || return 1
+  printf '%s' "$args" | grep -qF -- "$script"
 }
 
 # Kill only a verified live Nightshift watchman.
 # Sets NS_CONTROL_WATCHMAN to absent | stopped | unverified.
 # 0 killed or absent · 1 unverified (left running)
 ns_control_stop_watchman() { # <ns>
-  local ns="$1" pidfile tick pid start rc
+  local ns="$1" pidfile tick pid start script fields rc
   NS_CONTROL_WATCHMAN=absent
   ns_layout_set pidfile "$ns" watchman
   ns_layout_set tick "$ns" watchman-tick
@@ -154,8 +156,12 @@ ns_control_stop_watchman() { # <ns>
     ns_control_drop "$tick"
     return 0
   fi
-  pid="$(sed -n 1p "$pidfile" 2>/dev/null | tr -d '[:space:]')"
-  start="$(sed -n 2p "$pidfile" 2>/dev/null || true)"
+  fields="$(ns_watchman_pidfile_read "$pidfile" 2>/dev/null || true)"
+  pid="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  start="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  script="${fields%%$'\t'*}"
   case "$pid" in
     '' | *[!0-9]*)
       ns_control_drop "$pidfile"
@@ -179,11 +185,16 @@ ns_control_stop_watchman() { # <ns>
     NS_CONTROL_WATCHMAN=unverified
     return 1
   fi
-  if [ -z "$start" ] && ! ns_control_watchman_command_ok "$pid"; then
+  if [ -z "$start" ] && ! ns_control_watchman_command_ok "$pid" "$script"; then
     NS_CONTROL_WATCHMAN=unverified
     return 1
   fi
-  kill "$pid" 2>/dev/null || true
+  if ! kill "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null; then
+      NS_CONTROL_WATCHMAN=unverified
+      return 1
+    fi
+  fi
   ns_control_drop "$pidfile"
   ns_control_drop "$tick"
   NS_CONTROL_WATCHMAN=stopped
@@ -192,7 +203,7 @@ ns_control_stop_watchman() { # <ns>
 
 ns_control_drop_runtime_markers() { # <ns>
   local ns="$1" key f session scope
-  for key in armed ended session-end pulse mint-failed session worker stall notified \
+  for key in armed ended session-end pulse mint-failed idle-watch session worker stall notified \
     watchman-tick mutex-scope lock; do
     ns_control_drop "$(ns_layout_path "$ns" "$key")"
   done

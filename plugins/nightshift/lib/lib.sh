@@ -11,6 +11,7 @@
 #   policy.sh     the shift-policy resolver (rules, defaults, tonight's snapshot)
 #   usage.sh      what a shift cost, read from the records each host already keeps
 #   process.sh    process evidence
+#   idle.sh       alive-but-idle watchman rule
 #   ownership.sh  locks, session, lease, shift fencing
 #   file-map.sh   the files an item and a shift changed, drawn at each tick
 #   architecture.sh the shift's architecture diagram, snapshotted at each tick
@@ -52,6 +53,8 @@ _ns_lib_dir="${BASH_SOURCE[0]%/*}"
 . "$_ns_lib_dir/ownership.sh"
 # shellcheck source=plugins/nightshift/lib/watchman-install.sh
 . "$_ns_lib_dir/watchman-install.sh"
+# shellcheck source=plugins/nightshift/lib/idle.sh
+. "$_ns_lib_dir/idle.sh"
 # shellcheck source=plugins/nightshift/lib/evidence-lifecycle.sh
 . "$_ns_lib_dir/evidence-lifecycle.sh"
 # shellcheck source=plugins/nightshift/lib/file-map.sh

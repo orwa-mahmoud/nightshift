@@ -17,15 +17,18 @@ CURSOR="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/cursor/clock-out-gate.sh"
 }
 
 @test "Windows clock-out receipts commits match POSIX headless identity" {
-  grep -qF 'user.email=nightshift@localhost' "$CORE"
-  grep -qF 'commit.gpgsign=false' "$CORE"
-  grep -qF 'receiptsAutoCommit' "$CORE"
-  grep -qF 'user.email=nightshift@localhost' "$CODEX"
-  grep -qF 'commit.gpgsign=false' "$CODEX"
-  grep -qF 'receiptsAutoCommit' "$CODEX"
-  grep -qF 'user.email=nightshift@localhost' "$HELPER"
-  grep -qF 'commit.gpgsign=false' "$HELPER"
-  grep -qF 'receiptsAutoCommit' "$HELPER"
+  shared="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/shared/gate-core.sh"
+  ps="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.07.ps1"
+  grep -qF 'ns_shift_end' "$CORE"
+  grep -qF 'ns_shift_end' "$CODEX"
+  grep -qF 'ns_shift_end' "$CURSOR"
+  grep -qF 'Invoke-NSShiftEnd' "$HELPER"
+  grep -qF 'user.email=nightshift@localhost' "$shared"
+  grep -qF 'commit.gpgsign=false' "$shared"
+  grep -qF 'receiptsAutoCommit' "$shared"
+  grep -qF 'user.email=nightshift@localhost' "$ps"
+  grep -qF 'commit.gpgsign=false' "$ps"
+  grep -qF 'receiptsAutoCommit' "$ps"
 }
 
 @test "Windows stall progress token pairs POSIX artifact receipts" {
@@ -57,9 +60,10 @@ CURSOR="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/cursor/clock-out-gate.sh"
 }
 
 @test "Windows notified skip matches POSIX symlink fail-closed" {
-  grep -qF '[ -L "$NOTIFIED" ]' "$CORE"
-  grep -qF '[ -L "$NOTIFIED" ]' "$CODEX"
-  grep -qF 'Test-NSReparsePoint $notified' "$HELPER"
+  shared="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/shared/gate-core.sh"
+  ps="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.07.ps1"
+  grep -qF '[ -L "$notified" ]' "$shared"
+  grep -qF 'Test-NSReparsePoint $notified' "$ps"
 }
 
 # order_of <file> <pattern> — the line number a call sits on, so an ordering claim is checked
@@ -69,15 +73,15 @@ order_of() { grep -n "$2" "$1" | head -n1 | cut -d: -f1; }
 @test "every clock-out renders the receipt before the archives truncate what it reads" {
   # The findings ledger is the receipt's only source for its evidence sections, and the archive
   # empties it. Every host renders first.
-  for f in "$CORE" "$CODEX" "$CURSOR"; do
-    r="$(order_of "$f" '^ *render_morning_receipt ')"
-    a="$(order_of "$f" '^ *archive_findings_ledger ')"
-    [ -n "$r" ] && [ -n "$a" ]
-    [ "$r" -lt "$a" ]
-  done
-  r="$(order_of "$HELPER" '^    Save-NSMorningReceipt$')"
-  e="$(order_of "$HELPER" '^    Save-NSEvidenceArchive$')"
-  p="$(order_of "$HELPER" '^    Save-NSPolicyArchive$')"
+  shared="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/shared/gate-core.sh"
+  ps="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.07.ps1"
+  r="$(order_of "$shared" '^ *render_morning_receipt ')"
+  a="$(order_of "$shared" '^ *archive_findings_ledger ')"
+  [ -n "$r" ] && [ -n "$a" ]
+  [ "$r" -lt "$a" ]
+  r="$(order_of "$ps" 'Write-NSMorningReceiptFile')"
+  e="$(order_of "$ps" 'Invoke-NSEvidenceArchive')"
+  p="$(order_of "$ps" 'Invoke-NSShiftPolicyArchive')"
   [ -n "$r" ] && [ -n "$e" ] && [ -n "$p" ]
   [ "$r" -lt "$e" ]
   [ "$r" -lt "$p" ]

@@ -29,16 +29,15 @@ $log = Get-NSLayoutPath $ns 'shift-log'
 $output = Get-NSLayoutPath $ns 'watchman-log'
 $utf8 = New-Object Text.UTF8Encoding($false)
 
-function Read-NSWatchmanOwner {
-    if (-not (Test-Path -LiteralPath $marker -PathType Leaf) -or (Test-NSReparsePoint $marker)) { return @('', '') }
-    $owner = [IO.File]::ReadAllLines($marker)
-    return @($(if ($owner.Count -gt 0) { $owner[0] } else { '' }), $(if ($owner.Count -gt 1) { $owner[1] } else { '' }))
-}
-
 # One watchman per site. A live one is already doing this job, and a second would refuse anyway.
-$held = Read-NSWatchmanOwner
-if ((Test-NSRecordedProcess $held[0] $held[1]) -eq 'Alive') {
-    "watchman already watching (pid $($held[0]))"
+$held = Read-NSWatchmanPidFile $marker
+if ((Test-NSRecordedProcess $held.Pid $held.Start) -eq 'Alive') {
+    "watchman already watching (pid $($held.Pid))"
+    exit 0
+}
+$live = Find-NSWatchmanForProject $workspace
+if ($live -gt 1) {
+    "watchman already watching (pid $live)"
     exit 0
 }
 
@@ -92,8 +91,8 @@ for ($attempt = 0; $attempt -lt 300; $attempt++) {
     if ($process.HasExited) {
         Stop-NSUnarmedWatchman "the watchman exited before it armed (code $($process.ExitCode))"
     }
-    $owner = Read-NSWatchmanOwner
-    if ($owner[0] -eq [string]$process.Id -and $owner[1] -eq $processStart -and (Test-NSArmedLine)) {
+    $owner = Read-NSWatchmanPidFile $marker
+    if ($owner.Pid -eq [string]$process.Id -and $owner.Start -eq $processStart -and (Test-NSArmedLine)) {
         $ready = $true
         break
     }

@@ -2371,6 +2371,118 @@ function Test-NSSitePaused {
     return $false
 }
 
+function Read-NSWatchmanPidFile {
+    param([AllowEmptyString()][string]$Path)
+    $record = [pscustomobject]@{ Pid = ''; Start = ''; Script = ''; Version = '' }
+    if ([string]::IsNullOrEmpty($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf) -or (Test-NSReparsePoint $Path)) {
+        return $record
+    }
+    $n = 0
+    foreach ($line in @([IO.File]::ReadAllLines($Path))) {
+        $n++
+        $text = [string]$line
+        if ($text.StartsWith('start:', [StringComparison]::Ordinal)) {
+            $record.Start = $text.Substring('start:'.Length)
+        }
+        elseif ($text.StartsWith('script:', [StringComparison]::Ordinal)) {
+            $record.Script = $text.Substring('script:'.Length)
+        }
+        elseif ($text.StartsWith('version:', [StringComparison]::Ordinal)) {
+            $record.Version = $text.Substring('version:'.Length)
+        }
+        elseif ($n -eq 1) {
+            $record.Pid = $text.Trim()
+        }
+        elseif ([string]::IsNullOrEmpty($record.Start) -and [string]::IsNullOrEmpty($record.Script)) {
+            $record.Start = $text
+        }
+    }
+    return $record
+}
+
+function Write-NSWatchmanPidFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ProcessId,
+        [AllowEmptyString()][string]$Start = '',
+        [AllowEmptyString()][string]$Script = '',
+        [AllowEmptyString()][string]$Version = ''
+    )
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add($ProcessId)
+    if (-not [string]::IsNullOrEmpty($Start)) { $lines.Add('start:' + $Start) }
+    if (-not [string]::IsNullOrEmpty($Script)) { $lines.Add('script:' + $Script) }
+    if (-not [string]::IsNullOrEmpty($Version)) { $lines.Add('version:' + $Version) }
+    $null = Write-NSAtomicLines -Path $Path -Lines @($lines)
+}
+
+function Test-NSWatchmanScriptCommand {
+    param([AllowEmptyString()][string]$CommandLine)
+    if ([string]::IsNullOrEmpty($CommandLine)) { return $false }
+    foreach ($tok in ($CommandLine -split '\s+')) {
+        if ([string]::IsNullOrEmpty($tok)) { continue }
+        $bare = $tok.Trim([char[]]@([char]34, [char]39))
+        $leaf = $bare
+        $slash = [Math]::Max($bare.LastIndexOf('/'), $bare.LastIndexOf('\'))
+        if ($slash -ge 0) { $leaf = $bare.Substring($slash + 1) }
+        if ($leaf -ceq 'watchman.sh' -or $leaf -ceq 'watchman.ps1') { return $true }
+    }
+    return $false
+}
+
+function Test-NSWatchmanCommandForProject {
+    param(
+        [AllowEmptyString()][string]$CommandLine,
+        [AllowEmptyString()][string]$Workspace
+    )
+    if ([string]::IsNullOrEmpty($CommandLine) -or [string]::IsNullOrEmpty($Workspace)) { return $false }
+    if (-not (Test-NSWatchmanScriptCommand $CommandLine)) { return $false }
+    foreach ($form in @(
+            '--project ', '--project=', '-Project ', '-Project=',
+            '--project "', "-Project '", '--project ''', '-Project "'
+        )) {
+        $needle = $form + $Workspace
+        $from = 0
+        while ($from -lt $CommandLine.Length) {
+            $at = $CommandLine.IndexOf($needle, $from, [StringComparison]::Ordinal)
+            if ($at -lt 0) { break }
+            $after = $at + $needle.Length
+            if ($after -ge $CommandLine.Length) { return $true }
+            $c = $CommandLine[$after]
+            if ($c -eq ' ' -or $c -eq "'" -or $c -eq '"' -or $c -eq "`t") { return $true }
+            $from = $at + 1
+        }
+    }
+    return $false
+}
+
+function Find-NSWatchmanForProject {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $ws = $Workspace
+    try { $ws = Resolve-NSCanonicalPath $Workspace } catch { }
+    if ($env:OS -eq 'Windows_NT') {
+        try {
+            $rows = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+        }
+        catch { return 0 }
+        foreach ($row in $rows) {
+            $id = [int]$row.ProcessId
+            if ($id -le 1 -or $id -eq $PID) { continue }
+            if (Test-NSWatchmanCommandForProject ([string]$row.CommandLine) $ws) { return $id }
+        }
+        return 0
+    }
+    $raw = @(& ps -axww -o pid= -o command= 2>$null)
+    foreach ($line in $raw) {
+        $text = ([string]$line).Trim()
+        if ($text -notmatch '^([0-9]+)\s+(.*)$') { continue }
+        $id = [int]$Matches[1]
+        if ($id -le 1 -or $id -eq $PID) { continue }
+        if (Test-NSWatchmanCommandForProject $Matches[2] $ws) { return $id }
+    }
+    return 0
+}
+
 function Stop-NSWatchman {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $pidFile = Get-NSLayoutPath $NightshiftDir 'watchman'
@@ -2384,10 +2496,11 @@ function Stop-NSWatchman {
         Remove-NSPath $tick
         return 'absent'
     }
-    $lines = @([IO.File]::ReadAllLines($pidFile))
-    $pid = if ($lines.Count -gt 0) { $lines[0].Trim() } else { '' }
-    $start = if ($lines.Count -gt 1) { [string]$lines[1] } else { '' }
-    $state = Test-NSRecordedProcess $pid $start
+    $record = Read-NSWatchmanPidFile $pidFile
+    $procId = $record.Pid
+    $start = $record.Start
+    $scriptPath = $record.Script
+    $state = Test-NSRecordedProcess $procId $start
     if ($state -in @('Dead', 'Malformed')) {
         Remove-NSPath $pidFile
         Remove-NSPath $tick
@@ -2397,16 +2510,35 @@ function Stop-NSWatchman {
         return 'unverified'
     }
     if ([string]::IsNullOrEmpty($start)) {
-        $proc = Get-Process -Id ([int]$pid) -ErrorAction SilentlyContinue
+        $proc = Get-Process -Id ([int]$procId) -ErrorAction SilentlyContinue
         $blob = ''
         if ($null -ne $proc) {
             $blob = [string]$proc.ProcessName + ' ' + [string]$proc.Path
+            if (-not [string]::IsNullOrEmpty($scriptPath)) {
+                $blob = $blob + ' ' + (Get-NSProcessCommandLine ([int]$procId))
+            }
         }
-        if ($blob -notmatch 'watchman\.ps1|watchman\.sh|start-watchman') {
+        $named = -not [string]::IsNullOrEmpty($scriptPath) -and $blob.Contains($scriptPath)
+        if ($blob -notmatch 'watchman\.ps1|watchman\.sh|start-watchman' -and -not $named) {
             return 'unverified'
         }
     }
-    Stop-Process -Id ([int]$pid) -Force -ErrorAction SilentlyContinue
+    try {
+        Stop-Process -Id ([int]$procId) -Force -ErrorAction Stop
+    }
+    catch {
+        $still = Get-Process -Id ([int]$procId) -ErrorAction SilentlyContinue
+        if ($null -ne $still -and -not $still.HasExited) {
+            return 'unverified'
+        }
+    }
+    $gone = $false
+    for ($i = 0; $i -lt 40; $i++) {
+        $still = Get-Process -Id ([int]$procId) -ErrorAction SilentlyContinue
+        if ($null -eq $still -or $still.HasExited) { $gone = $true; break }
+        Start-Sleep -Milliseconds 50
+    }
+    if (-not $gone) { return 'unverified' }
     Remove-NSPath $pidFile
     Remove-NSPath $tick
     return 'stopped'
@@ -2414,7 +2546,7 @@ function Stop-NSWatchman {
 
 function Clear-NSRuntimeMarkers {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
-    foreach ($key in @('armed', 'ended', 'session-end', 'pulse', 'mint-failed', 'session', 'stall', 'notified', 'watchman-tick', 'mutex-scope')) {
+    foreach ($key in @('armed', 'ended', 'session-end', 'pulse', 'mint-failed', 'session', 'stall', 'notified', 'watchman-tick', 'mutex-scope', 'idle-watch')) {
         Remove-NSPath (Get-NSLayoutPath $NightshiftDir $key)
     }
     foreach ($key in @('session', 'mutex-scope')) {

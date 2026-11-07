@@ -63,15 +63,12 @@ case "$STATE_KIND" in
     ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
-declare PUNCH STOP DEADLINE STALL NOTIFIED ENDED ARMED POLICY LOG
+declare PUNCH STOP DEADLINE STALL ARMED LOG
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set STOP "$NS" stop
 ns_layout_set DEADLINE "$NS" deadline
 ns_layout_set STALL "$NS" stall
-ns_layout_set NOTIFIED "$NS" notified
-ns_layout_set ENDED "$NS" ended # written when the shift actually ends; hardhat keeps the site rules armed until then
 ns_layout_set ARMED "$NS" armed
-ns_layout_set POLICY "$NS" shift-policy
 ns_layout_set LOG "$NS" shift-log
 # One copy: the rules file is the config; env vars are session-start overrides only. The
 # shipped values live visibly in the file setup copies — no fallbacks hide here. A gate whose
@@ -83,7 +80,6 @@ LONG_UNIT_WARN="$(rule "$PROJECT_DIR" longUnitWarnMinutes "${NIGHTSHIFT_LONG_UNI
 STALL_OK=1
 case "$STALL_MAX" in '' | *[!0-9]*) STALL_OK=0 ;; esac
 case "$STALL_WARN" in '' | *[!0-9]* | 0) STALL_OK=0 ;; esac
-NOTIFY="$(rule "$PROJECT_DIR" notifyCommand "${NIGHTSHIFT_NOTIFY_CMD:-}")"
 GATE_MESSAGE="$(ns_expand_injected_paths "$PROJECT_DIR" "$(rule "$PROJECT_DIR" clockOutMessage "${NIGHTSHIFT_GATE_MESSAGE:-}")")"
 
 _ns_clock_out_block() {
@@ -107,135 +103,8 @@ log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 # receipts fingerprint (artifact mode). ns_gate_progress_token chooses.
 deadline_passed() { ns_gate_deadline_passed; }
 
-# Morning whistle — fires at most once per shift; $1 is the summary line.
-whistle() {
-  [ -n "$NOTIFY" ] || return 0
-  # Exclusive create: of two sessions releasing at once, exactly one owns the whistle.
-  # A planted symlink is not a prior notify — replace it rather than follow it.
-  [ -L "$NOTIFIED" ] && rm -f "$NOTIFIED"
-  (set -C; : >"$NOTIFIED") 2>/dev/null || return 0
-  NIGHTSHIFT_SUMMARY="$1" sh -c "$NOTIFY" nightshift "$1" >/dev/null 2>&1 || true
-}
-
-# Receipts snapshot — $1 is the commit subject. Transient markers stay out via the receipts
-# repo's own .gitignore; the pinned identity keeps this working headless. Signing is turned off
-# explicitly: an owner with commit.gpgsign=true globally would otherwise lose every receipt to a
-# key prompt that nothing is there to answer at 3am.
-receipts_commit() {
-  local err auto repo
-  ns_layout_set repo "$NS" receipts-repo
-  [ -d "$repo" ] || return 0
-  # Owner opt-in. Default off — a receipts git alone does not authorize headless commits.
-  auto="$(rule "$PROJECT_DIR" receiptsAutoCommit "${NIGHTSHIFT_RECEIPTS_AUTO_COMMIT:-}")"
-  case "$auto" in true | TRUE | 1 | yes | YES) ;; *) return 0 ;; esac
-  git -C "$NS" add -A >/dev/null 2>&1 || true
-  err="$(git -C "$NS" -c user.name=nightshift -c user.email=nightshift@localhost \
-    -c commit.gpgsign=false commit -q -m "$1" 2>&1)" && return 0
-  case "$err" in
-    *"nothing to commit"* | *"nothing added"*) : ;;
-    *) log_line "receipts commit failed: $(printf '%s' "$err" | head -n1)" ;;
-  esac
-}
-
-release_lease() {
-  ns_lease_release_retry "$NS" \
-    || log_line "process lease release deferred: lease mutex remained busy"
-}
-
-# Best effort, never blocks the release: file tonight's shift-policy.json in the shift's archive
-# folder, at the path it has live, via the same helper the owner runs by hand.
-# A shift that armed with safe defaults and never wrote a policy leaves nothing to archive.
-archive_shift_policy() {
-  local err
-  [ -f "$POLICY" ] && [ ! -L "$POLICY" ] || return 0
-  err="$("$_here/../runtime/shift-policy.sh" --project "$PROJECT_DIR" archive 2>&1)" && return 0
-  log_line "shift policy archive failed: $(printf '%s' "$err" | head -n1)"
-}
-
-# The morning receipt — the one page the owner reads over coffee. It renders from the live ledger
-# and the live policy, so it runs before either archive moves them. Best effort: an absent or
-# failing renderer leaves one line in the shift log, and both archives still run, so a night whose
-# receipt could not be written still keeps its evidence. $1 is tonight's shiftId, and empty when
-# no policy was written.
-render_morning_receipt() {
-  local renderer="$_here/../runtime/morning-receipt.sh" dir err out
-  ns_layout_set dir "$NS" receipts
-  if [ ! -f "$renderer" ]; then
-    log_line "morning receipt skipped: runtime/morning-receipt.sh is not installed"
-    return 0
-  fi
-  if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
-    log_line "morning receipt render failed: receipts path is not a directory"
-    return 0
-  fi
-  mkdir -p "$dir" 2>/dev/null || {
-    log_line "morning receipt render failed: cannot create $dir"
-    return 0
-  }
-  out="$dir/morning-$(date '+%Y-%m-%d')${1:+-$1}.md"
-  # A page already standing for this shift is the one the owner asked for — a custom handoff the
-  # model wrote to the owner's template, or the page a duplicate stop event already rendered.
-  # Neither is replaced by the built-in renderer.
-  if [ -e "$out" ] || [ -L "$out" ]; then
-    log_line "morning receipt kept: $out already exists for this shift"
-    return 0
-  fi
-  if err="$(bash "$renderer" --project "$PROJECT_DIR" --out "$out" 2>&1)"; then
-    # The receipts index links the page it now has.
-    if ns_receipts_enabled "$PROJECT_DIR"; then ns_receipts_write_index "$PROJECT_DIR"; fi
-    return 0
-  fi
-  log_line "morning receipt render failed: $(printf '%s' "$err" | head -n1)"
-}
-
-# Best effort: file findings.jsonl in the shift's archive folder, at the path it has live, and
-# truncate the live ledger so the next shift starts lean.
-archive_findings_ledger() {
-  local archiver="$_here/../runtime/evidence-archive.sh" err
-  [ -f "$archiver" ] || {
-    log_line "findings archive skipped: runtime/evidence-archive.sh is not installed"
-    return 0
-  }
-  err="$(bash "$archiver" --project "$PROJECT_DIR" --shift-id "$1" 2>&1)" && return 0
-  log_line "findings archive failed: $(printf '%s' "$err" | head -n1)"
-}
-
-# Every shift-ending release runs through here. ENDED is what stands the site rules down —
-# hardhat keeps them armed while a stop-work order is merely pending, because the agent goes on
-# working until its next stop attempt.
-end_shift() {
-  local shift_id
-  if [ -d "$NS" ]; then
-    [ -L "$ENDED" ] && rm -f "$ENDED"
-    : >"$ENDED"
-  fi
-  # An item still being worked closes its session as paused, while the shift is still armed.
-  ns_gate_usage_flush "$NS" "$PROJECT_DIR"
-  # The shift is over, so the site stops being on shift: without this the guards would still apply
-  # to whatever ordinary session opens this project next.
-  rm -f "$ARMED"
-  release_lease
-  # Naming the receipt needs the shiftId, and the archives are about to move the policy that
-  # carries it. A shift that never wrote a policy has no id, so the date alone names its receipt.
-  shift_id="$(ns_policy_shift_id "$PROJECT_DIR" 2>/dev/null)" || shift_id=""
-  if ns_handoff_enabled "$PROJECT_DIR"; then
-    render_morning_receipt "$shift_id"
-  else
-    log_line "morning receipt disabled by the owner (handoff.enabled) - every record stands"
-  fi
-  # The marker that says this shift ended also says which shift and where it files, and notes that
-  # filing is due when the owner asked for it. Archiving the policy below takes the first two away
-  # from any later Archive, and one shift's records must not end up half under its own name and
-  # half under a date.
-  ns_gate_record_ending "$NS" "$PROJECT_DIR" "${shift_id:-unknown}"
-  archive_shift_policy
-  archive_findings_ledger "${shift_id:-unknown}"
-  receipts_commit "$1"
-  if [ -f "$(ns_layout_path "$NS" pending-filing)" ]; then
-    log_line "archive.automatic is on - filing is due for this shift"
-  fi
-  whistle "$1"
-}
+# The terminal sequence lives once, in gate-core.sh. The watchman calls the same function.
+end_shift() { ns_shift_end "$PROJECT_DIR" "$1"; }
 
 # Every ending runs through here. The shift is over by now — the marker is written and the site is
 # disarmed — so asking the model to file is a request it can actually carry out, and the one hold

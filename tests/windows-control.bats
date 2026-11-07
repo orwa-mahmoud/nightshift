@@ -19,5 +19,8 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
     return 0
   fi
   run pwsh -NoProfile -NonInteractive -File "$LOGIC"
-  [ "$status" -eq 0 ]
+  if [ "$status" -ne 0 ]; then
+    printf '%s\n' "$output"
+    return 1
+  fi
 }

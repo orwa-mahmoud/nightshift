@@ -126,6 +126,118 @@ try {
     Expect-True (Test-Path -LiteralPath $root -PathType Container) 'project root remains'
     $null = Remove-NSNightshiftWorkspace -Project $root -ConfirmPath $confirm
 
+    $watchRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-watch-stop-" + [guid]::NewGuid().ToString('N'))
+    $watchNs = Join-Path $watchRoot '.nightshift'
+    $null = New-Item -ItemType Directory -Path $watchNs -Force
+    $sample = Join-Path $watchNs 'sample-pid'
+    [IO.File]::WriteAllLines($sample, @('42', 'script:/tmp/watchman.sh', 'version:0.30.2'))
+    $threeRead = Read-NSWatchmanPidFile $sample
+    Expect-True ($threeRead.Pid -ceq '42') 'three-line pid is the first line'
+    Expect-True ([string]::IsNullOrEmpty($threeRead.Start)) 'a script: line is not a start time'
+    Expect-True ($threeRead.Script -ceq '/tmp/watchman.sh') 'three-line script field'
+    Expect-True ($threeRead.Version -ceq '0.30.2') 'three-line version field'
+    [IO.File]::WriteAllLines($sample, @('7', 'start:THEN', 'script:/bin/watchman.ps1', 'version:9'))
+    $namedRead = Read-NSWatchmanPidFile $sample
+    Expect-True ($namedRead.Start -ceq 'THEN' -and $namedRead.Script -ceq '/bin/watchman.ps1') 'named start and script'
+    [IO.File]::WriteAllLines($sample, @('9', 'OLD-START'))
+    $oldRead = Read-NSWatchmanPidFile $sample
+    Expect-True ($oldRead.Pid -ceq '9' -and $oldRead.Start -ceq 'OLD-START') 'two-line file keeps its start time'
+    Expect-True (Test-NSWatchmanCommandForProject "bash /tmp/watchman.sh --project $watchRoot" $watchRoot) `
+        'a watchman for this project matches'
+    Expect-True (-not (Test-NSWatchmanCommandForProject "bash /tmp/watchman.sh --project ${watchRoot}-other" $watchRoot)) `
+        'a longer project path does not match'
+    Expect-True (-not (Test-NSWatchmanCommandForProject "bash /tmp/start-watchman.sh --project $watchRoot" $watchRoot)) `
+        'the launcher is not a watchman script'
+
+    $scriptPath = if ($env:OS -eq 'Windows_NT') { Join-Path $watchRoot 'watchman.ps1' } else { Join-Path $watchRoot 'watchman.sh' }
+    if ($env:OS -eq 'Windows_NT') {
+        [IO.File]::WriteAllText($scriptPath, "Start-Sleep -Seconds 300`n")
+    }
+    else {
+        [IO.File]::WriteAllText($scriptPath, "#!/bin/sh`nwhile :; do :; done`n")
+        & chmod +x $scriptPath
+    }
+    $canon = Resolve-NSCanonicalPath $watchRoot
+    $pidFile = Get-NSLayoutPath $watchNs 'watchman'
+    $hostExe = (Get-Process -Id $PID).Path
+    $spawned = New-Object System.Collections.Generic.List[System.Diagnostics.Process]
+    function Start-FixtureWatchman {
+        param([switch]$WithProject)
+        if ($env:OS -eq 'Windows_NT') {
+            $spawnArgs = @('-NoProfile', '-NonInteractive', '-File', $scriptPath)
+            if ($WithProject) { $spawnArgs += @('--project', $canon) }
+            return Start-Process -FilePath $hostExe -ArgumentList $spawnArgs -PassThru
+        }
+        $spawnArgs = @($scriptPath)
+        if ($WithProject) { $spawnArgs += @('--project', $canon) }
+        return Start-Process -FilePath '/bin/bash' -ArgumentList $spawnArgs -PassThru
+    }
+    try {
+        $three = Start-FixtureWatchman -WithProject
+        $spawned.Add($three)
+        [IO.File]::WriteAllText($pidFile, "$($three.Id)`nscript:$scriptPath`nversion:0.30.2`n")
+        $threeStopped = Stop-NSWatchman $watchNs
+        Expect-True ($threeStopped -ceq 'stopped') "three-line watchman stops: $threeStopped"
+        $three.Refresh()
+        Expect-True ($three.HasExited) 'three-line process is gone'
+        Expect-True (-not (Test-Path -LiteralPath $pidFile)) 'three-line pid file is removed only after the stop'
+
+        $plain = Start-Process -FilePath (Get-Process -Id $PID).Path `
+            -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 300') -PassThru
+        $spawned.Add($plain)
+        $plainStart = Get-NSProcessStart $plain.Id
+        Expect-True (-not [string]::IsNullOrEmpty($plainStart)) 'two-line start time was readable'
+        [IO.File]::WriteAllText($pidFile, "$($plain.Id)`r`n$plainStart`r`n")
+        $twoStopped = Stop-NSWatchman $watchNs
+        Expect-True ($twoStopped -ceq 'stopped') "two-line watchman stops: $twoStopped"
+        $plain.Refresh()
+        Expect-True ($plain.HasExited) 'two-line process is gone'
+
+        $unrecorded = Start-FixtureWatchman -WithProject
+        $spawned.Add($unrecorded)
+        $found = Find-NSWatchmanForProject $canon
+        Expect-True ($found -eq $unrecorded.Id) "unrecorded watchman is found (got $found, want $($unrecorded.Id))"
+        Stop-Process -Id $unrecorded.Id -Force -ErrorAction SilentlyContinue
+
+        $resetProc = Start-FixtureWatchman
+        $spawned.Add($resetProc)
+        [IO.File]::WriteAllText((Join-Path $watchNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
+        [IO.File]::WriteAllText($pidFile, "$($resetProc.Id)`nscript:$scriptPath`nversion:0.30.2`n")
+        $resetLines = @(Reset-NSShift -Project $watchRoot)
+        Expect-True (($resetLines -join "`n") -match 'watchman stopped') "reset stops the three-line watchman: $($resetLines -join ' | ')"
+        $resetProc.Refresh()
+        Expect-True ($resetProc.HasExited) 'reset killed the watchman'
+
+        $purgeRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-watch-purge-" + [guid]::NewGuid().ToString('N'))
+        $purgeNs = Join-Path $purgeRoot '.nightshift'
+        $null = New-Item -ItemType Directory -Path $purgeNs -Force
+        $purgeProc = Start-FixtureWatchman
+        $spawned.Add($purgeProc)
+        [IO.File]::WriteAllText((Join-Path $purgeNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
+        [IO.File]::WriteAllText((Get-NSLayoutPath $purgeNs 'watchman'), "$($purgeProc.Id)`nscript:$scriptPath`nversion:0.30.2`n")
+        $purgeConfirm = $purgeNs
+        try { $purgeConfirm = Resolve-NSCanonicalPath $purgeNs } catch { }
+        $purgeLines = @(Remove-NSNightshiftWorkspace -Project $purgeRoot -ConfirmPath $purgeConfirm)
+        Expect-True (($purgeLines -join "`n") -match 'watchman stopped') "purge stops the three-line watchman: $($purgeLines -join ' | ')"
+        $purgeProc.Refresh()
+        Expect-True ($purgeProc.HasExited) 'purge killed the watchman'
+        Expect-True (-not (Test-Path -LiteralPath $purgeNs)) 'purge removed .nightshift'
+    }
+    finally {
+        foreach ($proc in $spawned) {
+            try {
+                $proc.Refresh()
+                if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+            }
+            catch { }
+        }
+        foreach ($dir in @($watchRoot, $(if (Test-Path Variable:purgeRoot) { $purgeRoot } else { '' }))) {
+            if (-not [string]::IsNullOrEmpty($dir) -and (Test-Path -LiteralPath $dir)) {
+                Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     $threw = $false
     try {
         $null = Remove-NSNightshiftWorkspace -Project $root -ConfirmPath 'C:\not-this'

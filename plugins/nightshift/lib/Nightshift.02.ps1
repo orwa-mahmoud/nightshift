@@ -242,7 +242,7 @@ function Write-NSReason {
         'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
         'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
         'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit',
-        'install-pending', 'install-removed', 'install-mismatch', 'recovery-stuck'
+        'install-pending', 'install-removed', 'install-mismatch', 'recovery-stuck', 'idle-stuck'
     )
     if ($Code -notin $allowed) {
         $Code = 'stand-down'
@@ -1111,10 +1111,9 @@ function Get-NSMigrationPlan {
     foreach ($p in (Get-NSMigrationRows 'watchman')) {
         $native = Get-NSMigrationNative $ns $p
         if (-not (Test-NSMigrationFile $native)) { continue }
-        $lines = @()
-        try { $lines = @([IO.File]::ReadAllLines($native)) } catch { $lines = @() }
-        $recorded = if ($lines.Count -gt 0) { ([string]$lines[0]) -replace '\s', '' } else { '' }
-        $start = if ($lines.Count -gt 1) { [string]$lines[1] } else { '' }
+        $recordedOwner = Read-NSWatchmanPidFile $native
+        $recorded = $recordedOwner.Pid
+        $start = $recordedOwner.Start
         if ($recorded -cnotmatch '^[0-9]+$') { continue }
         # A process that cannot be looked at is treated as the watchman it may be.
         if ((Test-NSRecordedProcess $recorded $start) -in @('Alive', 'Unavailable')) {
@@ -1507,6 +1506,7 @@ function Get-NSReasonLabel {
         'install-removed' { return ('watchman stood down ' + [char]0x2014 + ' no current plugin install') }
         'install-mismatch' { return ('watchman stood down ' + [char]0x2014 + ' the hooks copy of the plugin cannot be used') }
         'recovery-stuck' { return ('unattended revival is stuck ' + [char]0x2014 + ' recorded scope cannot be restored') }
+        'idle-stuck' { return ('idle worker revival is stuck ' + [char]0x2014 + ' two recoveries failed') }
         default { return 'unknown watchman outcome' }
     }
 }
@@ -1896,7 +1896,10 @@ function Get-NSJsonFieldText {
 
 function Get-NSCursorLaunch {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
-    $launch = [pscustomobject]@{ Model = ''; Force = $false; Trust = $false }
+    $launch = [pscustomobject]@{
+        Model = ''; Force = $false; Trust = $false
+        ModelKnown = $false; ForceKnown = $false; TrustKnown = $false
+    }
     $path = Get-NSLayoutPath $NightshiftDir 'cursor-launch'
     if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $launch }
     foreach ($line in [IO.File]::ReadAllLines($path)) {
@@ -1904,9 +1907,18 @@ function Get-NSCursorLaunch {
         if ($eq -lt 1) { continue }
         $key = $line.Substring(0, $eq)
         $val = $line.Substring($eq + 1)
-        if ($key -ceq 'model' -and (Test-NSCursorModelSafe $val)) { $launch.Model = $val }
-        elseif ($key -ceq 'force' -and $val -ceq '1') { $launch.Force = $true }
-        elseif ($key -ceq 'trust' -and $val -ceq '1') { $launch.Trust = $true }
+        if ($key -ceq 'model') {
+            $launch.ModelKnown = $true
+            if (Test-NSCursorModelSafe $val) { $launch.Model = $val }
+        }
+        elseif ($key -ceq 'force') {
+            $launch.ForceKnown = $true
+            $launch.Force = $val -ceq '1'
+        }
+        elseif ($key -ceq 'trust') {
+            $launch.TrustKnown = $true
+            $launch.Trust = $val -ceq '1'
+        }
     }
     return $launch
 }
@@ -1915,18 +1927,25 @@ function Get-NSCursorLaunchArguments {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $launch = Get-NSCursorLaunch $NightshiftDir
     $extra = New-Object Collections.Generic.List[string]
-    if (-not [string]::IsNullOrEmpty($launch.Model)) {
+    if ($launch.ModelKnown -and -not [string]::IsNullOrEmpty($launch.Model)) {
         $extra.Add('--model')
         $extra.Add($launch.Model)
     }
-    if ($launch.Force) { $extra.Add('--force') }
-    if ($launch.Trust) { $extra.Add('--trust') }
+    if ($launch.ForceKnown -and $launch.Force) { $extra.Add('--force') }
+    if ($launch.TrustKnown -and $launch.Trust) { $extra.Add('--trust') }
     return $extra
+}
+
+function Get-NSCursorLaunchDefaultNote {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $launch = Get-NSCursorLaunch $NightshiftDir
+    if ($launch.ModelKnown -and $launch.ForceKnown -and $launch.TrustKnown) { return '' }
+    return 'watchman: launch options that could not be read use the CLI default'
 }
 
 function Get-NSCursorRulesFlags {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
-    $flags = [pscustomobject]@{ Force = $false; Trust = $false }
+    $flags = [pscustomobject]@{ Force = $false; Trust = $false; Set = $false }
     $path = Get-NSLayoutPath $NightshiftDir 'rules'
     if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $flags }
     $document = $null
@@ -1951,8 +1970,8 @@ function Get-NSCursorRulesFlags {
     }
     if ($listed -is [string]) { return $flags }
     foreach ($flag in @($listed)) {
-        if ($flag -ceq '--force' -or $flag -ceq '--yolo') { $flags.Force = $true }
-        elseif ($flag -ceq '--trust') { $flags.Trust = $true }
+        if ($flag -ceq '--force' -or $flag -ceq '--yolo') { $flags.Force = $true; $flags.Set = $true }
+        elseif ($flag -ceq '--trust') { $flags.Trust = $true; $flags.Set = $true }
     }
     return $flags
 }
@@ -1962,16 +1981,106 @@ function Write-NSCursorLaunchFile {
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
         [AllowEmptyString()][string]$Model,
         [bool]$Force,
-        [bool]$Trust
+        [bool]$Trust,
+        [bool]$ModelKnown = $false,
+        [bool]$ForceKnown = $false,
+        [bool]$TrustKnown = $false
     )
-    $forceBit = if ($Force) { '1' } else { '0' }
-    $trustBit = if ($Trust) { '1' } else { '0' }
+    $lines = New-Object Collections.Generic.List[string]
+    if ($ModelKnown) { $lines.Add('model=' + $Model) }
+    if ($ForceKnown) { $lines.Add('force=' + $(if ($Force) { '1' } else { '0' })) }
+    if ($TrustKnown) { $lines.Add('trust=' + $(if ($Trust) { '1' } else { '0' })) }
     New-NSLayoutParent $NightshiftDir 'cursor-launch'
-    $null = Write-NSAtomicLines -Path (Get-NSLayoutPath $NightshiftDir 'cursor-launch') -Lines @(
-        ('model=' + $Model),
-        ('force=' + $forceBit),
-        ('trust=' + $trustBit)
-    )
+    $null = Write-NSAtomicLines -Path (Get-NSLayoutPath $NightshiftDir 'cursor-launch') -Lines @($lines)
+}
+
+function Get-NSProcessCommandLine {
+    param([Parameter(Mandatory = $true)][int]$ProcessId)
+    if ($env:OS -eq 'Windows_NT') {
+        try {
+            $row = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction Stop
+            return [string]$row.CommandLine
+        }
+        catch { return '' }
+    }
+    $raw = & ps -ww -o args= -p $ProcessId 2>$null
+    return ([string]$raw).Trim()
+}
+
+function Get-NSParentPid {
+    param([Parameter(Mandatory = $true)][int]$ProcessId)
+    try {
+        $proc = Get-Process -Id $ProcessId -ErrorAction Stop
+        if ($null -ne $proc.Parent -and $proc.Parent.Id -gt 1) { return [int]$proc.Parent.Id }
+    }
+    catch { }
+    if ($env:OS -eq 'Windows_NT') {
+        try {
+            $row = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction Stop
+            $parent = [int]$row.ParentProcessId
+            if ($parent -gt 1) { return $parent }
+        }
+        catch { }
+        return 0
+    }
+    $raw = & ps -o ppid= -p $ProcessId 2>$null
+    $text = ([string]$raw).Trim()
+    if ($text -match '^[1-9][0-9]*$') { return [int]$text }
+    return 0
+}
+
+function Convert-NSCursorLaunchArgv {
+    param([AllowEmptyString()][string]$CommandLine)
+    $parsed = [pscustomobject]@{
+        Found = $false; Model = ''; ModelKnown = $false; Force = $false; Trust = $false
+    }
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $parsed }
+    $tokens = @($CommandLine -split '\s+' | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    $found = $false
+    $wantModel = $false
+    $modelSeen = $false
+    foreach ($tok in $tokens) {
+        if (-not $found) {
+            $base = $tok
+            $slash = [Math]::Max($tok.LastIndexOf('/'), $tok.LastIndexOf('\'))
+            if ($slash -ge 0) { $base = $tok.Substring($slash + 1) }
+            if ($base -ceq 'agent' -or $base -ceq 'cursor-agent') { $found = $true }
+            continue
+        }
+        if ($wantModel) {
+            $wantModel = $false
+            if (-not $tok.StartsWith('-') -and (Test-NSCursorModelSafe $tok)) {
+                $parsed.Model = $tok
+                $parsed.ModelKnown = $true
+            }
+            continue
+        }
+        if ($tok -ceq '--') { break }
+        if ($tok.StartsWith('--model=')) {
+            $modelSeen = $true
+            $val = $tok.Substring('--model='.Length)
+            if (Test-NSCursorModelSafe $val) { $parsed.Model = $val; $parsed.ModelKnown = $true }
+            continue
+        }
+        if ($tok -ceq '--model') { $wantModel = $true; $modelSeen = $true; continue }
+        if ($tok -ceq '--force' -or $tok -ceq '--yolo') { $parsed.Force = $true; continue }
+        if ($tok -ceq '--trust') { $parsed.Trust = $true; continue }
+    }
+    if (-not $found) { return $parsed }
+    $parsed.Found = $true
+    if (-not $modelSeen) { $parsed.ModelKnown = $true }
+    return $parsed
+}
+
+function Find-NSCursorCliLaunch {
+    param([int]$StartPid = $PID)
+    $current = $StartPid
+    for ($hop = 0; $hop -lt 16 -and $current -gt 1; $hop++) {
+        $parsed = Convert-NSCursorLaunchArgv (Get-NSProcessCommandLine $current)
+        if ($parsed.Found) { return $parsed }
+        $current = Get-NSParentPid $current
+    }
+    return (Convert-NSCursorLaunchArgv '')
 }
 
 function Add-NSCursorLaunchNote {
@@ -1981,25 +2090,31 @@ function Add-NSCursorLaunchNote {
     )
     $path = Get-NSLayoutPath $NightshiftDir 'cursor-launch'
     if (Test-NSReparsePoint $path) { return }
+    if (Test-Path -LiteralPath $path -PathType Leaf) { return }
+    $null = $PayloadJson
+    $observed = Find-NSCursorCliLaunch
     $model = ''
-    if (-not [string]::IsNullOrWhiteSpace($PayloadJson)) {
-        try {
-            $payload = ConvertFrom-NSJsonText $PayloadJson
-            foreach ($key in @('model_id', 'model')) {
-                $candidate = Get-NSJsonFieldText $payload $key
-                if (Test-NSCursorModelSafe $candidate) { $model = $candidate; break }
-            }
-        }
-        catch { }
-    }
-    if (Test-Path -LiteralPath $path -PathType Leaf) {
-        $existing = Get-NSCursorLaunch $NightshiftDir
-        if (-not [string]::IsNullOrEmpty($existing.Model) -or [string]::IsNullOrEmpty($model)) { return }
-        Write-NSCursorLaunchFile $NightshiftDir $model $existing.Force $existing.Trust
-        return
+    $modelKnown = $false
+    $force = $false
+    $trust = $false
+    $forceKnown = $false
+    $trustKnown = $false
+    if ($observed.Found) {
+        $model = $observed.Model
+        $modelKnown = $observed.ModelKnown
+        $force = $observed.Force
+        $trust = $observed.Trust
+        $forceKnown = $true
+        $trustKnown = $true
     }
     $flags = Get-NSCursorRulesFlags $NightshiftDir
-    Write-NSCursorLaunchFile $NightshiftDir $model $flags.Force $flags.Trust
+    if ($flags.Set) {
+        $force = $flags.Force
+        $trust = $flags.Trust
+        $forceKnown = $true
+        $trustKnown = $true
+    }
+    Write-NSCursorLaunchFile $NightshiftDir $model $force $trust $modelKnown $forceKnown $trustKnown
 }
 
 function Test-NSCursorModelMissing {

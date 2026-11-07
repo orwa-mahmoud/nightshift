@@ -309,7 +309,7 @@ Stand-down is success when the night already reached a declared ending. Matching
 | `shift is owned by` | both | This watchman is the wrong host. The other host's watchman owns the shift. |
 | `clean session end` | Claude Code | Owner closed the session on purpose. |
 | `owner pressed Esc — standing by` | Claude Code | Interrupt in the transcript tail. Not a death. `STOP` ends the shift. |
-| `long silent work; standing by` | Claude Code | Process alive, quiet, no API-error tail. |
+| `long silent work; standing by` | Claude Code | Process alive and quiet, still inside `idleWindowMinutes`. A worker quiet past that window is stopped and revived. |
 | `a claude session is live in this project` | Claude Code | Another Claude process in the project; revival refused to avoid two writers. |
 | Codex process or rollout still growing | Codex | Alive; stood by. A live-but-errored Codex session is **not** revived. |
 | `watchMinutes missing` / `cannot arm` | both | Unreadable rules. See §4. |

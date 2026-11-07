@@ -371,3 +371,18 @@ LOG
   facts "$p" | grep -qF 'receipts missing model text 1'
   ! facts "$p" | grep -qF 'not a usable directory' || false
 }
+
+@test "status names a worker that is alive but idle" {
+  p="$(new_project status-idle)"
+  printf '## Items\n- [ ] **1. work.**\n' >"$p/.nightshift/punch-list.md"
+  bash -c 'sleep 30' &
+  worker=$!
+  now="$(date +%s)"
+  printf 'since=%s\ncpu=0\nbytes=0\npids=%s\nfails=0\nepisode=0\nstuck=0\nnoticed=0\nevidence=pulse stale, transcript unchanged, cpu +0.00s, no busy child\n' \
+    "$((now - 120))" "$worker" >"$p/.nightshift/.idle-watch"
+  run bash "$STATUS" --project "$p"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'worker alive but idle for 2 min — pulse stale, transcript unchanged, cpu +0.00s, no busy child'
+}

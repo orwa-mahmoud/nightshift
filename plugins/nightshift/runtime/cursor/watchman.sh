@@ -23,28 +23,28 @@
 #   ALIVE (stand by), any of:
 #     · a fresh .shift-pulse (epoch within 2 * watchMinutes)
 #     · a missing pulse still inside the first two wake intervals after arm
-#     · the recorded pid (line 3) exists and its start time matches line 4
-#     · an empty recorded pid — empty pid never decides death
 #     · the recorded transcript (line 2) grew since the last wake
-#     · a live .shift-lease pid+start (a recovered CLI that holds the lease)
-#   DEAD (mint/revive): pulse stale, no transcript growth, no .session-end, and
-#     the lease pid is missing or dead. Missing process evidence stands by.
+#     · a live worker still inside idleWindowMinutes, or any busy signal
+#     · an empty recorded pid — empty pid never decides death
+#     · a live .shift-lease holder still inside that same idle window
+#   DEAD (mint/revive): the idle window elapsed and the tree was stopped, or
+#     the process is already dead. Missing process evidence stands by.
 # There is no Esc / roster / wedge ladder on Cursor.
 #
 # Stand-down order, checked at every wake — never override a declared ending:
 #   0. the armed marker is gone (.shift-armed)        -> down (a disarmed site has no shift)
-#   1. stop-work order (.nightshift/STOP)             -> down
-#   2. shift ended (.nightshift/run/.ended, or no punch)  -> down
-#   3. clean session end (.nightshift/run/.session-end)   -> down (owner closed it)
-#   4. another host's shift (.shift-session line 5)   -> down (its own watchman minds it)
-#   5. every box ticked                                -> one clock-out spawn if .ended missing,
-#                                                        then down
-#   6. deadline passed                                 -> one clock-out spawn, then down
+#   1. shift ended (.nightshift/run/.ended, or no punch)  -> down
+#   2. another host's shift (.shift-session line 5)   -> down (its own watchman minds it)
+#   3. every box ticked, STOP, or the deadline, and the
+#      bound session is gone or idle                  -> the shared clock-out, no agent, then down
+#   4. clean session end (.nightshift/run/.session-end)   -> down (owner closed it)
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh"
+# shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
+. "$_here/../../hooks/shared/gate-core.sh"
 ns_copy_serves_host "$_here/../.." cursor || exit 0
 
 PROJECT="$PWD"
@@ -74,6 +74,7 @@ NS_WATCHMAN_SELF_VERSION="$(ns_plugin_version "$(ns_plugin_root_from_script "$NS
 
 cd "$PROJECT" 2>/dev/null || exit 1
 PROJECT="$PWD"
+PROJECT_DIR="$PROJECT"
 NS="$PROJECT/.nightshift"
 WORK_TARGET="$(ns_work_target "$PROJECT" 2>/dev/null || true)"
 [ -n "$WORK_TARGET" ] || WORK_TARGET="$PROJECT"
@@ -132,6 +133,17 @@ armed() { [ -f "$ARMED" ]; }
 stand_down_disarmed() {
   note owner-disarm
   log_line "watchman: the armed marker is gone — standing down"
+  exit 0
+}
+stand_down_unclaimed() {
+  if [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ]; then
+    trap - EXIT
+    note stand-down "watchman pidfile taken over"
+    log_line "watchman: another watchman owns this site — standing down"
+    exit 0
+  fi
+  note stand-down "watchman pidfile gone"
+  log_line "watchman: the watchman pidfile is gone — standing down"
   exit 0
 }
 
@@ -234,7 +246,7 @@ forget_fresh_worker() {
 }
 
 launch_worker() { # <prompt>
-  local prompt="$1" fields model force trust
+  local prompt="$1" fields model force trust model_known force_known trust_known
   if [ -n "$AGENT" ]; then
     # shellcheck disable=SC2086
     ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
@@ -245,24 +257,38 @@ launch_worker() { # <prompt>
   model="${fields%%$'\t'*}"
   fields="${fields#*$'\t'}"
   force="${fields%%$'\t'*}"
-  trust="${fields#*$'\t'}"
-  if [ -n "$model" ] && [ "${NS_CURSOR_MODEL_SAID:-}" != 1 ] && ns_cursor_model_missing "$model"; then
+  fields="${fields#*$'\t'}"
+  trust="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  model_known="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  force_known="${fields%%$'\t'*}"
+  trust_known="${fields#*$'\t'}"
+  if [ "$model_known" != 1 ] || [ "$force_known" != 1 ] || [ "$trust_known" != 1 ]; then
+    if [ "${NS_CURSOR_LAUNCH_SAID:-}" != 1 ]; then
+      NS_CURSOR_LAUNCH_SAID=1
+      log_line "watchman: launch options that could not be read use the CLI default"
+    fi
+  fi
+  if [ "$model_known" = 1 ] && [ -n "$model" ] && [ "${NS_CURSOR_MODEL_SAID:-}" != 1 ] && ns_cursor_model_missing "$model"; then
     NS_CURSOR_MODEL_SAID=1
     log_line "watchman: recorded model ${model} is not in the Cursor model list — not substituting another"
     ns_watchman_park "$NS" "the Cursor model ${model} is not available; the revival still asks for it and does not switch models"
   fi
   set -- agent --resume="$WORKER" -p --workspace "$PROJECT"
-  [ -n "$model" ] && set -- "$@" --model "$model"
-  [ "$force" = 1 ] && set -- "$@" --force
-  [ "$trust" = 1 ] && set -- "$@" --trust
+  [ "$model_known" = 1 ] && [ -n "$model" ] && set -- "$@" --model "$model"
+  [ "$force_known" = 1 ] && [ "$force" = 1 ] && set -- "$@" --force
+  [ "$trust_known" = 1 ] && [ "$trust" = 1 ] && set -- "$@" --trust
   set -- "$@" "$prompt"
   ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
     CURSOR_PROJECT_DIR "$PROJECT" "$@"
 }
 
-# A headless `agent -p` worker runs no stop hook, so the clock-out gate cannot hold it: it exits
-# when its turn ends, open boxes or not. A run that ticked a box earns the next one; a run that
-# ticked nothing, or a shift that ended, stopped, or was taken back, returns to the wake cycle.
+# A headless `agent -p` turn is not what releases the shift. Cursor's hooks docs define `stop`
+# for a completed, aborted, or error loop and do not exempt print mode, but a print-mode turn
+# that ends in error has been seen to exit without that hook writing `.ended`. A run that ticked
+# a box earns the next one; a run that ticked nothing returns to the wake cycle. Clock-out is
+# the shared sequence below, not another agent.
 relaunch_due() { # <open-before-the-run>
   local now dl
   armed && [ ! -f "$STOP" ] && [ -f "$PUNCH" ] || return 1
@@ -355,6 +381,126 @@ notice_revival() {
     "$(ts)" "$cmd" >>"$LOT"
 }
 
+# 0 when nothing live remains, or a live tree has been quiet for the whole idle window.
+# A fresh pulse, a growing transcript, or a worker still inside that window is 1.
+session_gone_or_idle() {
+  local pids="" pid sample cpu known busy delta now window bytes changed verdict
+  NS_SESSION_QUIET=gone
+  transcript_grew && return 1
+  pulse_alive && return 1
+  if recorded_process_alive; then
+    pids="$(rec_pid)"
+  fi
+  if lease_pid_live; then
+    ns_lease_load "$NS" || true
+    pid="${NS_LEASE_PID:-}"
+    if [ -n "$pid" ] && [ "$pid" != "$pids" ]; then
+      pids="${pids:+$pids }$pid"
+    fi
+  fi
+  [ -n "$pids" ] || return 0
+  ns_idle_load "$NS"
+  # shellcheck disable=SC2086
+  sample="$(ns_idle_tree_sample $pids)"
+  cpu="${sample%%	*}"
+  sample="${sample#*	}"
+  known="${sample%%	*}"
+  busy="${sample#*	}"
+  delta=0
+  if [ -n "$NS_IDLE_CPU" ] && [ "$known" = 1 ]; then
+    delta=$((cpu - NS_IDLE_CPU))
+  fi
+  bytes=0
+  if [ -n "$(transcript)" ] && [ -f "$(transcript)" ]; then
+    bytes="$(wc -c <"$(transcript)" 2>/dev/null | tr -d '[:space:]')"
+  fi
+  changed=0
+  if [ -n "$NS_IDLE_SINCE" ] && [ "${NS_IDLE_BYTES:-0}" != "${bytes:-0}" ]; then
+    changed=1
+  fi
+  now="$(date +%s)"
+  window="$(ns_idle_window_minutes "$PROJECT")"
+  verdict="$(ns_idle_verdict stale "$changed" "$known" "$delta" "$busy" "$NS_IDLE_SINCE" "$now" "$window" "$NS_IDLE_STUCK")"
+  case "$verdict" in
+    due)
+      # shellcheck disable=SC2086
+      ns_idle_stop_tree $pids || return 2
+      NS_SESSION_QUIET=idle
+      return 0
+      ;;
+    pending)
+      [ -n "$NS_IDLE_SINCE" ] || NS_IDLE_SINCE="$now"
+      [ -n "$NS_IDLE_CPU" ] || NS_IDLE_CPU="$cpu"
+      [ -n "$NS_IDLE_BYTES" ] || NS_IDLE_BYTES="${bytes:-0}"
+      NS_IDLE_PIDS="$pids"
+      NS_IDLE_EVIDENCE="pulse stale, transcript unchanged, cpu $(ns_idle_cpu_label "$delta"), no busy child"
+      ns_idle_save "$NS" || return 1
+      return 1
+      ;;
+  esac
+  return 1
+}
+
+# Runs the shared ending under the site lock. 0 when .ended is real and the armed marker is gone.
+clock_out_direct() { # <ticked|stop|deadline> <gone|idle>
+  local why="$1" how="$2" summary reason open_now ticked total moved own_rc detail
+  LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
+  LEASE_GENERATION="${NIGHTSHIFT_LEASE_GENERATION:-}"
+  SID=""
+  ns_shift_unbound cursor gate
+  own_rc=$?
+  if [ "$own_rc" -eq 2 ]; then
+    log_line "watchman: clock-out refused: ownership — ${NS_SHIFT_FAIL:-the shift is not bound to this watchman}"
+    return 1
+  fi
+  ns_shift_ownership cursor "" "" gate
+  own_rc=$?
+  if [ "$own_rc" -eq 2 ]; then
+    log_line "watchman: clock-out refused: ownership — ${NS_SHIFT_FAIL:-the shift lease is unreadable}"
+    return 1
+  fi
+  open_now="$(ns_open_boxes "$PUNCH" 2>/dev/null)" || open_now=0
+  ticked="$(ns_ticked_boxes "$PUNCH" 2>/dev/null)" || ticked=0
+  total=$((open_now + ticked))
+  if [ "$why" = ticked ]; then
+    moved="$(ns_gate_done_mismatch "$PROJECT" "$PUNCH" 2>/dev/null)" || moved=""
+    if [ -n "$moved" ]; then
+      log_line "watchman: clock-out refused: $moved"
+      return 1
+    fi
+  fi
+  if ! ns_lock "$NS"; then
+    log_line "watchman: clock-out refused: site lock stayed busy"
+    return 1
+  fi
+  case "$why" in
+    stop)
+      reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+      summary="shift ended${reason:+ ($reason)}: $ticked/$total done"
+      detail="stop-work order, session $how"
+      ;;
+    deadline)
+      printf 'deadline\n' >"$STOP"
+      log_line "quitting time — shift ended, $ticked/$total done, items left open"
+      summary="quitting time: $ticked/$total done, items left open"
+      detail="deadline passed, session $how"
+      ;;
+    *)
+      summary="shift done: $ticked/$total"
+      detail="every box ticked, session $how"
+      ;;
+  esac
+  log_line "watchman: clocking out — $detail"
+  ns_shift_end "$PROJECT" "$summary"
+  own_rc=$?
+  ns_unlock "$NS"
+  if [ "$own_rc" -ne 0 ]; then
+    log_line "watchman: clock-out refused: the ended marker was not written"
+    return 1
+  fi
+  return 0
+}
+
 log_line "watchman (cursor) armed · every ${INTERVAL_MIN}m"
 BASE_SLEEP="${NIGHTSHIFT_WATCH_SLEEP:-$((INTERVAL_MIN * 60))}"
 wake=0
@@ -370,7 +516,7 @@ while :; do
   wake=$((wake + 1))
 
   armed || stand_down_disarmed
-  if [ -f "$STOP" ]; then note owner-stop; log_line "watchman: stop-work order — standing down"; exit 0; fi
+  holds_pidfile || stand_down_unclaimed
   if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then note completed; exit 0; fi
   if [ ! -f "$PUNCH" ]; then note stand-down "punch list missing"; exit 0; fi
   if [ -f "$SESSION_END" ] && [ ! -L "$SESSION_END" ]; then
@@ -410,70 +556,95 @@ while :; do
     fi
   fi
 
-  if [ "$(open_boxes)" -eq 0 ]; then
-    log_line "watchman: every box ticked but the shift never clocked out — spawning the clock-out (attempt 1/1)"
-    spawn 1 || true
-    ns_watchman_clockout_pending "$NS" "$TICK"
-    clock_rc=$?
-    if [ "$clock_rc" -eq 0 ]; then
-      note completed
-      exit 0
-    fi
-    note clock-out-failed
-    log_line "watchman: clock-out attempt 1/1 returned without releasing the shift — standing down"
-    exit 0
+  clock_why=""
+  if [ -f "$STOP" ]; then
+    clock_why=stop
+  elif open_now="$(open_boxes)" && [ "$open_now" -eq 0 ]; then
+    clock_why=ticked
+  elif ns_gate_deadline_passed; then
+    clock_why=deadline
   fi
-  if [ -f "$DEADLINE" ] && [ ! -L "$DEADLINE" ]; then
-    dl="$(tr -d '[:space:]' <"$DEADLINE" 2>/dev/null)"
-    if printf '%s' "$dl" | grep -qE '^[0-9]+$' && [ "$(date +%s)" -ge "$dl" ]; then
-      log_line "watchman: past the deadline with the session gone — spawning the clock-out (attempt 1/1)"
-      spawn 1 || true
-      ns_watchman_clockout_pending "$NS" "$TICK"
-      clock_rc=$?
-      if [ "$clock_rc" -eq 0 ]; then
-        note deadline
+  if [ -n "$clock_why" ]; then
+    session_gone_or_idle
+    quiet_rc=$?
+    if [ "$quiet_rc" -eq 0 ]; then
+      if clock_out_direct "$clock_why" "${NS_SESSION_QUIET:-gone}"; then
+        case "$clock_why" in
+          stop) note owner-stop ;;
+          deadline) note deadline ;;
+          *) note completed ;;
+        esac
         exit 0
       fi
       note clock-out-failed
-      log_line "watchman: clock-out attempt 1/1 returned without releasing the shift — standing down"
       exit 0
     fi
+    if [ "$quiet_rc" -eq 2 ]; then
+      note clock-out-failed
+      log_line "watchman: clock-out refused: idle worker could not be stopped"
+      exit 0
+    fi
+    if [ "${NS_CLOCK_WAIT_SAID:-}" != 1 ]; then
+      NS_CLOCK_WAIT_SAID=1
+      log_line "watchman: clock-out waits — session still working"
+    fi
+    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+    continue
   fi
 
   rec_rc=1
   if [ -n "$(rec_pid)" ]; then
     recorded_process_alive
     rec_rc=$?
-    if [ "$rec_rc" -eq 0 ]; then
-      note silent-standby
-      baseline_transcript
-      : >"$TICK" 2>/dev/null || true
-      if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
-      continue
-    fi
   fi
-  if transcript_grew; then
+  lease_rc=1
+  lease_pid_live && lease_rc=0
+  # A fresh pulse or a growing transcript is work. Anything else a live process
+  # can still be is the shared idle rule: stop the tree, then revive as dead.
+  if transcript_grew || pulse_alive; then
+    ns_idle_note_busy "$NS"
     note silent-standby
     baseline_transcript
     : >"$TICK" 2>/dev/null || true
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
     continue
   fi
-  if lease_pid_live; then
-    note silent-standby
-    baseline_transcript
-    : >"$TICK" 2>/dev/null || true
-    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
-    continue
+  idle_pids=""
+  if [ "$rec_rc" -eq 0 ]; then
+    idle_pids="$(rec_pid)"
   fi
-  if pulse_alive; then
-    note silent-standby
-    baseline_transcript
-    : >"$TICK" 2>/dev/null || true
-    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
-    continue
+  if [ "$lease_rc" -eq 0 ] && [ "$NS_LEASE_PID" != "$idle_pids" ]; then
+    idle_pids="${idle_pids:+$idle_pids }$NS_LEASE_PID"
   fi
-  if [ "$rec_rc" -eq 3 ]; then
+  if [ -n "$idle_pids" ]; then
+    # shellcheck disable=SC2086
+    ns_idle_take "$NS" "$PROJECT" "$(transcript)" stale $idle_pids
+    idle_take=$?
+    case "$idle_take" in
+      10) ;;
+      12)
+        note process-evidence-unavailable
+        log_line "watchman: process evidence unavailable — standing down, not reviving"
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+      13)
+        note idle-stuck
+        baseline_transcript
+        : >"$TICK" 2>/dev/null || true
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+      *)
+        note silent-standby
+        baseline_transcript
+        : >"$TICK" 2>/dev/null || true
+        if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+        continue
+        ;;
+    esac
+  fi
+  if [ "$rec_rc" -eq 3 ] && [ "$lease_rc" -ne 0 ]; then
     note process-evidence-unavailable
     log_line "watchman: process evidence unavailable — standing down, not reviving"
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
@@ -481,6 +652,14 @@ while :; do
   fi
   if ! ns_cursor_worker_present "$NS" && [ -f "$MINT_FAILED" ] && [ ! -L "$MINT_FAILED" ]; then
     note silent-standby
+    baseline_transcript
+    : >"$TICK" 2>/dev/null || true
+    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+    continue
+  fi
+
+  if ns_idle_revival_blocked "$NS"; then
+    note idle-stuck
     baseline_transcript
     : >"$TICK" 2>/dev/null || true
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
@@ -511,6 +690,7 @@ while :; do
     spawn_rc=$?
     if [ "$spawn_rc" -eq 0 ]; then
       revived=0
+      ns_idle_after_revival "$NS" revived || true
       if [ "$attempt" -ge 2 ]; then
         note fresh-fallback
       else
@@ -521,13 +701,17 @@ while :; do
     fi
     if [ "$spawn_rc" -eq 2 ]; then
       held=1
+      ns_idle_note_busy "$NS"
       note silent-standby
       break
     fi
     baseline_transcript
   done
   if [ "$revived" -eq 1 ] && [ "$attempt" -gt 0 ] && [ "$held" -eq 0 ]; then
-    note exhausted-retry
+    ns_idle_after_revival "$NS" failed
+    if [ "$?" -ne 2 ]; then
+      note exhausted-retry
+    fi
     # Every attempt took the lease for its own worker. A ladder that revived nothing hands it
     # back, so the recorded conversation is not left waiting on a generation nobody holds.
     ns_lease_restore_interactive "$NS" || true

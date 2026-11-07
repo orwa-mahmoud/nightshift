@@ -1774,7 +1774,8 @@ wait_watchman_armed() {
     rm -rf "$old" "$new" "$home"
     cp -R "$src" "$old"
     cp -R "$src" "$new"
-    sed 's/"version": "0.30.1"/"version": "9.9.9"/' "$new/.claude-plugin/plugin.json" >"$new/.claude-plugin/plugin.json.new"
+    oldv="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$new/.claude-plugin/plugin.json" | head -n1)"
+    sed "s/\"version\": \"$oldv\"/\"version\": \"9.9.9\"/" "$new/.claude-plugin/plugin.json" >"$new/.claude-plugin/plugin.json.new"
     mv "$new/.claude-plugin/plugin.json.new" "$new/.claude-plugin/plugin.json"
     plant_host_install "$host" "$home" "$new"
     current="$(phys_dir "$(host_install_root "$host" "$home" "$new")")"
@@ -1787,7 +1788,7 @@ wait_watchman_armed() {
     echo "host $host log:"
     cat "$P/.nightshift/shift-log.md"
     grep -qF "re-running 9.9.9 at $current" "$P/.nightshift/shift-log.md"
-    grep -qF '0.30.1' "$P/.nightshift/shift-log.md"
+    grep -qF "$oldv" "$P/.nightshift/shift-log.md"
     [ "$(calls)" -ge 1 ]
     if [ -f "$P/.nightshift/parking-lot.md" ]; then
       grep -qv 'no current install' "$P/.nightshift/parking-lot.md"
@@ -1802,7 +1803,8 @@ wait_watchman_armed() {
   rm -rf "$old" "$new"
   cp -R "$src" "$old"
   cp -R "$src" "$new"
-  sed 's/"version": "0.30.1"/"version": "9.9.9"/' "$new/.claude-plugin/plugin.json" >"$new/.claude-plugin/plugin.json.new"
+  oldv="$(sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$new/.claude-plugin/plugin.json" | head -n1)"
+  sed "s/\"version\": \"$oldv\"/\"version\": \"9.9.9\"/" "$new/.claude-plugin/plugin.json" >"$new/.claude-plugin/plugin.json.new"
   mv "$new/.claude-plugin/plugin.json.new" "$new/.claude-plugin/plugin.json"
   new="$(phys_dir "$new")"
   printf 'sid\n\n\n\nclaude\n' >"$P/.nightshift/.shift-session"
@@ -1857,16 +1859,268 @@ wait_watchman_armed() {
 
 @test "a Cursor launch record keeps the model and does not grow flags" {
   p="$(new_project cursor-launch-record)"
+  lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  out="$BATS_TEST_TMPDIR/launch-read"
+  donef="$BATS_TEST_TMPDIR/launch-done"
+  script="$BATS_TEST_TMPDIR/launch-note.sh"
   jq '.recovery.cursorFlags = ["--trust", "--sandbox"]' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
-  run bash -c '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift" \
-    '{"model_id":"composer-2","model":"other"}'
-  [ "$output" = "$(printf 'composer-2\t0\t1')" ]
+  rm -f "$out" "$donef"
+  cat >"$script" <<EOF
+#!/bin/bash
+. "$lib"
+ns_cursor_launch_note "$p/.nightshift" '{"model_id":"composer-2","model":"other"}'
+ns_cursor_launch_read "$p/.nightshift" >"$out"
+touch "$donef"
+EOF
+  chmod +x "$script"
+  python3 -c '
+import os, sys
+if os.fork() > 0:
+    os.wait()
+    raise SystemExit(0)
+if os.fork() > 0:
+    os._exit(0)
+os.setsid()
+os.execv(sys.argv[1], [sys.argv[1]])
+' "$script"
+  i=0
+  while [ ! -f "$donef" ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -f "$donef" ]
+  [ "$(head -n 1 "$out")" = "$(printf '\t0\t1\t0\t1\t1')" ]
+  if grep -q 'composer-2' "$p/.nightshift/.cursor-launch"; then return 1; fi
   jq '.recovery.cursorFlags = ["--force", "--trust"]' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash -c '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift" \
-    '{"model_id":"other-model"}'
-  [ "$output" = "$(printf 'composer-2\t0\t1')" ]
+    "$lib" "$p/.nightshift" '{"model_id":"other-model"}'
+  [ "$output" = "$(printf '\t0\t1\t0\t1\t1')" ]
+}
+
+LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+IDLE_WORKER=0
+IDLE_CHILD=0
+
+stop_idle_worker() {
+  if [ "$IDLE_CHILD" != 0 ]; then kill "$IDLE_CHILD" 2>/dev/null || true; fi
+  if [ "$IDLE_WORKER" != 0 ]; then kill "$IDLE_WORKER" 2>/dev/null || true; fi
+  if [ "$IDLE_WORKER" != 0 ]; then wait "$IDLE_WORKER" 2>/dev/null || true; fi
+  IDLE_WORKER=0
+  IDLE_CHILD=0
+}
+
+begin_idle_worker() { # sleep | cpu | busy
+  local kind="$1" childf _
+  stop_idle_worker
+  childf="$BATS_TEST_TMPDIR/idle-child"
+  rm -f "$childf"
+  case "$kind" in
+    sleep)
+      bash -c 'sleep 60 & echo $! >"$1"; wait' _ "$childf" &
+      ;;
+    cpu)
+      bash -c 'while :; do :; done' &
+      ;;
+    busy)
+      # Linux ps comm is the kernel name, and a renamed coreutils binary will not run.
+      case "$(uname -s)" in
+        Linux)
+          bash -c 'printf %s npm >/proc/$$/comm; sleep 60 & echo $! >"$1"; wait' _ "$childf" &
+          ;;
+        *)
+          bash -c 'exec -a npm /bin/sleep 60 & echo $! >"$1"; wait' _ "$childf" &
+          ;;
+      esac
+      ;;
+  esac
+  IDLE_WORKER=$!
+  if [ "$kind" != cpu ]; then
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+      [ -s "$childf" ] && break
+      sleep 0.05
+    done
+    IDLE_CHILD="$(tr -d '[:space:]' <"$childf")"
+  fi
+  kill -0 "$IDLE_WORKER"
+}
+
+plant_idle_session() { # host [transcript]
+  local start transcript="${2:-}"
+  start="$(ps -o lstart= -p "$IDLE_WORKER" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  printf 'sid-shift\n%s\n%s\n%s\n%s\n' "$transcript" "$IDLE_WORKER" "$start" "$1" \
+    >"$P/.nightshift/.shift-session"
+  printf '%s sid-shift\n' "$(($(date +%s) - 100000))" >"$P/.nightshift/.shift-pulse"
+}
+
+seed_idle_due() {
+  local now
+  now="$(date +%s)"
+  printf 'since=%s\ncpu=0\nbytes=0\npids=%s\nfails=0\nepisode=0\nstuck=0\nnoticed=0\nevidence=seed\n' \
+    "$((now - 180))" "$IDLE_WORKER" >"$P/.nightshift/.idle-watch"
+}
+
+seed_idle_open() {
+  local now
+  now="$(date +%s)"
+  printf 'since=%s\ncpu=0\nbytes=0\npids=%s\nfails=0\nepisode=0\nstuck=0\nnoticed=0\nevidence=seed\n' \
+    "$now" "$IDLE_WORKER" >"$P/.nightshift/.idle-watch"
+}
+
+reset_idle_site() {
+  rm -f "$P/.nightshift/agent-calls" "$P/.nightshift/shift-log.md" "$P/.nightshift/.watchman" \
+    "$P/.nightshift/.ended" "$P/.nightshift/.shift-lease" "$P/.nightshift/parking-lot.md"
+  printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+  : >"$P/.nightshift/.shift-armed"
+}
+
+worker_alive() { kill -0 "$IDLE_WORKER" 2>/dev/null; }
+
+@test "the idle verdict waits out the window and treats every busy signal as life" {
+  run bash -c '. "$1"; ns_idle_verdict stale 0 1 0 0 1000 1030 1 0' _ "$LIB"
+  [ "$output" = pending ]
+  run bash -c '. "$1"; ns_idle_verdict stale 0 1 0 0 1000 1060 1 0' _ "$LIB"
+  [ "$output" = due ]
+  run bash -c '. "$1"; ns_idle_verdict fresh 0 1 0 0 1000 9999 1 0' _ "$LIB"
+  [ "$output" = busy ]
+  run bash -c '. "$1"; ns_idle_verdict stale 1 1 0 0 1000 9999 1 0' _ "$LIB"
+  [ "$output" = busy ]
+  run bash -c '. "$1"; ns_idle_verdict stale 0 1 0 1 1000 9999 1 0' _ "$LIB"
+  [ "$output" = busy ]
+  run bash -c '. "$1"; ns_idle_verdict stale 0 1 100 0 1000 9999 1 0' _ "$LIB"
+  [ "$output" = busy ]
+  run bash -c '. "$1"; ns_idle_verdict stale 0 0 0 0 1000 9999 1 0' _ "$LIB"
+  [ "$output" = unavailable ]
+  run bash -c '. "$1"; ns_idle_verdict stale 0 1 0 0 1000 9999 1 1' _ "$LIB"
+  [ "$output" = stuck ]
+}
+
+@test "an idle live worker is stopped after the window and revived on every host" {
+  for host in cursor codex claude; do
+    begin_idle_worker sleep
+    plant_idle_session "$host"
+    seed_idle_due
+    reset_idle_site
+    run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0" NIGHTSHIFT_IDLE_WINDOW=1 \
+      NIGHTSHIFT_IDLE_GRACE=0 \
+      "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/$host/watchman.sh" \
+      --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 1
+    if worker_alive; then
+      echo "$host left the idle worker running"
+      printf '%s\n' "$output"
+      cat "$P/.nightshift/shift-log.md" 2>/dev/null || true
+      stop_idle_worker
+      return 1
+    fi
+    [ "$(calls)" -eq 1 ] || { echo "$host calls=$(calls)"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+    grep -q 'worker alive but idle' "$P/.nightshift/shift-log.md" \
+      || { echo "$host did not log the idle evidence"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+    lease_pid="$(sed -n 5p "$P/.nightshift/.shift-lease" 2>/dev/null | tr -d '[:space:]')"
+    [ -n "$lease_pid" ] && [ "$lease_pid" != "$IDLE_WORKER" ] \
+      || { echo "$host lease was not transferred (pid '$lease_pid')"; stop_idle_worker; return 1; }
+    if [ "$IDLE_CHILD" != 0 ] && kill -0 "$IDLE_CHILD" 2>/dev/null; then
+      echo "$host left the idle child running"
+      stop_idle_worker
+      return 1
+    fi
+    stop_idle_worker
+  done
+}
+
+@test "a worker inside the idle window is not stopped" {
+  begin_idle_worker sleep
+  plant_idle_session cursor
+  seed_idle_open
+  reset_idle_site
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0" NIGHTSHIFT_IDLE_WINDOW=1 \
+    NIGHTSHIFT_IDLE_GRACE=0 \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh" \
+    --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 1
+  worker_alive || { echo "stopped inside the window"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+  [ "$(calls)" -eq 0 ]
+  [ -f "$P/.nightshift/.idle-watch" ]
+  stop_idle_worker
+}
+
+@test "a quiet worker that burns CPU is not stopped" {
+  begin_idle_worker cpu
+  local _ cents t
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    t="$(ps -o time= -p "$IDLE_WORKER" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    cents="$(bash -c '. "$1"; ns_cpu_centiseconds "$2"' _ "$LIB" "$t")"
+    [ "${cents:-0}" -ge 100 ] && break
+    sleep 0.2
+  done
+  [ "${cents:-0}" -ge 100 ] || { echo "cpu never accumulated ($cents)"; stop_idle_worker; return 1; }
+  plant_idle_session cursor
+  seed_idle_due
+  reset_idle_site
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0" NIGHTSHIFT_IDLE_WINDOW=1 \
+    NIGHTSHIFT_IDLE_GRACE=0 \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh" \
+    --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 1
+  worker_alive || { echo "stopped a busy worker"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+  [ "$(calls)" -eq 0 ]
+  [ ! -f "$P/.nightshift/.idle-watch" ]
+  stop_idle_worker
+}
+
+@test "a fresh pulse or a growing transcript keeps an idle-looking worker" {
+  begin_idle_worker sleep
+  plant_idle_session cursor
+  seed_idle_due
+  printf '%s sid-shift\n' "$(date +%s)" >"$P/.nightshift/.shift-pulse"
+  reset_idle_site
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0" NIGHTSHIFT_IDLE_WINDOW=1 \
+    NIGHTSHIFT_IDLE_GRACE=0 \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh" \
+    --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 1
+  worker_alive || { echo "fresh pulse did not protect the worker"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+  [ "$(calls)" -eq 0 ]
+  stop_idle_worker
+
+  T="$BATS_TEST_TMPDIR/idle-transcript"
+  mkdir -p "$T"
+  printf 'one\n' >"$T/out.jsonl"
+  begin_idle_worker sleep
+  plant_idle_session cursor "$T/out.jsonl"
+  seed_idle_due
+  reset_idle_site
+  ( sleep 0.2; printf 'two\n' >>"$T/out.jsonl" ) &
+  writer=$!
+  run env NIGHTSHIFT_WATCH_SLEEP=1 NIGHTSHIFT_WATCH_RETRY="0" NIGHTSHIFT_IDLE_WINDOW=1 \
+    NIGHTSHIFT_IDLE_GRACE=0 \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh" \
+    --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 1
+  wait "$writer" 2>/dev/null || true
+  worker_alive || { echo "transcript growth did not protect the worker"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+  [ "$(calls)" -eq 0 ]
+  stop_idle_worker
+}
+
+@test "a build child keeps the worker, and two failed revivals park one notice" {
+  begin_idle_worker busy
+  plant_idle_session cursor
+  seed_idle_due
+  reset_idle_site
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0" NIGHTSHIFT_IDLE_WINDOW=1 \
+    NIGHTSHIFT_IDLE_GRACE=0 \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh" \
+    --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 1
+  worker_alive || { echo "stopped a worker with a busy child"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+  [ "$(calls)" -eq 0 ]
+  stop_idle_worker
+
+  begin_idle_worker sleep
+  plant_idle_session cursor
+  seed_idle_due
+  reset_idle_site
+  run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0" NIGHTSHIFT_IDLE_WINDOW=1 \
+    NIGHTSHIFT_IDLE_GRACE=0 \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/cursor/watchman.sh" \
+    --project "$P" --interval 20 --agent "bash $BIN/fail.sh" --max-wakes 3
+  [ "$(calls)" -eq 4 ] || { echo "calls=$(calls)"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+  [ "$(grep -c 'revival failed twice' "$P/.nightshift/parking-lot.md")" -eq 1 ]
+  stop_idle_worker
 }

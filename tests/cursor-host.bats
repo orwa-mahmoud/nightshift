@@ -217,21 +217,87 @@ cursor_pulse() {
   hook_payload "$(jq -nc --arg w "$p" \
     '{hook_event_name:"postToolUse",conversation_id:"conv-1",cwd:$w}')" \
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR/pulse.sh"
-  grep -qxF 'model=' "$p/.nightshift/.cursor-launch"
   grep -qxF 'force=1' "$p/.nightshift/.cursor-launch"
   grep -qxF 'trust=1' "$p/.nightshift/.cursor-launch"
   hook_payload "$(jq -nc --arg w "$p" \
     '{hook_event_name:"postToolUse",conversation_id:"conv-1",cwd:$w,model_id:"composer-2",model:"other"}')" \
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR/pulse.sh"
-  grep -qxF 'model=composer-2' "$p/.nightshift/.cursor-launch"
+  if grep -q 'composer-2' "$p/.nightshift/.cursor-launch"; then return 1; fi
   jq '.recovery.cursorFlags = []' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
   hook_payload "$(jq -nc --arg w "$p" \
     '{hook_event_name:"postToolUse",conversation_id:"conv-1",cwd:$w,model_id:"other-model"}')" \
     env CURSOR_PROJECT_DIR="$p" bash "$CURSOR/pulse.sh"
-  grep -qxF 'model=composer-2' "$p/.nightshift/.cursor-launch"
+  if grep -q 'other-model' "$p/.nightshift/.cursor-launch"; then return 1; fi
   grep -qxF 'force=1' "$p/.nightshift/.cursor-launch"
   if grep -q 'sandbox' "$p/.nightshift/.cursor-launch"; then return 1; fi
+}
+
+@test "a Cursor hook records the CLI ancestor's model and flags, not the payload base id" {
+  p="$(new_project cursor-argv-launch)"
+  printf '## Items\n- [ ] **1.**\n' >"$p/.nightshift/punch-list.md"
+  stub="$BATS_TEST_TMPDIR/cursor-agent"
+  cat >"$stub" <<'EOF'
+#!/bin/bash
+cmd=()
+seen=0
+for a in "$@"; do
+  if [ "$seen" = 1 ]; then
+    cmd+=("$a")
+  elif [ "$a" = "--run" ]; then
+    seen=1
+  fi
+done
+"${cmd[@]}"
+EOF
+  chmod +x "$stub"
+  lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  run "$stub" --model grok-4.7-high --force --trust --run bash -c \
+    '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
+    "$lib" "$p/.nightshift" '{"model_id":"grok-4.7","model":"grok-4.7"}'
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'grok-4.7-high\t1\t1\t1\t1\t1')" ]
+  run bash -c '. "$1"; ns_cursor_launch_note "$2" "$3"; ns_cursor_launch_read "$2"' _ \
+    "$lib" "$p/.nightshift" '{"model_id":"grok-4.7","model":"other"}'
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'grok-4.7-high\t1\t1\t1\t1\t1')" ]
+}
+
+@test "an unreadable Cursor launch records none of the payload model" {
+  p="$(new_project cursor-argv-missing)"
+  lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  out="$BATS_TEST_TMPDIR/launch-read"
+  donef="$BATS_TEST_TMPDIR/launch-done"
+  script="$BATS_TEST_TMPDIR/launch-note.sh"
+  rm -f "$out" "$donef"
+  cat >"$script" <<EOF
+#!/bin/bash
+. "$lib"
+ns_cursor_launch_note "$p/.nightshift" '{"model_id":"grok-4.7","model":"grok-4.7"}'
+ns_cursor_launch_read "$p/.nightshift" >"$out"
+touch "$donef"
+EOF
+  chmod +x "$script"
+  # A note run from this shell can see the IDE's own cursor-agent. Reparenting to pid 1
+  # leaves no CLI ancestor, which is the unreadable case.
+  python3 -c '
+import os, sys
+if os.fork() > 0:
+    os.wait()
+    raise SystemExit(0)
+if os.fork() > 0:
+    os._exit(0)
+os.setsid()
+os.execv(sys.argv[1], [sys.argv[1]])
+' "$script"
+  i=0
+  while [ ! -f "$donef" ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -f "$donef" ]
+  [ "$(head -n 1 "$out")" = "$(printf '\t0\t0\t0\t0\t0')" ]
+  if grep -q 'grok-4.7' "$p/.nightshift/.cursor-launch"; then return 1; fi
 }
 
 @test "the Cursor gate holds an ended shift once so the model can file it" {

@@ -436,9 +436,9 @@ $stoppedItems = [int]$counts.Stopped
 $watchmanLive = $false
 $watchmanPath = Get-NSLayoutPath $ns 'watchman'
 if ((Test-Path -LiteralPath $watchmanPath -PathType Leaf) -and -not (Test-NSReparsePoint $watchmanPath)) {
-    $watchLines = @([IO.File]::ReadAllLines($watchmanPath))
-    $watchPid = if ($watchLines.Count -gt 0) { $watchLines[0].Trim() } else { '' }
-    $watchStart = if ($watchLines.Count -gt 1) { $watchLines[1] } else { '' }
+    $watchOwner = Read-NSWatchmanPidFile $watchmanPath
+    $watchPid = $watchOwner.Pid
+    $watchStart = $watchOwner.Start
     if ((Test-NSRecordedProcess $watchPid $watchStart) -eq 'Alive') { $watchmanLive = $true }
 }
 if ($watchmanLive -and (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf) -and $open -gt 0) {
@@ -494,7 +494,7 @@ if (-not $DryRun) {
     $wasArmed = Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf
     $cleared = New-Object 'System.Collections.Generic.List[string]'
     foreach ($key in @('stop', 'stall', 'notified', 'ended', 'session-end', 'pulse',
-            'mint-failed', 'session', 'armed', 'watchman-tick', 'lock')) {
+            'mint-failed', 'session', 'armed', 'watchman-tick', 'lock', 'idle-watch')) {
         $marker = Get-NSLayoutPath $ns $key
         if (Test-NSPathEntry $marker) { $null = $cleared.Add((Split-Path -Leaf $marker)) }
     }

@@ -979,3 +979,18 @@ offers_promotion() { # <output>
   grep -qF '$drafts -gt 0 -and $armed -eq 0 -and $open -eq 0' "$DOCTOR_PS1"
   grep -qF 'staged work is informational while $open punch-list items are open' "$DOCTOR_PS1"
 }
+
+@test "Doctor names a worker that is alive but idle" {
+  p="$(new_project doctor-idle)"
+  printf '## Items\n- [ ] **1. work.**\n' >"$p/.nightshift/punch-list.md"
+  bash -c 'sleep 30' &
+  worker=$!
+  now="$(date +%s)"
+  printf 'since=%s\ncpu=0\nbytes=0\npids=%s\nfails=0\nepisode=0\nstuck=0\nnoticed=0\nevidence=pulse stale, transcript unchanged, cpu +0.00s, no busy child\n' \
+    "$((now - 120))" "$worker" >"$p/.nightshift/.idle-watch"
+  run doctor "$p"
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'worker alive but idle for 2 min — pulse stale, transcript unchanged, cpu +0.00s, no busy child'
+}

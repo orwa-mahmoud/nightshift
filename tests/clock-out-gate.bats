@@ -429,22 +429,25 @@ SH
 
 @test "every host gate renders the morning receipt the same way" {
   hooks="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks"
+  shared="$hooks/shared/gate-core.sh"
   for h in "$hooks/clock-out-gate.sh" "$hooks/codex/clock-out-gate.sh" \
     "$hooks/cursor/clock-out-gate.sh"; do
-    grep -qF 'render_morning_receipt "$shift_id"' "$h" \
-      || { echo "no receipt render in end_shift: $h"; return 1; }
+    grep -qF 'ns_shift_end' "$h" \
+      || { echo "gate does not call the shared ending: $h"; return 1; }
     if grep -qF -- '--view owner' "$h"; then
       echo "the gate forces a view over the owner's configured one: $h"
       return 1
     fi
-    grep -qF 'ns_handoff_enabled' "$h" || { echo "no handoff switch: $h"; return 1; }
-    grep -qF 'morning receipt kept:' "$h" || { echo "a custom handoff is overwritable: $h"; return 1; }
-    grep -qF 'morning receipt render failed:' "$h" || { echo "no failure line: $h"; return 1; }
-    grep -qF 'morning receipt skipped: runtime/morning-receipt.sh is not installed' "$h" \
-      || { echo "no absent-renderer line: $h"; return 1; }
-    awk '/render_morning_receipt "\$shift_id"/{r=NR} /receipts_commit "\$1"/{c=NR} END{exit !(r && c && r<c)}' "$h" \
-      || { echo "the receipt is written after the snapshot: $h"; return 1; }
   done
+  grep -qF 'render_morning_receipt "$shift_id"' "$shared" \
+    || { echo "no receipt render in the shared ending"; return 1; }
+  grep -qF 'ns_handoff_enabled' "$shared" || { echo "no handoff switch"; return 1; }
+  grep -qF 'morning receipt kept:' "$shared" || { echo "a custom handoff is overwritable"; return 1; }
+  grep -qF 'morning receipt render failed:' "$shared" || { echo "no failure line"; return 1; }
+  grep -qF 'morning receipt skipped: runtime/morning-receipt.sh is not installed' "$shared" \
+    || { echo "no absent-renderer line"; return 1; }
+  awk '/render_morning_receipt "\$shift_id"/{r=NR} /receipts_commit /{c=NR} END{exit !(r && c && r<c)}' "$shared" \
+    || { echo "the receipt is written after the snapshot"; return 1; }
 }
 
 @test "the gate honours the earlier of the deadline file and the shift-policy deadlineEpoch" {

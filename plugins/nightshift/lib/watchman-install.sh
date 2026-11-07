@@ -188,10 +188,117 @@ EOF
 }
 
 ns_watchman_write_pidfile() { # pidfile script
-  local root ver
+  local root ver start=""
   root="$(ns_plugin_root_from_script "$2")"
   ver="$(ns_plugin_version "$root")"
-  printf '%s\nscript:%s\nversion:%s\n' "$$" "$2" "$ver" >"$1"
+  start="$(ns_process_start $$ 2>/dev/null || true)"
+  if [ -n "$start" ]; then
+    printf '%s\nstart:%s\nscript:%s\nversion:%s\n' "$$" "$start" "$2" "$ver" >"$1"
+  else
+    printf '%s\nscript:%s\nversion:%s\n' "$$" "$2" "$ver" >"$1"
+  fi
+}
+
+# ns_watchman_pidfile_read <file> — pid, start, script, version, tab-separated.
+# Line 1 is the pid. Named fields are start:, script:, and version:. A second line
+# with no field name is the older start-time record.
+ns_watchman_pidfile_read() {
+  local line pid="" start="" script="" version="" n=0
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    case "$line" in
+      start:*) start="${line#start:}" ;;
+      script:*) script="${line#script:}" ;;
+      version:*) version="${line#version:}" ;;
+      *)
+        if [ "$n" -eq 1 ]; then
+          pid="$(printf '%s' "$line" | tr -d '[:space:]')"
+        elif [ -z "$start" ] && [ -z "$script" ]; then
+          start="$line"
+        fi
+        ;;
+    esac
+  done <"$1"
+  printf '%s\t%s\t%s\t%s' "$pid" "$start" "$script" "$version"
+}
+
+# 0 when an argument is the watchman script. A longer name that only contains those
+# letters is not it.
+ns_watchman_command_is_script() {
+  local cmd="$1" tok base noglob=0
+  case "$-" in *f*) noglob=1 ;; esac
+  set -f
+  # shellcheck disable=SC2086
+  for tok in $cmd; do
+    tok="${tok#\"}"
+    tok="${tok%\"}"
+    tok="${tok#\'}"
+    tok="${tok%\'}"
+    base="${tok##*/}"
+    case "$base" in
+      watchman.sh | watchman.ps1)
+        [ "$noglob" -eq 0 ] && set +f
+        return 0
+        ;;
+    esac
+  done
+  [ "$noglob" -eq 0 ] && set +f
+  return 1
+}
+
+# The workspace is one whole argument. A longer path that only begins with it does not match.
+ns_watchman_command_has_project() {
+  local cmd="$1" ws="$2" needle prefix rest
+  [ -n "$ws" ] || return 1
+  for needle in \
+    "--project $ws" "--project=$ws" "-Project $ws" "-Project=$ws" \
+    "--project \"$ws\"" "--project '$ws'" "-Project \"$ws\"" "-Project '$ws'"; do
+    prefix="$cmd"
+    while :; do
+      case "$prefix" in
+        *"$needle"*) ;;
+        *) break ;;
+      esac
+      rest="${prefix#*"$needle"}"
+      [ "$rest" != "$prefix" ] || break
+      prefix="$rest"
+      case "${prefix:0:1}" in
+        '' | ' ' | '"' | "'" | "$(printf '\t')") return 0 ;;
+      esac
+    done
+  done
+  return 1
+}
+
+# ns_watchman_live_for_project <workspace>
+# Prints the pid of a live watchman whose command names this workspace. Status 1 when
+# none is visible (no ps, or no such process).
+ns_watchman_live_for_project() {
+  local ws="$1" line pid cmd
+  [ -n "$ws" ] || return 1
+  ns_have_cmd ps || return 1
+  if [ -d "$ws" ]; then
+    ws="$(cd -P "$ws" 2>/dev/null && pwd)" || return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    pid="${line%%[[:space:]]*}"
+    cmd="${line#"$pid"}"
+    cmd="${cmd#"${cmd%%[![:space:]]*}"}"
+    case "$pid" in '' | *[!0-9]*) continue ;; esac
+    [ "$pid" -gt 1 ] || continue
+    [ "$pid" = "$$" ] && continue
+    ns_watchman_command_is_script "$cmd" || continue
+    ns_watchman_command_has_project "$cmd" "$ws" || continue
+    kill -0 "$pid" 2>/dev/null || continue
+    printf '%s\n' "$pid"
+    return 0
+  done <<EOF
+$(ps -axww -o pid= -o command= 2>/dev/null || true)
+EOF
+  return 1
 }
 
 # Claim the pidfile. Status 1 when another live watchman already holds it.

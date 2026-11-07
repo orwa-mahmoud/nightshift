@@ -278,8 +278,11 @@ acting.
 
 Codex SessionEnd stands the watchman down: closing, archiving, or an idle unload (about 30
 minutes with no client) is pause-recovery. The punch list stays; Start re-arms. A crash that
-never fires SessionEnd still revives. A fresh `.shift-pulse`, a live recorded process, or a
-growing rollout keeps the watchman standing by. Empty pid alone is not death.
+never fires SessionEnd still revives. A fresh `.shift-pulse` or a growing rollout keeps
+the watchman standing by. A live process that stays quiet for `idleWindowMinutes` (30 when
+that knob is absent) — stale pulse, unchanged transcript, under a second of CPU across its
+process tree, and no build, test, or browser child — is stopped and revived like a dead one.
+Empty pid alone is not death.
 
 A Codex turn that ends on an API error closes with `task_complete` carrying an `error` object and
 leaves the session open and quiet. Until the rollout moves again, the watchman treats that
@@ -416,7 +419,10 @@ Add the public GitHub repo as a Cursor marketplace source
 (`.cursor-plugin/marketplace.json` at the repo root, same role as the Claude
 marketplace file). Official marketplace listing waits on a
 verified Cursor shift with watchman recovery. The Cursor CLI (`agent`), including
-print mode (`agent -p`), runs the hooks shipped with an installed plugin. A project
+print mode (`agent -p`), runs the hooks shipped with an installed plugin. When every box is
+ticked, a stop-work order is present, or the deadline has passed, and the bound session is gone
+or idle, the Cursor watchman runs the same ending as the stop hook and does not wait on a
+headless turn to fire it. A project
 `.cursor/hooks.json` is a separate source and is not required. One that points at
 Nightshift's own hook scripts runs those hooks a second time, so Setup does not write
 that file. Remove it while the plugin is installed; Doctor names the file.

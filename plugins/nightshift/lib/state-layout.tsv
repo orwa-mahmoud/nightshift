@@ -129,6 +129,8 @@ watch-reason	0	.watch-reason	file
 watch-reason	2	run/.watch-reason	file
 mint-failed	0	.mint-failed	file
 mint-failed	2	run/.mint-failed	file
+idle-watch	0	.idle-watch	file
+idle-watch	2	run/.idle-watch	file
 lock	0	.lock.d	dir
 lock	2	run/.lock.d	dir
 lease-lock	0	.lease-lock.d	dir

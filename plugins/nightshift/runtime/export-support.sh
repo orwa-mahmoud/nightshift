@@ -285,6 +285,8 @@ dest="$outdir/${stamp}.txt"
   printf '\n== evidence summary ==\n'
   printf '%s\n' "$(ns_evidence_counts "$WORKSPACE")"
   printf 'liveness: %s\n' "$(ns_status_liveness "$NS" "$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")")"
+  IDLE_LINE="$(ns_idle_status_sentence "$NS" 2>/dev/null || true)"
+  [ -z "$IDLE_LINE" ] || printf '%s\n' "$IDLE_LINE"
   activity="$(ns_status_last_activity "$NS")"
   printf 'last activity: %s\n' "${activity:-none}"
   printf 'last checkpoint: %s\n' "$(ns_status_last_checkpoint "$WORKSPACE")"

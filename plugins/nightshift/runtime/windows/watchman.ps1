@@ -17,6 +17,7 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 $script:NSWatchmanHandoff = $false
 $script:NSCursorModelSaid = $false
+$script:NSCursorLaunchSaid = $false
 try { $script:NSWatchmanScript = (Resolve-Path -LiteralPath $PSCommandPath).ProviderPath } catch { $script:NSWatchmanScript = $PSCommandPath }
 $script:NSWatchmanSelfVersion = Get-NSPluginVersion $pluginRoot.ProviderPath
 
@@ -620,7 +621,14 @@ function Start-NSAgent {
         $commandArguments.Add('--workspace')
         $commandArguments.Add($workspace)
         $cursorLaunch = Get-NSCursorLaunch $ns
-        if (-not [string]::IsNullOrEmpty($cursorLaunch.Model) -and -not $script:NSCursorModelSaid -and (Test-NSCursorModelMissing $cursorLaunch.Model)) {
+        if (-not $script:NSCursorLaunchSaid) {
+            $launchNote = Get-NSCursorLaunchDefaultNote $ns
+            if (-not [string]::IsNullOrEmpty($launchNote)) {
+                $script:NSCursorLaunchSaid = $true
+                Write-NSLogLine $launchNote
+            }
+        }
+        if ($cursorLaunch.ModelKnown -and -not [string]::IsNullOrEmpty($cursorLaunch.Model) -and -not $script:NSCursorModelSaid -and (Test-NSCursorModelMissing $cursorLaunch.Model)) {
             $script:NSCursorModelSaid = $true
             Write-NSLogLine ('watchman: recorded model ' + $cursorLaunch.Model + ' is not in the Cursor model list - not substituting another')
             Add-NSWatchmanNotice $ns ('the Cursor model ' + $cursorLaunch.Model + ' is not available; the revival still asks for it and does not switch models')
@@ -857,9 +865,9 @@ try {
     }
     elseif (Test-Path -LiteralPath $pidFile -PathType Leaf) {
         try {
-            $oldOwner = [IO.File]::ReadAllLines($pidFile)
-            $oldPid = if ($oldOwner.Count -gt 0) { $oldOwner[0] } else { '' }
-            $oldStart = if ($oldOwner.Count -gt 1) { $oldOwner[1] } else { '' }
+            $oldOwner = Read-NSWatchmanPidFile $pidFile
+            $oldPid = $oldOwner.Pid
+            $oldStart = $oldOwner.Start
             $handoffPid = [string]$env:NIGHTSHIFT_WATCH_HANDOFF_PID
             $handoff = [string]$env:NIGHTSHIFT_WATCH_HANDOFF -eq '1' -and $oldPid -eq $handoffPid
             if ($oldPid -ne [string]$PID -and -not $handoff -and (Test-NSRecordedProcess $oldPid $oldStart) -eq 'Alive') {
@@ -872,12 +880,8 @@ try {
             }
         }
     }
-    $null = Write-NSAtomicLines -Path $pidFile -Lines @(
-        [string]$PID,
-        (Get-NSProcessStart $PID),
-        ('script:' + $script:NSWatchmanScript),
-        ('version:' + $script:NSWatchmanSelfVersion)
-    )
+    $null = Write-NSWatchmanPidFile -Path $pidFile -ProcessId ([string]$PID) `
+        -Start (Get-NSProcessStart $PID) -Script $script:NSWatchmanScript -Version $script:NSWatchmanSelfVersion
 
     Write-NSLogLine "watchman ($HostName, Windows) armed - every ${IntervalMinutes}m"
     $script:WatchStart = Get-NSUnixTime
@@ -894,7 +898,6 @@ try {
 
     $wake = 0
     $previousStandby = ''
-    $silentWakes = 0
     $armedMarker = Get-NSLayoutPath $ns 'armed'
     $immediateWake = [string]$env:NIGHTSHIFT_WATCH_IMMEDIATE -eq '1'
     if ($immediateWake) { Remove-Item Env:NIGHTSHIFT_WATCH_IMMEDIATE -ErrorAction SilentlyContinue }
@@ -918,12 +921,18 @@ try {
             Write-NSLogLine "watchman: the armed marker is gone $([char]0x2014) standing down"
             exit 0
         }
-        if (-not (Test-Path -LiteralPath $pidFile -PathType Leaf)) {
-            Write-NSLogLine "watchman: the watchman pidfile is gone $([char]0x2014) standing down"
+        $claim = Read-NSWatchmanPidFile $pidFile
+        if ($claim.Pid -ne [string]$PID) {
+            if ([string]::IsNullOrEmpty($claim.Pid)) {
+                Write-NSLogLine "watchman: the watchman pidfile is gone $([char]0x2014) standing down"
+            }
+            else {
+                Write-NSLogLine "watchman: another watchman owns this site $([char]0x2014) standing down"
+            }
             exit 0
         }
 
-        if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) {
+        if ($HostName -ne 'cursor' -and (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf)) {
             Write-NSReason $ns 'owner-stop'
             Write-NSLogLine 'watchman: stop-work order - standing down'
             exit 0
@@ -1006,7 +1015,27 @@ try {
         }
 
         $counts = Get-NSBoxCounts $punch
-        if ($counts.Open -eq 0 -or (Test-NSDeadlinePassed)) {
+        $stopPresent = (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf)
+        if ($HostName -eq 'cursor' -and ($stopPresent -or $counts.Open -eq 0 -or (Test-NSDeadlinePassed))) {
+            $clock = Invoke-NSWatchmanDirectClockOut -Workspace $workspace -HostName cursor -IntervalMinutes $IntervalMinutes
+            if ($clock.Released) {
+                if ($stopPresent) { $code = 'owner-stop' }
+                elseif ($counts.Open -eq 0) { $code = 'completed' }
+                else { $code = 'deadline' }
+                Write-NSReason $ns $code
+                exit 0
+            }
+            if ($clock.Waiting) {
+                Write-NSLogLine $clock.Reason
+                if ($MaxWakes -gt 0 -and $wake -ge $MaxWakes) { exit 0 }
+                continue
+            }
+            if ($clock.Reason -ne 'not due') {
+                Write-NSReason $ns 'clock-out-failed'
+                exit 0
+            }
+        }
+        if ($HostName -ne 'cursor' -and ($counts.Open -eq 0 -or (Test-NSDeadlinePassed))) {
             $label = if ($counts.Open -eq 0) { 'every box is ticked' } else { 'quitting time passed' }
             Write-NSLogLine "watchman: $label but the shift never clocked out - spawning the clock-out (attempt 1/1)"
             $null = Start-NSAgent 1 2
@@ -1036,16 +1065,18 @@ try {
             }
             $verdict = 'usage-limit'
         }
-        if ($verdict -eq 'silent') {
-            $silentWakes++
-            if ($silentWakes -ge 2 -and (Test-NSPulseStale $ns $IntervalMinutes)) {
-                Write-NSLogLine 'watchman: silent too long with a stale pulse - treating as dead'
-                $verdict = 'dead'
-                $silentWakes = 0
-            }
+        if ($verdict -in @('alive', 'esc', 'tabs')) {
+            Clear-NSIdleWatch $ns
         }
-        else {
-            $silentWakes = 0
+        if ($verdict -eq 'silent') {
+            $pulseStale = Test-NSPulseStale $ns $IntervalMinutes $script:WatchStart
+            $take = Invoke-NSIdleTake -NightshiftDir $ns -Workspace $workspace -TranscriptPath (Get-NSTranscript) -PulseStale ([bool]$pulseStale) -HostName $HostName
+            switch ($take) {
+                'revive' { $verdict = 'dead' }
+                'unavailable' { $verdict = 'unavailable' }
+                'stuck' { $verdict = 'stuck' }
+                'hold' { $verdict = 'silent' }
+            }
         }
         if ($verdict -eq 'alive') {
             $previousStandby = ''
@@ -1068,6 +1099,13 @@ try {
                 Write-NSLogLine "watchman: live $HostName process evidence - standing by"
             }
             $previousStandby = $verdict
+        }
+        elseif ($verdict -eq 'stuck') {
+            Write-NSReason $ns 'idle-stuck' 'two recoveries failed'
+            if ($previousStandby -ne 'stuck') {
+                Write-NSLogLine 'watchman: idle recovery failed twice - not reviving again'
+            }
+            $previousStandby = 'stuck'
         }
         elseif ($verdict -eq 'unavailable') {
             Write-NSReason $ns 'process-evidence-unavailable'
@@ -1098,6 +1136,12 @@ try {
             }
             if ($verdict -eq 'wedge') {
                 Write-NSLogLine 'watchman: probable API wedge - reviving the recorded conversation'
+            }
+
+            if (Test-NSIdleRevivalBlocked $ns) {
+                Write-NSReason $ns 'idle-stuck' 'two recoveries failed'
+                if ($MaxWakes -gt 0 -and $wake -ge $MaxWakes) { exit 0 }
+                continue
             }
 
             $totalAttempts = $retryValues.Count + 1
@@ -1135,6 +1179,7 @@ try {
                 Set-NSTranscriptBaseline
             }
             if ($revived) {
+                $null = Update-NSIdleAfterRevival -NightshiftDir $ns -Result 'revived'
                 $currentIntervalMinutes = $IntervalMinutes
                 if ($totalAttempts -gt 1 -and $attempt -ge $totalAttempts) {
                     Write-NSReason $ns 'fresh-fallback'
@@ -1166,7 +1211,10 @@ try {
                 }
             }
             elseif ([string]::IsNullOrEmpty($aborted)) {
-                Write-NSReason $ns 'exhausted-retry'
+                $idleAfter = Update-NSIdleAfterRevival -NightshiftDir $ns -Result 'failed'
+                if ($idleAfter -ne 'stuck') {
+                    Write-NSReason $ns 'exhausted-retry'
+                }
                 if (Test-NSApiFailureEvidence) {
                     $currentIntervalMinutes = [Math]::Min($currentIntervalMinutes * 2, 60)
                     $null = Write-NSUsagePause $ns 'usage limit'

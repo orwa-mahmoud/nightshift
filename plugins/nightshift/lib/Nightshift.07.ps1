@@ -502,6 +502,8 @@ function Write-NSStatusReport {
         Say ('Plan room:   open, ' + $(if ($planBound.Length -gt 0) { 'bound to conversation ' + $planBound } else { 'waiting for its conversation' }))
     }
     Say ('liveness:    ' + (Get-NSStatusLiveness $Workspace $watch))
+    $idleLine = Get-NSIdleStatusSentence (Join-Path $Workspace '.nightshift')
+    if (-not [string]::IsNullOrEmpty($idleLine)) { Say $idleLine }
     $activity = Get-NSStatusLastActivity $Workspace
     Say ('last activity: ' + ($(if ($activity.Length -gt 0) { $activity } else { 'none' })))
     Say ('last checkpoint: ' + (Get-NSGateCheckpointToken $Workspace))
@@ -574,10 +576,9 @@ function Write-NSStatusReport {
         $watchmanState = 'not a usable file'
     }
     elseif (Test-Path -LiteralPath $watchmanPath -PathType Leaf) {
-        $watchmanLines = @()
-        try { $watchmanLines = @([IO.File]::ReadAllLines($watchmanPath)) } catch { $watchmanLines = @() }
-        $watchmanPid = if ($watchmanLines.Count -gt 0) { ([string]$watchmanLines[0]) -replace '\s', '' } else { '' }
-        $watchmanStart = if ($watchmanLines.Count -gt 1) { [string]$watchmanLines[1] } else { '' }
+        $watchmanOwner = Read-NSWatchmanPidFile $watchmanPath
+        $watchmanPid = $watchmanOwner.Pid
+        $watchmanStart = $watchmanOwner.Start
         if ($watchmanPid -match '^[0-9]+$') {
             if ((Test-NSRecordedProcess $watchmanPid $watchmanStart) -eq 'Alive') {
                 $removed = Get-NSWatchmanRemovedSentence $ns $watchmanPath $watchmanPid 'windows'
@@ -3416,4 +3417,283 @@ function Get-NSArchitectureNotice {
     $dash = [string][char]0x2014
     return ('after the commit and before the tick, update ' + (Get-NSLayoutName (Join-Path $Workspace '.nightshift') 'receipts') +
         '/architecture.md only if this item changed the structure, then write `Diagram: updated ' + $dash + ' <what changed>` or `Diagram: unchanged ' + $dash + ' <why>` in the receipt')
+}
+
+function Write-NSShiftEndLog {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return }
+    $log = Get-NSLayoutPath $NightshiftDir 'shift-log'
+    $dir = Split-Path -Parent $log
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+    $line = '{0} - {1}{2}' -f (Get-NSLocalNow -Seconds), $Message, [Environment]::NewLine
+    [IO.File]::AppendAllText($log, $line, $script:NSUtf8NoBom)
+}
+
+function Invoke-NSShiftEndQuiet {
+    param([Parameter(Mandatory = $true)][scriptblock]$Body)
+    $originalOut = [Console]::Out
+    $originalErr = [Console]::Error
+    $swallow = New-Object IO.StringWriter
+    try {
+        [Console]::SetOut($swallow)
+        [Console]::SetError($swallow)
+        & $Body
+    }
+    finally {
+        [Console]::SetOut($originalOut)
+        [Console]::SetError($originalErr)
+    }
+}
+
+# The one terminal sequence. Every Windows gate and the Cursor watchman end a shift here.
+# Returns true once .ended is a real file and the armed marker is gone.
+function Invoke-NSShiftEnd {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Summary
+    )
+    $ns = Join-Path $Workspace '.nightshift'
+    if (-not (Test-Path -LiteralPath $ns -PathType Container)) { return $false }
+    $ended = Get-NSLayoutPath $ns 'ended'
+    $armed = Get-NSLayoutPath $ns 'armed'
+    if (Test-NSReparsePoint $ended) {
+        Remove-Item -LiteralPath $ended -Force -ErrorAction SilentlyContinue
+    }
+    try {
+        [IO.File]::WriteAllText($ended, '', $script:NSUtf8NoBom)
+    }
+    catch {
+        Write-NSShiftEndLog $ns ('clock-out refused: cannot write ' + (Get-NSLayoutName $ns 'ended'))
+        return $false
+    }
+    Invoke-NSGateUsageFlush $ns $Workspace
+    Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
+    if (-not (Release-NSLease $ns)) {
+        Start-Sleep -Milliseconds 200
+        if (-not (Release-NSLease $ns)) {
+            Write-NSShiftEndLog $ns 'process lease release deferred: lease mutex remained busy'
+        }
+    }
+    $endedId = 'unknown'
+    try {
+        $endedState = Get-NSShiftPolicyState $Workspace
+        if ($endedState['state'] -ceq 'valid') { $endedId = [string]$endedState['policy']['shiftId'] }
+    }
+    catch {
+        $endedId = 'unknown'
+    }
+    # Best effort, never blocks the release. A render failure is logged and the clock-out continues.
+    if (Test-NSHandoffEnabled $Workspace) {
+        try {
+            $kept = Get-NSMorningReceiptPath $Workspace
+            if (Test-Path -LiteralPath $kept) {
+                Write-NSShiftEndLog $ns "morning receipt kept: $kept already exists for this shift"
+            }
+            else {
+                Invoke-NSShiftEndQuiet { $null = Write-NSMorningReceiptFile $Workspace }
+            }
+        }
+        catch {
+            $failed = $_.Exception.Message
+            if ([string]::IsNullOrEmpty($failed)) { $failed = 'morning receipt failed' }
+            Write-NSShiftEndLog $ns ("morning receipt render failed: " + (($failed -split "`r?`n")[0]))
+        }
+    }
+    else {
+        Write-NSShiftEndLog $ns 'morning receipt disabled by the owner (handoff.enabled) - every record stands'
+    }
+    $endedName = Get-NSShiftName (Get-NSLayoutPath $ns 'punch-list')
+    $endedFolder = ''
+    try {
+        $claimed = Get-NSArchiveDir -Workspace $Workspace -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId $endedId -Name $endedName
+        if (-not [string]::IsNullOrEmpty($claimed)) { $endedFolder = Split-Path -Leaf $claimed }
+    }
+    catch {
+        Write-NSShiftEndLog $ns ('archive folder not claimed: ' + $_.Exception.Message)
+    }
+    $hostName = ''
+    $recorded = Read-NSSession $ns
+    if ($null -ne $recorded) { $hostName = [string]$recorded.HostName }
+    Write-NSEndedRecord -StateDir $ns -ShiftId $endedId `
+        -ArchiveRoot ([string](Get-NSPolicyGroupSetting $Workspace 'archive.root')['value']) `
+        -ArchiveLayout ([string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']) `
+        -ShiftName $endedName -ArchiveFolder $endedFolder -HostName $hostName
+    if (Test-NSArchiveAutomatic $Workspace) {
+        $pending = Get-NSLayoutPath $ns 'pending-filing'
+        if (Test-NSReparsePoint $pending) { Remove-Item -LiteralPath $pending -Force -ErrorAction SilentlyContinue }
+        [IO.File]::WriteAllText($pending, ('date=' + (Get-Date -Format 'yyyy-MM-dd') + "`nshiftId=$endedId`n"), $script:NSUtf8NoBom)
+        Write-NSShiftEndLog $ns 'archive.automatic is on - filing is due for this shift'
+    }
+    $policyPath = Get-NSLayoutPath $ns 'shift-policy'
+    if ((Test-Path -LiteralPath $policyPath -PathType Leaf) -and -not (Test-NSReparsePoint $policyPath)) {
+        try {
+            Invoke-NSShiftEndQuiet { $null = Invoke-NSShiftPolicyArchive -Workspace $Workspace -Date (Get-Date -Format 'yyyy-MM-dd') }
+        }
+        catch {
+            Write-NSShiftEndLog $ns ('shift policy archive failed: ' + $_.Exception.Message)
+        }
+    }
+    try {
+        Invoke-NSShiftEndQuiet { $null = Invoke-NSEvidenceArchive -Workspace $Workspace -ShiftId $endedId }
+    }
+    catch {
+        Write-NSShiftEndLog $ns ('findings archive failed: ' + $_.Exception.Message)
+    }
+    $repo = Get-NSLayoutPath $ns 'receipts-repo'
+    if (Test-Path -LiteralPath $repo -PathType Container) {
+        $auto = Get-NSRule $Workspace 'receiptsAutoCommit' ([string]$env:NIGHTSHIFT_RECEIPTS_AUTO_COMMIT)
+        if ($auto -match '^(?i:true|1|yes)$') {
+            try {
+                $null = Invoke-NSGitCommand $ns @('add', '-A')
+                $committed = Invoke-NSGitCommand $ns @(
+                    '-c', 'user.name=nightshift',
+                    '-c', 'user.email=nightshift@localhost',
+                    '-c', 'commit.gpgsign=false',
+                    'commit', '-q', '-m', $Summary
+                )
+                if ($committed.ExitCode -ne 0 -and $committed.Text -notmatch 'nothing to commit|nothing added') {
+                    Write-NSShiftEndLog $ns ('receipts commit failed: ' + (($committed.Text -split "`r?`n")[0]))
+                }
+            }
+            catch {
+                Write-NSShiftEndLog $ns ('receipts commit failed: ' + $_.Exception.Message)
+            }
+        }
+    }
+    $notify = Get-NSRule $Workspace 'notifyCommand' ([string]$env:NIGHTSHIFT_NOTIFY_CMD)
+    if (-not [string]::IsNullOrEmpty([string]$notify)) {
+        $notified = Get-NSLayoutPath $ns 'notified'
+        if (Test-NSReparsePoint $notified) {
+            Remove-Item -LiteralPath $notified -Force -ErrorAction SilentlyContinue
+        }
+        $stream = $null
+        $owned = $false
+        try {
+            $stream = [IO.File]::Open($notified, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            $stream.Dispose()
+            $stream = $null
+            $owned = $true
+        }
+        catch {
+            if ($null -ne $stream) { $stream.Dispose() }
+        }
+        if ($owned) {
+            $oldSummary = $env:NIGHTSHIFT_SUMMARY
+            try {
+                $env:NIGHTSHIFT_SUMMARY = $Summary
+                $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $notify 2>$null
+            }
+            catch { }
+            finally { $env:NIGHTSHIFT_SUMMARY = $oldSummary }
+        }
+    }
+    $endedReal = (Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)
+    $armedGone = -not (Test-Path -LiteralPath $armed)
+    return ($endedReal -and $armedGone)
+}
+
+# Cursor clock-out from the watchman. Does not spawn an agent. Released is true when the
+# shift ended. Waiting is true when the session is still working. A refusal is already logged.
+function Invoke-NSWatchmanDirectClockOut {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [ValidateSet('claude', 'codex', 'cursor')][string]$HostName = 'cursor',
+        [int]$IntervalMinutes = 20
+    )
+    $result = [pscustomobject]@{ Released = $false; Waiting = $false; Reason = '' }
+    $ns = Join-Path $Workspace '.nightshift'
+    if ($HostName -ne 'cursor') {
+        $result.Reason = 'clock-out refused: ownership ' + [char]0x2014 + ' this watchman is not the Cursor one'
+        return $result
+    }
+    if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
+        $result.Reason = 'clock-out refused: missing .nightshift'
+        return $result
+    }
+    $punch = Get-NSLayoutPath $ns 'punch-list'
+    $stop = Get-NSLayoutPath $ns 'stop'
+    $counts = Get-NSBoxCounts $punch
+    $stopPresent = (Test-Path -LiteralPath $stop -PathType Leaf) -and -not (Test-NSReparsePoint $stop)
+    $deadline = $false
+    $deadlinePath = Get-NSLayoutPath $ns 'deadline'
+    if ((Test-Path -LiteralPath $deadlinePath -PathType Leaf) -and -not (Test-NSReparsePoint $deadlinePath)) {
+        try {
+            $raw = ([IO.File]::ReadAllText($deadlinePath)).Trim()
+            if ($raw -match '^[0-9]+$' -and (Get-NSUnixTime) -ge [long]$raw) { $deadline = $true }
+        }
+        catch { }
+    }
+    $why = ''
+    if ($stopPresent) { $why = 'stop' }
+    elseif ($counts.Readable -and (Test-Path -LiteralPath $punch -PathType Leaf) -and $counts.Open -eq 0) { $why = 'ticked' }
+    elseif ($deadline) { $why = 'deadline' }
+    if ([string]::IsNullOrEmpty($why)) {
+        $result.Reason = 'not due'
+        return $result
+    }
+    $session = Read-NSSession $ns
+    if ($null -ne $session -and -not [string]::IsNullOrEmpty([string]$session.HostName) -and $session.HostName -ne 'cursor') {
+        $result.Reason = 'clock-out refused: ownership ' + [char]0x2014 + ' shift is owned by ' + $session.HostName
+        Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
+        return $result
+    }
+    $live = $false
+    if ($null -ne $session -and $session.ProcessId -match '^[1-9][0-9]*$' -and (Test-NSRecordedProcess $session.ProcessId $session.Start) -eq 'Alive') {
+        $live = $true
+    }
+    if (Test-NSLeasePidLive $ns) { $live = $true }
+    if (-not (Test-NSPulseStale $ns $IntervalMinutes) -or $live) {
+        $result.Waiting = $true
+        $result.Reason = 'watchman: clock-out waits ' + [char]0x2014 + ' session still working'
+        return $result
+    }
+    if ($why -eq 'ticked') {
+        $moved = Get-NSGateDoneMismatch $Workspace $punch
+        if (-not [string]::IsNullOrEmpty([string]$moved)) {
+            $result.Reason = "clock-out refused: $moved"
+            Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
+            return $result
+        }
+    }
+    $mutex = Enter-NSMutex $ns '.lock.d'
+    if ($null -eq $mutex) {
+        $result.Reason = 'clock-out refused: site lock stayed busy'
+        Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
+        return $result
+    }
+    try {
+        $ticked = [int]$counts.Ticked
+        $total = [int]$counts.Open + $ticked
+        $summary = "shift done: $ticked/$total"
+        $detail = 'every box ticked, session gone'
+        if ($why -eq 'stop') {
+            $reasonText = ''
+            try { $reasonText = ([string](@([IO.File]::ReadAllLines($stop))[0])).Trim() } catch { $reasonText = '' }
+            $suffix = ''
+            if (-not [string]::IsNullOrEmpty($reasonText)) { $suffix = " ($reasonText)" }
+            $summary = "shift ended${suffix}: $ticked/$total done"
+            $detail = 'stop-work order, session gone'
+        }
+        elseif ($why -eq 'deadline') {
+            [IO.File]::WriteAllText($stop, "deadline`n", $script:NSUtf8NoBom)
+            Write-NSShiftEndLog $ns "quitting time - shift ended, $ticked/$total done, items left open"
+            $summary = "quitting time: $ticked/$total done, items left open"
+            $detail = 'deadline passed, session gone'
+        }
+        Write-NSShiftEndLog $ns "watchman: clocking out - $detail"
+        $result.Released = [bool](Invoke-NSShiftEnd -Workspace $Workspace -Summary $summary)
+        if (-not $result.Released) {
+            $result.Reason = 'clock-out refused: the ended marker was not written'
+            Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
+        }
+    }
+    finally {
+        Exit-NSMutex $mutex
+    }
+    return $result
 }

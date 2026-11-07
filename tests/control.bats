@@ -131,6 +131,129 @@ stop_cmd() { # <project>
   wait "$rpid" 2>/dev/null || true
 }
 
+@test "Stop kills a watchman recorded in the three-line pid file" {
+  p="$(new_project three-line)"
+  punch_open "$p"
+  wpid=0
+  cleanup_three() {
+    if [ "$wpid" != 0 ]; then
+      kill "$wpid" 2>/dev/null || true
+      wait "$wpid" 2>/dev/null || true
+    fi
+  }
+  trap cleanup_three RETURN
+  wm="$BATS_TEST_TMPDIR/watchman-three.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" &
+  wpid=$!
+  printf '%s\nscript:%s\nversion:0.30.2\n' "$wpid" "$wm" >"$p/.nightshift/.watchman"
+  run "$STOP" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'watchman stopped'
+  gone=0
+  for _ in $(seq 1 50); do
+    case "$(ps -o stat= -p "$wpid" 2>/dev/null | tr -d ' ')" in
+      '' | Z*) gone=1; break ;;
+    esac
+    sleep 0.1
+  done
+  [ "$gone" -eq 1 ] || { echo "watchman $wpid is still running"; kill "$wpid" 2>/dev/null || true; return 1; }
+  [ ! -f "$p/.nightshift/.watchman" ]
+}
+
+@test "Stop kills a watchman recorded in the old two-line pid file" {
+  p="$(new_project two-line)"
+  punch_open "$p"
+  wpid=0
+  cleanup_two() {
+    if [ "$wpid" != 0 ]; then
+      kill "$wpid" 2>/dev/null || true
+      wait "$wpid" 2>/dev/null || true
+    fi
+  }
+  trap cleanup_two RETURN
+  sleep 300 &
+  wpid=$!
+  start="$(ps -o lstart= -p "$wpid" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [ -n "$start" ]
+  printf '%s\n%s\n' "$wpid" "$start" >"$p/.nightshift/.watchman"
+  run "$STOP" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'watchman stopped'
+  gone=0
+  for _ in $(seq 1 50); do
+    case "$(ps -o stat= -p "$wpid" 2>/dev/null | tr -d ' ')" in
+      '' | Z*) gone=1; break ;;
+    esac
+    sleep 0.1
+  done
+  [ "$gone" -eq 1 ] || { echo "watchman $wpid is still running"; kill "$wpid" 2>/dev/null || true; return 1; }
+  [ ! -f "$p/.nightshift/.watchman" ]
+}
+
+@test "Reset stops a watchman recorded in the three-line pid file" {
+  p="$(new_project reset-three)"
+  punch_open "$p"
+  wpid=0
+  cleanup_reset() {
+    if [ "$wpid" != 0 ]; then
+      kill "$wpid" 2>/dev/null || true
+      wait "$wpid" 2>/dev/null || true
+    fi
+  }
+  trap cleanup_reset RETURN
+  wm="$BATS_TEST_TMPDIR/watchman-reset.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" &
+  wpid=$!
+  printf '%s\nscript:%s\nversion:0.30.2\n' "$wpid" "$wm" >"$p/.nightshift/.watchman"
+  run "$RESET" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'watchman stopped'
+  gone=0
+  for _ in $(seq 1 50); do
+    case "$(ps -o stat= -p "$wpid" 2>/dev/null | tr -d ' ')" in
+      '' | Z*) gone=1; break ;;
+    esac
+    sleep 0.1
+  done
+  [ "$gone" -eq 1 ] || { echo "watchman $wpid is still running"; kill "$wpid" 2>/dev/null || true; return 1; }
+}
+
+@test "Purge stops a watchman recorded in the three-line pid file" {
+  p="$(new_project purge-three)"
+  punch_open "$p"
+  wpid=0
+  cleanup_purge() {
+    if [ "$wpid" != 0 ]; then
+      kill "$wpid" 2>/dev/null || true
+      wait "$wpid" 2>/dev/null || true
+    fi
+  }
+  trap cleanup_purge RETURN
+  wm="$BATS_TEST_TMPDIR/watchman-purge.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" &
+  wpid=$!
+  ns="$(cd -P "$p/.nightshift" && pwd -P)"
+  printf '%s\nscript:%s\nversion:0.30.2\n' "$wpid" "$wm" >"$p/.nightshift/.watchman"
+  run "$PURGE" --project "$p" --confirm-path "$ns"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -qF 'watchman stopped'
+  gone=0
+  for _ in $(seq 1 50); do
+    case "$(ps -o stat= -p "$wpid" 2>/dev/null | tr -d ' ')" in
+      '' | Z*) gone=1; break ;;
+    esac
+    sleep 0.1
+  done
+  [ "$gone" -eq 1 ] || { echo "watchman $wpid is still running"; kill "$wpid" 2>/dev/null || true; return 1; }
+  [ ! -e "$p/.nightshift" ]
+}
+
 @test "Stop keeps the lease and still allows the trusted helper through a recovery nonce" {
   p="$(new_project)"
   punch_open "$p"
