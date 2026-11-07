@@ -36,9 +36,13 @@ ns_rules_awk_bin() {
 _ns_rules_scan() {
   local bin
   bin="$(ns_rules_awk_bin)" || {
-    NS_RULES_ERR="rules.json cannot be read"
+    printf 'ERR%srules.json cannot be read\n' "$_NS_RULES_TAB"
     return 1
   }
+  if [ ! -f "$_NS_RULES_AWK_FILE" ]; then
+    printf 'ERR%sNightshift file missing: %s\n' "$_NS_RULES_TAB" "$_NS_RULES_AWK_FILE"
+    return 1
+  fi
   "$bin" -v mode="$1" -f "$_NS_RULES_AWK_FILE" "${2:--}"
 }
 

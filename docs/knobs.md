@@ -436,6 +436,14 @@ The scope is named in `shift-log.md` on each revival. Failed revivals retry at t
 `watchAgent` remains the owner-provided override for the whole command; Nightshift adds no
 permission arguments to it.
 
+`cursorFlags` is how a Cursor shift names the permission flags it was started with. The first
+Cursor hook of the shift records `--force` and `--trust` from that list (`--yolo` is the
+documented alias of `--force`) and ignores anything else. A revival and a relaunch pass those
+recorded flags, plus the model that hook payload named (`model_id`, otherwise `model`). A flag
+added to the list after that first hook is not passed. When `agent --list-models` returns a
+catalog that does not include the recorded model, the revival still asks for that model and says
+so; it does not pick a different one.
+
 `archive` decides where finished shift state is filed. Filing copies evidence; Archive separately
 retires live records that finished work no longer needs. `retention` controls pruning old generated
 history, after previewing the exact paths and asking. See [Archive and continue](archive.md#archive-and-continue).

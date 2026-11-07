@@ -25,11 +25,19 @@ CURSOR_MARKET="$ROOT/.cursor-plugin/marketplace.json"
   fi
 }
 
-@test "docs name the Cursor CLI file-hook limitation" {
-  grep -qF 'currently ignores' "$HOW"
-  grep -qF 'marketplace and local plugin hooks' "$HOW"
-  grep -qF 'a Cursor limitation' "$HOW"
-  grep -qF 'not a Nightshift skip' "$HOW"
+@test "docs say the Cursor CLI runs installed plugin hooks" {
+  grep -qF 'including' "$HOW"
+  grep -qF 'print mode (`agent -p`)' "$HOW"
+  grep -qF 'runs the hooks shipped with an installed plugin' "$HOW"
+  grep -qF 'Setup does not write' "$HOW"
+  grep -qF 'Doctor names the file' "$HOW"
+  if grep -qF 'currently ignores' "$HOW"; then
+    echo "how-it-works still says the CLI ignores plugin hooks"
+    return 1
+  fi
+  cursor_host="$ROOT/plugins/nightshift/skills/nightshift/references/hosts/cursor.md"
+  grep -qF 'including in print mode (`agent -p`)' "$cursor_host"
+  grep -qF 'Setup does not write it' "$cursor_host"
 }
 
 @test "Cursor installation names the repository flow and retains recovery limits" {

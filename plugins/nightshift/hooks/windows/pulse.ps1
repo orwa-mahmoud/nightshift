@@ -136,6 +136,9 @@ try {
 catch {
     [Console]::Error.WriteLine('nightshift: usage accounting skipped - ' + $_.Exception.Message)
 }
+if ($HostName -eq 'cursor') {
+    Add-NSCursorLaunchNote -NightshiftDir $ns -PayloadJson $raw
+}
 try {
     Write-NSPulseContext $HostName (Get-NSPulseNotices $ns $workspace)
 }

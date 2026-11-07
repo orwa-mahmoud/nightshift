@@ -579,7 +579,11 @@ function Write-NSStatusReport {
         $watchmanPid = if ($watchmanLines.Count -gt 0) { ([string]$watchmanLines[0]) -replace '\s', '' } else { '' }
         $watchmanStart = if ($watchmanLines.Count -gt 1) { [string]$watchmanLines[1] } else { '' }
         if ($watchmanPid -match '^[0-9]+$') {
-            if ((Test-NSRecordedProcess $watchmanPid $watchmanStart) -eq 'Alive') { $watchmanState = "alive (pid $watchmanPid)" }
+            if ((Test-NSRecordedProcess $watchmanPid $watchmanStart) -eq 'Alive') {
+                $removed = Get-NSWatchmanRemovedSentence $ns $watchmanPath $watchmanPid 'windows'
+                if (-not [string]::IsNullOrEmpty($removed)) { $watchmanState = "running from a removed install (pid $watchmanPid)" }
+                else { $watchmanState = "alive (pid $watchmanPid)" }
+            }
             else { $watchmanState = "stale (pid $watchmanPid)" }
         }
     }
@@ -596,10 +600,18 @@ function Write-NSStatusReport {
     }
 
     Fact 'watchman' $watchmanState
+    if ($watchmanState.StartsWith('running from a removed install', [StringComparison]::Ordinal)) {
+        Fact 'watchman warning' (Get-NSWatchmanRemovedSentence $ns $watchmanPath $watchmanPid 'windows')
+    }
+    $stuck = ''
+    try { $stuck = [string](Get-NSRecoveryStuckSentence $ns) } catch { $stuck = '' }
+    if (-not [string]::IsNullOrEmpty($stuck)) {
+        Fact 'watchman warning' $stuck
+    }
     $watchMinutesRaw = ''
     try { $watchMinutesRaw = [string](Get-NSRule $Workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH)) } catch { $watchMinutesRaw = '' }
     if ($armed -and $open -gt 0 -and $watchMinutesRaw -cne '0' -and
-        -not ($watchmanState.StartsWith('alive', [StringComparison]::Ordinal) -or $watchmanState -ceq 'not a usable file')) {
+        -not ($watchmanState.StartsWith('alive', [StringComparison]::Ordinal) -or $watchmanState.StartsWith('running', [StringComparison]::Ordinal) -or $watchmanState -ceq 'not a usable file')) {
         Fact 'watchman warning' 'the shift is armed with open items and nothing is watching it; a crash or usage limit will not be revived until ns start-watchman arms one again'
     }
 

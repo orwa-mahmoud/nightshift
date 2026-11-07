@@ -587,6 +587,14 @@ try {
     $recoveryScopeLogicRun = Invoke-TestScript $recoveryScopeLogic
     Assert-Equal 0 $recoveryScopeLogicRun.ExitCode `
         "recovery launch scope: $($recoveryScopeLogicRun.Stdout) $($recoveryScopeLogicRun.Stderr)"
+    $cursorLaunchLogic = Join-Path $PSScriptRoot 'cursor-launch-logic.ps1'
+    $cursorLaunchLogicRun = Invoke-TestScript $cursorLaunchLogic
+    Assert-Equal 0 $cursorLaunchLogicRun.ExitCode `
+        "cursor launch record: $($cursorLaunchLogicRun.Stdout) $($cursorLaunchLogicRun.Stderr)"
+    $watchmanInstallLogic = Join-Path $PSScriptRoot 'watchman-install-logic.ps1'
+    $watchmanInstallLogicRun = Invoke-TestScript $watchmanInstallLogic
+    Assert-Equal 0 $watchmanInstallLogicRun.ExitCode `
+        "watchman install handoff: $($watchmanInstallLogicRun.Stdout) $($watchmanInstallLogicRun.Stderr)"
     $migrateStateLogic = Join-Path $PSScriptRoot 'migrate-state-logic.ps1'
     $migrateStateLogicRun = Invoke-TestScript $migrateStateLogic
     Assert-Equal 0 $migrateStateLogicRun.ExitCode `

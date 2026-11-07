@@ -470,7 +470,13 @@ sys.stdout.write("".join(
 '
 
 # _ns_policy_facts <operation> <python-program> <file> — the fact stream on stdout.
-# Status 1 when the file is not JSON, 2 when no parser is installed.
+# Status 1 when the file is not JSON, 2 when no parser is installed, 3 when a Nightshift
+# program this reader needs is missing. Status 3 prints MISSING<TAB>path and nothing else.
+_ns_policy_missing() {
+  printf 'MISSING\t%s\n' "$1"
+  return 3
+}
+
 _ns_policy_facts() {
   local tool win bin mode
   tool="$(ns_policy_json_tool)" || {
@@ -483,14 +489,28 @@ _ns_policy_facts() {
       *) return 2 ;;
     esac
     bin="$(ns_rules_awk_bin)" || return 2
+    if [ ! -f "$_NS_RULES_AWK_FILE" ]; then
+      _ns_policy_missing "$_NS_RULES_AWK_FILE"
+      return 3
+    fi
     "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" <"$3" 2>/dev/null || return 1
     return 0
   }
   # Bash opens the document. jq -f still needs a path the jq binary can open:
   # Git's jq wants /d/..., native jq.exe wants D:\...
   if [ "$tool" = jq ]; then
+    if [ ! -f "$NS_POLICY_EMIT_JQ" ]; then
+      win="$(ns_native_display_path "$NS_POLICY_EMIT_JQ")"
+      if [ ! -f "$win" ]; then
+        _ns_policy_missing "$NS_POLICY_EMIT_JQ"
+        return 3
+      fi
+      jq -r --arg op "$1" -f "$win" <"$3" 2>/dev/null || return 1
+      return 0
+    fi
     jq -r --arg op "$1" -f "$NS_POLICY_EMIT_JQ" <"$3" 2>/dev/null && return 0
     win="$(ns_native_display_path "$NS_POLICY_EMIT_JQ")"
+    [ "$win" = "$NS_POLICY_EMIT_JQ" ] && return 1
     jq -r --arg op "$1" -f "$win" <"$3" 2>/dev/null || return 1
     return 0
   fi
@@ -503,6 +523,10 @@ _ns_policy_facts() {
 _ns_policy_awk_json() {
   local bin mode="$1"
   bin="$(ns_rules_awk_bin)" || return 2
+  if [ ! -f "$_NS_RULES_AWK_FILE" ]; then
+    _ns_policy_missing "$_NS_RULES_AWK_FILE"
+    return 3
+  fi
   shift
   if [ "$#" -ge 1 ]; then
     LC_ALL=C "$bin" -v mode="$mode" -f "$_NS_RULES_AWK_FILE" <"$1" 2>/dev/null || return 1
@@ -997,6 +1021,7 @@ _ns_policy_load_shift_file() {
   local f="$1" facts line rc
   NS_POLICY_SHIFT_STATE=""
   NS_POLICY_SHIFT_ERR=""
+  NS_POLICY_MISSING_FILE=""
   NS_POLICY_SHIFT_ID=""
   NS_POLICY_SHIFT_TYPES=""
   NS_POLICY_SHIFT_KEYS=""
@@ -1017,6 +1042,12 @@ _ns_policy_load_shift_file() {
   facts="$(_ns_policy_facts shift "$NS_POLICY_SHIFT_PY" "$f")"
   rc=$?
   facts="$(printf '%s' "$facts" | tr -d '\r')"
+  if [ "$rc" -eq 3 ]; then
+    NS_POLICY_MISSING_FILE="${facts#MISSING$'\t'}"
+    NS_POLICY_SHIFT_STATE=missing-file
+    NS_POLICY_SHIFT_ERR="Nightshift file missing: ${NS_POLICY_MISSING_FILE}"
+    return 0
+  fi
   if [ "$rc" -eq 2 ]; then
     NS_POLICY_SHIFT_STATE=noparser
     NS_POLICY_SHIFT_ERR="JSON parser unavailable; composition writes shift-policy.json and Start already has rules.json"

@@ -56,6 +56,10 @@ HELPER="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/doctor.ps1"
   grep -qF 'Doctor names a parking-lot paragraph by file and line' "$LOGIC"
   grep -qF 'Doctor names a snag-log paragraph by file and line' "$LOGIC"
   grep -qF 'the shipped inbox templates hold no entry Archive cannot file' "$LOGIC"
+  grep -qF "points at Nightshift's hook scripts while the Cursor plugin is installed" "$HELPER"
+  grep -qF 'Doctor does not delete the file' "$HELPER"
+  grep -qF 'Get-NSHostCurrentInstall' "$HELPER"
+  grep -qF 'a project hooks file that repeats the installed plugin is named' "$LOGIC"
 }
 
 @test "Windows Doctor leftover and staged-work logic passes when pwsh is present" {

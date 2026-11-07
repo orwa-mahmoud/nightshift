@@ -44,6 +44,29 @@ act() { # safe|confirm|blocked  message
 }[$1] $2"
 }
 
+# A project hooks file that execs Nightshift's own Cursor scripts runs them again
+# on top of the installed plugin. Name the file; never delete it.
+ns_doctor_cursor_duplicate_hooks() {
+  local install="" root="" file="" key="" seen=""
+  install="$(ns_host_current_install cursor 2>/dev/null || true)"
+  [ -n "$install" ] || return 0
+  for root in "$HOST" "$WORKSPACE" "$TARGET"; do
+    [ -n "$root" ] || continue
+    file="$root/.cursor/hooks.json"
+    [ -f "$file" ] || continue
+    key="$(cd -P "${file%/*}" 2>/dev/null && pwd)/hooks.json" || key="$file"
+    if printf '%s\n' "$seen" | grep -Fxq "$key"; then
+      continue
+    fi
+    seen="$seen$key
+"
+    if grep -qE 'hooks/cursor/(hardhat|pulse|clock-out-gate|session-end|before-submit)\.sh' "$file" 2>/dev/null; then
+      warn "project hooks file $key points at Nightshift's hook scripts while the Cursor plugin is installed; remove $key"
+      act confirm "remove $key; the installed Cursor plugin already runs these hooks, and Doctor does not delete the file"
+    fi
+  done
+}
+
 FACTS=""
 WARNS=""
 ACTIONS=""
@@ -158,6 +181,7 @@ else
     warn "work target could not be resolved; treating workspace as the code root"
   fi
 fi
+ns_doctor_cursor_duplicate_hooks
 
 # The one resolver renders the one view: every effective setting, where it came from, and when
 # it expires. Doctor reads it and never re-derives precedence — same order and wording as the
@@ -580,6 +604,7 @@ fi
 WPID=""
 WATCHMAN_UNUSABLE=0
 WATCHMAN_ALIVE=0
+WATCHMAN_REMOVED=0
 if [ -L "$WATCHMAN_FILE" ]; then
   warn "watchman pidfile path is not a usable file"
   WATCHMAN_UNUSABLE=1
@@ -588,8 +613,15 @@ elif [ -f "$WATCHMAN_FILE" ]; then
 fi
 if [ -n "$WPID" ] && printf '%s' "$WPID" | grep -qE '^[0-9]+$'; then
   if kill -0 "$WPID" 2>/dev/null; then
-    fact "watchman pid $WPID is alive"
-    WATCHMAN_ALIVE=1
+    removed="$(ns_watchman_removed_sentence "$NS" "$WATCHMAN_FILE" "$WPID" 2>/dev/null || true)"
+    if [ -n "$removed" ]; then
+      warn "$removed"
+      WATCHMAN_ALIVE=0
+      WATCHMAN_REMOVED=1
+    else
+      fact "watchman pid $WPID is alive"
+      WATCHMAN_ALIVE=1
+    fi
   else
     fact "watchman pid $WPID is stale"
     if [ "$ARMED" -eq 0 ]; then
@@ -604,13 +636,17 @@ RCODE="$(ns_reason_code "$NS")"
 if [ -n "$RCODE" ]; then
   fact "watchman reason $RCODE ($(ns_reason_label "$RCODE"))"
 fi
+STUCK="$(ns_recovery_stuck_sentence "$NS" 2>/dev/null || true)"
+if [ -n "$STUCK" ]; then
+  warn "$STUCK"
+fi
 
 # An armed shift with work left and nothing watching it is not revived after a crash or a usage
 # limit. Only watchMinutes 0 means that on purpose; a missing or unreadable value stops the watchman
 # arming too, so it is flagged the same way.
 WATCH_MINUTES="$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")"
 if [ "$ARMED" -eq 1 ] && [ "$OPEN" -gt 0 ] && [ "$WATCHMAN_ALIVE" -eq 0 ] &&
-  [ "$WATCHMAN_UNUSABLE" -eq 0 ] && [ "$WATCH_MINUTES" != 0 ]; then
+  [ "$WATCHMAN_UNUSABLE" -eq 0 ] && [ "$WATCHMAN_REMOVED" -eq 0 ] && [ "$WATCH_MINUTES" != 0 ]; then
   warn "shift is armed with open boxes and no watchman — a crash or usage limit will not be revived"
   act confirm "arm it again with ns start-watchman --host <this host>: it changes nothing else about the shift, and says why if it cannot arm (its output is in $(ns_layout_name "$NS" watchman-log)); or work the list in the live session"
 fi

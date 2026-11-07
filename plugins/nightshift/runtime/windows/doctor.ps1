@@ -21,6 +21,23 @@ function Add-NSAct {
     $null = $script:actions.Add("[$Kind] $Message")
 }
 
+function Add-NSCursorDuplicateHookWarnings {
+    $cursorInstall = Get-NSHostCurrentInstall 'cursor' 'cursor'
+    if ([string]::IsNullOrEmpty($cursorInstall)) { return }
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($root in @($hostPath, $workspace, $target)) {
+        if ([string]::IsNullOrEmpty($root)) { continue }
+        $hooksFile = Join-Path $root '.cursor/hooks.json'
+        if (-not (Test-Path -LiteralPath $hooksFile -PathType Leaf)) { continue }
+        try { $key = Resolve-NSCanonicalPath $hooksFile } catch { $key = $hooksFile }
+        if (-not $seen.Add([string]$key)) { continue }
+        try { $text = [IO.File]::ReadAllText($hooksFile) } catch { continue }
+        if ($text -notmatch 'hooks/cursor/(hardhat|pulse|clock-out-gate|session-end|before-submit)\.sh') { continue }
+        Add-NSWarn "project hooks file $key points at Nightshift's hook scripts while the Cursor plugin is installed; remove $key"
+        Add-NSAct confirm "remove $key; the installed Cursor plugin already runs these hooks, and Doctor does not delete the file"
+    }
+}
+
 try {
     $hostPath = Resolve-NSCanonicalPath $Project
 }
@@ -162,6 +179,7 @@ catch {
         Add-NSWarn 'work target could not be resolved; treating workspace as the code root'
     }
 }
+Add-NSCursorDuplicateHookWarnings
 
 # The one resolver renders the one view: every effective setting, where it came
 # from, and when it expires. Doctor reads it and never re-derives precedence.
@@ -655,6 +673,7 @@ $wpid = ''
 $wstart = ''
 $watchmanUnusable = $false
 $watchmanAlive = $false
+$watchmanRemoved = $false
 $watchmanPath = Get-NSLayoutPath $ns 'watchman'
 if (Test-NSReparsePoint $watchmanPath) {
     Add-NSWarn 'watchman pidfile path is not a usable file'
@@ -674,8 +693,16 @@ elseif (Test-Path -LiteralPath $watchmanPath -PathType Leaf) {
 if ($wpid -match '^[0-9]+$') {
     $watchLive = Test-NSRecordedProcess $wpid $wstart
     if ($watchLive -eq 'Alive') {
-        Add-NSFact "watchman pid $wpid is alive"
-        $watchmanAlive = $true
+        $removed = Get-NSWatchmanRemovedSentence $ns $watchmanPath $wpid 'windows'
+        if (-not [string]::IsNullOrEmpty($removed)) {
+            Add-NSWarn $removed
+            $watchmanAlive = $false
+            $watchmanRemoved = $true
+        }
+        else {
+            Add-NSFact "watchman pid $wpid is alive"
+            $watchmanAlive = $true
+        }
     }
     else {
         Add-NSFact "watchman pid $wpid is stale"
@@ -694,12 +721,17 @@ $rcode = Get-NSReasonCode $ns
 if (-not [string]::IsNullOrEmpty($rcode)) {
     Add-NSFact "watchman reason $rcode ($(Get-NSReasonLabel $rcode))"
 }
+$stuck = ''
+try { $stuck = [string](Get-NSRecoveryStuckSentence $ns) } catch { $stuck = '' }
+if (-not [string]::IsNullOrEmpty($stuck)) {
+    Add-NSWarn $stuck
+}
 
 # An armed shift with work left and nothing watching it is not revived after a crash or a usage
 # limit. Only watchMinutes 0 means that on purpose; a missing or unreadable value stops the watchman
 # arming too, so it is flagged the same way.
 $watchMinutes = [string](Get-NSRule $workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH))
-if ($armed -eq 1 -and $open -gt 0 -and -not $watchmanAlive -and -not $watchmanUnusable -and $watchMinutes -cne '0') {
+if ($armed -eq 1 -and $open -gt 0 -and -not $watchmanAlive -and -not $watchmanUnusable -and -not $watchmanRemoved -and $watchMinutes -cne '0') {
     Add-NSWarn 'shift is armed with open boxes and no watchman - a crash or usage limit will not be revived'
     Add-NSAct confirm ("arm it again with ns start-watchman -HostName <this host>: it changes nothing else about the shift, and says why if it cannot arm (its output is in " +
         (Get-NSLayoutName $ns 'watchman-log') + '); or work the list in the live session')

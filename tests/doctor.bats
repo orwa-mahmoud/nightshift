@@ -72,6 +72,48 @@ doctor() {
   printf '%s' "$output" | grep -q 'Actions (Doctor does not perform these)'
 }
 
+@test "Doctor names a project hooks file that repeats the installed Cursor plugin" {
+  p="$(new_project doctor-cursor-hooks)"
+  home="$BATS_TEST_TMPDIR/cursor-home"
+  root="$home/.cursor/plugins/cache/acme/nightshift/deadbeef"
+  mkdir -p "$root/.cursor-plugin" "$root/runtime/cursor" "$root/lib" "$p/.cursor"
+  printf '%s\n' '{' '  "name": "nightshift",' '  "version": "0.0.0"' '}' >"$root/.cursor-plugin/plugin.json"
+  : >"$root/runtime/cursor/watchman.sh"
+  : >"$root/lib/lib.sh"
+  : >"$root/lib/policy-emit.jq"
+  : >"$root/lib/rules-read.awk"
+  printf '%s\n' '{"version":1,"hooks":{"preToolUse":[{"command":"${CURSOR_PLUGIN_ROOT}/hooks/cursor/hardhat.sh"}]}}' >"$p/.cursor/hooks.json"
+  run env HOME="$home" bash "$DOCTOR" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "points at Nightshift's hook scripts while the Cursor plugin is installed"
+  printf '%s\n' "$output" | grep -qF "$p/.cursor/hooks.json"
+  printf '%s\n' "$output" | grep -qF 'Doctor does not delete the file'
+  printf '%s\n' '{"version":1,"hooks":{"afterFileEdit":[{"command":".cursor/hooks/format.sh"}]}}' >"$p/.cursor/hooks.json"
+  run env HOME="$home" bash "$DOCTOR" --project "$p"
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -qF "points at Nightshift's hook scripts"; then
+    echo "an unrelated project hooks file was flagged"
+    return 1
+  fi
+  printf '%s\n' '{"version":1,"hooks":{"preToolUse":[{"command":"${CURSOR_PLUGIN_ROOT}/hooks/cursor/pulse.sh"}]}}' >"$p/.cursor/hooks.json"
+  run env HOME="$BATS_TEST_TMPDIR/no-cursor-install" bash "$DOCTOR" --project "$p"
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -qF "points at Nightshift's hook scripts"; then
+    echo "flagged a duplicate hooks file when no Cursor plugin is installed"
+    return 1
+  fi
+}
+
+@test "Doctor names a stuck unattended revival" {
+  p="$(new_project doctor-recovery-stuck)"
+  punch_open "$p"
+  printf 'recovery-stuck\nunavailable:unrecorded\n' >"$p/.nightshift/.watch-reason"
+  run doctor "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'unattended revival and watchman clock-out are stuck'
+  printf '%s\n' "$output" | grep -qF 'nothing to inherit'
+}
+
 @test "Doctor names each snag entry that carries no disposition, by line" {
   p="$(new_project doctor-snags)"
   punch_open "$p"

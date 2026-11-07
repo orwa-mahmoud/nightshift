@@ -15,6 +15,10 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
+$script:NSWatchmanHandoff = $false
+$script:NSCursorModelSaid = $false
+try { $script:NSWatchmanScript = (Resolve-Path -LiteralPath $PSCommandPath).ProviderPath } catch { $script:NSWatchmanScript = $PSCommandPath }
+$script:NSWatchmanSelfVersion = Get-NSPluginVersion $pluginRoot.ProviderPath
 
 function Write-NSLogLine {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -551,7 +555,7 @@ function Start-NSAgent {
     $launchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
     if ($launchScope -clike 'unavailable:*') {
         Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $launchScope) + '. Recovery cannot restore this configured scope.')
-        Write-NSLogLine "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(Get-NSLayoutName $ns 'rules')."
+        Write-NSLogLine ('watchman: the work is untouched. ' + (Get-NSRecoveryRepair $workspace $launchScope))
         Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
         return $false
     }
@@ -615,6 +619,13 @@ function Start-NSAgent {
         $commandArguments.Add('-p')
         $commandArguments.Add('--workspace')
         $commandArguments.Add($workspace)
+        $cursorLaunch = Get-NSCursorLaunch $ns
+        if (-not [string]::IsNullOrEmpty($cursorLaunch.Model) -and -not $script:NSCursorModelSaid -and (Test-NSCursorModelMissing $cursorLaunch.Model)) {
+            $script:NSCursorModelSaid = $true
+            Write-NSLogLine ('watchman: recorded model ' + $cursorLaunch.Model + ' is not in the Cursor model list - not substituting another')
+            Add-NSWatchmanNotice $ns ('the Cursor model ' + $cursorLaunch.Model + ' is not available; the revival still asks for it and does not switch models')
+        }
+        foreach ($extra in (Get-NSCursorLaunchArguments $ns)) { $commandArguments.Add([string]$extra) }
         $commandArguments.Add($prompt)
     }
     elseif ($HostName -eq 'claude') {
@@ -697,6 +708,15 @@ function Start-NSAgent {
             $argumentLine = Get-NSAgentArgumentLine $commandName $commandArguments
             while (Test-NSCursorRelaunchDue $openBefore) {
                 $openBefore = [int](Get-NSBoxCounts $punch).Open
+                if ([string]::IsNullOrEmpty($Agent)) {
+                    $relaunchScope = Get-NSRecoveryEffectiveScope $workspace $HostName
+                    if ($relaunchScope -clike 'unavailable:*') {
+                        Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $relaunchScope) + '. Recovery cannot restore this configured scope.')
+                        Write-NSLogLine ('watchman: the work is untouched. ' + (Get-NSRecoveryRepair $workspace $relaunchScope))
+                        Write-NSReason -NightshiftDir $ns -Code 'recovery-scope-unavailable'
+                        break
+                    }
+                }
                 Write-NSLogLine "watchman: CLI worker $sessionId exited with $openBefore open $([char]0x2014) relaunching it"
                 $lease = Takeover-NSLease $ns $sessionId $HostName
                 if ($null -eq $lease) {
@@ -840,7 +860,9 @@ try {
             $oldOwner = [IO.File]::ReadAllLines($pidFile)
             $oldPid = if ($oldOwner.Count -gt 0) { $oldOwner[0] } else { '' }
             $oldStart = if ($oldOwner.Count -gt 1) { $oldOwner[1] } else { '' }
-            if ($oldPid -ne [string]$PID -and (Test-NSRecordedProcess $oldPid $oldStart) -eq 'Alive') {
+            $handoffPid = [string]$env:NIGHTSHIFT_WATCH_HANDOFF_PID
+            $handoff = [string]$env:NIGHTSHIFT_WATCH_HANDOFF -eq '1' -and $oldPid -eq $handoffPid
+            if ($oldPid -ne [string]$PID -and -not $handoff -and (Test-NSRecordedProcess $oldPid $oldStart) -eq 'Alive') {
                 throw "watchman: already watching (pid $oldPid)"
             }
         }
@@ -850,7 +872,12 @@ try {
             }
         }
     }
-    $null = Write-NSAtomicLines -Path $pidFile -Lines @([string]$PID, (Get-NSProcessStart $PID))
+    $null = Write-NSAtomicLines -Path $pidFile -Lines @(
+        [string]$PID,
+        (Get-NSProcessStart $PID),
+        ('script:' + $script:NSWatchmanScript),
+        ('version:' + $script:NSWatchmanSelfVersion)
+    )
 
     Write-NSLogLine "watchman ($HostName, Windows) armed - every ${IntervalMinutes}m"
     $script:WatchStart = Get-NSUnixTime
@@ -869,12 +896,19 @@ try {
     $previousStandby = ''
     $silentWakes = 0
     $armedMarker = Get-NSLayoutPath $ns 'armed'
+    $immediateWake = [string]$env:NIGHTSHIFT_WATCH_IMMEDIATE -eq '1'
+    if ($immediateWake) { Remove-Item Env:NIGHTSHIFT_WATCH_IMMEDIATE -ErrorAction SilentlyContinue }
     # Doubles on an exhausted ladder with API evidence, capped at 60m; resets to
     # IntervalMinutes on any live pulse or successful revival.
     $currentIntervalMinutes = $IntervalMinutes
     while ($true) {
-        $sleepSeconds = if ($null -ne $sleepOverrideSeconds) { $sleepOverrideSeconds } else { $currentIntervalMinutes * 60 }
-        Start-Sleep -Seconds $sleepSeconds
+        if ($immediateWake) {
+            $immediateWake = $false
+        }
+        else {
+            $sleepSeconds = if ($null -ne $sleepOverrideSeconds) { $sleepOverrideSeconds } else { $currentIntervalMinutes * 60 }
+            Start-Sleep -Seconds $sleepSeconds
+        }
         $wake++
 
         # Before anything else: a disarmed site or a replaced watchman stands down without
@@ -909,6 +943,66 @@ try {
             Write-NSReason $ns 'wrong-host' $sessionHost
             Write-NSLogLine "watchman: shift belongs to $sessionHost - standing down"
             exit 0
+        }
+
+        $install = Get-NSWatchmanInstallPlan -NightshiftDir $ns -HostName $HostName -ScriptPath $script:NSWatchmanScript -SelfVersion $script:NSWatchmanSelfVersion -RuntimeKind windows
+        if ($install.Action -eq 'reexec') {
+            Write-NSLogLine $install.Message
+            $script:NSWatchmanHandoff = $true
+            $env:NIGHTSHIFT_WATCH_HANDOFF = '1'
+            $env:NIGHTSHIFT_WATCH_HANDOFF_PID = [string]$PID
+            $env:NIGHTSHIFT_WATCH_IMMEDIATE = '1'
+            $arguments = New-Object Collections.Generic.List[string]
+            foreach ($argument in @(
+                    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $install.Target,
+                    '-Project', $workspace, '-HostName', $HostName,
+                    '-IntervalMinutes', [string]$IntervalMinutes, '-MaxWakes', [string]$MaxWakes
+                )) { $arguments.Add([string]$argument) }
+            if (-not [string]::IsNullOrEmpty($Agent)) {
+                $arguments.Add('-Agent')
+                $arguments.Add($Agent)
+            }
+            $argumentLine = (($arguments | ForEach-Object { Quote-NSWindowsArgument $_ }) -join ' ')
+            $child = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList $argumentLine -WorkingDirectory $workspace -WindowStyle Hidden -PassThru
+            $deadline = [DateTime]::UtcNow.AddSeconds(8)
+            do {
+                Start-Sleep -Milliseconds 100
+                try {
+                    $owner = @([IO.File]::ReadAllLines($pidFile))
+                    if ($owner.Count -gt 0 -and [string]$owner[0] -eq [string]$child.Id) { break }
+                }
+                catch { }
+            } while ([DateTime]::UtcNow -lt $deadline)
+            exit 0
+        }
+        if ($install.Action -eq 'pending') {
+            Write-NSReason $ns 'install-pending' $install.Reason
+            Write-NSLogLine ($install.Message + ' - checking once more on the next wake')
+            if ($MaxWakes -gt 0 -and $wake -ge $MaxWakes) { exit 0 }
+            continue
+        }
+        if ($install.Action -eq 'stand-down') {
+            $code = if ($install.Reason -eq 'hooks-unusable') { 'install-mismatch' } else { 'install-removed' }
+            Write-NSReason $ns $code $install.Reason
+            $cmd = Get-NSWatchmanStartCommand $HostName $workspace ''
+            Write-NSLogLine ($install.Message + ' - standing down. Run ' + $cmd)
+            Add-NSWatchmanNotice $ns ($install.Message + '. Run ' + $cmd)
+            exit 0
+        }
+
+        # An unrecorded or unsupported scope cannot change until the owner edits recovery.launchScope.
+        # Say so once, then wake without spawning a revival or a clock-out.
+        if ([string]::IsNullOrEmpty($Agent)) {
+            $hold = Invoke-NSWatchmanRecoveryHold -Workspace $workspace -NightshiftDir $ns -HostName $HostName
+            if ($hold -clike 'unavailable:*') {
+                Write-NSLogLine ('watchman: ' + (Get-NSRecoveryRefusal $hold) + '. Recovery cannot restore this configured scope.')
+                Write-NSLogLine ('watchman: the work is untouched. ' + (Get-NSRecoveryRepair $workspace $hold))
+                Write-NSLogLine 'watchman: unattended revival and clock-out stay refused until recovery.launchScope changes'
+            }
+            if ($hold -cne 'clear') {
+                if ($MaxWakes -gt 0 -and $wake -ge $MaxWakes) { exit 0 }
+                continue
+            }
         }
 
         $counts = Get-NSBoxCounts $punch
@@ -1114,7 +1208,7 @@ try {
 }
 finally {
     try {
-        if (Test-Path -LiteralPath $pidFile -PathType Leaf) {
+        if (-not $script:NSWatchmanHandoff -and (Test-Path -LiteralPath $pidFile -PathType Leaf)) {
             $ownerPid = ([IO.File]::ReadAllLines($pidFile) | Select-Object -First 1)
             if ($ownerPid -eq [string]$PID) {
                 Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue

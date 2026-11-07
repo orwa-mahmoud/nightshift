@@ -690,6 +690,13 @@ fi
 # to authorize one.
 RECOVERY_SCOPE="$(ns_recovery_effective_scope "$WORKSPACE" "$HOST_NAME" 2>/dev/null)" || RECOVERY_SCOPE=""
 case "$RECOVERY_SCOPE" in
+  unavailable:unrecorded)
+    if [ "$HOST_NAME" = cursor ]; then
+      warn "recovery Cursor records no launch scope, so under inherit-recorded-scope an unattended revival and a watchman clock-out are impossible. Set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules) to allow them."
+    else
+      warn "recovery $(ns_recovery_refusal "$RECOVERY_SCOPE") - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules) to authorize one."
+    fi
+    ;;
   unavailable:*)
     warn "recovery $(ns_recovery_refusal "$RECOVERY_SCOPE") - an unattended revival will refuse rather than launch at permissions it cannot show are no broader. Configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules) to authorize one."
     ;;

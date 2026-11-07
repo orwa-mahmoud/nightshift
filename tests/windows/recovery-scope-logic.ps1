@@ -119,6 +119,24 @@ try {
     try { Expect-Equal "read-only`tobserved" (Get-NSLaunchObserved 'codex') 'codex reports its sandbox' }
     finally { Remove-Item Env:CODEX_SANDBOX_MODE }
 
+    # A Nightshift file that cannot be opened is that file, not a silent inherit and not an
+    # unreadable policy. The test points the reader at a path that was never written.
+    Expect-True ((Get-NSRecoveryReaderPath) -like '*Nightshift.03.ps1') 'the recovery reader is the module file'
+    $missingReader = Join-Path ([IO.Path]::GetTempPath()) ('ns-missing-reader-' + [guid]::NewGuid().ToString('N'))
+    $env:NIGHTSHIFT_RECOVERY_READER = $missingReader
+    try {
+        $missingScope = Get-NSRecoveryEffectiveScope $workspace 'claude'
+        Expect-Equal ('unavailable:missing-file:' + $missingReader) $missingScope 'a missing Nightshift file is not inherited'
+        Expect-True ((Get-NSRecoveryRefusal $missingScope) -match 'Nightshift file missing:') 'the refusal names the missing file'
+        Expect-True ((Get-NSRecoveryRepair $workspace $missingScope) -notmatch 'set recovery.launchScope to host-default') 'a missing file is not repaired by setting a scope'
+    }
+    finally { Remove-Item Env:NIGHTSHIFT_RECOVERY_READER }
+
+    Set-Rules $workspace 'host-default'
+    Expect-True ((Get-NSRecoveryRepair $workspace 'unavailable:unrecorded') -match 'already host-default') 'repair does not ask for a scope that is already set'
+    Copy-Item $template (Join-Path $workspace '.nightshift/rules.json') -Force
+    Expect-True ((Get-NSRecoveryRepair $workspace 'unavailable:unrecorded') -match 'set recovery.launchScope to host-default') 'an unrecorded scope still names host-default'
+
     # And the writer records it, so the reader is not inheriting a field nobody wrote.
     $written = New-Workspace
     try {
@@ -171,6 +189,30 @@ $takeoverAt = $agentBody.IndexOf('Takeover-NSLease')
 Expect-True ($scopeAt -ge 0 -and $resolveAt -gt $scopeAt) 'the launch scope is resolved before a Cursor worker is minted'
 Expect-True ($heldAt -gt $resolveAt -and $writeAt -gt $heldAt -and $takeoverAt -gt $writeAt) `
     'the Cursor worker is recorded after the liveness re-check and just before the lease is taken'
+
+# An unrecorded scope is final: one notice, then silence, until the rules file changes.
+$holdWorkspace = New-Workspace
+try {
+    $holdNs = Join-Path $holdWorkspace '.nightshift'
+    $first = Invoke-NSWatchmanRecoveryHold -Workspace $holdWorkspace -NightshiftDir $holdNs -HostName 'cursor'
+    Expect-Equal 'unavailable:unrecorded' $first 'the first unrecorded wake sticks'
+    $second = Invoke-NSWatchmanRecoveryHold -Workspace $holdWorkspace -NightshiftDir $holdNs -HostName 'cursor'
+    Expect-Equal 'quiet' $second 'the next wake does not say it again'
+    $lot = Get-NSLayoutPath $holdNs 'parking-lot'
+    $notices = @(Select-String -LiteralPath $lot -Pattern 'unattended revival and watchman clock-out are stuck' -SimpleMatch)
+    Expect-Equal 1 $notices.Count 'one parking notice for a stuck revival'
+    Set-Rules $holdWorkspace 'host-default'
+    $cleared = Invoke-NSWatchmanRecoveryHold -Workspace $holdWorkspace -NightshiftDir $holdNs -HostName 'cursor'
+    Expect-Equal 'clear' $cleared 'host-default in the rules file clears the stuck revival'
+    Expect-Equal '' (Get-NSReasonCode $holdNs) 'the stuck reason is gone once revival can proceed'
+    $sentence = Get-NSRecoveryStuckSentence $holdNs
+    Expect-Equal '' $sentence 'status has nothing to warn once the reason is gone'
+}
+finally {
+    Remove-Item -LiteralPath $holdWorkspace -Recurse -Force
+}
+
+Expect-True ($watchman.Contains('Invoke-NSWatchmanRecoveryHold')) 'the Windows watchman holds a terminal scope'
 
 if ($failures.Count -gt 0) {
     Write-Host ("recovery-scope-logic failed ($($failures.Count)):")

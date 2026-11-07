@@ -65,6 +65,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+NS_WATCHMAN_SCRIPT="$_here/watchman.sh"
+case "$NS_WATCHMAN_SCRIPT" in
+  /*) ;;
+  *) NS_WATCHMAN_SCRIPT="$(pwd)/$NS_WATCHMAN_SCRIPT" ;;
+esac
+NS_WATCHMAN_SELF_VERSION="$(ns_plugin_version "$(ns_plugin_root_from_script "$NS_WATCHMAN_SCRIPT")")"
+
 cd "$PROJECT" 2>/dev/null || exit 1
 PROJECT="$PWD"
 NS="$PROJECT/.nightshift"
@@ -130,16 +137,7 @@ stand_down_disarmed() {
 
 declare PIDFILE
 ns_layout_set PIDFILE "$NS" watchman
-if [ -L "$PIDFILE" ]; then
-  rm -f "$PIDFILE"
-elif [ -f "$PIDFILE" ]; then
-  oldpid="$(sed -n 1p "$PIDFILE" 2>/dev/null)"
-  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
-    printf 'watchman: already watching (pid %s)\n' "$oldpid" >&2
-    exit 1
-  fi
-fi
-printf '%s\n' "$$" >"$PIDFILE"
+ns_watchman_claim "$PIDFILE" "$NS_WATCHMAN_SCRIPT" || exit 1
 # The pidfile is this loop's claim on the site, and a claim can change hands: Reset and Purge
 # remove it, a takeover replaces the pid inside it. Removing it on the way out is only right while
 # it still names this process — otherwise a watchman that has already been replaced would delete
@@ -236,15 +234,30 @@ forget_fresh_worker() {
 }
 
 launch_worker() { # <prompt>
+  local prompt="$1" fields model force trust
   if [ -n "$AGENT" ]; then
     # shellcheck disable=SC2086
     ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$1"
-  else
-    ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
-      CURSOR_PROJECT_DIR "$PROJECT" \
-      agent --resume="$WORKER" -p --workspace "$PROJECT" "$1"
+      CURSOR_PROJECT_DIR "$PROJECT" $AGENT "$prompt"
+    return
   fi
+  fields="$(ns_cursor_launch_read "$NS")"
+  model="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  force="${fields%%$'\t'*}"
+  trust="${fields#*$'\t'}"
+  if [ -n "$model" ] && [ "${NS_CURSOR_MODEL_SAID:-}" != 1 ] && ns_cursor_model_missing "$model"; then
+    NS_CURSOR_MODEL_SAID=1
+    log_line "watchman: recorded model ${model} is not in the Cursor model list — not substituting another"
+    ns_watchman_park "$NS" "the Cursor model ${model} is not available; the revival still asks for it and does not switch models"
+  fi
+  set -- agent --resume="$WORKER" -p --workspace "$PROJECT"
+  [ -n "$model" ] && set -- "$@" --model "$model"
+  [ "$force" = 1 ] && set -- "$@" --force
+  [ "$trust" = 1 ] && set -- "$@" --trust
+  set -- "$@" "$prompt"
+  ns_watchman_run_child "$NS" cursor "$WORKER" "$WORK_TARGET" \
+    CURSOR_PROJECT_DIR "$PROJECT" "$@"
 }
 
 # A headless `agent -p` worker runs no stop hook, so the clock-out gate cannot hold it: it exits
@@ -276,7 +289,7 @@ spawn() {
     case "$scope" in
       unavailable:*)
         log_line "watchman: $(ns_recovery_refusal "$scope"). Recovery cannot restore this configured scope."
-        log_line "watchman: the work is untouched. Resume the shift yourself, or configure permissions directly in the host and set recovery.launchScope to host-default in $(ns_layout_name "$NS" rules)."
+        log_line "watchman: the work is untouched. $(ns_recovery_repair "$PROJECT" "$scope")"
         note recovery-scope-unavailable
         return 1
         ;;
@@ -310,6 +323,17 @@ spawn() {
   fi
   while relaunch_due "$open_before"; do
     open_before="$(ns_open_boxes "$PUNCH")"
+    if [ -z "$AGENT" ]; then
+      scope="$(ns_recovery_effective_scope "$PROJECT" cursor)"
+      case "$scope" in
+        unavailable:*)
+          log_line "watchman: $(ns_recovery_refusal "$scope"). Recovery cannot restore this configured scope."
+          log_line "watchman: the work is untouched. $(ns_recovery_repair "$PROJECT" "$scope")"
+          note recovery-scope-unavailable
+          break
+          ;;
+      esac
+    fi
     log_line "watchman: CLI worker $WORKER exited with $open_before open — relaunching it"
     launch_worker "$PROMPT_RESUME"
     if [ "$?" -eq 3 ]; then
@@ -338,7 +362,11 @@ baseline_transcript
 : >"$TICK" 2>/dev/null || true
 
 while :; do
-  sleep "$BASE_SLEEP"
+  if [ "${NIGHTSHIFT_WATCH_IMMEDIATE:-}" = 1 ]; then
+    unset NIGHTSHIFT_WATCH_IMMEDIATE
+  else
+    sleep "$BASE_SLEEP"
+  fi
   wake=$((wake + 1))
 
   armed || stand_down_disarmed
@@ -356,6 +384,30 @@ while :; do
     note wrong-host "$host"
     log_line "watchman: shift is owned by $host — standing down"
     exit 0
+  fi
+
+  ns_watchman_settle cursor
+  settle_rc=$?
+  if [ "$settle_rc" -eq 1 ]; then
+    if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+    continue
+  fi
+
+  # An unrecorded or unsupported scope cannot change until the owner edits recovery.launchScope.
+  # Say so once, then wake without spawning a revival or a clock-out.
+  if [ -z "$AGENT" ]; then
+    ns_watchman_recovery_hold "$NS" "$PROJECT" cursor
+    hold_rc=$?
+    if [ "$hold_rc" -eq 2 ]; then
+      hold_scope="$(ns_reason_detail "$NS")"
+      log_line "watchman: $(ns_recovery_refusal "$hold_scope"). Recovery cannot restore this configured scope."
+      log_line "watchman: the work is untouched. $(ns_recovery_repair "$PROJECT" "$hold_scope")"
+      log_line "watchman: unattended revival and clock-out stay refused until recovery.launchScope changes"
+    fi
+    if [ "$hold_rc" -ne 1 ]; then
+      if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
+      continue
+    fi
   fi
 
   if [ "$(open_boxes)" -eq 0 ]; then

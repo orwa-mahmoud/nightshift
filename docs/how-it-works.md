@@ -415,10 +415,11 @@ once a worker is recorded. Do not arm the Claude or Codex watchman from a Cursor
 Add the public GitHub repo as a Cursor marketplace source
 (`.cursor-plugin/marketplace.json` at the repo root, same role as the Claude
 marketplace file). Official marketplace listing waits on a
-verified Cursor shift with watchman recovery. The Cursor CLI (`agent`) currently ignores
-marketplace and local plugin hooks and only runs project `.cursor/hooks.json`. Setup can
-copy the shipped Cursor hook file there on an explicit yes; that is a Cursor limitation,
-not a Nightshift skip.
+verified Cursor shift with watchman recovery. The Cursor CLI (`agent`), including
+print mode (`agent -p`), runs the hooks shipped with an installed plugin. A project
+`.cursor/hooks.json` is a separate source and is not required. One that points at
+Nightshift's own hook scripts runs those hooks a second time, so Setup does not write
+that file. Remove it while the plugin is installed; Doctor names the file.
 
 The differences among the hosts are in recovery evidence. Claude Code exposes Escape,
 clean session-end, process, transcript, pulse, and API-error signals. Codex exposes SessionEnd

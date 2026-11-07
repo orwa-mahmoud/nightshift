@@ -153,7 +153,18 @@ elif [ -f "$WATCHMAN_FILE" ]; then
   WPID="$(sed -n 1p "$WATCHMAN_FILE" 2>/dev/null | tr -d '[:space:]')"
   case "$WPID" in
     '' | *[!0-9]*) ;;
-    *) if kill -0 "$WPID" 2>/dev/null; then WATCHMAN_STATE="alive (pid $WPID)"; else WATCHMAN_STATE="stale (pid $WPID)"; fi ;;
+    *)
+      if kill -0 "$WPID" 2>/dev/null; then
+        WATCHMAN_REMOVED="$(ns_watchman_removed_sentence "$NS" "$WATCHMAN_FILE" "$WPID" 2>/dev/null || true)"
+        if [ -n "$WATCHMAN_REMOVED" ]; then
+          WATCHMAN_STATE="running from a removed install (pid $WPID)"
+        else
+          WATCHMAN_STATE="alive (pid $WPID)"
+        fi
+      else
+        WATCHMAN_STATE="stale (pid $WPID)"
+      fi
+      ;;
   esac
 fi
 # A reason is the last thing a watchman recorded; once that watchman is gone it describes the past.
@@ -166,8 +177,15 @@ else
   fact "watch reason" "none"
 fi
 fact "watchman" "$WATCHMAN_STATE"
+if [ -n "${WATCHMAN_REMOVED:-}" ]; then
+  fact "watchman warning" "$WATCHMAN_REMOVED"
+fi
+STUCK="$(ns_recovery_stuck_sentence "$NS" 2>/dev/null || true)"
+if [ -n "$STUCK" ]; then
+  fact "watchman warning" "$STUCK"
+fi
 case "$WATCHMAN_STATE" in
-  alive* | "not a usable file") ;;
+  alive* | "not a usable file" | running*) ;;
   *)
     if [ "$ARMED" -eq 1 ] && [ "$OPEN" -gt 0 ] && [ "$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")" != 0 ]; then
       fact "watchman warning" "the shift is armed with open items and nothing is watching it; a crash or usage limit will not be revived until ns start-watchman arms one again"

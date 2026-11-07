@@ -24,6 +24,14 @@ setup_site() { # <name> [punch-body]
   printf '%s' "$p"
 }
 
+@test "Cursor start says inherit-recorded-scope cannot revive or clock out" {
+  p="$(setup_site preflight-cursor-scope)"
+  run bash "$PREFLIGHT" --project "$p" --host cursor
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'under inherit-recorded-scope an unattended revival and a watchman clock-out are impossible'
+  printf '%s\n' "$output" | grep -qF 'Set recovery.launchScope to host-default'
+}
+
 @test "a clean site arms and every line is a verdict" {
   p="$(setup_site preflight-clean)"
   run bash "$PREFLIGHT" --project "$p" --host claude

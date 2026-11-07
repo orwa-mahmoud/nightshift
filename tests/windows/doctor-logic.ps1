@@ -399,6 +399,49 @@ finally {
     Remove-Item -LiteralPath $unwatched -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# A project hooks file that repeats the installed plugin is named, and only then.
+$hooksCase = Join-Path ([IO.Path]::GetTempPath()) ("ns-doctor-cursor-hooks-" + [guid]::NewGuid().ToString('N'))
+$savedProfile = [string]$env:USERPROFILE
+$savedHomeEnv = [string]$env:HOME
+try {
+    $fakeHome = Join-Path $hooksCase 'home'
+    $plugin = Join-Path $fakeHome '.cursor/plugins/cache/acme/nightshift/deadbeef'
+    $null = New-Item -ItemType Directory -Path (Join-Path $plugin '.cursor-plugin') -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $plugin 'runtime/cursor') -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $plugin 'lib') -Force
+    [IO.File]::WriteAllText((Join-Path $plugin '.cursor-plugin/plugin.json'), "{`n  `"name`": `"nightshift`",`n  `"version`": `"0.0.0`"`n}`n")
+    foreach ($rel in @('runtime/cursor/watchman.sh', 'lib/lib.sh', 'lib/policy-emit.jq', 'lib/rules-read.awk')) {
+        [IO.File]::WriteAllText((Join-Path $plugin $rel), '')
+    }
+    $site = Join-Path $hooksCase 'site'
+    $siteNs = Join-Path $site '.nightshift'
+    $null = New-Item -ItemType Directory -Path $siteNs -Force
+    $null = New-Item -ItemType Directory -Path (Join-Path $site '.cursor') -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $siteNs 'rules.json')
+    $hooksFile = Join-Path $site '.cursor/hooks.json'
+    [IO.File]::WriteAllText($hooksFile, '{"version":1,"hooks":{"preToolUse":[{"command":"${CURSOR_PLUGIN_ROOT}/hooks/cursor/hardhat.sh"}]}}')
+    $env:USERPROFILE = $fakeHome
+    $env:HOME = $fakeHome
+    $dup = Invoke-Doctor $site
+    Expect-True ($dup.ExitCode -eq 0 -and $dup.Stdout.Contains("points at Nightshift's hook scripts while the Cursor plugin is installed") -and $dup.Stdout.Contains($hooksFile) -and $dup.Stdout.Contains('Doctor does not delete the file')) `
+        "a project hooks file that repeats the installed plugin is named: $($dup.Stdout)"
+    [IO.File]::WriteAllText($hooksFile, '{"version":1,"hooks":{"afterFileEdit":[{"command":".cursor/hooks/format.sh"}]}}')
+    $other = Invoke-Doctor $site
+    Expect-True ($other.ExitCode -eq 0 -and -not $other.Stdout.Contains("points at Nightshift's hook scripts")) `
+        "an unrelated project hooks file stays quiet: $($other.Stdout)"
+    $env:USERPROFILE = Join-Path $hooksCase 'empty-home'
+    $env:HOME = $env:USERPROFILE
+    [IO.File]::WriteAllText($hooksFile, '{"version":1,"hooks":{"preToolUse":[{"command":"${CURSOR_PLUGIN_ROOT}/hooks/cursor/pulse.sh"}]}}')
+    $absent = Invoke-Doctor $site
+    Expect-True ($absent.ExitCode -eq 0 -and -not $absent.Stdout.Contains("points at Nightshift's hook scripts")) `
+        "no warning when the Cursor plugin is not installed: $($absent.Stdout)"
+}
+finally {
+    if ([string]::IsNullOrEmpty($savedProfile)) { Remove-Item Env:USERPROFILE -ErrorAction SilentlyContinue } else { $env:USERPROFILE = $savedProfile }
+    if ([string]::IsNullOrEmpty($savedHomeEnv)) { Remove-Item Env:HOME -ErrorAction SilentlyContinue } else { $env:HOME = $savedHomeEnv }
+    Remove-Item -LiteralPath $hooksCase -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "doctor-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

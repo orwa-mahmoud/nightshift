@@ -12,7 +12,8 @@ $codes = @(
     'unknown-wedge', 'revived', 'stand-down', 'wrong-host', 'deadline',
     'clean-session-end', 'esc-standby', 'silent-standby', 'non-resumable-session',
     'unreadable-rules', 'fresh-fallback', 'unsupported-state', 'process-evidence-unavailable',
-    'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit'
+    'clock-out-failed', 'recovery-scope-unavailable', 'api-error', 'usage-limit',
+    'install-pending', 'install-removed', 'install-mismatch', 'recovery-stuck'
 )
 
 foreach ($code in $codes) {

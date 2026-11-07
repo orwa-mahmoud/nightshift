@@ -89,6 +89,8 @@ lease	0	.shift-lease	file
 lease	2	run/.shift-lease	file
 worker	0	.shift-worker	file
 worker	2	run/.shift-worker	file
+cursor-launch	0	.cursor-launch	file
+cursor-launch	2	run/.cursor-launch	file
 ended	0	.ended	file
 ended	2	run/.ended	file
 pending-filing	0	.pending-filing	file
