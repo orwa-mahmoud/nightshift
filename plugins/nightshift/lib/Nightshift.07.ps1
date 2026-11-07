@@ -3487,6 +3487,7 @@ function Invoke-NSShiftEnd {
     catch {
         $endedId = 'unknown'
     }
+    # Best effort, never blocks the release. A render failure is logged and the clock-out continues.
     if (Test-NSHandoffEnabled $Workspace) {
         try {
             $kept = Get-NSMorningReceiptPath $Workspace

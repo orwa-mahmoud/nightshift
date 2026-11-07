@@ -48,9 +48,10 @@ HOOK="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/clock-out-gate.ps1"
 }
 
 @test "the clock-out gate writes the receipt at the end, best effort" {
-  grep -qF 'Save-NSMorningReceipt' "$HOOK"
-  grep -qF 'Write-NSMorningReceiptFile' "$HOOK"
-  grep -qF 'never blocks the release' "$HOOK"
+  local end="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.07.ps1"
+  grep -qF 'Invoke-NSShiftEnd' "$HOOK"
+  grep -qF 'Write-NSMorningReceiptFile' "$end"
+  grep -qF 'never blocks the release' "$end"
   windows_module_source | grep -qF "\$script:NSReceiptFileFormat = 'morning-{0}-{1}.md'"
   windows_module_source | grep -qF 'Get-NSMorningReceiptPath'
 }
