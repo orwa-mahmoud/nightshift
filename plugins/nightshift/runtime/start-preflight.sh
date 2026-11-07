@@ -447,8 +447,10 @@ fi
 
 WATCHMAN_LIVE=0
 if [ -f "$WATCHMAN_PID" ] && [ ! -L "$WATCHMAN_PID" ]; then
-  w_pid="$(sed -n 1p "$WATCHMAN_PID" 2>/dev/null | tr -d '[:space:]')"
-  w_start="$(sed -n 2p "$WATCHMAN_PID" 2>/dev/null || true)"
+  w_fields="$(ns_watchman_pidfile_read "$WATCHMAN_PID" 2>/dev/null || true)"
+  w_pid="${w_fields%%$'\t'*}"
+  w_fields="${w_fields#*$'\t'}"
+  w_start="${w_fields%%$'\t'*}"
   case "$w_pid" in
     '' | *[!0-9]*) ;;
     *) ns_recorded_process "$w_pid" "$w_start" && WATCHMAN_LIVE=1 ;;

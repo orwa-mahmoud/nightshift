@@ -497,3 +497,17 @@ errored_turn() { # <codex_error_info> [resets_at]
   [ "$(calls)" -eq 0 ]
   [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = usage-limit ]
 }
+
+@test "a removed watchman pidfile stands the Codex watchman down" {
+  cat >"$BIN/unclaim.sh" <<'STUB'
+#!/usr/bin/env bash
+echo called >>.nightshift/agent-calls
+rm -f .nightshift/.watchman
+exit 0
+STUB
+  chmod +x "$BIN/unclaim.sh"
+  run watch --agent "bash $BIN/unclaim.sh" --max-wakes 2
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -ge 1 ]
+  grep -qF 'watchman: the watchman pidfile is gone — standing down' "$P/.nightshift/shift-log.md"
+}

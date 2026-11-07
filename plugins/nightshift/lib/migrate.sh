@@ -142,7 +142,7 @@ EOF
 # Status 0 printed · 2 no usable state directory.
 ns_migrate_plan() {
   local ws="$1" ns kind ver key cur p prefix suffix parent lead name inst to verdict groups
-  local moves="" work armed pid start file fkey fcur fold oldv newv doc line key2
+  local moves="" work armed pid start fields file fkey fcur fold oldv newv doc line key2
   local archive_root f rel d known strays carry
   ns="$ws/.nightshift"
   kind="$(ns_state_kind "$ws")"
@@ -174,8 +174,10 @@ EOF
   while IFS= read -r p; do
     [ -n "$p" ] || continue
     if [ ! -f "$ns/$p" ] || [ -L "$ns/$p" ]; then continue; fi
-    pid="$(sed -n 1p "$ns/$p" 2>/dev/null | tr -d '[:space:]')"
-    start="$(sed -n 2p "$ns/$p" 2>/dev/null)"
+    fields="$(ns_watchman_pidfile_read "$ns/$p" 2>/dev/null || true)"
+    pid="${fields%%$'\t'*}"
+    fields="${fields#*$'\t'}"
+    start="${fields%%$'\t'*}"
     case "$pid" in '' | *[!0-9]*) continue ;; esac
     if ns_recorded_process "$pid" "$start"; then
       printf 'refuse\ta watchman is running (pid %s, %s) - stop it with Stop or Reset first\n' "$pid" "$p"

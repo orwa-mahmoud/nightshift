@@ -683,9 +683,9 @@ if (Test-NSReparsePoint $watchmanPath) {
 }
 elseif (Test-Path -LiteralPath $watchmanPath -PathType Leaf) {
     try {
-        $watchLines = [IO.File]::ReadAllLines($watchmanPath)
-        $wpid = if ($watchLines.Count -gt 0) { ([string]$watchLines[0] -replace '\s', '') } else { '' }
-        $wstart = if ($watchLines.Count -gt 1) { [string]$watchLines[1] } else { '' }
+        $watchOwner = Read-NSWatchmanPidFile $watchmanPath
+        $wpid = $watchOwner.Pid
+        $wstart = $watchOwner.Start
     }
     catch {
         $wpid = ''

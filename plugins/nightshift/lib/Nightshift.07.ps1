@@ -576,10 +576,9 @@ function Write-NSStatusReport {
         $watchmanState = 'not a usable file'
     }
     elseif (Test-Path -LiteralPath $watchmanPath -PathType Leaf) {
-        $watchmanLines = @()
-        try { $watchmanLines = @([IO.File]::ReadAllLines($watchmanPath)) } catch { $watchmanLines = @() }
-        $watchmanPid = if ($watchmanLines.Count -gt 0) { ([string]$watchmanLines[0]) -replace '\s', '' } else { '' }
-        $watchmanStart = if ($watchmanLines.Count -gt 1) { [string]$watchmanLines[1] } else { '' }
+        $watchmanOwner = Read-NSWatchmanPidFile $watchmanPath
+        $watchmanPid = $watchmanOwner.Pid
+        $watchmanStart = $watchmanOwner.Start
         if ($watchmanPid -match '^[0-9]+$') {
             if ((Test-NSRecordedProcess $watchmanPid $watchmanStart) -eq 'Alive') {
                 $removed = Get-NSWatchmanRemovedSentence $ns $watchmanPath $watchmanPid 'windows'

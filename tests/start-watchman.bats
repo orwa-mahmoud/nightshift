@@ -55,6 +55,48 @@ launch_from() {
   [ "$(grep -c 'watchman armed' "$P/.nightshift/shift-log.md")" -eq 1 ]
 }
 
+@test "a live watchman with no pid file is not joined by a second" {
+  canon="$(cd -P "$P" && pwd)"
+  wm="$BATS_TEST_TMPDIR/watchman.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" --project "$canon" &
+  wpid=$!
+  cleanup_unrecorded() {
+    pkill -P "$wpid" 2>/dev/null || true
+    kill "$wpid" 2>/dev/null || true
+    wait "$wpid" 2>/dev/null || true
+  }
+  rm -f "$P/.nightshift/.watchman"
+  run launch --project "$P" --host claude
+  # After run, so the trap does not fire when run itself returns.
+  trap cleanup_unrecorded RETURN
+  [ "$status" -eq 0 ]
+  [ "$output" = "watchman already watching (pid $wpid)" ]
+  kill -0 "$wpid"
+  [ ! -e "$P/.nightshift/.watchman" ]
+}
+
+@test "a watchman for another project does not block this one" {
+  other="$(cd -P "$BATS_TEST_TMPDIR" && pwd)/other-project"
+  wm="$BATS_TEST_TMPDIR/watchman.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" --project "$other" &
+  wpid=$!
+  cleanup_other() {
+    pkill -P "$wpid" 2>/dev/null || true
+    kill "$wpid" 2>/dev/null || true
+    wait "$wpid" 2>/dev/null || true
+  }
+  run launch --project "$P" --host claude
+  trap cleanup_other RETURN
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'watchman started'
+  [ "$output" != "watchman already watching (pid $wpid)" ]
+  kill -0 "$wpid"
+}
+
 @test "a watchman that cannot arm is reported in its own words and nothing is left running" {
   rm "$P/.nightshift/rules.json"
   run launch --project "$P" --host claude

@@ -436,9 +436,9 @@ $stoppedItems = [int]$counts.Stopped
 $watchmanLive = $false
 $watchmanPath = Get-NSLayoutPath $ns 'watchman'
 if ((Test-Path -LiteralPath $watchmanPath -PathType Leaf) -and -not (Test-NSReparsePoint $watchmanPath)) {
-    $watchLines = @([IO.File]::ReadAllLines($watchmanPath))
-    $watchPid = if ($watchLines.Count -gt 0) { $watchLines[0].Trim() } else { '' }
-    $watchStart = if ($watchLines.Count -gt 1) { $watchLines[1] } else { '' }
+    $watchOwner = Read-NSWatchmanPidFile $watchmanPath
+    $watchPid = $watchOwner.Pid
+    $watchStart = $watchOwner.Start
     if ((Test-NSRecordedProcess $watchPid $watchStart) -eq 'Alive') { $watchmanLive = $true }
 }
 if ($watchmanLive -and (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf) -and $open -gt 0) {

@@ -1111,10 +1111,9 @@ function Get-NSMigrationPlan {
     foreach ($p in (Get-NSMigrationRows 'watchman')) {
         $native = Get-NSMigrationNative $ns $p
         if (-not (Test-NSMigrationFile $native)) { continue }
-        $lines = @()
-        try { $lines = @([IO.File]::ReadAllLines($native)) } catch { $lines = @() }
-        $recorded = if ($lines.Count -gt 0) { ([string]$lines[0]) -replace '\s', '' } else { '' }
-        $start = if ($lines.Count -gt 1) { [string]$lines[1] } else { '' }
+        $recordedOwner = Read-NSWatchmanPidFile $native
+        $recorded = $recordedOwner.Pid
+        $start = $recordedOwner.Start
         if ($recorded -cnotmatch '^[0-9]+$') { continue }
         # A process that cannot be looked at is treated as the watchman it may be.
         if ((Test-NSRecordedProcess $recorded $start) -in @('Alive', 'Unavailable')) {

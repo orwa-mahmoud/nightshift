@@ -471,3 +471,18 @@ STUB
   [ -f "$P/.nightshift/agent-argv" ]
   if grep -q -- '--model\|--force\|--trust' "$P/.nightshift/agent-argv"; then return 1; fi
 }
+
+@test "a removed watchman pidfile stands the Cursor watchman down" {
+  cat >"$BIN/unclaim.sh" <<'STUB'
+#!/usr/bin/env bash
+echo called >>.nightshift/agent-calls
+rm -f .nightshift/.watchman
+exit 0
+STUB
+  chmod +x "$BIN/unclaim.sh"
+  stale_pulse
+  run watch --agent "bash $BIN/unclaim.sh" --max-wakes 2
+  [ "$status" -eq 0 ]
+  [ "$(calls)" -eq 3 ]
+  grep -qF 'watchman: the watchman pidfile is gone — standing down' "$P/.nightshift/shift-log.md"
+}

@@ -135,6 +135,17 @@ stand_down_disarmed() {
   log_line "watchman: the armed marker is gone — standing down"
   exit 0
 }
+stand_down_unclaimed() {
+  if [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ]; then
+    trap - EXIT
+    note stand-down "watchman pidfile taken over"
+    log_line "watchman: another watchman owns this site — standing down"
+    exit 0
+  fi
+  note stand-down "watchman pidfile gone"
+  log_line "watchman: the watchman pidfile is gone — standing down"
+  exit 0
+}
 
 declare PIDFILE
 ns_layout_set PIDFILE "$NS" watchman
@@ -505,6 +516,7 @@ while :; do
   wake=$((wake + 1))
 
   armed || stand_down_disarmed
+  holds_pidfile || stand_down_unclaimed
   if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then note completed; exit 0; fi
   if [ ! -f "$PUNCH" ]; then note stand-down "punch list missing"; exit 0; fi
   if [ -f "$SESSION_END" ] && [ ! -L "$SESSION_END" ]; then

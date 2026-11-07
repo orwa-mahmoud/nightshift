@@ -84,6 +84,18 @@ case "$held" in
     ;;
 esac
 
+# A live watchman can outlive its pid file: Stop used to delete the file without
+# killing the process. The script and --project still name it, and a second one
+# must not start beside it.
+live="$(ns_watchman_live_for_project "$WORKSPACE" 2>/dev/null || true)"
+case "$live" in
+  '' | *[!0-9]*) ;;
+  *)
+    printf 'watchman already watching (pid %s)\n' "$live"
+    exit 0
+    ;;
+esac
+
 mkdir -p "${OUTPUT%/*}" "${LOG%/*}" 2>/dev/null
 log_from=0
 [ -f "$LOG" ] && log_from="$(wc -c <"$LOG" | tr -d '[:space:]')"

@@ -865,9 +865,9 @@ try {
     }
     elseif (Test-Path -LiteralPath $pidFile -PathType Leaf) {
         try {
-            $oldOwner = [IO.File]::ReadAllLines($pidFile)
-            $oldPid = if ($oldOwner.Count -gt 0) { $oldOwner[0] } else { '' }
-            $oldStart = if ($oldOwner.Count -gt 1) { $oldOwner[1] } else { '' }
+            $oldOwner = Read-NSWatchmanPidFile $pidFile
+            $oldPid = $oldOwner.Pid
+            $oldStart = $oldOwner.Start
             $handoffPid = [string]$env:NIGHTSHIFT_WATCH_HANDOFF_PID
             $handoff = [string]$env:NIGHTSHIFT_WATCH_HANDOFF -eq '1' -and $oldPid -eq $handoffPid
             if ($oldPid -ne [string]$PID -and -not $handoff -and (Test-NSRecordedProcess $oldPid $oldStart) -eq 'Alive') {
@@ -880,12 +880,8 @@ try {
             }
         }
     }
-    $null = Write-NSAtomicLines -Path $pidFile -Lines @(
-        [string]$PID,
-        (Get-NSProcessStart $PID),
-        ('script:' + $script:NSWatchmanScript),
-        ('version:' + $script:NSWatchmanSelfVersion)
-    )
+    $null = Write-NSWatchmanPidFile -Path $pidFile -ProcessId ([string]$PID) `
+        -Start (Get-NSProcessStart $PID) -Script $script:NSWatchmanScript -Version $script:NSWatchmanSelfVersion
 
     Write-NSLogLine "watchman ($HostName, Windows) armed - every ${IntervalMinutes}m"
     $script:WatchStart = Get-NSUnixTime
@@ -925,8 +921,14 @@ try {
             Write-NSLogLine "watchman: the armed marker is gone $([char]0x2014) standing down"
             exit 0
         }
-        if (-not (Test-Path -LiteralPath $pidFile -PathType Leaf)) {
-            Write-NSLogLine "watchman: the watchman pidfile is gone $([char]0x2014) standing down"
+        $claim = Read-NSWatchmanPidFile $pidFile
+        if ($claim.Pid -ne [string]$PID) {
+            if ([string]::IsNullOrEmpty($claim.Pid)) {
+                Write-NSLogLine "watchman: the watchman pidfile is gone $([char]0x2014) standing down"
+            }
+            else {
+                Write-NSLogLine "watchman: another watchman owns this site $([char]0x2014) standing down"
+            }
             exit 0
         }
 
