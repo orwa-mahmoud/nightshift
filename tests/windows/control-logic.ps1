@@ -149,14 +149,31 @@ try {
     Expect-True (-not (Test-NSWatchmanCommandForProject "bash /tmp/start-watchman.sh --project $watchRoot" $watchRoot)) `
         'the launcher is not a watchman script'
 
-    $scriptPath = Join-Path $watchRoot 'watchman.sh'
-    [IO.File]::WriteAllText($scriptPath, "#!/bin/sh`nwhile :; do :; done`n")
-    & chmod +x $scriptPath
+    $scriptPath = if ($env:OS -eq 'Windows_NT') { Join-Path $watchRoot 'watchman.ps1' } else { Join-Path $watchRoot 'watchman.sh' }
+    if ($env:OS -eq 'Windows_NT') {
+        [IO.File]::WriteAllText($scriptPath, "Start-Sleep -Seconds 300`n")
+    }
+    else {
+        [IO.File]::WriteAllText($scriptPath, "#!/bin/sh`nwhile :; do :; done`n")
+        & chmod +x $scriptPath
+    }
     $canon = Resolve-NSCanonicalPath $watchRoot
     $pidFile = Get-NSLayoutPath $watchNs 'watchman'
+    $hostExe = (Get-Process -Id $PID).Path
     $spawned = New-Object System.Collections.Generic.List[System.Diagnostics.Process]
+    function Start-FixtureWatchman {
+        param([switch]$WithProject)
+        if ($env:OS -eq 'Windows_NT') {
+            $spawnArgs = @('-NoProfile', '-NonInteractive', '-File', $scriptPath)
+            if ($WithProject) { $spawnArgs += @('--project', $canon) }
+            return Start-Process -FilePath $hostExe -ArgumentList $spawnArgs -PassThru
+        }
+        $spawnArgs = @($scriptPath)
+        if ($WithProject) { $spawnArgs += @('--project', $canon) }
+        return Start-Process -FilePath '/bin/bash' -ArgumentList $spawnArgs -PassThru
+    }
     try {
-        $three = Start-Process -FilePath '/bin/bash' -ArgumentList @($scriptPath, '--project', $canon) -PassThru
+        $three = Start-FixtureWatchman -WithProject
         $spawned.Add($three)
         [IO.File]::WriteAllText($pidFile, "$($three.Id)`nscript:$scriptPath`nversion:0.30.2`n")
         $threeStopped = Stop-NSWatchman $watchNs
@@ -176,13 +193,13 @@ try {
         $plain.Refresh()
         Expect-True ($plain.HasExited) 'two-line process is gone'
 
-        $unrecorded = Start-Process -FilePath '/bin/bash' -ArgumentList @($scriptPath, '--project', $canon) -PassThru
+        $unrecorded = Start-FixtureWatchman -WithProject
         $spawned.Add($unrecorded)
         $found = Find-NSWatchmanForProject $canon
         Expect-True ($found -eq $unrecorded.Id) "unrecorded watchman is found (got $found, want $($unrecorded.Id))"
         Stop-Process -Id $unrecorded.Id -Force -ErrorAction SilentlyContinue
 
-        $resetProc = Start-Process -FilePath '/bin/bash' -ArgumentList @($scriptPath) -PassThru
+        $resetProc = Start-FixtureWatchman
         $spawned.Add($resetProc)
         [IO.File]::WriteAllText((Join-Path $watchNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
         [IO.File]::WriteAllText($pidFile, "$($resetProc.Id)`nscript:$scriptPath`nversion:0.30.2`n")
@@ -194,7 +211,7 @@ try {
         $purgeRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-watch-purge-" + [guid]::NewGuid().ToString('N'))
         $purgeNs = Join-Path $purgeRoot '.nightshift'
         $null = New-Item -ItemType Directory -Path $purgeNs -Force
-        $purgeProc = Start-Process -FilePath '/bin/bash' -ArgumentList @($scriptPath) -PassThru
+        $purgeProc = Start-FixtureWatchman
         $spawned.Add($purgeProc)
         [IO.File]::WriteAllText((Join-Path $purgeNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
         [IO.File]::WriteAllText((Get-NSLayoutPath $purgeNs 'watchman'), "$($purgeProc.Id)`nscript:$scriptPath`nversion:0.30.2`n")

@@ -2014,6 +2014,15 @@ function Get-NSParentPid {
         if ($null -ne $proc.Parent -and $proc.Parent.Id -gt 1) { return [int]$proc.Parent.Id }
     }
     catch { }
+    if ($env:OS -eq 'Windows_NT') {
+        try {
+            $row = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction Stop
+            $parent = [int]$row.ParentProcessId
+            if ($parent -gt 1) { return $parent }
+        }
+        catch { }
+        return 0
+    }
     $raw = & ps -o ppid= -p $ProcessId 2>$null
     $text = ([string]$raw).Trim()
     if ($text -match '^[1-9][0-9]*$') { return [int]$text }
