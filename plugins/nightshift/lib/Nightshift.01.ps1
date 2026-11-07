@@ -2532,6 +2532,13 @@ function Stop-NSWatchman {
             return 'unverified'
         }
     }
+    $gone = $false
+    for ($i = 0; $i -lt 40; $i++) {
+        $still = Get-Process -Id ([int]$procId) -ErrorAction SilentlyContinue
+        if ($null -eq $still -or $still.HasExited) { $gone = $true; break }
+        Start-Sleep -Milliseconds 50
+    }
+    if (-not $gone) { return 'unverified' }
     Remove-NSPath $pidFile
     Remove-NSPath $tick
     return 'stopped'
