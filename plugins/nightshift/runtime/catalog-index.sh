@@ -248,19 +248,7 @@ pairs_file="$(mktemp "${TMPDIR:-/tmp}/ns-catalog-pairs.XXXXXX")" || exit 1
 trap 'rm -f "$pairs_file"' EXIT
 set --
 if [ -n "$paths_raw" ] && [ "$paths_raw" != null ]; then
-  parsed="$(python3 -c 'import json,sys
-try:
-    v=json.loads(sys.argv[1])
-except Exception:
-    sys.exit(2)
-if v is None:
-    sys.exit(0)
-if not isinstance(v, list) or any(not isinstance(x, str) for x in v):
-    sys.exit(2)
-for x in v:
-    sys.stdout.write(x + "\n")
-' "$paths_raw" 2>/dev/null)" || parsed="__unreadable__"
-  if [ "$parsed" = "__unreadable__" ]; then
+  if ! parsed="$(ns_json_string_list "$paths_raw")"; then
     printf 'catalog-index: %s could not be read\n' "$paths_label" >&2
   else
     while IFS= read -r raw; do

@@ -191,6 +191,16 @@ _ns_rules_array() {
   printf '[%s]' "$out"
 }
 
+# ns_json_string_list <json> — each string of a JSON array on its own line, read with awk alone.
+# An empty argument or null prints nothing. Status 1 when the value is not a list of strings.
+ns_json_string_list() {
+  local out
+  [ -n "$1" ] || return 0
+  out="$(printf '%s' "$1" | _ns_rules_scan stringlist -)" || return 1
+  case "$out" in ERR"$_NS_RULES_TAB"*) return 1 ;; esac
+  [ -z "$out" ] || printf '%s\n' "$out"
+}
+
 # ns_rules_set_block <file> <key> <compact-json> — the same document with one top-level key set
 # to that value, sorted and indented, on stdout. Every other key survives byte for byte, including
 # one this version does not know: a plugin update fills settings in, it never takes them away.

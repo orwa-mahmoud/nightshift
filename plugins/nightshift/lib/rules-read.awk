@@ -15,6 +15,7 @@
 #   canonat  the compact canonical JSON of the value at dotted path -v key, or nothing when absent
 #   renamekey the document with top-level key -v key renamed to -v value, sorted and indented
 #   dropkey  the document without the value at dotted path -v key, sorted and indented
+#   stringlist one JSON array of strings, each decoded on its own line; null prints nothing
 #   unquote  one JSON string on stdin, decoded text on stdout
 
 {
@@ -38,7 +39,7 @@ END {
     fail("empty document")
   }
   if (mode == "canon" || mode == "pretty" || mode == "setblock" || mode == "mergeblock" ||
-      mode == "canonat" || mode == "renamekey" || mode == "dropkey") {
+      mode == "canonat" || mode == "renamekey" || mode == "dropkey" || mode == "stringlist") {
     jparse(".")
     skip_ws()
     if (i <= n) {
@@ -48,6 +49,10 @@ END {
       if (key in V_TYPE) {
         printf "%s\n", canon(key)
       }
+      exit
+    }
+    if (mode == "stringlist") {
+      emit_string_list()
       exit
     }
     if (mode == "renamekey") {
@@ -452,6 +457,29 @@ function emit_policy(    j, k, ap, cs, ws, cnt, val) {
 # canon(path) — the parsed value at path as compact canonical JSON. Keys sort in byte order,
 # which is what every other canonical writer here produces, so one document has one form
 # whichever reader wrote it.
+# One JSON array of strings, each decoded on its own line; null prints nothing. Any other shape
+# fails with a named reason, so a caller never mistakes a bad value for an empty list.
+function emit_string_list(    t, j) {
+  t = ptype(".")
+  if (t == "null") {
+    return
+  }
+  if (t != "array") {
+    fail("not a list of strings")
+  }
+  for (j = 0; j < V_LEN["."]; j++) {
+    if (ptype(".[" j "]") != "string") {
+      fail("not a list of strings")
+    }
+    if (index(V_STR[".[" j "]"], "\n") > 0) {
+      fail("a list entry spans lines")
+    }
+  }
+  for (j = 0; j < V_LEN["."]; j++) {
+    printf "%s\n", V_STR[".[" j "]"]
+  }
+}
+
 function canon(path,    t, out, keys, count, j, child, first) {
   t = ptype(path)
   if (t == "object") {

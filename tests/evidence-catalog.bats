@@ -391,6 +391,47 @@ EOF
   printf '%s\n' "$output" | grep -qF "configured folder missing: $missing"
 }
 
+@test "configured folders are read on a PATH with neither python3 nor jq" {
+  bin="$(build_toolset_bin no-parser-bin bash sh sed tr sort grep cut awk cat mktemp uname \
+    date rm mv cp ln printf head tail wc find test dirname basename cksum env true false \
+    chmod mkdir ls readlink)"
+  [ ! -e "$bin/python3" ]
+  [ ! -e "$bin/jq" ]
+  p="$(new_project no-parser)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  folder="$BATS_TEST_TMPDIR/configured"
+  write_kind "$folder/conf-only.md" "Configured only"
+  jq --arg a "$folder" '.receipts.evidence.kindsPaths = [$a]' \
+    "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+
+  run env -i PATH="$bin" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | awk -F'\t' '$1 == "conf-only" { print $4 }')" = "$folder" ] \
+    || { printf '%s\n' "$output"; return 1; }
+  if printf '%s\n' "$output" | grep -qF 'could not be read'; then
+    printf '%s\n' "$output"
+    return 1
+  fi
+
+  jq '.receipts.evidence.kindsPaths = "not a list"' \
+    "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  run env -i PATH="$bin" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'catalog-index: kindsPaths could not be read'
+  printf '%s\n' "$output" | awk -F'\t' '$1 == "ui" { found = 1 } END { exit found ? 0 : 1 }'
+
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  run pwsh -NoProfile -File "$INDEX_PS1" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'catalog-index: kindsPaths could not be read'
+}
+
 @test "with no owner folders the index is the shipped kinds alone" {
   p="$(new_project owner-none)"
   printf '2\n' >"$p/.nightshift/state-version"
