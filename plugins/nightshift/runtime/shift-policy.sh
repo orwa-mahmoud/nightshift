@@ -26,7 +26,7 @@
 # archive directory the clock-out gate files the snapshot into. Both writes are refused while the
 # shift is armed: composition writes before arming, and hardhat guards the files after.
 # Exit: 0 ok · 1 usage · 2 contract failure, naming the field · 3 nothing to read or archive
-#       · 4 refused while armed
+#       · 4 refused while armed · 5 resolve could not load rules.json
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"
@@ -324,11 +324,20 @@ cmd_defaults_set() {
 }
 
 cmd_resolve() {
+  local why=""
+  if [ -f "$RULES" ] && ! why="$(ns_rules_check "$WORKSPACE" 2>&1)"; then
+    [ -n "$why" ] || why="unreadable"
+  else
+    why=""
+  fi
   if [ "$FORMAT" = table ]; then
     ns_policy_resolve_table "$WORKSPACE" || die 'JSON parser unavailable; composition writes shift-policy.json and Start already has rules.json' 2
   else
     ns_policy_resolve "$WORKSPACE" || die 'JSON parser unavailable; composition writes shift-policy.json and Start already has rules.json' 2
   fi
+  # A file the reader refuses is never a silent fallback: the view above is the built-ins, and the
+  # exit status says so.
+  [ -z "$why" ] || die "$RULES cannot be loaded: $why; the values above are the built-ins" 5
   exit 0
 }
 

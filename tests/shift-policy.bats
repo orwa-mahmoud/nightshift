@@ -562,3 +562,18 @@ write_policy() { # <project> [extra JSON]
     date rm mv cp ln printf head tail wc find test dirname cmp)"
   agree "python3 backend" "$bin"
 }
+
+@test "resolve names a rules file the runtime cannot load, and exits 5 on both runtimes" {
+  p="$(unarmed resolve-broken)"
+  jq '.notifyCommand = null' "$p/.nightshift/rules.json" >"$p/rules.tmp"
+  mv "$p/rules.tmp" "$p/.nightshift/rules.json"
+  run bash "$SP" --project "$p" resolve --table
+  [ "$status" -eq 5 ]
+  printf '%s' "$output" | grep -qF 'rules.json cannot be loaded: unknown type'
+  if command -v pwsh >/dev/null 2>&1; then
+    printf '{not json' >"$p/.nightshift/rules.json"
+    run pwsh -NoProfile -File "$ROOT/plugins/nightshift/runtime/windows/shift-policy.ps1" -Project "$p" -Command resolve -Table
+    [ "$status" -eq 5 ]
+    printf '%s' "$output" | grep -qF 'rules.json cannot be loaded'
+  fi
+}

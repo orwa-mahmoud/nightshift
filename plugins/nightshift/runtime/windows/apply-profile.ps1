@@ -277,7 +277,23 @@ if ($Mode -eq 'fill') {
     }
 }
 else {
+    # Replace rebuilds the guards from the shipped template: the top-level settings and the toolDeny
+    # and elevation blocks. Every other block is an owner preference no guard profile is asking
+    # about (shift defaults, receipts, catalogs, retention and the rest), so it is kept as it is.
     $proposed = Copy-NSJsonObject $template
+    if ($null -ne $current) {
+        foreach ($property in $current.PSObject.Properties) {
+            $value = $property.Value
+            if ($null -eq $value -or $value -is [Array] -or $value -is [string] -or $value -is [ValueType]) { continue }
+            if ($property.Name -ceq 'toolDeny' -or $property.Name -ceq 'elevation') { continue }
+            if ($null -eq $proposed.PSObject.Properties[$property.Name]) {
+                $proposed | Add-Member -NotePropertyName $property.Name -NotePropertyValue $value
+            }
+            else {
+                $proposed.($property.Name) = $value
+            }
+        }
+    }
     foreach ($property in $profileObj.rules.PSObject.Properties) {
         if ($null -eq $proposed.PSObject.Properties[$property.Name]) {
             $proposed | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
@@ -310,10 +326,11 @@ if ($null -eq $toolDeny -or $toolDeny -is [Array] -or $toolDeny -is [string] -or
     exit 2
 }
 
-# shift-defaults.json base: the current file when it parses and matches the shape, else the
-# built-in defaults (a missing or malformed file decides nothing).
+# The base a profile merges over: the owner file's shift block when it has one, else the older
+# defaults file where a workspace still has one, else the built-ins. Reading the shift block first
+# keeps a field the last profile set. Mirrors shift_defaults_base in apply-profile.sh.
 function Get-NSShiftDefaultsBase {
-    param([string]$Path)
+    param([string]$Path, $Current)
     $shipped = New-NSShiftDefaultsDocument
     $builtin = [pscustomobject]@{
         schemaVersion        = 1
@@ -321,6 +338,18 @@ function Get-NSShiftDefaultsBase {
         hours                = $shipped['hours']
         toolingPolicy        = $shipped['toolingPolicy']
         execution            = $shipped['execution']
+    }
+    $block = Get-NSJsonPropertyValue $Current 'shift'
+    if ($null -ne $block -and $block -isnot [Array] -and $block -isnot [string] -and $block -isnot [ValueType]) {
+        foreach ($property in $block.PSObject.Properties) {
+            if ($null -eq $builtin.PSObject.Properties[$property.Name]) {
+                $builtin | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
+            }
+            else {
+                $builtin.($property.Name) = $property.Value
+            }
+        }
+        return $builtin
     }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return $builtin
@@ -431,6 +460,34 @@ function Get-NSGatesBody {
     return ($lines -join "`n")
 }
 
+# The whole next owner file, shift block included, so the preview is exactly what -Apply writes.
+# The remembered choices live in the shift block of the owner file, where they are read from.
+if ($sdType -eq 'object') {
+    $sdMerged = Merge-NSShiftDefaults (Get-NSShiftDefaultsBase $defaultsPath $current) $profileObj
+    $shiftBlock = Get-NSJsonPropertyValue $proposed 'shift'
+    if ($null -eq $shiftBlock -or $shiftBlock -is [Array] -or $shiftBlock -is [string] -or $shiftBlock -is [ValueType]) {
+        $shiftBlock = [pscustomobject]@{}
+    }
+    else {
+        $shiftBlock = Copy-NSJsonObject $shiftBlock
+    }
+    foreach ($property in $sdMerged.PSObject.Properties) {
+        if ($property.Name -ceq 'schemaVersion' -or $property.Name -ceq 'updatedAt') { continue }
+        if ($null -eq $shiftBlock.PSObject.Properties[$property.Name]) {
+            $shiftBlock | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
+        }
+        else {
+            $shiftBlock.($property.Name) = $property.Value
+        }
+    }
+    if ($null -eq $proposed.PSObject.Properties['shift']) {
+        $proposed | Add-Member -NotePropertyName shift -NotePropertyValue $shiftBlock
+    }
+    else {
+        $proposed.shift = $shiftBlock
+    }
+}
+
 Write-Output ("Profile: {0}" -f $profileObj.name)
 Write-Output ("Risk:    {0}" -f $profileObj.risk)
 Write-Output ("Use:     {0}" -f $profileObj.use)
@@ -443,14 +500,6 @@ foreach ($property in $profileObj.rules.PSObject.Properties) {
 Write-Output ''
 Write-Output 'Proposed rules.json'
 Write-Output ($proposed | ConvertTo-Json -Depth 20)
-
-if ($sdType -eq 'object') {
-    $sdBase = Get-NSShiftDefaultsBase $defaultsPath
-    $sdMerged = Merge-NSShiftDefaults $sdBase $profileObj
-    Write-Output ''
-    Write-Output 'Proposed shift-defaults.json'
-    Write-Output ($sdMerged | ConvertTo-Json -Depth 20)
-}
 
 if ($gatesType -eq 'object') {
     Write-Output ''
@@ -468,9 +517,12 @@ $json = ($proposed | ConvertTo-Json -Depth 20)
 if (-not $json.EndsWith("`n")) {
     $json += [Environment]::NewLine
 }
+# One write: the next file is read back before it replaces the owner's, so a failure leaves the
+# owner file as it was.
 $tmp = Join-Path $ns ('.rules.json.{0}' -f $PID)
 try {
     [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding $false))
+    $null = Get-Content -LiteralPath $tmp -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     Move-Item -LiteralPath $tmp -Destination $rulesPath -Force
 }
 catch {
@@ -481,26 +533,6 @@ catch {
 }
 Write-Output "Wrote $rulesPath"
 
-if ($sdType -eq 'object') {
-    $sdBase = Get-NSShiftDefaultsBase $defaultsPath
-    $sdMerged = Merge-NSShiftDefaults $sdBase $profileObj
-    $sdJson = ($sdMerged | ConvertTo-Json -Depth 20) -replace "`r`n", "`n"
-    if (-not $sdJson.EndsWith("`n")) {
-        $sdJson += "`n"
-    }
-    $tmpSd = Join-Path $ns ('.shift-defaults.json.{0}' -f $PID)
-    try {
-        [IO.File]::WriteAllText($tmpSd, $sdJson, (New-Object Text.UTF8Encoding $false))
-        Move-Item -LiteralPath $tmpSd -Destination $defaultsPath -Force
-    }
-    catch {
-        if (Test-Path -LiteralPath $tmpSd -PathType Leaf) {
-            Remove-NSFile $tmpSd
-        }
-        exit 2
-    }
-    Write-Output "Wrote $defaultsPath"
-}
 
 if ($gatesType -eq 'object') {
     $plLines = @(Get-Content -LiteralPath $punchListPath)

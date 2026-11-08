@@ -229,9 +229,11 @@ can preview or copy every version-1 or version-2 JSON file in
 `plugins/nightshift/skills/nightshift/references/profiles/`; the shipped `balanced`, `fast`, and
 `strict` profiles are version 2 and also carry shift defaults and a Gates block. That is a
 one-time local write, not a policy subscription. Fill keeps every owner value and refuses a file
-missing either native question policy. Replace starts from the complete shipped template, applies
-the profile, and shows the full next file first. Apply only while unarmed. Native Windows uses
-PowerShell's JSON parser; it does not require `jq`.
+missing either native question policy. Replace rebuilds the guards from the shipped template,
+keeps every owner block (shift defaults, receipts, catalogs, retention and the rest), and applies
+the profile. The preview is the full file that is written, and a file the runtime could not load
+is never written. Apply only while unarmed. Native Windows uses PowerShell's JSON parser; it does
+not require `jq`.
 
 **Idle window.** `idleWindowMinutes` (shipped **30**, `NIGHTSHIFT_IDLE_WINDOW` for one session) is how long a live worker must stay quiet before the watchman stops its process tree and revives the shift. Quiet means a stale pulse, an unchanged transcript or rollout, under a second of CPU across that tree, and no build, test, or browser child. Any of those signals resets the window. Missing or unreadable is 30. Two failed revivals of that worker write one parking-lot notice and stop retrying until the worker is busy again or the next Start.
 

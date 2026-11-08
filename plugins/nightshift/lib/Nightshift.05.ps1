@@ -1348,11 +1348,16 @@ function Invoke-NSShiftPolicyCommand {
                     -Hours $Hours -ToolingPolicy $ToolingPolicy -Execution $Execution)
         }
         'resolve' {
-            if ($Table) {
-                Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Table)
-                return 0
+            # A file the reader refuses is never a silent fallback: the view is the built-ins, and the
+            # exit status says so. Mirrors cmd_resolve in shift-policy.sh.
+            $rulesFile = Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'rules'
+            $unreadable = (Test-Path -LiteralPath $rulesFile -PathType Leaf) -and ($null -eq (Get-NSRulesObject $workspace))
+            if ($Table) { Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Table) }
+            else { Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Json) }
+            if ($unreadable) {
+                Write-NSPolicyError "shift-policy: $rulesFile cannot be loaded; the values above are the built-ins"
+                return 5
             }
-            Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Json)
             return 0
         }
         'migrate' {
