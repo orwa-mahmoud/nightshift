@@ -76,6 +76,7 @@ usage-shift	2	run/usage-*	dir
 evidence	0	evidence	dir
 evidence	2	run/evidence	dir
 evidence-kinds	2	evidence/kinds	dir
+gates-stacks	2	gates/stacks	dir
 provision-transaction	0	provision-transaction.json	file
 provision-transaction	2	run/provision-transaction.json	file
 provision-baseline	0	provision-baseline	dir

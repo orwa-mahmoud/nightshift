@@ -568,6 +568,29 @@ else {
                 Add-NSAct confirm "set $name to `"off`" or `"on`" in $rulesPath"
             }
         }
+        $gatesRule = $rules.PSObject.Properties['gates']
+        if ($null -ne $gatesRule -and $gatesRule.Value -is [Management.Automation.PSCustomObject]) {
+            $template = $gatesRule.Value.PSObject.Properties['stackTemplatePath']
+            if ($null -ne $template -and $template.Value -isnot [string]) {
+                $shown = ConvertTo-Json -Compress -InputObject $template.Value
+                Add-NSWarn "rules.json gates.stackTemplatePath is $shown; it must be text"
+                Add-NSAct confirm "set gates.stackTemplatePath to a template path, or `"`", in $rulesPath"
+            }
+            $stacks = $gatesRule.Value.PSObject.Properties['stacksPaths']
+            if ($null -ne $stacks) {
+                $stacksOk = $stacks.Value -is [Collections.IEnumerable] -and $stacks.Value -isnot [string]
+                if ($stacksOk) {
+                    foreach ($folder in @($stacks.Value)) {
+                        if ($folder -isnot [string]) { $stacksOk = $false; break }
+                    }
+                }
+                if (-not $stacksOk) {
+                    $shown = ConvertTo-Json -Compress -InputObject $stacks.Value
+                    Add-NSWarn "rules.json gates.stacksPaths is $shown; it must be a list of folders"
+                    Add-NSAct confirm "set gates.stacksPaths to a list of folders, or [], in $rulesPath"
+                }
+            }
+        }
     }
 }
 

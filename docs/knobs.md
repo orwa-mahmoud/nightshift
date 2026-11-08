@@ -370,6 +370,16 @@ plus a runtime-written index. It never reaches a public commit message.
 With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
 would be without these settings. A shift policy can turn any of them on for one shift.
 
+## Gates
+
+Stacks the owner adds beside the shipped quality-gate catalog. Empty leaves detection on the
+shipped stacks alone.
+
+| Key | Default | Values |
+|---|---|---|
+| `gates.stackTemplatePath` | `""` | The owner's template for a new stack. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. A drafted stack still needs Detect, Item gate, Site inspection, Notes, and one `Match:` line, and the check names any that are missing |
+| `gates.stacksPaths` | `[]` | More folders of stacks. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
+
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
 Nightshift already registers do see the numbers, and they take the readings. A reading is taken at

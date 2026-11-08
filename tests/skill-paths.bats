@@ -480,7 +480,8 @@ PY
 @test "catalog prose uses Nightshift filenames, not a workspace prefix" {
   for f in "$SKILLS/nightshift/references"/catalog-recipe.md \
            "$SKILLS/nightshift/references"/execution-modes.md \
-           "$SKILLS/nightshift/references"/gates-catalog.md \
+           "$SKILLS/nightshift/references/compose/gates-catalog.md" \
+           "$SKILLS/nightshift/references/compose/gates"/*.md \
            "$SKILLS/nightshift/references"/shift-catalog.md \
            "$SKILLS/nightshift/references/compose/shifts"/*.md; do
     ! grep -qF '$NIGHTSHIFT_WORKSPACE/.nightshift/' "$f" \

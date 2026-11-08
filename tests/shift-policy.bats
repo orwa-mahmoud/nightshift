@@ -83,7 +83,7 @@ write_policy() { # <project> [extra JSON]
   # Everything the candidate stated comes back exactly as it was written. What the snapshot adds
   # is what the shift needs fixed: the scope this session runs under, and the owner preferences
   # tonight was composed with.
-  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .receipts, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .receipts, .gates, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
   # And the contract as it stood at arming, so the gate can tell later whether it moved.
   printf '%s' "$output" | jq -e '
@@ -113,7 +113,7 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .receipts, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .receipts, .gates, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
 }
 

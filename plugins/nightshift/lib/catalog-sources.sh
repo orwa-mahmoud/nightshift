@@ -15,6 +15,7 @@
 #   NS_CATALOG_FENCE       a fence language that, when present, must carry the keys below
 #   NS_CATALOG_FENCE_KEYS  those keys, separated by spaces
 #   NS_CATALOG_FENCE_TYPES allowed values of a key named type, separated by spaces
+#   NS_CATALOG_MATCH       yes when the file must carry one Match line of stack, plugin, or fallback
 #
 # ns_catalog_entry_problems prints one reason per line and returns 1 when the file fails.
 # ns_catalog_list prints the index on stdout and the reasons on stderr, and returns 0.
@@ -72,7 +73,8 @@ ns_catalog_entry_problems() {
     -v bullet="${NS_CATALOG_BULLET-}" \
     -v fence="${NS_CATALOG_FENCE-}" \
     -v keys="${NS_CATALOG_FENCE_KEYS-}" \
-    -v types="${NS_CATALOG_FENCE_TYPES-}" '
+    -v types="${NS_CATALOG_FENCE_TYPES-}" \
+    -v matchmode="${NS_CATALOG_MATCH-}" '
     function fail(msg) { print msg; bad = 1 }
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     BEGIN {
@@ -85,6 +87,7 @@ ns_catalog_entry_problems() {
       seen_h1 = 0
       bullet_on = 0
       bullet_found = 0
+      match_seen = 0
     }
     {
       rest = $0
@@ -118,6 +121,13 @@ ns_catalog_entry_problems() {
         next
       }
       if (bullet_on && line ~ /^- /) bullet_found = 1
+      if (matchmode == "yes" && line ~ /^Match:[[:space:]]*/) {
+        val = trim(substr(line, 7))
+        if (val != "stack" && val != "plugin" && val != "fallback") fail("invalid match")
+        if (match_seen) fail("duplicate match")
+        match_seen = 1
+        next
+      }
       if (fence != "" && line ~ ("^```" fence "[[:space:]]*$")) {
         if (in_fence) fail("nested fence")
         in_fence = 1
@@ -157,6 +167,7 @@ ns_catalog_entry_problems() {
         if (need[h] != "" && !(need[h] in found)) fail("missing section " need[h])
       }
       if (bullet != "" && (bullet in found) && !bullet_found) fail("no bullet")
+      if (matchmode == "yes" && !match_seen) fail("missing match")
       if (in_fence) fail("unclosed fence")
       exit bad ? 1 : 0
     }

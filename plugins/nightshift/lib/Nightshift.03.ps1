@@ -934,6 +934,8 @@ $script:NSPolicyGroupDefaults['archive.automatic'] = $false
 $script:NSPolicyGroupDefaults['archive.layout'] = 'date'
 $script:NSPolicyGroupDefaults['archive.root'] = 'archive'
 $script:NSPolicyGroupDefaults['archive.templatePath'] = ''
+$script:NSPolicyGroupDefaults['gates.stackTemplatePath'] = ''
+$script:NSPolicyGroupDefaults['gates.stacksPaths'] = @()
 $script:NSPolicyGroupDefaults['handoff.detail'] = 'concise'
 $script:NSPolicyGroupDefaults['handoff.enabled'] = $true
 $script:NSPolicyGroupDefaults['handoff.language'] = 'auto'
@@ -979,6 +981,8 @@ $script:NSPolicySettingNames = @(
     'elevation.sudo',
     'expectedEmail',
     'forbiddenCommands',
+    'gates.stackTemplatePath',
+    'gates.stacksPaths',
     'handoff.detail',
     'handoff.enabled',
     'handoff.language',
@@ -1152,7 +1156,7 @@ function Test-NSShiftPolicyDocument {
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
         'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
-        'shift', 'recovery', 'handoff', 'archive', 'receipts')
+        'shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -1213,6 +1217,22 @@ function Test-NSShiftPolicyDocument {
         }
         if ($evidenceBlock.Contains('unavailable') -and $null -ne $evidenceBlock['unavailable'] -and -not (Test-NSEvidenceEnum $evidenceBlock['unavailable'] @('', 'hold', 'park', 'note'))) {
             $errors.Add('receipts.evidence.unavailable: must be hold, park, note, or empty')
+        }
+    }
+    $gatesBlock = Get-NSPolicyField $Document 'gates'
+    if ($gatesBlock -is [Collections.IDictionary]) {
+        if ($gatesBlock.Contains('stackTemplatePath') -and $null -ne $gatesBlock['stackTemplatePath'] -and $gatesBlock['stackTemplatePath'] -isnot [string]) {
+            $errors.Add('gates.stackTemplatePath: must be text')
+        }
+        if ($gatesBlock.Contains('stacksPaths') -and $null -ne $gatesBlock['stacksPaths']) {
+            $stacksPaths = $gatesBlock['stacksPaths']
+            $stacksOk = $stacksPaths -is [Collections.IEnumerable] -and $stacksPaths -isnot [string]
+            if ($stacksOk) {
+                foreach ($folder in @($stacksPaths)) {
+                    if ($folder -isnot [string]) { $stacksOk = $false; break }
+                }
+            }
+            if (-not $stacksOk) { $errors.Add('gates.stacksPaths: must be a list of folders') }
         }
     }
     if ($Document.Contains('completionMode') -and -not (Test-NSEvidenceEnum $Document['completionMode'] $script:NSPolicyCompletionModes)) {
@@ -1553,7 +1573,7 @@ function Set-NSShiftPolicy {
     # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
     # here, so an edit to rules.json lands on the next shift rather than moving the ground under
     # this one. A candidate that already states a block is left exactly as it was written.
-    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts')) {
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates')) {
         if ($document.Contains($block)) { continue }
         $frozen = New-NSOrdinalMap
         foreach ($name in $script:NSPolicyGroupDefaults.Keys) {

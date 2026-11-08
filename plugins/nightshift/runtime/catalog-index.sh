@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # catalog-index.sh — what a catalog holds, one line per entry.
 #
-#   catalog-index.sh [--plugin-root DIR] [--catalog shifts|evidence]
+#   catalog-index.sh [--plugin-root DIR] [--catalog shifts|evidence|gates]
 #                    [--project DIR] [--template] [--check-draft FILE]
 #
 # shifts, the default, reads references/compose/shifts and prints slug, ending, title and summary.
 # --project is accepted and ignored for shifts, so a caller that passes the workspace does not
-# change that listing. evidence reads every evidence kind — the shipped files, the project folder,
-# the user folder, and the folders in receipts.evidence.kindsPaths — and prints key, title,
-# description, source and the sources a same key replaced. --template prints the kind template
-# in force. --check-draft FILE checks one draft and names each required section it lacks.
+# change that listing. evidence and gates read the shipped files, the project folder, the user
+# folder, and the folders named in the rules file, and print key, title, description, source and
+# the sources a same key replaced. gates prints that list in match order. --template prints the
+# template in force. --check-draft FILE checks one draft and names each required section it lacks.
 #
 # Every entry opens with an H1, and that header is the metadata, so there is no second registry
 # to keep in step: a new file is listed the moment it exists, and one that is deleted stops being
@@ -130,28 +130,62 @@ if [ "$CATALOG" = shifts ]; then
   exit 0
 fi
 
-if [ "$CATALOG" != evidence ]; then
-  printf 'catalog-index: unknown catalog: %s\n' "$CATALOG" >&2
-  exit 1
-fi
+case "$CATALOG" in
+  evidence)
+    NS_CATALOG_HEADINGS='When it applies|Evidence lines|How to generate|How to verify|Never'
+    NS_CATALOG_BULLET='Evidence lines'
+    NS_CATALOG_FENCE='evidence-check'
+    NS_CATALOG_FENCE_KEYS='files min type'
+    NS_CATALOG_FENCE_TYPES='image text json any'
+    NS_CATALOG_MATCH=
+    template_rel='skills/nightshift/references/templates/evidence-kind.md'
+    plugin_rel='skills/nightshift/references/evidence/kinds'
+    layout_key='evidence-kinds'
+    user_catalog=evidence
+    user_entries=kinds
+    template_group=receipts
+    template_field=evidence.kindTemplatePath
+    paths_group=receipts
+    paths_field=evidence.kindsPaths
+    paths_label=kindsPaths
+    list_order=alpha
+    ;;
+  gates)
+    NS_CATALOG_HEADINGS='Detect|Item gate|Site inspection|Notes'
+    NS_CATALOG_BULLET=
+    NS_CATALOG_FENCE=
+    NS_CATALOG_FENCE_KEYS=
+    NS_CATALOG_FENCE_TYPES=
+    NS_CATALOG_MATCH=yes
+    template_rel='skills/nightshift/references/templates/gates-stack.md'
+    plugin_rel='skills/nightshift/references/compose/gates'
+    layout_key='gates-stacks'
+    user_catalog=gates
+    user_entries=stacks
+    template_group=gates
+    template_field=stackTemplatePath
+    paths_group=gates
+    paths_field=stacksPaths
+    paths_label=stacksPaths
+    list_order=match
+    ;;
+  *)
+    printf 'catalog-index: unknown catalog: %s\n' "$CATALOG" >&2
+    exit 1
+    ;;
+esac
 
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 # shellcheck source=plugins/nightshift/lib/catalog-sources.sh
 . "$_here/../lib/catalog-sources.sh"
 
-NS_CATALOG_HEADINGS='When it applies|Evidence lines|How to generate|How to verify|Never'
-NS_CATALOG_BULLET='Evidence lines'
-NS_CATALOG_FENCE='evidence-check'
-NS_CATALOG_FENCE_KEYS='files min type'
-NS_CATALOG_FENCE_TYPES='image text json any'
-
-shipped="$PLUGIN_ROOT/skills/nightshift/references/templates/evidence-kind.md"
+shipped="$PLUGIN_ROOT/$template_rel"
 template_setting=""
 paths_raw=""
 if [ -n "$WORKSPACE" ]; then
-  template_setting="$(ns_policy_pref "$WORKSPACE" receipts evidence.kindTemplatePath 2>/dev/null || true)"
-  paths_raw="$(ns_policy_pref "$WORKSPACE" receipts evidence.kindsPaths 2>/dev/null || true)"
+  template_setting="$(ns_policy_pref "$WORKSPACE" "$template_group" "$template_field" 2>/dev/null || true)"
+  paths_raw="$(ns_policy_pref "$WORKSPACE" "$paths_group" "$paths_field" 2>/dev/null || true)"
 fi
 
 if [ "$SHOW_TEMPLATE" = yes ]; then
@@ -179,7 +213,7 @@ EOF
   exit 0
 fi
 
-plugin_dir="$PLUGIN_ROOT/skills/nightshift/references/evidence/kinds"
+plugin_dir="$PLUGIN_ROOT/$plugin_rel"
 [ -d "$plugin_dir" ] || {
   printf 'catalog-index: no catalog at %s\n' "$plugin_dir" >&2
   exit 2
@@ -187,10 +221,12 @@ plugin_dir="$PLUGIN_ROOT/skills/nightshift/references/evidence/kinds"
 
 project_dir=""
 if [ -n "$WORKSPACE" ]; then
-  project_dir="$(ns_layout_path "$WORKSPACE/.nightshift" evidence-kinds 2>/dev/null || true)"
+  project_dir="$(ns_layout_path "$WORKSPACE/.nightshift" "$layout_key" 2>/dev/null || true)"
 fi
-user_dir="$(ns_catalog_user_dir evidence kinds)"
+user_dir="$(ns_catalog_user_dir "$user_catalog" "$user_entries")"
 
+pairs_file="$(mktemp "${TMPDIR:-/tmp}/ns-catalog-pairs.XXXXXX")" || exit 1
+trap 'rm -f "$pairs_file"' EXIT
 set --
 if [ -n "$paths_raw" ] && [ "$paths_raw" != null ]; then
   parsed="$(python3 -c 'import json,sys
@@ -206,11 +242,13 @@ for x in v:
     sys.stdout.write(x + "\n")
 ' "$paths_raw" 2>/dev/null)" || parsed="__unreadable__"
   if [ "$parsed" = "__unreadable__" ]; then
-    printf 'catalog-index: kindsPaths could not be read\n' >&2
+    printf 'catalog-index: %s could not be read\n' "$paths_label" >&2
   else
     while IFS= read -r raw; do
       [ -n "$raw" ] || continue
-      set -- "$@" "$raw" "$(ns_catalog_resolve "$WORKSPACE" "$raw")"
+      resolved="$(ns_catalog_resolve "$WORKSPACE" "$raw")"
+      printf '%s\t%s\n' "$raw" "$resolved" >>"$pairs_file"
+      set -- "$@" "$raw" "$resolved"
     done <<EOF
 $parsed
 EOF
@@ -221,6 +259,45 @@ listed="$(ns_catalog_list catalog-index "$plugin_dir" "$project_dir" "$user_dir"
 if [ -z "$listed" ]; then
   printf 'catalog-index: the catalog holds no entries\n' >&2
   exit 2
+fi
+# Print each index line prefixed by its match rank and key, so sort can order stacks
+# without a second registry. A case statement here stays outside the command substitution
+# that captures the result.
+_ns_gates_rank_lines() {
+  local line key source file rank match lab dir
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key="${line%%$'\t'*}"
+    source="$(printf '%s' "$line" | awk -F '\t' '{ print $4 }')"
+    case "$source" in
+      plugin) file="$plugin_dir/$key.md" ;;
+      project) file="$project_dir/$key.md" ;;
+      user) file="$user_dir/$key.md" ;;
+      *)
+        file=""
+        while IFS= read -r lab; do
+          dir="${lab#*$'\t'}"
+          lab="${lab%%$'\t'*}"
+          [ "$lab" = "$source" ] || continue
+          file="$dir/$key.md"
+          break
+        done <"$pairs_file"
+        ;;
+    esac
+    rank=0
+    if [ -n "$file" ] && [ -f "$file" ]; then
+      match="$(awk '/^Match:[[:space:]]*/ { sub(/^Match:[[:space:]]*/, ""); print; exit }' "$file")"
+      case "$match" in
+        plugin) rank=1 ;;
+        fallback) rank=2 ;;
+      esac
+    fi
+    printf '%s\t%s\t%s\n' "$rank" "$key" "$line"
+  done
+}
+
+if [ "$list_order" = match ]; then
+  listed="$(printf '%s\n' "$listed" | _ns_gates_rank_lines | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 | cut -f 3-)"
 fi
 printf '%s\n' "$listed"
 exit 0

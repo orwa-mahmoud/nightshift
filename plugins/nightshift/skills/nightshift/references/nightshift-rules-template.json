@@ -91,6 +91,10 @@
       "unavailable": ""
     }
   },
+  "gates": {
+    "stackTemplatePath": "",
+    "stacksPaths": []
+  },
   "recovery": {
     "launchScope": "inherit-recorded-scope",
     "cursorFlags": []

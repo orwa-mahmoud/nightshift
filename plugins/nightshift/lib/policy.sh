@@ -51,7 +51,8 @@ shift
 recovery
 handoff
 archive
-receipts"
+receipts
+gates"
 
 NS_POLICY_RULES_STATE=""
 NS_POLICY_RULES_VALS=""
@@ -166,12 +167,12 @@ ns_policy_builtin() {
     handoff.detail) printf '"concise"' ;;
     handoff.enabled | receipts.enabled) printf 'true' ;;
     handoff.language) printf '"auto"' ;;
-    handoff.sections | receipts.evidence.kindsPaths) printf '[]' ;;
+    handoff.sections | receipts.evidence.kindsPaths | gates.stacksPaths) printf '[]' ;;
     handoff.view) printf '"owner"' ;;
     recovery.launchScope) printf '"inherit-recorded-scope"' ;;
     receipts.duration) printf '"on"' ;;
     receipts.evidence.architecture | receipts.evidence.fileMap | receipts.evidence.review | receipts.evidence.check) printf '"off"' ;;
-    receipts.evidence.default | receipts.evidence.kindTemplatePath | receipts.evidence.unavailable) printf '""' ;;
+    receipts.evidence.default | receipts.evidence.kindTemplatePath | receipts.evidence.unavailable | gates.stackTemplatePath) printf '""' ;;
     receipts.progressMinutes) printf '20' ;;
     receipts.progressMode) printf '"time"' ;;
     receipts.progressTokens) printf '100000' ;;
@@ -338,7 +339,8 @@ PREF = [("shift", ["copyIn", "execution", "hours", "isolation", "itemBudget", "p
         ("receipts", ["duration", "enabled", "evidence.architecture", "evidence.check",
                     "evidence.default", "evidence.fileMap", "evidence.kindTemplatePath",
                     "evidence.kindsPaths", "evidence.review", "evidence.unavailable",
-                    "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"])]
+                    "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"]),
+        ("gates", ["stackTemplatePath", "stacksPaths"])]
 out = []
 
 
@@ -1003,6 +1005,20 @@ _ns_policy_validate_shift() {
       return 1
       ;;
   esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" gates.stackTemplatePath)" in
+    '' | null | '"'*) ;;
+    *)
+      _ns_policy_shift_fail gates.stackTemplatePath "must be text"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" gates.stacksPaths)" in
+    '' | null | '['*) ;;
+    *)
+      _ns_policy_shift_fail gates.stacksPaths "must be a list of folders"
+      return 1
+      ;;
+  esac
   case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.unavailable)" in
     '' | null | '""' | '"hold"' | '"park"' | '"note"') ;;
     *)
@@ -1560,7 +1576,7 @@ _ns_policy_setting() {
       if [ "$NS_POLICY_SHIFT_STATE" = ok ]; then
         category="${name%%.*}"
         case "$category" in
-          shift | recovery | handoff | archive | receipts)
+          shift | recovery | handoff | archive | receipts | gates)
             if [ "$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" "$category")" = object ]; then
               val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$name")" || val=""
               if [ -n "$val" ] && [ "$val" != null ]; then

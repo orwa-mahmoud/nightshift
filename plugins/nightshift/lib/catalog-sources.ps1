@@ -61,7 +61,8 @@ function Get-NSCatalogEntryProblems {
         [AllowEmptyString()][string]$BulletHeading,
         [AllowEmptyString()][string]$Fence,
         [string[]]$FenceKeys,
-        [string[]]$FenceTypes
+        [string[]]$FenceTypes,
+        [switch]$RequireMatch
     )
     $problems = New-Object System.Collections.Generic.List[string]
     $inComment = $false
@@ -69,6 +70,7 @@ function Get-NSCatalogEntryProblems {
     $seenH1 = $false
     $bulletOn = $false
     $bulletFound = $false
+    $matchSeen = $false
     $found = @{}
     $seenKeys = @{}
     $dash = ' ' + [string][char]0x2014 + ' '
@@ -110,6 +112,15 @@ function Get-NSCatalogEntryProblems {
             continue
         }
         if ($bulletOn -and $line.StartsWith('- ')) { $bulletFound = $true }
+        if ($RequireMatch -and $line -cmatch '^Match:\s*') {
+            $matchVal = ($line -replace '^Match:\s*', '').Trim()
+            if ($matchVal -cne 'stack' -and $matchVal -cne 'plugin' -and $matchVal -cne 'fallback') {
+                $problems.Add('invalid match')
+            }
+            if ($matchSeen) { $problems.Add('duplicate match') }
+            $matchSeen = $true
+            continue
+        }
         if (-not [string]::IsNullOrEmpty($Fence) -and $line -cmatch ('^```' + [regex]::Escape($Fence) + '\s*$')) {
             if ($inFence) { $problems.Add('nested fence') }
             $inFence = $true
@@ -156,6 +167,7 @@ function Get-NSCatalogEntryProblems {
     if (-not [string]::IsNullOrEmpty($BulletHeading) -and $found.ContainsKey($BulletHeading) -and -not $bulletFound) {
         $problems.Add('no bullet')
     }
+    if ($RequireMatch -and -not $matchSeen) { $problems.Add('missing match') }
     if ($inFence) { $problems.Add('unclosed fence') }
     return $problems.ToArray()
 }
@@ -175,7 +187,8 @@ function Add-NSCatalogDirectory {
         [AllowEmptyString()][string]$BulletHeading,
         [AllowEmptyString()][string]$Fence,
         [string[]]$FenceKeys,
-        [string[]]$FenceTypes
+        [string[]]$FenceTypes,
+        [switch]$RequireMatch
     )
     if ([string]::IsNullOrEmpty($Dir)) { return }
     if (-not (Test-Path -LiteralPath $Dir)) {
@@ -212,7 +225,8 @@ function Add-NSCatalogDirectory {
         }
         if ($Check) {
             $problems = @(Get-NSCatalogEntryProblems -Path $file.FullName -Headings $Headings `
-                    -BulletHeading $BulletHeading -Fence $Fence -FenceKeys $FenceKeys -FenceTypes $FenceTypes)
+                    -BulletHeading $BulletHeading -Fence $Fence -FenceKeys $FenceKeys -FenceTypes $FenceTypes `
+                    -RequireMatch:$RequireMatch)
             if ($problems.Count -gt 0) {
                 foreach ($problem in $problems) {
                     if (-not [string]::IsNullOrEmpty($problem)) {
@@ -259,7 +273,8 @@ function Get-NSCatalogIndex {
         [AllowEmptyString()][string]$BulletHeading = '',
         [AllowEmptyString()][string]$Fence = '',
         [string[]]$FenceKeys = @(),
-        [string[]]$FenceTypes = @()
+        [string[]]$FenceTypes = @(),
+        [switch]$RequireMatch
     )
     $order = New-Object System.Collections.Generic.List[string]
     $sourceOf = @{}
@@ -276,6 +291,7 @@ function Get-NSCatalogIndex {
         Fence         = $Fence
         FenceKeys     = $FenceKeys
         FenceTypes    = $FenceTypes
+        RequireMatch  = [bool]$RequireMatch
     }
     Add-NSCatalogDirectory -Dir $PluginDir -Label 'plugin' -Check $false -ReportMissing $false @common
     Add-NSCatalogDirectory -Dir $UserDir -Label 'user' -Check $true -ReportMissing $false @common

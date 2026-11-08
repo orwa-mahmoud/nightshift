@@ -364,6 +364,24 @@
         }
       }
     },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The quality-gate stacks this shift was composed with, frozen so a later edit to rules.json applies to the next shift. Every supported field is present: the owner's value where their file states one, the shipped default where it does not.",
+      "properties": {
+        "stackTemplatePath": {
+          "type": "string",
+          "description": "The owner's template for a new quality-gate stack. Empty uses the shipped template."
+        },
+        "stacksPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "More folders of quality-gate stacks. Empty means none. The first folder wins when two of them hold the same key."
+        }
+      }
+    },
     "receipts": {
       "type": "object",
       "additionalProperties": false,
