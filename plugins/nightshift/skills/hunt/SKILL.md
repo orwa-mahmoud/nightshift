@@ -1,6 +1,6 @@
 ---
 name: hunt
-description: Compose a shift from the ready catalog under one time budget, guided or automatic, reviewed first or run directly.
+description: Turn a request like "improve this project for 5 hours" into a shift from the ready catalog and start it, guided or automatic.
 license: MIT
 metadata:
   internal: true
@@ -21,22 +21,31 @@ directory persists between calls. Each `$NS/...` path below is where the current
 
 Read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/execution-modes.md` before composing: it
 carries the state map, who selects work, when the clock starts, direct-mode authority, the tooling
-policy, and how several entries become one shift. If `$NS/` does not exist yet, tell the owner to
-run Setup, then return.
+policy, and how several entries become one shift. If `$NS/` does not exist yet, run Setup's flow
+(`skills/setup/SKILL.md`, at most four questions) first, then continue with the same sentence.
+Never send the owner away to run Setup.
 
 ## 0. Read the sentence first
 
 The owner's sentence is binding intent. There is no keyword list.
 
-A time budget, an actionable objective, and clear direct-execution intent — regardless of
-wording — are a complete prompt: compose it and run it. Examples of a complete prompt:
+An actionable objective with a time budget — hours, or the word *auto* — regardless of wording, is
+a complete prompt: compose it and run it. Examples of a complete prompt:
+*"enhance my project for 5 hours"*;
 *"use the next 20 hours adding features and enhancing existing ones"*;
-*"8 hours clear lint and test debt"*; *"make checkout less ugly, run it"*.
+*"8 hours clear lint and test debt"*; *"make checkout less ugly, auto"*.
 
-- Complete → Automatic, run directly. Do not offer catalog cards. Do not ask who selects, when to
-  start, or "same as last time." Write the shift policy from the resolved tooling policy, no new elevation, and
-  remembered verification, unless the sentence already granted a policy or allowance.
-- Incomplete → Ask only a field that is still missing, then continue.
+- Complete → Automatic. Do not offer catalog cards. Do not ask who selects, when to start, or "same
+  as last time." It runs directly under the resolved `shift.execution` (`run-direct` unless the
+  owner chose otherwise, or the sentence asks to see it first). Write the shift policy from the
+  resolved tooling policy, no new elevation, and remembered verification, unless the sentence
+  already granted a policy or allowance.
+- An objective with no time budget → ask exactly one question, *"How long? Give hours, or say
+  auto."*, then continue as a complete prompt.
+- **auto** → the deadline comes from `ns shift-estimate --items <n>` when the owner's receipts give
+  an estimate; otherwise from the selected entries' typical-hours hints; otherwise from the rule in
+  `execution-modes.md`. State the chosen deadline in one line and start; never ask again.
+- Any other incomplete prompt → Ask only a field that is still missing, then continue.
 - The owner asked to pick from the menu, or named Guided → section 1.
 
 ## 1. Ask who selects
@@ -104,8 +113,9 @@ runnable. Automatic composes and works a shift without either.
 
 ## 2. Ask when execution starts
 
-When the prompt did not already carry clear direct-execution intent, ask
-**review first, or run directly?** — a choice independent from Guided or Automatic.
+A complete prompt never asks this: it follows the resolved `shift.execution` (`run-direct` unless
+the owner chose otherwise). A Guided or incomplete prompt asks **review first, or run directly?**,
+prefilled from `shift.execution` — a choice independent from Guided or Automatic.
 
 - **Review first** — discovery stays read-only and the clock starts only after approval.
 - **Run directly** — start the clock once the tooling policy is settled and do not pause after

@@ -129,6 +129,7 @@ Start with one small task in a project you trust. Keep the first run attended an
 | Action | Codex: ask Nightshift | Claude Code |
 | --- | --- | --- |
 | Set up | “Set up Nightshift in this project.” | `/nightshift:setup` |
+| Run for hours | “Improve this project for 5 hours.” | the same sentence, or `/nightshift:hunt` |
 | Start | “Start the Nightshift shift.” | `/nightshift:start` |
 | Check progress | “Show Nightshift status.” | `/nightshift:status` |
 | Diagnose | “Diagnose this Nightshift workspace.” | `/nightshift:doctor` |
@@ -137,7 +138,9 @@ Start with one small task in a project you trust. Keep the first run attended an
 | Leave the plan room | Type `$nightshift:plan-exit` | `/nightshift:plan-exit` |
 
 1. **Set up.** Setup asks at most four questions: your checks, then every default on one screen.
-   Accept them all, or name what to change.
+   Accept them all, or name what to change. Or skip setting up: say *“improve this project for 5 hours”*
+   and Nightshift sets the project up, picks the work from the catalog, and starts. With no hours it
+   asks one question: how long, or *auto*.
 2. **Write one item** under `## Items` in `.nightshift/punch-list.md`. For a repository that
    already has a test runner, a small first task could be:
 
