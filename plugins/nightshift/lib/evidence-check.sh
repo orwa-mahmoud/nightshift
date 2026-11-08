@@ -121,16 +121,7 @@ ns_evidence_kind_file() {
         return 0
       fi
     done <<PATHS
-$(printf '%s' "$raw" | python3 -c 'import json,sys
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-if isinstance(data, list):
-    for one in data:
-        if isinstance(one, str):
-            print(one)
-' 2>/dev/null || true)
+$(ns_json_string_list "$raw" || true)
 PATHS
   fi
   dir="$(ns_catalog_user_dir evidence kinds)"

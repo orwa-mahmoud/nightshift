@@ -204,3 +204,20 @@ EOF
   printf '%s\n' "$output" | grep -qx 'hold' || { printf '%s\n' "$output"; return 1; }
   grep -qF -- '- [-] **Shot.**' "$p/.nightshift/punch-list.md"
 }
+
+@test "a kind in a configured folder is found on a PATH with neither python3 nor jq" {
+  bin="$(build_toolset_bin evidence-no-parser bash sh sed tr sort grep cut awk cat mktemp uname \
+    date rm mv cp ln printf head tail wc find test dirname basename cksum env true false mkdir ls)"
+  p="$(new_project evidence-configured)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  folder="$BATS_TEST_TMPDIR/configured-kinds"
+  mkdir -p "$folder"
+  printf '# Shots — owner kind\n' >"$folder/shots.md"
+  jq --arg a "$folder" '.receipts.evidence.kindsPaths = [$a]' \
+    "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  run env -i PATH="$bin" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash -c '. "$1"; . "$2"; ns_evidence_kind_file "$3" shots' _ "$LIB" "$CHECK" "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  [ "$output" = "$folder/shots.md" ]
+}
