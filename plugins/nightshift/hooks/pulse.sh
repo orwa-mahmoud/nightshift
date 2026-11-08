@@ -198,7 +198,7 @@ ns_pulse_receipts_sections() {
   if [ -n "$path" ]; then
     printf 'follow the owner'\''s template at %s' "$path"
     [ -n "$folder" ] || return 0
-    printf ', with an Evidence section'
+    printf ', linking the evidence wherever that template puts it'
   elif [ -n "$folder" ]; then
     printf 'sections: What was delivered · Why · Tried and rejected · Verification · Evidence · Outputs · Parked decisions and snags'
   else

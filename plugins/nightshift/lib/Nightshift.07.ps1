@@ -1966,7 +1966,7 @@ function Get-NSPulseReceiptsSections {
     if (-not [string]::IsNullOrEmpty($path)) {
         $clause = 'follow the owner''s template at ' + $path
         if ($folder.Length -eq 0) { return $clause }
-        $clause += ', with an Evidence section'
+        $clause += ', linking the evidence wherever that template puts it'
     }
     elseif ($folder.Length -gt 0) {
         $clause = "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Evidence $script:NSDot Outputs $script:NSDot Parked decisions and snags"
@@ -2958,8 +2958,8 @@ function Test-NSPlanRoomTarget {
 # receipts.evidence.fileMap on, the tick writes the item's map, from the commits made since the
 # previous tick, as a generated block at the end of its receipt, and the shift's, from the commit
 # the shift started on to HEAD, as receipts/shift-map.md. In artifact mode the item map lists the
-# paths the receipt's Outputs section declares and the shift map is their union. Mirrors
-# lib/file-map.sh byte for byte.
+# paths the receipt declares under any heading that name a file in the work target, and the shift
+# map is their union. Mirrors lib/file-map.sh byte for byte.
 $script:NSFileMapCollapse = 40
 
 function Test-NSFileMapEnabled {
@@ -3093,17 +3093,23 @@ function Get-NSFileMapGitRows {
     return , $rows.ToArray()
 }
 
-# Get-NSFileMapOutputs <receipt> - the paths a receipt's Outputs section declares: relative link
-# targets and backticked paths, without a leading ./, sorted and unique. Mirrors ns_filemap_outputs.
+# Get-NSFileMapOutputs <receipt> [<work-target>] [-Missing] - the paths a receipt declares, under
+# any heading: relative link targets and backticked paths, without a leading ./, sorted and unique.
+# Generated blocks and HTML comments are skipped. With a work target, only paths that name a file in
+# it are kept; with -Missing, only the declared paths that name nothing, neither in the work target
+# nor beside the receipt where its evidence lives. Mirrors ns_filemap_outputs.
 function Get-NSFileMapOutputs {
-    param([Parameter(Mandatory = $true)][string]$Receipt)
+    param([Parameter(Mandatory = $true)][string]$Receipt, [AllowEmptyString()][string]$Target = '', [switch]$Missing)
     $found = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
     if (-not (Test-Path -LiteralPath $Receipt -PathType Leaf) -or (Test-NSReparsePoint $Receipt)) { return , @() }
-    $inside = $false
+    $skip = $false
+    $comment = $false
     foreach ($raw in [IO.File]::ReadAllLines($Receipt)) {
         $line = $raw.TrimEnd("`r")
-        if ($line.StartsWith('## ', [StringComparison]::Ordinal)) { $inside = ($line -ceq '## Outputs'); continue }
-        if (-not $inside) { continue }
+        if ($skip) { if ($line -cmatch '^<!-- /(nightshift:[a-z-]+|usage) -->$') { $skip = $false }; continue }
+        if ($line -cmatch '^<!-- (nightshift:[a-z-]+|usage) -->$') { $skip = $true; continue }
+        if ($comment) { if ($line.Contains('-->')) { $comment = $false }; continue }
+        if ($line.StartsWith('<!--', [StringComparison]::Ordinal)) { if (-not $line.Contains('-->')) { $comment = $true }; continue }
         $candidates = New-Object Collections.Generic.List[string]
         foreach ($m in [regex]::Matches($line, '\]\(([^)]+)\)')) {
             $t = ($m.Groups[1].Value -split '[ \t]', 2)[0]
@@ -3119,7 +3125,18 @@ function Get-NSFileMapOutputs {
         foreach ($t in $candidates) {
             $p = $t
             if ($p.StartsWith('./', [StringComparison]::Ordinal)) { $p = $p.Substring(2) }
-            if ($p.Trim().Length -gt 0) { $null = $found.Add($p) }
+            if ($p.Trim().Length -eq 0) { continue }
+            if ($p -ceq '..' -or $p.StartsWith('../', [StringComparison]::Ordinal) -or $p.EndsWith('/..', [StringComparison]::Ordinal) -or $p.Contains('/../')) { continue }
+            if ($Target.Length -gt 0) {
+                $full = Join-Path $Target $p
+                $present = (Test-Path -LiteralPath $full -PathType Leaf) -and -not (Test-NSReparsePoint $full)
+                if ($Missing) {
+                    if ($present -or (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $Receipt) $p))) { continue }
+                }
+                elseif (-not $present) { continue }
+            }
+            elseif ($Missing) { continue }
+            $null = $found.Add($p)
         }
     }
     return , @($found)
@@ -3258,11 +3275,23 @@ function Invoke-NSFileMapTick {
     $mode = 'repository'
     try { $mode = Get-NSWorkMode $Project } catch { $mode = 'repository' }
     if ($mode -ceq 'artifact') {
-        $rows = @(Get-NSFileMapOutputs $receipt | ForEach-Object { [pscustomobject]@{ Path = $_; Status = ''; Old = ''; Add = ''; Del = '' } })
-        Write-NSReceiptBlock $receipt 'file-map' ("## File map`n`n" + (Format-NSFileMap -Rows $rows -Kind 'artifact'))
+        # Without a resolvable work target the map lists every declared path, as on POSIX.
+        $target = ''
+        try { $target = Resolve-NSWorkTarget $Project } catch { $target = '' }
+        $rows = @(Get-NSFileMapOutputs $receipt $target | ForEach-Object { [pscustomobject]@{ Path = $_; Status = ''; Old = ''; Add = ''; Del = '' } })
+        $mapText = "## File map`n`n" + (Format-NSFileMap -Rows $rows -Kind 'artifact')
+        # A declared output that names nothing is shown, so a mistyped path is seen at review.
+        if ($target.Length -gt 0) {
+            $missingPaths = @(Get-NSFileMapOutputs $receipt $target -Missing)
+            if ($missingPaths.Count -gt 0) {
+                if (-not $mapText.EndsWith("`n")) { $mapText += "`n" }
+                $mapText += "`nDeclared but not found in the work target: " + (($missingPaths | ForEach-Object { '`' + $_ + '`' }) -join ', ') + "`n"
+            }
+        }
+        Write-NSReceiptBlock $receipt 'file-map' $mapText
         $union = New-Object 'Collections.Generic.SortedSet[string]' ([StringComparer]::Ordinal)
         foreach ($name in (Get-NSTickedReceiptNames $Project)) {
-            foreach ($p in (Get-NSFileMapOutputs (Join-Path $dir $name))) { $null = $union.Add($p) }
+            foreach ($p in (Get-NSFileMapOutputs (Join-Path $dir $name) $target)) { $null = $union.Add($p) }
         }
         $all = @($union | ForEach-Object { [pscustomobject]@{ Path = $_; Status = ''; Old = ''; Add = ''; Del = '' } })
         [IO.File]::WriteAllText($page, ("# Shift file map`n`nThe outputs the ticked items declare.`n`n" + (Format-NSFileMap -Rows $all -Kind 'artifact')), $utf8)
