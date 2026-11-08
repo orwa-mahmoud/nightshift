@@ -71,6 +71,7 @@ case "$HOST_NAME" in
 esac
 
 REFUSED=0
+# shellcheck disable=SC2034 # read by state.sh
 NS_EXPLAIN_FILE="$_here/../lib/preflight-explain.txt"
 ok()     { printf 'ok %s\n' "$1"; }
 repair() { printf 'repair %s\n' "$1"; }
@@ -508,6 +509,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
   CLEARED=""
   for key in stop stall notified ended session-end pulse mint-failed session armed watchman-tick lock idle-watch; do
     ns_layout_set marker "$NS" "$key"
+    # shellcheck disable=SC2154 # assigned by name by the layout helper
     if [ -e "$marker" ] || [ -L "$marker" ]; then
       CLEARED="${CLEARED}${CLEARED:+ }${marker##*/}"
     fi

@@ -53,7 +53,7 @@ git clone https://github.com/orwa-mahmoud/nightshift.git
 tests/run-parallel.sh                # full suite in parallel (default 6 shards; ~wall-clock of slowest shard)
 tests/run-shard.sh 1 6               # one CI shard; use --list to print its files without running bats
 bats -r tests/                       # serial full suite (same coverage, slower)
-git ls-files '*.sh' | xargs shellcheck -x  # lint — the same set CI checks
+tests/lint-shell.sh  # lint — the same set CI checks
 tests/coverage.sh                    # line coverage via kcov (runs in docker on non-Linux)
 claude plugin validate . --strict    # manifest + marketplace validation
 evals/run.sh                         # catalog contract schema, case book, and size budgets

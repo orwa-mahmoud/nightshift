@@ -20,6 +20,7 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# shellcheck disable=SC2034 # read by cold-stop.sh
 NS_COLD_STOP_HOST=cursor
 # shellcheck source=plugins/nightshift/hooks/shared/cold-stop.sh
 . "$_here/../shared/cold-stop.sh"
@@ -136,7 +137,9 @@ if [ -f "$STOP" ]; then
   honor_stop
 fi
 
+# shellcheck disable=SC2034 # read by ownership.sh
 LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
+# shellcheck disable=SC2034 # read by ownership.sh
 LEASE_GENERATION="${NIGHTSHIFT_LEASE_GENERATION:-}"
 ns_shift_unbound cursor gate
 own_rc=$?

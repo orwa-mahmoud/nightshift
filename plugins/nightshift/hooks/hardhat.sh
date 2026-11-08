@@ -73,6 +73,7 @@ else
   # otherwise strip the command string itself and a push would slip through.
   TOOL="$(printf '%s' "$INPUT" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   CMD="$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p')"
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   CWD="$(printf '%s' "$INPUT" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   TPATH="$(printf '%s' "$INPUT" | sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
@@ -180,6 +181,7 @@ own_rc=$?
 
 # Tool rules use the canonical tool_name from this host. The catch-all manifest sends every
 # observable PreToolUse call here; tools the host does not expose to hooks remain outside it.
+# shellcheck disable=SC2034 # read by hardhat-core.sh
 TOOL_RULES="$(ns_tool_rules "$PROJECT_DIR" "${NIGHTSHIFT_TOOL_RULES:-}")"
 if ns_hardhat_tool_deny_broken; then
   deny "BLOCKED: the toolDeny rules are not a JSON object, so the tool rules cannot run. Fix $(ns_hardhat_state_name rules) or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)."
@@ -211,9 +213,13 @@ if m="$(ns_hardhat_tool_deny_reason "$TOOL")"; then deny "$m"; fi
 if ns_hardhat_is_command_tool "$TOOL"; then
   # Command guards are the only readers of these four keys. Read them here so every
   # other PreToolUse call skips four rules-file parses.
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   PROTECTED_DIRS="$(rule "$PROJECT_DIR" protectedDirs "${NIGHTSHIFT_PROTECTED_DIRS:-}")"
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   EXPECTED_EMAIL="$(rule "$PROJECT_DIR" expectedEmail "${NIGHTSHIFT_EXPECTED_EMAIL:-}")"
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   NEVER_COMMIT_PATTERNS="$(rule "$PROJECT_DIR" neverCommitPatterns "${NIGHTSHIFT_NEVER_COMMIT_PATTERNS:-}")"
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   FORBIDDEN_COMMANDS="$(rule "$PROJECT_DIR" forbiddenCommands "${NIGHTSHIFT_FORBIDDEN_COMMANDS:-}")"
   if reason="$(ns_hardhat_command_reason)"; then
     deny "$reason"

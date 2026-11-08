@@ -38,6 +38,7 @@ ns_copy_serves_host "$_here/../.." codex || exit 0
 codex_read_input
 TOOL="$CODEX_TOOL_NAME"
 CMD="$CODEX_TOOL_CMD"
+# shellcheck disable=SC2034 # read by hardhat-core.sh
 CWD="$CODEX_CWD"
 SID="$CODEX_SESSION_ID"
 TPATH="$CODEX_TRANSCRIPT_PATH"
@@ -152,6 +153,7 @@ own_rc=$?
 
 # Tool rules use the canonical tool_name from this host. The catch-all manifest sends every
 # observable PreToolUse call here; hosted tools that Codex does not expose remain outside it.
+# shellcheck disable=SC2034 # read by hardhat-core.sh
 TOOL_RULES="$(ns_tool_rules "$PROJECT_DIR" "${NIGHTSHIFT_TOOL_RULES:-}")"
 if ns_hardhat_tool_deny_broken; then
   deny "BLOCKED: the toolDeny rules are not a JSON object, so the tool rules cannot run. Fix $(ns_hardhat_state_name rules) or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)."
@@ -184,9 +186,13 @@ fi
 if m="$(ns_hardhat_tool_deny_reason "$TOOL")"; then deny "$m"; fi
 
 if ns_hardhat_is_command_tool "$TOOL"; then
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   PROTECTED_DIRS="$(rule "$PROJECT_DIR" protectedDirs "${NIGHTSHIFT_PROTECTED_DIRS:-}")"
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   EXPECTED_EMAIL="$(rule "$PROJECT_DIR" expectedEmail "${NIGHTSHIFT_EXPECTED_EMAIL:-}")"
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   NEVER_COMMIT_PATTERNS="$(rule "$PROJECT_DIR" neverCommitPatterns "${NIGHTSHIFT_NEVER_COMMIT_PATTERNS:-}")"
+  # shellcheck disable=SC2034 # read by hardhat-core.sh
   FORBIDDEN_COMMANDS="$(rule "$PROJECT_DIR" forbiddenCommands "${NIGHTSHIFT_FORBIDDEN_COMMANDS:-}")"
   if reason="$(ns_hardhat_command_reason)"; then
     deny "$reason"

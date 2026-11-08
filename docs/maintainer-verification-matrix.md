@@ -72,7 +72,7 @@ Shared hook cores: `plugins/nightshift/hooks/shared/gate-core.sh`,
 evals/run.sh
 bats tests/evals.bats
 claude plugin validate . --strict
-git ls-files '*.sh' | xargs shellcheck -x
+tests/lint-shell.sh
 ```
 
 ## Non-goals

@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-# Docs-only CI: the bats files that grep README, docs/, examples/, or GitHub templates.
-# Runtime changes still run the full shard matrix, which already includes these files.
+# Docs-only CI: what a change to README, docs/, examples/ or the GitHub templates can break —
+# links and paths that must resolve, commands the docs name that the parser must take, and issue
+# forms GitHub must parse. Runtime changes run the full shard matrix, which includes these files.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 bats \
-  tests/artifact-receipts.bats \
   tests/bad-night-template.bats \
   tests/contribution-map.bats \
-  tests/cursor/honesty.bats \
   tests/doc-refs.bats \
-  tests/first-night-checklist.bats \
   tests/github-templates.bats \
-  tests/morning-receipt-docs.bats \
-  tests/rule-profiles.bats \
-  tests/schedule.bats \
-  tests/shift-modes.bats \
-  tests/skill-refs.bats \
-  tests/troubleshooting.bats
+  tests/skill-refs.bats

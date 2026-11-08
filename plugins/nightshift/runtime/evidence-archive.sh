@@ -63,6 +63,7 @@ dated="$(ns_archive_group "$WORKSPACE" "$(date '+%Y-%m-%d')" "$SHIFT_ID")" ||
   die 'archive.root must name a directory inside .nightshift/' 2
 [ ! -L "$dated" ] || die 'refuse to write through a symlink archive path' 2
 ns_layout_rel_set rel "$NS" evidence
+# shellcheck disable=SC2154 # assigned by name by the layout helper
 dest="$dated/$rel/findings.jsonl"
 ns_archive_dest "$dest" || die "refuse to write through $dest" 2
 mkdir -p "${dest%/*}" || die "cannot create ${dest%/*}" 2

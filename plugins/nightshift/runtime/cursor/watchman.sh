@@ -70,10 +70,12 @@ case "$NS_WATCHMAN_SCRIPT" in
   /*) ;;
   *) NS_WATCHMAN_SCRIPT="$(pwd)/$NS_WATCHMAN_SCRIPT" ;;
 esac
+# shellcheck disable=SC2034 # read by watchman-install.sh
 NS_WATCHMAN_SELF_VERSION="$(ns_plugin_version "$(ns_plugin_root_from_script "$NS_WATCHMAN_SCRIPT")")"
 
 cd "$PROJECT" 2>/dev/null || exit 1
 PROJECT="$PWD"
+# shellcheck disable=SC2034 # read by gate-core.sh
 PROJECT_DIR="$PROJECT"
 NS="$PROJECT/.nightshift"
 WORK_TARGET="$(ns_work_target "$PROJECT" 2>/dev/null || true)"
@@ -432,7 +434,9 @@ session_gone_or_idle() {
       [ -n "$NS_IDLE_SINCE" ] || NS_IDLE_SINCE="$now"
       [ -n "$NS_IDLE_CPU" ] || NS_IDLE_CPU="$cpu"
       [ -n "$NS_IDLE_BYTES" ] || NS_IDLE_BYTES="${bytes:-0}"
+      # shellcheck disable=SC2034 # read by idle.sh
       NS_IDLE_PIDS="$pids"
+      # shellcheck disable=SC2034 # read by idle.sh
       NS_IDLE_EVIDENCE="pulse stale, transcript unchanged, cpu $(ns_idle_cpu_label "$delta"), no busy child"
       ns_idle_save "$NS" || return 1
       return 1
@@ -444,8 +448,11 @@ session_gone_or_idle() {
 # Runs the shared ending under the site lock. 0 when .ended is real and the armed marker is gone.
 clock_out_direct() { # <ticked|stop|deadline> <gone|idle>
   local why="$1" how="$2" summary reason open_now ticked total moved own_rc detail hold
+  # shellcheck disable=SC2034 # read by ownership.sh
   LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
+  # shellcheck disable=SC2034 # read by ownership.sh
   LEASE_GENERATION="${NIGHTSHIFT_LEASE_GENERATION:-}"
+  # shellcheck disable=SC2034 # read by ownership.sh
   SID=""
   ns_shift_unbound cursor gate
   own_rc=$?

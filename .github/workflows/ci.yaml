@@ -21,14 +21,20 @@ permissions:
 # The filter matches a file when any one pattern matches it, and a `!` pattern matches every
 # file but the one it names. The plugin tree is therefore filtered in its own step under the
 # `every` quantifier, where a file must match `plugins/**` and each exclusion.
+#
+# What a change can break decides what runs. Code, tests, templates the runtime copies, and the
+# workflow run the full matrix. Plugin prose alone (skills, references, catalog entries) runs the
+# skills contract on shard 1: catalog discovery on both runtimes, references, frontmatter, evals
+# and fixtures. Docs alone run the docs contract: links, paths, named commands and issue forms.
 jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      suite: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.runtime == 'true' || steps.filter.outputs.workflow == 'true' }}
+      suite: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.code == 'true' || steps.filter.outputs.templates == 'true' || steps.filter.outputs.workflow == 'true' }}
       lint: ${{ steps.filter.outputs.shell == 'true' || steps.filter.outputs.workflow == 'true' }}
-      validate: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.runtime == 'true' || steps.filter.outputs.manifest == 'true' || steps.filter.outputs.workflow == 'true' }}
-      docs: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.runtime != 'true' && steps.plugin.outputs.runtime != 'true' && steps.filter.outputs.workflow != 'true' }}
+      validate: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.code == 'true' || steps.filter.outputs.templates == 'true' || steps.filter.outputs.prose == 'true' || steps.filter.outputs.manifest == 'true' || steps.filter.outputs.workflow == 'true' }}
+      docs: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.runtime != 'true' && steps.plugin.outputs.code != 'true' && steps.filter.outputs.templates != 'true' && steps.filter.outputs.workflow != 'true' }}
+      prose: ${{ steps.filter.outputs.prose == 'true' && steps.filter.outputs.runtime != 'true' && steps.plugin.outputs.code != 'true' && steps.filter.outputs.templates != 'true' && steps.filter.outputs.workflow != 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -36,8 +42,9 @@ jobs:
         with:
           predicate-quantifier: every
           filters: |
-            runtime:
+            code:
               - 'plugins/**'
+              - '!plugins/**/*.md'
               - '!plugins/nightshift/.claude-plugin/plugin.json'
               - '!plugins/nightshift/.codex-plugin/plugin.json'
               - '!plugins/nightshift/.cursor-plugin/plugin.json'
@@ -49,6 +56,10 @@ jobs:
               - '.github/workflows/ci.yaml'
             shell:
               - '**/*.sh'
+            templates:
+              - 'plugins/nightshift/skills/nightshift/references/templates/**'
+            prose:
+              - 'plugins/**/*.md'
             runtime:
               - 'tests/**'
               - 'evals/**'
@@ -90,14 +101,8 @@ jobs:
         if: needs.changes.outputs.lint == 'true'
         run: |
           set -eu
-          files=$(git ls-files '*.sh')
-          if [ -z "$files" ]; then
-            echo "no shell scripts yet"
-            exit 0
-          fi
-          echo "$files"
-          # The linter honors each file's directive; -x follows sourced paths.
-          echo "$files" | xargs shellcheck -x
+          chmod +x tests/lint-shell.sh
+          tests/lint-shell.sh
 
   bats:
     needs: changes
@@ -108,10 +113,10 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6]
     steps:
       - name: Skip shard
-        if: needs.changes.outputs.suite != 'true' && (needs.changes.outputs.docs != 'true' || matrix.shard != 1)
+        if: needs.changes.outputs.suite != 'true' && ((needs.changes.outputs.docs != 'true' && needs.changes.outputs.prose != 'true') || matrix.shard != 1)
         run: echo 'No suite paths for this shard.'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.changes.outputs.suite == 'true' || (needs.changes.outputs.docs == 'true' && matrix.shard == 1)
+        if: needs.changes.outputs.suite == 'true' || ((needs.changes.outputs.docs == 'true' || needs.changes.outputs.prose == 'true') && matrix.shard == 1)
       - name: Install bats and shellcheck
         if: needs.changes.outputs.suite == 'true'
         run: sudo apt-get update && sudo apt-get install -y bats shellcheck
@@ -126,7 +131,7 @@ jobs:
           chmod +x tests/run-shard.sh
           tests/run-shard.sh "${{ matrix.shard }}" 6
       - name: Install bats
-        if: needs.changes.outputs.suite != 'true' && needs.changes.outputs.docs == 'true' && matrix.shard == 1
+        if: needs.changes.outputs.suite != 'true' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.prose == 'true') && matrix.shard == 1
         run: sudo apt-get update && sudo apt-get install -y bats
       - name: Run docs contract
         if: needs.changes.outputs.suite != 'true' && needs.changes.outputs.docs == 'true' && matrix.shard == 1
@@ -134,6 +139,12 @@ jobs:
           set -eu
           chmod +x tests/run-docs-contract.sh
           tests/run-docs-contract.sh
+      - name: Run skills contract
+        if: needs.changes.outputs.suite != 'true' && needs.changes.outputs.prose == 'true' && matrix.shard == 1
+        run: |
+          set -eu
+          chmod +x tests/run-skills-contract.sh
+          tests/run-skills-contract.sh
 
   bats-macos:
     needs: changes

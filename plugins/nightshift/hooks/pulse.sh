@@ -53,6 +53,7 @@ ns_pulse_emit() { # <ns> <sid>
 # Silent, and never fatal: a host that reports nothing leaves no snapshot, and the report says
 # `unavailable` rather than zero.
 ns_pulse_usage() {
+  # shellcheck disable=SC2034 # assigned by the usage reader; local so they do not leak
   local ns="$1" host="$2" sid="$3" src="$4" reading fields offset model armed generation identity
   [ -n "$ns" ] && [ -n "$src" ] || return 0
   ns_layout_set armed "$ns" armed

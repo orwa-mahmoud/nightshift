@@ -51,6 +51,7 @@ if [ "$LIST" = yes ]; then
   printf '%s' "$NS_LAYOUT_ROWS" | while IFS="$(printf '\t')" read -r key _ _ kind; do
     case "$kind" in field | retired | stray) continue ;; esac
     ns_layout_set path "$NS" "$key" '*' || continue
+    # shellcheck disable=SC2154 # assigned by name by the layout helper
     printf '%s\t%s\n' "$key" "$path"
   done | awk -F '\t' '!seen[$1]++'
   exit 0
@@ -59,6 +60,7 @@ fi
 [ -n "$KEYS" ] || { printf 'path: name a state key, or --list\n' >&2; exit 1; }
 for key in $KEYS; do
   ns_layout_set path "$NS" "$key" || {
+    # shellcheck disable=SC2154 # assigned by name by the layout helper
     printf 'path: layout %s has no %s\n' "$(ns_layout_version_set v "$NS"; printf '%s' "$v")" "$key" >&2
     exit 1
   }

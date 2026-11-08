@@ -43,7 +43,7 @@ RECEIPTS="$ROOT/examples/README.md"
 }
 
 @test "the contribution map preserves focused and repository checks" {
-  for command in 'bats tests/' "git ls-files '*.sh' \| xargs shellcheck -x" \
+  for command in 'bats tests/' 'tests/lint-shell.sh' \
     'tests/coverage.sh' 'claude plugin validate . --strict'; do
     grep -qF "$command" "$MAP" || {
       echo "missing repository check: $command"
