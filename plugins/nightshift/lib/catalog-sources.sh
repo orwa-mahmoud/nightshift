@@ -363,6 +363,7 @@ _ns_catalog_rank() {
 _ns_catalog_index() {
   local prefix="$1" root="$2" name="$3" ws="$4"
   local tmp shape rule template setting raw raw_key project_dir legacy_project_dir user_dir legacy_user_dir
+  local configured one key meta entry_source replaced file rank
   ns_catalog_row "$name" || return 1
   rule="$NS_CAT_RULE"
   template="$(ns_catalog_template "$root" "$ws" "$name")"
@@ -407,12 +408,12 @@ _ns_catalog_index() {
     LC_ALL=C sort -u "$tmp/keys" | while IFS= read -r key; do
       [ -n "$key" ] || continue
       meta="$(cat "$tmp/meta/$key")"
-      src="$(cat "$tmp/source/$key")"
+      entry_source="$(cat "$tmp/source/$key")"
       replaced="$(cat "$tmp/replaced/$key")"
       file="$(cat "$tmp/file/$key")"
       rank=0
       [ "$NS_CAT_ORDER" != match ] || rank="$(_ns_catalog_rank "$file")"
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rank" "$key" "$meta" "$src" "$replaced" "$file"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$rank" "$key" "$meta" "$entry_source" "$replaced" "$file"
     done | LC_ALL=C sort -t "$(printf '\t')" -k1,1n -k2,2 | cut -f 2-
   )
 }
