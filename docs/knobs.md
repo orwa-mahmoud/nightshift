@@ -368,7 +368,7 @@ plus a runtime-written index. It never reaches a public commit message.
 | `evidence.fileMap` | `off` | `on` writes, at each tick, the item's changed files as a tree in its receipt and the whole shift's in `.nightshift/receipts/shift-map.md`, built from git |
 | `evidence.architecture` | `off` | `on` keeps one diagram of the components the shift touched, `.nightshift/receipts/architecture.md`, updated by the item that changes the structure |
 | `evidence.check` | `off` | What a missing named evidence file does to the tick. `off` leaves the tick alone. `report` lists each missing file on the receipt and the morning receipt, and the tick stands. `block` counts that ticked item as open until the files are present |
-| `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and writes a Reviewed section. With `check` at `block`, a missing Reviewed section counts as missing evidence |
+| `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and says in the receipt what it saw. It never affects the tick |
 | `evidence.unavailable` | `""` | What happens when the evidence cannot be produced. `hold` closes the item as stopped. `park` records the decision and keeps working. `note` ticks the item and the receipt says why. Empty means `hold` when `check` is `block`, and `note` otherwise |
 
 With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
