@@ -27,35 +27,35 @@ codex_hardhat_ask() {
 }
 
 @test "the no-push recipe denies push during an active shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "git push origin main" NIGHTSHIFT_FORBIDDEN_COMMANDS='git push'
   is_deny "$output"
 }
 
 @test "a scary-looking command passes when the forbidden list is unset" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "kubectl delete pod api-7f9"
   is_allow
 }
 
 @test "forbidden-commands rule is shift-scoped: inert once every box is ticked" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_done "$p"
   run codex_hardhat_bash "$p" "docker ps" NIGHTSHIFT_FORBIDDEN_COMMANDS='docker'
   is_allow
 }
 
 @test "a protected-dir commit is denied when configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "git commit -m x ai_docs/notes.md" NIGHTSHIFT_PROTECTED_DIRS="ai_docs notes"
   is_deny "$output"
 }
 
 @test "a protected-dir git add is denied; unset leaves it free" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "git add ai_docs/secret" NIGHTSHIFT_PROTECTED_DIRS="ai_docs"
   is_deny "$output"
@@ -64,21 +64,21 @@ codex_hardhat_ask() {
 }
 
 @test "commit under the wrong identity is denied when configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "git commit -m x" NIGHTSHIFT_EXPECTED_EMAIL="owner@nope.io"
   is_deny "$output"
 }
 
 @test "commit under the expected identity is allowed" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "git commit -m x" NIGHTSHIFT_EXPECTED_EMAIL="dev@example.com"
   is_allow
 }
 
 @test "a staged never-commit pattern is denied when configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'API_KEY=sk-secret\n' >"$p/leak.txt"
   git -C "$p" add leak.txt
@@ -87,7 +87,7 @@ codex_hardhat_ask() {
 }
 
 @test "AskUserQuestion is parked with the template's own message" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_ask "$p"
   is_deny "$output"
@@ -95,7 +95,7 @@ codex_hardhat_ask() {
 }
 
 @test "request_user_input is parked with its native template entry" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_ask "$p" request_user_input
   is_deny "$output"
@@ -103,7 +103,7 @@ codex_hardhat_ask() {
 }
 
 @test "request_user_input remains available outside an armed shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rm "$p/.nightshift/.shift-armed"
   run codex_hardhat_ask "$p" request_user_input
@@ -111,21 +111,21 @@ codex_hardhat_ask() {
 }
 
 @test "an open checkbox outside Items does not activate the codex hardhat" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   printf '%s\n' '- [ ] planning example' '## Items' '- [x] **1. done.**' >"$p/.nightshift/punch-list.md"
   run codex_hardhat_ask "$p"
   is_allow
 }
 
 @test "an open checkbox under Items activates the codex hardhat" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   printf '%s\n' '- [x] planning example' '## Items' '- [ ] **1. open.**' >"$p/.nightshift/punch-list.md"
   run codex_hardhat_ask "$p"
   is_deny "$output"
 }
 
 @test "open Items remain inert until the codex shift is armed" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rm "$p/.nightshift/.shift-armed"
   run codex_hardhat_ask "$p"
@@ -133,7 +133,7 @@ codex_hardhat_ask() {
 }
 
 @test "the AskUserQuestion compatibility alias reads its exact key" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_ask "$p" \
     NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"alias park","request_user_input":"native park"}'
@@ -142,7 +142,7 @@ codex_hardhat_ask() {
 }
 
 @test "request_user_input uses its own host-native message" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_ask "$p" request_user_input \
     NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"alias park","request_user_input":"native park"}'
@@ -151,7 +151,7 @@ codex_hardhat_ask() {
 }
 
 @test "an empty request_user_input message allows Codex to ask" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_ask "$p" request_user_input \
     NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"alias park","request_user_input":""}'
@@ -159,7 +159,7 @@ codex_hardhat_ask() {
 }
 
 @test "a missing Codex question key is a configuration error, not an alias fallback" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_ask "$p" request_user_input \
     NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"must not leak across hosts"}'
@@ -172,7 +172,7 @@ codex_hardhat_ask() {
 # Hosted tools never reach the Codex hook path; the arbitrary names an owner can list are MCP
 # tools, so the fixture speaks that vocabulary.
 @test "a listed tool is denied with its own message; an unlisted one passes" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"mcp__web__search",tool_input:{}}' |
     env NIGHTSHIFT_TOOL_RULES='{"mcp__web__search":"no browsing tonight"}' CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh")"
@@ -185,7 +185,7 @@ codex_hardhat_ask() {
 }
 
 @test "a nested question-tool name cannot bypass the canonical caller rule" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"mcp__router__invoke",tool_input:{tool_name:"request_user_input"}}' |
     env NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"","request_user_input":"","mcp__router__invoke":"router blocked"}' \
@@ -195,7 +195,7 @@ codex_hardhat_ask() {
 }
 
 @test "toolDeny can block canonical Codex Bash calls" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "git status" \
     NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"","request_user_input":"","Bash":"no shell tonight"}'
@@ -206,7 +206,7 @@ codex_hardhat_ask() {
 # Codex delivers file edits as apply_patch with the patch text in tool_input.command; the
 # payload's cwd is the documented way a hook finds the project — no env override here.
 @test "neverCommitPatterns inspects a pathspec commit on Codex" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'clean\n' >"$p/leak.txt"
   git -C "$p" add leak.txt
@@ -217,7 +217,7 @@ codex_hardhat_ask() {
 }
 
 @test "protectedDirs inspects Git paths on Codex too" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   mkdir -p "$p/ai_docs"
   printf 'secret\n' >"$p/ai_docs/secret.txt"
@@ -234,7 +234,7 @@ codex_hardhat_ask() {
 }
 
 @test "the bound worker cannot unlink the armed marker or delete the punch list" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "unlink .nightshift/.shift-armed"
   is_deny "$output"
@@ -247,7 +247,7 @@ codex_hardhat_ask() {
 }
 
 @test "an apply_patch aimed at the rules file is denied" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc --arg p "$p" '{tool_name:"apply_patch",cwd:$p,tool_input:{command:"*** Begin Patch\n*** Update File: .nightshift/rules.json\n@@\n-old\n+new\n*** End Patch"}}' |
     bash "$CODEX_HOOKS/hardhat.sh")"
@@ -255,7 +255,7 @@ codex_hardhat_ask() {
 }
 
 @test "an MCP writer aimed at the rules file is denied" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc --arg p "$p" '{tool_name:"mcp__filesystem__write_file",cwd:$p,tool_input:{path:($p + "/.nightshift/rules.json"),content:"{}"}}' |
     bash "$CODEX_HOOKS/hardhat.sh")"
@@ -263,7 +263,7 @@ codex_hardhat_ask() {
 }
 
 @test "a patch is not a command: forbidden text inside an edit trips no command guard" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc --arg p "$p" '{tool_name:"apply_patch",cwd:$p,tool_input:{command:"*** Begin Patch\n*** Update File: docs/deploy.md\n+document .nightshift/rules.json and run git push only after review\n*** End Patch"}}' |
     env NIGHTSHIFT_FORBIDDEN_COMMANDS='git push' bash "$CODEX_HOOKS/hardhat.sh")"
@@ -271,7 +271,7 @@ codex_hardhat_ask() {
 }
 
 @test "the codex binding probe records its host, and a second tab never overwrites it" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
@@ -286,7 +286,7 @@ codex_hardhat_ask() {
 }
 
 @test "only the binding probe claims the Codex shift session" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc '{tool_name:"mcp__filesystem__read_file",session_id:"helper-tab",tool_input:{path:"README.md"}}' |
     CODEX_PROJECT_DIR="$p" bash "$CODEX_HOOKS/hardhat.sh"
@@ -300,7 +300,7 @@ codex_hardhat_ask() {
 }
 
 @test "the no-push recipe holds when jq is absent and Python parses tool rules" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   bindir="$BATS_TEST_TMPDIR/nojq"
   mkdir -p "$bindir"
@@ -332,7 +332,7 @@ shift_policy() {
 codex_reason() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionReason'; }
 
 @test "codex denies rewriting the shift policy, its defaults, and the deadline" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   shift_policy "$p"
   for f in shift-policy.json shift-defaults.json deadline; do
@@ -344,8 +344,8 @@ codex_reason() { printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisio
   done
 }
 
-@test "codex denies every elevation category by default with the same repair" {
-  p="$(new_project)"
+@test "codex denies every elevation category the owner denies, with the same repair" {
+  p="$(new_guarded_project)"
   punch_open "$p"
   ws="$(cd -P "$p" && pwd -P)"
   while IFS='|' read -r category command; do
@@ -365,12 +365,12 @@ ROWS
 }
 
 @test "codex honours a rules allowance and a one-shift allowance alike" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rules_elevation "$p" containers allow
   run codex_hardhat_bash "$p" "docker compose up -d"
   is_allow
-  q="$(new_project codex-one-shift)"
+  q="$(new_guarded_project codex-one-shift)"
   punch_open "$q"
   shift_policy "$q" '[{"category":"daemons","scope":"category","provenance":"one-shift"}]'
   run codex_hardhat_bash "$q" "systemctl start nginx"
@@ -378,14 +378,14 @@ ROWS
 }
 
 @test "codex reads the scrubbed command, so a commit message names nothing" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "git commit -m 'sudo apt-get install jq and docker compose up'"
   is_allow
 }
 
 @test "codex create-state elevation denies bypass forms and leaves reads alone" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "/usr/bin/sudo id"
   is_deny "$output"
@@ -425,7 +425,7 @@ codex_shift_helper_passes() {
 }
 
 @test "codex runs the owner helpers from any conversation while a live worker holds the lease" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   sleep 300 &
   holder=$!
@@ -475,7 +475,7 @@ CMDS
 }
 
 @test "codex applies no rule on an unarmed site, whatever the lease still says" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   sleep 300 &
   holder=$!
@@ -492,7 +492,7 @@ CMDS
 }
 
 @test "codex applies no rule on a stopped shift, whatever the lease still says" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   dead="$(reaped_pid)"
   session_record "$p" shift-session "" "" "" codex
@@ -505,7 +505,7 @@ CMDS
 }
 
 @test "a literal parking-lot append may name the rules file" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run codex_hardhat_bash "$p" "echo 'needs a change to .nightshift/rules.json' >> .nightshift/parking-lot.md"
@@ -513,14 +513,14 @@ CMDS
 }
 
 @test "a real write to the rules file is still refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run codex_hardhat_bash "$p" "echo '{}' > .nightshift/rules.json"
   is_deny "$output"
 }
 
 @test "a parking-lot append through a symlink to the rules file is refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   ln -s rules.json "$p/.nightshift/parking-lot.md"
   run codex_hardhat_bash "$p" "echo 'inert looking note' >> .nightshift/parking-lot.md"
@@ -528,7 +528,7 @@ CMDS
 }
 
 @test "an executable substitution in a parking-lot append is refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run codex_hardhat_bash "$p" 'echo $(cat .nightshift/rules.json) >> .nightshift/parking-lot.md'
@@ -536,7 +536,7 @@ CMDS
 }
 
 @test "a parking-lot append plus a protected write is refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run codex_hardhat_bash "$p" "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json"

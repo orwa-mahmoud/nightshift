@@ -194,6 +194,7 @@ policy_json() { # <shiftId> <toolingPolicy> <verificationLevel> [source]
 
 @test "a preflight gap is present without an allowance and absent once one is granted, and parking follows" {
   p="$(unarmed mtx-gap)"
+  guard_elevation "$p"
   cat >"$p/.nightshift/punch-list.md" <<'MD'
 ## Items
 
@@ -211,6 +212,7 @@ MD
   grep -qF 'needs allowance: containers' "$p/.nightshift/parking-lot.md"
 
   q="$(unarmed mtx-gap-closed)"
+  guard_elevation "$q"
   cp "$p/.nightshift/punch-list.md" "$q/.nightshift/punch-list.md"
   policy_json eeeeeeeeeeeeeeee existing-tools final >"$q/candidate.json"
   jq '.allowances = [{"category":"containers","scope":"category","provenance":"one-shift"}]' \

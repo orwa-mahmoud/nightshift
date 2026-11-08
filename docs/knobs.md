@@ -89,9 +89,10 @@ with a workspace setting — it does not change runtime behaviour:
 
 ## Elevation
 
-`elevation` is the one guard that ships switched on. Five categories are denied out of the box, and
-each carries the `grep -E` pattern the hardhat and the permission preflight both match against, so
-the guard and the preflight can never disagree about what a command needs:
+`elevation` names five categories of command that create system state. Each ships allowed, so
+Nightshift adds nothing to what the host itself permits; set a category to `deny` to guard it.
+Each carries the `grep -E` pattern the hardhat and the permission preflight both match against,
+so the guard and the preflight can never disagree about what a command needs:
 
 | Category | What it covers |
 | --- | --- |
@@ -106,21 +107,21 @@ database, calling a local API, and running migrations or tests against your dev 
 gated. `docker ps`, `docker logs`, and `brew list` are reads, not elevation; `docker run` is
 elevation.
 
-Set a category's `policy` to `allow` to lift it permanently, or let a composition step record a
-one-shift allowance with its provenance on the shift policy. An allowance authorizes its category
-and nothing else: protected paths, never-commit patterns, and the expected commit identity are
-never lifted with it. A missing `elevation` object, or a missing category inside it, denies that
-category and keeps the shipped pattern.
+Set a category's `policy` to `deny` to guard it. A denied category can still be lifted for one shift
+by a composition step, which records the allowance with its provenance on the shift policy. An
+allowance authorizes its category and nothing else: protected paths, never-commit patterns, and the
+expected commit identity are never lifted with it. A missing `elevation` object, or a missing
+category inside it, allows that category and keeps the shipped pattern.
 
 ```json
 {
   "elevation": {
-    "containers": { "policy": "allow" }
+    "containers": { "policy": "deny" }
   }
 }
 ```
 
-`forbiddenCommands` remains your own free-form denylist; it is not how these five are denied.
+`forbiddenCommands` remains your own free-form denylist; it is separate from these five categories.
 
 **Hardhat is hardening, not a sandbox.** The patterns match command text. They stop accidental
 drift by a cooperative agent; they are not unbypassable isolation, and they are not a substitute
@@ -273,8 +274,8 @@ the default in the table.
 |---|---|---|
 | `verificationProfile` | `fast` | `fast` never runs the punch list's `## Gates`, `balanced` runs them once before clock-out, `strict` before every tick and once at the end, `custom` is the cadence the punch list itself names |
 | `hours` | `null` | A whole number of hours for a composed shift, or `null` to be asked. A finite punch list can still end at its last tick with no clock |
-| `execution` | `review-first` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
-| `toolingPolicy` | `existing-tools` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
+| `execution` | `run-direct` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
+| `toolingPolicy` | `auto-add` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
 | `itemBudget` | `""` | The budget every item gets when it names none of its own, in the words of an item's `Budget:` line. Empty means no limit |
 | `isolation` | `none` | `none` works in the work target itself. `worktree` gives each shift its own git worktree and branch: the owner's checkout, index and uncommitted edits stay untouched, and ignored files such as `.env` are absent unless listed in `copyIn`. Artifact mode ignores it |
 | `prepare` | `""` | One command run in a new shift worktree before the first item, such as `pnpm install --frozen-lockfile`. A failure stops Start and arms nothing |
@@ -452,7 +453,7 @@ host permission settings or adds bypass flags.
 
 | Key | Default | Values |
 |---|---|---|
-| `launchScope` | `inherit-recorded-scope` | Restore a recorded `read-only` or `workspace-write` Codex sandbox. Missing or unsupported scopes refuse recovery. `host-default` adds no permission arguments and uses the owner's independently configured host permissions. The legacy `host-grant` value refuses recovery |
+| `launchScope` | `host-default` | `inherit-recorded-scope` restores a recorded `read-only` or `workspace-write` Codex sandbox. Missing or unsupported scopes refuse recovery. `host-default` adds no permission arguments and uses the owner's independently configured host permissions. The legacy `host-grant` value refuses recovery |
 
 `host-default` does not promise the original session's permissions: the host applies its current
 configuration. Configure that directly in the host before unattended work. A permission prompt

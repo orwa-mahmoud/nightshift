@@ -583,10 +583,10 @@ function Get-NSPolicyResolution {
     $policy = $state['policy']
     $settings = New-NSOrdinalMap
 
-    # The built-in shift is the shipped fast profile: no gate cadence, existing
-    # tools, no deadline. Only tonight's policy moves any of the three.
-    $settings['verificationLevel'] = New-NSPolicySetting 'none' 'built-in' '-'
-    $settings['toolingPolicy'] = New-NSPolicySetting 'existing-tools' 'built-in' '-'
+    # The built-in shift is the shipped fast profile: no gate cadence, the built-in tooling
+    # policy, no deadline. Only tonight's policy moves any of the three.
+    $settings['verificationLevel'] = New-NSPolicySetting $script:NSPolicyBuiltins['verificationLevel'] 'built-in' '-'
+    $settings['toolingPolicy'] = New-NSPolicySetting $script:NSPolicyBuiltins['toolingPolicy'] 'built-in' '-'
     $settings['deadlineEpoch'] = New-NSPolicySetting $null 'built-in' '-'
     if ($null -ne $policy) {
         $settings['verificationLevel'] = New-NSPolicySetting $policy['verificationLevel'] 'one-shift' 'shift'
@@ -603,7 +603,7 @@ function Get-NSPolicyResolution {
     }
 
     foreach ($category in $script:NSPolicyCategories) {
-        $entry = New-NSPolicySetting 'deny' 'built-in' '-'
+        $entry = New-NSPolicySetting $script:NSPolicyBuiltins['elevation'] 'built-in' '-'
         $rulePolicy = Get-NSElevationRulePolicy $Workspace $category
         if (-not [string]::IsNullOrEmpty($rulePolicy)) {
             $entry = New-NSPolicySetting $rulePolicy 'rules' 'permanent'

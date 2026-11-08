@@ -944,7 +944,7 @@ $script:NSPolicyGroupDefaults['handoff.language'] = 'auto'
 $script:NSPolicyGroupDefaults['handoff.sections'] = @()
 $script:NSPolicyGroupDefaults['handoff.templatePath'] = ''
 $script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
-$script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
+$script:NSPolicyGroupDefaults['recovery.launchScope'] = 'host-default'
 $script:NSPolicyGroupDefaults['receipts.duration'] = 'on'
 $script:NSPolicyGroupDefaults['receipts.enabled'] = $true
 $script:NSPolicyGroupDefaults['receipts.evidence.architecture'] = 'off'
@@ -961,14 +961,21 @@ $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
 $script:NSPolicyGroupDefaults['receipts.templatePath'] = ''
 $script:NSPolicyGroupDefaults['receipts.usage'] = 'when-available'
 $script:NSPolicyGroupDefaults['shift.copyIn'] = @()
-$script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
+$script:NSPolicyGroupDefaults['shift.execution'] = 'run-direct'
 $script:NSPolicyGroupDefaults['shift.hours'] = $null
 $script:NSPolicyGroupDefaults['shift.isolation'] = 'none'
 $script:NSPolicyGroupDefaults['shift.itemBudget'] = ''
 $script:NSPolicyGroupDefaults['shift.prepare'] = ''
-$script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
+$script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'auto-add'
 $script:NSPolicyGroupDefaults['shift.verificationProfile'] = 'fast'
 $script:NSPolicyGroupDefaults['shift.worktreeRoot'] = '.nightshift/worktrees'
+
+# The built-in shift settings outside the preference blocks, the same as ns_policy_builtin in
+# lib/policy.sh. elevation is the policy of every category the owner has not set.
+$script:NSPolicyBuiltins = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
+$script:NSPolicyBuiltins['verificationLevel'] = 'none'
+$script:NSPolicyBuiltins['toolingPolicy'] = 'auto-add'
+$script:NSPolicyBuiltins['elevation'] = 'allow'
 
 $script:NSPolicySettingNames = @(
     'archive.automatic',
@@ -1525,9 +1532,15 @@ function New-NSStartSnapshot {
         if ($value -match '^[0-9]+$') { $deadline = $value }
     }
     $created = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+    # A notes folder has no repository toolchain to add, so it keeps existing tools.
+    $tooling = [string]$script:NSPolicyBuiltins['toolingPolicy']
+    $mode = ''
+    try { $mode = Get-NSWorkMode $Workspace } catch { $mode = '' }
+    if ($mode -ceq 'artifact') { $tooling = 'existing-tools' }
     $json = '{"schemaVersion":1,"shiftId":"' + $id + '","createdAt":"' + $created +
         '","source":"start-defaults","deadlineEpoch":' + $deadline +
-        ',"verificationLevel":"none","toolingPolicy":"existing-tools"}'
+        ',"verificationLevel":"' + [string]$script:NSPolicyBuiltins['verificationLevel'] +
+        '","toolingPolicy":"' + $tooling + '"}'
     if ((Set-NSShiftPolicy -Workspace $Workspace -Json $json) -ne 0) { return '' }
     return $id
 }
@@ -1626,10 +1639,10 @@ function Set-NSShiftPolicy {
 function New-NSShiftDefaultsDocument {
     $document = New-NSOrdinalMap
     $document['schemaVersion'] = 1
-    $document['verificationProfile'] = 'fast'
-    $document['hours'] = $null
-    $document['toolingPolicy'] = 'existing-tools'
-    $document['execution'] = 'review-first'
+    $document['verificationProfile'] = $script:NSPolicyGroupDefaults['shift.verificationProfile']
+    $document['hours'] = $script:NSPolicyGroupDefaults['shift.hours']
+    $document['toolingPolicy'] = $script:NSPolicyGroupDefaults['shift.toolingPolicy']
+    $document['execution'] = $script:NSPolicyGroupDefaults['shift.execution']
     $document['updatedAt'] = ''
     return $document
 }
@@ -1719,8 +1732,12 @@ function Get-NSRecoveryLaunchScope {
     if ([string]::IsNullOrEmpty($reader) -or -not (Test-Path -LiteralPath $reader -PathType Leaf)) {
         return ('unavailable:missing-file:' + $reader)
     }
+    # A setting the owner never wrote is the built-in default. An unrecognised value, or a rules
+    # file that cannot be parsed, inherits, which refuses an unattended revival rather than guess.
+    $builtin = [string]$script:NSPolicyGroupDefaults['recovery.launchScope']
     $path = (Get-NSPolicyPaths $Workspace)['rules']
-    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'inherit-recorded-scope' }
+    if (Test-NSReparsePoint $path) { return 'inherit-recorded-scope' }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $builtin }
     $document = $null
     try {
         $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
@@ -1729,9 +1746,10 @@ function Get-NSRecoveryLaunchScope {
         return 'inherit-recorded-scope'
     }
     if (-not ($document -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
-    if (-not $document.Contains('recovery')) { return 'inherit-recorded-scope' }
+    if (-not $document.Contains('recovery')) { return $builtin }
     $block = $document['recovery']
     if (-not ($block -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
+    if (-not $block.Contains('launchScope')) { return $builtin }
     $value = Get-NSMapValue $block 'launchScope'
     if ($value -ceq 'host-default') { return 'host-default' }
     if ($value -ceq 'host-grant') { return 'host-grant' }

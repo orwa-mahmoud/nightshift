@@ -116,8 +116,8 @@ authoritative.
 
 **Tooling policies** are `existing-tools` (scan with what is already installed),
 `review-missing` (hold the clock until the owner approves a plan for what is missing), and
-`auto-add` (add tools under the elevation categories the shift already allows). Artifact mode is
-always `existing-tools`. Start never asks: a composition step records the choice on the policy
+`auto-add` (add tools under the elevation categories the shift already allows), the default.
+Artifact mode is always `existing-tools`. Start never asks: a composition step records the choice on the policy
 snapshot, and Start works with what it finds.
 
 **Parsers.** The plugin ships no Python. POSIX hooks read `rules.json` with a bundled reader that
@@ -135,7 +135,7 @@ On Claude Code, Codex, and Cursor, an attempted stop with open punch-list items 
 focused contract again. On every host, hook-backed rules can deny commands, protected paths,
 suspicious secret patterns, or commits under the wrong identity.
 
-The five elevation categories deny by default. Optional command, path, identity, and secret
+The five elevation categories are allowed by default; the owner sets any of them to `deny`. Optional command, path, identity, and secret
 guards (`forbiddenCommands`, `protectedDirs`, `expectedEmail`, `neverCommitPatterns`) stay empty
 until the owner sets them; Setup proposes them and the owner chooses. The three explicit
 question-tool entries are the exception: the shipped rules park questions so an unattended shift

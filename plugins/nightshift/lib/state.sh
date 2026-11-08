@@ -2465,13 +2465,16 @@ ns_handoff_view() {
 # ns_recovery_launch_scope <project-dir> — the owner's recovery preference, read from the rules
 # file on every call. A shift snapshot freezes every other preference, but this one is how the
 # owner authorizes revival of the night already running, so a change is visible on the next wake.
-# Legacy host-grant remains readable so the resolver can refuse it explicitly; a missing or
-# unrecognised value inherits. A Nightshift file that could not be opened is
+# Legacy host-grant remains readable so the resolver can refuse it explicitly. A setting the owner
+# never wrote (no rules file, no recovery block, no launchScope) is the built-in default. An
+# unrecognised value, or a rules file that cannot be parsed, inherits, which refuses an
+# unattended revival rather than guess. A Nightshift file that could not be opened is
 # unavailable:missing-file — that is a failure to read the setting, not a default, and
 # NS_RECOVERY_MISSING_FILE names the file.
 ns_recovery_launch_scope() {
-  local v="" pref_out="" rules=""
+  local v="" pref_out="" rules="" unreadable=0
   NS_RECOVERY_MISSING_FILE=""
+  NS_RULES_ERR=""
   if [ -n "${NIGHTSHIFT_LAUNCH_SCOPE:-}" ]; then
     v="$NIGHTSHIFT_LAUNCH_SCOPE"
   else
@@ -2492,14 +2495,19 @@ ns_recovery_launch_scope() {
       "Nightshift file missing: "*)
         NS_RECOVERY_MISSING_FILE="${NS_RULES_ERR#Nightshift file missing: }"
         ;;
+      '' | missing) ;;
+      *) unreadable=1 ;;
     esac
   fi
   case "$v" in
-    host-default) printf 'host-default'; return 0 ;;
-    host-grant) printf 'host-grant'; return 0 ;;
+    host-default | host-grant | inherit-recorded-scope) printf '%s' "$v"; return 0 ;;
   esac
   if [ -n "$NS_RECOVERY_MISSING_FILE" ]; then
     printf 'unavailable:missing-file:%s' "$NS_RECOVERY_MISSING_FILE"
+    return 0
+  fi
+  if [ -z "$v" ] && [ "$unreadable" -eq 0 ]; then
+    ns_json_text "$(ns_policy_builtin recovery.launchScope)"
     return 0
   fi
   printf 'inherit-recorded-scope'

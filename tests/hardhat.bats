@@ -58,41 +58,41 @@ elevation_message() { # <project> <category>
 }
 
 @test "push is allowed by default during an active shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git push origin main"
   is_allow
 }
 
 @test "push is allowed by default when every box is ticked" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_done "$p"
   run hardhat_bash "$p" "git push"
   is_allow
 }
 
 @test "allows push when there is no punch list" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   run hardhat_bash "$p" "git push"
   is_allow
 }
 
 @test "the no-push recipe denies push during an active shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git push origin main" NIGHTSHIFT_FORBIDDEN_COMMANDS='git push'
   is_deny "$output"
 }
 
 @test "a commit message containing a forbidden word is not a match" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git commit -m 'push it real good'" NIGHTSHIFT_FORBIDDEN_COMMANDS='git push'
   is_allow
 }
 
 @test "protected-dir git write is denied when configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   mkdir -p "$p/ai_docs"
   printf 'secret\n' >"$p/ai_docs/secret"
@@ -101,7 +101,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "protectedDirs inspects the paths Git would add or commit" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   mkdir -p "$p/ai_docs"
   printf 'secret\n' >"$p/ai_docs/secret.txt"
@@ -139,7 +139,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "a --git-dir add is denied when a protected directory is configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git --git-dir=/somewhere/else/.git add x" NIGHTSHIFT_PROTECTED_DIRS="ai_docs"
   is_deny "$output"
@@ -147,7 +147,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "a --work-tree commit is denied when a protected directory is configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git --work-tree=/somewhere/else commit -am x" NIGHTSHIFT_PROTECTED_DIRS="ai_docs"
   is_deny "$output"
@@ -155,28 +155,28 @@ elevation_message() { # <project> <category>
 }
 
 @test "protected-dir check is skipped when unset" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git add ai_docs/secret"
   is_allow
 }
 
 @test "commit under the wrong identity is denied when configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git commit -m x" NIGHTSHIFT_EXPECTED_EMAIL="owner@nope.io"
   is_deny "$output"
 }
 
 @test "commit under the expected identity is allowed" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git commit -m x" NIGHTSHIFT_EXPECTED_EMAIL="dev@example.com"
   is_allow
 }
 
 @test "a staged never-commit pattern is denied when configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'API_KEY=sk-secret\n' >"$p/leak.txt"
   git -C "$p" add leak.txt
@@ -185,7 +185,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "neverCommitPatterns inspects the exact commit Git would write" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'clean\n' >"$p/leak.txt"
   git -C "$p" add leak.txt
@@ -202,7 +202,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "never-commit pattern check is skipped when unset" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'API_KEY=sk-secret\n' >"$p/leak.txt"
   git -C "$p" add leak.txt
@@ -211,7 +211,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "AskUserQuestion is denied during an active shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_ask "$p"
   is_deny "$output"
@@ -219,28 +219,28 @@ elevation_message() { # <project> <category>
 }
 
 @test "AskUserQuestion is allowed with no active shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_done "$p"
   run hardhat_ask "$p"
   is_allow
 }
 
 @test "an open checkbox outside Items does not activate the hardhat" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   printf '%s\n' '- [ ] planning example' '## Items' '- [x] **1. done.**' >"$p/.nightshift/punch-list.md"
   run hardhat_ask "$p"
   is_allow
 }
 
 @test "an open checkbox under Items activates the hardhat" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   printf '%s\n' '- [x] planning example' '## Items' '- [ ] **1. open.**' >"$p/.nightshift/punch-list.md"
   run hardhat_ask "$p"
   is_deny "$output"
 }
 
 @test "open Items remain inert until the shift is armed" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rm "$p/.nightshift/.shift-armed"
   run hardhat_ask "$p"
@@ -248,7 +248,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "STOP keeps hardhat active until ENDED even with no open boxes" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_done "$p"
   run hardhat_bash "$p" "git push" NIGHTSHIFT_FORBIDDEN_COMMANDS='git push'
   is_allow
@@ -261,7 +261,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "the no-push recipe holds when jq is absent and Python parses tool rules" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   bindir="$BATS_TEST_TMPDIR/nojq"
   mkdir -p "$bindir"
@@ -278,7 +278,7 @@ elevation_message() { # <project> <category>
 # actually releases, and only that stands them down.
 
 @test "a pending stop-work order keeps the site rules armed" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/STOP"
   run hardhat_bash "$p" "git add ai_docs/x" NIGHTSHIFT_PROTECTED_DIRS="ai_docs"
@@ -290,7 +290,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "the site rules stand down once the gate has ended the shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/STOP"
   run gate "$p"                       # the release that actually ends it
@@ -302,7 +302,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "a symlink ended marker keeps the site rules armed" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/ended-plant"
   ln -s ended-plant "$p/.nightshift/.ended"
@@ -311,14 +311,14 @@ elevation_message() { # <project> <category>
 }
 
 @test "forbidden-commands pattern denies during an active shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "docker system prune -af" NIGHTSHIFT_FORBIDDEN_COMMANDS='rm -rf|docker|kubectl'
   is_deny "$output"
 }
 
 @test "an invalid forbidden-command pattern names the session repair" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git status" NIGHTSHIFT_FORBIDDEN_COMMANDS='(unclosed'
   is_deny "$output"
@@ -327,21 +327,21 @@ elevation_message() { # <project> <category>
 }
 
 @test "forbidden-commands rule is shift-scoped: inert once every box is ticked" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_done "$p"
   run hardhat_bash "$p" "docker ps" NIGHTSHIFT_FORBIDDEN_COMMANDS='docker'
   is_allow
 }
 
 @test "a scary-looking command passes when the forbidden list is unset" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "kubectl delete pod api-7f9"
   is_allow
 }
 
 @test "deny stays valid JSON when the committer email contains a quote" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   git -C "$p" config user.email 'we"ird@example.com'
   run hardhat_bash "$p" "git commit -m x" NIGHTSHIFT_EXPECTED_EMAIL="owner@nope.io"
@@ -350,7 +350,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "deny stays valid JSON when a protected dir name contains a quote" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" 'git add we"ird/x' NIGHTSHIFT_PROTECTED_DIRS='we"ird'
   is_deny "$output"
@@ -433,7 +433,7 @@ elevation_message() { # <project> <category>
 # past that resolution — the guard would inspect one repository while the commit lands in
 # another. Unverifiable must mean denied, not misread.
 @test "a --git-dir commit is denied when a commit guard is configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git --git-dir=/somewhere/else/.git commit -m x" \
     NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com
@@ -441,7 +441,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "a --work-tree commit is denied when a commit guard is configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git --work-tree=/somewhere/else commit -am x" \
     NIGHTSHIFT_NEVER_COMMIT_PATTERNS='SECRET'
@@ -449,14 +449,14 @@ elevation_message() { # <project> <category>
 }
 
 @test "--git-dir passes when no commit guard is configured" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git --git-dir=/somewhere/else/.git commit -m x"
   is_allow
 }
 
 @test "a commit message mentioning --git-dir is not a match" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git commit -m 'document the --git-dir flag'" \
     NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com
@@ -466,7 +466,7 @@ elevation_message() { # <project> <category>
 # The identity guard reads the repo's config, and a command line can override identity past that
 # read. Every visible override form is denied when an expected identity is configured.
 @test "an inline -c user.email override is denied when an identity is expected" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git -c user.email=evil@example.com commit -m x" \
     NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com
@@ -474,7 +474,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "an --author override is denied when an identity is expected" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git commit --author='Evil <evil@example.com>' -m x" \
     NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com
@@ -482,7 +482,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "a GIT_AUTHOR_EMAIL prefix is denied when an identity is expected" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "GIT_AUTHOR_EMAIL=evil@example.com git commit -m x" \
     NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com
@@ -492,7 +492,7 @@ elevation_message() { # <project> <category>
 # The no-push recipe in docs/knobs.md is `git .*push` so that config injection cannot slip between the
 # words. This pins the recipe itself.
 @test "the isolated-branch recipe denies default-branch checkout, merge, and push" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   recipe="$(jq -r '.rules.forbiddenCommands' \
     "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/profiles/isolated-branch.json")"
@@ -519,7 +519,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "the no-push recipe catches git -c k=v push" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git -c http.proxy=x push origin main" \
     NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push'
@@ -530,7 +530,7 @@ elevation_message() { # <project> <category>
 # .shift-session, and a second tab never overwrites it — the watchman must know WHICH
 # conversation to read and revive, not guess at the newest.
 @test "the binding probe records its session, and a second tab never overwrites it" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc '{tool_name:"Bash",session_id:"first-tab",transcript_path:"/tmp/a.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
@@ -541,7 +541,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "a symlink shift-session does not block the binding probe" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'planted-tab\n/tmp/plant.jsonl\n99999\nstart\nclaude\n' >"$p/.nightshift/session-plant"
   ln -s session-plant "$p/.nightshift/.shift-session"
@@ -555,7 +555,7 @@ elevation_message() { # <project> <category>
 # Cursor IDE loads the Claude marketplace plugin beside the Cursor host plugin. Claude-entry
 # hooks must stand down so they cannot lease as host claude on a Cursor transcript.
 @test "claude hardhat stands down on a cursor transcript without claiming the lease" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc '{tool_name:"Bash",session_id:"cursor-tab",transcript_path:"/Users/o/.cursor/projects/x/agent-transcripts/u/u.jsonl",tool_input:{command:"echo hi"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
@@ -564,7 +564,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "a claude transcript keeps recording the claude host" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc '{tool_name:"Bash",session_id:"claude-tab",transcript_path:"/Users/o/.claude/projects/x/u.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
@@ -572,7 +572,7 @@ elevation_message() { # <project> <category>
 }
 
 @test "no active shift means no session record" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_done "$p"
   jq -nc '{tool_name:"Bash",session_id:"s1",transcript_path:"",tool_input:{command:"echo hi"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
@@ -582,7 +582,7 @@ elevation_message() { # <project> <category>
 # v0.5.2: the record carries process identity — the claude ancestor's pid and start time, found
 # by walking the hook's own ancestry. A stubbed ps makes the walk deterministic here.
 @test "the record claims the claude ancestor's pid and start time" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   stub="$BATS_TEST_TMPDIR/pidbin"
   mkdir -p "$stub"
@@ -603,7 +603,7 @@ STUB
 }
 
 @test "no claude ancestor leaves the pid lines empty, never breaks the record" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc '{tool_name:"Bash",session_id:"bare-tab",transcript_path:"",tool_input:{command:": nightshift-binding-probe"}}' |
     CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
@@ -617,7 +617,7 @@ STUB
 # lands whole, id and transcript from the same writer.
 @test "two racing identity claims land exactly one whole record" {
   for round in 1 2 3; do
-    p="$(new_project "race$round")"
+    p="$(new_guarded_project "race$round")"
     punch_open "$p"
     jq -nc '{tool_name:"Bash",session_id:"race-a",transcript_path:"/tmp/a.jsonl",tool_input:{command:": nightshift-binding-probe"}}' |
       CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh" &
@@ -641,7 +641,7 @@ STUB
 # ---- the site rules bind the shift's session; other conversations keep their tools ----
 
 @test "another conversation is untouched by the site rules" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'the-shift\n\n\n\n' >"$p/.nightshift/.shift-session"
   out="$(jq -nc '{tool_name:"AskUserQuestion",tool_input:{},session_id:"helper-tab"}' |
@@ -653,7 +653,7 @@ STUB
 }
 
 @test "the shift session itself still answers to the site rules" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'the-shift\n\n\n\n' >"$p/.nightshift/.shift-session"
   out="$(jq -nc '{tool_name:"Bash",tool_input:{command:"git push origin main"},session_id:"the-shift"}' |
@@ -662,7 +662,7 @@ STUB
 }
 
 @test "a tool call without a session id keeps the conservative reading — rules apply" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'the-shift\n\n\n\n' >"$p/.nightshift/.shift-session"
   run hardhat_bash "$p" "git push origin main" NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push'
@@ -670,7 +670,7 @@ STUB
 }
 
 @test "only the binding probe claims the shift session" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"Read",tool_input:{file_path:"README.md"},session_id:"helper-tab"}' |
     env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
@@ -689,7 +689,7 @@ STUB
 # ---- the tool rules map: one knob, per-tool messages, owner-only (env, fixed at start) ----
 
 @test "the map words the park denial per tool" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_ask "$p" NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"park it and keep welding"}'
   is_deny "$output"
@@ -697,7 +697,7 @@ STUB
 }
 
 @test "an empty message in the map lifts the question rule" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_ask "$p" \
     NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"","request_user_input":"codex only"}'
@@ -705,7 +705,7 @@ STUB
 }
 
 @test "a missing Claude question key is a configuration error, not a hidden policy" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_ask "$p" NIGHTSHIFT_TOOL_RULES='{"request_user_input":"codex only"}'
   is_deny "$output"
@@ -713,7 +713,7 @@ STUB
 }
 
 @test "a listed tool is denied with its own message; an unlisted one passes" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"WebSearch",tool_input:{}}' |
     env NIGHTSHIFT_TOOL_RULES='{"WebSearch":"no browsing tonight"}' CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
@@ -726,7 +726,7 @@ STUB
 }
 
 @test "a nested question-tool name cannot bypass the caller's own rule" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"mcp__router__invoke",tool_input:{tool_name:"AskUserQuestion"}}' |
     env NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"","request_user_input":"","mcp__router__invoke":"router blocked"}' \
@@ -736,7 +736,7 @@ STUB
 }
 
 @test "toolDeny can block Bash itself before command-pattern rules" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git status" \
     NIGHTSHIFT_TOOL_RULES='{"AskUserQuestion":"","request_user_input":"","Bash":"no shell tonight"}'
@@ -745,7 +745,7 @@ STUB
 }
 
 @test "a map that is not a JSON object denies loudly instead of waving through" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"WebSearch",tool_input:{}}' |
     env NIGHTSHIFT_TOOL_RULES='not json' CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
@@ -757,7 +757,7 @@ STUB
 }
 
 @test "an explicit Ask rule holds even without jq" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   nojq="$BATS_TEST_TMPDIR/nojq-rules"
   mkdir -p "$nojq"
@@ -771,7 +771,7 @@ STUB
 }
 
 @test "the rules-file tool map still works without jq" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   nojq="$BATS_TEST_TMPDIR/nojq-file-rules"
   mkdir -p "$nojq"
@@ -785,7 +785,7 @@ STUB
 }
 
 @test "tool rules still deny the question tool without jq or python3" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   noparser="$BATS_TEST_TMPDIR/no-rules-parser"
   mkdir -p "$noparser"
@@ -804,7 +804,7 @@ STUB
 # ---- one copy: the rules file IS the config; env is only a session-start override ----
 
 @test "the guards read the rules file directly — no env needed" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf '{"forbiddenCommands":"git .*push","toolDeny":{"AskUserQuestion":"file-map says park","request_user_input":"codex park"}}\n' >"$p/.nightshift/rules.json"
   run hardhat_bash "$p" "git push origin main"
@@ -815,7 +815,7 @@ STUB
 }
 
 @test "an env var overrides the file for the session" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf '{"forbiddenCommands":"git .*push"}\n' >"$p/.nightshift/rules.json"
   run hardhat_bash "$p" "git push origin main" NIGHTSHIFT_FORBIDDEN_COMMANDS="never-matches-anything"
@@ -823,7 +823,7 @@ STUB
 }
 
 @test "the night never rewrites its own rules — file tools and commands alike" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc --arg fp "$p/.nightshift/rules.json" '{tool_name:"Write",tool_input:{file_path:$fp,content:"{}"}}' |
     env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
@@ -843,19 +843,19 @@ STUB
 }
 
 @test "file tools are free of the command guards — and free entirely outside a shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc '{tool_name:"Write",tool_input:{file_path:"/tmp/notes.md",content:"document .nightshift/rules.json and how to git push"}}' |
     env NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push' CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
   [ -z "$out" ] # file content is neither a command nor the target path
-  q="$(new_project other)"
+  q="$(new_guarded_project other)"
   out="$(jq -nc --arg fp "$q/.nightshift/rules.json" '{tool_name:"Write",tool_input:{file_path:$fp,content:"{}"}}' |
     env CLAUDE_PROJECT_DIR="$q" bash "$HOOKS/hardhat.sh")"
   [ -z "$out" ] # no shift, no rules — the owner edits freely
 }
 
 @test "the bound worker cannot delete or forge armed-shift control files" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "unlink .nightshift/.shift-armed"
   is_deny "$output"
@@ -882,7 +882,7 @@ STUB
 }
 
 @test "slash tricks and absolute twins cannot forge armed-shift control files" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   phys="$(cd -P "$p" && pwd -P)"
   twin="$BATS_TEST_TMPDIR/control-twin"
@@ -934,7 +934,7 @@ STUB
 }
 
 @test "punch-list ticks stay allowed and Start can still create the armed marker" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   out="$(jq -nc --arg fp "$p/.nightshift/punch-list.md" '{tool_name:"Write",tool_input:{file_path:$fp,content:"## Items\n- [x] **1.**\n"}}' |
     env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh")"
@@ -947,7 +947,7 @@ STUB
 }
 
 @test "a helper session can still issue STOP" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'the-shift\n\n\n\n' >"$p/.nightshift/.shift-session"
   out="$(jq -nc --arg fp "$p/.nightshift/STOP" '{tool_name:"Write",session_id:"helper-tab",tool_input:{file_path:$fp,content:"stop"}}' |
@@ -975,7 +975,7 @@ shift_helper_passes() {
 }
 
 @test "the owner helpers run from any conversation while a live worker holds the lease" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   sleep 300 &
   holder=$!
@@ -996,7 +996,7 @@ shift_helper_passes() {
 }
 
 @test "the owner helpers run from any conversation while the lease holder is dead" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   dead="$(reaped_pid)"
   session_record "$p" shift-session "" "" "" claude
@@ -1045,7 +1045,7 @@ CMDS
 }
 
 @test "an unarmed site applies no rule, whatever the lease still says" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   sleep 300 &
   holder=$!
@@ -1060,7 +1060,7 @@ CMDS
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
 
-  q="$(new_project unarmed-dead-holder)"
+  q="$(new_guarded_project unarmed-dead-holder)"
   punch_open "$q"
   dead="$(reaped_pid)"
   session_record "$q" shift-session "" "" "" claude
@@ -1075,7 +1075,7 @@ CMDS
 # disarmed one from the next tool call — no Stop event needed. (A stop-work order that is
 # merely pending, marker still in place, keeps the site rules armed; that is its own test.)
 @test "a stopped shift applies no rule, whatever the lease still says" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   dead="$(reaped_pid)"
   session_record "$p" shift-session "" "" "" claude
@@ -1090,7 +1090,7 @@ CMDS
 
 # No readable rules is a fault, never permission to invent an ask policy.
 @test "a missing rules file denies the question and names the repair" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rm "$p/.nightshift/rules.json"
   run hardhat_ask "$p"
@@ -1102,7 +1102,7 @@ CMDS
 # --- the policy files are control files, and elevation is the owner's switch ---
 
 @test "the bound worker cannot rewrite or delete the shift policy, its defaults, or the deadline" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   shift_policy "$p"
   printf '{"schemaVersion":1}\n' >"$p/.nightshift/shift-defaults.json"
@@ -1131,9 +1131,21 @@ CMDS
   is_allow
 }
 
-@test "every elevation category is denied by default with the exact repair" {
+@test "every elevation category is allowed by default, and a denied one names the exact repair" {
   p="$(new_project)"
   punch_open "$p"
+  while IFS='|' read -r category command; do
+    [ -n "$category" ] || continue
+    run hardhat_bash "$p" "$command"
+    is_allow || { echo "the shipped template blocked $category: $command"; return 1; }
+  done <<'ROWS'
+sudo|sudo apt-get install -y jq
+containers|docker compose up -d
+global-packages|brew install shellcheck
+daemons|systemctl start nginx
+external-services|gh auth login
+ROWS
+  guard_elevation "$p"
   while IFS='|' read -r category command; do
     [ -n "$category" ] || continue
     run hardhat_bash "$p" "$command"
@@ -1150,7 +1162,7 @@ ROWS
 }
 
 @test "a rules allowance lifts its own category permanently and no other" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rules_elevation "$p" containers allow
   run hardhat_bash "$p" "docker compose up -d"
@@ -1161,19 +1173,19 @@ ROWS
 }
 
 @test "a one-shift allowance lifts the category for tonight only" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   shift_policy "$p" '[{"category":"containers","scope":"category","provenance":"one-shift"}]'
   run hardhat_bash "$p" "docker compose up -d"
   is_allow
-  # Tonight's snapshot is the whole authority: without it the shipped deny is back.
+  # Tonight's snapshot is the whole authority: without it the owner's deny is back.
   rm "$p/.nightshift/shift-policy.json"
   run hardhat_bash "$p" "docker compose up -d"
   is_deny "$output"
 }
 
 @test "an exact-plan allowance permits its listed command and names the mismatch" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   target="$(work_target "$p")"
   digest="$(plan_digest "$target" "docker compose up -d")"
@@ -1191,7 +1203,7 @@ ROWS
 }
 
 @test "an exact-plan allowance is bound to the plan the owner approved" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   target="$(work_target "$p")"
   # The binding lives in ns_policy_allowed, which the guard reads for the whole answer.
@@ -1213,7 +1225,7 @@ ROWS
 }
 
 @test "a category named only inside a commit message is not a command" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run hardhat_bash "$p" "git commit -m 'run docker compose up and sudo apt-get install jq'"
   is_allow
@@ -1222,7 +1234,7 @@ ROWS
 }
 
 @test "the forbidden list and the elevation categories are independent guards" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rules_elevation "$p" containers allow
   # An allowed category is still subject to the owner's own list.
@@ -1236,7 +1248,7 @@ ROWS
 }
 
 @test "an invalid elevation pattern fails closed and names the field" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   rules_pattern "$p" daemons '(unclosed'
   run hardhat_bash "$p" "git status"
@@ -1246,7 +1258,7 @@ ROWS
 }
 
 @test "using what already runs is never elevation" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   while IFS= read -r command; do
     [ -n "$command" ] || continue
@@ -1261,7 +1273,7 @@ CMDS
 }
 
 @test "create-state elevation denies bypass forms and leaves read-only forms alone" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   while IFS='|' read -r category command; do
     [ -n "$category" ] || continue
@@ -1297,14 +1309,14 @@ CMDS
 }
 
 @test "elevation rules are shift-scoped: inert once every box is ticked" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_done "$p"
   run hardhat_bash "$p" "sudo apt-get install -y jq"
   is_allow
 }
 
 @test "the permission preflight and the guard agree on the same commands" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   cat >"$p/.nightshift/punch-list.md" <<'MD'
 ## Items
 
@@ -1346,7 +1358,7 @@ hd() {
 }
 
 @test "a quoted heredoc naming every elevation category is documentation" {
-  p="$(new_project hd-elevation)"
+  p="$(new_guarded_project hd-elevation)"
   punch_open "$p"
   run hardhat_bash "$p" \
     "$(hd "'" docs/elevation.md 'sudo and doas, docker run, brew install -g, systemctl, gh auth login')"
@@ -1354,7 +1366,7 @@ hd() {
 }
 
 @test "a quoted heredoc naming the owner file and control files is documentation" {
-  p="$(new_project hd-names)"
+  p="$(new_guarded_project hd-names)"
   punch_open "$p"
   run hardhat_bash "$p" "$(hd "'" docs/knobs.md 'edit .nightshift/rules.json to set a knob')"
   is_allow
@@ -1364,7 +1376,7 @@ hd() {
 }
 
 @test "what the heredoc writes to is still what decides" {
-  p="$(new_project hd-target)"
+  p="$(new_guarded_project hd-target)"
   punch_open "$p"
   # The body is harmless; the target is the owner's file.
   run hardhat_bash "$p" "$(hd "'" .nightshift/rules.json 'harmless words')"
@@ -1374,7 +1386,7 @@ hd() {
 }
 
 @test "an unquoted heredoc body is still code" {
-  p="$(new_project hd-unquoted)"
+  p="$(new_guarded_project hd-unquoted)"
   punch_open "$p"
   # No quotes on the delimiter: the shell expands this, and the substitution really runs.
   run hardhat_bash "$p" "$(printf 'cat > out.txt <<EOF\n$(sudo id)\nEOF')"
@@ -1382,7 +1394,7 @@ hd() {
 }
 
 @test "a data word is not an elevation command" {
-  p="$(new_project elev-data)"
+  p="$(new_guarded_project elev-data)"
   punch_open "$p"
   while IFS= read -r command; do
     [ -n "$command" ] || continue
@@ -1412,7 +1424,7 @@ CMDS
 }
 
 @test "a state-changing elevation command stays denied" {
-  p="$(new_project elev-verbs)"
+  p="$(new_guarded_project elev-verbs)"
   punch_open "$p"
   while IFS='|' read -r category command; do
     [ -n "$category" ] || continue
@@ -1448,7 +1460,7 @@ ROWS
 }
 
 @test "a container payload is judged only as containers" {
-  p="$(new_project elev-payload)"
+  p="$(new_guarded_project elev-payload)"
   punch_open "$p"
   run hardhat_bash "$p" "docker run --rm python:3.12 pip install x"
   is_deny "$output"
@@ -1462,14 +1474,14 @@ ROWS
 }
 
 @test "an unterminated quoted heredoc is never treated as data" {
-  p="$(new_project hd-unterminated)"
+  p="$(new_guarded_project hd-unterminated)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "cat > x.md <<'EOF'\nsudo apt-get install ripgrep")"
   is_deny "$output"
 }
 
 @test "a real command after a closed heredoc is still a real command" {
-  p="$(new_project hd-after)"
+  p="$(new_guarded_project hd-after)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "cat > d.md <<'EOF'\nharmless\nEOF\nsudo id")"
   is_deny "$output"
@@ -1480,7 +1492,7 @@ ROWS
 # These feed strings to the hook and assert its decision — no payload is ever executed.
 
 @test "a quoted heredoc fed to an interpreter is code, not documentation" {
-  p="$(new_project hd-interpreter)"
+  p="$(new_guarded_project hd-interpreter)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "bash <<'EOF'\nsudo id\nEOF")"
   is_deny "$output"
@@ -1491,7 +1503,7 @@ ROWS
 }
 
 @test "a heredoc piped into an interpreter is code" {
-  p="$(new_project hd-pipe)"
+  p="$(new_guarded_project hd-pipe)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "cat <<'EOF' | bash\nsudo id\nEOF")"
   is_deny "$output"
@@ -1500,7 +1512,7 @@ ROWS
 }
 
 @test "eval and source forms keep their heredoc bodies visible" {
-  p="$(new_project hd-eval)"
+  p="$(new_guarded_project hd-eval)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "eval <<'EOF'\nsudo id\nEOF")"
   is_deny "$output"
@@ -1509,14 +1521,14 @@ ROWS
 }
 
 @test "a backslash-quoted delimiter is not an exemption either" {
-  p="$(new_project hd-backslash)"
+  p="$(new_guarded_project hd-backslash)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf 'bash <<\\EOF\nsudo id\nEOF')"
   is_deny "$output"
 }
 
 @test "a substituted or non-literal destination keeps its body visible" {
-  p="$(new_project hd-dynamic)"
+  p="$(new_guarded_project hd-dynamic)"
   punch_open "$p"
   # Where it writes is not on the line, so the body is not taken on trust.
   run hardhat_bash "$p" "$(printf 'cat > "$out" <<%s\nsudo id\nEOF' "'EOF'")"
@@ -1526,7 +1538,7 @@ ROWS
 }
 
 @test "a command list on the opening line keeps its body visible" {
-  p="$(new_project hd-list)"
+  p="$(new_guarded_project hd-list)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "true; cat > d.md <<'EOF'\nsudo id\nEOF")"
   is_deny "$output"
@@ -1535,7 +1547,7 @@ ROWS
 }
 
 @test "tee writes and tab-stripped bodies are still documentation" {
-  p="$(new_project hd-tee)"
+  p="$(new_guarded_project hd-tee)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "tee docs/e.md <<'EOF'\nsudo and doas, docker run, systemctl\nEOF")"
   is_allow
@@ -1546,7 +1558,7 @@ ROWS
 }
 
 @test "one documentation heredoc does not exempt the next interpreter one" {
-  p="$(new_project hd-multi)"
+  p="$(new_guarded_project hd-multi)"
   punch_open "$p"
   run hardhat_bash "$p" \
     "$(printf "cat > d.md <<'A'\nharmless words\nA\nbash <<'B'\nsudo id\nB")"
@@ -1558,14 +1570,14 @@ ROWS
 }
 
 @test "two heredocs on one line are never exempt" {
-  p="$(new_project hd-two-on-one)"
+  p="$(new_guarded_project hd-two-on-one)"
   punch_open "$p"
   run hardhat_bash "$p" "$(printf "cat <<'A' <<'B'\nsudo id\nA\nB")"
   is_deny "$output"
 }
 
 @test "the owner's own forbidden pattern still holds inside and outside a heredoc" {
-  p="$(new_project hd-owner-rule)"
+  p="$(new_guarded_project hd-owner-rule)"
   punch_open "$p"
   # The owner's pattern is theirs: a real push is denied.
   run hardhat_bash "$p" "git push" NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push'
@@ -1577,7 +1589,7 @@ ROWS
 }
 
 @test "a literal parking-lot append may name the rules file" {
-  p="$(new_project lot-append)"
+  p="$(new_guarded_project lot-append)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run hardhat_bash "$p" "echo 'needs a change to .nightshift/rules.json' >> .nightshift/parking-lot.md"
@@ -1589,7 +1601,7 @@ ROWS
 }
 
 @test "a real write to the rules file is still refused" {
-  p="$(new_project lot-rules-write)"
+  p="$(new_guarded_project lot-rules-write)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run hardhat_bash "$p" "echo '{}' > .nightshift/rules.json"
@@ -1600,7 +1612,7 @@ ROWS
 }
 
 @test "a parking-lot append through a symlink to the rules file is refused" {
-  p="$(new_project lot-symlink)"
+  p="$(new_guarded_project lot-symlink)"
   punch_open "$p"
   ln -s rules.json "$p/.nightshift/parking-lot.md"
   run hardhat_bash "$p" "echo 'inert looking note' >> .nightshift/parking-lot.md"
@@ -1609,7 +1621,7 @@ ROWS
 }
 
 @test "an executable substitution in a parking-lot append is refused" {
-  p="$(new_project lot-subst)"
+  p="$(new_guarded_project lot-subst)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run hardhat_bash "$p" 'echo $(cat .nightshift/rules.json) >> .nightshift/parking-lot.md'
@@ -1617,7 +1629,7 @@ ROWS
 }
 
 @test "a parking-lot append plus a protected write is refused" {
-  p="$(new_project lot-compound)"
+  p="$(new_guarded_project lot-compound)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run hardhat_bash "$p" "echo 'rules.json' >> .nightshift/parking-lot.md && echo '{}' > .nightshift/rules.json"

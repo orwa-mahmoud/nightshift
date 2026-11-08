@@ -74,7 +74,8 @@ to implement; the launch choice decides that.
 ## Tooling policy, and tonight's one question
 
 A third independent choice, and the only question composition asks. On a complete Automatic prompt,
-do not ask it: use existing-tools, no new elevation, and remembered verification from
+do not ask it: use the resolved tooling policy (`auto-add` unless the owner chose otherwise;
+existing-tools in artifact mode), no new elevation, and remembered verification from
 `shift-defaults.json` when present. The owner may still name a policy or allowance in the same
 sentence.
 

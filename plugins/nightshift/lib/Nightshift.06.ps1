@@ -1379,9 +1379,9 @@ function Get-NSReceiptContext {
     catch {
         $resolution = $null
     }
-    $verificationLevel = 'none'
+    $verificationLevel = [string]$script:NSPolicyBuiltins['verificationLevel']
     $verificationSource = 'built-in'
-    $toolingPolicy = 'existing-tools'
+    $toolingPolicy = [string]$script:NSPolicyBuiltins['toolingPolicy']
     if ($null -ne $resolution) {
         $verificationLevel = [string]$resolution['settings']['verificationLevel']['value']
         $verificationSource = [string]$resolution['settings']['verificationLevel']['source']

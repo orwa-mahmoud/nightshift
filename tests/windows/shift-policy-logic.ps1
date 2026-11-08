@@ -143,10 +143,19 @@ function Test-NSKeysSorted {
 }
 
 function New-PolicyProject {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    # -Guarded sets every elevation category to deny, the owner who guards them, so the allowance
+    # rows have a deny to lift.
+    param([Parameter(Mandatory = $true)][string]$Path, [switch]$Guarded)
     $ns = Join-Path $Path '.nightshift'
     $null = New-Item -ItemType Directory -Path $ns -Force
     Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $ns 'rules.json')
+    if ($Guarded) {
+        $guardedRules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText((Join-Path $ns 'rules.json'), $utf8))
+        foreach ($category in @($guardedRules['elevation'].Keys)) {
+            $guardedRules['elevation'][$category]['policy'] = 'deny'
+        }
+        Write-JsonFile (Join-Path $ns 'rules.json') $guardedRules
+    }
     return $ns
 }
 
@@ -260,8 +269,8 @@ try {
         'an absent deadline reports null, the way the POSIX table does'
     Expect-Equal 'verificationLevel=none (built-in, -)' (Get-SettingLine $table 'verificationLevel') `
         'without a policy the verification level is the built-in default'
-    Expect-Equal 'toolingPolicy=existing-tools (built-in, -)' (Get-SettingLine $table 'toolingPolicy') `
-        'without a policy the tooling policy is existing-tools'
+    Expect-Equal 'toolingPolicy=auto-add (built-in, -)' (Get-SettingLine $table 'toolingPolicy') `
+        'without a policy the tooling policy is the built-in auto-add'
 
     # Row: a key the owner wrote is sourced to rules even when its value is empty.
     Expect-Equal 'expectedEmail= (rules, permanent)' (Get-SettingLine $table 'expectedEmail') `
@@ -269,10 +278,10 @@ try {
     Expect-Equal 'watchMinutes=10 (rules, permanent)' (Get-SettingLine $table 'watchMinutes') `
         'watchMinutes comes from rules.json'
 
-    # === 2. precedence row 2: built-in deny, rules deny, rules allow, one-shift allow ===
+    # === 2. precedence row 2: built-in allow, rules allow, rules deny, one-shift allow ===
     foreach ($category in @('sudo', 'containers', 'global-packages', 'daemons', 'external-services')) {
-        Expect-Equal "elevation.$category=deny (rules, permanent)" (Get-SettingLine $table "elevation.$category") `
-            "the shipped template denies $category and says so as an owner decision"
+        Expect-Equal "elevation.$category=allow (rules, permanent)" (Get-SettingLine $table "elevation.$category") `
+            "the shipped template allows $category and says so as an owner decision"
         Expect-True ((Get-NSElevationPattern $base $category).Length -gt 0) `
             "the shipped template carries a $category pattern"
     }
@@ -285,8 +294,8 @@ try {
     Write-JsonFile (Join-Path $noElevationNs 'rules.json') $strippedRules
     $noElevationTable = (Invoke-Helper @('-Project', $noElevation, '-Command', 'resolve', '-Table')).StdoutText.TrimEnd("`n")
     foreach ($category in @('sudo', 'containers', 'global-packages', 'daemons', 'external-services')) {
-        Expect-Equal "elevation.$category=deny (built-in, -)" (Get-SettingLine $noElevationTable "elevation.$category") `
-            "$category is denied by default when rules.json names no elevation"
+        Expect-Equal "elevation.$category=allow (built-in, -)" (Get-SettingLine $noElevationTable "elevation.$category") `
+            "$category is allowed by default when rules.json names no elevation"
     }
     Expect-True ((Get-NSElevationPattern $noElevation 'sudo').Contains('sudo|d[o]as')) `
         'a workspace with no elevation object still gets the shipped patterns'
@@ -296,28 +305,28 @@ try {
             "the built-in $category pattern is the template's, character for character"
     }
 
-    $rulesAllow = Join-Path $root 'rules-allow'
+    $rulesAllow = Join-Path $root 'rules-deny'
     $rulesAllowNs = New-PolicyProject $rulesAllow
     $rules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText((Join-Path $rulesAllowNs 'rules.json'), $utf8))
     $elevation = New-NSOrdinalMap
     $containers = New-NSOrdinalMap
-    $containers['policy'] = 'allow'
+    $containers['policy'] = 'deny'
     $containers['pattern'] = '(^|[;&|(]|[[:space:]])(docker|podman)([[:space:]]|$)'
     $elevation['containers'] = $containers
     $rules['elevation'] = $elevation
     Write-JsonFile (Join-Path $rulesAllowNs 'rules.json') $rules
     $rulesTable = (Invoke-Helper @('-Project', $rulesAllow, '-Command', 'resolve', '-Table')).StdoutText.TrimEnd("`n")
-    Expect-Equal 'elevation.containers=allow (rules, permanent)' (Get-SettingLine $rulesTable 'elevation.containers') `
-        'a rules.elevation allow lifts the built-in deny permanently'
-    Expect-Equal 'elevation.sudo=deny (built-in, -)' (Get-SettingLine $rulesTable 'elevation.sudo') `
-        'a category dropped from rules.elevation falls back to the built-in deny'
+    Expect-Equal 'elevation.containers=deny (rules, permanent)' (Get-SettingLine $rulesTable 'elevation.containers') `
+        'a rules.elevation deny guards the category permanently'
+    Expect-Equal 'elevation.sudo=allow (built-in, -)' (Get-SettingLine $rulesTable 'elevation.sudo') `
+        'a category dropped from rules.elevation falls back to the built-in allow'
     Expect-Equal '(^|[;&|(]|[[:space:]])(docker|podman)([[:space:]]|$)' (Get-NSElevationPattern $rulesAllow 'containers') `
         'the owner pattern replaces the shipped one'
     Expect-True ((Get-NSElevationPattern $rulesAllow 'sudo').Contains('sudo|d[o]as')) `
         'a missing category falls back to the shipped pattern'
 
     $oneShift = Join-Path $root 'one-shift'
-    $oneShiftNs = New-PolicyProject $oneShift
+    $oneShiftNs = New-PolicyProject $oneShift -Guarded
     Write-JsonFile (Join-Path $oneShiftNs 'shift-policy.json') `
     (New-Policy -VerificationLevel 'per-item' -ToolingPolicy 'auto-add' -DeadlineEpoch 1788000000 `
             -Allowances @((New-Allowance -Category 'containers' -Scope 'category' -Provenance 'one-shift')))
@@ -341,7 +350,7 @@ try {
 
     # === 3. precedence row 1: no allowance lifts a protected boundary ===
     $protectedProject = Join-Path $root 'protected'
-    $protectedNs = New-PolicyProject $protectedProject
+    $protectedNs = New-PolicyProject $protectedProject -Guarded
     $protectedRules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText((Join-Path $protectedNs 'rules.json'), $utf8))
     $protectedRules['protectedDirs'] = '.github infra'
     $protectedRules['neverCommitPatterns'] = 'BEGIN OPENSSH PRIVATE KEY'
@@ -361,7 +370,7 @@ try {
 
     # === 4. precedence row 3: exact plan, and category wins when both are present ===
     $planProject = Join-Path $root 'exact-plan'
-    $planNs = New-PolicyProject $planProject
+    $planNs = New-PolicyProject $planProject -Guarded
     $planTarget = Get-NSAbsolutePath $planProject
     $planCommand = 'sudo apt-get install -y ripgrep'
     Write-JsonFile (Join-Path $planNs 'shift-policy.json') `
@@ -481,7 +490,7 @@ try {
     $defaultsProject = Join-Path $root 'defaults'
     $null = New-PolicyProject $defaultsProject
     $defaultsSet = Invoke-Helper @('-Project', $defaultsProject, '-Command', 'defaults-set',
-        '-VerificationProfile', 'strict', '-Hours', '10', '-ToolingPolicy', 'auto-add', '-Execution', 'run-direct')
+        '-VerificationProfile', 'strict', '-Hours', '10', '-ToolingPolicy', 'review-missing', '-Execution', 'run-direct')
     Expect-Equal 0 $defaultsSet.ExitCode "defaults-set exits 0 ($($defaultsSet.StderrText))"
     $defaultsGet = Invoke-Helper @('-Project', $defaultsProject, '-Command', 'defaults-get')
     Expect-True $defaultsGet.StdoutText.Contains('"verificationProfile": "strict"') 'defaults-get reports the remembered profile'
@@ -489,7 +498,7 @@ try {
     $defaultsTable = (Invoke-Helper @('-Project', $defaultsProject, '-Command', 'resolve', '-Table')).StdoutText.TrimEnd("`n")
     Expect-Equal 'verificationLevel=none (built-in, -)' (Get-SettingLine $defaultsTable 'verificationLevel') `
         'a remembered strict profile never becomes an effective verification level'
-    Expect-Equal 'toolingPolicy=existing-tools (built-in, -)' (Get-SettingLine $defaultsTable 'toolingPolicy') `
+    Expect-Equal 'toolingPolicy=auto-add (built-in, -)' (Get-SettingLine $defaultsTable 'toolingPolicy') `
         'a remembered tooling policy never becomes an effective value'
     $defaultsBad = Invoke-Helper @('-Project', $defaultsProject, '-Command', 'defaults-set', '-Hours', 'ten')
     Expect-Equal 2 $defaultsBad.ExitCode 'defaults-set rejects a non-numeric hours'
@@ -558,7 +567,7 @@ try {
 
     # === 8. precedence row 6: a malformed policy grants no authority ===
     $malformed = Join-Path $root 'malformed'
-    $malformedNs = New-PolicyProject $malformed
+    $malformedNs = New-PolicyProject $malformed -Guarded
     $malformedDocument = New-Policy -VerificationLevel 'per-item' -Allowances @(
         (New-Allowance -Category 'sudo' -Scope 'category' -Provenance 'one-shift'))
     $malformedDocument['toolingPolicy'] = 'install-whatever'
@@ -845,6 +854,30 @@ try {
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# === every built-in default equals the shipped template, key by key ===
+$module = Get-Module Nightshift
+$groupDefaults = & $module { $script:NSPolicyGroupDefaults }
+$builtins = & $module { $script:NSPolicyBuiltins }
+$shippedRules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($rulesTemplate, $utf8))
+foreach ($key in @($groupDefaults.Keys)) {
+    $node = $shippedRules
+    foreach ($part in $key.Split('.')) {
+        Expect-True (($node -is [Collections.IDictionary]) -and $node.Contains($part)) "the template carries $key"
+        if (-not (($node -is [Collections.IDictionary]) -and $node.Contains($part))) { $node = $null; break }
+        $node = $node[$part]
+    }
+    $builtin = $groupDefaults[$key]
+    $left = ConvertTo-Json -Compress -InputObject @($builtin)
+    $right = ConvertTo-Json -Compress -InputObject @($node)
+    Expect-Equal $right $left "the built-in $key equals the template"
+}
+foreach ($category in @($shippedRules['elevation'].Keys)) {
+    Expect-Equal ([string]$shippedRules['elevation'][$category]['policy']) ([string]$builtins['elevation']) `
+        "the built-in elevation policy equals the template for $category"
+}
+Expect-Equal ([string]$shippedRules['shift']['toolingPolicy']) ([string]$builtins['toolingPolicy']) `
+    'the built-in tooling policy equals the template'
 
 if ($failures.Count -gt 0) {
     Write-Host "shift-policy-logic failed ($($failures.Count)):"

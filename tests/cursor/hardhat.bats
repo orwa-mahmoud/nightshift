@@ -11,7 +11,7 @@ is_cursor_deny() {
 }
 
 @test "AskQuestion is parked with the template's own message" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   bind_session "$p" cursor-tab cursor
   jq -nc --arg p "$p" \
@@ -23,7 +23,7 @@ is_cursor_deny() {
 }
 
 @test "cursor hardhat denies a forbidden Shell command during a shift" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   bind_session "$p" fixture-cursor-conversation cursor
   run env CURSOR_PROJECT_DIR="$p" NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push' \
@@ -32,7 +32,7 @@ is_cursor_deny() {
 }
 
 @test "cursor hardhat records the cursor host from a cursor transcript path" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc --arg p "$p" \
     '{tool_name:"Shell",conversation_id:"cursor-tab",transcript_path:"/Users/o/.cursor/projects/x/agent-transcripts/u/u.jsonl",cwd:$p,tool_input:{command:": nightshift-binding-probe"}}' |
@@ -43,7 +43,7 @@ is_cursor_deny() {
 }
 
 @test "cursor hardhat reclaims a claude-contaminated lease for the same session" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf '%s\n' cursor-tab \
     '/Users/o/.cursor/projects/x/agent-transcripts/u/u.jsonl' '' '' cursor \
@@ -60,7 +60,7 @@ is_cursor_deny() {
 # ---- the site rules bind the shift's session; other conversations keep their tools ----
 
 @test "another conversation is untouched by the site rules" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'the-shift\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   out="$(jq -nc --arg p "$p" \
@@ -70,7 +70,7 @@ is_cursor_deny() {
 }
 
 @test "the shift session itself still answers to the site rules" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'the-shift\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   jq -nc --arg p "$p" \
@@ -82,7 +82,7 @@ is_cursor_deny() {
 }
 
 @test "origin tab is pointed at the live CLI worker" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   cursor_worker_ran "$p" live-cli-worker
@@ -99,7 +99,7 @@ is_cursor_deny() {
 }
 
 @test "origin tab can still run the stop helper while a worker is live" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   cursor_worker_ran "$p" live-cli-worker
@@ -113,7 +113,7 @@ is_cursor_deny() {
 }
 
 @test "another conversation stays free while a CLI worker is recorded" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   cursor_worker_ran "$p" live-cli-worker
@@ -124,7 +124,7 @@ is_cursor_deny() {
 }
 
 @test "cursor binding probe is recognized on Shell" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   jq -nc --arg p "$p" \
     '{tool_name:"Shell",conversation_id:"bind-me",transcript_path:"",cwd:$p,tool_input:{command:": nightshift-binding-probe"}}' |
@@ -145,7 +145,7 @@ cursor_shell() {
 }
 
 @test "cursor denies rewriting the shift policy, its defaults, and the deadline" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   for f in shift-policy.json shift-defaults.json deadline; do
     run cursor_shell "$p" "printf 'forged' > .nightshift/$f"
@@ -156,8 +156,8 @@ cursor_shell() {
   done
 }
 
-@test "cursor denies an elevation category by default and honours an allowance" {
-  p="$(new_project)"
+@test "cursor denies an elevation category the owner denies and honours an allowance" {
+  p="$(new_guarded_project)"
   punch_open "$p"
   run cursor_shell "$p" "docker compose up -d"
   is_cursor_deny
@@ -173,7 +173,7 @@ cursor_shell() {
 }
 
 @test "cursor leaves a command that only uses the dev stack alone" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run cursor_shell "$p" "psql -c 'select 1'"
   is_allow
@@ -182,7 +182,7 @@ cursor_shell() {
 }
 
 @test "cursor create-state elevation denies bypass forms and leaves reads alone" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   run cursor_shell "$p" "/usr/bin/sudo id"
   is_cursor_deny
@@ -222,7 +222,7 @@ cursor_shift_helper_passes() {
 }
 
 @test "cursor runs the owner helpers from any conversation while a live worker holds the lease" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   sleep 300 &
   holder=$!
@@ -273,7 +273,7 @@ CMDS
 }
 
 @test "cursor applies no rule on an unarmed site, whatever the lease still says" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   sleep 300 &
   holder=$!
@@ -290,7 +290,7 @@ CMDS
 }
 
 @test "cursor applies no rule on a stopped shift, whatever the lease still says" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   dead="$(reaped_pid)"
   session_record "$p" cursor-tab "" "" "" cursor
@@ -303,7 +303,7 @@ CMDS
 }
 
 @test "cursor reclaims a lease left by a dead recovery attempt for the recorded tab" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   dead="$(reaped_pid)"
   session_record "$p" cursor-tab "" "" "" cursor
@@ -317,7 +317,7 @@ CMDS
 }
 
 @test "a literal parking-lot append may name the rules file" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   run cursor_sid_shell "$p" cursor-tab "echo 'needs a change to .nightshift/rules.json' >> .nightshift/parking-lot.md"
@@ -325,7 +325,7 @@ CMDS
 }
 
 @test "a real write to the rules file is still refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   bind_session "$p" cursor-tab cursor
   run cursor_sid_shell "$p" cursor-tab "echo '{}' > .nightshift/rules.json"
@@ -333,7 +333,7 @@ CMDS
 }
 
 @test "a parking-lot append through a symlink to the rules file is refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   ln -s rules.json "$p/.nightshift/parking-lot.md"
   bind_session "$p" cursor-tab cursor
@@ -342,7 +342,7 @@ CMDS
 }
 
 @test "an executable substitution in a parking-lot append is refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   bind_session "$p" cursor-tab cursor
@@ -351,7 +351,7 @@ CMDS
 }
 
 @test "a parking-lot append plus a protected write is refused" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   : >"$p/.nightshift/parking-lot.md"
   bind_session "$p" cursor-tab cursor
@@ -360,7 +360,7 @@ CMDS
 }
 
 @test "origin tab keeps its tools when the recorded worker never ran" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   punch_open "$p"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   printf 'never-ran-worker\n' >"$p/.nightshift/.shift-worker"

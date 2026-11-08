@@ -34,7 +34,7 @@ wording — are a complete prompt: compose it and run it. Examples of a complete
 *"8 hours clear lint and test debt"*; *"make checkout less ugly, run it"*.
 
 - Complete → Automatic, run directly. Do not offer catalog cards. Do not ask who selects, when to
-  start, or "same as last time." Write the shift policy from existing tools, no new elevation, and
+  start, or "same as last time." Write the shift policy from the resolved tooling policy, no new elevation, and
   remembered verification, unless the sentence already granted a policy or allowance.
 - Incomplete → Ask only a field that is still missing, then continue.
 - The owner asked to pick from the menu, or named Guided → section 1.
@@ -117,8 +117,8 @@ When the prompt did not already carry clear direct-execution intent, ask
 This is composition's one question for tonight's policy — Start never asks it. On a complete
 Automatic prompt, skip the question and write the safe defaults from `execution-modes.md`, parking
 any elevation gap. **The tooling policy is the owner's standing answer, not a default to re-pick:**
-read the resolved value and carry it. Only when the owner has no explicit persistent choice does a
-complete prompt run under existing tools. A saved `auto-add` or `review-missing` survives an
+read the resolved value and carry it. With no explicit persistent choice, a complete prompt runs
+under the built-in `auto-add` (existing-tools in artifact mode). A saved `auto-add` or `review-missing` survives an
 objective that says nothing about tooling; a tonight-only `existing-tools` in the prompt overrides
 it for that shift alone and changes nothing persistent. Carrying a policy forward grants no new
 elevation — an allowance is still the owner's to give. Otherwise ask **before scanning**, and

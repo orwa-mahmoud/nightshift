@@ -84,8 +84,8 @@ validate() {
     [ "$?" -le 1 ]
   }
   for c in sudo containers global-packages daemons external-services; do
-    jq -e --arg c "$c" '.elevation[$c].policy == "deny"' "$TEMPLATE" >/dev/null \
-      || { echo "template does not deny $c"; return 1; }
+    jq -e --arg c "$c" '.elevation[$c].policy == "allow"' "$TEMPLATE" >/dev/null \
+      || { echo "template does not allow $c"; return 1; }
     pat="$(jq -r --arg c "$c" '.elevation[$c].pattern' "$TEMPLATE")"
     [ -n "$pat" ] || { echo "template has no pattern for $c"; return 1; }
     ere_ok "$pat" || { echo "template pattern for $c is not a valid ERE"; return 1; }

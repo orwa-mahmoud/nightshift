@@ -276,7 +276,7 @@ fi
 # first is what makes "only the profile's own fields change" true — merging over the built-ins
 # would quietly reset a field the last profile set.
 shift_defaults_base() {
-  builtin='{"schemaVersion":1,"verificationProfile":"fast","hours":null,"toolingPolicy":"existing-tools","execution":"review-first"}'
+  builtin="{\"schemaVersion\":1,\"verificationProfile\":$(ns_policy_builtin shift.verificationProfile),\"hours\":$(ns_policy_builtin shift.hours),\"toolingPolicy\":$(ns_policy_builtin shift.toolingPolicy),\"execution\":$(ns_policy_builtin shift.execution)}"
   block=""
   if [ -f "$RULES" ]; then
     block="$(jq -c 'if (.shift | type) == "object" then (.shift + {schemaVersion: 1}) else empty end' \

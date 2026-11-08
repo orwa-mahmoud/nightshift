@@ -294,8 +294,8 @@ with open(p,"w") as f: json.dump(d,f)
   grep -qF '== resolved policy ==' "$bundle"
   grep -qF 'shift_policy: absent' "$bundle"
   grep -qF 'verificationLevel=none (built-in, -)' "$bundle"
-  grep -qF 'toolingPolicy=existing-tools (built-in, -)' "$bundle"
-  grep -qF 'elevation.sudo=deny (rules, permanent)' "$bundle"
+  grep -qF 'toolingPolicy=auto-add (built-in, -)' "$bundle"
+  grep -qF 'elevation.sudo=allow (rules, permanent)' "$bundle"
   grep -qF 'watchMinutes=10 (rules, permanent)' "$bundle"
   # the shipped template's four free-form fields are empty strings, and still redacted.
   grep -qF 'forbiddenCommands=<redacted 0 chars> (rules, permanent)' "$bundle"

@@ -32,8 +32,8 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
 }
 
 @test "Windows shift-policy logic covers every precedence row" {
-  grep -qF 'is denied by default' "$LOGIC"
-  grep -qF 'a rules.elevation allow lifts the built-in deny permanently' "$LOGIC"
+  grep -qF 'is allowed by default' "$LOGIC"
+  grep -qF 'a rules.elevation deny guards the category permanently' "$LOGIC"
   grep -qF 'a one-shift allowance alone lifts the deny for tonight' "$LOGIC"
   grep -qF 'a category allowance beside an exact plan wins' "$LOGIC"
   grep -qF 'protected paths stay rules-only under a category allowance' "$LOGIC"

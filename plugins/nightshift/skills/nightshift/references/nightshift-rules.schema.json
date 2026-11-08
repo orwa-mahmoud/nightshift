@@ -68,7 +68,7 @@
     "elevation": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Permanent per-category elevation policy for the five default-denied categories: sudo, containers, global-packages, daemons, and external-services. Elevation gates creating system state, never using what already exists: connecting to a running database, calling a local API, and running migrations or tests against the owner's dev stack are never gated. Containers cover the Docker socket and create-state verbs (run, create, compose up, start, build); read-only forms such as docker ps, docker logs, and brew list are not elevation. Hardhat is hardening, not a sandbox — patterns match command text and are not unbypassable isolation. A missing object, or a missing category inside it, denies that category and keeps the shipped pattern. policy is the visible switch; pattern is the grep -E the guard and the permission preflight both match against, so they can never disagree. An allowance authorizes its category within all other boundaries — protected paths, never-commit patterns, and the expected commit identity are never lifted. forbiddenCommands stays the owner's separate free-form list; it is not how the five categories are denied.",
+      "description": "Permanent per-category elevation policy for the five categories, each allowed by default: sudo, containers, global-packages, daemons, and external-services. Elevation gates creating system state, never using what already exists: connecting to a running database, calling a local API, and running migrations or tests against the owner's dev stack are never gated. Containers cover the Docker socket and create-state verbs (run, create, compose up, start, build); read-only forms such as docker ps, docker logs, and brew list are not elevation. Hardhat is hardening, not a sandbox — patterns match command text and are not unbypassable isolation. A missing object, or a missing category inside it, denies that category and keeps the shipped pattern. policy is the visible switch; pattern is the grep -E the guard and the permission preflight both match against, so they can never disagree. An allowance authorizes its category within all other boundaries — protected paths, never-commit patterns, and the expected commit identity are never lifted. forbiddenCommands stays the owner's separate free-form list; it is not how the five categories are denied.",
       "properties": {
         "sudo": {
           "$comment": "Root escalation.",
@@ -304,7 +304,7 @@
             "review-first",
             "run-direct"
           ],
-          "description": "Whether a composed shift is shown for review before it runs, or started directly. It never widens what the shift may do: the host permission boundary and every rule in this file still apply."
+          "description": "Whether a composed shift is shown for review before it runs, or started directly. It never widens what the shift may do: the host permission boundary and every rule in this file still apply. The default is run-direct."
         },
         "toolingPolicy": {
           "type": "string",
@@ -313,7 +313,7 @@
             "review-missing",
             "auto-add"
           ],
-          "description": "What a shift does about development tooling the project does not have. existing-tools uses only what is installed, review-missing reports the gap, auto-add may add a tool the project itself selects. Artifact mode is always existing-tools."
+          "description": "What a shift does about development tooling the project does not have. existing-tools uses only what is installed, review-missing reports the gap, auto-add may add a tool the project itself selects. The default is auto-add; artifact mode is always existing-tools."
         }
       }
     },
@@ -559,7 +559,7 @@
             "host-grant",
             "host-default"
           ],
-          "description": "inherit-recorded-scope restores a recorded restricted Codex sandbox (read-only or workspace-write). Missing or unsupported scopes refuse recovery. host-default adds no permission arguments and uses independently configured host permissions, without promising the original session scope. Legacy host-grant is retained for compatibility but refuses recovery. Nightshift never writes host permission settings or adds bypass flags. Each revival logs its scope and retries at the same scope."
+          "description": "inherit-recorded-scope restores a recorded restricted Codex sandbox (read-only or workspace-write). Missing or unsupported scopes refuse recovery. host-default, the default, adds no permission arguments and uses independently configured host permissions, without promising the original session scope. Legacy host-grant is retained for compatibility but refuses recovery. Nightshift never writes host permission settings or adds bypass flags. Each revival logs its scope and retries at the same scope."
         },
         "cursorFlags": {
           "type": "array",

@@ -156,9 +156,9 @@ ns_policy_refresh_elevation() {
 ns_policy_builtin() {
   case "$1" in
     verificationLevel) printf '"none"' ;;
-    toolingPolicy) printf '"existing-tools"' ;;
+    toolingPolicy) printf '"auto-add"' ;;
     deadlineEpoch) printf 'null' ;;
-    elevation.*) printf '"deny"' ;;
+    elevation.*) printf '"allow"' ;;
     forbiddenCommands | protectedDirs | neverCommitPatterns | expectedEmail) printf '""' ;;
     stallMax) printf '0' ;;
     watchMinutes) printf '10' ;;
@@ -170,7 +170,7 @@ ns_policy_builtin() {
     handoff.language) printf '"auto"' ;;
     handoff.sections | receipts.evidence.kindsPaths | gates.stacksPaths | edgeCases.packsPaths) printf '[]' ;;
     handoff.view) printf '"owner"' ;;
-    recovery.launchScope) printf '"inherit-recorded-scope"' ;;
+    recovery.launchScope) printf '"host-default"' ;;
     receipts.duration) printf '"on"' ;;
     receipts.evidence.architecture | receipts.evidence.fileMap | receipts.evidence.review | receipts.evidence.check) printf '"off"' ;;
     receipts.evidence.default | receipts.evidence.kindTemplatePath | receipts.evidence.unavailable | gates.stackTemplatePath | edgeCases.packTemplatePath) printf '""' ;;
@@ -178,14 +178,14 @@ ns_policy_builtin() {
     receipts.progressMode) printf '"time"' ;;
     receipts.progressTokens) printf '100000' ;;
     receipts.usage) printf '"when-available"' ;;
-    shift.execution) printf '"review-first"' ;;
+    shift.execution) printf '"run-direct"' ;;
     shift.hours) printf 'null' ;;
     shift.copyIn) printf '[]' ;;
     shift.isolation) printf '"none"' ;;
     shift.itemBudget) printf '""' ;;
     shift.prepare) printf '""' ;;
     shift.worktreeRoot) printf '".nightshift/worktrees"' ;;
-    shift.toolingPolicy) printf '"existing-tools"' ;;
+    shift.toolingPolicy) printf '"auto-add"' ;;
     shift.verificationProfile) printf '"fast"' ;;
     archive.templatePath | handoff.templatePath | receipts.templatePath) printf '""' ;;
     *) return 1 ;;
@@ -1405,14 +1405,24 @@ ns_policy_selected_debt() {
 
 # ---------------------------------------------------------------- shift-defaults.json
 
+# _ns_policy_shift_builtins — profile, hours, tooling and execution set to the built-in shift
+# block, read from ns_policy_builtin so no default is written twice. Defined for
+# ns_policy_read_defaults, which owns those four locals.
+_ns_policy_shift_builtins() {
+  profile="$(ns_policy_builtin shift.verificationProfile)"
+  hours="$(ns_policy_builtin shift.hours)"
+  tooling="$(ns_policy_builtin shift.toolingPolicy)"
+  execution="$(ns_policy_builtin shift.execution)"
+}
+
 # ns_policy_read_defaults <workspace>
 # The effective remembered choices as compact canonical JSON. Status 0 when the file is absent or
 # valid, 1 when it is malformed — either way the built-in defaults are printed, because these
 # choices only prefill a question and must never decide anything.
 ns_policy_read_defaults() {
   local ws="$1" f facts line rc bad=0 canon v
-  local profile='"fast"' hours=null tooling='"existing-tools"'
-  local execution='"review-first"' updated=null
+  local profile hours tooling execution updated=null
+  _ns_policy_shift_builtins
   ns_layout_set f "$ws/.nightshift" shift-defaults
   if [ -f "$f" ]; then
     facts="$(_ns_policy_facts defaults "$NS_POLICY_DEFAULTS_PY" "$f")"
@@ -1468,10 +1478,7 @@ EOF
     fi
   fi
   if [ "$bad" -ne 0 ]; then
-    profile='"fast"'
-    hours=null
-    tooling='"existing-tools"'
-    execution='"review-first"'
+    _ns_policy_shift_builtins
     updated=null
   fi
   # The shift block of the owner file is where these live now. A value stated there is the
@@ -1580,8 +1587,11 @@ _ns_policy_setting() {
       val="${row#*"$NS_POLICY_TAB"}"
       NS_POLICY_S=rules
       NS_POLICY_E=permanent
-      [ "$val" = allow ] || return 0
-      NS_POLICY_V='"allow"'
+      # The owner's word decides either way. A category with no policy of its own keeps the
+      # built-in, the same as Get-NSElevationRulePolicy on Windows.
+      case "$val" in
+        allow | deny) NS_POLICY_V="\"$val\"" ;;
+      esac
       return 0
       ;;
   esac
@@ -1705,11 +1715,11 @@ ns_new_shift_id() {
 # composition behind it. A composed shift has its policy written before arming; a plain Start had
 # none, so nothing recorded the contract and items it armed with and the gate could not tell a
 # deleted item from a finished one. This writes one with source `start-defaults` and the values the
-# resolved view already shows without a policy (no gate cadence, existing tools, and the deadline
-# file's epoch or none) through the same writer composition uses, which records the digests and
+# resolved view already shows without a policy (the built-in verification level and tooling policy,
+# existing tools in artifact mode, and the deadline file's epoch or none) through the same writer composition uses, which records the digests and
 # freezes the owner's preference blocks. Prints the new shift id.
 ns_start_snapshot() {
-  local ws="$1" helper="$2" ns="$1/.nightshift" id deadline policy file
+  local ws="$1" helper="$2" ns="$1/.nightshift" id deadline policy file tooling
   ns_layout_set policy "$ns" shift-policy
   ns_layout_set file "$ns" deadline
   [ ! -e "$policy" ] || return 1
@@ -1719,8 +1729,13 @@ ns_start_snapshot() {
     deadline="$(tr -d '[:space:]' <"$file" 2>/dev/null)"
     case "$deadline" in '' | *[!0-9]*) deadline="null" ;; esac
   fi
-  printf '{"schemaVersion":1,"shiftId":"%s","createdAt":"%s","source":"start-defaults","deadlineEpoch":%s,"verificationLevel":"none","toolingPolicy":"existing-tools"}\n' \
-    "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$deadline" |
+  # A notes folder has no repository toolchain to add, so it keeps existing tools.
+  tooling="$(ns_policy_builtin toolingPolicy)"
+  if [ "$(ns_work_mode "$ws" 2>/dev/null)" = artifact ]; then
+    tooling='"existing-tools"'
+  fi
+  printf '{"schemaVersion":1,"shiftId":"%s","createdAt":"%s","source":"start-defaults","deadlineEpoch":%s,"verificationLevel":%s,"toolingPolicy":%s}\n' \
+    "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$deadline" "$(ns_policy_builtin verificationLevel)" "$tooling" |
     bash "$helper" --project "$ws" set --from-json - >/dev/null 2>&1 || return 1
   printf '%s' "$id"
 }

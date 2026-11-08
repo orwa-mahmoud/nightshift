@@ -157,7 +157,8 @@ The tooling policy decides what happens when useful checks are missing:
   existing elevation permissions.
 
 A complete Automatic run-direct request carries your saved tooling policy. With no saved choice
-or explicit override, it uses existing tools. A remembered policy grants no new elevation.
+or explicit override, it uses the default, automatically adding standard development tools. A
+remembered policy grants no new elevation.
 Artifact mode uses existing tools only and inspects the persistent folder's files and source
 manifests without requiring Git history. Quality-debt entries are skipped when their discovery
 surface is absent. In artifact mode:

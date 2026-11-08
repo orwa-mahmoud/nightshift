@@ -9,9 +9,10 @@ SP="$ROOT/plugins/nightshift/runtime/shift-policy.sh"
 LIB="$ROOT/plugins/nightshift/lib/lib.sh"
 GATES_BLOCK='## Gates'
 
+# Every category starts denied, the owner who guards them, so each row has a deny to lift.
 unarmed() {
   local p
-  p="$(new_project "${1:-prec}")"
+  p="$(new_guarded_project "${1:-prec}")"
   rm -f "$p/.nightshift/.shift-armed"
   printf '%s' "$p"
 }
@@ -124,7 +125,7 @@ bound_plan() { # <project> <deadline JSON> <command>...
 }
 
 # Row 2 -------------------------------------------------------------------------------------
-@test "row 2: a one-shift allowance alone lifts the built-in deny" {
+@test "row 2: a one-shift allowance alone lifts the owner's deny" {
   p="$(unarmed prec-row2a)"
   [ "$(setting "$p" elevation.containers)" = 'deny|rules|permanent' ]
   [ "$(allowed "$p" containers 'docker compose up')" = 1 ]
@@ -136,7 +137,7 @@ bound_plan() { # <project> <deadline JSON> <command>...
   [ "$(allowed "$p" sudo 'sudo id')" = 1 ]
 }
 
-@test "row 2: a rules allow alone lifts the built-in deny, and outlives the shift" {
+@test "row 2: a rules allow alone lifts the owner's deny, and outlives the shift" {
   p="$(unarmed prec-row2b)"
   rules_set "$p" '.elevation.containers.policy = "allow"'
   [ "$(setting "$p" elevation.containers)" = 'allow|rules|permanent' ]
@@ -160,11 +161,11 @@ bound_plan() { # <project> <deadline JSON> <command>...
   [ "$(allowed "$p" sudo 'sudo id')" = 1 ]
 }
 
-@test "row 2: a category missing from rules.elevation falls back to the built-in deny" {
+@test "row 2: a category missing from rules.elevation falls back to the built-in allow" {
   p="$(unarmed prec-row2e)"
   rules_set "$p" 'del(.elevation)'
-  [ "$(setting "$p" elevation.sudo)" = 'deny|built-in|-' ]
-  [ "$(allowed "$p" sudo 'sudo id')" = 1 ]
+  [ "$(setting "$p" elevation.sudo)" = 'allow|built-in|-' ]
+  [ "$(allowed "$p" sudo 'sudo id')" = 0 ]
   # The guard still has a pattern to match with.
   run bash -c '. "$1"; ns_policy_elevation_pattern "$2" sudo' _ "$LIB" "$p"
   [ "$status" -eq 0 ]
@@ -330,21 +331,21 @@ bound_plan() { # <project> <deadline JSON> <command>...
 @test "row 4: shift-defaults never appears as the source of an effective value" {
   p="$(unarmed prec-row4)"
   bash "$SP" --project "$p" defaults-set --verificationProfile strict --hours 10 \
-    --toolingPolicy auto-add --execution run-direct >/dev/null
+    --toolingPolicy review-missing --execution run-direct >/dev/null
   run bash "$SP" --project "$p" resolve --json
   [ "$status" -eq 0 ]
   if printf '%s' "$output" | grep -qF '"source":"defaults"'; then
     return 1
   fi
   # The remembered choices prefill the next question; they do not decide tonight.
-  [ "$(setting "$p" toolingPolicy)" = 'existing-tools|built-in|-' ]
+  [ "$(setting "$p" toolingPolicy)" = 'auto-add|built-in|-' ]
   [ "$(setting "$p" verificationLevel)" = 'none|built-in|-' ]
   # Once a composition step copies a choice into the policy, the policy is the source.
   policy "$p" ''
   [ "$(setting "$p" toolingPolicy)" = 'existing-tools|one-shift|shift' ]
   [ "$(setting "$p" verificationLevel)" = 'final|one-shift|shift' ]
   run bash "$SP" --project "$p" defaults-get
-  printf '%s' "$output" | jq -e '.toolingPolicy == "auto-add"' >/dev/null
+  printf '%s' "$output" | jq -e '.toolingPolicy == "review-missing"' >/dev/null
 }
 
 # Row 5 -------------------------------------------------------------------------------------
@@ -386,7 +387,7 @@ bound_plan() { # <project> <deadline JSON> <command>...
   jq '.verificationLevel = "loud"' "$archived" >"$p/.nightshift/shift-policy.json"
   [ "$(setting "$p" elevation.containers)" = 'deny|rules|permanent' ]
   [ "$(setting "$p" verificationLevel)" = 'none|built-in|-' ]
-  [ "$(setting "$p" toolingPolicy)" = 'existing-tools|built-in|-' ]
+  [ "$(setting "$p" toolingPolicy)" = 'auto-add|built-in|-' ]
   [ "$(allowed "$p" containers 'docker compose up')" = 1 ]
 
   # Rules keep applying through the malformation.

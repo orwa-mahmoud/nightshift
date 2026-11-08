@@ -16,9 +16,10 @@ sp() {
 }
 
 # A project with rules but no armed marker: composition writes before the clock starts.
+# Every category starts denied, the owner who guards them, so an allowance has a deny to lift.
 unarmed() {
   local p
-  p="$(new_project "${1:-policy}")"
+  p="$(new_guarded_project "${1:-policy}")"
   rm -f "$p/.nightshift/.shift-armed"
   printf '%s' "$p"
 }
@@ -222,15 +223,15 @@ write_policy() { # <project> [extra JSON]
   p="$(unarmed sp-def)"
   run sp "$p" defaults-get
   [ "$status" -eq 0 ]
-  [ "$output" = '{"execution":"review-first","hours":null,"schemaVersion":1,"toolingPolicy":"existing-tools","updatedAt":null,"verificationProfile":"fast"}' ]
+  [ "$output" = '{"execution":"run-direct","hours":null,"schemaVersion":1,"toolingPolicy":"auto-add","updatedAt":null,"verificationProfile":"fast"}' ]
   printf '{ truncated\n' >"$p/.nightshift/shift-defaults.json"
   run sp "$p" defaults-get
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | jq -e '.verificationProfile == "fast" and .toolingPolicy == "existing-tools"' >/dev/null
+  printf '%s' "$output" | jq -e '.verificationProfile == "fast" and .toolingPolicy == "auto-add"' >/dev/null
   printf '{"schemaVersion":1,"toolingPolicy":"nonsense"}\n' >"$p/.nightshift/shift-defaults.json"
   run sp "$p" defaults-get
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | jq -e '.toolingPolicy == "existing-tools"' >/dev/null
+  printf '%s' "$output" | jq -e '.toolingPolicy == "auto-add"' >/dev/null
 }
 
 @test "defaults-set remembers one field at a time and refuses an unknown value" {

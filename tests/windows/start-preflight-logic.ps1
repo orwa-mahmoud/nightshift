@@ -390,13 +390,20 @@ try {
     if (Test-Path -LiteralPath $snapPolicy -PathType Leaf) {
         $doc = [IO.File]::ReadAllText($snapPolicy) | ConvertFrom-Json
         Expect-True ($doc.source -ceq 'start-defaults') 'the snapshot says who wrote it'
-        Expect-True ($doc.verificationLevel -ceq 'none' -and $doc.toolingPolicy -ceq 'existing-tools') `
+        Expect-True ($doc.verificationLevel -ceq 'none' -and $doc.toolingPolicy -ceq 'auto-add') `
             'the snapshot keeps the values the resolved view showed'
         Expect-True ($null -eq $doc.deadlineEpoch) 'a finite list records no deadline'
         $snapPunch = Join-Path $snapNs 'punch-list.md'
         Expect-True ($doc.contractDigest -ceq (Get-NSPunchContractDigest $snapPunch)) 'the contract digest is the list armed with'
         Expect-True ($doc.itemsDigest -ceq (Get-NSPunchItemsDigest $snapPunch)) 'the items digest is the list armed with'
     }
+
+    # A notes folder has no repository toolchain to add, so its snapshot keeps existing tools.
+    $artifactSnap = New-Site (Join-Path $root 'snapshot-artifact')
+    Write-NSWorkMode -Workspace $artifactSnap -Mode artifact
+    $null = New-NSStartSnapshot $artifactSnap
+    $artifactDoc = [IO.File]::ReadAllText((Join-Path (Join-Path $artifactSnap '.nightshift') 'shift-policy.json')) | ConvertFrom-Json
+    Expect-True ($artifactDoc.toolingPolicy -ceq 'existing-tools') "an artifact snapshot keeps existing tools: $($artifactDoc.toolingPolicy)"
 
     # A policy is one night's approval: once a night has run under it and been filed, arming it
     # again would replay that approval. Start's own snapshot draws an id the archive has never seen.

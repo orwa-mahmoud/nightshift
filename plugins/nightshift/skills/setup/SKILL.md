@@ -198,12 +198,12 @@ permissions directly in the host before starting unattended work. Never write pe
 allowlists, or approval settings, and never enable permission bypass on the owner's behalf.
 Nightshift's guards remain active within the permissions the host provides.
 
-Recovery uses `recovery.launchScope` in `$NS/rules.json`. The shipped
-`inherit-recorded-scope` choice restores a recorded restricted Codex sandbox when supported;
-missing or unsupported scopes refuse recovery. `host-default` adds no permission arguments and
-uses the owner's independently configured host permissions; it does not promise the same scope
-as the original session. The legacy `host-grant` value is refused. Ask whether to keep the shipped
-choice or use `host-default`, then persist only that recovery preference after creating or validating
+Recovery uses `recovery.launchScope` in `$NS/rules.json`. The shipped `host-default` adds no
+permission arguments and uses the owner's independently configured host permissions; it does not
+promise the same scope as the original session. `inherit-recorded-scope` restores a recorded
+restricted Codex sandbox when supported; missing or unsupported scopes refuse recovery. The legacy
+`host-grant` value is refused. Ask whether to keep the shipped choice or use
+`inherit-recorded-scope`, then persist only that recovery preference after creating or validating
 `rules.json` in step 5. Never change the active
 session's permissions. If the owner keeps interactive approvals, explain that a prompt or denial
 can leave unattended work needing their attention.

@@ -32,8 +32,16 @@ function Expect-Equal {
 function New-Workspace {
     $path = Join-Path ([IO.Path]::GetTempPath()) ('ns-scope-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path (Join-Path $path '.nightshift') | Out-Null
-    Copy-Item $template (Join-Path $path '.nightshift/rules.json')
+    Reset-Rules $path
     return $path
+}
+
+# The shipped template with recovery.launchScope set to inherit-recorded-scope: the owner who
+# chose to restore a recorded scope, which is what most of this file exercises.
+function Reset-Rules {
+    param([string]$Workspace)
+    Copy-Item $template (Join-Path $Workspace '.nightshift/rules.json') -Force
+    Set-Rules $Workspace 'inherit-recorded-scope'
 }
 
 function Set-Rules {
@@ -62,22 +70,28 @@ function Set-Snapshot {
 
 $workspace = New-Workspace
 try {
-    # The shipped template asks to inherit, and that is what the resolver reports. Reading it as
-    # the broad grant is the defect this file exists to keep out.
-    Expect-Equal 'inherit-recorded-scope' (Get-NSRecoveryLaunchScope $workspace) 'shipped template inherits'
+    # The owner's inherit-recorded-scope is what the resolver reports. Reading it as the broad
+    # grant is the defect this file exists to keep out.
+    Expect-Equal 'inherit-recorded-scope' (Get-NSRecoveryLaunchScope $workspace) 'an owner who chose to inherit inherits'
+    $shipped = Join-Path ([IO.Path]::GetTempPath()) ('ns-scope-shipped-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path (Join-Path $shipped '.nightshift') | Out-Null
+    Copy-Item $template (Join-Path $shipped '.nightshift/rules.json')
+    try { Expect-Equal 'host-default' (Get-NSRecoveryLaunchScope $shipped) 'the shipped template is host-default' }
+    finally { Remove-Item -Recurse -Force $shipped }
 
     # Nothing recorded: there is nothing to inherit, so a revival is refused rather than launched
     # at whatever the host happens to default to.
     Expect-Equal 'unavailable:unrecorded' (Get-NSRecoveryEffectiveScope $workspace 'codex') 'no snapshot refuses rather than guesses'
     Expect-True ((Get-NSRecoveryRefusal 'unavailable:unrecorded') -match 'nothing to inherit') 'the refusal says why'
 
-    # A missing recovery block, a malformed file and an unrecognised value all inherit. None of
-    # them is a reason to hand out permissions.
+    # A missing recovery block is a setting the owner never wrote, so it is the built-in default.
+    # A malformed file and an unrecognised value inherit: neither is a reason to hand out
+    # permissions.
     Set-Rules $workspace $null
-    Expect-Equal 'inherit-recorded-scope' (Get-NSRecoveryLaunchScope $workspace) 'a legacy file with no recovery block inherits'
+    Expect-Equal 'host-default' (Get-NSRecoveryLaunchScope $workspace) 'a legacy file with no recovery block is the built-in default'
     [IO.File]::WriteAllText((Join-Path $workspace '.nightshift/rules.json'), '{ "recovery": ', $utf8)
     Expect-Equal 'inherit-recorded-scope' (Get-NSRecoveryLaunchScope $workspace) 'a malformed file inherits'
-    Copy-Item $template (Join-Path $workspace '.nightshift/rules.json') -Force
+    Reset-Rules $workspace
     Set-Rules $workspace 'something-else'
     Expect-Equal 'inherit-recorded-scope' (Get-NSRecoveryLaunchScope $workspace) 'an unrecognised value inherits'
 
@@ -91,7 +105,7 @@ try {
     Set-Snapshot $workspace 'unknown' 'unavailable'
 
     # An observed scope the host can be asked for again passes through; one it cannot is refused.
-    Copy-Item $template (Join-Path $workspace '.nightshift/rules.json') -Force
+    Reset-Rules $workspace
     foreach ($mode in @('read-only', 'workspace-write')) {
         Set-Snapshot $workspace $mode 'observed'
         Expect-Equal ('recorded:' + $mode) (Get-NSRecoveryEffectiveScope $workspace 'codex') "codex can be asked for $mode"
@@ -134,7 +148,7 @@ try {
 
     Set-Rules $workspace 'host-default'
     Expect-True ((Get-NSRecoveryRepair $workspace 'unavailable:unrecorded') -match 'already host-default') 'repair does not ask for a scope that is already set'
-    Copy-Item $template (Join-Path $workspace '.nightshift/rules.json') -Force
+    Reset-Rules $workspace
     Expect-True ((Get-NSRecoveryRepair $workspace 'unavailable:unrecorded') -match 'set recovery.launchScope to host-default') 'an unrecorded scope still names host-default'
 
     # And the writer records it, so the reader is not inheriting a field nobody wrote.

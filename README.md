@@ -258,7 +258,7 @@ terminal path that needs no live model session or remaining allowance.
 - **Bound retries.** A stalled finite shift remains held by default. Set a deadline or an explicit
   stall limit when you need a cost boundary. Open-ended work always requires a deadline.
 - **Check your host's recovery limits.** The watchman requires positive failure evidence and
-  inherits the recorded permissions by default. Recovery and stale IDE views have
+  launches the replacement under the host's own configured permissions by default. Recovery and stale IDE views have
   [host-specific boundaries](docs/how-it-works.md#recovery). The recovered
   headless worker can continue without you watching it.
 - **Review before publishing.** Commits stay local unless the contract authorizes otherwise.

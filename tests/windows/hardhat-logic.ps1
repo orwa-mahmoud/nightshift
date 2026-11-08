@@ -297,6 +297,11 @@ try {
     $policyPath = Join-Path $nightshift 'shift-policy.json'
     $template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
     Copy-Item -LiteralPath $template -Destination $rulesPath -Force
+    # The shipped template allows every category. These rows test the guard itself, so they start
+    # from the owner who sets every category to deny.
+    $guardedRules = Get-Content -LiteralPath $rulesPath -Raw | ConvertFrom-Json
+    foreach ($categoryRule in $guardedRules.elevation.PSObject.Properties) { $categoryRule.Value.policy = 'deny' }
+    [IO.File]::WriteAllText($rulesPath, ($guardedRules | ConvertTo-Json -Depth 10))
 
     function Get-ElevationReason {
         param([Parameter(Mandatory = $true)][string]$Command)
@@ -399,8 +404,8 @@ try {
     $messageOnly = Get-ElevationReason "git commit -m 'sudo apt-get install jq and docker compose up'"
     Expect-True ([string]::IsNullOrEmpty($messageOnly)) "a commit message names no category: $messageOnly"
 
-    # A rules file that names no elevation answers from the built-in patterns alone, and answers
-    # the same corpus the same way - the guard does not depend on the owner's file carrying them.
+    # A rules file that names no elevation answers from the built-in allow: nothing in the corpus
+    # is blocked, and inspection stays untouched.
     $templateRules = [IO.File]::ReadAllText($rulesPath)
     $strippedRules = $templateRules | ConvertFrom-Json
     $null = $strippedRules.PSObject.Properties.Remove('elevation')
@@ -409,6 +414,19 @@ try {
         $reason = Get-ElevationReason $command
         Expect-True ([string]::IsNullOrEmpty($reason)) "built-in patterns leave inspection alone: $command -> $reason"
     }
+    foreach ($category in @('sudo', 'containers', 'global-packages')) {
+        foreach ($command in $bypass[$category]) {
+            $reason = Get-ElevationReason $command
+            Expect-True ([string]::IsNullOrEmpty($reason)) "the built-in allow leaves $command alone: $reason"
+        }
+    }
+    # A denied category whose rule carries no pattern answers from the built-in pattern, and answers
+    # the same corpus the same way - the guard does not depend on the owner's file carrying them.
+    $patternless = $templateRules | ConvertFrom-Json
+    foreach ($categoryRule in $patternless.elevation.PSObject.Properties) {
+        $null = $categoryRule.Value.PSObject.Properties.Remove('pattern')
+    }
+    [IO.File]::WriteAllText($rulesPath, ($patternless | ConvertTo-Json -Depth 10))
     foreach ($category in @('sudo', 'containers', 'global-packages')) {
         $expected = "BLOCKED: this command needs the '$category' elevation category, which is denied for this shift. The owner allows it in .nightshift/rules.json (elevation.$category.policy) or for one shift in shift-policy.json before arming. Park the item in .nightshift/parking-lot.md as `"needs allowance: $category`" and keep working."
         foreach ($command in $bypass[$category]) {
