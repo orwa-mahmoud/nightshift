@@ -212,7 +212,29 @@ EOF
   printf '2\n' >"$p/.nightshift/state-version"
   folder="$BATS_TEST_TMPDIR/configured-kinds"
   mkdir -p "$folder"
-  printf '# Shots — owner kind\n' >"$folder/shots.md"
+  cat >"$folder/shots.md" <<'KIND'
+# Shots — owner kind
+
+## When it applies
+
+Items with screens.
+
+## Evidence lines
+
+- Evidence: one shot
+
+## How to generate
+
+Take it.
+
+## How to verify
+
+Open it.
+
+## Never
+
+No secrets.
+KIND
   jq --arg a "$folder" '.receipts.evidence.kindsPaths = [$a]' \
     "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"

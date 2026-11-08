@@ -12,6 +12,8 @@ _here="$(cd -P "$_here" && pwd)" || exit 1
 . "$_here/../lib/lib.sh"
 # shellcheck source=plugins/nightshift/lib/migrate.sh
 . "$_here/../lib/migrate.sh"
+# shellcheck source=plugins/nightshift/lib/catalog-sources.sh
+. "$_here/../lib/catalog-sources.sh"
 
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
 while [ $# -gt 0 ]; do
@@ -490,16 +492,6 @@ elif json_is_object "$RULES"; then
         warn "rules.json $ev_name is $ev_val; it must be text"
         act confirm "set $ev_name to the evidence every item should carry, or \"\", in $RULES"
         ;;
-      receipts.evidence.kindTemplatePath)
-        case "$ev_val" in '"'*) continue ;; esac
-        warn "rules.json $ev_name is $ev_val; it must be text"
-        act confirm "set $ev_name to a template path, or \"\", in $RULES"
-        ;;
-      receipts.evidence.kindsPaths)
-        case "$ev_val" in '['*) continue ;; esac
-        warn "rules.json $ev_name is $ev_val; it must be a list of folders"
-        act confirm "set $ev_name to a list of folders, or [], in $RULES"
-        ;;
       receipts.evidence.check)
         case "$ev_val" in '"off"' | '"report"' | '"block"') continue ;; esac
         warn "rules.json $ev_name is $ev_val; it must be off, report, or block"
@@ -515,22 +507,12 @@ elif json_is_object "$RULES"; then
         warn "rules.json $ev_name is $ev_val; it must be hold, park, note, or empty"
         act confirm "set $ev_name to \"hold\", \"park\", \"note\", or \"\" in $RULES"
         ;;
-      gates.stackTemplatePath)
+      catalogs.*.template)
         case "$ev_val" in '"'*) continue ;; esac
         warn "rules.json $ev_name is $ev_val; it must be text"
         act confirm "set $ev_name to a template path, or \"\", in $RULES"
         ;;
-      gates.stacksPaths)
-        case "$ev_val" in '['*) continue ;; esac
-        warn "rules.json $ev_name is $ev_val; it must be a list of folders"
-        act confirm "set $ev_name to a list of folders, or [], in $RULES"
-        ;;
-      edgeCases.packTemplatePath)
-        case "$ev_val" in '"'*) continue ;; esac
-        warn "rules.json $ev_name is $ev_val; it must be text"
-        act confirm "set $ev_name to a template path, or \"\", in $RULES"
-        ;;
-      edgeCases.packsPaths)
+      catalogs.*.paths)
         case "$ev_val" in '['*) continue ;; esac
         warn "rules.json $ev_name is $ev_val; it must be a list of folders"
         act confirm "set $ev_name to a list of folders, or [], in $RULES"
@@ -539,6 +521,25 @@ elif json_is_object "$RULES"; then
   done <<EVIDENCE
 $(ns_rules_facts "$RULES" 2>/dev/null)
 EVIDENCE
+  # A setting or folder an earlier version used for a catalog is still read; name where it lives now.
+  for cat_name in $(ns_catalog_names); do
+    ns_catalog_row "$cat_name" || continue
+    for cat_pair in "paths:$NS_CAT_LEGACY_PATHS" "template:$NS_CAT_LEGACY_TEMPLATE"; do
+      cat_field="${cat_pair%%:*}"
+      cat_legacy="${cat_pair#*:}"
+      [ -n "$cat_legacy" ] || continue
+      cat_val="$(ns_rules_get_in "$RULES" "${cat_legacy%%.*}" "${cat_legacy#*.}")"
+      case "$cat_val" in '' | null | '[]' | '""') continue ;; esac
+      warn "rules.json $cat_legacy is read as catalogs.$cat_name.$cat_field"
+      act confirm "move $cat_legacy to catalogs.$cat_name.$cat_field in $RULES"
+    done
+    [ -n "$NS_CAT_LEGACY_PROJECT" ] || continue
+    cat_dir="$(ns_layout_path "$NS" "$NS_CAT_LEGACY_PROJECT" 2>/dev/null || true)"
+    if [ -n "$cat_dir" ] && [ -d "$cat_dir" ] && ls "$cat_dir"/*.md >/dev/null 2>&1; then
+      warn "$cat_dir is read as the $cat_name catalog's project folder"
+      act confirm "move its entries to $(ns_layout_path "$NS" "catalog-$cat_name")"
+    fi
+  done
 else
   if [ -n "$NS_RULES_ERR" ]; then
     warn "rules.json is unreadable or not a JSON object ($NS_RULES_ERR)"

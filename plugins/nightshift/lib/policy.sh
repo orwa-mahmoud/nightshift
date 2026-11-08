@@ -52,8 +52,7 @@ recovery
 handoff
 archive
 receipts
-gates
-edgeCases"
+catalogs"
 
 NS_POLICY_RULES_STATE=""
 NS_POLICY_RULES_VALS=""
@@ -168,12 +167,13 @@ ns_policy_builtin() {
     handoff.detail) printf '"concise"' ;;
     handoff.enabled | receipts.enabled) printf 'true' ;;
     handoff.language) printf '"auto"' ;;
-    handoff.sections | receipts.evidence.kindsPaths | gates.stacksPaths | edgeCases.packsPaths) printf '[]' ;;
+    handoff.sections | catalogs.*.paths) printf '[]' ;;
+    catalogs.*.template) printf '""' ;;
     handoff.view) printf '"owner"' ;;
     recovery.launchScope) printf '"host-default"' ;;
     receipts.duration) printf '"on"' ;;
     receipts.evidence.architecture | receipts.evidence.fileMap | receipts.evidence.review | receipts.evidence.check) printf '"off"' ;;
-    receipts.evidence.default | receipts.evidence.kindTemplatePath | receipts.evidence.unavailable | gates.stackTemplatePath | edgeCases.packTemplatePath) printf '""' ;;
+    receipts.evidence.default | receipts.evidence.unavailable) printf '""' ;;
     receipts.progressMinutes) printf '20' ;;
     receipts.progressMode) printf '"time"' ;;
     receipts.progressTokens) printf '100000' ;;
@@ -338,11 +338,10 @@ PREF = [("shift", ["copyIn", "execution", "hours", "isolation", "itemBudget", "p
         ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
         ("archive", ["automatic", "layout", "root", "templatePath"]),
         ("receipts", ["duration", "enabled", "evidence.architecture", "evidence.check",
-                    "evidence.default", "evidence.fileMap", "evidence.kindTemplatePath",
-                    "evidence.kindsPaths", "evidence.review", "evidence.unavailable",
+                    "evidence.default", "evidence.fileMap", "evidence.review", "evidence.unavailable",
                     "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"]),
-        ("gates", ["stackTemplatePath", "stacksPaths"]),
-        ("edgeCases", ["packTemplatePath", "packsPaths"])]
+        ("catalogs", ["edge-cases.paths", "edge-cases.template", "evidence.paths", "evidence.template",
+                      "gates.paths", "gates.template", "shifts.paths", "shifts.template"])]
 out = []
 
 
@@ -979,20 +978,6 @@ _ns_policy_validate_shift() {
       return 1
       ;;
   esac
-  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.kindTemplatePath)" in
-    '' | null | '"'*) ;;
-    *)
-      _ns_policy_shift_fail receipts.evidence.kindTemplatePath "must be text"
-      return 1
-      ;;
-  esac
-  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.kindsPaths)" in
-    '' | null | '['*) ;;
-    *)
-      _ns_policy_shift_fail receipts.evidence.kindsPaths "must be a list of folders"
-      return 1
-      ;;
-  esac
   case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.check)" in
     '' | null | '"off"' | '"report"' | '"block"') ;;
     *)
@@ -1007,34 +992,20 @@ _ns_policy_validate_shift() {
       return 1
       ;;
   esac
-  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" gates.stackTemplatePath)" in
-    '' | null | '"'*) ;;
-    *)
-      _ns_policy_shift_fail gates.stackTemplatePath "must be text"
-      return 1
-      ;;
-  esac
-  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" gates.stacksPaths)" in
-    '' | null | '['*) ;;
-    *)
-      _ns_policy_shift_fail gates.stacksPaths "must be a list of folders"
-      return 1
-      ;;
-  esac
-  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" edgeCases.packTemplatePath)" in
-    '' | null | '"'*) ;;
-    *)
-      _ns_policy_shift_fail edgeCases.packTemplatePath "must be text"
-      return 1
-      ;;
-  esac
-  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" edgeCases.packsPaths)" in
-    '' | null | '['*) ;;
-    *)
-      _ns_policy_shift_fail edgeCases.packsPaths "must be a list of folders"
-      return 1
-      ;;
-  esac
+  # Every catalog freezes the same two settings: a list of folders, and a template path.
+  local cat_key cat_val
+  while IFS="$NS_POLICY_TAB" read -r cat_key cat_val; do
+    case "$cat_key" in
+      catalogs.*.paths)
+        case "$cat_val" in null | '['*) ;; *) _ns_policy_shift_fail "$cat_key" "must be a list of folders"; return 1 ;; esac
+        ;;
+      catalogs.*.template)
+        case "$cat_val" in null | '"'*) ;; *) _ns_policy_shift_fail "$cat_key" "must be text"; return 1 ;; esac
+        ;;
+    esac
+  done <<EOF_CATALOGS
+$NS_POLICY_SHIFT_VALS
+EOF_CATALOGS
   case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.unavailable)" in
     '' | null | '""' | '"hold"' | '"park"' | '"note"') ;;
     *)
@@ -1602,7 +1573,7 @@ _ns_policy_setting() {
       if [ "$NS_POLICY_SHIFT_STATE" = ok ]; then
         category="${name%%.*}"
         case "$category" in
-          shift | recovery | handoff | archive | receipts | gates | edgeCases)
+          shift | recovery | handoff | archive | receipts | catalogs)
             if [ "$(_ns_policy_pick "$NS_POLICY_SHIFT_TYPES" "$category")" = object ]; then
               val="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" "$name")" || val=""
               if [ -n "$val" ] && [ "$val" != null ]; then

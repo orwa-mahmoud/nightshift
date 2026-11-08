@@ -84,20 +84,28 @@
       "fileMap": "off",
       "architecture": "off",
       "default": "",
-      "kindTemplatePath": "",
-      "kindsPaths": [],
       "check": "off",
       "review": "off",
       "unavailable": ""
     }
   },
-  "gates": {
-    "stackTemplatePath": "",
-    "stacksPaths": []
-  },
-  "edgeCases": {
-    "packTemplatePath": "",
-    "packsPaths": []
+  "catalogs": {
+    "shifts": {
+      "paths": [],
+      "template": ""
+    },
+    "evidence": {
+      "paths": [],
+      "template": ""
+    },
+    "gates": {
+      "paths": [],
+      "template": ""
+    },
+    "edge-cases": {
+      "paths": [],
+      "template": ""
+    }
   },
   "recovery": {
     "launchScope": "host-default",

@@ -369,14 +369,13 @@ function praw_pref(path,    n, i, out, kind) {
 # emits its type and no fields, which is how a policy written before this feature is told apart
 # from one whose owner left a block empty.
 function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
-  count = split("shift recovery handoff archive receipts gates edgeCases", blocks, " ")
+  count = split("shift recovery handoff archive receipts catalogs", blocks, " ")
   fields["shift"] = "copyIn execution hours isolation itemBudget prepare toolingPolicy verificationProfile worktreeRoot"
   fields["recovery"] = "launchScope"
   fields["handoff"] = "detail enabled language sections templatePath view"
   fields["archive"] = "automatic layout root templatePath"
-  fields["receipts"] = "duration enabled evidence.architecture evidence.check evidence.default evidence.fileMap evidence.kindTemplatePath evidence.kindsPaths evidence.review evidence.unavailable progressMinutes progressMode progressTokens templatePath usage"
-  fields["gates"] = "stackTemplatePath stacksPaths"
-  fields["edgeCases"] = "packTemplatePath packsPaths"
+  fields["receipts"] = "duration enabled evidence.architecture evidence.check evidence.default evidence.fileMap evidence.review evidence.unavailable progressMinutes progressMode progressTokens templatePath usage"
+  fields["catalogs"] = "edge-cases.paths edge-cases.template evidence.paths evidence.template gates.paths gates.template shifts.paths shifts.template"
   for (j = 1; j <= count; j++) {
     put("ty\t" blocks[j] "\t" ptype(blocks[j]))
     if (!(blocks[j] in V_TYPE)) {
@@ -1328,7 +1327,7 @@ function parse_top_value(key,    c) {
       return
     }
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
-        key == "receipts" || key == "planRoom" || key == "gates" || key == "edgeCases") {
+        key == "receipts" || key == "planRoom" || key == "catalogs" || key == "gates" || key == "edgeCases") {
       emit(key, "", "", "o", "")
       parse_settings_object(key, "")
       return
@@ -1569,7 +1568,7 @@ function parse_settings_object(p1, prefix,    c, key, first) {
       emit(p1, prefix key, "", "z", "null")
     } else if (c == "[") {
       parse_settings_array(p1, prefix key)
-    } else if (c == "{" && p1 == "receipts" && prefix == "" && key == "evidence") {
+    } else if (c == "{" && prefix == "" && ((p1 == "receipts" && key == "evidence") || p1 == "catalogs")) {
       emit(p1, key, "", "o", "")
       parse_settings_object(p1, key ".")
     } else {

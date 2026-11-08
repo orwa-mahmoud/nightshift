@@ -477,6 +477,14 @@ NS_RULES_GROUP_KEYS='archive.automatic
 archive.layout
 archive.root
 archive.templatePath
+catalogs.edge-cases.paths
+catalogs.edge-cases.template
+catalogs.evidence.paths
+catalogs.evidence.template
+catalogs.gates.paths
+catalogs.gates.template
+catalogs.shifts.paths
+catalogs.shifts.template
 handoff.detail
 handoff.enabled
 handoff.language
@@ -490,8 +498,6 @@ receipts.evidence.architecture
 receipts.evidence.check
 receipts.evidence.default
 receipts.evidence.fileMap
-receipts.evidence.kindTemplatePath
-receipts.evidence.kindsPaths
 receipts.evidence.review
 receipts.evidence.unavailable
 receipts.progressMinutes
@@ -507,11 +513,7 @@ shift.itemBudget
 shift.prepare
 shift.toolingPolicy
 shift.verificationProfile
-shift.worktreeRoot
-gates.stackTemplatePath
-gates.stacksPaths
-edgeCases.packTemplatePath
-edgeCases.packsPaths'
+shift.worktreeRoot'
 
 ns_rules_facts() {
   local k c row typ val present pol pat

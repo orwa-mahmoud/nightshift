@@ -278,7 +278,10 @@
         },
         "isolation": {
           "type": "string",
-          "enum": ["none", "worktree"],
+          "enum": [
+            "none",
+            "worktree"
+          ],
           "description": "Where a shift works. none: in the work target itself. worktree: in its own git worktree and shift branch, so the owner's checkout, index and uncommitted edits are never touched and ignored files such as .env are absent unless listed in copyIn. Artifact mode ignores it."
         },
         "prepare": {
@@ -287,7 +290,9 @@
         },
         "copyIn": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Ignored files, relative to the work target, copied into a new shift worktree, for example \".env.test\". Nothing else ignored is copied."
         },
         "worktreeRoot": {
@@ -471,28 +476,40 @@
             },
             "kindTemplatePath": {
               "type": "string",
-              "description": "The owner's template for a new evidence kind. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. An owner template may add sections; a drafted kind still needs the five required sections."
+              "description": "Read as catalogs.evidence.template when that is empty."
             },
             "kindsPaths": {
               "type": "array",
               "items": {
                 "type": "string"
               },
-              "description": "More folders of evidence kinds. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+              "description": "Read as catalogs.evidence.paths when that is empty."
             },
             "check": {
               "type": "string",
-              "enum": ["off", "report", "block"],
+              "enum": [
+                "off",
+                "report",
+                "block"
+              ],
               "description": "What a missing named evidence file does to the tick. off leaves the tick alone. report lists each missing file on the receipt and the morning receipt, and the tick stands. block counts a ticked item with a missing file as open, so the clock-out gate names the item and each missing file."
             },
             "review": {
               "type": "string",
-              "enum": ["off", "on"],
+              "enum": [
+                "off",
+                "on"
+              ],
               "description": "Whether the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and writes a Reviewed section. With check at block, a missing Reviewed section counts as missing evidence."
             },
             "unavailable": {
               "type": "string",
-              "enum": ["", "hold", "park", "note"],
+              "enum": [
+                "",
+                "hold",
+                "park",
+                "note"
+              ],
               "description": "What happens when the evidence cannot be produced. hold closes the item as stopped and the shift moves on. park records the decision and keeps working. note ticks the item and the receipt says why. Empty means hold when check is block, and note otherwise."
             }
           }
@@ -514,36 +531,36 @@
     "edgeCases": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Edge-case packs the owner adds. Empty uses the shipped packs only.",
+      "description": "Read as catalogs.edge-cases when that is empty.",
       "properties": {
         "packTemplatePath": {
           "type": "string",
-          "description": "The owner's template for a new edge-case pack. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. A drafted pack still needs When it applies, Cases, and Example lines."
+          "description": "Read as catalogs.edge-cases.template when that is empty."
         },
         "packsPaths": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "More folders of edge-case packs. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+          "description": "Read as catalogs.edge-cases.paths when that is empty."
         }
       }
     },
     "gates": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Quality-gate stacks the owner adds. Empty uses the shipped stacks only.",
+      "description": "Read as catalogs.gates when that is empty.",
       "properties": {
         "stackTemplatePath": {
           "type": "string",
-          "description": "The owner's template for a new quality-gate stack. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. A drafted stack still needs Detect, Item gate, Site inspection, Notes, and one Match line."
+          "description": "Read as catalogs.gates.template when that is empty."
         },
         "stacksPaths": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "More folders of quality-gate stacks. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+          "description": "Read as catalogs.gates.paths when that is empty."
         }
       }
     },
@@ -565,7 +582,11 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["--force", "--trust", "--yolo"]
+            "enum": [
+              "--force",
+              "--trust",
+              "--yolo"
+            ]
           },
           "description": "Overrides the Cursor permission flags recorded from the CLI process (--force, --trust; --yolo is the alias of --force). A non-empty list replaces those two flags. An empty list leaves the process's own. The model comes from that process's --model, not from the hook payload."
         }
@@ -595,12 +616,93 @@
       "properties": {
         "blockedTools": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Tool names blocked while the plan room is open, `*` matching any run of characters, for example `mcp__slack__*`. Empty blocks no tool."
         },
         "blockedCommands": {
           "type": "string",
           "description": "grep -E pattern matched against shell command text while the plan room is open. Absent means `git (commit|push|tag)`; empty blocks no command."
+        }
+      }
+    },
+    "catalogs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The owner's own catalog entries and templates, one block per catalog. Empty uses the shipped entries only.",
+      "properties": {
+        "shifts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Where the owner keeps shift entries, beside the project folder .nightshift/catalogs/<name>/ and the user folder <user config>/nightshift/catalogs/<name>/.",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "More folders of entries. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+            },
+            "template": {
+              "type": "string",
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+            }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Where the owner keeps evidence kinds, beside the project folder .nightshift/catalogs/<name>/ and the user folder <user config>/nightshift/catalogs/<name>/.",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "More folders of entries. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+            },
+            "template": {
+              "type": "string",
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+            }
+          }
+        },
+        "gates": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Where the owner keeps quality-gate stacks, beside the project folder .nightshift/catalogs/<name>/ and the user folder <user config>/nightshift/catalogs/<name>/.",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "More folders of entries. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+            },
+            "template": {
+              "type": "string",
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+            }
+          }
+        },
+        "edge-cases": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Where the owner keeps edge-case packs, beside the project folder .nightshift/catalogs/<name>/ and the user folder <user config>/nightshift/catalogs/<name>/.",
+          "properties": {
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "More folders of entries. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+            },
+            "template": {
+              "type": "string",
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+            }
+          }
         }
       }
     }

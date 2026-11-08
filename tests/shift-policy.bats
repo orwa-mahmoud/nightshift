@@ -84,7 +84,7 @@ write_policy() { # <project> [extra JSON]
   # Everything the candidate stated comes back exactly as it was written. What the snapshot adds
   # is what the shift needs fixed: the scope this session runs under, and the owner preferences
   # tonight was composed with.
-  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .receipts, .gates, .edgeCases, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .receipts, .catalogs, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
   # And the contract as it stood at arming, so the gate can tell later whether it moved.
   printf '%s' "$output" | jq -e '
@@ -114,7 +114,7 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .receipts, .gates, .edgeCases, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .receipts, .catalogs, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
 }
 
@@ -162,7 +162,7 @@ write_policy() { # <project> [extra JSON]
   printf '%s\n' "$output" | grep -qxF 'receipts.evidence.fileMap=off (rules, permanent)'
   # Start freezes the block as the owner's file holds it, one level down.
   [ "$(bash -c '. "$1"; ns_policy_freeze_pref "$2" receipts' _ "$LIB" "$p" | jq -c .evidence)" = \
-    '{"architecture":"off","check":"off","default":"","fileMap":"off","kindTemplatePath":"","kindsPaths":[],"review":"off","unavailable":""}' ]
+    '{"architecture":"off","check":"off","default":"","fileMap":"off","review":"off","unavailable":""}' ]
   # One shift turns the file map on. Status shows it, and the snapshot validates.
   write_policy "$p" '"receipts":{"evidence":{"fileMap":"on"}}'
   run sp "$p" set --from-json "$p/.nightshift/shift-policy.json"

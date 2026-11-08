@@ -103,39 +103,9 @@ _ns_evidence_plugin() {
   (cd "$_ns_evidence_here/.." && pwd -P)
 }
 
-# ns_evidence_kind_file <project> <key> — the winning kind file, project over configured over user over plugin.
+# ns_evidence_kind_file <project> <key> — the kind file in force, by the catalogs' one precedence.
 ns_evidence_kind_file() {
-  local project="$1" key="$2" dir f raw resolved plugin
-  dir="$(ns_layout_path "$project/.nightshift" evidence-kinds 2>/dev/null || true)"
-  if [ -n "$dir" ] && [ -f "$dir/$key.md" ] && [ ! -L "$dir/$key.md" ]; then
-    printf '%s' "$dir/$key.md"
-    return 0
-  fi
-  raw="$(ns_evidence_shift_value "$project" kindsPaths)"
-  if [ -n "$raw" ]; then
-    while IFS= read -r resolved; do
-      [ -n "$resolved" ] || continue
-      f="$(ns_catalog_resolve "$project" "$resolved")/$key.md"
-      if [ -f "$f" ] && [ ! -L "$f" ]; then
-        printf '%s' "$f"
-        return 0
-      fi
-    done <<PATHS
-$(ns_json_string_list "$raw" || true)
-PATHS
-  fi
-  dir="$(ns_catalog_user_dir evidence kinds)"
-  if [ -f "$dir/$key.md" ] && [ ! -L "$dir/$key.md" ]; then
-    printf '%s' "$dir/$key.md"
-    return 0
-  fi
-  plugin="$(_ns_evidence_plugin)"
-  f="$plugin/skills/nightshift/references/evidence/kinds/$key.md"
-  if [ -f "$f" ] && [ ! -L "$f" ]; then
-    printf '%s' "$f"
-    return 0
-  fi
-  return 1
+  ns_catalog_file evidence-check "$(_ns_evidence_plugin)" evidence "$1" "$2"
 }
 
 # _ns_evidence_block <kind-file> — `files`, `min`, `type` from the first evidence-check fence.
