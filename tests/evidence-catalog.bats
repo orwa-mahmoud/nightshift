@@ -207,7 +207,8 @@ LINES
   grep -qF 'min:' "$TEMPLATE"
   grep -qF 'type:' "$TEMPLATE"
   # The example is not a live block.
-  ! strip_comments "$TEMPLATE" | grep -qF '```evidence-check'
+  ! strip_comments "$TEMPLATE" | grep -qF '```evidence-check' \
+    || { echo "the example is a live block"; return 1; }
 }
 
 @test "the evidence index lists every kind, and both runtimes agree" {
@@ -276,7 +277,7 @@ ENTRY
   grep -qF 'Read this only after the owner says yes' "$CATALOG"
   grep -qF 'ns catalog-index --catalog evidence' "$CATALOG"
   flat "$CATALOG" | grep -qF 'read in full only the kinds that fit'
-  ! grep -qF '| Kind of item |' "$CATALOG"
+  ! grep -qF '| Kind of item |' "$CATALOG" || { echo "the entry page still has the old table"; return 1; }
   flat "$MENU" | grep -qF 'Read `evidence/catalog.md` and suggest one `Evidence:` line per item'
   flat "$MENU" | grep -qF 'ns catalog-index --catalog evidence'
   flat "$MENU" | grep -qF 'read in full only the kinds that fit'
@@ -298,8 +299,8 @@ ENTRY
 @test "the catalog helper does not name one catalog" {
   [ -f "$SOURCES" ]
   [ -f "$SOURCES_PS1" ]
-  ! grep -i evidence "$SOURCES"
-  ! grep -i evidence "$SOURCES_PS1"
+  ! grep -i evidence "$SOURCES" || { echo "the helper names a catalog"; return 1; }
+  ! grep -i evidence "$SOURCES_PS1" || { echo "the helper names a catalog"; return 1; }
 }
 
 @test "owner kinds are listed with their source, and precedence names what it replaced" {

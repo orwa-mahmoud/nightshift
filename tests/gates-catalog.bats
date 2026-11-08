@@ -121,8 +121,8 @@ EOF
     run ns_catalog_entry_problems "$f"
     [ "$status" -eq 0 ] || { printf '%s\n%s\n' "$f" "$output"; return 1; }
   done
-  ! grep -i gates "$SOURCES"
-  ! grep -i gates "$SOURCES_PS1"
+  ! grep -i gates "$SOURCES" || { echo "the helper names a catalog"; return 1; }
+  ! grep -i gates "$SOURCES_PS1" || { echo "the helper names a catalog"; return 1; }
 }
 
 @test "Setup treats a nested plugins/<name> manifest as a plugin-stack match" {
