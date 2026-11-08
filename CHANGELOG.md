@@ -3,6 +3,17 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.31.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.3...v0.31.0) (2026-11-08)
+
+
+### Features
+
+* keep edge cases as packs the owner can extend ([218e38a](https://github.com/orwa-mahmoud/nightshift/commit/218e38a5beb632ec44320e43ca6a33a033792a51))
+* keep quality gates as one file per stack the owner can extend ([dfdfd06](https://github.com/orwa-mahmoud/nightshift/commit/dfdfd064a6ede58a25d857e8bd76f3c63f40cd13))
+* let the owner add and customise evidence kinds ([6ec3ad7](https://github.com/orwa-mahmoud/nightshift/commit/6ec3ad7895bf50dc43e8bf9f89d9a827cc76a997))
+* let the owner decide whether evidence blocks a tick ([6d91eff](https://github.com/orwa-mahmoud/nightshift/commit/6d91effadbcbd961d62c0afc5445214b49ceb347))
+* split the evidence catalog into one file per kind ([d92b7e9](https://github.com/orwa-mahmoud/nightshift/commit/d92b7e9717836e9c5d59a8898e9009e40571165a))
+
 ## [0.30.3](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.2...v0.30.3) (2026-11-07)
 
 
