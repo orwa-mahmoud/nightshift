@@ -16,6 +16,7 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+. (Join-Path $pluginRoot 'lib/evidence-check.ps1')
 if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 
 # The reason a block carries: the whole contract, or one line when the gate positively knows
@@ -341,6 +342,11 @@ try {
             if (-not [string]::IsNullOrEmpty($doneMoved)) {
                 Write-NSLogLine 'punch list changed since arming - the done clock-out is blocked until it is restored'
                 Write-Block $doneMoved
+            }
+            $evidenceHold = Get-NSEvidenceHold $workspace $punch
+            if (-not [string]::IsNullOrEmpty($evidenceHold)) {
+                Write-NSLogLine 'evidence missing - the done clock-out stays blocked until the named files are present'
+                Write-Block $evidenceHold
             }
             Complete-NSShiftAndStop "shift done: $($counts.Ticked)/$($counts.Total)"
         }

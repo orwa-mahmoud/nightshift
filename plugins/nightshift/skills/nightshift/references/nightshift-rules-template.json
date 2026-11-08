@@ -85,7 +85,10 @@
       "architecture": "off",
       "default": "",
       "kindTemplatePath": "",
-      "kindsPaths": []
+      "kindsPaths": [],
+      "check": "off",
+      "review": "off",
+      "unavailable": ""
     }
   },
   "recovery": {

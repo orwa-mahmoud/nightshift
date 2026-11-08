@@ -71,8 +71,9 @@ def PREF: {
   "recovery": ["launchScope"],
   "handoff":  ["detail", "enabled", "language", "sections", "templatePath", "view"],
   "archive":  ["automatic", "layout", "root", "templatePath"],
-  "receipts": ["duration", "enabled", "evidence.architecture", "evidence.default", "evidence.fileMap",
-               "evidence.kindTemplatePath", "evidence.kindsPaths",
+  "receipts": ["duration", "enabled", "evidence.architecture", "evidence.check", "evidence.default",
+               "evidence.fileMap", "evidence.kindTemplatePath", "evidence.kindsPaths",
+               "evidence.review", "evidence.unavailable",
                "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"]
 };
 

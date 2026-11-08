@@ -1453,6 +1453,7 @@ function Invoke-NSGateUsageTick {
     Update-NSReceiptLabel $receipt $Label
     Invoke-NSFileMapTick $NightshiftDir $Project $Label
     Invoke-NSArchitectureTick $NightshiftDir $Project $Label
+    Write-NSEvidenceRecord $NightshiftDir $Project $Label
     $due = Get-NSLayoutPath $NightshiftDir 'receipt-due'
     if (Test-Path -LiteralPath $due -PathType Leaf) { Remove-Item -LiteralPath $due -Force -ErrorAction SilentlyContinue }
     Write-NSReceiptsIndex $Project
@@ -3656,6 +3657,13 @@ function Invoke-NSWatchmanDirectClockOut {
         $moved = Get-NSGateDoneMismatch $Workspace $punch
         if (-not [string]::IsNullOrEmpty([string]$moved)) {
             $result.Reason = "clock-out refused: $moved"
+            Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
+            return $result
+        }
+        $evidenceHold = ''
+        try { $evidenceHold = [string](Get-NSEvidenceHold $Workspace $punch) } catch { $evidenceHold = '' }
+        if (-not [string]::IsNullOrEmpty($evidenceHold)) {
+            $result.Reason = 'clock-out refused: ' + $evidenceHold
             Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
             return $result
         }

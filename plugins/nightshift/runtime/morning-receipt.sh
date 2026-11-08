@@ -1083,6 +1083,11 @@ _lines_items() {
     [ -n "$label" ] || continue
     _item_link "$label" "$id"
     sec_add "- $ITEM_LINK $DASH $state"
+    missing="$(ns_evidence_problems "$WORKSPACE" "$PUNCH" "$label" 2>/dev/null || true)"
+    if [ -n "$missing" ]; then
+      flat="$(printf '%s\n' "$missing" | paste -sd ', ' -)"
+      sec_add "  - evidence: $flat"
+    fi
   done <<EOF
 $(ns_item_states "$PUNCH")
 EOF

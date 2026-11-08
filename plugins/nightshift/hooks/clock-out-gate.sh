@@ -3,7 +3,8 @@
 #
 # The punch list is the only truth. Release order on every stop attempt:
 #   1. stop-work order — .nightshift/STOP exists              -> release (open boxes stay open)
-#   2. done            — zero open "- [ ]" (or no punch list) -> release
+#   2. done            — zero open "- [ ]" (or no punch list), and no ticked item
+#                        whose evidence check is block with a file still missing -> release
 #   3. quitting time   — now past .nightshift/run/deadline    -> write STOP, log, release
 #   4. otherwise       — block, re-injecting the contract
 #
@@ -220,6 +221,12 @@ if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
     if [ -n "$NS_DONE_MOVED" ]; then
       log_line "punch list changed since arming — the done clock-out is blocked until it is restored"
       _ns_clock_out_block "$NS_DONE_MOVED"
+      exit 0
+    fi
+    NS_EVIDENCE_HOLD="$(ns_evidence_hold "$PROJECT_DIR" "$PUNCH")" || NS_EVIDENCE_HOLD=""
+    if [ -n "$NS_EVIDENCE_HOLD" ]; then
+      log_line "evidence missing — the done clock-out stays blocked until the named files are present"
+      _ns_clock_out_block "$NS_EVIDENCE_HOLD"
       exit 0
     fi
     end_and_stop "shift done: $TICKED/$TOTAL"

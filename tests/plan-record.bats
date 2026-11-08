@@ -115,7 +115,7 @@ EOF
     flat "$f" | grep -qF 'want any of: evidence lines,'
     flat "$f" | grep -qF 'The default is none.'
     flat "$f" | grep -qF 'skills/nightshift/references/plan/menu.md'
-    flat "$f" | grep -qF 'never gates a tick'
+    flat "$f" | grep -qF 'check off leaves the tick alone, report names a missing file, and block keeps the stop open'
   done
   flat "$menu" | grep -qF 'Read `evidence/catalog.md` and suggest one `Evidence:` line per item'
   flat "$plan" | grep -qF 'Decided: planning menu — none'

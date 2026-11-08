@@ -17,7 +17,7 @@ One line, or a list under it:
     - the tests added and the behaviour each covers
 ```
 
-Evidence shows the work; it never decides a tick. `Verify:` is what must pass.
+Evidence shows the work. `check` off leaves the tick alone, `report` names a missing file, and `block` keeps the stop open. `Verify:` is what must pass.
 
 List the kinds with `ns catalog-index --catalog evidence`. Each line is the key, the title, the
 description, the source, and the sources a same key replaced, tab-separated. The source is

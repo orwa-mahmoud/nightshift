@@ -443,7 +443,7 @@ session_gone_or_idle() {
 
 # Runs the shared ending under the site lock. 0 when .ended is real and the armed marker is gone.
 clock_out_direct() { # <ticked|stop|deadline> <gone|idle>
-  local why="$1" how="$2" summary reason open_now ticked total moved own_rc detail
+  local why="$1" how="$2" summary reason open_now ticked total moved own_rc detail hold
   LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
   LEASE_GENERATION="${NIGHTSHIFT_LEASE_GENERATION:-}"
   SID=""
@@ -466,6 +466,11 @@ clock_out_direct() { # <ticked|stop|deadline> <gone|idle>
     moved="$(ns_gate_done_mismatch "$PROJECT" "$PUNCH" 2>/dev/null)" || moved=""
     if [ -n "$moved" ]; then
       log_line "watchman: clock-out refused: $moved"
+      return 1
+    fi
+    hold="$(ns_evidence_hold "$PROJECT" "$PUNCH" 2>/dev/null || true)"
+    if [ -n "$hold" ]; then
+      log_line "watchman: clock-out refused: $hold"
       return 1
     fi
   fi
@@ -559,7 +564,7 @@ while :; do
   clock_why=""
   if [ -f "$STOP" ]; then
     clock_why=stop
-  elif open_now="$(open_boxes)" && [ "$open_now" -eq 0 ]; then
+  elif open_now="$(open_boxes)" && [ "$open_now" -eq 0 ] && [ -z "$(ns_evidence_hold "$PROJECT" "$PUNCH" 2>/dev/null || true)" ]; then
     clock_why=ticked
   elif ns_gate_deadline_passed; then
     clock_why=deadline

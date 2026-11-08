@@ -170,8 +170,8 @@ ns_policy_builtin() {
     handoff.view) printf '"owner"' ;;
     recovery.launchScope) printf '"inherit-recorded-scope"' ;;
     receipts.duration) printf '"on"' ;;
-    receipts.evidence.architecture | receipts.evidence.fileMap) printf '"off"' ;;
-    receipts.evidence.default | receipts.evidence.kindTemplatePath) printf '""' ;;
+    receipts.evidence.architecture | receipts.evidence.fileMap | receipts.evidence.review | receipts.evidence.check) printf '"off"' ;;
+    receipts.evidence.default | receipts.evidence.kindTemplatePath | receipts.evidence.unavailable) printf '""' ;;
     receipts.progressMinutes) printf '20' ;;
     receipts.progressMode) printf '"time"' ;;
     receipts.progressTokens) printf '100000' ;;
@@ -335,8 +335,9 @@ PREF = [("shift", ["copyIn", "execution", "hours", "isolation", "itemBudget", "p
         ("recovery", ["launchScope"]),
         ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
         ("archive", ["automatic", "layout", "root", "templatePath"]),
-        ("receipts", ["duration", "enabled", "evidence.architecture", "evidence.default",
-                    "evidence.fileMap", "evidence.kindTemplatePath", "evidence.kindsPaths",
+        ("receipts", ["duration", "enabled", "evidence.architecture", "evidence.check",
+                    "evidence.default", "evidence.fileMap", "evidence.kindTemplatePath",
+                    "evidence.kindsPaths", "evidence.review", "evidence.unavailable",
                     "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"])]
 out = []
 
@@ -985,6 +986,27 @@ _ns_policy_validate_shift() {
     '' | null | '['*) ;;
     *)
       _ns_policy_shift_fail receipts.evidence.kindsPaths "must be a list of folders"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.check)" in
+    '' | null | '"off"' | '"report"' | '"block"') ;;
+    *)
+      _ns_policy_shift_fail receipts.evidence.check "must be off, report, or block"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.review)" in
+    '' | null | '"off"' | '"on"') ;;
+    *)
+      _ns_policy_shift_fail receipts.evidence.review "must be off or on"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.unavailable)" in
+    '' | null | '""' | '"hold"' | '"park"' | '"note"') ;;
+    *)
+      _ns_policy_shift_fail receipts.evidence.unavailable "must be hold, park, note, or empty"
       return 1
       ;;
   esac

@@ -523,7 +523,7 @@ else {
             $evidenceRule = $receiptsRule.Value.PSObject.Properties['evidence']
         }
         if ($null -ne $evidenceRule -and $evidenceRule.Value -is [Management.Automation.PSCustomObject]) {
-            foreach ($k in @('architecture', 'default', 'fileMap', 'kindTemplatePath', 'kindsPaths')) {
+            foreach ($k in @('architecture', 'check', 'default', 'fileMap', 'kindTemplatePath', 'kindsPaths', 'review', 'unavailable')) {
                 $setting = $evidenceRule.Value.PSObject.Properties[$k]
                 if ($null -eq $setting) { continue }
                 $name = 'receipts.evidence.' + $k
@@ -537,6 +537,18 @@ else {
                     else {
                         Add-NSAct confirm "set $name to a template path, or `"`", in $rulesPath"
                     }
+                    continue
+                }
+                if ($k -ceq 'check') {
+                    if ($setting.Value -is [string] -and ($setting.Value -ceq 'off' -or $setting.Value -ceq 'report' -or $setting.Value -ceq 'block')) { continue }
+                    Add-NSWarn "rules.json $name is $shown; it must be off, report, or block"
+                    Add-NSAct confirm "set $name to `"off`", `"report`", or `"block`" in $rulesPath"
+                    continue
+                }
+                if ($k -ceq 'unavailable') {
+                    if ($setting.Value -is [string] -and ($setting.Value -ceq '' -or $setting.Value -ceq 'hold' -or $setting.Value -ceq 'park' -or $setting.Value -ceq 'note')) { continue }
+                    Add-NSWarn "rules.json $name is $shown; it must be hold, park, note, or empty"
+                    Add-NSAct confirm "set $name to `"hold`", `"park`", `"note`", or `"`" in $rulesPath"
                     continue
                 }
                 if ($k -ceq 'kindsPaths') {

@@ -944,10 +944,13 @@ $script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
 $script:NSPolicyGroupDefaults['receipts.duration'] = 'on'
 $script:NSPolicyGroupDefaults['receipts.enabled'] = $true
 $script:NSPolicyGroupDefaults['receipts.evidence.architecture'] = 'off'
+$script:NSPolicyGroupDefaults['receipts.evidence.check'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.evidence.default'] = ''
 $script:NSPolicyGroupDefaults['receipts.evidence.fileMap'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.evidence.kindTemplatePath'] = ''
 $script:NSPolicyGroupDefaults['receipts.evidence.kindsPaths'] = @()
+$script:NSPolicyGroupDefaults['receipts.evidence.review'] = 'off'
+$script:NSPolicyGroupDefaults['receipts.evidence.unavailable'] = ''
 $script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
 $script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
 $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
@@ -988,10 +991,13 @@ $script:NSPolicySettingNames = @(
     'receipts.duration',
     'receipts.enabled',
     'receipts.evidence.architecture',
+    'receipts.evidence.check',
     'receipts.evidence.default',
     'receipts.evidence.fileMap',
     'receipts.evidence.kindTemplatePath',
     'receipts.evidence.kindsPaths',
+    'receipts.evidence.review',
+    'receipts.evidence.unavailable',
     'receipts.progressMinutes',
     'receipts.progressMode',
     'receipts.progressTokens',
@@ -1198,6 +1204,15 @@ function Test-NSShiftPolicyDocument {
                 }
             }
             if (-not $kindsOk) { $errors.Add('receipts.evidence.kindsPaths: must be a list of folders') }
+        }
+        if ($evidenceBlock.Contains('check') -and $null -ne $evidenceBlock['check'] -and -not (Test-NSEvidenceEnum $evidenceBlock['check'] @('off', 'report', 'block'))) {
+            $errors.Add('receipts.evidence.check: must be off, report, or block')
+        }
+        if ($evidenceBlock.Contains('review') -and $null -ne $evidenceBlock['review'] -and -not (Test-NSEvidenceEnum $evidenceBlock['review'] @('off', 'on'))) {
+            $errors.Add('receipts.evidence.review: must be off or on')
+        }
+        if ($evidenceBlock.Contains('unavailable') -and $null -ne $evidenceBlock['unavailable'] -and -not (Test-NSEvidenceEnum $evidenceBlock['unavailable'] @('', 'hold', 'park', 'note'))) {
+            $errors.Add('receipts.evidence.unavailable: must be hold, park, note, or empty')
         }
     }
     if ($Document.Contains('completionMode') -and -not (Test-NSEvidenceEnum $Document['completionMode'] $script:NSPolicyCompletionModes)) {

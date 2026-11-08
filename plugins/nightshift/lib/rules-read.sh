@@ -477,10 +477,13 @@ recovery.launchScope
 receipts.duration
 receipts.enabled
 receipts.evidence.architecture
+receipts.evidence.check
 receipts.evidence.default
 receipts.evidence.fileMap
 receipts.evidence.kindTemplatePath
 receipts.evidence.kindsPaths
+receipts.evidence.review
+receipts.evidence.unavailable
 receipts.progressMinutes
 receipts.progressMode
 receipts.progressTokens

@@ -71,6 +71,23 @@ Expect-True ($otherResult.Reason.Contains('ownership')) 'the refusal names owner
 Expect-True (-not (Test-Path -LiteralPath (Join-Path $other '.nightshift/.ended'))) 'ownership refusal writes no .ended'
 Remove-Item -LiteralPath $other -Recurse -Force
 
+$blockedPunch = @"
+## Items
+- [x] **Shot.** <!-- id: ab12 -->
+  - Evidence: the screen ``shot.png`` check: block
+"@
+$blocked = New-Workspace $blockedPunch
+$blockedResult = Invoke-NSWatchmanDirectClockOut -Workspace $blocked -HostName cursor -IntervalMinutes 20
+Expect-True (-not $blockedResult.Released) 'missing evidence keeps a ticked shift from clocking out'
+Expect-True (-not (Test-Path -LiteralPath (Join-Path $blocked '.nightshift/.ended'))) 'missing evidence writes no .ended'
+$shot = Get-NSReceiptPath $blocked 'Shot.' 'ab12'
+$shotDir = $shot.Substring(0, $shot.Length - 3)
+New-Item -ItemType Directory -Force -Path $shotDir | Out-Null
+[IO.File]::WriteAllBytes((Join-Path $shotDir 'shot.png'), [byte[]](0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x78))
+$present = Invoke-NSWatchmanDirectClockOut -Workspace $blocked -HostName cursor -IntervalMinutes 20
+Expect-True $present.Released 'a present image lets the ticked shift clock out'
+Remove-Item -LiteralPath $blocked -Recurse -Force
+
 if ($failures.Count -gt 0) {
     Write-Host ($failures -join [Environment]::NewLine)
     exit 1

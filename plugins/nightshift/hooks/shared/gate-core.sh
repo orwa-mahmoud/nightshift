@@ -3,6 +3,8 @@
 
 _ns_gate_core_dir="${BASH_SOURCE[0]%/*}"
 [ "$_ns_gate_core_dir" != "${BASH_SOURCE[0]}" ] || _ns_gate_core_dir=.
+# shellcheck source=plugins/nightshift/lib/evidence-check.sh
+. "$_ns_gate_core_dir/../../lib/evidence-check.sh"
 
 # ns_gate_boxes — set OPEN, TICKED, TOTAL from the punch list. Return 1 when
 # the file exists but cannot be read; then the counts are not a verdict and
@@ -208,6 +210,7 @@ ns_gate_usage_tick() {
   ns_receipt_track_label "$receipt" "$label"
   ns_filemap_tick "$ns" "$project" "$label" || :
   ns_architecture_tick "$ns" "$project" "$label" || :
+  ns_evidence_record "$ns" "$project" "$label" || :
   rm -f "$(ns_layout_path "$ns" receipt-due)" "$(ns_layout_path "$ns" report-due)" 2>/dev/null || :
   ns_receipts_write_index "$project"
 }

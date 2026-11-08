@@ -773,7 +773,9 @@ function Get-NSHoldReason {
         return 'shift ended'
     }
     if ((Get-NSBoxCounts $punch).Open -eq 0) {
-        return 'all boxes ticked'
+        $evidenceHold = ''
+        try { $evidenceHold = [string](Get-NSEvidenceHold $workspace $punch) } catch { $evidenceHold = '' }
+        if ([string]::IsNullOrEmpty($evidenceHold)) { return 'all boxes ticked' }
     }
     if (Test-NSDeadlinePassed) {
         return 'deadline passed'
@@ -1016,11 +1018,16 @@ try {
 
         $counts = Get-NSBoxCounts $punch
         $stopPresent = (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf)
-        if ($HostName -eq 'cursor' -and ($stopPresent -or $counts.Open -eq 0 -or (Test-NSDeadlinePassed))) {
+        $evidenceBlocks = $false
+        if ($counts.Open -eq 0) {
+            try { $evidenceBlocks = -not [string]::IsNullOrEmpty([string](Get-NSEvidenceHold $workspace $punch)) } catch { $evidenceBlocks = $false }
+        }
+        $boxesDone = ($counts.Open -eq 0) -and (-not $evidenceBlocks)
+        if ($HostName -eq 'cursor' -and ($stopPresent -or $boxesDone -or (Test-NSDeadlinePassed))) {
             $clock = Invoke-NSWatchmanDirectClockOut -Workspace $workspace -HostName cursor -IntervalMinutes $IntervalMinutes
             if ($clock.Released) {
                 if ($stopPresent) { $code = 'owner-stop' }
-                elseif ($counts.Open -eq 0) { $code = 'completed' }
+                elseif ($boxesDone) { $code = 'completed' }
                 else { $code = 'deadline' }
                 Write-NSReason $ns $code
                 exit 0
@@ -1035,13 +1042,13 @@ try {
                 exit 0
             }
         }
-        if ($HostName -ne 'cursor' -and ($counts.Open -eq 0 -or (Test-NSDeadlinePassed))) {
-            $label = if ($counts.Open -eq 0) { 'every box is ticked' } else { 'quitting time passed' }
+        if ($HostName -ne 'cursor' -and ($boxesDone -or (Test-NSDeadlinePassed))) {
+            $label = if ($boxesDone) { 'every box is ticked' } else { 'quitting time passed' }
             Write-NSLogLine "watchman: $label but the shift never clocked out - spawning the clock-out (attempt 1/1)"
             $null = Start-NSAgent 1 2
             if (Test-NSRealEnded) {
                 $null = Release-NSLease $ns
-                Write-NSReason $ns $(if ($counts.Open -eq 0) { 'completed' } else { 'deadline' })
+                Write-NSReason $ns $(if ($boxesDone) { 'completed' } else { 'deadline' })
                 exit 0
             }
             $null = Restore-NSLeaseInteractive $ns
