@@ -71,8 +71,12 @@ def PREF: {
   "recovery": ["launchScope"],
   "handoff":  ["detail", "enabled", "language", "sections", "templatePath", "view"],
   "archive":  ["automatic", "layout", "root", "templatePath"],
-  "receipts": ["duration", "enabled", "evidence.architecture", "evidence.default", "evidence.fileMap",
-               "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"]
+  "receipts": ["duration", "enabled", "evidence.architecture", "evidence.check", "evidence.default",
+               "evidence.fileMap", "evidence.kindTemplatePath", "evidence.kindsPaths",
+               "evidence.review", "evidence.unavailable",
+               "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"],
+  "gates":    ["stackTemplatePath", "stacksPaths"],
+  "edgeCases": ["packTemplatePath", "packsPaths"]
 };
 
 def shift_policy:
@@ -83,7 +87,7 @@ def shift_policy:
                    "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
                    "completionMode", "gatesDigest",
                    "contractDigest", "itemsDigest"])),
-    (["shift", "recovery", "handoff", "archive", "receipts"][] as $b
+    (["shift", "recovery", "handoff", "archive", "receipts", "gates", "edgeCases"][] as $b
      | ($P[$b] | ty($b)),
        (if ($P | has($b)) then ($P[$b] | obj | sc($b; PREF[$b])) else empty end)),
     ($P.budgets | ty("budgets")),

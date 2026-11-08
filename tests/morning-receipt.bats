@@ -68,6 +68,26 @@ write_shift_policy() {
   [[ "$output" == *'- Disabled by owner: none'* ]] || false
 }
 
+@test "report names a missing evidence file on the morning receipt" {
+  p="$(new_project morning-evidence)"
+  cat >"$p/.nightshift/punch-list.md" <<'EOF'
+# Punch list
+
+## Items
+
+- [x] **Shot.** <!-- id: ab12 -->
+  - Evidence: the screen `shot.png` check: report
+EOF
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'evidence: missing shot.png'* ]] || false
+
+  printf '## Items\n\n- [x] **Shot.** <!-- id: ab12 -->\n  - Evidence: the screen `shot.png`\n' >"$p/.nightshift/punch-list.md"
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" != *'evidence: missing shot.png'* ]] || false
+}
+
 @test "a shift with no policy and no gates states the same reason without a gate line" {
   p="$(new_project receipt-no-gates)"
   printf '# Punch list\n\n## Items\n\n- [x] Tidy the changelog\n' >"$p/.nightshift/punch-list.md"

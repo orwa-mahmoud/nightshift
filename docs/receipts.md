@@ -107,7 +107,7 @@ asks the same of every item for a shift.
 Such an item's receipt gets an `## Evidence` section. Short evidence sits inline; screenshots,
 recordings and data go in a folder named after the receipt, beside it, and are linked relatively.
 Evidence that could not be produced reads `unavailable — <reason>`. Archive files the folder with its
-receipt, a renamed receipt takes it along, and the index links it. Evidence never holds a tick.
+receipt, a renamed receipt takes it along, and the index links it. check off leaves the tick alone, report names a missing file, and block keeps the stop open.
 
 ## Receipts and the morning receipt are separate switches
 

@@ -364,12 +364,14 @@ function praw_pref(path,    n, i, out, kind) {
 # emits its type and no fields, which is how a policy written before this feature is told apart
 # from one whose owner left a block empty.
 function emit_preferences(    blocks, fields, count, j, k, parts, fcount) {
-  count = split("shift recovery handoff archive receipts", blocks, " ")
+  count = split("shift recovery handoff archive receipts gates edgeCases", blocks, " ")
   fields["shift"] = "copyIn execution hours isolation itemBudget prepare toolingPolicy verificationProfile worktreeRoot"
   fields["recovery"] = "launchScope"
   fields["handoff"] = "detail enabled language sections templatePath view"
   fields["archive"] = "automatic layout root templatePath"
-  fields["receipts"] = "duration enabled evidence.architecture evidence.default evidence.fileMap progressMinutes progressMode progressTokens templatePath usage"
+  fields["receipts"] = "duration enabled evidence.architecture evidence.check evidence.default evidence.fileMap evidence.kindTemplatePath evidence.kindsPaths evidence.review evidence.unavailable progressMinutes progressMode progressTokens templatePath usage"
+  fields["gates"] = "stackTemplatePath stacksPaths"
+  fields["edgeCases"] = "packTemplatePath packsPaths"
   for (j = 1; j <= count; j++) {
     put("ty\t" blocks[j] "\t" ptype(blocks[j]))
     if (!(blocks[j] in V_TYPE)) {
@@ -1298,7 +1300,7 @@ function parse_top_value(key,    c) {
       return
     }
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
-        key == "receipts" || key == "planRoom") {
+        key == "receipts" || key == "planRoom" || key == "gates" || key == "edgeCases") {
       emit(key, "", "", "o", "")
       parse_settings_object(key, "")
       return

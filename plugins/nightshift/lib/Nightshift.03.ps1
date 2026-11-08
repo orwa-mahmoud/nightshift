@@ -934,6 +934,10 @@ $script:NSPolicyGroupDefaults['archive.automatic'] = $false
 $script:NSPolicyGroupDefaults['archive.layout'] = 'date'
 $script:NSPolicyGroupDefaults['archive.root'] = 'archive'
 $script:NSPolicyGroupDefaults['archive.templatePath'] = ''
+$script:NSPolicyGroupDefaults['edgeCases.packTemplatePath'] = ''
+$script:NSPolicyGroupDefaults['edgeCases.packsPaths'] = @()
+$script:NSPolicyGroupDefaults['gates.stackTemplatePath'] = ''
+$script:NSPolicyGroupDefaults['gates.stacksPaths'] = @()
 $script:NSPolicyGroupDefaults['handoff.detail'] = 'concise'
 $script:NSPolicyGroupDefaults['handoff.enabled'] = $true
 $script:NSPolicyGroupDefaults['handoff.language'] = 'auto'
@@ -944,8 +948,13 @@ $script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
 $script:NSPolicyGroupDefaults['receipts.duration'] = 'on'
 $script:NSPolicyGroupDefaults['receipts.enabled'] = $true
 $script:NSPolicyGroupDefaults['receipts.evidence.architecture'] = 'off'
+$script:NSPolicyGroupDefaults['receipts.evidence.check'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.evidence.default'] = ''
 $script:NSPolicyGroupDefaults['receipts.evidence.fileMap'] = 'off'
+$script:NSPolicyGroupDefaults['receipts.evidence.kindTemplatePath'] = ''
+$script:NSPolicyGroupDefaults['receipts.evidence.kindsPaths'] = @()
+$script:NSPolicyGroupDefaults['receipts.evidence.review'] = 'off'
+$script:NSPolicyGroupDefaults['receipts.evidence.unavailable'] = ''
 $script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
 $script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
 $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
@@ -967,6 +976,8 @@ $script:NSPolicySettingNames = @(
     'archive.root',
     'archive.templatePath',
     'deadlineEpoch',
+    'edgeCases.packTemplatePath',
+    'edgeCases.packsPaths',
     'elevation.containers',
     'elevation.daemons',
     'elevation.external-services',
@@ -974,6 +985,8 @@ $script:NSPolicySettingNames = @(
     'elevation.sudo',
     'expectedEmail',
     'forbiddenCommands',
+    'gates.stackTemplatePath',
+    'gates.stacksPaths',
     'handoff.detail',
     'handoff.enabled',
     'handoff.language',
@@ -986,8 +999,13 @@ $script:NSPolicySettingNames = @(
     'receipts.duration',
     'receipts.enabled',
     'receipts.evidence.architecture',
+    'receipts.evidence.check',
     'receipts.evidence.default',
     'receipts.evidence.fileMap',
+    'receipts.evidence.kindTemplatePath',
+    'receipts.evidence.kindsPaths',
+    'receipts.evidence.review',
+    'receipts.evidence.unavailable',
     'receipts.progressMinutes',
     'receipts.progressMode',
     'receipts.progressTokens',
@@ -1142,7 +1160,7 @@ function Test-NSShiftPolicyDocument {
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
         'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
-        'shift', 'recovery', 'handoff', 'archive', 'receipts')
+        'shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates', 'edgeCases')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -1181,6 +1199,60 @@ function Test-NSShiftPolicyDocument {
         }
         if ($evidenceBlock.Contains('default') -and $null -ne $evidenceBlock['default'] -and $evidenceBlock['default'] -isnot [string]) {
             $errors.Add('receipts.evidence.default: must be text')
+        }
+        if ($evidenceBlock.Contains('kindTemplatePath') -and $null -ne $evidenceBlock['kindTemplatePath'] -and $evidenceBlock['kindTemplatePath'] -isnot [string]) {
+            $errors.Add('receipts.evidence.kindTemplatePath: must be text')
+        }
+        if ($evidenceBlock.Contains('kindsPaths') -and $null -ne $evidenceBlock['kindsPaths']) {
+            $kindsPaths = $evidenceBlock['kindsPaths']
+            $kindsOk = $kindsPaths -is [Collections.IEnumerable] -and $kindsPaths -isnot [string]
+            if ($kindsOk) {
+                foreach ($folder in @($kindsPaths)) {
+                    if ($folder -isnot [string]) { $kindsOk = $false; break }
+                }
+            }
+            if (-not $kindsOk) { $errors.Add('receipts.evidence.kindsPaths: must be a list of folders') }
+        }
+        if ($evidenceBlock.Contains('check') -and $null -ne $evidenceBlock['check'] -and -not (Test-NSEvidenceEnum $evidenceBlock['check'] @('off', 'report', 'block'))) {
+            $errors.Add('receipts.evidence.check: must be off, report, or block')
+        }
+        if ($evidenceBlock.Contains('review') -and $null -ne $evidenceBlock['review'] -and -not (Test-NSEvidenceEnum $evidenceBlock['review'] @('off', 'on'))) {
+            $errors.Add('receipts.evidence.review: must be off or on')
+        }
+        if ($evidenceBlock.Contains('unavailable') -and $null -ne $evidenceBlock['unavailable'] -and -not (Test-NSEvidenceEnum $evidenceBlock['unavailable'] @('', 'hold', 'park', 'note'))) {
+            $errors.Add('receipts.evidence.unavailable: must be hold, park, note, or empty')
+        }
+    }
+    $gatesBlock = Get-NSPolicyField $Document 'gates'
+    if ($gatesBlock -is [Collections.IDictionary]) {
+        if ($gatesBlock.Contains('stackTemplatePath') -and $null -ne $gatesBlock['stackTemplatePath'] -and $gatesBlock['stackTemplatePath'] -isnot [string]) {
+            $errors.Add('gates.stackTemplatePath: must be text')
+        }
+        if ($gatesBlock.Contains('stacksPaths') -and $null -ne $gatesBlock['stacksPaths']) {
+            $stacksPaths = $gatesBlock['stacksPaths']
+            $stacksOk = $stacksPaths -is [Collections.IEnumerable] -and $stacksPaths -isnot [string]
+            if ($stacksOk) {
+                foreach ($folder in @($stacksPaths)) {
+                    if ($folder -isnot [string]) { $stacksOk = $false; break }
+                }
+            }
+            if (-not $stacksOk) { $errors.Add('gates.stacksPaths: must be a list of folders') }
+        }
+    }
+    $edgeBlock = Get-NSPolicyField $Document 'edgeCases'
+    if ($edgeBlock -is [Collections.IDictionary]) {
+        if ($edgeBlock.Contains('packTemplatePath') -and $null -ne $edgeBlock['packTemplatePath'] -and $edgeBlock['packTemplatePath'] -isnot [string]) {
+            $errors.Add('edgeCases.packTemplatePath: must be text')
+        }
+        if ($edgeBlock.Contains('packsPaths') -and $null -ne $edgeBlock['packsPaths']) {
+            $packsPaths = $edgeBlock['packsPaths']
+            $packsOk = $packsPaths -is [Collections.IEnumerable] -and $packsPaths -isnot [string]
+            if ($packsOk) {
+                foreach ($folder in @($packsPaths)) {
+                    if ($folder -isnot [string]) { $packsOk = $false; break }
+                }
+            }
+            if (-not $packsOk) { $errors.Add('edgeCases.packsPaths: must be a list of folders') }
         }
     }
     if ($Document.Contains('completionMode') -and -not (Test-NSEvidenceEnum $Document['completionMode'] $script:NSPolicyCompletionModes)) {
@@ -1521,7 +1593,7 @@ function Set-NSShiftPolicy {
     # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
     # here, so an edit to rules.json lands on the next shift rather than moving the ground under
     # this one. A candidate that already states a block is left exactly as it was written.
-    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts')) {
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates', 'edgeCases')) {
         if ($document.Contains($block)) { continue }
         $frozen = New-NSOrdinalMap
         foreach ($name in $script:NSPolicyGroupDefaults.Keys) {

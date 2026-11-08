@@ -460,10 +460,10 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'ns_gate_progress_token' "$CODEX_GATE"
 }
 
-@test "a receipt's evidence: a section when asked, a folder beside it, and a gap written, never a held tick" {
+@test "a receipt's evidence: a section when asked, a folder beside it, and the owner's check" {
   flat() { tr '\n' ' ' <"$1" | tr -s ' '; }
   flat "$NIGHTSHIFT" | grep -qF 'An item with an `Evidence:` line also gets an `## Evidence` section after Verification.'
-  flat "$NIGHTSHIFT" | grep -qF 'could not be produced is written as `unavailable — <reason>`, never left out. Evidence never holds a tick.'
+  flat "$NIGHTSHIFT" | grep -qF 'could not be produced is written as `unavailable — <reason>`, never left out. check off leaves the tick alone, report names a missing file, and block keeps the stop open.'
   flat "$NIGHTSHIFT" | grep -qF 'a folder named after the receipt, beside it, linked relatively'
   receipt="$SKILLS/nightshift/references/templates/receipt-item.md"
   grep -qx '## Evidence' "$receipt"

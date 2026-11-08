@@ -184,6 +184,12 @@ if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
       codex_emit_block "$NS_DONE_MOVED"
       exit 0
     fi
+    NS_EVIDENCE_HOLD="$(ns_evidence_hold "$PROJECT_DIR" "$PUNCH")" || NS_EVIDENCE_HOLD=""
+    if [ -n "$NS_EVIDENCE_HOLD" ]; then
+      log_line "evidence missing — the done clock-out stays blocked until the named files are present"
+      codex_emit_block "$NS_EVIDENCE_HOLD"
+      exit 0
+    fi
     end_and_stop "shift done: $TICKED/$TOTAL"
   fi
 fi

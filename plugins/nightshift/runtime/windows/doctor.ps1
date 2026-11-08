@@ -523,20 +523,95 @@ else {
             $evidenceRule = $receiptsRule.Value.PSObject.Properties['evidence']
         }
         if ($null -ne $evidenceRule -and $evidenceRule.Value -is [Management.Automation.PSCustomObject]) {
-            foreach ($k in @('architecture', 'default', 'fileMap')) {
+            foreach ($k in @('architecture', 'check', 'default', 'fileMap', 'kindTemplatePath', 'kindsPaths', 'review', 'unavailable')) {
                 $setting = $evidenceRule.Value.PSObject.Properties[$k]
                 if ($null -eq $setting) { continue }
                 $name = 'receipts.evidence.' + $k
                 $shown = ConvertTo-Json -Compress -InputObject $setting.Value
-                if ($k -ceq 'default') {
+                if ($k -ceq 'default' -or $k -ceq 'kindTemplatePath') {
                     if ($setting.Value -is [string]) { continue }
                     Add-NSWarn "rules.json $name is $shown; it must be text"
-                    Add-NSAct confirm "set $name to the evidence every item should carry, or `"`", in $rulesPath"
+                    if ($k -ceq 'default') {
+                        Add-NSAct confirm "set $name to the evidence every item should carry, or `"`", in $rulesPath"
+                    }
+                    else {
+                        Add-NSAct confirm "set $name to a template path, or `"`", in $rulesPath"
+                    }
+                    continue
+                }
+                if ($k -ceq 'check') {
+                    if ($setting.Value -is [string] -and ($setting.Value -ceq 'off' -or $setting.Value -ceq 'report' -or $setting.Value -ceq 'block')) { continue }
+                    Add-NSWarn "rules.json $name is $shown; it must be off, report, or block"
+                    Add-NSAct confirm "set $name to `"off`", `"report`", or `"block`" in $rulesPath"
+                    continue
+                }
+                if ($k -ceq 'unavailable') {
+                    if ($setting.Value -is [string] -and ($setting.Value -ceq '' -or $setting.Value -ceq 'hold' -or $setting.Value -ceq 'park' -or $setting.Value -ceq 'note')) { continue }
+                    Add-NSWarn "rules.json $name is $shown; it must be hold, park, note, or empty"
+                    Add-NSAct confirm "set $name to `"hold`", `"park`", `"note`", or `"`" in $rulesPath"
+                    continue
+                }
+                if ($k -ceq 'kindsPaths') {
+                    $kindsOk = $setting.Value -is [Collections.IEnumerable] -and $setting.Value -isnot [string]
+                    if ($kindsOk) {
+                        foreach ($folder in @($setting.Value)) {
+                            if ($folder -isnot [string]) { $kindsOk = $false; break }
+                        }
+                    }
+                    if ($kindsOk) { continue }
+                    Add-NSWarn "rules.json $name is $shown; it must be a list of folders"
+                    Add-NSAct confirm "set $name to a list of folders, or [], in $rulesPath"
                     continue
                 }
                 if ($setting.Value -is [string] -and ($setting.Value -ceq 'off' -or $setting.Value -ceq 'on')) { continue }
                 Add-NSWarn "rules.json $name is $shown; it must be off or on"
                 Add-NSAct confirm "set $name to `"off`" or `"on`" in $rulesPath"
+            }
+        }
+        $gatesRule = $rules.PSObject.Properties['gates']
+        if ($null -ne $gatesRule -and $gatesRule.Value -is [Management.Automation.PSCustomObject]) {
+            $template = $gatesRule.Value.PSObject.Properties['stackTemplatePath']
+            if ($null -ne $template -and $template.Value -isnot [string]) {
+                $shown = ConvertTo-Json -Compress -InputObject $template.Value
+                Add-NSWarn "rules.json gates.stackTemplatePath is $shown; it must be text"
+                Add-NSAct confirm "set gates.stackTemplatePath to a template path, or `"`", in $rulesPath"
+            }
+            $stacks = $gatesRule.Value.PSObject.Properties['stacksPaths']
+            if ($null -ne $stacks) {
+                $stacksOk = $stacks.Value -is [Collections.IEnumerable] -and $stacks.Value -isnot [string]
+                if ($stacksOk) {
+                    foreach ($folder in @($stacks.Value)) {
+                        if ($folder -isnot [string]) { $stacksOk = $false; break }
+                    }
+                }
+                if (-not $stacksOk) {
+                    $shown = ConvertTo-Json -Compress -InputObject $stacks.Value
+                    Add-NSWarn "rules.json gates.stacksPaths is $shown; it must be a list of folders"
+                    Add-NSAct confirm "set gates.stacksPaths to a list of folders, or [], in $rulesPath"
+                }
+            }
+        }
+        $edgeRule = $rules.PSObject.Properties['edgeCases']
+        if ($null -ne $edgeRule -and $edgeRule.Value -is [Management.Automation.PSCustomObject]) {
+            $packTemplate = $edgeRule.Value.PSObject.Properties['packTemplatePath']
+            if ($null -ne $packTemplate -and $packTemplate.Value -isnot [string]) {
+                $shown = ConvertTo-Json -Compress -InputObject $packTemplate.Value
+                Add-NSWarn "rules.json edgeCases.packTemplatePath is $shown; it must be text"
+                Add-NSAct confirm "set edgeCases.packTemplatePath to a template path, or `"`", in $rulesPath"
+            }
+            $packs = $edgeRule.Value.PSObject.Properties['packsPaths']
+            if ($null -ne $packs) {
+                $packsOk = $packs.Value -is [Collections.IEnumerable] -and $packs.Value -isnot [string]
+                if ($packsOk) {
+                    foreach ($folder in @($packs.Value)) {
+                        if ($folder -isnot [string]) { $packsOk = $false; break }
+                    }
+                }
+                if (-not $packsOk) {
+                    $shown = ConvertTo-Json -Compress -InputObject $packs.Value
+                    Add-NSWarn "rules.json edgeCases.packsPaths is $shown; it must be a list of folders"
+                    Add-NSAct confirm "set edgeCases.packsPaths to a list of folders, or [], in $rulesPath"
+                }
             }
         }
     }

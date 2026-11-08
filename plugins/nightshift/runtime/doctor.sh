@@ -490,6 +490,51 @@ elif json_is_object "$RULES"; then
         warn "rules.json $ev_name is $ev_val; it must be text"
         act confirm "set $ev_name to the evidence every item should carry, or \"\", in $RULES"
         ;;
+      receipts.evidence.kindTemplatePath)
+        case "$ev_val" in '"'*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be text"
+        act confirm "set $ev_name to a template path, or \"\", in $RULES"
+        ;;
+      receipts.evidence.kindsPaths)
+        case "$ev_val" in '['*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be a list of folders"
+        act confirm "set $ev_name to a list of folders, or [], in $RULES"
+        ;;
+      receipts.evidence.check)
+        case "$ev_val" in '"off"' | '"report"' | '"block"') continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be off, report, or block"
+        act confirm "set $ev_name to \"off\", \"report\", or \"block\" in $RULES"
+        ;;
+      receipts.evidence.review)
+        case "$ev_val" in '"off"' | '"on"') continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be off or on"
+        act confirm "set $ev_name to \"off\" or \"on\" in $RULES"
+        ;;
+      receipts.evidence.unavailable)
+        case "$ev_val" in '""' | '"hold"' | '"park"' | '"note"') continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be hold, park, note, or empty"
+        act confirm "set $ev_name to \"hold\", \"park\", \"note\", or \"\" in $RULES"
+        ;;
+      gates.stackTemplatePath)
+        case "$ev_val" in '"'*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be text"
+        act confirm "set $ev_name to a template path, or \"\", in $RULES"
+        ;;
+      gates.stacksPaths)
+        case "$ev_val" in '['*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be a list of folders"
+        act confirm "set $ev_name to a list of folders, or [], in $RULES"
+        ;;
+      edgeCases.packTemplatePath)
+        case "$ev_val" in '"'*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be text"
+        act confirm "set $ev_name to a template path, or \"\", in $RULES"
+        ;;
+      edgeCases.packsPaths)
+        case "$ev_val" in '['*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be a list of folders"
+        act confirm "set $ev_name to a list of folders, or [], in $RULES"
+        ;;
     esac
   done <<EVIDENCE
 $(ns_rules_facts "$RULES" 2>/dev/null)

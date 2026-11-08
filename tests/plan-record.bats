@@ -115,15 +115,32 @@ EOF
     flat "$f" | grep -qF 'want any of: evidence lines,'
     flat "$f" | grep -qF 'The default is none.'
     flat "$f" | grep -qF 'skills/nightshift/references/plan/menu.md'
-    flat "$f" | grep -qF 'never gates a tick'
+    flat "$f" | grep -qF 'check off leaves the tick alone, report names a missing file, and block keeps the stop open'
   done
   flat "$menu" | grep -qF 'Read `evidence/catalog.md` and suggest one `Evidence:` line per item'
   flat "$plan" | grep -qF 'Decided: planning menu — none'
   flat "$plan" | grep -qF 'do not offer the menu again for that plan'
   flat "$hunt" | grep -qF 'never in run directly'
-  for kind in UI Performance Tests 'API or contract' Docs 'Data or migration' Security Refactor; do
-    grep -qF "| $kind |" "$catalog" || { echo "catalog lacks $kind"; return 1; }
-  done
+  # The ten kinds are files. The set is never smaller than these ten.
+  local kinds="$PLUGIN/skills/nightshift/references/evidence/kinds"
+  local key title
+  while IFS='	' read -r key title; do
+    [ -f "$kinds/$key.md" ] || { echo "catalog lacks $key"; return 1; }
+    head -n1 "$kinds/$key.md" | grep -qF "# $title — " \
+      || { echo "catalog lacks $title"; return 1; }
+  done <<'KINDS'
+ui	UI
+performance	Performance
+tests	Tests
+api-or-contract	API or contract
+docs	Docs
+data-or-migration	Data or migration
+security	Security
+refactor	Refactor
+cli-or-tooling	CLI or tooling
+configuration-or-infrastructure	Configuration or infrastructure
+KINDS
+  [ "$(find "$kinds" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" -ge 10 ]
   grep -qF 'Read this only after the owner says yes' "$catalog"
 }
 

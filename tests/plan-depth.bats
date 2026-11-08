@@ -63,13 +63,14 @@ QUESTION='Before I write these, want any of: evidence lines, an edge-case pass, 
 }
 
 @test "the edge-case catalog holds every kind of case, and the skills carry only the question" {
-  for kind in Input State Concurrency Environment Failure Security; do
-    grep -qx "## $kind" "$CATALOG" || { echo "catalog lacks $kind"; return 1; }
+  PACKS="$SKILLS/nightshift/references/plan/edge-cases"
+  for kind in input state concurrency environment failure security; do
+    [ -f "$PACKS/$kind.md" ] || { echo "missing pack $kind"; return 1; }
   done
   for c in Empty Huge Malformed Unicode 'Paths with spaces' 'First run' 'Upgrade from the previous version' \
     'Interrupted halfway' 'Run twice' 'Two sessions' 'A file changed underneath' 'Windows paths' 'No network' \
     'Missing tool' 'Read-only folder' 'Partial failure' Rollback 'The error the user sees' 'Untrusted input' 'Secrets in logs'; do
-    grep -qF -- "- **$c**" "$CATALOG" || { echo "catalog lacks $c"; return 1; }
+    grep -qF -- "- **$c**" "$PACKS"/*.md || { echo "catalog lacks $c"; return 1; }
   done
   flat "$MENU" | grep -qF 'Read `plan/edge-cases.md` and propose WHEN/THEN lines for the cases each item can meet.'
   flat "$CATALOG" | grep -qF 'never every case for every item'
@@ -77,6 +78,66 @@ QUESTION='Before I write these, want any of: evidence lines, an edge-case pass, 
     ! grep -qF 'Paths with spaces' "$f" || { echo "$f carries the catalog"; return 1; }
     ! grep -qF 'failed a week later' "$f" || { echo "$f carries the pre-mortem method"; return 1; }
   done
+}
+
+@test "every pack and the template have the shape, and an owner pack replaces the shipped one" {
+  PACKS="$SKILLS/nightshift/references/plan/edge-cases"
+  TEMPLATE="$SKILLS/nightshift/references/templates/edge-case-pack.md"
+  INDEX="$ROOT/plugins/nightshift/runtime/catalog-index.sh"
+  INDEX_PS1="$ROOT/plugins/nightshift/runtime/windows/catalog-index.ps1"
+  SOURCES="$ROOT/plugins/nightshift/lib/catalog-sources.sh"
+  # shellcheck disable=SC1090
+  . "$SOURCES"
+  NS_CATALOG_HEADINGS='When it applies|Cases|Example lines'
+  NS_CATALOG_BULLET='Example lines'
+  NS_CATALOG_FENCE=
+  NS_CATALOG_FENCE_KEYS=
+  NS_CATALOG_FENCE_TYPES=
+  NS_CATALOG_MATCH=
+  for f in "$PACKS"/*.md "$TEMPLATE"; do
+    run ns_catalog_entry_problems "$f"
+    [ "$status" -eq 0 ] || { printf '%s\n%s\n' "$f" "$output"; return 1; }
+  done
+  ! grep -i edge "$SOURCES" || { echo "the helper names a catalog"; return 1; }
+
+  mkdir -p "$BATS_TEST_TMPDIR/no-owner"
+  export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/no-owner"
+  export APPDATA="$XDG_CONFIG_HOME"
+  p="$(new_project owner-packs)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  mkdir -p "$p/.nightshift/edge-cases/packs"
+  cp "$TEMPLATE" "$p/.nightshift/edge-cases/packs/input.md"
+  printf '\n## House style\n\nName the file.\n' >>"$p/.nightshift/edge-cases/packs/input.md"
+  # The H1 of the template is "Pack". Replace it so the source is visible.
+  printf '%s\n' '# Project Input — an item that reads a file' | cat - <(tail -n +2 "$p/.nightshift/edge-cases/packs/input.md") >"$p/.nightshift/edge-cases/packs/input.next"
+  mv "$p/.nightshift/edge-cases/packs/input.next" "$p/.nightshift/edge-cases/packs/input.md"
+  cat >"$p/.nightshift/edge-cases/packs/broken.md" <<'EOF'
+# Broken — missing a section
+
+## When it applies
+
+Items.
+
+## Cases
+
+- **Empty** — nothing there.
+EOF
+  run bash "$INDEX" --catalog edge-cases --project "$p"
+  [ "$status" -eq 0 ]
+  row="$(printf '%s\n' "$output" | awk -F '\t' '$1 == "input"')"
+  [ "$(printf '%s' "$row" | cut -f4)" = project ]
+  [ "$(printf '%s' "$row" | cut -f5)" = plugin ]
+  printf '%s\n' "$output" | grep -qF 'missing section Example lines'
+  if printf '%s\n' "$output" | awk -F '\t' '$1 == "broken" { found = 1 } END { exit found ? 0 : 1 }'; then
+    echo "a malformed pack was listed"
+    return 1
+  fi
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  run bash -c 'diff <(bash "$1" --catalog edge-cases --project "$3") <(pwsh -NoProfile -File "$2" --catalog edge-cases --project "$3")' \
+    _ "$INDEX" "$INDEX_PS1" "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
 }
 
 @test "every reference the plan and hunt skills cite exists" {

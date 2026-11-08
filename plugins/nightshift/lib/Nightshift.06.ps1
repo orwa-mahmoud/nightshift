@@ -1589,6 +1589,11 @@ function Get-NSReceiptItemsLines {
     foreach ($row in (Get-NSItemRows ([string]$Context['punch']) 'all')) {
         $state = $row.State
         $lines.Add(('- {0} {1} {2}' -f (Get-NSReceiptItemLink $workspace $row.Label $row.Id), (Get-NSEvidenceDash), $state))
+        try {
+            $problems = @(Get-NSEvidenceProblems $workspace ([string]$Context['punch']) $row.Label | Where-Object { -not [string]::IsNullOrEmpty($_) })
+            if ($problems.Count -gt 0) { $lines.Add(('  - evidence: ' + ($problems -join ', '))) }
+        }
+        catch { }
     }
     return , $lines.ToArray()
 }

@@ -79,6 +79,43 @@ SH
   fi
 }
 
+@test "block keeps a done stop closed until the named file is a real image" {
+  p="$(new_project evidence-gate)"
+  cat >"$p/.nightshift/punch-list.md" <<'EOF'
+## Items
+
+- [x] **Shot.** <!-- id: ab12 -->
+  - Evidence: the screen `shot.png` check: block
+EOF
+  run gate "$p"
+  is_block "$output"
+  printf '%s' "$output" | grep -qF 'missing shot.png'
+  [ ! -f "$p/.nightshift/.ended" ]
+
+  dir="$(bash -c '. "$1"; ns_receipt_path "$2" "Shot." ab12' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p")"
+  dir="${dir%.md}"
+  mkdir -p "$dir"
+  ln -s missing "$dir/shot.png"
+  run gate "$p"
+  is_block "$output"
+  printf '%s' "$output" | grep -qF 'link shot.png'
+
+  rm -f "$dir/shot.png"
+  : >"$dir/shot.png"
+  run gate "$p"
+  is_block "$output"
+  printf '%s' "$output" | grep -qF 'empty shot.png'
+
+  printf 'not an image\n' >"$dir/shot.png"
+  run gate "$p"
+  is_block "$output"
+  printf '%s' "$output" | grep -qF 'type shot.png'
+
+  printf '\211PNG\r\n\032\nxx' >"$dir/shot.png"
+  run gate "$p"
+  is_release
+}
+
 @test "releases when every box is ticked" {
   p="$(new_project)"
   punch_done "$p"

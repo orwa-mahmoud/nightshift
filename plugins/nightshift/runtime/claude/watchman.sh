@@ -554,7 +554,7 @@ site_verdict() { # prints: esc | alive | silent | wedge | tabs | dead | unavaila
 hold_reason() {
   if [ -f "$STOP" ]; then printf 'stop-work order'; return; fi
   if { [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; } || [ ! -f "$PUNCH" ]; then printf 'shift ended'; return; fi
-  if [ "$(open_boxes)" -eq 0 ]; then printf 'all boxes ticked'; return; fi
+  if [ "$(open_boxes)" -eq 0 ] && [ -z "$(ns_evidence_hold "$PROJECT" "$PUNCH" 2>/dev/null || true)" ]; then printf 'all boxes ticked'; return; fi
   if deadline_passed; then printf 'deadline passed'; return; fi
   if [ -f "$SESSION_END" ] && [ ! -L "$SESSION_END" ]; then printf 'clean session end'; return; fi
   case "$(site_verdict)" in
@@ -620,7 +620,7 @@ while :; do
     if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
     continue
   fi
-  if [ "$(open_boxes)" -eq 0 ]; then
+  if [ "$(open_boxes)" -eq 0 ] && [ -z "$(ns_evidence_hold "$PROJECT" "$PUNCH" 2>/dev/null || true)" ]; then
     log_line "watchman: every box ticked but the shift never clocked out — spawning the clock-out (attempt 1/1)"
     spawn "$(resolve_agent)" "$(rung_prompt 1 2)" || true
     ns_watchman_clockout_pending "$NS" "$SENTINEL"

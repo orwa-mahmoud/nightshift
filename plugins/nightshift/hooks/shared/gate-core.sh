@@ -3,6 +3,8 @@
 
 _ns_gate_core_dir="${BASH_SOURCE[0]%/*}"
 [ "$_ns_gate_core_dir" != "${BASH_SOURCE[0]}" ] || _ns_gate_core_dir=.
+# shellcheck source=plugins/nightshift/lib/evidence-check.sh
+. "$_ns_gate_core_dir/../../lib/evidence-check.sh"
 
 # ns_gate_boxes — set OPEN, TICKED, TOTAL from the punch list. Return 1 when
 # the file exists but cannot be read; then the counts are not a verdict and
@@ -12,6 +14,7 @@ ns_gate_boxes() {
   OPEN=0
   TICKED=0
   TOTAL=0
+  # shellcheck disable=SC2153 # the caller's global; a sourced local named punch is a different variable
   [ -f "$PUNCH" ] || return 0
   OPEN="$(ns_open_boxes "$PUNCH")" || {
     OPEN=0
@@ -31,6 +34,7 @@ ns_gate_boxes() {
 
 ns_gate_project_head() {
   local r
+  # shellcheck disable=SC2153 # the caller's global; a sourced local named project_dir is a different variable
   if r="$(ns_work_target "$PROJECT_DIR")"; then
     git -C "$r" rev-parse HEAD 2>/dev/null || printf 'nohead'
   else
@@ -208,6 +212,7 @@ ns_gate_usage_tick() {
   ns_receipt_track_label "$receipt" "$label"
   ns_filemap_tick "$ns" "$project" "$label" || :
   ns_architecture_tick "$ns" "$project" "$label" || :
+  ns_evidence_record "$ns" "$project" "$label" || :
   rm -f "$(ns_layout_path "$ns" receipt-due)" "$(ns_layout_path "$ns" report-due)" 2>/dev/null || :
   ns_receipts_write_index "$project"
 }

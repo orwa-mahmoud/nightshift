@@ -361,9 +361,33 @@ plus a runtime-written index. It never reaches a public commit message.
 | `evidence.default` | `""` | Evidence every item should carry when its own `Evidence:` line says nothing, such as `before/after screenshots for UI items`. Empty asks for none |
 | `evidence.fileMap` | `off` | `on` writes, at each tick, the item's changed files as a tree in its receipt and the whole shift's in `.nightshift/receipts/shift-map.md`, built from git |
 | `evidence.architecture` | `off` | `on` keeps one diagram of the components the shift touched, `.nightshift/receipts/architecture.md`, updated by the item that changes the structure |
+| `evidence.kindTemplatePath` | `""` | The owner's template for a new evidence kind. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. An owner template may add sections; a drafted kind still needs the five required sections, and the check names any that are missing |
+| `evidence.kindsPaths` | `[]` | More folders of evidence kinds. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
+| `evidence.check` | `off` | What a missing named evidence file does to the tick. `off` leaves the tick alone. `report` lists each missing file on the receipt and the morning receipt, and the tick stands. `block` counts that ticked item as open until the files are present |
+| `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and writes a Reviewed section. With `check` at `block`, a missing Reviewed section counts as missing evidence |
+| `evidence.unavailable` | `""` | What happens when the evidence cannot be produced. `hold` closes the item as stopped. `park` records the decision and keeps working. `note` ticks the item and the receipt says why. Empty means `hold` when `check` is `block`, and `note` otherwise |
 
 With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
 would be without these settings. A shift policy can turn any of them on for one shift.
+
+## Gates
+
+Stacks the owner adds beside the shipped quality-gate catalog. Empty leaves detection on the
+shipped stacks alone.
+
+| Key | Default | Values |
+|---|---|---|
+| `gates.stackTemplatePath` | `""` | The owner's template for a new stack. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. A drafted stack still needs Detect, Item gate, Site inspection, Notes, and one `Match:` line, and the check names any that are missing |
+| `gates.stacksPaths` | `[]` | More folders of stacks. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
+
+## Edge cases
+
+Packs the owner adds beside the shipped edge-case catalog. Empty leaves the pass on the shipped packs alone.
+
+| Key | Default | Values |
+|---|---|---|
+| `edgeCases.packTemplatePath` | `""` | The owner's template for a new pack. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. A drafted pack still needs When it applies, Cases, and Example lines, and the check names any that are missing |
+| `edgeCases.packsPaths` | `[]` | More folders of packs. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
 
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
