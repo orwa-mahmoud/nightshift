@@ -5,13 +5,12 @@ CONTRIBUTING="$ROOT/CONTRIBUTING.md"
 AGENTS="$ROOT/AGENTS.md"
 PR_TEMPLATE="$ROOT/.github/PULL_REQUEST_TEMPLATE.md"
 ISSUE_CONFIG="$ROOT/.github/ISSUE_TEMPLATE/config.yml"
-CATALOG_FORM="$ROOT/.github/ISSUE_TEMPLATE/catalog_shift.yml"
 RECEIPTS="$ROOT/examples/README.md"
 
 @test "the contribution map is reachable from contributor entry points" {
   [ -f "$MAP" ]
   for entry in "$README" "$CONTRIBUTING" "$AGENTS" "$PR_TEMPLATE" \
-    "$ISSUE_CONFIG" "$CATALOG_FORM" "$RECEIPTS"; do
+    "$ISSUE_CONFIG" "$RECEIPTS"; do
     grep -qF 'docs/contribution-map.md' "$entry" || {
       echo "contribution map is not linked from: $entry"
       return 1

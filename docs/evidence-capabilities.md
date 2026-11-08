@@ -173,7 +173,7 @@ handoff.
 
 `evals/` holds the catalog contract schema, a versioned case book, frozen identifiers, and
 instruction-size budgets. `evals/run.sh`, `evals/validate.sh`, and `tests/evals.bats` check schema
-and size. They do not run a host-agent matrix; a catalog contribution is still read by a person.
+and size. They do not run a host-agent matrix.
 
 ## Limits
 
