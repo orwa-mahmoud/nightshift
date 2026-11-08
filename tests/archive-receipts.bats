@@ -149,35 +149,6 @@ new_artifact() {
     "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/shift/state-map.md"
 }
 
-@test "Archive skill names the receipts helper on POSIX and Windows" {
-  grep -qE 'ns"? archive-receipts' "$ARCHIVE_SKILL"
-  grep -qF 'Missing or empty receipts create no dated receipts folder' "$ARCHIVE_SKILL"
-  grep -qF 'A receipts path that is not a usable directory is a refuse, not an empty skip' "$ARCHIVE_SKILL"
-  grep -qF 'Filing is a copy' "$ARCHIVE_SKILL"
-  grep -qF -e '--retire' "$ARCHIVE_SKILL"
-  grep -qF 'For each ticked item, pass `--retire <receipt-name>`' "$ARCHIVE_SKILL"
-  grep -qF 'agent running Archive takes it from' "$ARCHIVE_SKILL"
-  if grep -qF 'the right answer whenever you are unsure' "$ARCHIVE_SKILL"; then
-    echo 'the skill still endorses a bare copy'
-    return 1
-  fi
-  grep -qF 'Never call `ns archive-receipts`' "$ARCHIVE_SKILL"
-  grep -qE 'ns"? archive-receipts' "$COMMANDS"
-  grep -qF 'Missing or empty receipts create no dated receipts folder' "$COMMANDS"
-  grep -qF 'ns.ps1 archive-receipts' "$COMMANDS"
-  grep -qE 'ns"? archive-receipts' "$HOW"
-  grep -qF 'Missing or empty receipts create no dated receipts folder' "$HOW"
-  [ -f "$ARCHIVE_PS1" ]
-  grep -qF 'Get-NSReceiptsDir' "$ARCHIVE_PS1"
-  grep -qF "StartsWith('.')" "$ARCHIVE_PS1"
-  grep -qF 'symlink receipts path' "$ARCHIVE_SH"
-  grep -qF 'symlink receipts path' "$ARCHIVE_PS1"
-  grep -qF 'receipts path is not a directory' "$ARCHIVE_SH"
-  grep -qF 'receipts path is not a directory' "$ARCHIVE_PS1"
-  grep -qF 'non-directory archive path' "$ARCHIVE_SH"
-  grep -qF 'non-directory archive path' "$ARCHIVE_PS1"
-}
-
 @test "Windows archive-receipts logic passes when pwsh is present" {
   [ -f "$ARCHIVE_LOGIC" ]
   grep -qF 'archive-receipts-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"

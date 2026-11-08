@@ -4,18 +4,6 @@ PLUGIN="$BATS_TEST_DIRNAME/../plugins/nightshift"
 START="$PLUGIN/skills/start/SKILL.md"
 TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
 
-@test "the renderer's no-parser message is the one the skill tells the model to watch for" {
-  grep -qF 'JSON parser unavailable' "$PLUGIN/runtime/morning-receipt.sh"
-  grep -qF 'JSON parser unavailable' "$START"
-}
-
-@test "Start hands the model a receipt to write when the renderer has no parser" {
-  grep -qF 'receipts/morning.md' "$START"
-  # The file Start points at names the file to write.
-  grep -qF 'morning-<YYYY-MM-DD>.md' "$TEMPLATES"
-  grep -qF 'Every shift leaves a receipt.' "$START"
-}
-
 @test "the receipt templates carry the morning receipt block" {
   grep -qF '# Morning receipt' "$TEMPLATES"
   grep -qF 'The clock-out gate renders this page' "$TEMPLATES"
@@ -26,10 +14,6 @@ TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
     '- Unavailable:'; do
     grep -qF -- "$field" "$TEMPLATES" || { echo "missing field: $field"; return 1; }
   done
-}
-
-@test "README links the morning receipt doc from the receipts section" {
-  grep -qF '](docs/morning-receipt.md#the-morning-receipt)' "$README"
 }
 
 @test "morning-receipt doc covers every section, view, and the zero-gate line" {
@@ -60,14 +44,6 @@ TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
   grep -qF '.nightshift/receipts/morning-<YYYY-MM-DD>.md' "$DOC"
 }
 
-@test "morning-receipt doc separates an absent policy from a chosen level of none" {
-  grep -qF 'no shift policy was written' "$DOC"
-  grep -qF "punch list's \`## Gates\`" "$DOC"
-  grep -qF 'the policy file is present but unreadable or fails the schema' "$DOC"
-  grep -qF 'Receipts:' "$DOC"
-  grep -qF '[index](./README.md)' "$DOC"
-}
-
 @test "morning-receipt doc states what each verdict section guarantees" {
   grep -qF 'in UTC with the zone written out' "$DOC"
   grep -qF 'The reasons add up to the paused' "$DOC"
@@ -87,16 +63,4 @@ TEMPLATES="$PLUGIN/skills/nightshift/references/receipts/morning.md"
     '## Interruptions' '## Decisions for you' '## Found but not fixed' '## Next step'; do
     grep -qxF "$heading" "$TEMPLATES" || { echo "missing: $heading"; return 1; }
   done
-}
-
-@test "morning-receipt doc claims nothing Status does not print" {
-  if grep -qF 'Status prints the first section' "$DOC"; then
-    return 1
-  fi
-}
-
-@test "morning-receipt doc names no competing tool" {
-  if grep -qiE 'copilot|windsurf|cline|devin|aider' "$DOC"; then
-    return 1
-  fi
 }

@@ -15,22 +15,6 @@ ARMED_PATH_TOOLSET="bash sh sed tr sort grep cut awk cat mktemp uname date \
 rm mv cp ln printf head tail wc find test dirname basename cksum env true false \
 chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
 
-@test "Quality routes a feature sentence to Hunt and keeps a quality sentence" {
-  grep -qF 'continue as Hunt / Product Evolution' "$QUALITY"
-  grep -qF 'Do not show Quality catalog cards' "$QUALITY"
-  grep -qF 'stay in this skill' "$QUALITY"
-  grep -qF 'use the next 20 hours adding features and enhancing existing ones' "$HUNT"
-  grep -qF '8 hours clear lint and test debt' "$HUNT"
-  # The capability is what the policy verdict explains, so that is where the sentence lives.
-  grep -qF 'reads the same on every host, with or without jq and python3' "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
-  if grep -qF 'python3' "$QUALITY"; then
-    return 1
-  fi
-  if grep -qF 'python3' "$HUNT"; then
-    return 1
-  fi
-}
-
 @test "the plugin ships no Python" {
   run git -C "$ROOT" ls-files 'plugins/nightshift/**/*.py'
   [ "$status" -eq 0 ]

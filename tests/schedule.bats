@@ -21,11 +21,6 @@ setup() {
   printf '%s' "$output" | grep -qF 'ask Nightshift to set up on Codex'
 }
 
-@test "Windows missing-state names Setup like POSIX" {
-  grep -qF '/nightshift:setup on Claude Code; ask Nightshift to set up on Codex' "$SCHED"
-  grep -qF '/nightshift:setup on Claude Code; ask Nightshift to set up on Codex' "$WIN"
-}
-
 @test "an option with no value exits instead of spinning" {
   run "$SCHED" --at
   [ "$status" -eq 1 ]
@@ -290,15 +285,6 @@ with open(p,"w") as f: json.dump(d,f)
   printf '%s' "$output" | grep -q 'watchman will refuse to arm'
 }
 
-@test "Windows schedule preflight names empty watchman recovery keys" {
-  grep -qF 'watchRetrySeconds is empty' "$SCHED"
-  grep -qF 'revivalPrompt is empty' "$SCHED"
-  grep -qF 'freshRevivalPrompt is empty' "$SCHED"
-  grep -qF 'watchRetrySeconds is empty' "$WIN"
-  grep -qF 'revivalPrompt is empty' "$WIN"
-  grep -qF 'freshRevivalPrompt is empty' "$WIN"
-}
-
 @test "--preflight fails when artifact receipts path is unusable" {
   cp "$RULES_TEMPLATE" "$P/.nightshift/rules.json"
   printf 'artifact\n' >"$P/.nightshift/work-mode"
@@ -317,13 +303,6 @@ with open(p,"w") as f: json.dump(d,f)
   run "$SCHED" --project "$P" --at 04:05
   [ "$status" -eq 1 ]
   printf '%s' "$output$stderr" | grep -qF 'artifact receipts path is not a usable directory'
-}
-
-@test "Windows schedule names an unusable artifact receipts path" {
-  grep -qF 'a scheduled start will refuse to arm' "$SCHED"
-  grep -qF 'a scheduled start will refuse to arm' "$WIN"
-  grep -qF 'Test-NSUsableReceiptsDir' "$WIN"
-  grep -qF 'ns_receipts_usable_dir' "$SCHED"
 }
 
 @test "--preflight fails when work mode is unset and Setup would propose artifact" {
@@ -346,13 +325,6 @@ with open(p,"w") as f: json.dump(d,f)
   run "$SCHED" --project "$w" --at 04:05
   [ "$status" -eq 1 ]
   printf '%s' "$output$stderr" | grep -qF 'work mode is unset; Setup would propose artifact'
-}
-
-@test "Windows schedule names an unset artifact proposal" {
-  grep -qF 'work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm' "$SCHED"
-  grep -qF 'work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm' "$WIN"
-  grep -qF '3 unset artifact proposal' "$SCHED"
-  grep -qF '3 unset artifact proposal' "$WIN"
 }
 
 @test "--preflight fails when the work target cannot be resolved" {

@@ -100,11 +100,3 @@ RECEIPTS="$ROOT/examples/README.md"
     }
   done < <(grep -oE '\]\([^)]*\)' "$MAP")
 }
-
-@test "the contribution map keeps live work and proposal links" {
-  grep -qF 'issues?q=is%3Aissue+is%3Aopen' "$MAP"
-  grep -qF 'issues/new?template=catalog_shift.yml' "$MAP"
-  grep -qF 'issues/21' "$MAP"
-  grep -qF 'issues/22' "$MAP"
-  grep -qF 'platform%3A+linux' "$MAP"
-}

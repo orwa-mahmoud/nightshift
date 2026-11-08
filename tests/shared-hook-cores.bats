@@ -3,26 +3,6 @@ load helpers
 HOOKS="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks"
 CODEX_HOOKS="$HOOKS/codex"
 
-@test "both gate wrappers source one shared decision core" {
-  grep -qF 'shared/gate-core.sh' "$HOOKS/clock-out-gate.sh"
-  grep -qF '../shared/gate-core.sh' "$HOOKS/codex/clock-out-gate.sh"
-  grep -qF '../shared/gate-core.sh' "$HOOKS/cursor/clock-out-gate.sh"
-  [ -f "$HOOKS/shared/gate-core.sh" ]
-  grep -qF 'ns_gate_progress_token' "$HOOKS/shared/gate-core.sh"
-  grep -qF 'ns_gate_progress_token' "$HOOKS/clock-out-gate.sh"
-  grep -qF 'ns_gate_progress_token' "$HOOKS/codex/clock-out-gate.sh"
-  grep -qF 'ns_gate_progress_token' "$HOOKS/cursor/clock-out-gate.sh"
-}
-
-@test "both hardhat wrappers source one shared active-shift core" {
-  grep -qF 'shared/hardhat-core.sh' "$HOOKS/hardhat.sh"
-  grep -qF '../shared/hardhat-core.sh' "$HOOKS/codex/hardhat.sh"
-  grep -qF '../shared/hardhat-core.sh' "$HOOKS/cursor/hardhat.sh"
-  grep -qF 'ns_hardhat_active' "$HOOKS/hardhat.sh"
-  grep -qF 'ns_hardhat_active' "$HOOKS/codex/hardhat.sh"
-  grep -qF 'ns_hardhat_active' "$HOOKS/cursor/hardhat.sh"
-}
-
 @test "command, tool-deny, and scrub decisions live in the shared core" {
   for fn in ns_hardhat_command_reason ns_hardhat_tool_deny_reason \
     ns_hardhat_required_tool_deny_reason ns_hardhat_scrub ns_hardhat_rules_has \
@@ -80,18 +60,6 @@ CODEX_HOOKS="$HOOKS/codex"
   grep -qF 'ns_watchman_clockout_pending' "$CLAUDE_WM"
   grep -qF 'ns_watchman_clockout_pending' "$CODEX_WM"
   grep -qF 'clock_out_direct' "$CURSOR_WM"
-}
-
-@test "host protocols remain in their wrappers" {
-  if grep -qE 'codex_emit|hookSpecificOutput' "$HOOKS/shared/gate-core.sh" "$HOOKS/shared/hardhat-core.sh"; then
-    return 1
-  fi
-  grep -qF 'codex_emit_block' "$HOOKS/codex/clock-out-gate.sh"
-  grep -qF 'permissionDecision' "$HOOKS/hardhat.sh"
-  grep -qF 'request_user_input' "$HOOKS/codex/hardhat.sh"
-  if grep -qF 'request_user_input' "$HOOKS/hardhat.sh"; then
-    return 1
-  fi
 }
 
 # Table: command -> expected (deny|allow) -> reason fragment

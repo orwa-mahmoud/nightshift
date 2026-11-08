@@ -73,62 +73,6 @@ HOOK="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/clock-out-gate.ps1"
   grep -qF 'a different record is already filed under that name' "$sh"
 }
 
-@test "Windows morning-receipt logic covers every view and the zero-gate render" {
-  grep -qF 'the owner view renders every section in interface order' "$LOGIC"
-  grep -qF 'the reviewer view renders the baseline and the comparison' "$LOGIC"
-  grep -qF 'the release view carries regressions only' "$LOGIC"
-  grep -qF 'the artifact view omits the repository sections' "$LOGIC"
-  grep -qF 'a zero-gate shift says nothing was verified and why' "$LOGIC"
-  grep -qF 'a shift with no ledger omits the baseline section' "$LOGIC"
-  grep -qF 'verification level none (owner)' "$LOGIC"
-}
-
-@test "Windows morning-receipt logic covers honesty and citation" {
-  grep -qF 'every comparison row cites a record id' "$LOGIC"
-  grep -qF 'a disabled check is never rendered as a check that passed' "$LOGIC"
-  grep -qF 'a check the level skipped is reported as disabled, never as passed' "$LOGIC"
-  grep -qF 'section 1 names the unavailable source' "$LOGIC"
-  grep -qF 'the artifact view names no repository term' "$LOGIC"
-  grep -qF 'every allowance carries its provenance' "$LOGIC"
-  grep -qF 'an unreadable punch list reports Ending unknown, never done' "$LOGIC"
-  grep -qF 'the page links the index' "$LOGIC"
-  grep -qF 'every item has its line with its state' "$LOGIC"
-  grep -qF 'an accepted policy is named at the top' "$LOGIC"
-  grep -qF 'a missing file is named as absent, not as malformed' "$LOGIC"
-  grep -qF 'the unreadable fixture is named as malformed' "$LOGIC"
-}
-
-@test "Windows morning-receipt logic covers the gate and the archive" {
-  grep -qF 'the gate writes receipts/morning-<date>-<shiftId>.md at the end of the shift' "$LOGIC"
-  grep -qF 'a receipt render failure never blocks the release' "$LOGIC"
-  grep -qF 'a receipt render failure still clocks the shift out' "$LOGIC"
-  grep -qF 'an armed shift keeps every live record, whatever it is called' "$LOGIC"
-  grep -qF 'a closed and verified record leaves live storage' "$LOGIC"
-  grep -qF 'the artifact receipt is retired on the same terms, not by its name' "$LOGIC"
-  grep -qF 'the record already filed is never overwritten' "$LOGIC"
-}
-
-@test "Windows morning-receipt logic covers the verdict sections" {
-  grep -qF 'both ends of the shift are in local time with the offset' "$LOGIC"
-  grep -qF 'pause reasons sum to the paused total' "$LOGIC"
-  grep -qF 'a kind the host did not report reads unavailable' "$LOGIC"
-  grep -qF 'a measurement the owner turned off reads off' "$LOGIC"
-  grep -qF 'an item links to its receipt only when the file exists' "$LOGIC"
-  grep -qF 'review first ranks by change size' "$LOGIC"
-  grep -qF 'review first does not apply in artifact mode' "$LOGIC"
-  grep -qF 'a wrapped parked entry renders in full' "$LOGIC"
-  grep -qF 'both renderers write the same verdict' "$LOGIC"
-}
-
-@test "Windows morning-receipt logic checks exact byte formatting and bash parity" {
-  grep -qF 'Test-NSNoCarriageReturn' "$LOGIC"
-  grep -qF 'Test-NSSingleTrailingNewline' "$LOGIC"
-  grep -qF 'Test-NSHasBom' "$LOGIC"
-  grep -qF 'byte-identical' "$LOGIC"
-  grep -qF 'morning-receipt.sh' "$LOGIC"
-  grep -qF 'parity leg not run' "$LOGIC"
-}
-
 @test "Windows morning-receipt logic passes when pwsh is present" {
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh not installed'

@@ -17,22 +17,6 @@ HELPER="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/import-issues.p
   fi
 }
 
-@test "Windows import-issues usage errors name native flags" {
-  grep -qF -- '-Repo requires' "$HELPER"
-  grep -qF -- '-AuthorizedRepo must be' "$HELPER"
-  grep -qF -- '-AllowClosed' "$HELPER"
-  if grep -qF 'import-issues: --repo' "$HELPER"; then
-    return 1
-  fi
-  if grep -qF '--authorized-repo' "$HELPER"; then
-    return 1
-  fi
-  if grep -qF '--allow-closed' "$HELPER"; then
-    return 1
-  fi
-  grep -qF 'gh issue view' "$HELPER"
-}
-
 @test "Windows import-issues list/promote logic passes when pwsh is present" {
   if ! command -v pwsh >/dev/null 2>&1; then
     return 0

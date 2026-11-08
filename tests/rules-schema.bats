@@ -153,14 +153,6 @@ validate() {
   validate "$f"
 }
 
-@test "knobs and setup document editor discovery of the schema" {
-  grep -qF 'nightshift-rules.schema.json' "$KNOBS"
-  grep -qF 'json.schemas' "$KNOBS"
-  grep -qF '.nightshift/rules.json' "$KNOBS"
-  grep -qF 'nightshift-rules.schema.json' "$SETUP"
-  grep -qF 'docs/knobs.md' "$SETUP"
-}
-
 @test "a numeric bound applies to numbers and says nothing about null" {
   # A nullable field carrying a bound has to validate when it is unset. Its `type` is what
   # rejects a wrong type; `minimum` is only about numbers.

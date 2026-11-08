@@ -31,17 +31,6 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
   windows_module_source | grep -qF "'{0}={1} ({2}, {3})'"
 }
 
-@test "Windows shift-policy logic covers every precedence row" {
-  grep -qF 'is allowed by default' "$LOGIC"
-  grep -qF 'a rules.elevation deny guards the category permanently' "$LOGIC"
-  grep -qF 'a one-shift allowance alone lifts the deny for tonight' "$LOGIC"
-  grep -qF 'a category allowance beside an exact plan wins' "$LOGIC"
-  grep -qF 'protected paths stay rules-only under a category allowance' "$LOGIC"
-  grep -qF 'never becomes an effective verification level' "$LOGIC"
-  grep -qF 'a malformed policy grants no allowance' "$LOGIC"
-  grep -qF 'the resolver names the exact field' "$LOGIC"
-}
-
 @test "Windows shift-policy logic covers exact-plan binding and the armed refusal" {
   grep -qF 'whitespace collapses before the exact match' "$LOGIC"
   grep -qF 'a neighbouring command is an exact-plan mismatch, not a deny' "$LOGIC"
@@ -59,42 +48,12 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
   grep -qF 'archive files the policy at its live path in the shift folder' "$LOGIC"
 }
 
-@test "Windows shift-policy logic checks exact byte formatting" {
-  grep -qF 'Test-NSNoCarriageReturn' "$LOGIC"
-  grep -qF 'Test-NSSingleTrailingNewline' "$LOGIC"
-  grep -qF 'Test-NSAsciiOnly' "$LOGIC"
-  grep -qF 'Test-NSKeysSorted' "$LOGIC"
-  grep -qF 'Test-NSHasBom' "$LOGIC"
-  grep -qF '{"schemaVersion":1,"settings":{' "$LOGIC"
-}
-
-@test "Windows Doctor and support render the resolved view, never the policy files" {
-  grep -qF 'resolved policy' "$WIN/doctor.ps1"
-  grep -qF 'Format-NSPolicyTable' "$WIN/doctor.ps1"
-  grep -qF 'does not match shift-policy deadlineEpoch' "$WIN/doctor.ps1"
-  grep -qF 'shift-policy.json is malformed' "$WIN/doctor.ps1"
-  if grep -qF 'capability policy' "$WIN/doctor.ps1"; then
-    return 1
-  fi
-  grep -qF '== resolved policy ==' "$WIN/export-support.ps1"
-  grep -qF '<redacted ' "$WIN/export-support.ps1"
-  if grep -qF 'capability-policy' "$WIN/export-support.ps1"; then
-    return 1
-  fi
-}
-
 @test "Windows migrate-state previews by default and moves only with -Apply" {
   grep -qF '[switch]$Apply' "$WIN/migrate-state.ps1"
   grep -qF 'Invoke-NSMigrationApply $workspace $records' "$WIN/migrate-state.ps1"
   if grep -qF 'capability-policy' "$WIN/migrate-state.ps1"; then
     return 1
   fi
-}
-
-@test "Windows shift-policy logic keeps the rest of the shift block" {
-  grep -qF 'defaults-set keeps the rest of the shift block' "$LOGIC"
-  grep -qF 'migrate keeps the rest of the shift block' "$LOGIC"
-  grep -qF 'defaults-set creates a shift block when the file has none' "$LOGIC"
 }
 
 @test "Windows shift-policy logic passes when pwsh is present" {

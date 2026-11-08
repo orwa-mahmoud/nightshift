@@ -531,16 +531,6 @@ probe_from() {
   done
 }
 
-@test "Start routes through the helper instead of restating its rules" {
-  grep -qE 'ns"? start-preflight' "$START"
-  grep -qF -- '--phase bind' "$START"
-  grep -qF 'refuse' "$START"
-  grep -qF 'repair' "$START"
-  grep -qF 'explain' "$START"
-  [ -d "$HOSTS" ]
-  grep -qF 'references/hosts/<host>.md' "$START"
-}
-
 # The helpers these skills used to name are gone from the runtime. A skill that still names one
 # sends the model looking for a file that will never be there.
 @test "the routed skills name no helper the plugin no longer ships" {

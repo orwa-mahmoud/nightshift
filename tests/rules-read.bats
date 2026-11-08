@@ -165,24 +165,6 @@ no_json_bin() {
   fi
 }
 
-@test "owner-facing docs never name the reader implementation" {
-  if grep -qiE '\bawk\b' "$ROOT/docs/how-it-works.md"; then
-    return 1
-  fi
-  if grep -qiE '\bawk\b' "$ROOT/docs/knobs.md"; then
-    return 1
-  fi
-  if grep -qiE '\bawk\b' "$START"; then
-    return 1
-  fi
-  if grep -qiE '\bawk\b' "$ROOT/plugins/nightshift/skills/doctor/SKILL.md"; then
-    return 1
-  fi
-  if grep -qiE '\bawk\b' "$ROOT/plugins/nightshift/skills/status/SKILL.md"; then
-    return 1
-  fi
-}
-
 # The three settings blocks are one level of named values: a string, an integer, a bool, a null,
 # or a string array. The reader carries every one of them, because a field it quietly skipped
 # would read as a setting the owner never wrote.

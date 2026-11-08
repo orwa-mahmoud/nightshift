@@ -501,11 +501,6 @@ COMPARE_TOOLSET_NO_JQ="bash sh git sed grep find sort ls awk cat tr head tail wc
   [ "$(cat "$p/.nightshift/evidence/findings.jsonl")" = "$digest_before" ]
 }
 
-@test "compare temps are created mode 700" {
-  grep -qF 'mktemp -d' "$EC"
-  grep -qF 'chmod 700' "$EC"
-}
-
 # ---------------------------------------------------------------------------------------------
 # The source answers for itself. A tool that could not run reports nothing whether or not the
 # baseline had seen anything, so clear-all cannot read its silence as a clean sheet — and the

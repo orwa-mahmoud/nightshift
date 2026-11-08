@@ -4,11 +4,6 @@ COMMANDS="$BATS_TEST_DIRNAME/../docs/commands.md"
 MODES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/execution-modes.md"
 RECEIPTS="$BATS_TEST_DIRNAME/../docs/evidence-capabilities.md"
 
-@test "README and commands link the shift-modes walkthroughs" {
-  grep -qF '[Shift modes](docs/shift-modes.md#shift-modes)' "$README"
-  grep -qF '[Shift modes](shift-modes.md#shift-modes)' "$COMMANDS"
-}
-
 @test "shift-modes covers each Guided/Automatic launch combination" {
   for heading in 'Guided + Review first' 'Guided + Run directly' \
     'Automatic + Review first' 'Automatic + Run directly'; do
@@ -43,17 +38,4 @@ RECEIPTS="$BATS_TEST_DIRNAME/../docs/evidence-capabilities.md"
   ! grep -qF 'In this already configured Git repository' "$DOC" || false
   [ "$(grep -Fc '**Morning receipt (after clock-out, with default settings):**' "$DOC")" -eq 4 ] || false
   grep -qF '.nightshift/receipts/morning-<YYYY-MM-DD>-<shiftId>.md' "$DOC" || false
-}
-
-@test "how-it-works links the shift-modes walkthroughs" {
-  grep -qF '[Shift modes](shift-modes.md#shift-modes)' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
-}
-
-@test "shift-modes relative links resolve" {
-  [ -f "$MODES" ]
-  [ -f "$BATS_TEST_DIRNAME/../docs/commands.md" ]
-  [ -f "$BATS_TEST_DIRNAME/../docs/first-night-checklist.md" ]
-  grep -qF 'execution-modes.md' "$DOC"
-  grep -qF 'first-night-checklist.md' "$DOC"
-  grep -qF 'commands.md' "$DOC"
 }

@@ -31,33 +31,6 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
   windows_module_source | grep -qF 'Convert-NSPolicyErePattern'
 }
 
-@test "Windows preflight logic covers every shipped signal" {
-  grep -qF 'docker compose is a containers signal' "$LOGIC"
-  grep -qF 'sudo is a sudo signal' "$LOGIC"
-  grep -qF 'apt-get is a global-packages signal' "$LOGIC"
-  grep -qF 'npm install -g is a global-packages signal' "$LOGIC"
-  grep -qF 'npm login is an external-services signal' "$LOGIC"
-  grep -qF 'systemctl is a daemons signal' "$LOGIC"
-  grep -qF 'npm test needs no elevation' "$LOGIC"
-  grep -qF 'a ticked item is finished work and is never reported' "$LOGIC"
-  grep -qF 'a ticked item is never parked' "$LOGIC"
-  grep -qF 'a fully ticked work order reports neither its box nor its heading' "$LOGIC"
-  grep -qF 'only the Items section is read' "$LOGIC"
-  grep -qF 'a work order is matched against the same patterns' "$LOGIC"
-  grep -qF 'the open-item and gap summary leads' "$LOGIC"
-  grep -qF 'shared fixture: no gaps' "$LOGIC"
-  grep -qF 'shared fixture mixed needs: gap summary' "$LOGIC"
-}
-
-@test "Windows preflight logic checks gaps against the resolver and never refuses" {
-  grep -qF 'a one-shift allowance turns a need into an allowance' "$LOGIC"
-  grep -qF 'an allowed category is no longer a gap' "$LOGIC"
-  grep -qF 'a broken pattern never makes the preflight refuse' "$LOGIC"
-  grep -qF 'an empty workspace exits 0' "$LOGIC"
-  grep -qF 'the JSON view is LF-only' "$LOGIC"
-  grep -qF '"patternErrors":[]' "$LOGIC"
-}
-
 @test "Windows park-needs writes one idempotent entry per gap" {
   windows_module_source | grep -qF 'needs allowance: '
   windows_module_source | grep -qF 'worked last if the owner allows it before then'

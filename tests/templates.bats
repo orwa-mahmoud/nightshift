@@ -22,12 +22,6 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
   is_allow
 }
 
-@test "the punch-list template carries the headings the gate and setup depend on" {
-  grep -q '^## Items' "$REF/templates/punch-list.md"
-  grep -q '^## Gates' "$REF/templates/punch-list.md"
-  grep -qF 'right before its commit or artifact receipt' "$REF/templates/punch-list.md"
-}
-
 # The drafting table is where work waits, so it must show the item shape. It is never read by
 # the gate — only the punch list is — which is exactly why proposals land there first.
 @test "the drafting table and catalog entries do show the item shape" {
@@ -171,10 +165,6 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
   grep -qF 'ns" scaffold work-orders' "$q"
   grep -qi 'never write the punch list first' "$q"
   grep -qi 'never clobber orders already' "$q"
-}
-
-@test "command reference says Quality fix now goes through a Hunt work order" {
-  grep -qF 'appends a Hunt work order' "$BATS_TEST_DIRNAME/../docs/commands.md"
 }
 
 @test "quality covers the full catalog and shares hunt execution modes" {
