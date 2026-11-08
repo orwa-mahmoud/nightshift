@@ -1,6 +1,6 @@
 ---
 name: hunt
-description: Turn a request like "improve this project for 5 hours" into a shift from the ready catalog and start it, guided or automatic.
+description: Turn a request like "improve this project for 5 hours" into a shift from the ready catalog and start it, asking only for the hours when they are missing.
 license: MIT
 metadata:
   internal: true

@@ -1,6 +1,6 @@
 ---
 name: nightshift
-description: Work a punch list to completion autonomously — overnight, through a todo list, or until a product is polished — parking decisions and leaving receipts.
+description: Work a punch list to completion autonomously, overnight, through a todo list or until a product is polished, parking decisions instead of asking and leaving receipts.
 license: MIT
 metadata:
   internal: true

@@ -1,6 +1,6 @@
 ---
 name: customize
-description: Show every setting, template and catalog entry on one screen, and change what the owner names.
+description: Show every setting, template and catalog entry on one screen, and change only what the owner names.
 license: MIT
 metadata:
   internal: true
