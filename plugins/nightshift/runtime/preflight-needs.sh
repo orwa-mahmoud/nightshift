@@ -3,8 +3,8 @@
 #
 #   preflight-needs.sh --project DIR [--json]
 #
-# Reads the open items under `## Items` in punch-list.md and every open item under a
-# `## Work order` heading in work-orders.md, matches each item's own text against the same
+# Reads the open items under `## Items` in punch-list.md and every open item in
+# work-orders.md, under any heading, matches each item's own text against the same
 # elevation patterns the guard uses, and reports per item what it needs, what the resolver
 # allows, and the gap between them. A ticked item is finished work and is never scanned. Only a
 # category the resolver reports as `allow` is allowed outright; a denial and an exact-plan
@@ -123,8 +123,8 @@ ns_layout_set WORK_ORDERS "$NS" work-orders
     scan punch-list "$TMPD/items.md"
   fi
   if [ -f "$WORK_ORDERS" ]; then
-    sed -n '/^## Work order/,$p' "$WORK_ORDERS" >"$TMPD/orders.md"
-    scan work-orders "$TMPD/orders.md"
+    # Every box in the file, under any heading.
+    scan work-orders "$WORK_ORDERS"
   fi
 } >"$TMPD/scan"
 

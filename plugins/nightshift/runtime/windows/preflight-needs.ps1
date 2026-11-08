@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   Mirrors runtime/preflight-needs.sh. Reads the `## Items` section of
-  punch-list.md and every `## Work order` in work-orders.md, matches each item
+  punch-list.md and every open item in work-orders.md, matches each item
   against the same rules.elevation patterns the hardhat guard uses, and reports
   the categories each item needs against the resolved policy. Reports only:
   it never writes and never refuses.

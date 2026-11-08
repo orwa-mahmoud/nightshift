@@ -61,7 +61,6 @@ EOF
   grep -qi 'unavailable' "$CONTRACT"
   grep -qi 'Observations' "$CONTRACT"
   grep -qi 'Inferences' "$CONTRACT"
-  grep -qi 'Executive summary' "$CONTRACT"
   grep -qi 'private source code' "$CONTRACT"
   grep -qi 'external search' "$CONTRACT"
   grep -qi 'owner supplies the URLs' "$CONTRACT" || grep -qi 'owner-approved' "$CONTRACT"
@@ -87,16 +86,6 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "check-report rejects an unavailable source omitted from Sources" {
-  p="$(new_project cited-unav)"
-  valid_bundle "$p"
-  awk 'tolower($0) ~ /^##[ \t]*sources/ {p=1} p && /S2/ {next} {print}' "$p/report.md" >"$p/report2.md"
-  mv "$p/report2.md" "$p/report.md"
-  run bash "$CHECK" --project "$p" --report "$p/report.md" --manifest "$p/sources.tsv"
-  [ "$status" -eq 2 ]
-  printf '%s' "$output$stderr" | grep -qi 'unavailable'
-}
-
 @test "check-report rejects an uncited ok source" {
   p="$(new_project cited-uncited)"
   valid_bundle "$p"
@@ -115,14 +104,25 @@ EOF
   printf '%s' "$output$stderr" | grep -qF 'fabricated citation: [S9]'
 }
 
-@test "check-report rejects a missing heading" {
+@test "check-report accepts a report under any headings" {
   p="$(new_project cited-heading)"
   valid_bundle "$p"
-  grep -v 'Executive summary' "$p/report.md" >"$p/report2.md"
+  sed -e 's/^## Executive summary$/## What we found/' -e 's/^## Sources$/## References/' \
+    -e 's/^## Observations$/## Facts/' -e 's/^## Inferences$/## What it means/' \
+    "$p/report.md" >"$p/report2.md"
+  mv "$p/report2.md" "$p/report.md"
+  run bash "$CHECK" --project "$p" --report "$p/report.md" --manifest "$p/sources.tsv"
+  [ "$status" -eq 0 ]
+}
+
+@test "check-report rejects an unavailable source the report never discloses" {
+  p="$(new_project cited-undisclosed)"
+  valid_bundle "$p"
+  grep -v 'S2' "$p/report.md" >"$p/report2.md"
   mv "$p/report2.md" "$p/report.md"
   run bash "$CHECK" --project "$p" --report "$p/report.md" --manifest "$p/sources.tsv"
   [ "$status" -eq 2 ]
-  printf '%s' "$output$stderr" | grep -qi 'Executive summary'
+  printf '%s' "$output$stderr" | grep -qF 'unavailable source not recorded: S2'
 }
 
 @test "check-report rejects a symlink output" {
@@ -165,7 +165,6 @@ EOF
 
 @test "Windows check-report pairs POSIX and runs when pwsh is present" {
   grep -qE 'ns"? check-report' "$NIGHTSHIFT"
-  grep -qF 'missing heading' "$CHECK_PS1"
   grep -qF 'fabricated citation' "$CHECK_PS1"
   grep -qF 'Test-NSSecretLine' "$CHECK_PS1"
   grep -qF 'Test-NSReparsePoint' "$CHECK_PS1"

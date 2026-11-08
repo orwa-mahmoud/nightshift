@@ -7,7 +7,8 @@
 # one (a punch list), else the items below its first `---` rule, else the whole file. For each item
 # it reports what the gate and the item's own definition of done would trip over:
 #
-#   no Verify: line · a Verify: that names no command and no WHEN/THEN scenario · no Commit: line
+#   no Verify: line · a Verify: that names no command, path, number, quoted text, URL or WHEN/THEN
+#   (a question, since a plain sentence can be checkable) · no Commit: line
 #   (or Receipt: in artifact mode) · an Evidence: line that names nothing · a Budget: line that
 #   does not parse · a nested checkbox
 #
@@ -79,10 +80,16 @@ EVENTS="$(awk '
   }
   mode == "items" && /^## / { finish(); on = 0; next }
 
+  # A Verify line is checkable when it names a command, a path or file, a number, quoted text, a URL
+  # or a WHEN/THEN scenario. The hint is a question: it refuses nothing.
+  function is_checkable(s) {
+    return s ~ /`[^`]+`|[0-9]|[A-Za-z0-9_-]\/[A-Za-z0-9_.-]|\.[A-Za-z][A-Za-z]*|"[^"]+"|\047[^\047]+\047|https?:\/\/|WHEN .*THEN /
+  }
+
   function finish() {
     if (!open) return
     if (!verify) print "find\tno Verify: line"
-    else if (!concrete) print "find\tVerify: names no command and no WHEN/THEN scenario"
+    else if (!checkable) print "find\tVerify: names no command, path, number or scenario; is it checkable?"
     if (!commit) print "find\tno Commit: line"
     if (evidence && !evidencetext) print "find\tEvidence: names nothing"
     if (budget != "") print "budget\t" budgettext
@@ -121,7 +128,7 @@ EVENTS="$(awk '
     sub(/^- \[.\][[:space:]]*/, "", label)
     sub(/[[:space:]]*<!--.*-->[[:space:]]*$/, "", label)
     print "item\t" label
-    open = 1; verify = 0; concrete = 0; commit = 0; budget = ""; budgettext = ""; nested = 0; inverify = 0
+    open = 1; verify = 0; checkable = 0; commit = 0; budget = ""; budgettext = ""; nested = 0; inverify = 0
     evidence = 0; evidencetext = 0; inevidence = 0
     next
   }
@@ -130,16 +137,13 @@ EVENTS="$(awk '
 
   open && /^[[:space:]]+/ {
     indent = match($0, /[^[:space:]]/) - 1
-    if (inverify && indent > verifyindent) {
-      if ($0 ~ /`[^`]+`/ || $0 ~ /WHEN .*THEN /) concrete = 1
-      next
-    }
+    if (inverify && indent > verifyindent) { if (is_checkable($0)) checkable = 1; next }
     if (inevidence && indent > evidenceindent) { evidencetext = 1; next }
     inverify = 0; inevidence = 0
     if ($0 ~ /^[[:space:]]*-[[:space:]]*\[.\]/) { nestedat[++nested] = FNR; next }
     if ($0 ~ /^[[:space:]]*- Verify:/) {
       verify = 1; inverify = 1; verifyindent = indent
-      if ($0 ~ /`[^`]+`/ || $0 ~ /WHEN .*THEN /) concrete = 1
+      if (is_checkable(substr($0, index($0, "Verify:") + 7))) checkable = 1
       next
     }
     if ($0 ~ /^[[:space:]]*- (Commit|Receipt):/) { commit = 1; next }

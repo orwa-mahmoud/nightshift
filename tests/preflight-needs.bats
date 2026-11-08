@@ -153,6 +153,21 @@ MD
   printf '%s' "$output" | jq -e '[.items[0].needs[].category] == ["containers"]' >/dev/null
 }
 
+@test "a work order is read under any heading" {
+  p="$(unarmed pre-orders-heading)"
+  printf '## Items\n' >"$p/.nightshift/punch-list.md"
+  cat >"$p/.nightshift/work-orders.md" <<'MD'
+# Work Orders
+
+## Tonight's work
+
+- [ ] **Bring the stack up with `docker compose up -d`**
+MD
+  run pre "$p" --json
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -e '[.items[0].needs[].category] == ["containers"]' >/dev/null
+}
+
 @test "an allowance closes the gap and the resolver is what decides" {
   p="$(unarmed pre-allow)"
   fixture_list "$p"

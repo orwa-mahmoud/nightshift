@@ -91,11 +91,6 @@ Test-NSSecretFile $reportAbs
 Test-NSSecretFile $manifestAbs
 
 $reportText = [IO.File]::ReadAllText($reportAbs)
-foreach ($heading in @('Executive summary', 'Sources', 'Observations', 'Inferences')) {
-    if ($reportText -notmatch ("(?m)^##\s*" + [regex]::Escape($heading) + "(\s|$)")) {
-        Fail-NSCheck "missing heading: ## $heading"
-    }
-}
 
 $ids = New-Object System.Collections.Generic.List[string]
 $okIds = New-Object System.Collections.Generic.List[string]
@@ -146,26 +141,9 @@ foreach ($sid in $okIds) {
     }
 }
 
-$sourcesBlock = New-Object System.Collections.Generic.List[string]
-$inSources = $false
-foreach ($line in [IO.File]::ReadAllLines($reportAbs)) {
-    if ($line -match '^##\s*Sources(\s|$)') {
-        $inSources = $true
-        continue
-    }
-    if ($line -match '^##\s') {
-        $inSources = $false
-    }
-    if ($inSources) {
-        [void]$sourcesBlock.Add($line)
-    }
-}
-$sourcesText = ($sourcesBlock -join "`n")
-if ([string]::IsNullOrWhiteSpace($sourcesText)) {
-    Fail-NSCheck 'empty Sources section'
-}
+# An unavailable source is disclosed somewhere in the report, under any heading.
 foreach ($sid in $unavIds) {
-    if ($sourcesText -notlike "*$sid*") {
+    if ($reportText -cnotmatch ('\b' + [regex]::Escape($sid) + '\b')) {
         Fail-NSCheck "unavailable source not recorded: $sid"
     }
 }

@@ -38,8 +38,10 @@ if (-not (Test-Path -LiteralPath $File -PathType Leaf) -or (Test-NSReparsePoint 
 
 $lines = @([IO.File]::ReadAllLines($File) | ForEach-Object { $_.TrimEnd("`r") })
 $box = '^[ \t]*-[ \t]*\[[ \t]\]'
+# A Verify line is checkable when it names a command, a path or file, a number, quoted text, a URL or
+# a WHEN/THEN scenario. The hint is a question: it refuses nothing. Mirrors is_checkable.
+$checkablePattern = '`[^`]+`|[0-9]|[A-Za-z0-9_-]/[A-Za-z0-9_.-]|\.[A-Za-z]+|"[^"]+"|''[^'']+''|https?://|WHEN .*THEN '
 $itemLine = '^- \[[ xX-]\]'
-$concretePattern = '`[^`]+`|WHEN .*THEN '
 
 # Where the items are: under `## Items`, else below the first rule, else everywhere.
 $mode = ''
@@ -54,7 +56,7 @@ $state = @{ Open = $false }
 function Close-Item {
     if (-not $state.Open) { return }
     if (-not $state.Verify) { $events.Add(@('find', 'no Verify: line')) }
-    elseif (-not $state.Concrete) { $events.Add(@('find', 'Verify: names no command and no WHEN/THEN scenario')) }
+    elseif (-not $state.Checkable) { $events.Add(@('find', 'Verify: names no command, path, number or scenario; is it checkable?')) }
     if (-not $state.Commit) { $events.Add(@('find', 'no Commit: line')) }
     if ($state.Evidence -and -not $state.EvidenceText) { $events.Add(@('find', 'Evidence: names nothing')) }
     if ($state.Budget) { $events.Add(@('budget', $state.BudgetText)) }
@@ -105,7 +107,7 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
         $label = $line -creplace '^- \[.\][ \t]*', ''
         $label = $label -creplace '[ \t]*<!--.*-->[ \t]*$', ''
         $events.Add(@('item', $label))
-        $state = @{ Open = $true; Verify = $false; Concrete = $false; Commit = $false; Budget = $false; BudgetText = ''
+        $state = @{ Open = $true; Verify = $false; Checkable = $false; Commit = $false; Budget = $false; BudgetText = ''
             Evidence = $false; EvidenceText = $false; Nested = (New-Object Collections.Generic.List[int]) }
         $inVerify = $false
         $inEvidence = $false
@@ -117,7 +119,7 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($state.Open -and $line -cmatch '^[ \t]+') {
         $indent = $line.Length - $line.TrimStart(' ', "`t").Length
         if ($inVerify -and $indent -gt $verifyIndent) {
-            if ($line -cmatch $concretePattern) { $state.Concrete = $true }
+            if ($line -cmatch $checkablePattern) { $state.Checkable = $true }
             continue
         }
         if ($inEvidence -and $indent -gt $evidenceIndent) { $state.EvidenceText = $true; continue }
@@ -128,7 +130,7 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
             $state.Verify = $true
             $inVerify = $true
             $verifyIndent = $indent
-            if ($line -cmatch $concretePattern) { $state.Concrete = $true }
+            if (($line.Substring($line.IndexOf('Verify:') + 7)) -cmatch $checkablePattern) { $state.Checkable = $true }
             continue
         }
         if ($line -cmatch '^[ \t]*- (Commit|Receipt):') { $state.Commit = $true; continue }

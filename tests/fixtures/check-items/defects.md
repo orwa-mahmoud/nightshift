@@ -5,8 +5,8 @@
 - [ ] **1. No verify line.**
   - Commit: `feat: one`
 
-- [ ] **2. A verify line that checks nothing.**
-  - Verify: tests pass and it works
+- [ ] **2. A plain-language verify line.**
+  - Verify: open checkout at 375 px and confirm the Pay button is visible
   - Commit: `feat: two`
 
 - [ ] **3. No commit line.**

@@ -891,15 +891,9 @@ function Get-NSPreflightItems {
         $items.Add($item)
     }
 
+    # Every box in the file, under any heading.
     $orderLines = New-Object Collections.Generic.List[string]
-    $inOrders = $false
-    foreach ($line in (Get-NSPreflightFileLines $paths['orders'])) {
-        if (-not $inOrders) {
-            if ($line -match '^##\s+Work order') { $inOrders = $true }
-            else { continue }
-        }
-        $orderLines.Add($line)
-    }
+    foreach ($line in (Get-NSPreflightFileLines $paths['orders'])) { $orderLines.Add($line) }
     if ($orderLines.Count -gt 0) {
         foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-orders' -FallbackTitle '')) {
             $items.Add($item)
