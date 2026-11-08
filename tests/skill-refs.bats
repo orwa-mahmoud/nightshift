@@ -522,7 +522,7 @@ documented_pages() {
   for pair in "start:punch list" "hunt:catalog" "quality:quality debt" "setup:Scaffold" \
     "status:Read-only" "doctor:diagnosis" "archive:archive" "schedule:fixed time" \
     "import-issues:GitHub issues" "stop:stop-work" "reset:markers" "purge:delete" \
-    "plan:plan room" "plan-exit:Leave the plan room"; do
+    "plan:plan room" "plan-exit:Leave the plan room" "customize:one screen"; do
     name="${pair%%:*}"
     phrase="${pair#*:}"
     grep -m1 '^description:' "$SKILLS/$name/SKILL.md" | grep -qF "$phrase" \

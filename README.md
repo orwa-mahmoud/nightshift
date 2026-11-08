@@ -136,6 +136,7 @@ Start with one small task in a project you trust. Keep the first run attended an
 | Stop | “Stop the Nightshift shift.” | `/nightshift:stop` |
 | Plan before building | “Plan this with Nightshift.” | `/nightshift:plan` |
 | Leave the plan room | Type `$nightshift:plan-exit` | `/nightshift:plan-exit` |
+| Customize | “Customize Nightshift.” | `/nightshift:customize` |
 
 1. **Set up.** Setup asks at most four questions: your checks, then every default on one screen.
    Accept them all, or name what to change. Or skip setting up: say *“improve this project for 5 hours”*

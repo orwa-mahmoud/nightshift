@@ -10,6 +10,7 @@ or [archive finished shifts](archive.md#archive-and-continue). The commands belo
 /nightshift:import-issues  # stage explicitly named GitHub issues onto the drafting table
 /nightshift:plan       # open the plan room: explore and design with the agent; nothing is built
 /nightshift:plan-exit  # leave the plan room (or type /nightshift:start to leave and start)
+/nightshift:customize  # every setting, template and catalog entry on one screen; change what you name
 # or write your items in the punch list by hand — one checkbox per task
 #   item anatomy, with filled items: examples/overnight-webapp.md
 /nightshift:start      # works queued items without questions; offers drafts only when empty

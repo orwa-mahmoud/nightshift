@@ -19,6 +19,11 @@ shift the file itself is guarded: the session working the night is denied touchi
 you set or lift a rule. The env vars below remain as session-start overrides for tests and
 one-off exceptions.
 
+**Three ways to change a setting, all equal:** edit the file, ask for the change in plain words in
+any conversation, or run `/nightshift:customize` (in Codex, ask Nightshift to customize), which
+shows every setting, template and catalog entry on one screen with its current and shipped value
+and changes only what you name. None of them requires the others.
+
 ## Where a setting comes from
 
 A setting has one permanent home and one place it may be varied for a single night. Four sources
