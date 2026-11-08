@@ -520,3 +520,28 @@ PY
     return 1
   fi
 }
+
+@test "setup asks at most four questions and shows every default on one screen" {
+  grep -qF 'at most four questions' "$SETUP"
+  grep -qF '## 3. The questions — at most four' "$SETUP"
+  # The four, in order, and each conditional one says when it is asked.
+  grep -qF '1. **Work target** — only when it is ambiguous' "$SETUP"
+  grep -qF '2. **Gates**' "$SETUP"
+  grep -qF '3. **Defaults** — every remaining choice on one screen' "$SETUP"
+  grep -qF '4. **Copy-in files** — only when the owner chose a shift worktree' "$SETUP"
+  # One screen, answered once: every line the old flow asked separately is a row of it.
+  for row in 'Receipts repo' 'Shift worktree' 'Site inspection' 'Verification profile' \
+    'Typical hours' 'Execution' 'Tooling policy' 'Recovery' 'Elevation' 'Evidence'; do
+    grep -qF "| $row |" "$SETUP" || { echo "defaults screen lacks $row"; return 1; }
+  done
+  grep -qF 'accept all' "$SETUP"
+  grep -qF 'do not ask a second round' "$SETUP"
+  grep -qF 'never a separate question' "$SETUP"
+  # The question-by-question wording is gone.
+  if grep -qE 'ask, default no|Ask whether to keep the shipped|Project defaults — ask once' "$SETUP"; then
+    return 1
+  fi
+  # The summary hands over the one sentence and the customize skill.
+  grep -qF 'improve this' "$SETUP"
+  grep -qF '/nightshift:customize' "$SETUP"
+}

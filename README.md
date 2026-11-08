@@ -136,7 +136,8 @@ Start with one small task in a project you trust. Keep the first run attended an
 | Plan before building | “Plan this with Nightshift.” | `/nightshift:plan` |
 | Leave the plan room | Type `$nightshift:plan-exit` | `/nightshift:plan-exit` |
 
-1. **Set up.** Review the proposed checks and permissions. Setup asks before applying them.
+1. **Set up.** Setup asks at most four questions: your checks, then every default on one screen.
+   Accept them all, or name what to change.
 2. **Write one item** under `## Items` in `.nightshift/punch-list.md`. For a repository that
    already has a test runner, a small first task could be:
 

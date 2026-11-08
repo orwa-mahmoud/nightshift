@@ -4,7 +4,7 @@ Choose work with [Shift modes](shift-modes.md#shift-modes), inspect [receipts an
 or [archive finished shifts](archive.md#archive-and-continue). The commands below operate those workflows.
 
 ```text
-/nightshift:setup      # scaffold .nightshift/ + propose quality gates (ask, never impose)
+/nightshift:setup      # at most four questions: gates, then every default on one screen
 /nightshift:quality    # survey quality debt; choose review first or run directly
 /nightshift:hunt       # compose tonight: pick ready shifts, set hours, add your scope
 /nightshift:import-issues  # stage explicitly named GitHub issues onto the drafting table
@@ -22,6 +22,11 @@ or [archive finished shifts](archive.md#archive-and-continue). The commands belo
 /nightshift:archive    # file the shift into its own folder, .nightshift/archive/<YYYY-MM-DD>/ by default, laid out like the live site; open work and the contract stay live
 # you review the local commits or artifact receipts — push only in repository mode, or forbid pushing outright (one env line below)
 ```
+
+Setup asks at most four questions: the work target only when it is ambiguous, the detected gates
+(accept, edit, or none), one screen with every other default, and the ignored files a shift
+worktree should copy in when one was chosen. Answer the defaults screen with "accept all" or name
+what to change; a rerun shows the current values.
 
 With work in the punch list, Start asks nothing and promotes no other work. If the list is empty,
 it offers staged drafts and orders for approval; an empty unattended start cannot choose for the
