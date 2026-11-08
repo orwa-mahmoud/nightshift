@@ -35,6 +35,15 @@ Read the complete
 defines the required ending, discovery method, definition of done, refusals, verification, and
 supported stacks.
 
+An evidence kind is one new file and does not change the index:
+
+```text
+plugins/nightshift/skills/nightshift/references/evidence/kinds/<key>.md
+```
+
+Follow
+[`evidence/recipe.md`](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
+
 ## Before opening a pull request
 
 1. Confirm the issue or proposal agrees with the change.

@@ -83,6 +83,14 @@ Cited reports, SEO audits, sourced documentation, and research synthesis follow
 [`cited-research.md`](../plugins/nightshift/skills/nightshift/references/shift/cited-research.md#cited-research-and-report). Source
 policies (`closed-list`, `bounded-discovery`, `connected-corpus`) decide what may be fetched.
 
+## Evidence lines
+
+Plan and Hunt suggest an `Evidence:` line only after the owner asks for one. Each kind is one file
+under `skills/nightshift/references/evidence/kinds/`. `ns catalog-index --catalog evidence` lists
+the kinds; a kind is read in full only when a drafted item fits it. Adding a kind is one new file,
+described in
+[`evidence/recipe.md`](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
+
 ## Policy behind a receipt
 
 Three layers resolve before the site arms — permanent rules, remembered defaults, and tonight's

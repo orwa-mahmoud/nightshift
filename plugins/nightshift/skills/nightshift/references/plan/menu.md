@@ -17,7 +17,9 @@ day loses nothing and the menu is not offered twice for the same plan:
 
 ## Evidence lines and shift-wide evidence
 
-Read `evidence/catalog.md` and suggest one `Evidence:` line per item, beside its `Verify:`. Then
+Read `evidence/catalog.md` and suggest one `Evidence:` line per item, beside its `Verify:`.
+List the kinds with `ns catalog-index --catalog evidence` and read in full only the kinds that
+fit the drafted items. Then
 ask once, for the whole plan rather than per item, which shift-wide settings to include: evidence
 every item should carry (`receipts.evidence.default`), a file map on every receipt
 (`receipts.evidence.fileMap`), an architecture diagram kept current

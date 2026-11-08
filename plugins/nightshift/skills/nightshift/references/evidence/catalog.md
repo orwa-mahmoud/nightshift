@@ -1,11 +1,11 @@
 # Evidence catalog
 
-Read this only after the owner says yes to evidence lines. Each kind of item below names the
-evidence that lets a reviewer see the work at a glance, without rerunning it. Suggest from the row
-that fits the item, name concrete widths, commands and figures, and leave the owner to keep, edit
-or drop each line.
+Read this only after the owner says yes to evidence lines. An `Evidence:` line sits beside
+`Verify:` in the item. It names what lets a reviewer see the work at a glance, without rerunning
+it. Suggest from the kind that fits the item, name concrete widths, commands and figures, and
+leave the owner to keep, edit or drop each line.
 
-An `Evidence:` line sits beside `Verify:` in the item. One line, or a list under it:
+One line, or a list under it:
 
 ```text
   - Evidence: before/after screenshots at 375 and 1280 px, light and dark
@@ -19,18 +19,9 @@ An `Evidence:` line sits beside `Verify:` in the item. One line, or a list under
 
 Evidence shows the work; it never decides a tick. `Verify:` is what must pass.
 
-| Kind of item | Evidence |
-| --- | --- |
-| UI | Before/after screenshots at named widths (for example 375 and 1280 px), light and dark. A short recording for a flow of more than one step. |
-| Performance | The exact command, the machine and its load, before/after figures with units, and the run count behind each figure. |
-| Tests | The tests added, the behaviour each one covers, and the coverage change for the touched files. |
-| API or contract | A sample request and response, and the schema diff. For a breaking change, the old and new shape side by side. |
-| Docs | The rendered page, or a screenshot of it, and the link check output. |
-| Data or migration | Row or record counts before and after, the migration's own output, and the rollback command. |
-| Security | The scan command and its output, and each finding's disposition: fixed, accepted with a reason, or not applicable. |
-| Refactor | What moved where, what stayed behaviour-identical, and how that was shown: the unchanged tests, a before/after output diff, or both. |
-| CLI or tooling | The command run and its output before and after, including the error a user sees. |
-| Configuration or infrastructure | The resolved config diff, the plan or dry-run output, and how the change is undone. |
+List the kinds with `ns catalog-index --catalog evidence`. Each line is the key, the title, and
+the description, tab-separated, read from `evidence/kinds/<key>.md`. Then read in full only the
+kinds that fit the drafted items. An item that fits no kind needs no line. An item that fits two
+kinds takes the evidence of both, trimmed to what a reviewer would actually open.
 
-An item that fits no row needs no line. An item that fits two rows takes the evidence of both,
-trimmed to what a reviewer would actually open.
+To add a kind, follow `evidence/recipe.md`.
