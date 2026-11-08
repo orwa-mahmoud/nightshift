@@ -12,7 +12,7 @@ is the shortest current queue.
 
 | Area | A good first contribution | Know before starting | Likely files | Minimum verification | Current work |
 | --- | --- | --- | --- | --- | --- |
-| **Shift catalog** | Add one narrow, reusable night shift | Markdown, a concrete definition of done, and the failure modes the shift must refuse | `plugins/nightshift/skills/nightshift/references/compose/shifts/`, `tests/shifts/` | `bats tests/catalog.bats` plus the matching file under `tests/shifts/`; for priority contracts also `evals/validate.sh` and `tests/evals.bats` (schema and size budgets) | [Propose a shift](https://github.com/orwa-mahmoud/nightshift/issues/new?template=catalog_shift.yml) or join [#21](https://github.com/orwa-mahmoud/nightshift/issues/21) |
+| **Shift catalog** | Add one narrow, reusable night shift, evidence kind, gate stack or edge-case pack ([Add to a catalog](add-to-a-catalog.md#add-to-a-catalog)) | Markdown, a concrete definition of done, and the failure modes the shift must refuse | `plugins/nightshift/skills/nightshift/references/compose/shifts/`, `tests/shifts/` | `bats tests/catalog.bats` plus the matching file under `tests/shifts/`; for priority contracts also `evals/validate.sh` and `tests/evals.bats` (schema and size budgets) | [Propose a shift](https://github.com/orwa-mahmoud/nightshift/issues/new?template=catalog_shift.yml) or join [#21](https://github.com/orwa-mahmoud/nightshift/issues/21) |
 | **Documentation** | Shorten a path to a first successful shift or document a verified layout | The behavior being documented; reproduce every command you change | `README.md`, `docs/`, `examples/`, skill `SKILL.md` files | Run the focused contract test when one exists: `bats tests/doc-refs.bats tests/contribution-map.bats tests/first-night-checklist.bats tests/shift-modes.bats tests/troubleshooting.bats tests/bad-night-template.bats tests/github-templates.bats`; then `claude plugin validate . --strict` | [Open documentation work](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+docs%22) |
 | **Testing** | Add a regression for one observed failure | Bats and the shell or skill contract under test | `tests/*.bats`, `tests/codex/`, `tests/fixtures/` | Run the changed Bats file directly, then `bats tests/` | Check [open testing work](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+testing%22); if the queue is empty, propose one reproducible gap first |
 | **Runtime** | Fix a diagnosed setup, state, scheduling, import, or support-bundle problem | Portable Bash 3.2, filesystem safety, and the matching runtime contract | `plugins/nightshift/runtime/`, `plugins/nightshift/lib/lib.sh`, `plugins/nightshift/lib/Nightshift.psm1` and the numbered parts it loads, matching `tests/*.bats` | Run the matching Bats file, then `bats tests/` and `git ls-files '*.sh' \| xargs shellcheck -x` | [Open runtime work](https://github.com/orwa-mahmoud/nightshift/issues?q=is%3Aissue+is%3Aopen+label%3A%22area%3A+runtime%22) |
@@ -23,26 +23,16 @@ is the shortest current queue.
 
 ## The easiest code-free path
 
-A catalog entry is two new files and does not change shared hooks:
+A catalog entry is one new Markdown file and changes nothing shared. Shifts, evidence kinds, gate
+stacks and edge-case packs all work the same way:
+[Add to a catalog](add-to-a-catalog.md#add-to-a-catalog) has the table of catalogs, the three
+steps, and what a reviewer looks for. A shift may add one test, `tests/shifts/<your-shift>.bats`.
 
-```text
-plugins/nightshift/skills/nightshift/references/compose/shifts/<your-shift>.md
-tests/shifts/<your-shift>.bats
-```
-
-Read the complete
-[`catalog-recipe.md`](../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md#adding-a-shift-to-the-catalog). It
-defines the required ending, discovery method, definition of done, refusals, verification, and
-supported stacks.
-
-An evidence kind is one new file and does not change the index:
-
-```text
-plugins/nightshift/skills/nightshift/references/evidence/kinds/<key>.md
-```
-
-Follow
-[`evidence/recipe.md`](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
+The rules specific to each catalog are in the
+[shift recipe](../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md#adding-a-shift-to-the-catalog)
+(the required ending, discovery method, definition of done, refusals, verification, and supported
+stacks) and the
+[evidence recipe](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
 
 ## Before opening a pull request
 

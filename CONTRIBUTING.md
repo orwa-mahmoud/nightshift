@@ -104,8 +104,9 @@ docs that shorten the path to a first successful shift.
 The [contribution map](docs/contribution-map.md) links current issues and gives each area an entry
 path, prerequisite knowledge, likely files, and focused verification commands.
 
-Shift catalog entries are the easiest way in: they are markdown, they touch no
-hooks, and they grow the catalog without growing the product. Read
+Catalog entries are the easiest way in: each is one Markdown file, it touches no hooks, and it
+grows a catalog without growing the product. [Add to a catalog](docs/add-to-a-catalog.md#add-to-a-catalog)
+covers shifts, evidence kinds, gate stacks and edge-case packs. For a shift, read
 [`catalog-recipe.md`](plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md) first — an
 entry must declare its ending, how it discovers work, its definition of done, what
 it will never do, its verification, and the stacks it supports. Every catalog PR is

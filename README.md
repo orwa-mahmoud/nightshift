@@ -290,7 +290,8 @@ Use the [documentation index](docs/README.md#documentation) for the full referen
 
 ## Contributing
 
-Catalog entries are a focused starting point: one Markdown contract and its checks. Human and
+Catalog entries are a focused starting point: one Markdown file per entry, with no code.
+[Add to a catalog](docs/add-to-a-catalog.md#add-to-a-catalog) walks through it. Human and
 AI-assisted contributions are welcome. Use the [contribution map](docs/contribution-map.md#choose-your-contribution) to
 choose an area; verification and the release process are in [CONTRIBUTING.md](CONTRIBUTING.md#contributing-to-nightshift).
 

@@ -52,7 +52,7 @@ a complete prompt: compose it and run it. Examples of a complete prompt:
 
 Entries live one per file: the shipped ones in
 `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/compose/shifts/`, and the owner's in the
-catalog folders `docs/knobs.md#catalogs` describes. **Start with what the catalog holds, not with
+catalog folders [Owner knobs](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/knobs.md#catalogs) describes. **Start with what the catalog holds, not with
 every contract in it:**
 
 ```bash
