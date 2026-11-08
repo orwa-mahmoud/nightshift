@@ -3,6 +3,23 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.32.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.31.0...v0.32.0) (2026-11-08)
+
+
+### Features
+
+* add a customize skill that offers every setting in one place ([8b82de7](https://github.com/orwa-mahmoud/nightshift/commit/8b82de71b53140ef27165979b9567b9762a3d64d))
+* give every catalog one model and one owner folder ([18d06ff](https://github.com/orwa-mahmoud/nightshift/commit/18d06ffbaa536a0afa265ee354fb5fc2233497e5))
+* set up a project in at most four questions ([9d19343](https://github.com/orwa-mahmoud/nightshift/commit/9d193433369704a53a26eb4aa20b2e98717dc933))
+* ship defaults that never block a shift ([e42a97b](https://github.com/orwa-mahmoud/nightshift/commit/e42a97b5e8174120817c1f067ec839325eedab93))
+* start a shift from one sentence ([99e492a](https://github.com/orwa-mahmoud/nightshift/commit/99e492aaf2340e9779299a8e53a33f3940faa006))
+
+
+### Bug Fixes
+
+* find evidence kinds in configured folders without python3 ([1ff4b6d](https://github.com/orwa-mahmoud/nightshift/commit/1ff4b6d5fa030102a77b9ff4cee9363ef30a8e0d))
+* read configured catalog folders without python3 ([7722211](https://github.com/orwa-mahmoud/nightshift/commit/7722211d2b4ecb57c4f29ce364c0ac1d49c4f866))
+
 ## [0.31.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.30.3...v0.31.0) (2026-11-08)
 
 
