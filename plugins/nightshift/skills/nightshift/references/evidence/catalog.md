@@ -19,9 +19,11 @@ One line, or a list under it:
 
 Evidence shows the work; it never decides a tick. `Verify:` is what must pass.
 
-List the kinds with `ns catalog-index --catalog evidence`. Each line is the key, the title, and
-the description, tab-separated, read from `evidence/kinds/<key>.md`. Then read in full only the
-kinds that fit the drafted items. An item that fits no kind needs no line. An item that fits two
+List the kinds with `ns catalog-index --catalog evidence`. Each line is the key, the title, the
+description, the source, and the sources a same key replaced, tab-separated. The source is
+`plugin`, `user`, `project`, or a configured folder. Then read in full only the kinds that fit
+the drafted items. Where an owner's kind and a shipped kind both fit, the owner's wins. An item
+that fits none is offered one draft, written only after the owner says yes. An item that fits two
 kinds takes the evidence of both, trimmed to what a reviewer would actually open.
 
 To add a kind, follow `evidence/recipe.md`.

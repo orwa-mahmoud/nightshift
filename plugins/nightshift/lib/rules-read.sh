@@ -479,6 +479,8 @@ receipts.enabled
 receipts.evidence.architecture
 receipts.evidence.default
 receipts.evidence.fileMap
+receipts.evidence.kindTemplatePath
+receipts.evidence.kindsPaths
 receipts.progressMinutes
 receipts.progressMode
 receipts.progressTokens

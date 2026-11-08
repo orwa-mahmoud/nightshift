@@ -523,15 +523,32 @@ else {
             $evidenceRule = $receiptsRule.Value.PSObject.Properties['evidence']
         }
         if ($null -ne $evidenceRule -and $evidenceRule.Value -is [Management.Automation.PSCustomObject]) {
-            foreach ($k in @('architecture', 'default', 'fileMap')) {
+            foreach ($k in @('architecture', 'default', 'fileMap', 'kindTemplatePath', 'kindsPaths')) {
                 $setting = $evidenceRule.Value.PSObject.Properties[$k]
                 if ($null -eq $setting) { continue }
                 $name = 'receipts.evidence.' + $k
                 $shown = ConvertTo-Json -Compress -InputObject $setting.Value
-                if ($k -ceq 'default') {
+                if ($k -ceq 'default' -or $k -ceq 'kindTemplatePath') {
                     if ($setting.Value -is [string]) { continue }
                     Add-NSWarn "rules.json $name is $shown; it must be text"
-                    Add-NSAct confirm "set $name to the evidence every item should carry, or `"`", in $rulesPath"
+                    if ($k -ceq 'default') {
+                        Add-NSAct confirm "set $name to the evidence every item should carry, or `"`", in $rulesPath"
+                    }
+                    else {
+                        Add-NSAct confirm "set $name to a template path, or `"`", in $rulesPath"
+                    }
+                    continue
+                }
+                if ($k -ceq 'kindsPaths') {
+                    $kindsOk = $setting.Value -is [Collections.IEnumerable] -and $setting.Value -isnot [string]
+                    if ($kindsOk) {
+                        foreach ($folder in @($setting.Value)) {
+                            if ($folder -isnot [string]) { $kindsOk = $false; break }
+                        }
+                    }
+                    if ($kindsOk) { continue }
+                    Add-NSWarn "rules.json $name is $shown; it must be a list of folders"
+                    Add-NSAct confirm "set $name to a list of folders, or [], in $rulesPath"
                     continue
                 }
                 if ($setting.Value -is [string] -and ($setting.Value -ceq 'off' -or $setting.Value -ceq 'on')) { continue }

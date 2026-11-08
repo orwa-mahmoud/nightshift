@@ -47,6 +47,41 @@ type: image
 
 An unknown key, a missing key, or any other `type:` is rejected. The block says a file is present. It does not say the work is right.
 
+## Owner kinds
+
+An owner adds a kind without a pull request. One file in the project is used only there. One file
+in the user folder is used in every project on the machine. Further folders are named with
+`receipts.evidence.kindsPaths`. The index lists all of them. A project kind wins over a configured
+folder, which wins over a user kind, which wins over the shipped kind of the same key.
+
+The project folder is the path `ns path evidence-kinds` prints (`evidence/kinds` inside
+`.nightshift` on the current layout). The user folder is the same on every project on this machine.
+
+POSIX:
+
+```bash
+project_kinds="$(ns path evidence-kinds)"
+mkdir -p "$project_kinds"
+cp plugins/nightshift/skills/nightshift/references/templates/evidence-kind.md "$project_kinds/<key>.md"
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/nightshift/evidence/kinds"
+cp plugins/nightshift/skills/nightshift/references/templates/evidence-kind.md "${XDG_CONFIG_HOME:-$HOME/.config}/nightshift/evidence/kinds/<key>.md"
+```
+
+PowerShell:
+
+```powershell
+$projectKinds = ns path evidence-kinds
+New-Item -ItemType Directory -Force $projectKinds
+Copy-Item plugins/nightshift/skills/nightshift/references/templates/evidence-kind.md (Join-Path $projectKinds '<key>.md')
+New-Item -ItemType Directory -Force "$env:APPDATA\nightshift\evidence\kinds"
+Copy-Item plugins/nightshift/skills/nightshift/references/templates/evidence-kind.md (Join-Path $env:APPDATA "nightshift\evidence\kinds\<key>.md")
+```
+
+`receipts.evidence.kindTemplatePath` names the owner's own template. Empty uses the shipped
+template. A kind drafted from it still needs the five sections. The check names any section that
+is missing. Owner kinds stay on the machine. Purge removes the project folder with the rest of
+`.nightshift/` and does not touch the user folder. Reset and Archive leave both.
+
 ## Review
 
 Every kind is read by a human before merge. The shape is necessary and not sufficient: a kind that names no concrete file, command, or figure will be followed literally, and a tired model will produce exactly the vague line it was given.

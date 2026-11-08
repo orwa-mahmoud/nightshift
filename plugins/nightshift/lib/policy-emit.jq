@@ -72,6 +72,7 @@ def PREF: {
   "handoff":  ["detail", "enabled", "language", "sections", "templatePath", "view"],
   "archive":  ["automatic", "layout", "root", "templatePath"],
   "receipts": ["duration", "enabled", "evidence.architecture", "evidence.default", "evidence.fileMap",
+               "evidence.kindTemplatePath", "evidence.kindsPaths",
                "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"]
 };
 

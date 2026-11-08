@@ -166,12 +166,12 @@ ns_policy_builtin() {
     handoff.detail) printf '"concise"' ;;
     handoff.enabled | receipts.enabled) printf 'true' ;;
     handoff.language) printf '"auto"' ;;
-    handoff.sections) printf '[]' ;;
+    handoff.sections | receipts.evidence.kindsPaths) printf '[]' ;;
     handoff.view) printf '"owner"' ;;
     recovery.launchScope) printf '"inherit-recorded-scope"' ;;
     receipts.duration) printf '"on"' ;;
     receipts.evidence.architecture | receipts.evidence.fileMap) printf '"off"' ;;
-    receipts.evidence.default) printf '""' ;;
+    receipts.evidence.default | receipts.evidence.kindTemplatePath) printf '""' ;;
     receipts.progressMinutes) printf '20' ;;
     receipts.progressMode) printf '"time"' ;;
     receipts.progressTokens) printf '100000' ;;
@@ -336,8 +336,8 @@ PREF = [("shift", ["copyIn", "execution", "hours", "isolation", "itemBudget", "p
         ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
         ("archive", ["automatic", "layout", "root", "templatePath"]),
         ("receipts", ["duration", "enabled", "evidence.architecture", "evidence.default",
-                    "evidence.fileMap", "progressMinutes", "progressMode", "progressTokens",
-                    "templatePath", "usage"])]
+                    "evidence.fileMap", "evidence.kindTemplatePath", "evidence.kindsPaths",
+                    "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"])]
 out = []
 
 
@@ -971,6 +971,20 @@ _ns_policy_validate_shift() {
     '' | null | '"'*) ;;
     *)
       _ns_policy_shift_fail receipts.evidence.default "must be text"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.kindTemplatePath)" in
+    '' | null | '"'*) ;;
+    *)
+      _ns_policy_shift_fail receipts.evidence.kindTemplatePath "must be text"
+      return 1
+      ;;
+  esac
+  case "$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" receipts.evidence.kindsPaths)" in
+    '' | null | '['*) ;;
+    *)
+      _ns_policy_shift_fail receipts.evidence.kindsPaths "must be a list of folders"
       return 1
       ;;
   esac

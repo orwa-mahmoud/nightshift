@@ -4,6 +4,8 @@
 
 bats_require_minimum_version 1.5.0
 
+load helpers
+
 ROOT="$BATS_TEST_DIRNAME/.."
 PLUGIN="$ROOT/plugins/nightshift"
 INDEX="$PLUGIN/runtime/catalog-index.sh"
@@ -14,6 +16,47 @@ CATALOG="$PLUGIN/skills/nightshift/references/evidence/catalog.md"
 RECIPE="$PLUGIN/skills/nightshift/references/evidence/recipe.md"
 MENU="$PLUGIN/skills/nightshift/references/plan/menu.md"
 README="$PLUGIN/skills/nightshift/references/README.md"
+PURGE="$PLUGIN/runtime/purge-workspace.sh"
+RESET="$PLUGIN/runtime/reset-shift.sh"
+PURGE_PS1="$PLUGIN/runtime/windows/purge-workspace.ps1"
+RESET_PS1="$PLUGIN/runtime/windows/reset-shift.ps1"
+PATH_SH="$PLUGIN/runtime/path.sh"
+SOURCES="$PLUGIN/lib/catalog-sources.sh"
+SOURCES_PS1="$PLUGIN/lib/catalog-sources.ps1"
+
+# A developer's own kinds must not leak into a test that lists the shipped catalog.
+setup() {
+  mkdir -p "$BATS_TEST_TMPDIR/no-owner"
+  export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/no-owner"
+  export APPDATA="$XDG_CONFIG_HOME"
+}
+
+write_kind() { # <path> <title>
+  mkdir -p "${1%/*}"
+  cat >"$1" <<EOF
+# $2 — owner kind for this test
+
+## When it applies
+
+Items this owner kind fits.
+
+## Evidence lines
+
+- Evidence: the owner's own note
+
+## How to generate
+
+Write the note into the item folder.
+
+## How to verify
+
+Open the note.
+
+## Never
+
+No tokens.
+EOF
+}
 
 # Drop HTML comments so a commented example is not a live block.
 strip_comments() {
@@ -173,10 +216,10 @@ LINES
   [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" \
     -eq "$(find "$KINDS" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" ]
   while IFS= read -r line; do
-    [ "$(printf '%s' "$line" | awk -F'\t' '{print NF}')" -eq 3 ] \
-      || { echo "not three cells: $line"; return 1; }
-    printf '%s' "$line" | awk -F'\t' '$1 == "" || $2 == "" || $3 == "" { exit 1 }' \
-      || { echo "an empty cell: $line"; return 1; }
+    [ "$(printf '%s' "$line" | awk -F'\t' '{print NF}')" -eq 5 ] \
+      || { echo "not five cells: $line"; return 1; }
+    printf '%s' "$line" | awk -F'\t' '$1 == "" || $2 == "" || $3 == "" || $4 != "plugin" || $5 != "" { exit 1 }' \
+      || { echo "not a shipped kind: $line"; return 1; }
   done < <(printf '%s\n' "$output")
   for key in ui performance tests api-or-contract docs data-or-migration security refactor \
     cli-or-tooling configuration-or-infrastructure; do
@@ -250,4 +293,229 @@ ENTRY
   done
   grep -qF 'references/evidence/recipe.md' "$ROOT/docs/evidence-capabilities.md"
   grep -qF 'references/evidence/recipe.md' "$ROOT/docs/contribution-map.md"
+}
+
+@test "the catalog helper does not name one catalog" {
+  [ -f "$SOURCES" ]
+  [ -f "$SOURCES_PS1" ]
+  ! grep -i evidence "$SOURCES"
+  ! grep -i evidence "$SOURCES_PS1"
+}
+
+@test "owner kinds are listed with their source, and precedence names what it replaced" {
+  p="$(new_project owner-kinds)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  folder_a="$BATS_TEST_TMPDIR/folder-a"
+  folder_b="$BATS_TEST_TMPDIR/folder-b"
+  mkdir -p "$folder_a" "$folder_b"
+  write_kind "$p/.nightshift/evidence/kinds/ui.md" "Project UI"
+  printf '\n## Where it lives\n\nThis project.\n' >>"$p/.nightshift/evidence/kinds/ui.md"
+  write_kind "$p/.nightshift/evidence/kinds/proj-only.md" "Project only"
+  write_kind "$XDG_CONFIG_HOME/nightshift/evidence/kinds/ui.md" "User UI"
+  write_kind "$XDG_CONFIG_HOME/nightshift/evidence/kinds/user-only.md" "User only"
+  write_kind "$folder_a/ui.md" "Folder A"
+  write_kind "$folder_a/conf-only.md" "Folder A only"
+  write_kind "$folder_b/ui.md" "Folder B"
+  jq --arg a "$folder_a" --arg b "$folder_b" \
+    '.receipts.evidence.kindsPaths = [$a, $b]' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+
+  run bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ]
+  ui="$(printf '%s\n' "$output" | awk -F'\t' '$1 == "ui"')"
+  [ "$(printf '%s' "$ui" | cut -f2)" = "Project UI" ]
+  [ "$(printf '%s' "$ui" | cut -f4)" = project ]
+  [ "$(printf '%s' "$ui" | cut -f5)" = "$folder_a, $folder_b, user, plugin" ] \
+    || { printf 'ui line: %s\n' "$ui"; return 1; }
+  [ "$(printf '%s\n' "$output" | awk -F'\t' '$1 == "proj-only" { print $4 }')" = project ]
+  [ "$(printf '%s\n' "$output" | awk -F'\t' '$1 == "user-only" { print $4 }')" = user ]
+  [ "$(printf '%s\n' "$output" | awk -F'\t' '$1 == "conf-only" { print $4 }')" = "$folder_a" ]
+  printf '%s\n' "$output" | awk -F'\t' '$1 == "ui" && $4 == "plugin" { found = 1 } END { exit found ? 1 : 0 }'
+
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  run bash -c 'diff <(bash "$1" --catalog evidence --project "$3") <(pwsh -NoProfile -File "$2" --catalog evidence --project "$3")' \
+    _ "$INDEX" "$INDEX_PS1" "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+}
+
+@test "a malformed owner kind and a missing configured folder are reported and skipped" {
+  p="$(new_project owner-bad)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  missing="$BATS_TEST_TMPDIR/no-such-kinds"
+  write_kind "$p/.nightshift/evidence/kinds/ui.md" "Project UI"
+  cat >"$p/.nightshift/evidence/kinds/broken.md" <<'EOF'
+# Broken — missing a required section
+
+## When it applies
+
+Items.
+
+## Evidence lines
+
+- Evidence: a note
+
+## How to generate
+
+Write it.
+
+## How to verify
+
+Open it.
+EOF
+  printf '# Not a key\n' >"$p/.nightshift/evidence/kinds/Not A Key.md"
+  jq --arg m "$missing" '.receipts.evidence.kindsPaths = [$m]' \
+    "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+
+  run bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'missing section Never'
+  printf '%s\n' "$output" | grep -qF 'broken.md'
+  printf '%s\n' "$output" | grep -qF 'malformed file name'
+  printf '%s\n' "$output" | grep -qF "configured folder missing: $missing"
+  if printf '%s\n' "$output" | awk -F'\t' '$1 == "broken" { found = 1 } END { exit found ? 0 : 1 }'; then
+    echo "a malformed kind was listed"
+    return 1
+  fi
+  printf '%s\n' "$output" | awk -F'\t' '$1 == "ui" { found = 1 } END { exit found ? 0 : 1 }'
+
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  run pwsh -NoProfile -File "$INDEX_PS1" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'missing section Never'
+  printf '%s\n' "$output" | grep -qF "configured folder missing: $missing"
+}
+
+@test "with no owner folders the index is the shipped kinds alone" {
+  p="$(new_project owner-none)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  run bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" \
+    -eq "$(find "$KINDS" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')" ]
+  printf '%s\n' "$output" | awk -F'\t' '$4 != "plugin" || $5 != "" { exit 1 }'
+}
+
+@test "kindTemplatePath is used when set, and a draft missing a section is refused by name" {
+  p="$(new_project owner-template)"
+  cp "$TEMPLATE" "$p/mine.md"
+  printf '\n## House style\n\nSay which screen.\n' >>"$p/mine.md"
+  jq '.receipts.evidence.kindTemplatePath = "mine.md"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  run bash "$INDEX" --catalog evidence --project "$p" --template
+  [ "$status" -eq 0 ]
+  [ "$output" = "$p/mine.md" ]
+
+  jq '.receipts.evidence.kindTemplatePath = ""' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  run bash "$INDEX" --catalog evidence --project "$p" --template
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(cd "$PLUGIN" && pwd -P)/skills/nightshift/references/templates/evidence-kind.md" ] \
+    || { printf 'template: [%s]\n' "$output"; return 1; }
+
+  jq '.receipts.evidence.kindTemplatePath = "~/mine.md"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  run env HOME="$p" bash "$INDEX" --catalog evidence --project "$p" --template
+  [ "$status" -eq 0 ]
+  [ "$output" = "$p/mine.md" ]
+
+  draft="$BATS_TEST_TMPDIR/draft.md"
+  cat >"$draft" <<'EOF'
+# Draft — a kind that is not finished
+
+## When it applies
+
+Items.
+
+## Evidence lines
+
+- Evidence: a note
+
+## How to generate
+
+Write it.
+
+## How to verify
+
+Open it.
+EOF
+  run bash "$INDEX" --catalog evidence --check-draft "$draft"
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'missing section Never'
+  printf '%s\n' "$output" | grep -qF "$draft"
+
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  jq '.receipts.evidence.kindTemplatePath = "mine.md"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  run pwsh -NoProfile -File "$INDEX_PS1" --catalog evidence --project "$p" --template
+  [ "$status" -eq 0 ]
+  [ "$output" = "$p/mine.md" ]
+  run pwsh -NoProfile -File "$INDEX_PS1" --catalog evidence --check-draft "$draft"
+  [ "$status" -eq 1 ] || { printf '%s\n' "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'missing section Never'
+}
+
+@test "project evidence kinds resolve, Purge removes them, and Reset keeps them and the user folder" {
+  p="$(new_project owner-path)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  run bash "$PATH_SH" --project "$p" evidence-kinds
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(cd -P "$p" && pwd -P)/.nightshift/evidence/kinds" ] \
+    || { printf 'path: [%s]\n' "$output"; return 1; }
+  grep -qF '| `evidence/kinds/` |' "$PLUGIN/skills/nightshift/references/shift/state-map.md"
+
+  write_kind "$p/.nightshift/evidence/kinds/proj-only.md" "Project only"
+  write_kind "$XDG_CONFIG_HOME/nightshift/evidence/kinds/user-only.md" "User only"
+  ns="$(cd -P "$p/.nightshift" && pwd -P)"
+  run bash "$RESET" --project "$p"
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/evidence/kinds/proj-only.md" ]
+  [ -f "$XDG_CONFIG_HOME/nightshift/evidence/kinds/user-only.md" ]
+
+  run bash "$PURGE" --project "$p" --confirm-path "$ns"
+  [ "$status" -eq 0 ]
+  [ ! -e "$p/.nightshift" ]
+  [ -f "$XDG_CONFIG_HOME/nightshift/evidence/kinds/user-only.md" ]
+
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  q="$(new_project owner-path-ps)"
+  printf '2\n' >"$q/.nightshift/state-version"
+  write_kind "$q/.nightshift/evidence/kinds/proj-only.md" "Project only"
+  user_file="$APPDATA/nightshift/evidence/kinds/user-only.md"
+  write_kind "$user_file" "User only"
+  ns="$(pwsh -NoProfile -Command "Import-Module '${PLUGIN}/lib/Nightshift.psm1' -Force -DisableNameChecking; Resolve-NSCanonicalPath (Join-Path (Resolve-NSCanonicalPath '${q}') '.nightshift')")"
+  run pwsh -NoProfile -File "$RESET_PS1" -Project "$q"
+  [ "$status" -eq 0 ]
+  [ -f "$q/.nightshift/evidence/kinds/proj-only.md" ]
+  [ -f "$user_file" ]
+  run pwsh -NoProfile -File "$PURGE_PS1" -Project "$q" -ConfirmPath "$ns"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  [ ! -e "$q/.nightshift" ]
+  [ -f "$user_file" ]
+}
+
+@test "the planning read offers owner kinds and the settings are published" {
+  flat() { tr '\n' ' ' <"$1" | tr -s ' '; }
+  flat "$MENU" | grep -qF 'Each line names its source'
+  flat "$MENU" | grep -qF 'receipts.evidence.kindTemplatePath'
+  flat "$MENU" | grep -qF 'only after the owner says yes'
+  grep -qF 'XDG_CONFIG_HOME' "$RECIPE"
+  grep -qF 'APPDATA' "$RECIPE"
+  grep -qF 'never leave the machine' "$ROOT/docs/evidence-capabilities.md"
+  grep -qF 'evidence.kindsPaths' "$ROOT/docs/knobs.md"
+  grep -qF 'evidence.kindTemplatePath' "$ROOT/docs/knobs.md"
+  jq -e '.properties.receipts.properties.evidence.properties.kindsPaths.type == "array"' \
+    "$PLUGIN/skills/nightshift/references/nightshift-rules.schema.json" >/dev/null
+  jq -e '.properties.receipts.properties.evidence.properties.kindTemplatePath.type == "string"' \
+    "$PLUGIN/skills/nightshift/references/schemas/v1/shift-policy.json" >/dev/null
+  jq -e '.receipts.evidence.kindsPaths == [] and .receipts.evidence.kindTemplatePath == ""' \
+    "$PLUGIN/skills/nightshift/references/nightshift-rules-template.json" >/dev/null
 }

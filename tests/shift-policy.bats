@@ -161,7 +161,7 @@ write_policy() { # <project> [extra JSON]
   printf '%s\n' "$output" | grep -qxF 'receipts.evidence.fileMap=off (rules, permanent)'
   # Start freezes the block as the owner's file holds it, one level down.
   [ "$(bash -c '. "$1"; ns_policy_freeze_pref "$2" receipts' _ "$LIB" "$p" | jq -c .evidence)" = \
-    '{"architecture":"off","default":"","fileMap":"off"}' ]
+    '{"architecture":"off","default":"","fileMap":"off","kindTemplatePath":"","kindsPaths":[]}' ]
   # One shift turns the file map on. Status shows it, and the snapshot validates.
   write_policy "$p" '"receipts":{"evidence":{"fileMap":"on"}}'
   run sp "$p" set --from-json "$p/.nightshift/shift-policy.json"

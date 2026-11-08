@@ -85,10 +85,13 @@ policies (`closed-list`, `bounded-discovery`, `connected-corpus`) decide what ma
 
 ## Evidence lines
 
-Plan and Hunt suggest an `Evidence:` line only after the owner asks for one. Each kind is one file
-under `skills/nightshift/references/evidence/kinds/`. `ns catalog-index --catalog evidence` lists
-the kinds; a kind is read in full only when a drafted item fits it. Adding a kind is one new file,
-described in
+Plan and Hunt suggest an `Evidence:` line only after the owner asks for one. Each shipped kind is
+one file under `skills/nightshift/references/evidence/kinds/`. An owner adds a kind without a pull
+request: one file in the project's `.nightshift/evidence/kinds/`, or in the user folder
+(`$XDG_CONFIG_HOME/nightshift/evidence/kinds` on POSIX, `%APPDATA%\nightshift\evidence\kinds` on
+Windows), or in a folder named by `receipts.evidence.kindsPaths`. Those files never leave the machine.
+`ns catalog-index --catalog evidence` lists every source; a kind is read in full only
+when a drafted item fits it. Adding a shipped kind is one new file, described in
 [`evidence/recipe.md`](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
 
 ## Policy behind a receipt

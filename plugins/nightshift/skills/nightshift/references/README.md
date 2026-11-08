@@ -13,8 +13,9 @@ first. Nothing here is loaded because it might come up.
   method, and the edge-case catalog.
 - `evidence/` — the evidence catalog. `evidence/catalog.md` is the entry page Plan and Hunt read
   after the owner says yes to evidence lines; `ns catalog-index --catalog evidence` lists the
-  kinds, and only the kinds that fit the drafted items are read in full. The baseline and
-  checkpoint ledger records live here too, and the working shift writes those.
+  kinds, including kinds the owner added, and only the kinds that fit the drafted items are read
+  in full. The baseline and checkpoint ledger records live here too, and the working shift writes
+  those.
 - `receipts/` — one receipt kind per file. The file names are the index; open the one you are
   writing.
 - `hosts/` — read only when a Start verdict names that host. Every verdict-tied paragraph already

@@ -946,6 +946,8 @@ $script:NSPolicyGroupDefaults['receipts.enabled'] = $true
 $script:NSPolicyGroupDefaults['receipts.evidence.architecture'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.evidence.default'] = ''
 $script:NSPolicyGroupDefaults['receipts.evidence.fileMap'] = 'off'
+$script:NSPolicyGroupDefaults['receipts.evidence.kindTemplatePath'] = ''
+$script:NSPolicyGroupDefaults['receipts.evidence.kindsPaths'] = @()
 $script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
 $script:NSPolicyGroupDefaults['receipts.progressMode'] = 'time'
 $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
@@ -988,6 +990,8 @@ $script:NSPolicySettingNames = @(
     'receipts.evidence.architecture',
     'receipts.evidence.default',
     'receipts.evidence.fileMap',
+    'receipts.evidence.kindTemplatePath',
+    'receipts.evidence.kindsPaths',
     'receipts.progressMinutes',
     'receipts.progressMode',
     'receipts.progressTokens',
@@ -1181,6 +1185,19 @@ function Test-NSShiftPolicyDocument {
         }
         if ($evidenceBlock.Contains('default') -and $null -ne $evidenceBlock['default'] -and $evidenceBlock['default'] -isnot [string]) {
             $errors.Add('receipts.evidence.default: must be text')
+        }
+        if ($evidenceBlock.Contains('kindTemplatePath') -and $null -ne $evidenceBlock['kindTemplatePath'] -and $evidenceBlock['kindTemplatePath'] -isnot [string]) {
+            $errors.Add('receipts.evidence.kindTemplatePath: must be text')
+        }
+        if ($evidenceBlock.Contains('kindsPaths') -and $null -ne $evidenceBlock['kindsPaths']) {
+            $kindsPaths = $evidenceBlock['kindsPaths']
+            $kindsOk = $kindsPaths -is [Collections.IEnumerable] -and $kindsPaths -isnot [string]
+            if ($kindsOk) {
+                foreach ($folder in @($kindsPaths)) {
+                    if ($folder -isnot [string]) { $kindsOk = $false; break }
+                }
+            }
+            if (-not $kindsOk) { $errors.Add('receipts.evidence.kindsPaths: must be a list of folders') }
         }
     }
     if ($Document.Contains('completionMode') -and -not (Test-NSEvidenceEnum $Document['completionMode'] $script:NSPolicyCompletionModes)) {

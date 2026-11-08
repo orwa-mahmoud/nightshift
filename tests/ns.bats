@@ -78,7 +78,7 @@ on() {
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF "Workspace:   $(canon "$p")"
 
-  # catalog-index takes no --project; the dispatcher must not invent one for it.
+  # catalog-index accepts --project. The one the dispatcher adds must not read as unknown.
   run on claude "$p" catalog-index --help
   [ "$status" -ne 2 ]
   ! printf '%s\n' "$output" | grep -qF 'unknown argument: --project' || false

@@ -83,7 +83,9 @@
     "evidence": {
       "fileMap": "off",
       "architecture": "off",
-      "default": ""
+      "default": "",
+      "kindTemplatePath": "",
+      "kindsPaths": []
     }
   },
   "recovery": {

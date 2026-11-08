@@ -269,8 +269,9 @@ ns_control_stop() { # <host-path> [reason]
 }
 
 # Reset: Stop teardown plus drop deadline, leftover STOP/reason, and tonight's shift policy.
-# shift-defaults.json (remembered convenience) and rules.json (permanent boundaries) survive a
-# reset exactly like the punch list and parking lot do.
+# shift-defaults.json (remembered convenience), rules.json (permanent boundaries), and
+# owner-authored files such as evidence kinds survive a reset exactly like the punch list and
+# parking lot do.
 ns_control_reset() { # <host-path>
   local host="$1" rc=0 txn key
   ns_control_resolve "$host" || return $?
@@ -308,6 +309,8 @@ ns_control_purge_allowed() { # <workspace> <ns>
 }
 
 # Purge: Reset, then delete this project's .nightshift/ and a local .nightshift-link.
+# Owner-authored project files under that directory, including evidence kinds, go with it.
+# A per-user folder outside the project is not this project's state and is never deleted.
 # Requires --confirm-path equal to the canonical .nightshift directory.
 ns_control_purge() { # <host-path> <confirm-path>
   local host="$1" confirm="$2" ns_canon link rc=0 workspace

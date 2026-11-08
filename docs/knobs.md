@@ -361,6 +361,8 @@ plus a runtime-written index. It never reaches a public commit message.
 | `evidence.default` | `""` | Evidence every item should carry when its own `Evidence:` line says nothing, such as `before/after screenshots for UI items`. Empty asks for none |
 | `evidence.fileMap` | `off` | `on` writes, at each tick, the item's changed files as a tree in its receipt and the whole shift's in `.nightshift/receipts/shift-map.md`, built from git |
 | `evidence.architecture` | `off` | `on` keeps one diagram of the components the shift touched, `.nightshift/receipts/architecture.md`, updated by the item that changes the structure |
+| `evidence.kindTemplatePath` | `""` | The owner's template for a new evidence kind. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. An owner template may add sections; a drafted kind still needs the five required sections, and the check names any that are missing |
+| `evidence.kindsPaths` | `[]` | More folders of evidence kinds. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
 
 With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
 would be without these settings. A shift policy can turn any of them on for one shift.
