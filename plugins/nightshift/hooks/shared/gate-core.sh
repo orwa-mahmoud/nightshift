@@ -14,6 +14,7 @@ ns_gate_boxes() {
   OPEN=0
   TICKED=0
   TOTAL=0
+  # shellcheck disable=SC2153 # the caller's global; a sourced local named punch is a different variable
   [ -f "$PUNCH" ] || return 0
   OPEN="$(ns_open_boxes "$PUNCH")" || {
     OPEN=0
@@ -33,6 +34,7 @@ ns_gate_boxes() {
 
 ns_gate_project_head() {
   local r
+  # shellcheck disable=SC2153 # the caller's global; a sourced local named project_dir is a different variable
   if r="$(ns_work_target "$PROJECT_DIR")"; then
     git -C "$r" rev-parse HEAD 2>/dev/null || printf 'nohead'
   else
