@@ -934,6 +934,8 @@ $script:NSPolicyGroupDefaults['archive.automatic'] = $false
 $script:NSPolicyGroupDefaults['archive.layout'] = 'date'
 $script:NSPolicyGroupDefaults['archive.root'] = 'archive'
 $script:NSPolicyGroupDefaults['archive.templatePath'] = ''
+$script:NSPolicyGroupDefaults['edgeCases.packTemplatePath'] = ''
+$script:NSPolicyGroupDefaults['edgeCases.packsPaths'] = @()
 $script:NSPolicyGroupDefaults['gates.stackTemplatePath'] = ''
 $script:NSPolicyGroupDefaults['gates.stacksPaths'] = @()
 $script:NSPolicyGroupDefaults['handoff.detail'] = 'concise'
@@ -974,6 +976,8 @@ $script:NSPolicySettingNames = @(
     'archive.root',
     'archive.templatePath',
     'deadlineEpoch',
+    'edgeCases.packTemplatePath',
+    'edgeCases.packsPaths',
     'elevation.containers',
     'elevation.daemons',
     'elevation.external-services',
@@ -1156,7 +1160,7 @@ function Test-NSShiftPolicyDocument {
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
         'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
-        'shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates')
+        'shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates', 'edgeCases')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -1233,6 +1237,22 @@ function Test-NSShiftPolicyDocument {
                 }
             }
             if (-not $stacksOk) { $errors.Add('gates.stacksPaths: must be a list of folders') }
+        }
+    }
+    $edgeBlock = Get-NSPolicyField $Document 'edgeCases'
+    if ($edgeBlock -is [Collections.IDictionary]) {
+        if ($edgeBlock.Contains('packTemplatePath') -and $null -ne $edgeBlock['packTemplatePath'] -and $edgeBlock['packTemplatePath'] -isnot [string]) {
+            $errors.Add('edgeCases.packTemplatePath: must be text')
+        }
+        if ($edgeBlock.Contains('packsPaths') -and $null -ne $edgeBlock['packsPaths']) {
+            $packsPaths = $edgeBlock['packsPaths']
+            $packsOk = $packsPaths -is [Collections.IEnumerable] -and $packsPaths -isnot [string]
+            if ($packsOk) {
+                foreach ($folder in @($packsPaths)) {
+                    if ($folder -isnot [string]) { $packsOk = $false; break }
+                }
+            }
+            if (-not $packsOk) { $errors.Add('edgeCases.packsPaths: must be a list of folders') }
         }
     }
     if ($Document.Contains('completionMode') -and -not (Test-NSEvidenceEnum $Document['completionMode'] $script:NSPolicyCompletionModes)) {
@@ -1573,7 +1593,7 @@ function Set-NSShiftPolicy {
     # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
     # here, so an edit to rules.json lands on the next shift rather than moving the ground under
     # this one. A candidate that already states a block is left exactly as it was written.
-    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates')) {
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates', 'edgeCases')) {
         if ($document.Contains($block)) { continue }
         $frozen = New-NSOrdinalMap
         foreach ($name in $script:NSPolicyGroupDefaults.Keys) {

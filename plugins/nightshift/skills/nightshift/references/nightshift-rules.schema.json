@@ -511,6 +511,24 @@
         }
       }
     },
+    "edgeCases": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Edge-case packs the owner adds. Empty uses the shipped packs only.",
+      "properties": {
+        "packTemplatePath": {
+          "type": "string",
+          "description": "The owner's template for a new edge-case pack. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. A drafted pack still needs When it applies, Cases, and Example lines."
+        },
+        "packsPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "More folders of edge-case packs. Each entry is a path relative to the workspace, an absolute path, or a path starting with ~. Empty means none. The first folder wins when two of them hold the same key."
+        }
+      }
+    },
     "gates": {
       "type": "object",
       "additionalProperties": false,

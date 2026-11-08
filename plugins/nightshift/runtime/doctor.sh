@@ -525,6 +525,16 @@ elif json_is_object "$RULES"; then
         warn "rules.json $ev_name is $ev_val; it must be a list of folders"
         act confirm "set $ev_name to a list of folders, or [], in $RULES"
         ;;
+      edgeCases.packTemplatePath)
+        case "$ev_val" in '"'*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be text"
+        act confirm "set $ev_name to a template path, or \"\", in $RULES"
+        ;;
+      edgeCases.packsPaths)
+        case "$ev_val" in '['*) continue ;; esac
+        warn "rules.json $ev_name is $ev_val; it must be a list of folders"
+        act confirm "set $ev_name to a list of folders, or [], in $RULES"
+        ;;
     esac
   done <<EVIDENCE
 $(ns_rules_facts "$RULES" 2>/dev/null)

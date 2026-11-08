@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # catalog-index.sh — what a catalog holds, one line per entry.
 #
-#   catalog-index.sh [--plugin-root DIR] [--catalog shifts|evidence|gates]
+#   catalog-index.sh [--plugin-root DIR] [--catalog shifts|evidence|gates|edge-cases]
 #                    [--project DIR] [--template] [--check-draft FILE]
 #
 # shifts, the default, reads references/compose/shifts and prints slug, ending, title and summary.
@@ -168,6 +168,25 @@ case "$CATALOG" in
     paths_field=stacksPaths
     paths_label=stacksPaths
     list_order=match
+    ;;
+  edge-cases)
+    NS_CATALOG_HEADINGS='When it applies|Cases|Example lines'
+    NS_CATALOG_BULLET='Example lines'
+    NS_CATALOG_FENCE=
+    NS_CATALOG_FENCE_KEYS=
+    NS_CATALOG_FENCE_TYPES=
+    NS_CATALOG_MATCH=
+    template_rel='skills/nightshift/references/templates/edge-case-pack.md'
+    plugin_rel='skills/nightshift/references/plan/edge-cases'
+    layout_key='edge-case-packs'
+    user_catalog='edge-cases'
+    user_entries=packs
+    template_group=edgeCases
+    template_field=packTemplatePath
+    paths_group=edgeCases
+    paths_field=packsPaths
+    paths_label=packsPaths
+    list_order=alpha
     ;;
   *)
     printf 'catalog-index: unknown catalog: %s\n' "$CATALOG" >&2

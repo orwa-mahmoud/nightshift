@@ -499,7 +499,9 @@ shift.toolingPolicy
 shift.verificationProfile
 shift.worktreeRoot
 gates.stackTemplatePath
-gates.stacksPaths'
+gates.stacksPaths
+edgeCases.packTemplatePath
+edgeCases.packsPaths'
 
 ns_rules_facts() {
   local k c row typ val present pol pat

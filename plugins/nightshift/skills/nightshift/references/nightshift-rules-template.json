@@ -95,6 +95,10 @@
     "stackTemplatePath": "",
     "stacksPaths": []
   },
+  "edgeCases": {
+    "packTemplatePath": "",
+    "packsPaths": []
+  },
   "recovery": {
     "launchScope": "inherit-recorded-scope",
     "cursorFlags": []

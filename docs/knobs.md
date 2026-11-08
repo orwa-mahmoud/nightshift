@@ -380,6 +380,15 @@ shipped stacks alone.
 | `gates.stackTemplatePath` | `""` | The owner's template for a new stack. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. A drafted stack still needs Detect, Item gate, Site inspection, Notes, and one `Match:` line, and the check names any that are missing |
 | `gates.stacksPaths` | `[]` | More folders of stacks. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
 
+## Edge cases
+
+Packs the owner adds beside the shipped edge-case catalog. Empty leaves the pass on the shipped packs alone.
+
+| Key | Default | Values |
+|---|---|---|
+| `edgeCases.packTemplatePath` | `""` | The owner's template for a new pack. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. A drafted pack still needs When it applies, Cases, and Example lines, and the check names any that are missing |
+| `edgeCases.packsPaths` | `[]` | More folders of packs. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
+
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
 Nightshift already registers do see the numbers, and they take the readings. A reading is taken at

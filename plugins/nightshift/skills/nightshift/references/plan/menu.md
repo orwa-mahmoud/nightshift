@@ -41,6 +41,9 @@ report names a missing file, and block keeps the stop open.
 ## Edge-case pass
 
 Read `plan/edge-cases.md` and propose WHEN/THEN lines for the cases each item can meet.
+List the packs with `ns catalog-index --catalog edge-cases`, with their source, and read only the
+packs that fit. Suggest from the owner's packs where they fit, and offer once to draft a new pack
+from the template when none fits, written only after the owner says yes.
 
 ## Pre-mortem
 

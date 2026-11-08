@@ -364,6 +364,24 @@
         }
       }
     },
+    "edgeCases": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The edge-case packs this shift was composed with, frozen so a later edit to rules.json applies to the next shift. Every supported field is present: the owner's value where their file states one, the shipped default where it does not.",
+      "properties": {
+        "packTemplatePath": {
+          "type": "string",
+          "description": "The owner's template for a new edge-case pack. Empty uses the shipped template."
+        },
+        "packsPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "More folders of edge-case packs. Empty means none. The first folder wins when two of them hold the same key."
+        }
+      }
+    },
     "gates": {
       "type": "object",
       "additionalProperties": false,

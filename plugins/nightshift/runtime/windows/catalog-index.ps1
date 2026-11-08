@@ -115,6 +115,23 @@ switch ($Catalog) {
         $pathsLabel = 'stacksPaths'
         $listOrder = 'match'
     }
+    'edge-cases' {
+        $headings = @('When it applies', 'Cases', 'Example lines')
+        $bullet = 'Example lines'
+        $fence = ''
+        $fenceKeys = @()
+        $fenceTypes = @()
+        $requireMatch = $false
+        $templateRel = 'skills/nightshift/references/templates/edge-case-pack.md'
+        $pluginRel = 'skills/nightshift/references/plan/edge-cases'
+        $layoutKey = 'edge-case-packs'
+        $userCatalog = 'edge-cases'
+        $userEntries = 'packs'
+        $templateName = 'edgeCases.packTemplatePath'
+        $pathsName = 'edgeCases.packsPaths'
+        $pathsLabel = 'packsPaths'
+        $listOrder = 'alpha'
+    }
     default {
         [Console]::Error.WriteLine('catalog-index: unknown catalog: ' + $Catalog)
         exit 1

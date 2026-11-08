@@ -591,6 +591,29 @@ else {
                 }
             }
         }
+        $edgeRule = $rules.PSObject.Properties['edgeCases']
+        if ($null -ne $edgeRule -and $edgeRule.Value -is [Management.Automation.PSCustomObject]) {
+            $packTemplate = $edgeRule.Value.PSObject.Properties['packTemplatePath']
+            if ($null -ne $packTemplate -and $packTemplate.Value -isnot [string]) {
+                $shown = ConvertTo-Json -Compress -InputObject $packTemplate.Value
+                Add-NSWarn "rules.json edgeCases.packTemplatePath is $shown; it must be text"
+                Add-NSAct confirm "set edgeCases.packTemplatePath to a template path, or `"`", in $rulesPath"
+            }
+            $packs = $edgeRule.Value.PSObject.Properties['packsPaths']
+            if ($null -ne $packs) {
+                $packsOk = $packs.Value -is [Collections.IEnumerable] -and $packs.Value -isnot [string]
+                if ($packsOk) {
+                    foreach ($folder in @($packs.Value)) {
+                        if ($folder -isnot [string]) { $packsOk = $false; break }
+                    }
+                }
+                if (-not $packsOk) {
+                    $shown = ConvertTo-Json -Compress -InputObject $packs.Value
+                    Add-NSWarn "rules.json edgeCases.packsPaths is $shown; it must be a list of folders"
+                    Add-NSAct confirm "set edgeCases.packsPaths to a list of folders, or [], in $rulesPath"
+                }
+            }
+        }
     }
 }
 
