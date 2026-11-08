@@ -9,8 +9,8 @@
 # Precedence, highest first: the project folder, the configured folders in the order given, the
 # user folder, the shipped directory. A later source replaces an earlier one and the index names
 # what it replaced. An owner entry that fails its check is reported and left out. A symlink is
-# skipped. The template is the schema: its H2 headings are the sections every entry needs, and a
-# section whose template text shows a bullet needs one in the entry.
+# skipped. The template is a starting point. An entry is checked
+# only for what code reads, which the registry row's rule names.
 
 $script:NSCatalogsTable = Join-Path $PSScriptRoot 'catalogs.tsv'
 
@@ -119,41 +119,6 @@ function Get-NSCatalogTemplate {
     return (Join-Path $PluginRoot $Row.Template)
 }
 
-# Get-NSCatalogShape <template> - the required H2 names and the names of the sections that need a
-# bullet. Comments and fenced blocks are not part of the shape.
-function Get-NSCatalogShape {
-    param([Parameter(Mandatory = $true)][string]$Template)
-    $heads = New-Object System.Collections.Generic.List[string]
-    $bullets = New-Object System.Collections.Generic.List[string]
-    $inComment = $false
-    $inFence = $false
-    $current = ''
-    $lines = @()
-    if (Test-Path -LiteralPath $Template -PathType Leaf) { $lines = [IO.File]::ReadAllLines($Template) }
-    foreach ($raw in $lines) {
-        $line = $raw.TrimEnd("`r")
-        if ($inComment) {
-            if ($line.Contains('-->')) { $inComment = $false }
-            continue
-        }
-        if ($line.StartsWith('<!--')) {
-            if (-not $line.Contains('-->')) { $inComment = $true }
-            continue
-        }
-        if ($line.StartsWith('```')) { $inFence = -not $inFence; continue }
-        if ($inFence) { continue }
-        if ($line.StartsWith('## ')) {
-            $current = $line.Substring(3).Trim()
-            $heads.Add($current)
-            continue
-        }
-        if ($current.Length -gt 0 -and $line.StartsWith('- ') -and -not $bullets.Contains($current)) {
-            $bullets.Add($current)
-        }
-    }
-    return [pscustomobject]@{ Headings = $heads.ToArray(); Bullets = $bullets.ToArray() }
-}
-
 function Get-NSCatalogHeading {
     param([Parameter(Mandatory = $true)][string]$Path)
     $dash = ' ' + [string][char]0x2014 + ' '
@@ -171,13 +136,15 @@ function Get-NSCatalogHeading {
     return @('', '')
 }
 
-# Get-NSCatalogEntryProblems - one reason per entry, the same words as catalog-sources.sh. Rule is
-# the registry's rule: shift, fence:<lang>, match, or empty. HTML comments are not part of the check.
+# Get-NSCatalogEntryProblems - one reason per entry, the same words as catalog-sources.sh. Only what
+# code reads is checked; the prose and its headings are the author's. Rule is the registry's rule:
+# shift, fence:<lang>, match, or empty. HTML comments are not part of the check. With -Notes, a
+# line starting "note: " also says what the entry leaves to the owner; a note is never a problem.
 function Get-NSCatalogEntryProblems {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)]$Shape,
-        [AllowEmptyString()][string]$Rule = ''
+        [AllowEmptyString()][string]$Rule = '',
+        [switch]$Notes
     )
     $problems = New-Object System.Collections.Generic.List[string]
     $fenceKeys = @('files', 'min', 'type')
@@ -185,14 +152,14 @@ function Get-NSCatalogEntryProblems {
     $inComment = $false
     $inCheck = $false
     $inBlock = $false
-    $inItem = $false
-    $itemBox = $false
-    $itemVerify = $false
+    $inText = $false
+    $box = $false
+    $verify = $false
+    $anyBox = $false
+    $itemOk = $false
     $seenH1 = $false
     $matchSeen = $false
-    $current = ''
-    $found = @{}
-    $hasBullet = @{}
+    $seenFence = $false
     $seenKeys = @{}
     $dash = ' ' + [string][char]0x2014 + ' '
     $lines = @()
@@ -215,13 +182,10 @@ function Get-NSCatalogEntryProblems {
             $inComment = $true
         }
         if ($inComment) { continue }
-        if (-not $seenH1 -and $line.StartsWith('# ') -and -not $line.StartsWith('## ')) {
+        if ($Rule -ceq 'shift' -and -not $seenH1 -and $line.StartsWith('# ') -and -not $line.StartsWith('## ')) {
             $seenH1 = $true
             $parts = $line.Substring(2) -split [regex]::Escape($dash)
-            if ($parts.Count -lt 2 -or [string]::IsNullOrEmpty($parts[0]) -or [string]::IsNullOrEmpty($parts[1])) {
-                $problems.Add('missing H1')
-            }
-            if ($Rule -ceq 'shift' -and ($parts.Count -lt 3 -or ($parts[1] -cne 'finite' -and $parts[1] -cne 'open-ended'))) {
+            if ($parts.Count -lt 2 -or ($parts[1] -cne 'finite' -and $parts[1] -cne 'open-ended')) {
                 $problems.Add('H1 must name the ending: finite or open-ended')
             }
             continue
@@ -229,12 +193,16 @@ function Get-NSCatalogEntryProblems {
         if ($line.StartsWith('```') -and -not $inCheck) {
             if ($Rule.StartsWith('fence:') -and $line -cmatch ('^```' + [regex]::Escape($Rule.Substring(6)) + '\s*$')) {
                 $inCheck = $true
+                $seenFence = $true
                 $seenKeys = @{}
                 continue
             }
             $inBlock = -not $inBlock
-            if ($inBlock -and $current -ceq 'Item' -and $line -cmatch '^```text\s*$') { $inItem = $true }
-            if (-not $inBlock) { $inItem = $false }
+            if ($inBlock -and $line -cmatch '^```text\s*$') { $inText = $true; $box = $false; $verify = $false }
+            if (-not $inBlock) {
+                if ($inText -and $box) { $anyBox = $true; if ($verify) { $itemOk = $true } }
+                $inText = $false
+            }
             continue
         }
         if ($inCheck -and $line -cmatch '^```\s*$') {
@@ -255,18 +223,12 @@ function Get-NSCatalogEntryProblems {
             $seenKeys[$key] = $val
             continue
         }
-        if ($inItem) {
-            if ($line -cmatch '^- \[ \] \*\*') { $itemBox = $true }
-            if ($line.Contains('Verify:')) { $itemVerify = $true }
+        if ($inText) {
+            if ($line -cmatch '^- \[ \] \*\*') { $box = $true }
+            if ($line.Contains('Verify:')) { $verify = $true }
             continue
         }
         if ($inBlock) { continue }
-        if ($line.StartsWith('## ')) {
-            $current = $line.Substring(3).Trim()
-            $found[$current] = $true
-            continue
-        }
-        if ($Shape.Bullets -ccontains $current -and $line.StartsWith('- ')) { $hasBullet[$current] = $true }
         if ($Rule -ceq 'match' -and $line -cmatch '^Match:\s*') {
             $matchVal = ($line -replace '^Match:\s*', '').Trim()
             if ($matchVal -cne 'stack' -and $matchVal -cne 'plugin' -and $matchVal -cne 'fallback') {
@@ -276,21 +238,14 @@ function Get-NSCatalogEntryProblems {
             $matchSeen = $true
         }
     }
-    if (-not $seenH1) { $problems.Add('missing H1') }
-    foreach ($heading in $Shape.Headings) {
-        if (-not [string]::IsNullOrEmpty($heading) -and -not $found.ContainsKey($heading)) {
-            $problems.Add('missing section ' + $heading)
-        }
-    }
-    foreach ($heading in $Shape.Bullets) {
-        if ($found.ContainsKey($heading) -and -not $hasBullet.ContainsKey($heading)) {
-            $problems.Add('no bullet in ' + $heading)
-        }
-    }
+    if ($Rule -ceq 'shift' -and -not $seenH1) { $problems.Add('H1 must name the ending: finite or open-ended') }
+    if ($Rule -ceq 'shift' -and -not $anyBox) { $problems.Add('no pasteable item: a text block with a box') }
+    if ($Rule -ceq 'shift' -and $anyBox -and -not $itemOk) { $problems.Add('the item has no Verify line') }
     if ($Rule -ceq 'match' -and -not $matchSeen) { $problems.Add('missing match') }
-    if ($Rule -ceq 'shift' -and -not $itemBox) { $problems.Add('the Item section has no pasteable box') }
-    if ($Rule -ceq 'shift' -and -not $itemVerify) { $problems.Add('the Item section has no Verify line') }
     if ($inCheck -or $inBlock) { $problems.Add('unclosed fence') }
+    if ($Notes -and $Rule.StartsWith('fence:') -and -not $seenFence) {
+        $problems.Add('note: no ' + $Rule.Substring(6) + ' block, so check: block holds only the files an item names')
+    }
     return $problems.ToArray()
 }
 
@@ -334,7 +289,7 @@ function Add-NSCatalogDirectory {
             continue
         }
         if ($Check) {
-            $problems = @(Get-NSCatalogEntryProblems -Path $file.FullName -Shape $State['Shape'] -Rule $State['Rule'])
+            $problems = @(Get-NSCatalogEntryProblems -Path $file.FullName -Rule $State['Rule'])
             if ($problems.Count -gt 0) {
                 foreach ($problem in $problems) {
                     Write-NSCatalogProblem $State ("${prefix}: $($file.FullName): $problem")
@@ -343,6 +298,8 @@ function Add-NSCatalogDirectory {
             }
         }
         $heading = @(Get-NSCatalogHeading -Path $file.FullName)
+        # An entry with no title is listed under its file name.
+        if ([string]::IsNullOrEmpty([string]$heading[0])) { $heading = @($key, [string]$heading[1]) }
         if ($State['SourceOf'].ContainsKey($key)) {
             $old = [string]$State['SourceOf'][$key]
             $prev = [string]$State['ReplacedOf'][$key]
@@ -372,6 +329,50 @@ function Get-NSCatalogRank {
     return 0
 }
 
+# Get-NSCatalogSources - the folders a catalog reads, lowest precedence first: the shipped folder,
+# the user folders, the configured folders (the first one given wins, so they come last to first),
+# then the project folders. Mirrors _ns_catalog_sources.
+function Get-NSCatalogSources {
+    param(
+        [Parameter(Mandatory = $true)][string]$Prefix,
+        [Parameter(Mandatory = $true)][string]$PluginRoot,
+        [Parameter(Mandatory = $true)]$Row,
+        [AllowEmptyString()][string]$Workspace = '',
+        [Parameter(Mandatory = $true)][hashtable]$State
+    )
+    $sources = New-Object System.Collections.Generic.List[object]
+    $add = { param($Dir, $Label, $Check, $ReportMissing)
+        if (-not [string]::IsNullOrEmpty($Dir)) {
+            $sources.Add([pscustomobject]@{ Dir = $Dir; Label = $Label; Check = $Check; ReportMissing = $ReportMissing })
+        }
+    }
+    $userRoot = Get-NSCatalogUserRoot
+    & $add (Join-Path $PluginRoot $Row.Shipped) 'plugin' $false $false
+    if (-not [string]::IsNullOrEmpty($Row.LegacyUser)) { & $add (Join-Path $userRoot $Row.LegacyUser) 'user' $true $false }
+    & $add (Join-Path (Join-Path $userRoot 'catalogs') $Row.Name) 'user' $true $false
+    $setting = Get-NSCatalogSetting -Workspace $Workspace -Row $Row -Field paths
+    $configured = @()
+    if ($null -ne $setting['Value']) {
+        $readable = ($setting['Value'] -isnot [string]) -and ($setting['Value'] -is [Collections.IEnumerable])
+        if ($readable) {
+            foreach ($one in @($setting['Value'])) { if ($one -isnot [string]) { $readable = $false } }
+        }
+        if ($readable) { $configured = @($setting['Value'] | Where-Object { -not [string]::IsNullOrEmpty($_) }) }
+        else { Write-NSCatalogProblem $State "${Prefix}: $($setting['Key']) could not be read" }
+    }
+    for ($i = $configured.Count - 1; $i -ge 0; $i--) {
+        & $add (Resolve-NSCatalogPath $Workspace $configured[$i]) $configured[$i] $true $true
+    }
+    if (-not [string]::IsNullOrEmpty($Workspace)) {
+        $ns = Join-Path $Workspace '.nightshift'
+        if (-not [string]::IsNullOrEmpty($Row.LegacyProject) -and (Test-NSLayoutKey $ns $Row.LegacyProject)) {
+            & $add (Get-NSLayoutPath $ns $Row.LegacyProject) 'project' $true $false
+        }
+        if (Test-NSLayoutKey $ns ('catalog-' + $Row.Name)) { & $add (Get-NSLayoutPath $ns ('catalog-' + $Row.Name)) 'project' $true $false }
+    }
+    return $sources.ToArray()
+}
+
 # Get-NSCatalogEntries - every entry once, in the catalog's order, as objects with Key, Title,
 # Description, Source, Replaced and File. Problems go to stderr under Prefix.
 function Get-NSCatalogEntries {
@@ -382,11 +383,9 @@ function Get-NSCatalogEntries {
         [AllowEmptyString()][string]$Workspace = '',
         [switch]$Quiet
     )
-    $template = Get-NSCatalogTemplate -PluginRoot $PluginRoot -Workspace $Workspace -Row $Row
     $state = @{
         Prefix     = $Prefix
         Quiet      = [bool]$Quiet
-        Shape      = (Get-NSCatalogShape -Template $template)
         Rule       = $Row.Rule
         Order      = (New-Object System.Collections.Generic.List[string])
         SourceOf   = @{}
@@ -394,39 +393,9 @@ function Get-NSCatalogEntries {
         MetaOf     = @{}
         FileOf     = @{}
     }
-    $projectDir = ''
-    $legacyProjectDir = ''
-    if (-not [string]::IsNullOrEmpty($Workspace)) {
-        $ns = Join-Path $Workspace '.nightshift'
-        if (Test-NSLayoutKey $ns ('catalog-' + $Row.Name)) { $projectDir = Get-NSLayoutPath $ns ('catalog-' + $Row.Name) }
-        if (-not [string]::IsNullOrEmpty($Row.LegacyProject) -and (Test-NSLayoutKey $ns $Row.LegacyProject)) {
-            $legacyProjectDir = Get-NSLayoutPath $ns $Row.LegacyProject
-        }
+    foreach ($source in @(Get-NSCatalogSources -Prefix $Prefix -PluginRoot $PluginRoot -Row $Row -Workspace $Workspace -State $state)) {
+        Add-NSCatalogDirectory -Dir $source.Dir -Label $source.Label -Check $source.Check -ReportMissing $source.ReportMissing -State $state
     }
-    $userRoot = Get-NSCatalogUserRoot
-    $userDir = Join-Path (Join-Path $userRoot 'catalogs') $Row.Name
-    $legacyUserDir = ''
-    if (-not [string]::IsNullOrEmpty($Row.LegacyUser)) { $legacyUserDir = Join-Path $userRoot $Row.LegacyUser }
-
-    Add-NSCatalogDirectory -Dir (Join-Path $PluginRoot $Row.Shipped) -Label 'plugin' -Check $false -ReportMissing $false -State $state
-    Add-NSCatalogDirectory -Dir $legacyUserDir -Label 'user' -Check $true -ReportMissing $false -State $state
-    Add-NSCatalogDirectory -Dir $userDir -Label 'user' -Check $true -ReportMissing $false -State $state
-    $setting = Get-NSCatalogSetting -Workspace $Workspace -Row $Row -Field paths
-    $configured = @()
-    if ($null -ne $setting['Value']) {
-        $readable = ($setting['Value'] -isnot [string]) -and ($setting['Value'] -is [Collections.IEnumerable])
-        if ($readable) {
-            foreach ($one in @($setting['Value'])) { if ($one -isnot [string]) { $readable = $false } }
-        }
-        if ($readable) { $configured = @($setting['Value'] | Where-Object { -not [string]::IsNullOrEmpty($_) }) }
-        else { Write-NSCatalogProblem $state "${Prefix}: $($setting['Key']) could not be read" }
-    }
-    for ($i = $configured.Count - 1; $i -ge 0; $i--) {
-        Add-NSCatalogDirectory -Dir (Resolve-NSCatalogPath $Workspace $configured[$i]) -Label $configured[$i] `
-            -Check $true -ReportMissing $true -State $state
-    }
-    Add-NSCatalogDirectory -Dir $legacyProjectDir -Label 'project' -Check $true -ReportMissing $false -State $state
-    Add-NSCatalogDirectory -Dir $projectDir -Label 'project' -Check $true -ReportMissing $false -State $state
 
     $keys = @($state['Order'] | Select-Object -Unique)
     [Array]::Sort($keys, [StringComparer]::Ordinal)
@@ -464,9 +433,21 @@ function Get-NSCatalogFile {
         [AllowEmptyString()][string]$Workspace = '',
         [Parameter(Mandatory = $true)][string]$Key
     )
-    $entries = Get-NSCatalogEntries -Prefix $Prefix -PluginRoot $PluginRoot -Row $Row -Workspace $Workspace -Quiet
-    foreach ($entry in $entries) {
-        if ($entry.Key -ceq $Key) { return $entry.File }
+    # The same file the index lists, found by checking <key>.md in each folder from the highest
+    # precedence down rather than building the whole index. Mirrors ns_catalog_file.
+    $quiet = @{ Quiet = $true }
+    $sources = @(Get-NSCatalogSources -Prefix $Prefix -PluginRoot $PluginRoot -Row $Row -Workspace $Workspace -State $quiet)
+    for ($i = $sources.Count - 1; $i -ge 0; $i--) {
+        $source = $sources[$i]
+        if (-not (Test-Path -LiteralPath $source.Dir -PathType Container)) { continue }
+        $file = Join-Path $source.Dir ($Key + '.md')
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        if ((Get-Item -LiteralPath $file -Force).LinkType) { continue }
+        if ($source.Check) {
+            if ($Key -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') { continue }
+            if (@(Get-NSCatalogEntryProblems -Path $file -Rule $Row.Rule).Count -gt 0) { continue }
+        }
+        return $file
     }
     return ''
 }

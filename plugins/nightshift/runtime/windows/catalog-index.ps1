@@ -10,7 +10,7 @@
 
   shifts prints slug, ending, title and summary. The others print key, title, description, source,
   and the sources a same key replaced; gates prints them in match order. -Template prints the
-  template in force. -CheckDraft FILE checks one draft against it and names each problem. -Path KEY
+  template in force. -CheckDraft FILE checks what code reads in one draft and names each problem. -Path KEY
   prints the file in force for one key.
 
   Every entry opens with an H1, and that header is the metadata, so there is no second registry of
@@ -54,12 +54,10 @@ if ($Template) {
 }
 
 if (-not [string]::IsNullOrEmpty($CheckDraft)) {
-    $templatePath = Get-NSCatalogTemplate -PluginRoot $PluginRoot -Workspace $Project -Row $row
-    if (-not (Test-Path -LiteralPath $templatePath -PathType Leaf)) {
-        [Console]::Error.WriteLine('catalog-index: no template at ' + $templatePath)
-        exit 2
-    }
-    $problems = @(Get-NSCatalogEntryProblems -Path $CheckDraft -Shape (Get-NSCatalogShape -Template $templatePath) -Rule $row.Rule)
+    $found = @(Get-NSCatalogEntryProblems -Path $CheckDraft -Rule $row.Rule -Notes)
+    # A note says what the draft leaves to the owner; it never fails the check.
+    foreach ($note in @($found | Where-Object { $_.StartsWith('note: ') })) { Write-Output ("catalog-index: ${CheckDraft}: " + $note.Substring(6)) }
+    $problems = @($found | Where-Object { -not $_.StartsWith('note: ') })
     if ($problems.Count -gt 0) {
         foreach ($problem in $problems) { [Console]::Error.WriteLine("catalog-index: ${CheckDraft}: $problem") }
         exit 1

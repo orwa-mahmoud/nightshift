@@ -13,8 +13,8 @@
 # what it replaced. An owner entry that fails its check is reported on stderr and left out. A
 # symlink is skipped.
 #
-# The template is the schema: its H2 headings are the sections every entry needs, and a section
-# whose template text shows a bullet needs one in the entry.
+# The template is a starting point. An entry is checked only for what code reads, which the
+# registry row's rule names.
 
 _NS_CATALOGS_TSV="${BASH_SOURCE[0]%/*}"
 [ "$_NS_CATALOGS_TSV" != "${BASH_SOURCE[0]}" ] || _NS_CATALOGS_TSV=.
@@ -113,40 +113,6 @@ ns_catalog_template() {
   fi
 }
 
-# ns_catalog_shape <template> — the template as a schema, one line: the required H2 names separated
-# by |, a tab, then the names of the sections that need a bullet, separated by |. Comments and
-# fenced blocks are not part of the shape.
-ns_catalog_shape() {
-  LC_ALL=C awk '
-    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
-    {
-      line = $0
-      sub(/\r$/, "", line)
-      if (in_comment) {
-        if (index(line, "-->")) in_comment = 0
-        next
-      }
-      if (line ~ /^<!--/) {
-        if (!index(line, "-->")) in_comment = 1
-        next
-      }
-      if (line ~ /^```/) { in_fence = !in_fence; next }
-      if (in_fence) next
-      if (line ~ /^## /) {
-        name = trim(substr(line, 4))
-        heads = heads (heads == "" ? "" : "|") name
-        cur = name
-        next
-      }
-      if (cur != "" && line ~ /^- / && !(cur in bulleted)) {
-        bulleted[cur] = 1
-        bullets = bullets (bullets == "" ? "" : "|") cur
-      }
-    }
-    END { printf "%s\t%s\n", heads, bullets }
-  ' "$1"
-}
-
 # ns_catalog_read_heading <file> — the H1 as title and description, separated by a tab.
 # The split is the em dash the catalogs use. No H1 prints nothing.
 ns_catalog_read_heading() {
@@ -168,23 +134,18 @@ ns_catalog_read_heading() {
   ' "$1"
 }
 
-# ns_catalog_entry_problems <file> <shape> <rule> — one reason per line, status 1 when any was
-# printed. <shape> is what ns_catalog_shape printed for the template in force. <rule> is the
-# registry's rule: shift (an H1 that names the ending, and an item block with a box and a Verify
-# line), fence:<lang> (a fence of that language with exactly files, min and type), match (one Match
-# line), or empty.
-# HTML comments are not part of the file for this check, so a commented example is not live.
+# ns_catalog_entry_problems <file> <rule> [notes] — one reason per line, status 1 when any was
+# printed. Only what code reads is checked; the prose and its headings are the author's. <rule> is
+# the registry's rule: shift (a title that names the ending, and a text block with a box and a
+# Verify line), fence:<lang> (a fence of that language with exactly files, min and type), match (one
+# Match line), or empty. HTML comments are not part of the file for this check. With notes, a line
+# starting "note: " also says what the entry leaves to the owner, such as a fence rule with no
+# fence; a note is never a problem and never changes the status.
 ns_catalog_entry_problems() {
-  local headings bullets
-  headings="${2%%$'\t'*}"
-  bullets="${2#*$'\t'}"
-  LC_ALL=C awk -v headings="$headings" -v bullets="$bullets" -v rule="${3-}" '
+  LC_ALL=C awk -v rule="${2-}" -v notes="${3-}" '
     function fail(msg) { print msg; bad = 1 }
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     BEGIN {
-      nhead = split(headings, need, "|")
-      nbul = split(bullets, needbullet, "|")
-      for (b = 1; b <= nbul; b++) wantbullet[needbullet[b]] = 1
       nkey = split("files min type", allowed, " ")
       ntype = split("image text json any", allowed_type, " ")
       fence = (substr(rule, 1, 6) == "fence:") ? substr(rule, 7) : ""
@@ -208,22 +169,25 @@ ns_catalog_entry_problems() {
         in_comment = 1
       }
       if (in_comment) next
-      if (!seen_h1 && line ~ /^# / && line !~ /^## /) {
+      if (rule == "shift" && !seen_h1 && line ~ /^# / && line !~ /^## /) {
         seen_h1 = 1
         n = split(substr(line, 3), part, " \xe2\x80\x94 ")
-        if (n < 2 || part[1] == "" || part[2] == "") fail("missing H1")
-        if (rule == "shift" && (n < 3 || (part[2] != "finite" && part[2] != "open-ended"))) fail("H1 must name the ending: finite or open-ended")
+        if (n < 2 || (part[2] != "finite" && part[2] != "open-ended")) fail("H1 must name the ending: finite or open-ended")
         next
       }
       if (line ~ /^```/ && !in_check) {
         if (fence != "" && line ~ ("^```" fence "[[:space:]]*$")) {
           in_check = 1
+          seen_fence = 1
           delete seenk
           next
         }
         in_block = !in_block
-        if (in_block && cur == "Item" && line ~ /^```text[[:space:]]*$/) in_item = 1
-        if (!in_block) in_item = 0
+        if (in_block && line ~ /^```text[[:space:]]*$/) { in_text = 1; box = 0; verify = 0 }
+        if (!in_block) {
+          if (in_text && box) { any_box = 1; if (verify) item_ok = 1 }
+          in_text = 0
+        }
         next
       }
       if (in_check && line ~ /^```[[:space:]]*$/) {
@@ -250,18 +214,12 @@ ns_catalog_entry_problems() {
         seenk[key] = val
         next
       }
-      if (in_item) {
-        if (line ~ /^- \[ \] \*\*/) item_box = 1
-        if (index(line, "Verify:")) item_verify = 1
+      if (in_text) {
+        if (line ~ /^- \[ \] \*\*/) box = 1
+        if (index(line, "Verify:")) verify = 1
         next
       }
       if (in_block) next
-      if (line ~ /^## /) {
-        cur = trim(substr(line, 4))
-        found[cur] = 1
-        next
-      }
-      if (cur in wantbullet && line ~ /^- /) hasbullet[cur] = 1
       if (rule == "match" && line ~ /^Match:[[:space:]]*/) {
         val = trim(substr(line, 7))
         if (val != "stack" && val != "plugin" && val != "fallback") fail("invalid match")
@@ -270,17 +228,12 @@ ns_catalog_entry_problems() {
       }
     }
     END {
-      if (!seen_h1) fail("missing H1")
-      for (h = 1; h <= nhead; h++) {
-        if (need[h] != "" && !(need[h] in found)) fail("missing section " need[h])
-      }
-      for (b = 1; b <= nbul; b++) {
-        if (needbullet[b] != "" && (needbullet[b] in found) && !(needbullet[b] in hasbullet)) fail("no bullet in " needbullet[b])
-      }
+      if (rule == "shift" && !seen_h1) fail("H1 must name the ending: finite or open-ended")
+      if (rule == "shift" && !any_box) fail("no pasteable item: a text block with a box")
+      if (rule == "shift" && any_box && !item_ok) fail("the item has no Verify line")
       if (rule == "match" && !match_seen) fail("missing match")
-      if (rule == "shift" && !item_box) fail("the Item section has no pasteable box")
-      if (rule == "shift" && !item_verify) fail("the Item section has no Verify line")
       if (in_check || in_block) fail("unclosed fence")
+      if (notes != "" && fence != "" && !seen_fence) print "note: no " fence " block, so check: block holds only the files an item names"
       exit bad ? 1 : 0
     }
   ' "$1"
@@ -288,7 +241,7 @@ ns_catalog_entry_problems() {
 
 # _ns_catalog_ingest <dir> <label> <check: yes|no> <missing: report|quiet>
 # Lists the markdown files in one directory into the temp index. Defined for _ns_catalog_index,
-# which owns tmp, prefix, shape and rule.
+# which owns tmp, prefix and rule.
 _ns_catalog_ingest() {
   local dir="$1" label="$2" check="$3" missing="$4"
   local f base key line problems meta old prev
@@ -316,7 +269,7 @@ _ns_catalog_ingest() {
         ;;
     esac
     if [ "$check" = yes ]; then
-      problems="$(ns_catalog_entry_problems "$f" "$shape" "$rule" || true)"
+      problems="$(ns_catalog_entry_problems "$f" "$rule" || true)"
       if [ -n "$problems" ]; then
         while IFS= read -r line; do
           [ -n "$line" ] || continue
@@ -329,6 +282,8 @@ EOF
     fi
     meta="$(ns_catalog_read_heading "$f")"
     case "$meta" in *$'\t'*) ;; *) meta="$meta"$'\t' ;; esac
+    # An entry with no title is listed under its file name.
+    case "$meta" in $'\t'*) meta="$key$meta" ;; esac
     if [ -f "$tmp/source/$key" ]; then
       old=""
       IFS= read -r old <"$tmp/source/$key" || true
@@ -358,52 +313,55 @@ _ns_catalog_rank() {
   esac
 }
 
+# _ns_catalog_sources <prefix> <plugin-root> <name> <workspace> — the folders a catalog reads, one
+# per line, lowest precedence first: folder, label, check (yes|no), missing (report|quiet). The
+# shipped folder, the user folders, the configured folders (the first one given wins, so they come
+# last to first), then the project folders. Run after ns_catalog_row has set NS_CAT_*.
+_ns_catalog_sources() {
+  local prefix="$1" root="$2" name="$3" ws="$4" setting raw raw_key configured one dir
+  printf '%s\tplugin\tno\tquiet\n' "${root%/}/$NS_CAT_SHIPPED"
+  [ -z "$NS_CAT_LEGACY_USER" ] || printf '%s\tuser\tyes\tquiet\n' "$(ns_catalog_user_root)/$NS_CAT_LEGACY_USER"
+  printf '%s\tuser\tyes\tquiet\n' "$(ns_catalog_user_root)/catalogs/$name"
+  setting="$(ns_catalog_setting "$ws" "$name" paths)"
+  raw_key="${setting%%$'\t'*}"
+  raw="${setting#*$'\t'}"
+  if [ -n "$raw" ]; then
+    if ! configured="$(ns_json_string_list "$raw")"; then
+      printf '%s: %s could not be read\n' "$prefix" "$raw_key" >&2
+      configured=""
+    fi
+    printf '%s\n' "$configured" | awk 'NF { line[++n] = $0 } END { for (i = n; i >= 1; i--) print line[i] }' |
+      while IFS= read -r one; do
+        printf '%s\t%s\tyes\treport\n' "$(ns_catalog_resolve "$ws" "$one")" "$one"
+      done
+  fi
+  [ -n "$ws" ] || return 0
+  if [ -n "$NS_CAT_LEGACY_PROJECT" ]; then
+    dir="$(ns_layout_path "$ws/.nightshift" "$NS_CAT_LEGACY_PROJECT" 2>/dev/null || true)"
+    [ -z "$dir" ] || printf '%s\tproject\tyes\tquiet\n' "$dir"
+  fi
+  dir="$(ns_layout_path "$ws/.nightshift" "catalog-$name" 2>/dev/null || true)"
+  [ -z "$dir" ] || printf '%s\tproject\tyes\tquiet\n' "$dir"
+}
+
 # _ns_catalog_index <prefix> <plugin-root> <name> <workspace> — every entry once, in the catalog's
 # order: key, title, description, source, replaced, file. Problems go to stderr under <prefix>.
 _ns_catalog_index() {
   local prefix="$1" root="$2" name="$3" ws="$4"
-  local tmp shape rule template setting raw raw_key project_dir legacy_project_dir user_dir legacy_user_dir
-  local configured one key meta entry_source replaced file rank
+  local tmp rule sources dir label check missing key meta entry_source replaced file rank
   ns_catalog_row "$name" || return 1
   rule="$NS_CAT_RULE"
-  template="$(ns_catalog_template "$root" "$ws" "$name")"
-  shape="$(ns_catalog_shape "$template" 2>/dev/null)" || shape=""
-  project_dir=""
-  legacy_project_dir=""
-  if [ -n "$ws" ]; then
-    project_dir="$(ns_layout_path "$ws/.nightshift" "catalog-$name" 2>/dev/null || true)"
-    if [ -n "$NS_CAT_LEGACY_PROJECT" ]; then
-      legacy_project_dir="$(ns_layout_path "$ws/.nightshift" "$NS_CAT_LEGACY_PROJECT" 2>/dev/null || true)"
-    fi
-  fi
-  user_dir="$(ns_catalog_user_root)/catalogs/$name"
-  legacy_user_dir=""
-  [ -z "$NS_CAT_LEGACY_USER" ] || legacy_user_dir="$(ns_catalog_user_root)/$NS_CAT_LEGACY_USER"
-  setting="$(ns_catalog_setting "$ws" "$name" paths)"
-  raw_key="${setting%%$'\t'*}"
-  raw="${setting#*$'\t'}"
+  sources="$(_ns_catalog_sources "$prefix" "$root" "$name" "$ws")"
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ns-catalog.XXXXXX")" || return 1
   (
     trap 'rm -rf "$tmp"' EXIT
     mkdir -p "$tmp/source" "$tmp/meta" "$tmp/replaced" "$tmp/file"
     : >"$tmp/keys"
-    _ns_catalog_ingest "${root%/}/$NS_CAT_SHIPPED" plugin no quiet
-    _ns_catalog_ingest "$legacy_user_dir" user yes quiet
-    _ns_catalog_ingest "$user_dir" user yes quiet
-    if [ -n "$raw" ]; then
-      if ! configured="$(ns_json_string_list "$raw")"; then
-        printf '%s: %s could not be read\n' "$prefix" "$raw_key" >&2
-        configured=""
-      fi
-      # The first configured folder wins, so they are ingested last to first. The index lives in
-      # files under $tmp, so the loop's writes survive its subshell.
-      printf '%s\n' "$configured" | awk 'NF { line[++n] = $0 } END { for (i = n; i >= 1; i--) print line[i] }' |
-        while IFS= read -r one; do
-          _ns_catalog_ingest "$(ns_catalog_resolve "$ws" "$one")" "$one" yes report
-        done
-    fi
-    _ns_catalog_ingest "$legacy_project_dir" project yes quiet
-    _ns_catalog_ingest "$project_dir" project yes quiet
+    # The index lives in files under $tmp, so the loop's writes survive its subshell.
+    printf '%s\n' "$sources" | while IFS=$'\t' read -r dir label check missing; do
+      [ -n "$dir" ] || continue
+      _ns_catalog_ingest "$dir" "$label" "$check" "$missing"
+    done
     [ -s "$tmp/keys" ] || exit 0
     LC_ALL=C sort -u "$tmp/keys" | while IFS= read -r key; do
       [ -n "$key" ] || continue
@@ -418,17 +376,25 @@ _ns_catalog_index() {
   )
 }
 
-# ns_catalog_list <prefix> <plugin-root> <name> <workspace> — the index: key, title, description,
-# source, and the sources a same key replaced, tab-separated, in the catalog's order.
-ns_catalog_list() {
-  _ns_catalog_index "$@" | cut -f 1-5
-}
-
-# ns_catalog_file <prefix> <plugin-root> <name> <workspace> <key> — the file in force for one key.
-# Status 1 when no source holds it.
+# ns_catalog_file <prefix> <plugin-root> <name> <workspace> <key> — the file in force for one key,
+# the same one the index lists, found by checking <key>.md in each folder from the highest
+# precedence down rather than building the whole index. Status 1 when no folder holds it.
 ns_catalog_file() {
-  local line
-  line="$(_ns_catalog_index "$1" "$2" "$3" "$4" 2>/dev/null | awk -F '\t' -v k="$5" '$1 == k { print; exit }')"
-  [ -n "$line" ] || return 1
-  printf '%s' "${line##*$'\t'}"
+  local prefix="$1" root="$2" name="$3" ws="$4" key="$5" sources dir label check missing f
+  ns_catalog_row "$name" || return 1
+  sources="$(_ns_catalog_sources "$prefix" "$root" "$name" "$ws" 2>/dev/null)"
+  while IFS=$'\t' read -r dir label check missing; do
+    [ -n "$dir" ] && [ -d "$dir" ] && [ -r "$dir" ] || continue
+    f="$dir/$key.md"
+    [ -e "$f" ] && [ ! -L "$f" ] && [ -f "$f" ] || continue
+    if [ "$check" = yes ]; then
+      case "$key" in '' | *[!a-z0-9-]* | -* | *- | *--*) continue ;; esac
+      ns_catalog_entry_problems "$f" "$NS_CAT_RULE" >/dev/null || continue
+    fi
+    printf '%s' "$f"
+    return 0
+  done <<EOF
+$(printf '%s\n' "$sources" | awk 'NF { line[++n] = $0 } END { for (i = n; i >= 1; i--) print line[i] }')
+EOF
+  return 1
 }

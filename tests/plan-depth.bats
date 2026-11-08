@@ -80,25 +80,11 @@ QUESTION='Before I write these, want any of: evidence lines, an edge-case pass, 
   done
 }
 
-@test "every pack and the template have the shape, and an owner pack replaces the shipped one" {
+@test "an owner pack replaces the shipped one, and a pack under its own headings is listed" {
   PACKS="$SKILLS/nightshift/references/plan/edge-cases"
   TEMPLATE="$SKILLS/nightshift/references/templates/edge-case-pack.md"
   INDEX="$ROOT/plugins/nightshift/runtime/catalog-index.sh"
   INDEX_PS1="$ROOT/plugins/nightshift/runtime/windows/catalog-index.ps1"
-  SOURCES="$ROOT/plugins/nightshift/lib/catalog-sources.sh"
-  # shellcheck disable=SC1090
-  . "$SOURCES"
-  NS_CATALOG_HEADINGS='When it applies|Cases|Example lines'
-  NS_CATALOG_BULLET='Example lines'
-  NS_CATALOG_FENCE=
-  NS_CATALOG_FENCE_KEYS=
-  NS_CATALOG_FENCE_TYPES=
-  NS_CATALOG_MATCH=
-  for f in "$PACKS"/*.md "$TEMPLATE"; do
-    run ns_catalog_entry_problems "$f"
-    [ "$status" -eq 0 ] || { printf '%s\n%s\n' "$f" "$output"; return 1; }
-  done
-  ! grep -i edge "$SOURCES" || { echo "the helper names a catalog"; return 1; }
 
   mkdir -p "$BATS_TEST_TMPDIR/no-owner"
   export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/no-owner"
@@ -111,27 +97,17 @@ QUESTION='Before I write these, want any of: evidence lines, an edge-case pass, 
   # The H1 of the template is "Pack". Replace it so the source is visible.
   printf '%s\n' '# Project Input — an item that reads a file' | cat - <(tail -n +2 "$p/.nightshift/edge-cases/packs/input.md") >"$p/.nightshift/edge-cases/packs/input.next"
   mv "$p/.nightshift/edge-cases/packs/input.next" "$p/.nightshift/edge-cases/packs/input.md"
-  cat >"$p/.nightshift/edge-cases/packs/broken.md" <<'EOF'
-# Broken — missing a section
+  cat >"$p/.nightshift/edge-cases/packs/retries.md" <<'EOF'
+# Retries — three lines are enough
 
-## When it applies
-
-Items.
-
-## Cases
-
-- **Empty** — nothing there.
+WHEN the network drops THEN the job retries once.
 EOF
   run bash "$INDEX" --catalog edge-cases --project "$p"
   [ "$status" -eq 0 ]
   row="$(printf '%s\n' "$output" | awk -F '\t' '$1 == "input"')"
   [ "$(printf '%s' "$row" | cut -f4)" = project ]
   [ "$(printf '%s' "$row" | cut -f5)" = plugin ]
-  printf '%s\n' "$output" | grep -qF 'missing section Example lines'
-  if printf '%s\n' "$output" | awk -F '\t' '$1 == "broken" { found = 1 } END { exit found ? 0 : 1 }'; then
-    echo "a malformed pack was listed"
-    return 1
-  fi
+  printf '%s\n' "$output" | awk -F '\t' '$1 == "retries" && $4 == "project" { found = 1 } END { exit found ? 0 : 1 }'
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh is not installed'
   fi

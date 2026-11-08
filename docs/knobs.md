@@ -389,8 +389,8 @@ highest precedence first:
 An entry of the same key replaces a lower one, and `ns catalog-index --catalog <catalog>` names the
 source that won and the ones it replaced. `ns catalog-new --catalog <catalog> --key <key>` starts an
 entry from the template in force (`--user` for every project), and
-`ns catalog-index --catalog <catalog> --check-draft <file>` names any section it still lacks. The
-template is the schema: its headings are the sections every entry needs.
+`ns catalog-index --catalog <catalog> --check-draft <file>` checks what Nightshift reads from it. The
+template is a starting point; an entry may use any headings.
 
 | Key | Default | Values |
 |---|---|---|

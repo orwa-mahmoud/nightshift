@@ -646,7 +646,7 @@
             },
             "template": {
               "type": "string",
-              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. A starting point; its headings are not required."
             }
           }
         },
@@ -664,7 +664,7 @@
             },
             "template": {
               "type": "string",
-              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. A starting point; its headings are not required."
             }
           }
         },
@@ -682,7 +682,7 @@
             },
             "template": {
               "type": "string",
-              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. A starting point; its headings are not required."
             }
           }
         },
@@ -700,7 +700,7 @@
             },
             "template": {
               "type": "string",
-              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. Its H2 headings are the sections every entry needs."
+              "description": "The owner's template for a new entry. A path relative to the workspace, an absolute path, or a path starting with ~. Empty uses the shipped template. A starting point; its headings are not required."
             }
           }
         }

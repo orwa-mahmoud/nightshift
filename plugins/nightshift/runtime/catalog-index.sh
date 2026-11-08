@@ -10,7 +10,7 @@
 #
 # shifts prints slug, ending, title and summary. The others print key, title, description, source,
 # and the sources a same key replaced; gates prints them in match order. --template prints the
-# template in force. --check-draft FILE checks one draft against it and names each problem.
+# template in force. --check-draft FILE checks what code reads in one draft and names each problem.
 # --path KEY prints the file in force for one key.
 #
 # Every entry opens with an H1, and that header is the metadata, so there is no second registry
@@ -78,12 +78,10 @@ case "$MODE" in
     exit 0
     ;;
   check)
-    template="$(ns_catalog_template "$PLUGIN_ROOT" "$WORKSPACE" "$CATALOG")"
-    [ -f "$template" ] || {
-      printf 'catalog-index: no template at %s\n' "$template" >&2
-      exit 2
-    }
-    problems="$(ns_catalog_entry_problems "$ARG" "$(ns_catalog_shape "$template")" "$NS_CAT_RULE" || true)"
+    problems="$(ns_catalog_entry_problems "$ARG" "$NS_CAT_RULE" notes || true)"
+    # A note says what the draft leaves to the owner; it never fails the check.
+    printf '%s\n' "$problems" | sed -n "s|^note: |catalog-index: $ARG: |p"
+    problems="$(printf '%s\n' "$problems" | grep -v '^note: ' || true)"
     if [ -n "$problems" ]; then
       while IFS= read -r line; do
         [ -n "$line" ] || continue
