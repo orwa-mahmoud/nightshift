@@ -1,5 +1,5 @@
 name: Catalog shift proposal
-description: Propose a ready-made overnight shift. A merged entry still needs the recipe files and a contract test.
+description: Propose a ready-made overnight shift. A merged entry is still one new file and human review.
 title: "[catalog]: "
 labels: [enhancement]
 body:
@@ -7,8 +7,9 @@ body:
     attributes:
       value: |
         Propose a shift the catalog does not yet have. This form does **not** add the shift —
-        a merged entry is still two new files plus human review, per the
-        [catalog recipe](https://github.com/orwa-mahmoud/nightshift/blob/main/plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md).
+        a merged entry is still one new file plus human review, per
+        [Add to a catalog](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/add-to-a-catalog.md)
+        and the [catalog recipe](https://github.com/orwa-mahmoud/nightshift/blob/main/plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md).
         The [contribution map](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/contribution-map.md)
         lists the files and checks for catalog work.
 
@@ -77,5 +78,5 @@ body:
       options:
         - label: I have listed concrete refusals, not "be careful".
           required: true
-        - label: "I understand a merged shift still requires catalog-recipe.md plus tests/shifts/<name>.bats — this form does not replace them."
+        - label: "I understand a merged shift still requires its entry file, written to catalog-recipe.md — this form does not replace it."
           required: true

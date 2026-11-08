@@ -85,28 +85,11 @@ function Get-NSEvidenceEffective {
     return 'note'
 }
 
+# Get-NSEvidenceKindFile - the kind file in force, by the catalogs' one precedence.
 function Get-NSEvidenceKindFile {
     param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
-    $ns = Join-Path $Workspace '.nightshift'
-    if (Test-NSLayoutKey $ns 'evidence-kinds') {
-        $dir = Get-NSLayoutPath $ns 'evidence-kinds'
-        $candidate = Join-Path $dir ($Key + '.md')
-        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and -not (Test-NSReparsePoint $candidate)) { return $candidate }
-    }
-    $raw = (Get-NSPolicyGroupSetting $Workspace 'receipts.evidence.kindsPaths')['value']
-    if ($null -ne $raw -and $raw -is [Collections.IEnumerable] -and $raw -isnot [string]) {
-        foreach ($one in @($raw)) {
-            if ($one -isnot [string] -or [string]::IsNullOrEmpty($one)) { continue }
-            $candidate = Join-Path (Resolve-NSCatalogPath $Workspace $one) ($Key + '.md')
-            if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and -not (Test-NSReparsePoint $candidate)) { return $candidate }
-        }
-    }
-    $user = Join-Path (Get-NSCatalogUserDir 'evidence' 'kinds') ($Key + '.md')
-    if ((Test-Path -LiteralPath $user -PathType Leaf) -and -not (Test-NSReparsePoint $user)) { return $user }
-    $plugin = Join-Path $PSScriptRoot '../skills/nightshift/references/evidence/kinds'
-    $shipped = Join-Path $plugin ($Key + '.md')
-    if ((Test-Path -LiteralPath $shipped -PathType Leaf) -and -not (Test-NSReparsePoint $shipped)) { return $shipped }
-    return ''
+    return (Get-NSCatalogFile -Prefix 'evidence-check' -PluginRoot (Join-Path $PSScriptRoot '..') `
+            -Row (Get-NSCatalogRow -Name 'evidence') -Workspace $Workspace -Key $Key)
 }
 
 function Get-NSEvidenceBlock {

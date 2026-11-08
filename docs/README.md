@@ -40,5 +40,6 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 ## Maintain the plugin
 
 - [Contribution map](contribution-map.md#choose-your-contribution) — contribution areas, likely files, and focused checks.
+- [Add to a catalog](add-to-a-catalog.md#add-to-a-catalog) — one Markdown file for a shift, evidence kind, gate stack, or edge-case pack.
 - [Maintainer verification matrix](maintainer-verification-matrix.md#maintainer-verification-matrix) — shipped surfaces and their tests.
 - [Contributing](../CONTRIBUTING.md#contributing-to-nightshift) — portability, review standards, and releases.

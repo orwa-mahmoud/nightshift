@@ -63,7 +63,9 @@ for f in punch-list drafting-table parking-lot snag-log product-research opportu
   cp "$REF/templates/$f.md" "$NS/$f.md"
 done
 [ -f "$REF/nightshift-rules-template.json" ] || die 'missing rules template'
-cp "$REF/nightshift-rules-template.json" "$NS/rules.json"
+# The owner who guards every elevation category, so the hardhat has a deny to show. No jq here:
+# the shipped template's policies are rewritten with sed.
+sed 's/"policy": "allow"/"policy": "deny"/' "$REF/nightshift-rules-template.json" >"$NS/rules.json"
 printf '# Shift Log\n' >"$NS/shift-log.md"
 printf '1\n' >"$NS/state-version"
 printf 'repository\n' >"$NS/work-mode"

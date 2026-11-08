@@ -934,25 +934,27 @@ $script:NSPolicyGroupDefaults['archive.automatic'] = $false
 $script:NSPolicyGroupDefaults['archive.layout'] = 'date'
 $script:NSPolicyGroupDefaults['archive.root'] = 'archive'
 $script:NSPolicyGroupDefaults['archive.templatePath'] = ''
-$script:NSPolicyGroupDefaults['edgeCases.packTemplatePath'] = ''
-$script:NSPolicyGroupDefaults['edgeCases.packsPaths'] = @()
-$script:NSPolicyGroupDefaults['gates.stackTemplatePath'] = ''
-$script:NSPolicyGroupDefaults['gates.stacksPaths'] = @()
+$script:NSPolicyGroupDefaults['catalogs.edge-cases.paths'] = @()
+$script:NSPolicyGroupDefaults['catalogs.edge-cases.template'] = ''
+$script:NSPolicyGroupDefaults['catalogs.evidence.paths'] = @()
+$script:NSPolicyGroupDefaults['catalogs.evidence.template'] = ''
+$script:NSPolicyGroupDefaults['catalogs.gates.paths'] = @()
+$script:NSPolicyGroupDefaults['catalogs.gates.template'] = ''
+$script:NSPolicyGroupDefaults['catalogs.shifts.paths'] = @()
+$script:NSPolicyGroupDefaults['catalogs.shifts.template'] = ''
 $script:NSPolicyGroupDefaults['handoff.detail'] = 'concise'
 $script:NSPolicyGroupDefaults['handoff.enabled'] = $true
 $script:NSPolicyGroupDefaults['handoff.language'] = 'auto'
 $script:NSPolicyGroupDefaults['handoff.sections'] = @()
 $script:NSPolicyGroupDefaults['handoff.templatePath'] = ''
 $script:NSPolicyGroupDefaults['handoff.view'] = 'owner'
-$script:NSPolicyGroupDefaults['recovery.launchScope'] = 'inherit-recorded-scope'
+$script:NSPolicyGroupDefaults['recovery.launchScope'] = 'host-default'
 $script:NSPolicyGroupDefaults['receipts.duration'] = 'on'
 $script:NSPolicyGroupDefaults['receipts.enabled'] = $true
 $script:NSPolicyGroupDefaults['receipts.evidence.architecture'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.evidence.check'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.evidence.default'] = ''
 $script:NSPolicyGroupDefaults['receipts.evidence.fileMap'] = 'off'
-$script:NSPolicyGroupDefaults['receipts.evidence.kindTemplatePath'] = ''
-$script:NSPolicyGroupDefaults['receipts.evidence.kindsPaths'] = @()
 $script:NSPolicyGroupDefaults['receipts.evidence.review'] = 'off'
 $script:NSPolicyGroupDefaults['receipts.evidence.unavailable'] = ''
 $script:NSPolicyGroupDefaults['receipts.progressMinutes'] = 20
@@ -961,23 +963,36 @@ $script:NSPolicyGroupDefaults['receipts.progressTokens'] = 100000
 $script:NSPolicyGroupDefaults['receipts.templatePath'] = ''
 $script:NSPolicyGroupDefaults['receipts.usage'] = 'when-available'
 $script:NSPolicyGroupDefaults['shift.copyIn'] = @()
-$script:NSPolicyGroupDefaults['shift.execution'] = 'review-first'
+$script:NSPolicyGroupDefaults['shift.execution'] = 'run-direct'
 $script:NSPolicyGroupDefaults['shift.hours'] = $null
 $script:NSPolicyGroupDefaults['shift.isolation'] = 'none'
 $script:NSPolicyGroupDefaults['shift.itemBudget'] = ''
 $script:NSPolicyGroupDefaults['shift.prepare'] = ''
-$script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'existing-tools'
+$script:NSPolicyGroupDefaults['shift.toolingPolicy'] = 'auto-add'
 $script:NSPolicyGroupDefaults['shift.verificationProfile'] = 'fast'
 $script:NSPolicyGroupDefaults['shift.worktreeRoot'] = '.nightshift/worktrees'
+
+# The built-in shift settings outside the preference blocks, the same as ns_policy_builtin in
+# lib/policy.sh. elevation is the policy of every category the owner has not set.
+$script:NSPolicyBuiltins = New-Object Collections.Specialized.OrderedDictionary([StringComparer]::Ordinal)
+$script:NSPolicyBuiltins['verificationLevel'] = 'none'
+$script:NSPolicyBuiltins['toolingPolicy'] = 'auto-add'
+$script:NSPolicyBuiltins['elevation'] = 'allow'
 
 $script:NSPolicySettingNames = @(
     'archive.automatic',
     'archive.layout',
     'archive.root',
     'archive.templatePath',
+    'catalogs.edge-cases.paths',
+    'catalogs.edge-cases.template',
+    'catalogs.evidence.paths',
+    'catalogs.evidence.template',
+    'catalogs.gates.paths',
+    'catalogs.gates.template',
+    'catalogs.shifts.paths',
+    'catalogs.shifts.template',
     'deadlineEpoch',
-    'edgeCases.packTemplatePath',
-    'edgeCases.packsPaths',
     'elevation.containers',
     'elevation.daemons',
     'elevation.external-services',
@@ -985,8 +1000,6 @@ $script:NSPolicySettingNames = @(
     'elevation.sudo',
     'expectedEmail',
     'forbiddenCommands',
-    'gates.stackTemplatePath',
-    'gates.stacksPaths',
     'handoff.detail',
     'handoff.enabled',
     'handoff.language',
@@ -1002,8 +1015,6 @@ $script:NSPolicySettingNames = @(
     'receipts.evidence.check',
     'receipts.evidence.default',
     'receipts.evidence.fileMap',
-    'receipts.evidence.kindTemplatePath',
-    'receipts.evidence.kindsPaths',
     'receipts.evidence.review',
     'receipts.evidence.unavailable',
     'receipts.progressMinutes',
@@ -1160,7 +1171,7 @@ function Test-NSShiftPolicyDocument {
     $known = @('schemaVersion', 'shiftId', 'createdAt', 'source', 'deadlineEpoch',
         'verificationLevel', 'toolingPolicy', 'launchScope', 'launchProvenance', 'budgets',
         'allowances', 'gatesDigest', 'completionMode', 'selectedDebt', 'contractDigest', 'itemsDigest',
-        'shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates', 'edgeCases')
+        'shift', 'recovery', 'handoff', 'archive', 'receipts', 'catalogs')
     foreach ($key in @($Document.Keys)) {
         if (-not ($known -ccontains [string]$key)) {
             $errors.Add(([string]$key) + ': unknown field')
@@ -1200,19 +1211,6 @@ function Test-NSShiftPolicyDocument {
         if ($evidenceBlock.Contains('default') -and $null -ne $evidenceBlock['default'] -and $evidenceBlock['default'] -isnot [string]) {
             $errors.Add('receipts.evidence.default: must be text')
         }
-        if ($evidenceBlock.Contains('kindTemplatePath') -and $null -ne $evidenceBlock['kindTemplatePath'] -and $evidenceBlock['kindTemplatePath'] -isnot [string]) {
-            $errors.Add('receipts.evidence.kindTemplatePath: must be text')
-        }
-        if ($evidenceBlock.Contains('kindsPaths') -and $null -ne $evidenceBlock['kindsPaths']) {
-            $kindsPaths = $evidenceBlock['kindsPaths']
-            $kindsOk = $kindsPaths -is [Collections.IEnumerable] -and $kindsPaths -isnot [string]
-            if ($kindsOk) {
-                foreach ($folder in @($kindsPaths)) {
-                    if ($folder -isnot [string]) { $kindsOk = $false; break }
-                }
-            }
-            if (-not $kindsOk) { $errors.Add('receipts.evidence.kindsPaths: must be a list of folders') }
-        }
         if ($evidenceBlock.Contains('check') -and $null -ne $evidenceBlock['check'] -and -not (Test-NSEvidenceEnum $evidenceBlock['check'] @('off', 'report', 'block'))) {
             $errors.Add('receipts.evidence.check: must be off, report, or block')
         }
@@ -1223,36 +1221,28 @@ function Test-NSShiftPolicyDocument {
             $errors.Add('receipts.evidence.unavailable: must be hold, park, note, or empty')
         }
     }
-    $gatesBlock = Get-NSPolicyField $Document 'gates'
-    if ($gatesBlock -is [Collections.IDictionary]) {
-        if ($gatesBlock.Contains('stackTemplatePath') -and $null -ne $gatesBlock['stackTemplatePath'] -and $gatesBlock['stackTemplatePath'] -isnot [string]) {
-            $errors.Add('gates.stackTemplatePath: must be text')
-        }
-        if ($gatesBlock.Contains('stacksPaths') -and $null -ne $gatesBlock['stacksPaths']) {
-            $stacksPaths = $gatesBlock['stacksPaths']
-            $stacksOk = $stacksPaths -is [Collections.IEnumerable] -and $stacksPaths -isnot [string]
-            if ($stacksOk) {
-                foreach ($folder in @($stacksPaths)) {
-                    if ($folder -isnot [string]) { $stacksOk = $false; break }
-                }
+    # Every catalog freezes the same two settings: a list of folders, and a template path.
+    $catalogsBlock = Get-NSPolicyField $Document 'catalogs'
+    if ($catalogsBlock -is [Collections.IDictionary]) {
+        foreach ($catalogName in @($catalogsBlock.Keys)) {
+            $catalogBlock = $catalogsBlock[$catalogName]
+            if ($catalogBlock -isnot [Collections.IDictionary]) {
+                $errors.Add("catalogs.${catalogName}: must be an object")
+                continue
             }
-            if (-not $stacksOk) { $errors.Add('gates.stacksPaths: must be a list of folders') }
-        }
-    }
-    $edgeBlock = Get-NSPolicyField $Document 'edgeCases'
-    if ($edgeBlock -is [Collections.IDictionary]) {
-        if ($edgeBlock.Contains('packTemplatePath') -and $null -ne $edgeBlock['packTemplatePath'] -and $edgeBlock['packTemplatePath'] -isnot [string]) {
-            $errors.Add('edgeCases.packTemplatePath: must be text')
-        }
-        if ($edgeBlock.Contains('packsPaths') -and $null -ne $edgeBlock['packsPaths']) {
-            $packsPaths = $edgeBlock['packsPaths']
-            $packsOk = $packsPaths -is [Collections.IEnumerable] -and $packsPaths -isnot [string]
-            if ($packsOk) {
-                foreach ($folder in @($packsPaths)) {
-                    if ($folder -isnot [string]) { $packsOk = $false; break }
-                }
+            if ($catalogBlock.Contains('template') -and $null -ne $catalogBlock['template'] -and $catalogBlock['template'] -isnot [string]) {
+                $errors.Add("catalogs.${catalogName}.template: must be text")
             }
-            if (-not $packsOk) { $errors.Add('edgeCases.packsPaths: must be a list of folders') }
+            if ($catalogBlock.Contains('paths') -and $null -ne $catalogBlock['paths']) {
+                $catalogPaths = $catalogBlock['paths']
+                $pathsOk = $catalogPaths -is [Collections.IEnumerable] -and $catalogPaths -isnot [string]
+                if ($pathsOk) {
+                    foreach ($folder in @($catalogPaths)) {
+                        if ($folder -isnot [string]) { $pathsOk = $false; break }
+                    }
+                }
+                if (-not $pathsOk) { $errors.Add("catalogs.${catalogName}.paths: must be a list of folders") }
+            }
         }
     }
     if ($Document.Contains('completionMode') -and -not (Test-NSEvidenceEnum $Document['completionMode'] $script:NSPolicyCompletionModes)) {
@@ -1525,9 +1515,15 @@ function New-NSStartSnapshot {
         if ($value -match '^[0-9]+$') { $deadline = $value }
     }
     $created = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+    # A notes folder has no repository toolchain to add, so it keeps existing tools.
+    $tooling = [string]$script:NSPolicyBuiltins['toolingPolicy']
+    $mode = ''
+    try { $mode = Get-NSWorkMode $Workspace } catch { $mode = '' }
+    if ($mode -ceq 'artifact') { $tooling = 'existing-tools' }
     $json = '{"schemaVersion":1,"shiftId":"' + $id + '","createdAt":"' + $created +
         '","source":"start-defaults","deadlineEpoch":' + $deadline +
-        ',"verificationLevel":"none","toolingPolicy":"existing-tools"}'
+        ',"verificationLevel":"' + [string]$script:NSPolicyBuiltins['verificationLevel'] +
+        '","toolingPolicy":"' + $tooling + '"}'
     if ((Set-NSShiftPolicy -Workspace $Workspace -Json $json) -ne 0) { return '' }
     return $id
 }
@@ -1593,7 +1589,7 @@ function Set-NSShiftPolicy {
     # Freeze the owner's preference blocks into tonight's policy. From here the shift reads them
     # here, so an edit to rules.json lands on the next shift rather than moving the ground under
     # this one. A candidate that already states a block is left exactly as it was written.
-    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts', 'gates', 'edgeCases')) {
+    foreach ($block in @('shift', 'recovery', 'handoff', 'archive', 'receipts', 'catalogs')) {
         if ($document.Contains($block)) { continue }
         $frozen = New-NSOrdinalMap
         foreach ($name in $script:NSPolicyGroupDefaults.Keys) {
@@ -1626,10 +1622,10 @@ function Set-NSShiftPolicy {
 function New-NSShiftDefaultsDocument {
     $document = New-NSOrdinalMap
     $document['schemaVersion'] = 1
-    $document['verificationProfile'] = 'fast'
-    $document['hours'] = $null
-    $document['toolingPolicy'] = 'existing-tools'
-    $document['execution'] = 'review-first'
+    $document['verificationProfile'] = $script:NSPolicyGroupDefaults['shift.verificationProfile']
+    $document['hours'] = $script:NSPolicyGroupDefaults['shift.hours']
+    $document['toolingPolicy'] = $script:NSPolicyGroupDefaults['shift.toolingPolicy']
+    $document['execution'] = $script:NSPolicyGroupDefaults['shift.execution']
     $document['updatedAt'] = ''
     return $document
 }
@@ -1719,8 +1715,12 @@ function Get-NSRecoveryLaunchScope {
     if ([string]::IsNullOrEmpty($reader) -or -not (Test-Path -LiteralPath $reader -PathType Leaf)) {
         return ('unavailable:missing-file:' + $reader)
     }
+    # A setting the owner never wrote is the built-in default. An unrecognised value, or a rules
+    # file that cannot be parsed, inherits, which refuses an unattended revival rather than guess.
+    $builtin = [string]$script:NSPolicyGroupDefaults['recovery.launchScope']
     $path = (Get-NSPolicyPaths $Workspace)['rules']
-    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return 'inherit-recorded-scope' }
+    if (Test-NSReparsePoint $path) { return 'inherit-recorded-scope' }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $builtin }
     $document = $null
     try {
         $document = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($path, $script:NSUtf8NoBom))
@@ -1729,9 +1729,10 @@ function Get-NSRecoveryLaunchScope {
         return 'inherit-recorded-scope'
     }
     if (-not ($document -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
-    if (-not $document.Contains('recovery')) { return 'inherit-recorded-scope' }
+    if (-not $document.Contains('recovery')) { return $builtin }
     $block = $document['recovery']
     if (-not ($block -is [Collections.IDictionary])) { return 'inherit-recorded-scope' }
+    if (-not $block.Contains('launchScope')) { return $builtin }
     $value = Get-NSMapValue $block 'launchScope'
     if ($value -ceq 'host-default') { return 'host-default' }
     if ($value -ceq 'host-grant') { return 'host-grant' }

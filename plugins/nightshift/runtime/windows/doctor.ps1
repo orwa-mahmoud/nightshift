@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
+. (Join-Path $pluginRoot 'lib/catalog-sources.ps1')
 
 $here = $PSScriptRoot
 $facts = New-Object Collections.Generic.List[string]
@@ -523,20 +524,15 @@ else {
             $evidenceRule = $receiptsRule.Value.PSObject.Properties['evidence']
         }
         if ($null -ne $evidenceRule -and $evidenceRule.Value -is [Management.Automation.PSCustomObject]) {
-            foreach ($k in @('architecture', 'check', 'default', 'fileMap', 'kindTemplatePath', 'kindsPaths', 'review', 'unavailable')) {
+            foreach ($k in @('architecture', 'check', 'default', 'fileMap', 'review', 'unavailable')) {
                 $setting = $evidenceRule.Value.PSObject.Properties[$k]
                 if ($null -eq $setting) { continue }
                 $name = 'receipts.evidence.' + $k
                 $shown = ConvertTo-Json -Compress -InputObject $setting.Value
-                if ($k -ceq 'default' -or $k -ceq 'kindTemplatePath') {
+                if ($k -ceq 'default') {
                     if ($setting.Value -is [string]) { continue }
                     Add-NSWarn "rules.json $name is $shown; it must be text"
-                    if ($k -ceq 'default') {
-                        Add-NSAct confirm "set $name to the evidence every item should carry, or `"`", in $rulesPath"
-                    }
-                    else {
-                        Add-NSAct confirm "set $name to a template path, or `"`", in $rulesPath"
-                    }
+                    Add-NSAct confirm "set $name to the evidence every item should carry, or `"`", in $rulesPath"
                     continue
                 }
                 if ($k -ceq 'check') {
@@ -551,67 +547,62 @@ else {
                     Add-NSAct confirm "set $name to `"hold`", `"park`", `"note`", or `"`" in $rulesPath"
                     continue
                 }
-                if ($k -ceq 'kindsPaths') {
-                    $kindsOk = $setting.Value -is [Collections.IEnumerable] -and $setting.Value -isnot [string]
-                    if ($kindsOk) {
-                        foreach ($folder in @($setting.Value)) {
-                            if ($folder -isnot [string]) { $kindsOk = $false; break }
-                        }
-                    }
-                    if ($kindsOk) { continue }
-                    Add-NSWarn "rules.json $name is $shown; it must be a list of folders"
-                    Add-NSAct confirm "set $name to a list of folders, or [], in $rulesPath"
-                    continue
-                }
                 if ($setting.Value -is [string] -and ($setting.Value -ceq 'off' -or $setting.Value -ceq 'on')) { continue }
                 Add-NSWarn "rules.json $name is $shown; it must be off or on"
                 Add-NSAct confirm "set $name to `"off`" or `"on`" in $rulesPath"
             }
         }
-        $gatesRule = $rules.PSObject.Properties['gates']
-        if ($null -ne $gatesRule -and $gatesRule.Value -is [Management.Automation.PSCustomObject]) {
-            $template = $gatesRule.Value.PSObject.Properties['stackTemplatePath']
-            if ($null -ne $template -and $template.Value -isnot [string]) {
-                $shown = ConvertTo-Json -Compress -InputObject $template.Value
-                Add-NSWarn "rules.json gates.stackTemplatePath is $shown; it must be text"
-                Add-NSAct confirm "set gates.stackTemplatePath to a template path, or `"`", in $rulesPath"
-            }
-            $stacks = $gatesRule.Value.PSObject.Properties['stacksPaths']
-            if ($null -ne $stacks) {
-                $stacksOk = $stacks.Value -is [Collections.IEnumerable] -and $stacks.Value -isnot [string]
-                if ($stacksOk) {
-                    foreach ($folder in @($stacks.Value)) {
-                        if ($folder -isnot [string]) { $stacksOk = $false; break }
-                    }
+        # Every catalog takes a list of folders and a template path.
+        $catalogsRule = $rules.PSObject.Properties['catalogs']
+        if ($null -ne $catalogsRule -and $catalogsRule.Value -is [Management.Automation.PSCustomObject]) {
+            foreach ($catalogRule in $catalogsRule.Value.PSObject.Properties) {
+                if ($catalogRule.Value -isnot [Management.Automation.PSCustomObject]) { continue }
+                $template = $catalogRule.Value.PSObject.Properties['template']
+                if ($null -ne $template -and $template.Value -isnot [string]) {
+                    $shown = ConvertTo-Json -Compress -InputObject $template.Value
+                    Add-NSWarn "rules.json catalogs.$($catalogRule.Name).template is $shown; it must be text"
+                    Add-NSAct confirm "set catalogs.$($catalogRule.Name).template to a template path, or `"`", in $rulesPath"
                 }
-                if (-not $stacksOk) {
-                    $shown = ConvertTo-Json -Compress -InputObject $stacks.Value
-                    Add-NSWarn "rules.json gates.stacksPaths is $shown; it must be a list of folders"
-                    Add-NSAct confirm "set gates.stacksPaths to a list of folders, or [], in $rulesPath"
+                $folders = $catalogRule.Value.PSObject.Properties['paths']
+                if ($null -ne $folders) {
+                    $foldersOk = $folders.Value -is [Collections.IEnumerable] -and $folders.Value -isnot [string]
+                    if ($foldersOk) {
+                        foreach ($folder in @($folders.Value)) {
+                            if ($folder -isnot [string]) { $foldersOk = $false; break }
+                        }
+                    }
+                    if (-not $foldersOk) {
+                        $shown = ConvertTo-Json -Compress -InputObject $folders.Value
+                        Add-NSWarn "rules.json catalogs.$($catalogRule.Name).paths is $shown; it must be a list of folders"
+                        Add-NSAct confirm "set catalogs.$($catalogRule.Name).paths to a list of folders, or [], in $rulesPath"
+                    }
                 }
             }
         }
-        $edgeRule = $rules.PSObject.Properties['edgeCases']
-        if ($null -ne $edgeRule -and $edgeRule.Value -is [Management.Automation.PSCustomObject]) {
-            $packTemplate = $edgeRule.Value.PSObject.Properties['packTemplatePath']
-            if ($null -ne $packTemplate -and $packTemplate.Value -isnot [string]) {
-                $shown = ConvertTo-Json -Compress -InputObject $packTemplate.Value
-                Add-NSWarn "rules.json edgeCases.packTemplatePath is $shown; it must be text"
-                Add-NSAct confirm "set edgeCases.packTemplatePath to a template path, or `"`", in $rulesPath"
+        # A setting or folder an earlier version used for a catalog is still read; name where it lives now.
+        foreach ($catalogRow in (Get-NSCatalogRows)) {
+            foreach ($pair in @(@('paths', $catalogRow.LegacyPaths), @('template', $catalogRow.LegacyTemplate))) {
+                $legacyKey = [string]$pair[1]
+                if ([string]::IsNullOrEmpty($legacyKey)) { continue }
+                $node = $rules
+                foreach ($part in $legacyKey.Split('.')) {
+                    if ($null -eq $node -or $node -isnot [Management.Automation.PSCustomObject]) { $node = $null; break }
+                    $prop = $node.PSObject.Properties[$part]
+                    if ($null -eq $prop) { $node = $null; break }
+                    $node = $prop.Value
+                }
+                if (Test-NSCatalogSettingEmpty $node) { continue }
+                Add-NSWarn "rules.json $legacyKey is read as catalogs.$($catalogRow.Name).$($pair[0])"
+                Add-NSAct confirm "move $legacyKey to catalogs.$($catalogRow.Name).$($pair[0]) in $rulesPath"
             }
-            $packs = $edgeRule.Value.PSObject.Properties['packsPaths']
-            if ($null -ne $packs) {
-                $packsOk = $packs.Value -is [Collections.IEnumerable] -and $packs.Value -isnot [string]
-                if ($packsOk) {
-                    foreach ($folder in @($packs.Value)) {
-                        if ($folder -isnot [string]) { $packsOk = $false; break }
-                    }
-                }
-                if (-not $packsOk) {
-                    $shown = ConvertTo-Json -Compress -InputObject $packs.Value
-                    Add-NSWarn "rules.json edgeCases.packsPaths is $shown; it must be a list of folders"
-                    Add-NSAct confirm "set edgeCases.packsPaths to a list of folders, or [], in $rulesPath"
-                }
+            if ([string]::IsNullOrEmpty($catalogRow.LegacyProject)) { continue }
+            $legacyNs = Join-Path $workspace '.nightshift'
+            if (-not (Test-NSLayoutKey $legacyNs $catalogRow.LegacyProject)) { continue }
+            $legacyDir = Get-NSLayoutPath $legacyNs $catalogRow.LegacyProject
+            if ((Test-Path -LiteralPath $legacyDir -PathType Container) -and
+                @(Get-ChildItem -LiteralPath $legacyDir -Filter '*.md' -File -ErrorAction SilentlyContinue).Count -gt 0) {
+                Add-NSWarn "$legacyDir is read as the $($catalogRow.Name) catalog's project folder"
+                Add-NSAct confirm "move its entries to $(Get-NSLayoutPath $legacyNs ('catalog-' + $catalogRow.Name))"
             }
         }
     }

@@ -18,7 +18,7 @@ park() { bash "$PARK" --project "$1"; }
 
 unarmed() {
   local p
-  p="$(new_project "${1:-pre}")"
+  p="$(new_guarded_project "${1:-pre}")"
   rm -f "$p/.nightshift/.shift-armed"
   printf '%s' "$p"
 }
@@ -342,7 +342,7 @@ MD
 }
 
 @test "park-needs works while the shift is armed: Start parks and keeps working" {
-  p="$(new_project park-armed)"
+  p="$(new_guarded_project park-armed)"
   fixture_list "$p"
   [ -f "$p/.nightshift/.shift-armed" ]
   run park "$p"

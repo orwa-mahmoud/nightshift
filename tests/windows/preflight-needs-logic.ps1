@@ -100,11 +100,20 @@ function Invoke-Park {
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $parkNeeds, '-Project', $Project)
 }
 
+# The shipped template allows every category. A preflight test needs gaps to find, so its rules
+# file is the owner who sets every category to deny.
+function Copy-GuardedRules {
+    param([Parameter(Mandatory = $true)][string]$Nightshift)
+    $rules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText($rulesTemplate, $utf8))
+    foreach ($category in @($rules['elevation'].Keys)) { $rules['elevation'][$category]['policy'] = 'deny' }
+    [IO.File]::WriteAllText((Join-Path $Nightshift 'rules.json'), (ConvertTo-NSCanonicalJson $rules), $utf8)
+}
+
 function New-PreflightProject {
     param([Parameter(Mandatory = $true)][string]$Path, [AllowEmptyString()][string]$Orders = '')
     $ns = Join-Path $Path '.nightshift'
     $null = New-Item -ItemType Directory -Path $ns -Force
-    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $ns 'rules.json')
+    Copy-GuardedRules $ns
     $punch = @(
         '# Punch List',
         '',
@@ -328,7 +337,7 @@ try {
     $mixed = Join-Path $root 'shared-mixed'
     $mixedNs = Join-Path $mixed '.nightshift'
     $null = New-Item -ItemType Directory -Path $mixedNs -Force
-    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $mixedNs 'rules.json')
+    Copy-GuardedRules $mixedNs
     [IO.File]::WriteAllText((Join-Path $mixedNs 'punch-list.md'), $sharedList, $utf8)
     $mixedText = (Invoke-Preflight -Project $mixed).StdoutText
     Expect-True $mixedText.Contains('preflight: 3 open items, 2 with gaps') 'shared fixture mixed needs: open and gap counts'
@@ -341,7 +350,7 @@ try {
     $oneGap = Join-Path $root 'shared-one-gap'
     $oneGapNs = Join-Path $oneGap '.nightshift'
     $null = New-Item -ItemType Directory -Path $oneGapNs -Force
-    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $oneGapNs 'rules.json')
+    Copy-GuardedRules $oneGapNs
     [IO.File]::WriteAllText((Join-Path $oneGapNs 'punch-list.md'), $sharedList, $utf8)
     Write-SharedPolicy $oneGapNs @((New-SharedAllowance 'containers'))
     $oneGapText = (Invoke-Preflight -Project $oneGap).StdoutText
@@ -353,7 +362,7 @@ try {
     $noGaps = Join-Path $root 'shared-no-gaps'
     $noGapsNs = Join-Path $noGaps '.nightshift'
     $null = New-Item -ItemType Directory -Path $noGapsNs -Force
-    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $noGapsNs 'rules.json')
+    Copy-GuardedRules $noGapsNs
     [IO.File]::WriteAllText((Join-Path $noGapsNs 'punch-list.md'), $sharedList, $utf8)
     Write-SharedPolicy $noGapsNs @(
         (New-SharedAllowance 'containers'),

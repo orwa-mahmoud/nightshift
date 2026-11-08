@@ -38,7 +38,7 @@ Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameC
 # The verbs that change something on disk. Identical in the POSIX dispatcher.
 $NSWritingVerbs = @('scaffold', 'archive-receipts', 'stop-shift', 'link-workspace',
     'evidence-archive', 'migrate-state', 'apply-profile', 'plan-enter', 'plan-exit',
-    'evidence-unavailable')
+    'evidence-unavailable', 'catalog-new')
 # Verbs that answer from any copy. Identical in the POSIX dispatcher.
 $NSReadOnlyVerbs = @('help', 'bind', 'path', 'status', 'doctor')
 

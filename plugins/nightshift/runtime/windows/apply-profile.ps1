@@ -314,12 +314,13 @@ if ($null -eq $toolDeny -or $toolDeny -is [Array] -or $toolDeny -is [string] -or
 # built-in defaults (a missing or malformed file decides nothing).
 function Get-NSShiftDefaultsBase {
     param([string]$Path)
+    $shipped = New-NSShiftDefaultsDocument
     $builtin = [pscustomobject]@{
         schemaVersion        = 1
-        verificationProfile  = 'fast'
-        hours                = $null
-        toolingPolicy        = 'existing-tools'
-        execution            = 'review-first'
+        verificationProfile  = $shipped['verificationProfile']
+        hours                = $shipped['hours']
+        toolingPolicy        = $shipped['toolingPolicy']
+        execution            = $shipped['execution']
     }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return $builtin

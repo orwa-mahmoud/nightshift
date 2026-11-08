@@ -42,7 +42,7 @@ cursor_blocked() {
 }
 
 @test "the Cursor guard denies the owner's forbidden command, in Cursor's own answer" {
-  p="$(new_project cursor-forbidden)"
+  p="$(new_guarded_project cursor-forbidden)"
   punch_open "$p"
   run cursor_tool "$p" "git push origin HEAD" NIGHTSHIFT_FORBIDDEN_COMMANDS='git .*push'
   [ "$status" -eq 0 ]
@@ -51,7 +51,7 @@ cursor_blocked() {
 }
 
 @test "the Cursor guard denies an elevation category the shift does not allow" {
-  p="$(new_project cursor-elevation)"
+  p="$(new_guarded_project cursor-elevation)"
   punch_open "$p"
   run cursor_tool "$p" "sudo apt-get install -y jq"
   cursor_denied "$output" || { echo "not a Cursor denial: $output"; return 1; }
@@ -59,7 +59,7 @@ cursor_blocked() {
 }
 
 @test "the Cursor guard is inert when no shift is running" {
-  p="$(new_project cursor-inert)"
+  p="$(new_guarded_project cursor-inert)"
   # new_project arms the site; an ordinary session is one that is not on shift.
   rm -f "$p/.nightshift/.shift-armed"
   run cursor_tool "$p" "sudo apt-get install -y jq"
@@ -70,7 +70,7 @@ cursor_blocked() {
 @test "the Cursor guard reads a here-document the way Claude's does" {
   # The rule is the shared core's, but this proves the Cursor entry point reaches it: a quoted
   # documentation write passes and the same body fed to an interpreter does not.
-  p="$(new_project cursor-heredoc)"
+  p="$(new_guarded_project cursor-heredoc)"
   punch_open "$p"
   run cursor_tool "$p" "$(printf "cat > docs/e.md <<'EOF'\nsudo and doas, docker run\nEOF")"
   [ -z "$output" ]
@@ -79,7 +79,7 @@ cursor_blocked() {
 }
 
 @test "the Cursor gate keeps the session going while a box is open" {
-  p="$(new_project cursor-gate-open)"
+  p="$(new_guarded_project cursor-gate-open)"
   punch_open "$p"
   run cursor_stop "$p"
   [ "$status" -eq 0 ]
@@ -87,7 +87,7 @@ cursor_blocked() {
 }
 
 @test "the Cursor gate lets the session stop once every box is ticked" {
-  p="$(new_project cursor-gate-done)"
+  p="$(new_guarded_project cursor-gate-done)"
   printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"
   run cursor_stop "$p"
   [ "$status" -eq 0 ]
@@ -99,7 +99,7 @@ cursor_blocked() {
 @test "the Cursor seam reads the same payload with no jq on PATH" {
   # The seam has a sed fallback for a host without jq. It has to find the same fields, or a
   # Cursor user without jq silently loses every guard.
-  p="$(new_project cursor-no-jq)"
+  p="$(new_guarded_project cursor-no-jq)"
   punch_open "$p"
   bin="$p/bin"
   mkdir -p "$bin"
@@ -125,7 +125,7 @@ cursor_pulse() {
 }
 
 @test "the Cursor pulse records the session that owns the shift, and only that one" {
-  p="$(new_project cursor-pulse)"
+  p="$(new_guarded_project cursor-pulse)"
   punch_open "$p"
   printf 'conv-1\n' >"$p/.nightshift/.shift-session"
 
@@ -145,7 +145,7 @@ cursor_pulse() {
 }
 
 @test "in a Cursor session the Claude copy's pulse records nothing and the Cursor copy's records the turn" {
-  p="$(new_project cursor-one-copy)"
+  p="$(new_guarded_project cursor-one-copy)"
   punch_open "$p"
   bind_session "$p" conv-1 cursor
   usage="$(bash -c '. "$1"; ns_usage_dir "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p/.nightshift")"
@@ -170,7 +170,7 @@ cursor_pulse() {
 }
 
 @test "the Cursor pulse says nothing once the shift is over" {
-  p="$(new_project cursor-pulse-ended)"
+  p="$(new_guarded_project cursor-pulse-ended)"
   punch_open "$p"
   printf 'conv-1\n' >"$p/.nightshift/.shift-session"
   rm -f "$p/.nightshift/.shift-armed"
@@ -181,7 +181,7 @@ cursor_pulse() {
 }
 
 @test "the Cursor session end records the ending without ending the shift itself" {
-  p="$(new_project cursor-session-end)"
+  p="$(new_guarded_project cursor-session-end)"
   punch_open "$p"
   run env CURSOR_PROJECT_DIR="$p" bash -c \
     'printf "%s" "$1" | bash "$2"' _ \
@@ -194,7 +194,7 @@ cursor_pulse() {
 }
 
 @test "the Cursor watchman stands down on a shift that is not armed" {
-  p="$(new_project cursor-watchman)"
+  p="$(new_guarded_project cursor-watchman)"
   punch_open "$p"
   rm -f "$p/.nightshift/.shift-armed"
   # NIGHTSHIFT_WATCH_SLEEP is the suite's speed lever. Without it `--interval 1` means one minute,
@@ -207,7 +207,7 @@ cursor_pulse() {
 }
 
 @test "a Cursor hook records the model and freezes the permission flags" {
-  p="$(new_project cursor-launch-note)"
+  p="$(new_guarded_project cursor-launch-note)"
   printf '## Items\n- [ ] **1.**\n' >"$p/.nightshift/punch-list.md"
   : >"$p/.nightshift/.shift-armed"
   printf 'conv-1\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
@@ -234,7 +234,7 @@ cursor_pulse() {
 }
 
 @test "a Cursor hook records the CLI ancestor's model and flags, not the payload base id" {
-  p="$(new_project cursor-argv-launch)"
+  p="$(new_guarded_project cursor-argv-launch)"
   printf '## Items\n- [ ] **1.**\n' >"$p/.nightshift/punch-list.md"
   stub="$BATS_TEST_TMPDIR/cursor-agent"
   cat >"$stub" <<'EOF'
@@ -264,7 +264,7 @@ EOF
 }
 
 @test "an unreadable Cursor launch records none of the payload model" {
-  p="$(new_project cursor-argv-missing)"
+  p="$(new_guarded_project cursor-argv-missing)"
   lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
   out="$BATS_TEST_TMPDIR/launch-read"
   donef="$BATS_TEST_TMPDIR/launch-done"
@@ -301,7 +301,7 @@ os.execv(sys.argv[1], [sys.argv[1]])
 }
 
 @test "the Cursor gate holds an ended shift once so the model can file it" {
-  p="$(new_project cursor-auto-file)"
+  p="$(new_guarded_project cursor-auto-file)"
   printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"
   jq '.archive.automatic = true' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
@@ -322,7 +322,7 @@ os.execv(sys.argv[1], [sys.argv[1]])
 }
 
 @test "the Cursor gate releases a finished shift that asked for nothing" {
-  p="$(new_project cursor-auto-off)"
+  p="$(new_guarded_project cursor-auto-off)"
   printf '## Items\n- [x] **1. done.**\n' >"$p/.nightshift/punch-list.md"
   run cursor_stop "$p"
   [ "$status" -eq 0 ]

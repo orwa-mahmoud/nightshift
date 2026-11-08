@@ -21,7 +21,7 @@ resolve_table() { "$SH" --project "$1" resolve --table; }
     'handoff.enabled=true (rules, permanent)' \
     'handoff.view=owner (rules, permanent)' \
     'handoff.sections=[] (rules, permanent)' \
-    'recovery.launchScope=inherit-recorded-scope (rules, permanent)' \
+    'recovery.launchScope=host-default (rules, permanent)' \
     'receipts.enabled=true (rules, permanent)' \
     'receipts.progressMode=time (rules, permanent)' \
     'receipts.progressMinutes=20 (rules, permanent)' \
@@ -41,7 +41,7 @@ resolve_table() { "$SH" --project "$1" resolve --table; }
   printf '%s\n' "$output" | grep -qxF 'receipts.enabled=true (built-in, -)'
   printf '%s\n' "$output" | grep -qxF 'receipts.progressMode=time (built-in, -)'
   printf '%s\n' "$output" | grep -qxF 'archive.root=archive (built-in, -)'
-  printf '%s\n' "$output" | grep -qxF 'recovery.launchScope=inherit-recorded-scope (built-in, -)'
+  printf '%s\n' "$output" | grep -qxF 'recovery.launchScope=host-default (built-in, -)'
 }
 
 @test "the owner's own values are what the view reports, and presence is what makes them theirs" {
@@ -185,4 +185,34 @@ resolve_table() { "$SH" --project "$1" resolve --table; }
     "Import-Module '$module' -Force -DisableNameChecking; Resolve-NSPolicy -Workspace '$p'"
   [ "$status" -eq 0 ]
   [ "$output" = "$("$SH" --project "$p" resolve)" ]
+}
+
+@test "every built-in default equals the shipped template, key by key" {
+  # shellcheck source=plugins/nightshift/lib/lib.sh
+  . "$LIB"
+  checked=0
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    builtin="$(ns_policy_builtin "$key")" || continue
+    shipped="$(jq -c --arg k "$key" 'getpath($k | split("."))' "$TEMPLATE")"
+    [ "$builtin" = "$shipped" ] || { echo "$key: built-in $builtin, template $shipped"; return 1; }
+    checked=$((checked + 1))
+  done <<EOF2
+$(jq -r '[paths(type != "object")] | map(select(.[-1] | type == "string")) | .[]
+  | select(.[0] | IN("archive","handoff","receipts","gates","edgeCases","recovery","shift"))
+  | join(".")' "$TEMPLATE")
+EOF2
+  [ "$checked" -ge 30 ] || { echo "only $checked keys compared"; return 1; }
+  for category in $(jq -r '.elevation | keys[]' "$TEMPLATE"); do
+    shipped="$(jq -c --arg c "$category" '.elevation[$c].policy' "$TEMPLATE")"
+    [ "$(ns_policy_builtin "elevation.$category")" = "$shipped" ] \
+      || { echo "elevation.$category differs from the template"; return 1; }
+  done
+  [ "$(ns_policy_builtin toolingPolicy)" = "$(jq -c '.shift.toolingPolicy' "$TEMPLATE")" ]
+}
+
+@test "the shipped defaults never block: elevation allowed, host-default recovery, run-direct, auto-add" {
+  jq -e '[.elevation[].policy] | all(. == "allow")' "$TEMPLATE" >/dev/null
+  jq -e '.recovery.launchScope == "host-default"' "$TEMPLATE" >/dev/null
+  jq -e '.shift.execution == "run-direct" and .shift.toolingPolicy == "auto-add"' "$TEMPLATE" >/dev/null
 }

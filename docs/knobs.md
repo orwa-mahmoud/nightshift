@@ -19,6 +19,11 @@ shift the file itself is guarded: the session working the night is denied touchi
 you set or lift a rule. The env vars below remain as session-start overrides for tests and
 one-off exceptions.
 
+**Three ways to change a setting, all equal:** edit the file, ask for the change in plain words in
+any conversation, or run `/nightshift:customize` (in Codex, ask Nightshift to customize), which
+shows every setting, template and catalog entry on one screen with its current and shipped value
+and changes only what you name. None of them requires the others.
+
 ## Where a setting comes from
 
 A setting has one permanent home and one place it may be varied for a single night. Four sources
@@ -89,9 +94,10 @@ with a workspace setting — it does not change runtime behaviour:
 
 ## Elevation
 
-`elevation` is the one guard that ships switched on. Five categories are denied out of the box, and
-each carries the `grep -E` pattern the hardhat and the permission preflight both match against, so
-the guard and the preflight can never disagree about what a command needs:
+`elevation` names five categories of command that create system state. Each ships allowed, so
+Nightshift adds nothing to what the host itself permits; set a category to `deny` to guard it.
+Each carries the `grep -E` pattern the hardhat and the permission preflight both match against,
+so the guard and the preflight can never disagree about what a command needs:
 
 | Category | What it covers |
 | --- | --- |
@@ -106,21 +112,21 @@ database, calling a local API, and running migrations or tests against your dev 
 gated. `docker ps`, `docker logs`, and `brew list` are reads, not elevation; `docker run` is
 elevation.
 
-Set a category's `policy` to `allow` to lift it permanently, or let a composition step record a
-one-shift allowance with its provenance on the shift policy. An allowance authorizes its category
-and nothing else: protected paths, never-commit patterns, and the expected commit identity are
-never lifted with it. A missing `elevation` object, or a missing category inside it, denies that
-category and keeps the shipped pattern.
+Set a category's `policy` to `deny` to guard it. A denied category can still be lifted for one shift
+by a composition step, which records the allowance with its provenance on the shift policy. An
+allowance authorizes its category and nothing else: protected paths, never-commit patterns, and the
+expected commit identity are never lifted with it. A missing `elevation` object, or a missing
+category inside it, allows that category and keeps the shipped pattern.
 
 ```json
 {
   "elevation": {
-    "containers": { "policy": "allow" }
+    "containers": { "policy": "deny" }
   }
 }
 ```
 
-`forbiddenCommands` remains your own free-form denylist; it is not how these five are denied.
+`forbiddenCommands` remains your own free-form denylist; it is separate from these five categories.
 
 **Hardhat is hardening, not a sandbox.** The patterns match command text. They stop accidental
 drift by a cooperative agent; they are not unbypassable isolation, and they are not a substitute
@@ -273,8 +279,8 @@ the default in the table.
 |---|---|---|
 | `verificationProfile` | `fast` | `fast` never runs the punch list's `## Gates`, `balanced` runs them once before clock-out, `strict` before every tick and once at the end, `custom` is the cadence the punch list itself names |
 | `hours` | `null` | A whole number of hours for a composed shift, or `null` to be asked. A finite punch list can still end at its last tick with no clock |
-| `execution` | `review-first` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
-| `toolingPolicy` | `existing-tools` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
+| `execution` | `run-direct` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
+| `toolingPolicy` | `auto-add` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
 | `itemBudget` | `""` | The budget every item gets when it names none of its own, in the words of an item's `Budget:` line. Empty means no limit |
 | `isolation` | `none` | `none` works in the work target itself. `worktree` gives each shift its own git worktree and branch: the owner's checkout, index and uncommitted edits stay untouched, and ignored files such as `.env` are absent unless listed in `copyIn`. Artifact mode ignores it |
 | `prepare` | `""` | One command run in a new shift worktree before the first item, such as `pnpm install --frozen-lockfile`. A failure stops Start and arms nothing |
@@ -361,8 +367,6 @@ plus a runtime-written index. It never reaches a public commit message.
 | `evidence.default` | `""` | Evidence every item should carry when its own `Evidence:` line says nothing, such as `before/after screenshots for UI items`. Empty asks for none |
 | `evidence.fileMap` | `off` | `on` writes, at each tick, the item's changed files as a tree in its receipt and the whole shift's in `.nightshift/receipts/shift-map.md`, built from git |
 | `evidence.architecture` | `off` | `on` keeps one diagram of the components the shift touched, `.nightshift/receipts/architecture.md`, updated by the item that changes the structure |
-| `evidence.kindTemplatePath` | `""` | The owner's template for a new evidence kind. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. An owner template may add sections; a drafted kind still needs the five required sections, and the check names any that are missing |
-| `evidence.kindsPaths` | `[]` | More folders of evidence kinds. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
 | `evidence.check` | `off` | What a missing named evidence file does to the tick. `off` leaves the tick alone. `report` lists each missing file on the receipt and the morning receipt, and the tick stands. `block` counts that ticked item as open until the files are present |
 | `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and writes a Reviewed section. With `check` at `block`, a missing Reviewed section counts as missing evidence |
 | `evidence.unavailable` | `""` | What happens when the evidence cannot be produced. `hold` closes the item as stopped. `park` records the decision and keeps working. `note` ticks the item and the receipt says why. Empty means `hold` when `check` is `block`, and `note` otherwise |
@@ -370,24 +374,34 @@ plus a runtime-written index. It never reaches a public commit message.
 With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
 would be without these settings. A shift policy can turn any of them on for one shift.
 
-## Gates
+## Catalogs
 
-Stacks the owner adds beside the shipped quality-gate catalog. Empty leaves detection on the
-shipped stacks alone.
+Every catalog — shifts, evidence kinds, quality-gate stacks, edge-case packs — takes the owner's own
+entries the same way. An entry is one Markdown file, named for its key, in one of these places,
+highest precedence first:
+
+1. this project: `.nightshift/catalogs/<catalog>/`
+2. the folders `catalogs.<catalog>.paths` names, in the order given
+3. every project on the machine: `$XDG_CONFIG_HOME/nightshift/catalogs/<catalog>/` on POSIX
+   (`~/.config` when unset), `%APPDATA%\nightshift\catalogs\<catalog>\` on Windows
+4. the shipped catalog
+
+An entry of the same key replaces a lower one, and `ns catalog-index --catalog <catalog>` names the
+source that won and the ones it replaced. `ns catalog-new --catalog <catalog> --key <key>` starts an
+entry from the template in force (`--user` for every project), and
+`ns catalog-index --catalog <catalog> --check-draft <file>` names any section it still lacks. The
+template is the schema: its headings are the sections every entry needs.
 
 | Key | Default | Values |
 |---|---|---|
-| `gates.stackTemplatePath` | `""` | The owner's template for a new stack. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. A drafted stack still needs Detect, Item gate, Site inspection, Notes, and one `Match:` line, and the check names any that are missing |
-| `gates.stacksPaths` | `[]` | More folders of stacks. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
+| `catalogs.<catalog>.paths` | `[]` | More folders of entries. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
+| `catalogs.<catalog>.template` | `""` | The owner's template for a new entry, the same kinds of path. Empty uses the shipped template |
 
-## Edge cases
-
-Packs the owner adds beside the shipped edge-case catalog. Empty leaves the pass on the shipped packs alone.
-
-| Key | Default | Values |
-|---|---|---|
-| `edgeCases.packTemplatePath` | `""` | The owner's template for a new pack. A path relative to the workspace, an absolute path, or a path starting with `~`. Empty uses the shipped template. A drafted pack still needs When it applies, Cases, and Example lines, and the check names any that are missing |
-| `edgeCases.packsPaths` | `[]` | More folders of packs. Each entry is a path relative to the workspace, an absolute path, or a path starting with `~`. Empty means none. The first folder wins when two of them hold the same key |
+`<catalog>` is `shifts`, `evidence`, `gates`, or `edge-cases`. The keys and folders an earlier
+version read — `receipts.evidence.kindsPaths` and `kindTemplatePath`, `gates.stacksPaths` and
+`stackTemplatePath`, `edgeCases.packsPaths` and `packTemplatePath`, and `.nightshift/evidence/kinds/`,
+`.nightshift/gates/stacks/`, `.nightshift/edge-cases/packs/` — are still read, and Doctor names
+where each lives now.
 
 The measuring is the runtime's, not the model's. No host shows a model its own token counts from
 inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
@@ -452,7 +466,7 @@ host permission settings or adds bypass flags.
 
 | Key | Default | Values |
 |---|---|---|
-| `launchScope` | `inherit-recorded-scope` | Restore a recorded `read-only` or `workspace-write` Codex sandbox. Missing or unsupported scopes refuse recovery. `host-default` adds no permission arguments and uses the owner's independently configured host permissions. The legacy `host-grant` value refuses recovery |
+| `launchScope` | `host-default` | `inherit-recorded-scope` restores a recorded `read-only` or `workspace-write` Codex sandbox. Missing or unsupported scopes refuse recovery. `host-default` adds no permission arguments and uses the owner's independently configured host permissions. The legacy `host-grant` value refuses recovery |
 
 `host-default` does not promise the original session's permissions: the host applies its current
 configuration. Configure that directly in the host before unattended work. A permission prompt

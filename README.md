@@ -129,14 +129,19 @@ Start with one small task in a project you trust. Keep the first run attended an
 | Action | Codex: ask Nightshift | Claude Code |
 | --- | --- | --- |
 | Set up | “Set up Nightshift in this project.” | `/nightshift:setup` |
+| Run for hours | “Improve this project for 5 hours.” | the same sentence, or `/nightshift:hunt` |
 | Start | “Start the Nightshift shift.” | `/nightshift:start` |
 | Check progress | “Show Nightshift status.” | `/nightshift:status` |
 | Diagnose | “Diagnose this Nightshift workspace.” | `/nightshift:doctor` |
 | Stop | “Stop the Nightshift shift.” | `/nightshift:stop` |
 | Plan before building | “Plan this with Nightshift.” | `/nightshift:plan` |
 | Leave the plan room | Type `$nightshift:plan-exit` | `/nightshift:plan-exit` |
+| Customize | “Customize Nightshift.” | `/nightshift:customize` |
 
-1. **Set up.** Review the proposed checks and permissions. Setup asks before applying them.
+1. **Set up.** Setup asks at most four questions: your checks, then every default on one screen.
+   Accept them all, or name what to change. Or skip setting up: say *“improve this project for 5 hours”*
+   and Nightshift sets the project up, picks the work from the catalog, and starts. With no hours it
+   asks one question: how long, or *auto*.
 2. **Write one item** under `## Items` in `.nightshift/punch-list.md`. For a repository that
    already has a test runner, a small first task could be:
 
@@ -258,7 +263,7 @@ terminal path that needs no live model session or remaining allowance.
 - **Bound retries.** A stalled finite shift remains held by default. Set a deadline or an explicit
   stall limit when you need a cost boundary. Open-ended work always requires a deadline.
 - **Check your host's recovery limits.** The watchman requires positive failure evidence and
-  inherits the recorded permissions by default. Recovery and stale IDE views have
+  launches the replacement under the host's own configured permissions by default. Recovery and stale IDE views have
   [host-specific boundaries](docs/how-it-works.md#recovery). The recovered
   headless worker can continue without you watching it.
 - **Review before publishing.** Commits stay local unless the contract authorizes otherwise.
@@ -286,7 +291,8 @@ Use the [documentation index](docs/README.md#documentation) for the full referen
 
 ## Contributing
 
-Catalog entries are a focused starting point: one Markdown contract and its checks. Human and
+Catalog entries are a focused starting point: one Markdown file per entry, with no code.
+[Add to a catalog](docs/add-to-a-catalog.md#add-to-a-catalog) walks through it. Human and
 AI-assisted contributions are welcome. Use the [contribution map](docs/contribution-map.md#choose-your-contribution) to
 choose an area; verification and the release process are in [CONTRIBUTING.md](CONTRIBUTING.md#contributing-to-nightshift).
 

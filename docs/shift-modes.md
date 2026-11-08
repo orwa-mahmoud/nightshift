@@ -28,6 +28,11 @@ These are independent choices. Picking a category does not by itself authorize i
 | **Guided** | You choose the entries; inspect the plan before approving work. | You choose the entries; Nightshift starts their work immediately. |
 | **Automatic** | Give a goal and hours; inspect the proposed work before approving it. | Give a goal and hours; Nightshift selects and starts work that serves the goal. |
 
+One sentence is enough. *“Enhance my project for 5 hours”* is a complete Automatic request: it runs
+directly under the shipped `shift.execution`, and a new project is set up first. With no hours,
+Nightshift asks one question, hours or *auto*; *auto* takes the deadline from your past receipts,
+then from the selected entries' typical hours.
+
 Review-first discovery is read-only. Nothing is armed until you approve. Run directly authorizes
 implementation within the stated scope and time; it does not authorize publishing, destructive
 changes, or changes to owner policy. Significant decisions and their rollback stay in the parking
@@ -157,7 +162,8 @@ The tooling policy decides what happens when useful checks are missing:
   existing elevation permissions.
 
 A complete Automatic run-direct request carries your saved tooling policy. With no saved choice
-or explicit override, it uses existing tools. A remembered policy grants no new elevation.
+or explicit override, it uses the default, automatically adding standard development tools. A
+remembered policy grants no new elevation.
 Artifact mode uses existing tools only and inspects the persistent folder's files and source
 manifests without requiring Git history. Quality-debt entries are skipped when their discovery
 surface is absent. In artifact mode:

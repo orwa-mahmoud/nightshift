@@ -391,6 +391,47 @@ EOF
   printf '%s\n' "$output" | grep -qF "configured folder missing: $missing"
 }
 
+@test "configured folders are read on a PATH with neither python3 nor jq" {
+  bin="$(build_toolset_bin no-parser-bin bash sh sed tr sort grep cut awk cat mktemp uname \
+    date rm mv cp ln printf head tail wc find test dirname basename cksum env true false \
+    chmod mkdir ls readlink)"
+  [ ! -e "$bin/python3" ]
+  [ ! -e "$bin/jq" ]
+  p="$(new_project no-parser)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  folder="$BATS_TEST_TMPDIR/configured"
+  write_kind "$folder/conf-only.md" "Configured only"
+  jq --arg a "$folder" '.receipts.evidence.kindsPaths = [$a]' \
+    "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+
+  run env -i PATH="$bin" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | awk -F'\t' '$1 == "conf-only" { print $4 }')" = "$folder" ] \
+    || { printf '%s\n' "$output"; return 1; }
+  if printf '%s\n' "$output" | grep -qF 'could not be read'; then
+    printf '%s\n' "$output"
+    return 1
+  fi
+
+  jq '.receipts.evidence.kindsPaths = "not a list"' \
+    "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+  mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+  run env -i PATH="$bin" HOME="$HOME" XDG_CONFIG_HOME="$XDG_CONFIG_HOME" TMPDIR="${TMPDIR:-/tmp}" \
+    bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'catalog-index: receipts.evidence.kindsPaths could not be read'
+  printf '%s\n' "$output" | awk -F'\t' '$1 == "ui" { found = 1 } END { exit found ? 0 : 1 }'
+
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  run pwsh -NoProfile -File "$INDEX_PS1" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qF 'catalog-index: receipts.evidence.kindsPaths could not be read'
+}
+
 @test "with no owner folders the index is the shipped kinds alone" {
   p="$(new_project owner-none)"
   printf '2\n' >"$p/.nightshift/state-version"
@@ -469,7 +510,7 @@ EOF
   [ "$status" -eq 0 ]
   [ "$output" = "$(cd -P "$p" && pwd -P)/.nightshift/evidence/kinds" ] \
     || { printf 'path: [%s]\n' "$output"; return 1; }
-  grep -qF '| `evidence/kinds/` |' "$PLUGIN/skills/nightshift/references/shift/state-map.md"
+  grep -qF '| `catalogs/<catalog>/` |' "$PLUGIN/skills/nightshift/references/shift/state-map.md"
 
   write_kind "$p/.nightshift/evidence/kinds/proj-only.md" "Project only"
   write_kind "$XDG_CONFIG_HOME/nightshift/evidence/kinds/user-only.md" "User only"
@@ -506,17 +547,17 @@ EOF
 @test "the planning read offers owner kinds and the settings are published" {
   flat() { tr '\n' ' ' <"$1" | tr -s ' '; }
   flat "$MENU" | grep -qF 'Each line names its source'
-  flat "$MENU" | grep -qF 'receipts.evidence.kindTemplatePath'
+  flat "$MENU" | grep -qF 'ns catalog-new --catalog evidence'
   flat "$MENU" | grep -qF 'only after the owner says yes'
   grep -qF 'XDG_CONFIG_HOME' "$RECIPE"
   grep -qF 'APPDATA' "$RECIPE"
   grep -qF 'never leave the machine' "$ROOT/docs/evidence-capabilities.md"
-  grep -qF 'evidence.kindsPaths' "$ROOT/docs/knobs.md"
-  grep -qF 'evidence.kindTemplatePath' "$ROOT/docs/knobs.md"
-  jq -e '.properties.receipts.properties.evidence.properties.kindsPaths.type == "array"' \
+  grep -qF 'catalogs.<catalog>.paths' "$ROOT/docs/knobs.md"
+  grep -qF 'catalogs.<catalog>.template' "$ROOT/docs/knobs.md"
+  jq -e '.properties.catalogs.properties.evidence.properties.paths.type == "array"' \
     "$PLUGIN/skills/nightshift/references/nightshift-rules.schema.json" >/dev/null
-  jq -e '.properties.receipts.properties.evidence.properties.kindTemplatePath.type == "string"' \
+  jq -e '.properties.catalogs.properties.evidence.properties.template.type == "string"' \
     "$PLUGIN/skills/nightshift/references/schemas/v1/shift-policy.json" >/dev/null
-  jq -e '.receipts.evidence.kindsPaths == [] and .receipts.evidence.kindTemplatePath == ""' \
+  jq -e '.catalogs.evidence.paths == [] and .catalogs.evidence.template == ""' \
     "$PLUGIN/skills/nightshift/references/nightshift-rules-template.json" >/dev/null
 }

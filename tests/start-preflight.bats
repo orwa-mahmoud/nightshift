@@ -26,10 +26,22 @@ setup_site() { # <name> [punch-body]
 
 @test "Cursor start says inherit-recorded-scope cannot revive or clock out" {
   p="$(setup_site preflight-cursor-scope)"
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash "$PREFLIGHT" --project "$p" --host cursor
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF 'under inherit-recorded-scope an unattended revival and a watchman clock-out are impossible'
   printf '%s\n' "$output" | grep -qF 'Set recovery.launchScope to host-default'
+}
+
+@test "the shipped host-default lets a Cursor start revive and clock out without a scope warning" {
+  p="$(setup_site preflight-cursor-default)"
+  run bash "$PREFLIGHT" --project "$p" --host cursor
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -qE '^warn recovery'; then
+    printf '%s\n' "$output"
+    return 1
+  fi
 }
 
 @test "a clean site arms and every line is a verdict" {
@@ -790,10 +802,18 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   printf '%s\n' "$output" | grep -qE '^ok snapshot start-defaults recorded for shift [0-9a-f]{16}$'
   pol="$p/.nightshift/shift-policy.json"
   [ -f "$pol" ]
-  jq -e '.source == "start-defaults" and .verificationLevel == "none" and .toolingPolicy == "existing-tools" and .deadlineEpoch == null' "$pol" >/dev/null
+  jq -e '.source == "start-defaults" and .verificationLevel == "none" and .toolingPolicy == "auto-add" and .deadlineEpoch == null' "$pol" >/dev/null
   lib="$PLUGIN/lib/lib.sh"
   [ "$(jq -r .contractDigest "$pol")" = "$(bash -c '. "$1"; ns_punch_contract_digest "$2"' _ "$lib" "$p/.nightshift/punch-list.md")" ]
   [ "$(jq -r .itemsDigest "$pol")" = "$(bash -c '. "$1"; ns_punch_items_digest "$2"' _ "$lib" "$p/.nightshift/punch-list.md")" ]
+}
+
+@test "an artifact-mode Start snapshot keeps existing tools" {
+  p="$(setup_site preflight-snapshot-artifact)"
+  printf 'artifact\n' >"$p/.nightshift/work-mode"
+  run bash -c '. "$1"; ns_start_snapshot "$2" "$3"' _ "$PLUGIN/lib/lib.sh" "$p" "$PLUGIN/runtime/shift-policy.sh"
+  [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+  jq -e '.toolingPolicy == "existing-tools"' "$p/.nightshift/shift-policy.json" >/dev/null
 }
 
 @test "a Start snapshot adopts a deadline the owner already wrote" {

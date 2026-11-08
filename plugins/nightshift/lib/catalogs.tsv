@@ -1,0 +1,19 @@
+# The catalogs, one row each. Both runtimes read this file; a new catalog is one new row.
+#
+# name      the catalog's name: --catalog <name>, catalogs.<name> in rules.json, and the owner
+#           folder catalogs/<name> in the project and in the user folder
+# shipped   the shipped entries, relative to the plugin root
+# template  the shipped template, relative to the plugin root; its H2 headings are the sections
+#           every entry needs, and a section that shows a bullet needs one
+# order     alpha, or match (gates: stack, then plugin, then fallback)
+# rule      the one check the template cannot express: shift (an ending and an item block),
+#           fence:<lang> (a fence of that language with files, min and type), match (one Match
+#           line), or -
+# legacy    the owner folder, user folder, paths key and template key an earlier version read,
+#           still honoured; - when there were none
+#
+# name	shipped	template	order	rule	legacy-project	legacy-user	legacy-paths	legacy-template
+shifts	skills/nightshift/references/compose/shifts	skills/nightshift/references/templates/shift-entry.md	alpha	shift	-	-	-	-
+evidence	skills/nightshift/references/evidence/kinds	skills/nightshift/references/templates/evidence-kind.md	alpha	fence:evidence-check	evidence-kinds	evidence/kinds	receipts.evidence.kindsPaths	receipts.evidence.kindTemplatePath
+gates	skills/nightshift/references/compose/gates	skills/nightshift/references/templates/gates-stack.md	match	match	gates-stacks	gates/stacks	gates.stacksPaths	gates.stackTemplatePath
+edge-cases	skills/nightshift/references/plan/edge-cases	skills/nightshift/references/templates/edge-case-pack.md	alpha	-	edge-case-packs	edge-cases/packs	edgeCases.packsPaths	edgeCases.packTemplatePath

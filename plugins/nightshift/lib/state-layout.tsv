@@ -78,7 +78,10 @@ evidence	2	run/evidence	dir
 evidence-kinds	2	evidence/kinds	dir
 gates-stacks	2	gates/stacks	dir
 edge-case-packs	2	edge-cases/packs	dir
-edge-case-packs	2	edge-cases/packs	dir
+catalog-shifts	2	catalogs/shifts	dir
+catalog-evidence	2	catalogs/evidence	dir
+catalog-gates	2	catalogs/gates	dir
+catalog-edge-cases	2	catalogs/edge-cases	dir
 provision-transaction	0	provision-transaction.json	file
 provision-transaction	2	run/provision-transaction.json	file
 provision-baseline	0	provision-baseline	dir

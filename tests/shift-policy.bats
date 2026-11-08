@@ -16,9 +16,10 @@ sp() {
 }
 
 # A project with rules but no armed marker: composition writes before the clock starts.
+# Every category starts denied, the owner who guards them, so an allowance has a deny to lift.
 unarmed() {
   local p
-  p="$(new_project "${1:-policy}")"
+  p="$(new_guarded_project "${1:-policy}")"
   rm -f "$p/.nightshift/.shift-armed"
   printf '%s' "$p"
 }
@@ -83,7 +84,7 @@ write_policy() { # <project> [extra JSON]
   # Everything the candidate stated comes back exactly as it was written. What the snapshot adds
   # is what the shift needs fixed: the scope this session runs under, and the owner preferences
   # tonight was composed with.
-  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .receipts, .gates, .edgeCases, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.launchScope, .launchProvenance, .shift, .recovery, .handoff, .archive, .receipts, .catalogs, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
   # And the contract as it stood at arming, so the gate can tell later whether it moved.
   printf '%s' "$output" | jq -e '
@@ -113,7 +114,7 @@ write_policy() { # <project> [extra JSON]
   [ "$status" -eq 0 ]
   run sp "$p" get
   [ "$status" -eq 0 ]
-  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .receipts, .gates, .edgeCases, .contractDigest, .itemsDigest)')" \
+  [ "$(printf '%s' "$output" | jq -cS 'del(.shift, .recovery, .handoff, .archive, .receipts, .catalogs, .contractDigest, .itemsDigest)')" \
     = "$(jq -caS . "$p/candidate.json")" ]
 }
 
@@ -161,7 +162,7 @@ write_policy() { # <project> [extra JSON]
   printf '%s\n' "$output" | grep -qxF 'receipts.evidence.fileMap=off (rules, permanent)'
   # Start freezes the block as the owner's file holds it, one level down.
   [ "$(bash -c '. "$1"; ns_policy_freeze_pref "$2" receipts' _ "$LIB" "$p" | jq -c .evidence)" = \
-    '{"architecture":"off","check":"off","default":"","fileMap":"off","kindTemplatePath":"","kindsPaths":[],"review":"off","unavailable":""}' ]
+    '{"architecture":"off","check":"off","default":"","fileMap":"off","review":"off","unavailable":""}' ]
   # One shift turns the file map on. Status shows it, and the snapshot validates.
   write_policy "$p" '"receipts":{"evidence":{"fileMap":"on"}}'
   run sp "$p" set --from-json "$p/.nightshift/shift-policy.json"
@@ -222,15 +223,15 @@ write_policy() { # <project> [extra JSON]
   p="$(unarmed sp-def)"
   run sp "$p" defaults-get
   [ "$status" -eq 0 ]
-  [ "$output" = '{"execution":"review-first","hours":null,"schemaVersion":1,"toolingPolicy":"existing-tools","updatedAt":null,"verificationProfile":"fast"}' ]
+  [ "$output" = '{"execution":"run-direct","hours":null,"schemaVersion":1,"toolingPolicy":"auto-add","updatedAt":null,"verificationProfile":"fast"}' ]
   printf '{ truncated\n' >"$p/.nightshift/shift-defaults.json"
   run sp "$p" defaults-get
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | jq -e '.verificationProfile == "fast" and .toolingPolicy == "existing-tools"' >/dev/null
+  printf '%s' "$output" | jq -e '.verificationProfile == "fast" and .toolingPolicy == "auto-add"' >/dev/null
   printf '{"schemaVersion":1,"toolingPolicy":"nonsense"}\n' >"$p/.nightshift/shift-defaults.json"
   run sp "$p" defaults-get
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | jq -e '.toolingPolicy == "existing-tools"' >/dev/null
+  printf '%s' "$output" | jq -e '.toolingPolicy == "auto-add"' >/dev/null
 }
 
 @test "defaults-set remembers one field at a time and refuses an unknown value" {

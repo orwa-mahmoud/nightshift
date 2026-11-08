@@ -678,10 +678,10 @@ EOF
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -q 'resolved policy'
   printf '%s' "$output" | grep -qF 'verificationLevel=none (built-in, -)'
-  printf '%s' "$output" | grep -qF 'toolingPolicy=existing-tools (built-in, -)'
+  printf '%s' "$output" | grep -qF 'toolingPolicy=auto-add (built-in, -)'
   printf '%s' "$output" | grep -qF 'deadlineEpoch=null (built-in, -)'
-  printf '%s' "$output" | grep -qF 'elevation.sudo=deny (rules, permanent)'
-  printf '%s' "$output" | grep -qF 'elevation.containers=deny (rules, permanent)'
+  printf '%s' "$output" | grep -qF 'elevation.sudo=allow (rules, permanent)'
+  printf '%s' "$output" | grep -qF 'elevation.containers=allow (rules, permanent)'
   printf '%s' "$output" | grep -qF 'watchMinutes=10 (rules, permanent)'
   printf '%s' "$output" | grep -qF 'stallMax=0 (rules, permanent)'
   # order: Facts, then resolved policy, then Warnings.
@@ -726,7 +726,7 @@ EOF
 }
 
 @test "Doctor reports preflight gaps without refusing" {
-  p="$(new_project)"
+  p="$(new_guarded_project)"
   rm -f "$p/.nightshift/.shift-armed"
   printf '## Items\n- [ ] **1. run docker compose up for local services.**\n' >"$p/.nightshift/punch-list.md"
   run doctor "$p"

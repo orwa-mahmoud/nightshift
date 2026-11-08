@@ -76,9 +76,10 @@ chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
 
   p="$(new_project no-parser-elevation)"
   punch_open "$p"
-  jq 'del(.elevation)' "$p/.nightshift/rules.json" >"$p/rules.tmp"
+  # Every category denied with no pattern of its own, so the built-in patterns are what match.
+  jq '.elevation |= map_values({policy: "deny"})' "$p/.nightshift/rules.json" >"$p/rules.tmp"
   mv "$p/rules.tmp" "$p/.nightshift/rules.json"
-  if grep -qF '"elevation"' "$p/.nightshift/rules.json"; then
+  if jq -e '[.elevation[] | has("pattern")] | any' "$p/.nightshift/rules.json" >/dev/null; then
     return 1
   fi
 
@@ -118,7 +119,7 @@ chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
 
 # A punch list that exists but cannot be counted is not zero open work: the site stays armed.
 @test "an uncountable punch list keeps the hardhat on" {
-  p="$(new_project hardhat-uncountable)"
+  p="$(new_guarded_project hardhat-uncountable)"
   punch_open "$p"
   chmod 000 "$p/.nightshift/punch-list.md"
   run hardhat_bash "$p" '/usr/bin/sudo id'

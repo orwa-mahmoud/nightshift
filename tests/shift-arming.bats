@@ -185,6 +185,7 @@ sp() {
 # false green.
 @test "a queued one-shift allowance is consumed exactly once, when the gate archives the policy" {
   p="$(new_project sa-consumed)"
+  guard_elevation "$p"
   rm -f "$p/.nightshift/.shift-armed"
   sid=2222222222222222
   policy="{\"schemaVersion\":1,\"shiftId\":\"$sid\",\"createdAt\":\"2026-09-02T03:00:00Z\","

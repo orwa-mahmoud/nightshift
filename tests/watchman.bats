@@ -971,7 +971,7 @@ STUB
 # whatever the host defaults to is a guess about permissions, not a narrowing.
 
 @test "a revival is refused when there is nothing to inherit, and says what would authorize one" {
-  jq 'del(.recovery)' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
   mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
   run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" NIGHTSHIFT_WATCH_TRANSCRIPTS=/tmp/nowhere \
     "$WATCHMAN" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 2
@@ -994,7 +994,7 @@ STUB
 
 @test "a policy that cannot be read refuses in its own words, not as an unrecorded scope" {
   printf '{ "schemaVersion": 1,\n' >"$P/.nightshift/shift-policy.json"
-  jq 'del(.recovery)' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
   mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
   run env NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" NIGHTSHIFT_WATCH_TRANSCRIPTS=/tmp/nowhere \
     "$WATCHMAN" --project "$P" --interval 20 --agent "bash $BIN/tick.sh" --max-wakes 2
@@ -1457,7 +1457,12 @@ STUB
 
 @test "a revival inherits the scope the shift was started under, and never widens it" {
   p="$(new_project watch-scope)"
-  # Shipped: inherit whatever the shift itself was running under.
+  # Shipped: the host's own configured permissions.
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = host-default ]
+  # An owner who chose to inherit gets whatever the shift itself was running under.
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
   [ "$output" = inherit-recorded-scope ]
 
@@ -1525,18 +1530,19 @@ STUB
   [ "$output" = host-default ]
 }
 
-@test "a workspace that predates the setting is not read as having chosen the broad grant" {
+@test "a workspace that predates the setting resolves to the built-in host-default" {
   p="$(new_project watch-scope-legacy)"
-  # A rules file from before recovery.launchScope existed. Its old behaviour was the built-in
-  # broad launch, but that was a default nobody chose — so it inherits rather than escalates.
+  # A rules file from before recovery.launchScope existed names no scope, so the built-in decides.
   jq 'del(.recovery)' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
-  [ "$output" = inherit-recorded-scope ]
-  # And it inherits nothing, because nothing was recorded — so the revival is refused rather than
-  # launched at a scope nobody can vouch for.
+  [ "$output" = host-default ]
   run bash -c '. "$1"; ns_recovery_effective_scope "$2" codex' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
-  [ "$output" = "unavailable:unrecorded" ]
+  [ "$output" = host-default ]
+  # A rules file that cannot be parsed is not a setting nobody wrote: it inherits, and refuses.
+  printf '{ "recovery": ' >"$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_recovery_launch_scope "$2"' _ "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh" "$p"
+  [ "$output" = inherit-recorded-scope ]
 }
 
 @test "what the host reports is what gets recorded, and silence is not a scope" {
@@ -1554,6 +1560,8 @@ STUB
 
 @test "a recorded scope this host cannot ask for refuses the revival instead of guessing" {
   p="$(new_project watch-scope-unsupported)"
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
   # The arming session reported a sandbox mode codex exec has no flag for. Reviving anyway would
   # run at some other scope, so the answer says so and the watchman stands down on it.
   jq -n '{schemaVersion: 1, shiftId: "9f2c40ab77e51d63", createdAt: "2026-09-02T00:00:00Z",
@@ -1692,7 +1700,7 @@ STUB
   rm -f "$copy/lib/policy-emit.jq"
   jq -n '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T00:00:00Z",source:"composition",verificationLevel:"none",toolingPolicy:"existing-tools"}' \
     >"$P/.nightshift/shift-policy.json"
-  jq 'del(.recovery)' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
+  jq '.recovery.launchScope = "inherit-recorded-scope"' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
   mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
   run bash -c '. "$1"; ns_recovery_effective_scope "$2" claude; printf "\n"; ns_recovery_refusal "$(ns_recovery_effective_scope "$2" claude)"' _ "$copy/lib/lib.sh" "$P"
   printf '%s\n' "$output" | grep -qF 'Nightshift file missing:'

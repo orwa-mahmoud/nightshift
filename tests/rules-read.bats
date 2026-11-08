@@ -73,7 +73,7 @@ no_json_bin() {
 }
 
 @test "Start can resolve rules and hardhat can deny sudo without jq or python3" {
-  p="$(new_project rules-nojq)"
+  p="$(new_guarded_project rules-nojq)"
   punch_open "$p"
   bin="$(no_json_bin rules-nojq-bin)"
   run env -i PATH="$bin" HOME="$HOME" TMPDIR="${TMPDIR:-/tmp}" \
@@ -189,7 +189,7 @@ no_json_bin() {
 @test "the settings blocks read back exactly as written" {
   run bash -c '. "$1"; ns_rules_get "$2" shift' _ "$LIB" "$TEMPLATE"
   [ "$status" -eq 0 ]
-  [ "$output" = '{"verificationProfile":"fast","hours":null,"itemBudget":"","execution":"review-first","toolingPolicy":"existing-tools","isolation":"none","prepare":"","copyIn":[],"worktreeRoot":".nightshift/worktrees"}' ]
+  [ "$output" = '{"verificationProfile":"fast","hours":null,"itemBudget":"","execution":"run-direct","toolingPolicy":"auto-add","isolation":"none","prepare":"","copyIn":[],"worktreeRoot":".nightshift/worktrees"}' ]
   run bash -c '. "$1"; ns_rules_get "$2" handoff' _ "$LIB" "$TEMPLATE"
   [ "$status" -eq 0 ]
   [ "$output" = '{"enabled":true,"view":"owner","language":"auto","detail":"concise","sections":[],"templatePath":""}' ]

@@ -149,7 +149,7 @@ expected() { printf '%s' "$FIX/$1/expected.json"; }
 @test "an owner denylist stays independent of the elevation categories" {
   jq -e '.forbiddenCommands == ""' "$TEMPLATE" >/dev/null
   for c in $(jq -r '.elevation | keys[]' "$TEMPLATE"); do
-    jq -e --arg c "$c" '.elevation[$c].policy == "deny"' "$TEMPLATE" >/dev/null
+    jq -e --arg c "$c" '.elevation[$c].policy == "allow"' "$TEMPLATE" >/dev/null
     # No category pattern is copied into the owner's own list, so lifting a category
     # can never lift a command the owner named there.
     pat="$(jq -r --arg c "$c" '.elevation[$c].pattern' "$TEMPLATE")"

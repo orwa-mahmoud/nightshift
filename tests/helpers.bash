@@ -30,6 +30,22 @@ new_project() {
   printf '%s' "$p"
 }
 
+# guard_elevation <workspace> — every elevation category set to deny, the owner who guards them.
+# The shipped template allows them, so a test of the guard itself starts from here.
+guard_elevation() {
+  local f="$1/.nightshift/rules.json"
+  jq '.elevation |= with_entries(.value.policy = "deny")' "$f" >"$f.new"
+  mv "$f.new" "$f"
+}
+
+# new_guarded_project [name] — new_project with every elevation category denied. Echoes the path.
+new_guarded_project() {
+  local p
+  p="$(new_project "$@")"
+  guard_elevation "$p"
+  printf '%s' "$p"
+}
+
 # Create the recommended layout: a plain workspace folder that is NOT a repo, holding the code
 # repo one level down and .nightshift beside it. Echoes the workspace path.
 new_workspace() {
