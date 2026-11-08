@@ -1,10 +1,10 @@
-# catalog-sources.ps1 — where a catalog's entries live, and one index of them.
+# catalog-sources.ps1 - where a catalog's entries live, and one index of them.
 # Mirrors catalog-sources.sh in this directory. The catalog name and the entry-folder name are arguments.
 # Project wins over the configured folders, those win in the order given, then the user folder,
 # then the shipped directory. A file that fails the structural check is reported and left out.
 # A symlink is skipped. Nothing here names a catalog.
 
-# Get-NSCatalogUserDir <catalog> <entries> — the per-user folder.
+# Get-NSCatalogUserDir <catalog> <entries> - the per-user folder.
 # One formula: Application Data, then nightshift, then the catalog and its entry folder.
 function Get-NSCatalogUserDir {
     param(
@@ -18,7 +18,7 @@ function Get-NSCatalogUserDir {
     return (Join-Path (Join-Path (Join-Path $base 'nightshift') $Catalog) $Entries)
 }
 
-# Resolve-NSCatalogPath <workspace> <path> — a tilde, an absolute path, or a workspace-relative path.
+# Resolve-NSCatalogPath <workspace> <path> - a tilde, an absolute path, or a workspace-relative path.
 function Resolve-NSCatalogPath {
     param(
         [AllowEmptyString()][string]$Workspace,
@@ -53,7 +53,7 @@ function Get-NSCatalogHeading {
     return @('', '')
 }
 
-# Get-NSCatalogEntryProblems — one reason per line. HTML comments are not part of the check.
+# Get-NSCatalogEntryProblems - one reason per line. HTML comments are not part of the check.
 function Get-NSCatalogEntryProblems {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -259,7 +259,7 @@ function Add-NSCatalogDirectory {
     }
 }
 
-# Get-NSCatalogIndex — one line per entry: key, title, description, source, replaced.
+# Get-NSCatalogIndex - one line per entry: key, title, description, source, replaced.
 # ConfiguredLabels and ConfiguredDirs are parallel. The first label wins.
 function Get-NSCatalogIndex {
     param(

@@ -4,7 +4,7 @@ param(
     [string]$Reason = ''
 )
 
-# evidence-unavailable.ps1 — apply the item's unavailable setting.
+# evidence-unavailable.ps1 - apply the item's unavailable setting.
 #   evidence-unavailable.ps1 -Project DIR -Item LABEL -Reason TEXT
 # hold closes the item as stopped. park writes one parking-lot entry. note ticks it.
 # -Project and -Item are required. Does not use the current working directory.

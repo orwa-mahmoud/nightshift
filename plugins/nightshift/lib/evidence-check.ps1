@@ -1,4 +1,4 @@
-# evidence-check.ps1 — whether a ticked item's named evidence is present.
+# evidence-check.ps1 - whether a ticked item's named evidence is present.
 # Mirrors lib/evidence-check.sh. check off asks for nothing. report and block name what is missing.
 # block is the only one the clock-out gate treats as open.
 
@@ -237,7 +237,8 @@ function Get-NSEvidenceHold {
         if ((Get-NSEvidenceEffective $Workspace $line 'check') -cne 'block') { continue }
         $problems = @(Get-NSEvidenceProblems $Workspace $PunchList $row.Label)
         if ($problems.Count -eq 0) { continue }
-        return ('DO NOT STOP — ' + $row.Label + ' is ticked and its evidence is not present: ' + ($problems -join ', ') + '. A present file is a regular, non-empty file of the type it claims. The tick stands once those files are there.')
+        $dash = [string][char]0x2014
+        return ('DO NOT STOP ' + $dash + ' ' + $row.Label + ' is ticked and its evidence is not present: ' + ($problems -join ', ') + '. A present file is a regular, non-empty file of the type it claims. The tick stands once those files are there.')
     }
     return ''
 }
@@ -310,9 +311,10 @@ function Set-NSEvidenceBox {
 function Get-NSEvidenceUnavailableText {
     param([AllowEmptyString()][string]$Line, [Parameter(Mandatory = $true)][string]$Reason)
     $files = @(Get-NSEvidenceFiles $Line)
-    if ($files.Count -eq 0) { return ('unavailable — ' + $Reason) }
+    $dash = [string][char]0x2014
+    if ($files.Count -eq 0) { return ('unavailable ' + $dash + ' ' + $Reason) }
     $lines = New-Object Collections.Generic.List[string]
-    foreach ($file in $files) { $lines.Add($file + ': unavailable — ' + $Reason) }
+    foreach ($file in $files) { $lines.Add($file + ': unavailable ' + $dash + ' ' + $Reason) }
     return ($lines -join "`n")
 }
 
