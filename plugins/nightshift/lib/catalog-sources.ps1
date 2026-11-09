@@ -14,6 +14,36 @@
 
 $script:NSCatalogsTable = Join-Path $PSScriptRoot 'catalogs.tsv'
 
+function Test-NSCatalogKey {
+    param([AllowEmptyString()][string]$Key)
+    return ($Key -cmatch '^[a-z0-9]+(-[a-z0-9]+)*$')
+}
+
+# Shared Markdown preprocessing for catalog validation and evidence rules.
+function Get-NSCatalogText {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $inComment = $false
+    foreach ($raw in [IO.File]::ReadAllLines($Path)) {
+        $rest = $raw.TrimEnd("`r")
+        $line = ''
+        while ($rest.Length -gt 0) {
+            if ($inComment) {
+                $i = $rest.IndexOf('-->')
+                if ($i -lt 0) { break }
+                $rest = $rest.Substring($i + 3)
+                $inComment = $false
+                continue
+            }
+            $i = $rest.IndexOf('<!--')
+            if ($i -lt 0) { $line += $rest; break }
+            $line += $rest.Substring(0, $i)
+            $rest = $rest.Substring($i + 4)
+            $inComment = $true
+        }
+        if (-not $inComment) { Write-Output $line }
+    }
+}
+
 function Get-NSCatalogRows {
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($line in [IO.File]::ReadAllLines($script:NSCatalogsTable)) {
@@ -149,7 +179,6 @@ function Get-NSCatalogEntryProblems {
     $problems = New-Object System.Collections.Generic.List[string]
     $fenceKeys = @('files', 'min', 'type')
     $fenceTypes = @('image', 'text', 'json', 'any')
-    $inComment = $false
     $inCheck = $false
     $inBlock = $false
     $inText = $false
@@ -163,25 +192,8 @@ function Get-NSCatalogEntryProblems {
     $seenKeys = @{}
     $dash = ' ' + [string][char]0x2014 + ' '
     $lines = @()
-    if (Test-Path -LiteralPath $Path -PathType Leaf) { $lines = [IO.File]::ReadAllLines($Path) }
-    foreach ($raw in $lines) {
-        $rest = $raw.TrimEnd("`r")
-        $line = ''
-        while ($rest.Length -gt 0) {
-            if ($inComment) {
-                $i = $rest.IndexOf('-->')
-                if ($i -lt 0) { $rest = ''; break }
-                $rest = $rest.Substring($i + 3)
-                $inComment = $false
-                continue
-            }
-            $i = $rest.IndexOf('<!--')
-            if ($i -lt 0) { $line += $rest; $rest = ''; break }
-            $line += $rest.Substring(0, $i)
-            $rest = $rest.Substring($i + 4)
-            $inComment = $true
-        }
-        if ($inComment) { continue }
+    if (Test-Path -LiteralPath $Path -PathType Leaf) { $lines = @(Get-NSCatalogText -Path $Path) }
+    foreach ($line in $lines) {
         if ($Rule -ceq 'shift' -and -not $seenH1 -and $line.StartsWith('# ') -and -not $line.StartsWith('## ')) {
             $seenH1 = $true
             $parts = $line.Substring(2) -split [regex]::Escape($dash)
@@ -284,7 +296,7 @@ function Add-NSCatalogDirectory {
     foreach ($file in $files) {
         if ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
         $key = [IO.Path]::GetFileNameWithoutExtension($file.Name)
-        if ($Check -and $key -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') {
+        if ($Check -and -not (Test-NSCatalogKey $key)) {
             Write-NSCatalogProblem $State ("${prefix}: $($file.FullName): malformed file name")
             continue
         }
@@ -435,6 +447,7 @@ function Get-NSCatalogFile {
     )
     # The same file the index lists, found by checking <key>.md in each folder from the highest
     # precedence down rather than building the whole index. Mirrors ns_catalog_file.
+    if (-not (Test-NSCatalogKey $Key)) { return '' }
     $quiet = @{ Quiet = $true }
     $sources = @(Get-NSCatalogSources -Prefix $Prefix -PluginRoot $PluginRoot -Row $Row -Workspace $Workspace -State $quiet)
     for ($i = $sources.Count - 1; $i -ge 0; $i--) {
@@ -444,7 +457,6 @@ function Get-NSCatalogFile {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
         if ((Get-Item -LiteralPath $file -Force).LinkType) { continue }
         if ($source.Check) {
-            if ($Key -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') { continue }
             if (@(Get-NSCatalogEntryProblems -Path $file -Rule $Row.Rule).Count -gt 0) { continue }
         }
         return $file

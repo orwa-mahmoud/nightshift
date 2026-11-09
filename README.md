@@ -36,7 +36,7 @@ usage and time where available, then archive the shift with its evidence intact.
 | **[Finish the work you already planned](docs/how-it-works.md#the-work-contract)** | A persistent punch list, item-by-item verification, and a gate that rejects premature clock-out. |
 | **[Put a few hours into the project](docs/shift-modes.md#shift-modes)** | Open-ended product evolution, coverage hunts, or your own objective, with an explicit deadline and a continuation record. |
 | **[Start without writing a backlog](docs/shift-modes.md#choose-the-right-starting-point)** | Ready-made shifts through Hunt and Quality. Choose the work yourself or let the agent compose it; review first or run directly. |
-| **[See proof, not just a tick](docs/receipts.md#evidence-a-reviewer-opens-first)** | An evidence line per item from a catalog of kinds, a file map in every receipt, and your choice of whether missing evidence holds the clock-out. |
+| **[See proof, not just a tick](docs/receipts.md#evidence-a-reviewer-opens-first)** | An evidence line per item from a catalog of kinds, an optional file map in each receipt, and your choice of whether missing evidence holds the clock-out. |
 | **[Keep each item in bounds](docs/knobs.md#item-budgets)** | Soft and hard limits per item in working time, tokens, or both. A hard limit turns the agent to wrap-up and closes the item as stopped. |
 | **[Keep a long run moving](docs/how-it-works.md#recovery)** | Progress across compaction, parked decisions, deduplicated findings, and recovery under the host's supported signals. |
 | **[See what the work consumed](docs/receipts.md#receipts-and-token-usage)** | Runtime-measured token usage and duration per item, with host-specific gaps clearly marked. |

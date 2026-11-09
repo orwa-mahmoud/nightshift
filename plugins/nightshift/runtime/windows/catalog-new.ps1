@@ -37,7 +37,7 @@ if ($null -eq $row) {
     [Console]::Error.WriteLine("catalog-new: unknown catalog: $Catalog (one of: $names)")
     exit 1
 }
-if ($Key -cnotmatch '^[a-z0-9]+(-[a-z0-9]+)*$') {
+if (-not (Test-NSCatalogKey $Key)) {
     [Console]::Error.WriteLine("catalog-new: $Key is not a key: use lowercase words joined by hyphens")
     exit 2
 }

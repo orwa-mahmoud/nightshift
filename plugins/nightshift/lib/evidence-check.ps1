@@ -98,13 +98,13 @@ function Get-NSEvidenceBlock {
     $files = ''
     $min = ''
     $type = ''
-    foreach ($line in [IO.File]::ReadAllLines($KindFile)) {
-        if ($line -ceq '```evidence-check') { $on = $true; continue }
-        if ($on -and $line -ceq '```') { break }
+    foreach ($line in (Get-NSCatalogText -Path $KindFile)) {
+        if ($line -cmatch '^```evidence-check\s*$') { $on = $true; continue }
+        if ($on -and $line -cmatch '^```\s*$') { break }
         if (-not $on) { continue }
-        if ($line.StartsWith('files: ')) { $files = $line.Substring(7) }
-        elseif ($line.StartsWith('min: ')) { $min = $line.Substring(5) }
-        elseif ($line.StartsWith('type: ')) { $type = $line.Substring(6) }
+        if ($line -cmatch '^files:\s*(\S.*)$') { $files = $Matches[1] }
+        elseif ($line -cmatch '^min:\s*(\S.*)$') { $min = $Matches[1] }
+        elseif ($line -cmatch '^type:\s*(\S.*)$') { $type = $Matches[1] }
     }
     if ([string]::IsNullOrEmpty($files) -and [string]::IsNullOrEmpty($min) -and [string]::IsNullOrEmpty($type)) { return $null }
     return [pscustomobject]@{ Files = $files; Min = $min; Type = $type }

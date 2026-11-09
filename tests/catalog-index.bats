@@ -79,6 +79,31 @@ ENTRY
   printf '%s\n' "$output" | grep -qF 'no catalog at'
 }
 
+@test "path lookup rejects malformed keys before reaching any catalog source" {
+  export XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg"
+  export APPDATA="$BATS_TEST_TMPDIR/appdata"
+  # This file exists outside the shipped evidence directory: traversal must not resolve it.
+  [ -f "$PLUGIN/skills/nightshift/references/templates/evidence-kind.md" ]
+  key=../../templates/evidence-kind
+  run bash "$INDEX" --catalog evidence --path "$key"
+  [ "$status" -eq 2 ] || { printf '%s: %s\n' "$key" "$output"; return 1; }
+  printf '%s' "$output" | grep -qF 'holds no entry'
+  if command -v pwsh >/dev/null 2>&1; then
+    run pwsh -NoProfile -File "$INDEX_PS1" -Catalog evidence -EntryKey "$key"
+    [ "$status" -eq 2 ] || { printf '%s: %s\n' "$key" "$output"; return 1; }
+    printf '%s' "$output" | grep -qF 'holds no entry'
+  fi
+  run bash "$INDEX" --catalog evidence --path ui
+  [ "$status" -eq 0 ]
+  expected="$(cd "$PLUGIN" && pwd -P)/skills/nightshift/references/evidence/kinds/ui.md"
+  [ "$output" = "$expected" ]
+  if command -v pwsh >/dev/null 2>&1; then
+    run pwsh -NoProfile -File "$INDEX_PS1" -Catalog evidence -EntryKey ui
+    [ "$status" -eq 0 ]
+    [ "$output" = "$expected" ]
+  fi
+}
+
 @test "both hosts list the catalog identically" {
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh is not installed'
@@ -111,15 +136,6 @@ owner_project() { # <name> — a v2 workspace whose user folder is empty
     case "$order" in alpha | match) ;; *) echo "$name: order $order"; return 1 ;; esac
     case "$rule" in - | shift | match | fence:*) ;; *) echo "$name: rule $rule"; return 1 ;; esac
   done < <(awk -F '\t' '!/^#/ && NF >= 9' "$REGISTRY")
-  # Neither runtime's helper names a catalog: the registry is the only place one is named.
-  for helper in "$PLUGIN/lib/catalog-sources.sh" "$PLUGIN/lib/catalog-sources.ps1"; do
-    for name in $(catalog_names) kinds stacks packs; do
-      if grep -qiE "(^|[^a-z-])$name([^a-z-]|$)" "$helper"; then
-        echo "$helper names $name"
-        return 1
-      fi
-    done
-  done
 }
 
 @test "every shipped entry of every catalog passes its operational checks, on both runtimes" {

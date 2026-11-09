@@ -57,12 +57,10 @@ ns_catalog_row "$CATALOG" || {
   printf 'catalog-new: unknown catalog: %s (one of: %s)\n' "$CATALOG" "$(ns_catalog_names | tr '\n' ' ' | sed 's/ $//')" >&2
   exit 1
 }
-case "$KEY" in
-  '' | *[!a-z0-9-]* | -* | *- | *--*)
-    printf 'catalog-new: %s is not a key: use lowercase words joined by hyphens\n' "$KEY" >&2
-    exit 2
-    ;;
-esac
+if ! ns_catalog_key_valid "$KEY"; then
+  printf 'catalog-new: %s is not a key: use lowercase words joined by hyphens\n' "$KEY" >&2
+  exit 2
+fi
 
 if [ "$SCOPE" = user ]; then
   dir="$(ns_catalog_user_root)/catalogs/$CATALOG"
