@@ -110,6 +110,52 @@ EOF
     || { printf '%s\n' "$output"; return 1; }
 }
 
+@test "a commented kind example is inert and an active rule still checks files on both runtimes" {
+  p="$(new_project commented-kind)"
+  printf '2\n' >"$p/.nightshift/state-version"
+  kind="$p/.nightshift/catalogs/evidence/custom.md"
+  mkdir -p "${kind%/*}"
+  cp "$ROOT/plugins/nightshift/skills/nightshift/references/templates/evidence-kind.md" "$kind"
+  write_item "$p" 'kind: custom check: block'
+  run ns_catalog_entry_problems "$kind" fence:evidence-check
+  [ "$status" -eq 0 ]
+  run ns_evidence_hold "$p" "$p/.nightshift/punch-list.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run _ns_evidence_block "$kind"
+  [ -z "$output" ]
+
+  if command -v pwsh >/dev/null 2>&1; then
+    run pwsh -NoProfile -Command "Import-Module '$MOD' -Force -DisableNameChecking; . '$PS1'; Get-NSCatalogEntryProblems -Path '$kind' -Rule fence:evidence-check; Get-NSEvidenceHold '$p' '$p/.nightshift/punch-list.md'; Get-NSEvidenceBlock '$kind'"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ] || { printf '%s\n' "$output"; return 1; }
+  fi
+
+  # Inline comments, CRLF, and trailing fence whitespace have the same meaning in draft and run.
+  printf '\r\n```evidence-check  <!-- active -->\r\nfiles:\t*.json<!-- extension -->\r\nmin:1\r\ntype:\tjson\r\n``` \t\r\n' >>"$kind"
+  run ns_catalog_entry_problems "$kind" fence:evidence-check
+  [ "$status" -eq 0 ]
+  run _ns_evidence_block "$kind"
+  [ "$output" = $'*.json\t1\tjson' ]
+  run ns_evidence_problems "$p" "$p/.nightshift/punch-list.md" 'Shot.'
+  [ "$output" = 'pattern custom' ]
+  if command -v pwsh >/dev/null 2>&1; then
+    run pwsh -NoProfile -Command "Import-Module '$MOD' -Force -DisableNameChecking; . '$PS1'; Get-NSCatalogEntryProblems -Path '$kind' -Rule fence:evidence-check; Get-NSEvidenceProblems '$p' '$p/.nightshift/punch-list.md' 'Shot.'"
+    [ "$status" -eq 0 ]
+    [ "$output" = 'pattern custom' ] || { printf '%s\n' "$output"; return 1; }
+  fi
+  receipt="$(ns_receipt_path "$p" 'Shot.' ab12)"
+  mkdir -p "${receipt%.md}"
+  printf 'false\n' >"${receipt%.md}/result.json"
+  run ns_evidence_hold "$p" "$p/.nightshift/punch-list.md"
+  [ -z "$output" ]
+  if command -v pwsh >/dev/null 2>&1; then
+    run pwsh -NoProfile -Command "Import-Module '$MOD' -Force -DisableNameChecking; . '$PS1'; Get-NSEvidenceHold '$p' '$p/.nightshift/punch-list.md'"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ] || { printf '%s\n' "$output"; return 1; }
+  fi
+}
+
 @test "check off leaves the receipt alone, and report names the missing file without blocking" {
   p="$(new_project evidence-report)"
   punch="$p/.nightshift/punch-list.md"

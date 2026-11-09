@@ -20,6 +20,34 @@ _NS_CATALOGS_TSV="${BASH_SOURCE[0]%/*}"
 [ "$_NS_CATALOGS_TSV" != "${BASH_SOURCE[0]}" ] || _NS_CATALOGS_TSV=.
 _NS_CATALOGS_TSV="$_NS_CATALOGS_TSV/catalogs.tsv"
 
+# Shared Markdown preprocessing for catalog validation and evidence rules.
+NS_AWK_CATALOG_TEXT='
+  function ns_catalog_text(raw,    rest, line, i) {
+    rest = raw
+    sub(/\r$/, "", rest)
+    line = ""
+    while (length(rest) > 0) {
+      if (ns_catalog_in_comment) {
+        i = index(rest, "-->")
+        if (i == 0) break
+        rest = substr(rest, i + 3)
+        ns_catalog_in_comment = 0
+        continue
+      }
+      i = index(rest, "<!--")
+      if (i == 0) { line = line rest; break }
+      line = line substr(rest, 1, i - 1)
+      rest = substr(rest, i + 4)
+      ns_catalog_in_comment = 1
+    }
+    return line
+  }
+'
+
+ns_catalog_key_valid() {
+  case "$1" in '' | *[!a-z0-9-]* | -* | *- | *--*) return 1 ;; esac
+}
+
 # ns_catalog_names — every catalog name, in registry order.
 ns_catalog_names() {
   awk -F '\t' '!/^#/ && NF >= 9 { print $1 }' "$_NS_CATALOGS_TSV"
@@ -142,7 +170,7 @@ ns_catalog_read_heading() {
 # starting "note: " also says what the entry leaves to the owner, such as a fence rule with no
 # fence; a note is never a problem and never changes the status.
 ns_catalog_entry_problems() {
-  LC_ALL=C awk -v rule="${2-}" -v notes="${3-}" '
+  LC_ALL=C awk -v rule="${2-}" -v notes="${3-}" "$NS_AWK_CATALOG_TEXT"'
     function fail(msg) { print msg; bad = 1 }
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
     BEGIN {
@@ -151,24 +179,8 @@ ns_catalog_entry_problems() {
       fence = (substr(rule, 1, 6) == "fence:") ? substr(rule, 7) : ""
     }
     {
-      rest = $0
-      sub(/\r$/, "", rest)
-      line = ""
-      while (length(rest) > 0) {
-        if (in_comment) {
-          i = index(rest, "-->")
-          if (i == 0) { rest = ""; break }
-          rest = substr(rest, i + 3)
-          in_comment = 0
-          continue
-        }
-        i = index(rest, "<!--")
-        if (i == 0) { line = line rest; rest = ""; break }
-        line = line substr(rest, 1, i - 1)
-        rest = substr(rest, i + 4)
-        in_comment = 1
-      }
-      if (in_comment) next
+      line = ns_catalog_text($0)
+      if (ns_catalog_in_comment) next
       if (rule == "shift" && !seen_h1 && line ~ /^# / && line !~ /^## /) {
         seen_h1 = 1
         n = split(substr(line, 3), part, " \xe2\x80\x94 ")
@@ -260,14 +272,10 @@ _ns_catalog_ingest() {
     [ -f "$f" ] || continue
     base="${f##*/}"
     key="${base%.md}"
-    case "$key" in
-      '' | *[!a-z0-9-]* | -* | *- | *--*)
-        if [ "$check" = yes ]; then
-          printf '%s: %s: malformed file name\n' "$prefix" "$f" >&2
-          continue
-        fi
-        ;;
-    esac
+    if [ "$check" = yes ] && ! ns_catalog_key_valid "$key"; then
+      printf '%s: %s: malformed file name\n' "$prefix" "$f" >&2
+      continue
+    fi
     if [ "$check" = yes ]; then
       problems="$(ns_catalog_entry_problems "$f" "$rule" || true)"
       if [ -n "$problems" ]; then
@@ -381,6 +389,7 @@ _ns_catalog_index() {
 # precedence down rather than building the whole index. Status 1 when no folder holds it.
 ns_catalog_file() {
   local prefix="$1" root="$2" name="$3" ws="$4" key="$5" sources dir label check missing f
+  ns_catalog_key_valid "$key" || return 1
   ns_catalog_row "$name" || return 1
   sources="$(_ns_catalog_sources "$prefix" "$root" "$name" "$ws" 2>/dev/null)"
   while IFS=$'\t' read -r dir label check missing; do
@@ -388,7 +397,6 @@ ns_catalog_file() {
     f="$dir/$key.md"
     [ -e "$f" ] && [ ! -L "$f" ] && [ -f "$f" ] || continue
     if [ "$check" = yes ]; then
-      case "$key" in '' | *[!a-z0-9-]* | -* | *- | *--*) continue ;; esac
       ns_catalog_entry_problems "$f" "$NS_CAT_RULE" >/dev/null || continue
     fi
     printf '%s' "$f"
