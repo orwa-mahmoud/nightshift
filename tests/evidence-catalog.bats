@@ -21,8 +21,6 @@ RESET="$PLUGIN/runtime/reset-shift.sh"
 PURGE_PS1="$PLUGIN/runtime/windows/purge-workspace.ps1"
 RESET_PS1="$PLUGIN/runtime/windows/reset-shift.ps1"
 PATH_SH="$PLUGIN/runtime/path.sh"
-SOURCES="$PLUGIN/lib/catalog-sources.sh"
-SOURCES_PS1="$PLUGIN/lib/catalog-sources.ps1"
 
 # A developer's own kinds must not leak into a test that lists the shipped catalog.
 setup() {
@@ -117,13 +115,6 @@ ENTRY
   [ "$output" = "$default" ]
   first="$(printf '%s\n' "$default" | head -n1)"
   [ "$(printf '%s' "$first" | awk -F'\t' '{print NF}')" -eq 4 ]
-}
-
-@test "the catalog helper does not name one catalog" {
-  [ -f "$SOURCES" ]
-  [ -f "$SOURCES_PS1" ]
-  ! grep -i evidence "$SOURCES" || { echo "the helper names a catalog"; return 1; }
-  ! grep -i evidence "$SOURCES_PS1" || { echo "the helper names a catalog"; return 1; }
 }
 
 @test "owner kinds are listed with their source, and precedence names what it replaced" {

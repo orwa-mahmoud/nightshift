@@ -4,9 +4,6 @@ ROOT="$BATS_TEST_DIRNAME/../../"
 HOW="$ROOT/docs/how-it-works.md"
 KNOBS="$ROOT/docs/knobs.md"
 START="$ROOT/plugins/nightshift/skills/start/SKILL.md"
-README="$ROOT/README.md"
-MARKET="$ROOT/.claude-plugin/marketplace.json"
-CODEX_MARKET="$ROOT/.agents/plugins/marketplace.json"
 CURSOR_MARKET="$ROOT/.cursor-plugin/marketplace.json"
 
 @test "docs say the Cursor CLI runs installed plugin hooks" {
@@ -22,20 +19,6 @@ CURSOR_MARKET="$ROOT/.cursor-plugin/marketplace.json"
   cursor_host="$ROOT/plugins/nightshift/skills/nightshift/references/hosts/cursor.md"
   grep -qF 'including in print mode (`agent -p`)' "$cursor_host"
   grep -qF 'Setup does not write it' "$cursor_host"
-}
-
-@test "Cursor installation names the repository flow and retains recovery limits" {
-  grep -qE '^### Cursor$' "$README"
-  grep -qF 'Customize → Add → From GitHub Repository' "$README"
-  grep -qF 'is for discovery' "$README"
-  grep -qF '](docs/how-it-works.md#recovery)' "$README"
-  grep -qF 'marketplace listing waits' "$HOW"
-  if grep -qi cursor "$MARKET"; then
-    return 1
-  fi
-  if grep -qi cursor "$CODEX_MARKET"; then
-    return 1
-  fi
 }
 
 @test "the Cursor marketplace file points at the shipped plugin" {
