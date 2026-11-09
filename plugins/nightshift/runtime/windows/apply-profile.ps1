@@ -55,7 +55,7 @@ if ($Mode -notin @('replace', 'fill')) {
     [Console]::Error.WriteLine('apply-profile: -Mode must be replace or fill')
     exit 1
 }
-if ([string]::IsNullOrEmpty($Profile) -or $Profile -notmatch '^[A-Za-z0-9_-]+$') {
+if ([string]::IsNullOrEmpty($Profile) -or $Profile -cnotmatch '^[A-Za-z0-9_-]+$') {
     [Console]::Error.WriteLine("apply-profile: unknown profile $Profile")
     exit 1
 }

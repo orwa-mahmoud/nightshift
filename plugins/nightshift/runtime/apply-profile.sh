@@ -78,12 +78,10 @@ case "$MODE" in
   replace | fill) ;;
   *) printf 'apply-profile: --mode must be replace or fill\n' >&2; exit 1 ;;
 esac
-case "$PROFILE" in
-  '' | *[!A-Za-z0-9_-]*)
-    printf 'apply-profile: unknown profile %s\n' "$PROFILE" >&2
-    exit 1
-    ;;
-esac
+if [ -z "$PROFILE" ] || ! ns_ascii_only "$PROFILE" lower upper digit _-; then
+  printf 'apply-profile: unknown profile %s\n' "$PROFILE" >&2
+  exit 1
+fi
 SRC="$PROFILES/${PROFILE}.json"
 [ -f "$SRC" ] || {
   printf 'apply-profile: unknown profile %s\n' "$PROFILE" >&2

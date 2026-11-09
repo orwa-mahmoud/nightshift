@@ -259,3 +259,52 @@ ENTRY
   run env APPDATA="$BATS_TEST_TMPDIR/appdata" pwsh -NoProfile -File "$NEW_PS1" -Catalog evidence -Key screens -Project "$p"
   [ "$status" -eq 2 ]
 }
+
+@test "a key outside lowercase ASCII is refused on both runtimes, whatever the locale" {
+  p="$(owner_project ascii-keys)"
+  # /bin/bash is bash 3.2 on macOS, where a bracket range follows the locale's collation.
+  for key in Ui straße "ui$(printf '\xc3\xa9')"; do
+    run env LC_ALL=en_US.UTF-8 XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg-ascii-keys" \
+      /bin/bash "$INDEX" --catalog evidence --project "$p" --path "$key"
+    [ "$status" -eq 2 ] || { printf '%s: %s\n' "$key" "$output"; return 1; }
+    run env LC_ALL=en_US.UTF-8 XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg-ascii-keys" \
+      /bin/bash "$NEW" --catalog evidence --key "$key" --project "$p"
+    [ "$status" -eq 2 ] || { printf '%s: %s\n' "$key" "$output"; return 1; }
+    if command -v pwsh >/dev/null 2>&1; then
+      run env APPDATA="$BATS_TEST_TMPDIR/appdata" pwsh -NoProfile -File "$INDEX_PS1" -Catalog evidence -Project "$p" -EntryKey "$key"
+      [ "$status" -eq 2 ] || { printf '%s: %s\n' "$key" "$output"; return 1; }
+      run env APPDATA="$BATS_TEST_TMPDIR/appdata" pwsh -NoProfile -File "$NEW_PS1" -Catalog evidence -Key "$key" -Project "$p"
+      [ "$status" -eq 2 ] || { printf '%s: %s\n' "$key" "$output"; return 1; }
+    fi
+  done
+  [ ! -d "$p/.nightshift/catalogs/evidence" ] || [ -z "$(ls -A "$p/.nightshift/catalogs/evidence")" ]
+}
+
+@test "the index reads the heading the checks read: comments and CRLF never reach it, on both runtimes" {
+  p="$(owner_project heading-reader)"
+  mkdir -p "$p/.nightshift/catalogs/shifts" "$p/.nightshift/catalogs/evidence"
+  printf '%s\r\n' '<!--' '# Example — open-ended — a commented example' '-->' \
+    '# Nightly docs — finite — keep the docs in step' '' '## Item' '' '```text' \
+    '- [ ] **Nightly docs — bring the docs back in step.**' '  - Verify: run the docs build.' '```' \
+    >"$p/.nightshift/catalogs/shifts/nightly-docs.md"
+  printf '%s\r\n' '<!-- # Example kind — a commented heading -->' '# Docs pages — pages a docs item renders' \
+    '' '## When it applies' '' 'Docs items.' >"$p/.nightshift/catalogs/evidence/docs-pages.md"
+  shift_line="$(printf 'nightly-docs\tfinite\tNightly docs\tkeep the docs in step')"
+  kind_cells="$(printf 'docs-pages\tDocs pages\tpages a docs item renders')"
+
+  run env XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg-heading-reader" bash "$INDEX" --catalog shifts --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF "$shift_line" || { printf '%s\n' "$output" | cat -v; return 1; }
+  run env XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg-heading-reader" bash "$INDEX" --catalog evidence --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | cut -f 1-3 | grep -qxF "$kind_cells" || { printf '%s\n' "$output" | cat -v; return 1; }
+  if ! command -v pwsh >/dev/null 2>&1; then
+    skip 'pwsh is not installed'
+  fi
+  run env APPDATA="$BATS_TEST_TMPDIR/appdata" pwsh -NoProfile -File "$INDEX_PS1" -Catalog shifts -Project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF "$shift_line" || { printf '%s\n' "$output" | cat -v; return 1; }
+  run env APPDATA="$BATS_TEST_TMPDIR/appdata" pwsh -NoProfile -File "$INDEX_PS1" -Catalog evidence -Project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | cut -f 1-3 | grep -qxF "$kind_cells" || { printf '%s\n' "$output" | cat -v; return 1; }
+}

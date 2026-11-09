@@ -96,7 +96,7 @@ function Get-NSShiftLine {
     $ending = ''
     $summary = ''
     $seen = $false
-    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+    foreach ($line in (Get-NSCatalogText -Path $Path)) {
         if (-not $seen) {
             if ($line.StartsWith('# ')) {
                 $seen = $true

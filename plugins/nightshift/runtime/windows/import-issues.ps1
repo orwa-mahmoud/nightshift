@@ -75,7 +75,7 @@ function Parse-NSIssueSpec {
     else {
         return $null
     }
-    if ($owner -notmatch '^[A-Za-z0-9._-]+$' -or $repoName -notmatch '^[A-Za-z0-9._-]+$' -or $num -notmatch '^[0-9]+$') {
+    if ($owner -cnotmatch '^[A-Za-z0-9._-]+$' -or $repoName -cnotmatch '^[A-Za-z0-9._-]+$' -or $num -cnotmatch '^[0-9]+$') {
         return $null
     }
     return [pscustomobject]@{

@@ -79,13 +79,12 @@ function Get-NSTranscript {
         $directory = $override
     }
     elseif ($HostName -eq 'claude') {
-        $slug = $workspace -replace '[^A-Za-z0-9]', '-'
-        $directory = Join-Path $HOME ".claude/projects/$slug"
+        $directory = Get-NSClaudeProjectDir -Project $workspace
     }
     else {
         return ''
     }
-    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+    if ([string]::IsNullOrEmpty($directory) -or -not (Test-Path -LiteralPath $directory -PathType Container)) {
         return ''
     }
     $latest = Get-ChildItem -LiteralPath $directory -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |

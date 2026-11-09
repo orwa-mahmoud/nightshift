@@ -1828,8 +1828,8 @@ function Get-NSGateStallState {
     $lines = @([IO.File]::ReadAllLines($Path))
     if ($lines.Count -lt 2) { return 'quiet' }
     $n = $lines[1].Trim()
-    if ($n -notmatch '^\d+$') { return 'quiet' }
-    if ("$WarnEvery" -notmatch '^\d+$' -or [int]$WarnEvery -le 0) { return 'quiet' }
+    if ($n -cnotmatch '^[0-9]+$') { return 'quiet' }
+    if ("$WarnEvery" -cnotmatch '^[0-9]+$' -or [int]$WarnEvery -le 0) { return 'quiet' }
     if ([int]$n -ge [int]$WarnEvery) { return 'warned' }
     return 'quiet'
 }
@@ -1864,7 +1864,7 @@ function Get-NSGateReminderText {
         return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
     $lines = @([IO.File]::ReadAllLines($file))
-    if ($lines.Count -lt 2 -or [string]::IsNullOrEmpty($lines[0]) -or $lines[1].Trim() -notmatch '^\d+$') {
+    if ($lines.Count -lt 2 -or [string]::IsNullOrEmpty($lines[0]) -or $lines[1].Trim() -cnotmatch '^[0-9]+$') {
         Save-NSGateReminder $ns $Fingerprint 0
         return (Add-NSGateReceiptsMissingNote $Workspace $Full)
     }
@@ -1874,7 +1874,7 @@ function Get-NSGateReminderText {
     }
     $count = [int]$lines[1].Trim()
     $limit = [string](Get-NSPolicyGroupSettingOrRule $Workspace 'clockOutReminderLimit')
-    if ($limit -notmatch '^\d+$' -or [int]$limit -le 0) { $limit = 10 }
+    if ($limit -cnotmatch '^[0-9]+$' -or [int]$limit -le 0) { $limit = 10 }
     if ($count -ge [int]$limit) {
         Save-NSGateReminder $ns $Fingerprint 0
         return (Add-NSGateReceiptsMissingNote $Workspace $Full)

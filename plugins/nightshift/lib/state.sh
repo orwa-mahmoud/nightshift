@@ -1978,7 +1978,8 @@ ns_archive_group() {
 # nothing. A shift without an id owns no folder anyone can find by it.
 ns_archive_folder_of() {
   local root d owner
-  case "$2" in '' | unknown | *[!A-Za-z0-9-]*) return 0 ;; esac
+  case "$2" in '' | unknown) return 0 ;; esac
+  ns_ascii_only "$2" lower upper digit - || return 0
   root="$(ns_archive_root "$1")" || return 0
   for d in "$root"/*/; do
     d="${d%/}"
@@ -1998,7 +1999,8 @@ ns_archive_folder_of() {
 # `shift-policy-<id>.json` name earlier versions filed it by. Nothing when none is filed.
 ns_archived_policy() {
   local project="$1" id="$2" root folder f
-  case "$id" in '' | unknown | *[!0-9a-f-]*) return 0 ;; esac
+  case "$id" in '' | unknown) return 0 ;; esac
+  ns_ascii_only "$id" hex - || return 0
   root="$(ns_archive_root "$project")" || return 0
   { [ -d "$root" ] && [ ! -L "$root" ]; } || return 0
   for folder in "$(ns_archive_group_if_claimed "$project" "$id")" "$(ns_archive_folder_of "$project" "$id")"; do

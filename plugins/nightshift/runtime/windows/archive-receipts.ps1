@@ -49,7 +49,7 @@ $ns = Join-Path $workspace '.nightshift'
 if ([string]::IsNullOrWhiteSpace($Date)) {
     $Date = Get-Date -Format 'yyyy-MM-dd'
 }
-if ($Date -notmatch '^\d{4}-\d{2}-\d{2}$') {
+if ($Date -cnotmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}$') {
     Write-NSArchiveReceiptsError 'archive-receipts: -Date must be YYYY-MM-DD'
     exit 1
 }

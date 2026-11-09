@@ -152,8 +152,7 @@ function Get-NSCatalogTemplate {
 function Get-NSCatalogHeading {
     param([Parameter(Mandatory = $true)][string]$Path)
     $dash = ' ' + [string][char]0x2014 + ' '
-    foreach ($raw in [IO.File]::ReadAllLines($Path)) {
-        $line = $raw.TrimEnd("`r")
+    foreach ($line in (Get-NSCatalogText -Path $Path)) {
         if ($line.StartsWith('# ') -and -not $line.StartsWith('## ')) {
             $text = $line.Substring(2)
             $parts = $text -split [regex]::Escape($dash), 2

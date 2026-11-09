@@ -19,6 +19,8 @@
 _NS_CATALOGS_TSV="${BASH_SOURCE[0]%/*}"
 [ "$_NS_CATALOGS_TSV" != "${BASH_SOURCE[0]}" ] || _NS_CATALOGS_TSV=.
 _NS_CATALOGS_TSV="$_NS_CATALOGS_TSV/catalogs.tsv"
+# shellcheck source=plugins/nightshift/lib/charsets.sh
+. "${_NS_CATALOGS_TSV%/*}/charsets.sh"
 
 # Shared Markdown preprocessing for catalog validation and evidence rules.
 NS_AWK_CATALOG_TEXT='
@@ -45,7 +47,8 @@ NS_AWK_CATALOG_TEXT='
 '
 
 ns_catalog_key_valid() {
-  case "$1" in '' | *[!a-z0-9-]* | -* | *- | *--*) return 1 ;; esac
+  ns_ascii_only "$1" lower digit - || return 1
+  case "$1" in '' | -* | *- | *--*) return 1 ;; esac
 }
 
 # ns_catalog_names — every catalog name, in registry order.
@@ -144,7 +147,11 @@ ns_catalog_template() {
 # ns_catalog_read_heading <file> — the H1 as title and description, separated by a tab.
 # The split is the em dash the catalogs use. No H1 prints nothing.
 ns_catalog_read_heading() {
-  LC_ALL=C awk '
+  LC_ALL=C awk "$NS_AWK_CATALOG_TEXT"'
+    {
+      $0 = ns_catalog_text($0)
+      if (ns_catalog_in_comment) next
+    }
     /^# / && !/^## / && !seen {
       seen = 1
       line = substr($0, 3)

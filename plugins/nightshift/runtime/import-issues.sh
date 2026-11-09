@@ -130,8 +130,9 @@ parse_spec() {
       ;;
   esac
 
-  case "$owner" in "" | *[!A-Za-z0-9._-]*) return 1 ;; esac
-  case "$repo" in "" | *[!A-Za-z0-9._-]*) return 1 ;; esac
+  [ -n "$owner" ] && [ -n "$repo" ] || return 1
+  ns_ascii_only "$owner" lower upper digit ._- || return 1
+  ns_ascii_only "$repo" lower upper digit ._- || return 1
   case "$num" in "" | *[!0-9]*) return 1 ;; esac
   printf '%s\t%s\t%s\thttps://github.com/%s/%s/issues/%s\n' \
     "$owner" "$repo" "$num" "$owner" "$repo" "$num"

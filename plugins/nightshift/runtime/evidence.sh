@@ -17,6 +17,8 @@ set -u
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/layout.sh
 . "$_here/../lib/layout.sh"
+# shellcheck source=plugins/nightshift/lib/charsets.sh
+. "$_here/../lib/charsets.sh"
 SCHEMA_PATH="$_here/../skills/nightshift/references/schemas/v1/finding.json"
 EMIT_JQ="$_here/evidence-emit.jq"
 
@@ -96,13 +98,9 @@ _join() {
 
 # Evidence ids: a leading [A-Za-z0-9], then [A-Za-z0-9_-]* only.
 _valid_evidence_id() {
-  case "$1" in
-    '' | *[!A-Za-z0-9_-]*) return 1 ;;
-  esac
-  case "$1" in
-    [A-Za-z0-9]*) return 0 ;;
-  esac
-  return 1
+  [ -n "$1" ] || return 1
+  ns_ascii_only "$1" lower upper digit _- || return 1
+  ns_ascii_only "${1:0:1}" lower upper digit
 }
 
 # _contained_raw ID -> RAWPATH, RAWABS under .nightshift/. Resolves the parent

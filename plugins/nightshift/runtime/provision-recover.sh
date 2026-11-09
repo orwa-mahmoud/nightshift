@@ -349,7 +349,7 @@ _plain() {
 }
 
 _hex64() {
-  case "$1" in *[!0-9a-f]*) return 1 ;; esac
+  ns_ascii_only "$1" hex || return 1
   [ "${#1}" -eq 64 ]
 }
 
