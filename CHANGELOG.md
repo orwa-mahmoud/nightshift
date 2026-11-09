@@ -3,6 +3,24 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.33.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.32.0...v0.33.0) (2026-11-09)
+
+
+### Features
+
+* check reports, drafts and work orders by what they say, not their headings ([2cce4af](https://github.com/orwa-mahmoud/nightshift/commit/2cce4afb3afd8f3b10bf40b8ea12354ff0e19816))
+* let catalog entries take any shape and check only what Nightshift reads ([f409f7b](https://github.com/orwa-mahmoud/nightshift/commit/f409f7b71e55750f6aa0ff76e7f5a88ae86aba32))
+* read receipt outputs under any heading and show declared paths that name nothing ([28472ec](https://github.com/orwa-mahmoud/nightshift/commit/28472ec8a4250074d82c6dcd0de61d6bb898de89))
+
+
+### Bug Fixes
+
+* accept any valid JSON evidence and hold the tick on files, not on a heading ([95764a7](https://github.com/orwa-mahmoud/nightshift/commit/95764a7ea35484453a135645faccfd9483ead3d7))
+* ask the owner for the shift's hours and never choose them ([d436823](https://github.com/orwa-mahmoud/nightshift/commit/d4368233c3600a609ca5e7aefd5e688cbede4ac4))
+* keep owner settings when applying a profile, and name a rules file that cannot load ([3148917](https://github.com/orwa-mahmoud/nightshift/commit/31489171198519b2a3ea645811271931939f949c))
+* state in each skill description what the skill does and promises ([ed1e9f2](https://github.com/orwa-mahmoud/nightshift/commit/ed1e9f21aee8ca9d919e9d7fb6721d119185e4a9))
+* write the Archive summary from archive.templatePath when the owner sets one ([5b8cd82](https://github.com/orwa-mahmoud/nightshift/commit/5b8cd82910573743f1c1789b1c0e8b44d219de51))
+
 ## [0.32.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.31.0...v0.32.0) (2026-11-08)
 
 
