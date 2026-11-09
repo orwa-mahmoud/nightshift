@@ -49,14 +49,6 @@ left nine focused items as reviewable commits. A later
 survived a host handoff and became a human-reviewed 67-commit pull request. These are documented
 runs, not benchmarks.
 
-## See it work
-
-[![A recorded Claude Code shift: the agent tried to clock out with two items open, and the gate sent it back to work](https://nightshift.orwamahmoud.com/nightshift-demo-poster.jpg)](https://nightshift.orwamahmoud.com/#demo-title)
-
-A recorded Claude Code session, three items on the punch list. Midway the agent declares itself
-finished with two boxes still open; the gate hands back the contract, and the agent clocks out only
-once every box is ticked. [Watch the 36-second clip →](https://nightshift.orwamahmoud.com/#demo-title)
-
 ## Why Nightshift
 
 It started with eight requested changes and a screen saying the four hard ones deserved a
