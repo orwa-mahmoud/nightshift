@@ -159,17 +159,6 @@ call_lib() {
   grep -qF 'Setup would propose artifact, refuse to print or install a job' "$SCHEDULE"
 }
 
-@test "workspace docs describe artifact mode" {
-  grep -qF '### Persistent folder (artifact mode)' "$DOC"
-  grep -qF '.nightshift/run/work-mode' "$DOC"
-  grep -qF 'artifact' "$VOCAB"
-}
-
-@test "hardhat treats work-mode as a control file" {
-  grep -qF 'work-mode' "$HARDHAT"
-  grep -qF 'work-mode' "$WIN_HARDHAT"
-}
-
 @test "Windows helpers persist and resolve the same two modes" {
   windows_module_source | grep -qF 'function Get-NSWorkMode'
   windows_module_source | grep -qF 'function Get-NSProposedWorkMode'

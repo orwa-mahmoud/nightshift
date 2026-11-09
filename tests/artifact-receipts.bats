@@ -337,12 +337,6 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   [ "$(sed -n '2p' "$p/.nightshift/.stall")" = "1" ]
 }
 
-@test "archive copies receipts, and removing one is a separate decision" {
-  grep -qF 'archive/<YYYY-MM-DD>/receipts/' "$ARCHIVE"
-  grep -qF 'Filing is a copy' "$ARCHIVE"
-  grep -qE 'ns"? archive-receipts' "$ARCHIVE"
-}
-
 @test "skills and docs name artifact receipts" {
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"
   grep -qF '$NS/receipts/' "$NIGHTSHIFT"

@@ -165,7 +165,7 @@ EOF
   ! grep -qF 'Shift file map' "$r/README.md" || false
 }
 
-@test "a map that cannot be built says why, and artifact mode lists the declared outputs" {
+@test "a map that cannot be built says why, and artifact mode lists the declared outputs under any heading" {
   p="$(new_project fm-unavailable)"
   file_maps "$p" on
   printf '## Items\n- [ ] **1. Late.** <!-- id: aa11 -->\n' >"$p/.nightshift/punch-list.md"
@@ -182,8 +182,16 @@ EOF
   printf '## Items\n- [ ] **1. Site.** <!-- id: aa11 -->\n- [ ] **2. Report.** <!-- id: bb22 -->\n' >"$a/.nightshift/punch-list.md"
   r="$a/.nightshift/receipts"
   mkdir -p "$r"
-  printf '# 1. Site.\n\n## Outputs\n\n- `out/site/index.html` and [the styles](./out/site/style.css)\n- [docs](https://example.com/x) `not a path`\n' >"$r/01-site-aa11.md"
-  printf '# 2. Report.\n\n## Outputs\n\n- [report](out/report.pdf)\n- `out/site/index.html`\n' >"$r/02-report-bb22.md"
+  # Outputs are read under any heading, and only paths that name a file in the work target count.
+  # An evidence link beside the receipt is not an output; a declared path that names nothing is shown.
+  mkdir -p "$a/out/site"
+  : >"$a/out/site/index.html"
+  : >"$a/out/site/style.css"
+  : >"$a/out/report.pdf"
+  mkdir -p "$r/01-site-aa11"
+  : >"$r/01-site-aa11/checkout.png"
+  printf '# 1. Site.\n\n## Outputs\n\n- `out/site/index.html` and [the styles](./out/site/style.css)\n- [docs](https://example.com/x) `not a path`\n- [the shot](01-site-aa11/checkout.png), `out/missing.html`, `../outside.txt`\n' >"$r/01-site-aa11.md"
+  printf '# 2. Report.\n\n## Deliverables\n\n| What | Where |\n| --- | --- |\n| Report | [report](out/report.pdf) |\n| Home | `out/site/index.html` |\n' >"$r/02-report-bb22.md"
   tick "$a" 1
   tick "$a" 2
   [ "$(block "$r/01-site-aa11.md")" = "$(cat <<'EOF'
@@ -197,6 +205,8 @@ out/site/
   index.html
   style.css
 ```
+
+Declared but not found in the work target: `out/missing.html`
 <!-- /nightshift:file-map -->
 EOF
 )" ] || { cat "$r/01-site-aa11.md"; return 1; }
@@ -248,4 +258,25 @@ EOF
   command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
   run pwsh -NoProfile -File "$BATS_TEST_DIRNAME/windows/receipt-file-map-logic.ps1"
   [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+}
+
+@test "PowerShell draws the same artifact-mode block, declared-but-missing line included" {
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  a="$(new_project fm-artifact-parity)"
+  file_maps "$a" on
+  printf 'artifact\n' >"$a/.nightshift/work-mode"
+  printf '## Items\n- [x] **1. Site.** <!-- id: aa11 -->\n' >"$a/.nightshift/punch-list.md"
+  mkdir -p "$a/out" "$a/.nightshift/receipts/01-site-aa11"
+  : >"$a/out/index.html"
+  : >"$a/.nightshift/receipts/01-site-aa11/shot.png"
+  printf '# 1. Site.\n\n## Deliverables\n\n- `out/index.html`, `out/typo.html`, [shot](01-site-aa11/shot.png)\n' \
+    >"$a/.nightshift/receipts/01-site-aa11.md"
+  cp -R "$a" "$BATS_TEST_TMPDIR/fm-artifact-parity-ps"
+  q="$BATS_TEST_TMPDIR/fm-artifact-parity-ps"
+  lib ns_filemap_tick "$a/.nightshift" "$a" '1. Site.'
+  NS_MODULE="$PSM1" NS_NS="$q/.nightshift" NS_WS="$q" pwsh -NoProfile -NonInteractive -Command \
+    'Import-Module $env:NS_MODULE -Force -DisableNameChecking; Invoke-NSFileMapTick $env:NS_NS $env:NS_WS "1. Site."'
+  block "$a/.nightshift/receipts/01-site-aa11.md" | grep -qxF 'Declared but not found in the work target: `out/typo.html`'
+  cmp "$a/.nightshift/receipts/01-site-aa11.md" "$q/.nightshift/receipts/01-site-aa11.md" ||
+    { diff "$a/.nightshift/receipts/01-site-aa11.md" "$q/.nightshift/receipts/01-site-aa11.md"; return 1; }
 }

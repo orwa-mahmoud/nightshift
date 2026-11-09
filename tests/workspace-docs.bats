@@ -50,11 +50,6 @@ resolve_work_target() {
   grep -qF 'Nightshift never selects the first directory silently' "$DOC"
 }
 
-@test "workspace docs name the headless receipts identity" {
-  grep -qF 'nightshift@localhost' "$DOC"
-  grep -qF 'commit.gpgsign=false' "$DOC"
-}
-
 @test "workspace docs state the link trust boundary" {
   contents="$(tr '\n' ' ' <"$DOC")"
   printf '%s' "$contents" | grep -qF 'This file is a trust boundary'

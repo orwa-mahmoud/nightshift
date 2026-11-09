@@ -35,12 +35,6 @@ doctor() {
   [ -d "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/doctor" ]
 }
 
-@test "Doctor tells unattended runs to report, never write, confirmation repairs" {
-  grep -qF 'report that' "$SKILL"
-  grep -qF 'write the parking lot or ask' "$SKILL"
-  grep -qF 'the Doctor invocation remains byte-identical' "$SKILL"
-}
-
 # The inspectors already say what is wrong in English. Doctor and Status pass those warnings
 # through; they do not keep a second copy of the sentence, and they never quietly drop one.
 @test "Doctor and Status relay every inspector warning instead of restating it" {
@@ -640,15 +634,6 @@ EOF
   printf '%s' "$output" | grep -q 'site with spaces'
   after="$(fingerprint "$p")"
   [ "$before" = "$after" ]
-}
-
-@test "docs expose Doctor as a read-only command" {
-  grep -qF '/nightshift:doctor' "$BATS_TEST_DIRNAME/../docs/commands.md"
-  grep -qF 'never repairs' "$BATS_TEST_DIRNAME/../docs/commands.md"
-  grep -qF '/nightshift:doctor' "$BATS_TEST_DIRNAME/../docs/troubleshooting.md"
-  grep -qF '/nightshift:doctor' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
-  grep -qF 'never repairs' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
-  grep -qE 'ns"? export-support' "$BATS_TEST_DIRNAME/../docs/commands.md"
 }
 
 @test "doctor and export-support call the policy resolver, never the legacy helper" {

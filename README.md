@@ -141,7 +141,7 @@ Start with one small task in a project you trust. Keep the first run attended an
 1. **Set up.** Setup asks at most four questions: your checks, then every default on one screen.
    Accept them all, or name what to change. Or skip setting up: say *“improve this project for 5 hours”*
    and Nightshift sets the project up, picks the work from the catalog, and starts. With no hours it
-   asks one question: how long, or *auto*.
+   asks one question: how many hours.
 2. **Write one item** under `## Items` in `.nightshift/punch-list.md`. For a repository that
    already has a test runner, a small first task could be:
 

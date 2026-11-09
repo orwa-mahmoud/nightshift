@@ -891,15 +891,9 @@ function Get-NSPreflightItems {
         $items.Add($item)
     }
 
+    # Every box in the file, under any heading.
     $orderLines = New-Object Collections.Generic.List[string]
-    $inOrders = $false
-    foreach ($line in (Get-NSPreflightFileLines $paths['orders'])) {
-        if (-not $inOrders) {
-            if ($line -match '^##\s+Work order') { $inOrders = $true }
-            else { continue }
-        }
-        $orderLines.Add($line)
-    }
+    foreach ($line in (Get-NSPreflightFileLines $paths['orders'])) { $orderLines.Add($line) }
     if ($orderLines.Count -gt 0) {
         foreach ($item in (Get-NSPreflightSectionItems -Lines $orderLines.ToArray() -Source 'work-orders' -FallbackTitle '')) {
             $items.Add($item)
@@ -1348,11 +1342,16 @@ function Invoke-NSShiftPolicyCommand {
                     -Hours $Hours -ToolingPolicy $ToolingPolicy -Execution $Execution)
         }
         'resolve' {
-            if ($Table) {
-                Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Table)
-                return 0
+            # A file the reader refuses is never a silent fallback: the view is the built-ins, and the
+            # exit status says so. Mirrors cmd_resolve in shift-policy.sh.
+            $rulesFile = Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'rules'
+            $unreadable = (Test-Path -LiteralPath $rulesFile -PathType Leaf) -and ($null -eq (Get-NSRulesObject $workspace))
+            if ($Table) { Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Table) }
+            else { Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Json) }
+            if ($unreadable) {
+                Write-NSPolicyError "shift-policy: $rulesFile cannot be loaded; the values above are the built-ins"
+                return 5
             }
-            Write-NSPolicyOut (Resolve-NSPolicy -Workspace $workspace -Json)
             return 0
         }
         'migrate' {

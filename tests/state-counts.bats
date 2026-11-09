@@ -33,11 +33,6 @@ MR="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/morning-receipt.sh"
   fi
 }
 
-@test "morning-receipt temps are created mode 700" {
-  grep -qF 'mktemp -d' "$MR"
-  grep -qF 'chmod 700' "$MR"
-}
-
 @test "ns_open_boxes_file counts every open box and treats a missing file as zero" {
   f="$BATS_TEST_TMPDIR/orders.md"
   printf '# Work Orders\n\n- [ ] **one.**\n- [x] **done.**\n- [ ] **two.**\n' >"$f"

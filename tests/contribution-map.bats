@@ -5,13 +5,12 @@ CONTRIBUTING="$ROOT/CONTRIBUTING.md"
 AGENTS="$ROOT/AGENTS.md"
 PR_TEMPLATE="$ROOT/.github/PULL_REQUEST_TEMPLATE.md"
 ISSUE_CONFIG="$ROOT/.github/ISSUE_TEMPLATE/config.yml"
-CATALOG_FORM="$ROOT/.github/ISSUE_TEMPLATE/catalog_shift.yml"
 RECEIPTS="$ROOT/examples/README.md"
 
 @test "the contribution map is reachable from contributor entry points" {
   [ -f "$MAP" ]
   for entry in "$README" "$CONTRIBUTING" "$AGENTS" "$PR_TEMPLATE" \
-    "$ISSUE_CONFIG" "$CATALOG_FORM" "$RECEIPTS"; do
+    "$ISSUE_CONFIG" "$RECEIPTS"; do
     grep -qF 'docs/contribution-map.md' "$entry" || {
       echo "contribution map is not linked from: $entry"
       return 1
@@ -44,7 +43,7 @@ RECEIPTS="$ROOT/examples/README.md"
 }
 
 @test "the contribution map preserves focused and repository checks" {
-  for command in 'bats tests/' "git ls-files '*.sh' \| xargs shellcheck -x" \
+  for command in 'bats tests/' 'tests/lint-shell.sh' \
     'tests/coverage.sh' 'claude plugin validate . --strict'; do
     grep -qF "$command" "$MAP" || {
       echo "missing repository check: $command"
@@ -100,12 +99,4 @@ RECEIPTS="$ROOT/examples/README.md"
       return 1
     }
   done < <(grep -oE '\]\([^)]*\)' "$MAP")
-}
-
-@test "the contribution map keeps live work and proposal links" {
-  grep -qF 'issues?q=is%3Aissue+is%3Aopen' "$MAP"
-  grep -qF 'issues/new?template=catalog_shift.yml' "$MAP"
-  grep -qF 'issues/21' "$MAP"
-  grep -qF 'issues/22' "$MAP"
-  grep -qF 'platform%3A+linux' "$MAP"
 }

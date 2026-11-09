@@ -1,5 +1,5 @@
 # Portable PowerShell coverage for the Windows apply-profile v2 profile behaviour (armed refuse,
-# shift-defaults.json merge, and the `## Gates` block rewrite).
+# rules.json shift block merge, and the `## Gates` block rewrite).
 # Run on macOS or Windows: pwsh -File tests/windows/apply-profile-logic.ps1
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -113,7 +113,7 @@ try {
     New-NSTestProject $previewRoot -WithPunchList
     $preview = Invoke-ApplyProfile $previewRoot -ProfileName 'fast'
     Expect-True ($preview.ExitCode -eq 0) "fast preview exits 0 (got $($preview.ExitCode) $($preview.Stderr))"
-    Expect-True ($preview.Stdout -match 'Proposed shift-defaults\.json') 'preview shows proposed shift-defaults.json'
+    Expect-True ($preview.Stdout -match '"verificationProfile":\s*"fast"') 'preview shows the shift block inside rules.json'
     Expect-True ($preview.Stdout -match 'Proposed ## Gates block') 'preview shows the proposed Gates block'
     Expect-True (-not (Test-Path (Join-Path $previewRoot '.nightshift/shift-defaults.json'))) `
         'preview writes no shift-defaults.json'
@@ -124,14 +124,16 @@ finally {
     Remove-Item -LiteralPath $previewRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# --- apply fast, then strict: shift-defaults.json merges, Gates stays untouched ------------------
+# --- apply fast, then strict: the rules.json shift block merges, Gates stays untouched -----------
 $mergeRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-apply-profile-merge-" + [guid]::NewGuid().ToString('N'))
 try {
     New-NSTestProject $mergeRoot -WithPunchList
     $fastRun = Invoke-ApplyProfile $mergeRoot -ProfileName 'fast' -Apply
     Expect-True ($fastRun.ExitCode -eq 0) "apply fast exits 0 (got $($fastRun.ExitCode) $($fastRun.Stderr))"
     $defaultsPath = Join-Path $mergeRoot '.nightshift/shift-defaults.json'
-    $fastDefaults = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json
+    $rulesFile = Join-Path $mergeRoot '.nightshift/rules.json'
+    Expect-True (-not (Test-Path -LiteralPath $defaultsPath)) 'apply writes no legacy shift-defaults.json'
+    $fastDefaults = (Get-Content -LiteralPath $rulesFile -Raw | ConvertFrom-Json).shift
     Expect-True ($fastDefaults.verificationProfile -eq 'fast') 'fast sets verificationProfile fast'
     Expect-True ($fastDefaults.toolingPolicy -eq 'existing-tools') 'fast sets toolingPolicy existing-tools'
     Expect-True ($fastDefaults.execution -eq 'run-direct') 'fast sets execution run-direct'
@@ -141,23 +143,27 @@ try {
     $punchHashBefore = (Get-FileHash -LiteralPath (Join-Path $mergeRoot '.nightshift/punch-list.md') -Algorithm SHA256).Hash
     $strictRun = Invoke-ApplyProfile $mergeRoot -ProfileName 'strict' -Apply
     Expect-True ($strictRun.ExitCode -eq 0) "apply strict exits 0 (got $($strictRun.ExitCode) $($strictRun.Stderr))"
-    $strictDefaults = Get-Content -LiteralPath $defaultsPath -Raw | ConvertFrom-Json
+    $strictDefaults = (Get-Content -LiteralPath $rulesFile -Raw | ConvertFrom-Json).shift
     Expect-True ($strictDefaults.verificationProfile -eq 'strict') 'strict changes verificationProfile to strict'
     Expect-True ($strictDefaults.toolingPolicy -eq 'existing-tools') 'strict preserves toolingPolicy from fast'
     Expect-True ($strictDefaults.execution -eq 'run-direct') 'strict preserves execution from fast'
     $punchHashAfter = (Get-FileHash -LiteralPath (Join-Path $mergeRoot '.nightshift/punch-list.md') -Algorithm SHA256).Hash
     Expect-True ($punchHashBefore -eq $punchHashAfter) 'strict (gates: null) leaves punch-list.md untouched'
 
-    $rulesHashBefore = (Get-FileHash -LiteralPath (Join-Path $mergeRoot '.nightshift/rules.json') -Algorithm SHA256).Hash
-    $defaultsHashBefore = (Get-FileHash -LiteralPath $defaultsPath -Algorithm SHA256).Hash
+    # Replace keeps every owner block: the shift defaults and custom catalog folders survive it.
+    $withCatalogs = Get-Content -LiteralPath $rulesFile -Raw | ConvertFrom-Json
+    $withCatalogs.catalogs.evidence.paths = @('kinds')
+    [IO.File]::WriteAllText($rulesFile, ($withCatalogs | ConvertTo-Json -Depth 20), (New-Object Text.UTF8Encoding $false))
+    $shiftBefore = ($withCatalogs.shift | ConvertTo-Json -Compress -Depth 5)
+    $rulesHashBefore = (Get-FileHash -LiteralPath $rulesFile -Algorithm SHA256).Hash
     $noPushRun = Invoke-ApplyProfile $mergeRoot -ProfileName 'no-push' -ModeName 'replace' -Apply
     Expect-True ($noPushRun.ExitCode -eq 0) "apply no-push exits 0 (got $($noPushRun.ExitCode) $($noPushRun.Stderr))"
     $rulesAfter = Get-Content -LiteralPath (Join-Path $mergeRoot '.nightshift/rules.json') -Raw | ConvertFrom-Json
     Expect-True ($rulesAfter.forbiddenCommands -eq 'git .*push') 'v1 no-push (replace) sets forbiddenCommands'
     $rulesHashAfter = (Get-FileHash -LiteralPath (Join-Path $mergeRoot '.nightshift/rules.json') -Algorithm SHA256).Hash
     Expect-True ($rulesHashBefore -ne $rulesHashAfter) 'v1 apply changes rules.json'
-    $defaultsHashAfter = (Get-FileHash -LiteralPath $defaultsPath -Algorithm SHA256).Hash
-    Expect-True ($defaultsHashBefore -eq $defaultsHashAfter) 'v1 apply leaves shift-defaults.json untouched'
+    Expect-True (($rulesAfter.shift | ConvertTo-Json -Compress -Depth 5) -ceq $shiftBefore) 'v1 replace keeps the shift block'
+    Expect-True (@($rulesAfter.catalogs.evidence.paths) -join ',' -ceq 'kinds') 'v1 replace keeps custom catalog folders'
 }
 finally {
     Remove-Item -LiteralPath $mergeRoot -Recurse -Force -ErrorAction SilentlyContinue

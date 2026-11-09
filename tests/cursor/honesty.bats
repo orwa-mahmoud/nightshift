@@ -9,22 +9,6 @@ MARKET="$ROOT/.claude-plugin/marketplace.json"
 CODEX_MARKET="$ROOT/.agents/plugins/marketplace.json"
 CURSOR_MARKET="$ROOT/.cursor-plugin/marketplace.json"
 
-@test "docs name the Cursor IDE and CLI store split" {
-  grep -qF '~/.cursor/projects/' "$HOW"
-  grep -qF 'agent-transcripts' "$HOW"
-  grep -qF '~/.cursor/chats' "$HOW"
-  grep -qF 'agent --resume' "$HOW"
-  grep -qF 'Never pass the IDE id to `agent --resume`' "$KNOBS"
-}
-
-@test "docs forbid resuming an IDE conversation_id" {
-  grep -qF 'never pass the IDE' "$HOW"
-  grep -qF 'conversation_id' "$HOW"
-  if grep -qE 'agent --resume .*conversation_id' "$HOW" "$KNOBS" "$START"; then
-    return 1
-  fi
-}
-
 @test "docs say the Cursor CLI runs installed plugin hooks" {
   grep -qF 'including' "$HOW"
   grep -qF 'print mode (`agent -p`)' "$HOW"

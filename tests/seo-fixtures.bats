@@ -29,13 +29,6 @@ CONTRACT="$ROOT/plugins/nightshift/skills/nightshift/references/compose/shifts/s
   jq -e '.segmentation.dimensions | index("query")' "$FIX/connected/connected-export-sample.json" >/dev/null
 }
 
-@test "connected raw CSV export samples exist" {
-  [ -f "$FIX/connected/search-console-export.csv" ]
-  [ -f "$FIX/connected/analytics-export.csv" ]
-  grep -q 'seo audit checklist' "$FIX/connected/search-console-export.csv"
-  grep -q 'Sessions' "$FIX/connected/analytics-export.csv"
-}
-
 @test "seo evidence schemas are draft-07 with stable ids" {
   for s in local-inventory live-crawl connected-export; do
     jq -e '.["$schema"] == "http://json-schema.org/draft-07/schema#"' "$SCHEMAS/$s.json" >/dev/null
@@ -51,29 +44,4 @@ CONTRACT="$ROOT/plugins/nightshift/skills/nightshift/references/compose/shifts/s
   grep -qi 'not measured' "$CONTRACT" || grep -qi 'not-measured' "$CONTRACT" || grep -qi 'notMeasured' "$CONTRACT"
   grep -qi 'receipt' "$CONTRACT"
   grep -qi 'evidence mode' "$CONTRACT"
-}
-
-@test "seo audit contract writes a receipt without the removed helper" {
-  if grep -qF 'runtime/seo-evidence.sh' "$CONTRACT"; then
-    return 1
-  fi
-  grep -qF 'receipts/cycle-specialist-evidence.md' "$CONTRACT"
-  grep -qF 'local-inventory' "$CONTRACT"
-  grep -qF 'live-crawl' "$CONTRACT"
-  grep -qF 'connected-export' "$CONTRACT"
-}
-
-@test "seo audit discovery documents mode selection" {
-  grep -qi 'Discovery' "$CONTRACT"
-  grep -qi 'owner-approved' "$CONTRACT"
-  grep -qi 'mode' "$CONTRACT"
-}
-
-@test "fixtures README documents all three scenarios" {
-  [ -f "$FIX/README.md" ]
-  grep -qi 'Local' "$FIX/README.md"
-  grep -qi 'Live' "$FIX/README.md"
-  grep -qi 'Connected' "$FIX/README.md"
-  grep -qi 'malicious' "$FIX/README.md"
-  grep -qi 'clicks' "$FIX/README.md"
 }

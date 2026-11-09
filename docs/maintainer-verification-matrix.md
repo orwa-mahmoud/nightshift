@@ -35,7 +35,7 @@ Schemas: `plugins/nightshift/skills/nightshift/references/schemas/v1/`. Fixtures
 
 | Surface | Tests |
 | --- | --- |
-| Catalog contracts, one file per entry | `tests/catalog.bats`, `tests/shifts/` |
+| Catalog contracts, one file per entry | `tests/catalog-index.bats`, `tests/catalog.bats` |
 | Every path a skill names resolves | `tests/skill-refs.bats`, `tests/skill-paths.bats` |
 | Every path the docs name resolves | `tests/doc-refs.bats` |
 | Selection and launch modes | `tests/shift-modes.bats`, `tests/walkthroughs.bats`, `tests/shift-planner.bats` |
@@ -72,7 +72,7 @@ Shared hook cores: `plugins/nightshift/hooks/shared/gate-core.sh`,
 evals/run.sh
 bats tests/evals.bats
 claude plugin validate . --strict
-git ls-files '*.sh' | xargs shellcheck -x
+tests/lint-shell.sh
 ```
 
 ## Non-goals

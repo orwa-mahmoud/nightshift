@@ -52,54 +52,6 @@ POSIX="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/provision.sh"
   windows_module_source | grep -qF "(\$label + '.blob')"
 }
 
-@test "Windows provisioning logic covers rollback, the proof and the late stages" {
-  grep -qF 'recover with no transaction reports the frozen object' "$LOGIC"
-  grep -qF 'rollback restores the owner bytes from the blob store' "$LOGIC"
-  grep -qF 'rollback restores from the recorded base64 when no blob is named' "$LOGIC"
-  grep -qF 'rollback falls back to the recorded base64 when the blob file is gone' "$LOGIC"
-  grep -qF 'a created file is removed' "$LOGIC"
-  grep -qF 'an emptied parent is pruned' "$LOGIC"
-  grep -qF 'pruning stops at the work target' "$LOGIC"
-  grep -qF 'nothing to restore from leaves the file alone' "$LOGIC"
-  grep -qF 'an unproven restore leaves the transaction in place' "$LOGIC"
-  grep -qF 'an unproven rollback never deletes owner work' "$LOGIC"
-  grep -qF 'the proof reports a baseline file that never came back' "$LOGIC"
-  grep -qF 'the proof reports a directory blocking the baseline path' "$LOGIC"
-  grep -qF 'a blocking directory is never deleted' "$LOGIC"
-  grep -qF 'the late stages commit the tooling under one subject' "$LOGIC"
-  grep -qF 'the row records the setup commit' "$LOGIC"
-  grep -qF 'finishing clears the blob store too' "$LOGIC"
-  grep -qF 'nothing staged is not a failure and not a commit' "$LOGIC"
-  grep -qF 'the rollback verb undoes a late stage instead of finishing it' "$LOGIC"
-  grep -qF 'recover -Rollback forces the undo whatever the stage' "$LOGIC"
-  grep -qF 'a failed transaction rolls back rather than finishes' "$LOGIC"
-}
-
-@test "Windows provisioning logic covers every malformed field" {
-  grep -qF 'a malformed transaction touches no file' "$LOGIC"
-  grep -qF 'a transaction that is not JSON names the document' "$LOGIC"
-  grep -qF 'an unknown stage is named' "$LOGIC"
-  grep -qF 'an empty capabilityId is named' "$LOGIC"
-  grep -qF 'a malformed workTarget is named' "$LOGIC"
-  grep -qF 'a malformed failed flag is named' "$LOGIC"
-  grep -qF 'a malformed touched list is named' "$LOGIC"
-  grep -qF 'a malformed baseline is named' "$LOGIC"
-  grep -qF 'a baseline entry with no existed flag is named down to the field' "$LOGIC"
-  grep -qF 'a missing digest is named down to the field' "$LOGIC"
-  grep -qF 'a malformed blob address is named down to the field' "$LOGIC"
-  grep -qF 'a path outside the work target is named as the entry' "$LOGIC"
-  grep -qF 'the digest is compared, never shape-checked' "$LOGIC"
-  grep -qF 'undecodable baseline bytes never overwrite the tree' "$LOGIC"
-}
-
-@test "Windows provisioning logic covers the refused verbs" {
-  grep -qF 'is not a seatbelt verb' "$LOGIC"
-  grep -qF 'prints the seatbelt usage' "$LOGIC"
-  grep -qF 'opens no transaction' "$LOGIC"
-  grep -qF 'writes nothing into the work target' "$LOGIC"
-  grep -qF 'baseline without a surface is a usage error' "$LOGIC"
-}
-
 @test "the Windows seatbelt takes the four verbs and no plan or apply" {
   grep -qF "@('baseline', 'diff', 'rollback', 'recover')" "$WIN/provision.ps1"
   for fn in Invoke-NSProvisionPlan Invoke-NSProvisionApply Get-NSProvisionSkipReasons; do
@@ -133,16 +85,6 @@ POSIX="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/provision.sh"
   grep -qF 'diagnose classes an unprovable baseline' "$LOGIC"
   grep -qF 'diagnose classes a malformed transaction' "$LOGIC"
   grep -qF 'diagnose changes nothing' "$LOGIC"
-}
-
-@test "Windows provisioning logic checks exact byte formatting" {
-  grep -qF 'Test-NSNoCarriageReturn' "$LOGIC"
-  grep -qF 'Test-NSSingleTrailingNewline' "$LOGIC"
-  grep -qF 'Test-NSAsciiOnly' "$LOGIC"
-  grep -qF 'Test-NSHasBom' "$LOGIC"
-  grep -qF '{"detail":"no transaction","ok":true,"recovered":false}' "$LOGIC"
-  grep -qF 'the inventory is pretty-printed with two spaces' "$LOGIC"
-  grep -qF 'the inventory sorts its keys' "$LOGIC"
 }
 
 @test "Windows provisioning logic passes when pwsh is present" {

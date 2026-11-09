@@ -4,9 +4,9 @@
 # With receipts.evidence.fileMap on, the gate's tick writes two maps and the model writes neither:
 # the item's, from the commits made since the previous tick, as a generated block at the end of its
 # receipt; and the shift's, from the commit the shift started on to HEAD, as receipts/shift-map.md.
-# In artifact mode there is no git, so the item map lists the paths the receipt's Outputs section
-# declares, and the shift map is the union over the ticked items. A map that cannot be built says
-# `unavailable — <reason>`. PowerShell draws the same bytes (Nightshift.07.ps1).
+# In artifact mode there is no git, so the item map lists the paths the receipt declares under
+# any heading, and the shift map is the union over the ticked items. A map that cannot be built
+# says `unavailable — <reason>`. PowerShell draws the same bytes (Nightshift.07.ps1).
 #
 # run/file-map records, one key=value per line, the shift it belongs to (shift), the commit that
 # shift started on (base) and HEAD at the last tick (last).
@@ -88,14 +88,20 @@ ns_filemap_git_rows() {
   rm -f "$names" "$counts" "$names.raw" "$counts.raw"
 }
 
-# ns_filemap_outputs <receipt> — the paths a receipt's Outputs section declares: relative link
-# targets and backticked paths, one per line, without a leading `./`, sorted and unique.
+# ns_filemap_outputs <receipt> [<work-target> [missing]] — the paths a receipt declares, under any
+# heading: relative link targets and backticked paths, one per line, without a leading `./`, sorted
+# and unique. Generated blocks and HTML comments are skipped. With a work target, only paths that
+# name a file in it are kept; with missing, only the declared paths that name nothing, neither in
+# the work target nor beside the receipt where its evidence lives.
 ns_filemap_outputs() {
+  local path
   { [ -f "$1" ] && [ ! -L "$1" ]; } || return 0
   awk '
     { sub(/\r$/, "") }
-    /^## / { inside = ($0 == "## Outputs"); next }
-    !inside { next }
+    skip { if ($0 ~ /^<!-- \/(nightshift:[a-z-]+|usage) -->$/) skip = 0; next }
+    /^<!-- (nightshift:[a-z-]+|usage) -->$/ { skip = 1; next }
+    comment { if (index($0, "-->")) comment = 0; next }
+    /^<!--/ { if (!index($0, "-->")) comment = 1; next }
     {
       line = $0
       while (match(line, /\]\([^)]+\)/)) {
@@ -114,7 +120,16 @@ ns_filemap_outputs() {
         print t
       }
     }
-  ' "$1" | sed 's#^\./##' | awk 'NF' | LC_ALL=C sort -u
+  ' "$1" | sed 's#^\./##' | awk 'NF' | LC_ALL=C sort -u | while IFS= read -r path; do
+    case "$path" in .. | ../* | */.. | */../*) continue ;; esac
+    if [ -z "${2-}" ]; then
+      printf '%s\n' "$path"
+    elif [ -f "$2/$path" ] && [ ! -L "$2/$path" ]; then
+      [ "${3-}" = missing ] || printf '%s\n' "$path"
+    elif [ "${3-}" = missing ] && [ ! -e "${1%/*}/$path" ]; then
+      printf '%s\n' "$path"
+    fi
+  done
 }
 
 # ns_filemap_render <rows-file> <git|artifact> — the map's summary line and tree. Each row is
@@ -213,7 +228,7 @@ ns_filemap_summary() {
 # ns_filemap_tick <nightshift-dir> <project> <item-label> — draw the item's map into its receipt and
 # the shift's into receipts/shift-map.md. Called by the gate when it records a tick.
 ns_filemap_tick() {
-  local ns="$1" project="$2" label="$3" receipt dir target base last head rows body page names f
+  local ns="$1" project="$2" label="$3" receipt dir target base last head rows body page names f missing
   ns_filemap_enabled "$project" || return 0
   receipt="$(ns_receipt_path "$project" "$label")"
   [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 0
@@ -222,14 +237,22 @@ ns_filemap_tick() {
   body="$(mktemp "${TMPDIR:-/tmp}/ns-filemap-body.XXXXXX")" || { rm -f "$rows"; return 0; }
   page="$(ns_layout_path "$ns" shift-map)"
   if [ "$(ns_work_mode "$project" 2>/dev/null)" = artifact ]; then
-    ns_filemap_outputs "$receipt" >"$rows"
-    { printf '## File map\n\n'; ns_filemap_render "$rows" artifact; } >"$body"
+    target="$(ns_work_target "$project" 2>/dev/null)" || target=""
+    ns_filemap_outputs "$receipt" "$target" >"$rows"
+    missing=""
+    [ -z "$target" ] || missing="$(ns_filemap_outputs "$receipt" "$target" missing | awk 'NF { printf "%s`%s`", (n++ ? ", " : ""), $0 }')"
+    {
+      printf '## File map\n\n'
+      ns_filemap_render "$rows" artifact
+      # A declared output that names nothing is shown, so a mistyped path is seen at review.
+      [ -z "$missing" ] || printf '\nDeclared but not found in the work target: %s\n' "$missing"
+    } >"$body"
     ns_receipt_write_block "$receipt" file-map "$body" || :
     names="$(ns_receipts_ticked_names "$project")"
     : >"$rows"
     while IFS= read -r f; do
       [ -n "$f" ] || continue
-      ns_filemap_outputs "$dir/$f" >>"$rows"
+      ns_filemap_outputs "$dir/$f" "$target" >>"$rows"
     done <<EOF
 $names
 EOF

@@ -30,8 +30,7 @@ These are independent choices. Picking a category does not by itself authorize i
 
 One sentence is enough. *“Enhance my project for 5 hours”* is a complete Automatic request: it runs
 directly under the shipped `shift.execution`, and a new project is set up first. With no hours,
-Nightshift asks one question, hours or *auto*; *auto* takes the deadline from your past receipts,
-then from the selected entries' typical hours.
+Nightshift asks one question: how many hours.
 
 Review-first discovery is read-only. Nothing is armed until you approve. Run directly authorizes
 implementation within the stated scope and time; it does not authorize publishing, destructive

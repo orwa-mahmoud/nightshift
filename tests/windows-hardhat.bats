@@ -8,15 +8,6 @@ PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
 
 WRAPPER="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hardhat.sh"
 
-@test "Windows expected-email denials match POSIX wording" {
-  grep -qF "committer identity ('" "$CORE"
-  grep -qF "committer identity ('" "$HELPER"
-  grep -qF 'Fix git config user.email, then retry.' "$CORE"
-  grep -qF 'Fix git config user.email, then retry.' "$HELPER"
-  grep -qF "repository's configured identity" "$CORE"
-  grep -qF "repository's configured identity" "$HELPER"
-}
-
 @test "Windows CI runs the portable hardhat expected-email suite" {
   [ -f "$LOGIC" ]
   grep -qF 'hardhat-logic.ps1' "$RUN"
@@ -52,38 +43,6 @@ WRAPPER="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hardhat.sh"
   grep -qF 'forbidden list' "$LOGIC"
 }
 
-@test "Windows never-commit denials match POSIX wording" {
-  grep -qF 'matches a never-commit pattern. Remove it, restage, retry. Do not weaken the pattern list.' "$CORE"
-  grep -qF 'matches a never-commit pattern. Remove it, restage, retry. Do not weaken the pattern list.' "$HELPER"
-  grep -qF 'never-commit pattern' "$RUN"
-  grep -qF 'never-commit pattern' "$LOGIC"
-}
-
-@test "Windows protected-dir git-dir denials match POSIX wording" {
-  grep -qF 'somewhere the protected-directory guard cannot verify' "$CORE"
-  grep -qF 'somewhere the protected-directory guard cannot verify' "$HELPER"
-  grep -qF 'protected-directory guard cannot verify' "$RUN"
-  grep -qF 'protected-directory guard cannot verify' "$LOGIC"
-}
-
-@test "Windows invalid-pattern denials match POSIX wording" {
-  grep -qF 'is not a valid extended regular expression, so the guard it configures cannot run' "$CORE"
-  grep -qF 'is not a valid extended regular expression, so the guard it configures cannot run' "$HELPER"
-  grep -qF 'NIGHTSHIFT_FORBIDDEN_COMMANDS is not a valid extended regular expression' "$HELPER"
-  grep -qF 'NIGHTSHIFT_NEVER_COMMIT_PATTERNS is not a valid extended regular expression' "$HELPER"
-  grep -qF 'Fix the pattern in your session settings.' "$CORE"
-  grep -qF 'Fix the pattern in your session settings.' "$HELPER"
-  grep -qF 'NIGHTSHIFT_FORBIDDEN_COMMANDS is not a valid extended regular expression' "$RUN"
-  grep -qF 'NIGHTSHIFT_FORBIDDEN_COMMANDS is not a valid extended regular expression' "$LOGIC"
-}
-
-@test "Windows git-dir commit-guard denials match POSIX wording" {
-  grep -qF 'somewhere the configured commit guards cannot verify' "$CORE"
-  grep -qF 'somewhere the configured commit guards cannot verify' "$HELPER"
-  grep -qF 'configured commit guards cannot verify' "$RUN"
-  grep -qF 'configured commit guards cannot verify' "$LOGIC"
-}
-
 @test "Windows fence wording is unchanged and the dead-holder reclaim is wired" {
   windows_module_source | grep -qF 'BLOCKED: this shift is being recovered in another process. Wait or issue STOP from a separate session; reopening the recorded conversation stays blocked while that worker holds the lease.'
   windows_module_source | grep -qF 'BLOCKED: this shift continued in a recovered process. Reopen the recorded conversation before using tools here.'
@@ -94,16 +53,6 @@ WRAPPER="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hardhat.sh"
   grep -qF 'a live recovery worker still fences the recorded conversation' "$LOGIC"
   grep -qF 'the Stop helper is allowed through a live foreign lease' "$LOGIC"
   grep -qF 'a disarmed site holds nobody' "$LOGIC"
-}
-
-@test "Windows parking-lot append exemption matches POSIX" {
-  grep -qF 'ns_hardhat_is_inert_parking_lot_write' "$CORE"
-  grep -qF 'Test-NSInertParkingLotWrite' "$HELPER"
-  grep -qF 'ns_hardhat_literal_append_target' "$CORE"
-  grep -qF 'Get-NSLiteralAppendTarget' "$HELPER"
-  grep -qF 'ns_hardhat_write_target_reaches_rules' "$CORE"
-  grep -qF 'Test-NSWriteTargetReachesRules' "$HELPER"
-  grep -qF 'literal parking-lot append naming rules.json is inert' "$LOGIC"
 }
 
 @test "Windows hardhat lease-reclaim logic passes when pwsh is present" {

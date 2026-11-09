@@ -79,18 +79,6 @@ ENTRY
   printf '%s\n' "$output" | grep -qF 'no catalog at'
 }
 
-@test "Hunt discovers before it reads, and still reads what it composes" {
-  grep -qE 'ns"? catalog-index' "$HUNT"
-  grep -qF 'Then read in full only the entries you are actually going to use' "$HUNT"
-  # The old instruction to read all thirty is gone.
-  if grep -qF 'read every file in it' "$HUNT"; then
-    echo "Hunt still reads every contract up front"
-    return 1
-  fi
-  # Falling back to reading the directory is still there for a host without the helper.
-  grep -qF 'list the directory and read the entries yourself' "$HUNT"
-}
-
 @test "both hosts list the catalog identically" {
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh is not installed'
@@ -134,7 +122,7 @@ owner_project() { # <name> — a v2 workspace whose user folder is empty
   done
 }
 
-@test "every shipped entry of every catalog passes its template, on both runtimes" {
+@test "every shipped entry of every catalog passes its operational checks, on both runtimes" {
   for name in $(catalog_names); do
     while IFS=$'\t' read -r key _; do
       file="$(bash "$INDEX" --catalog "$name" --path "$key")"
@@ -151,18 +139,14 @@ owner_project() { # <name> — a v2 workspace whose user folder is empty
   done
 }
 
-@test "the template is the schema: an owner template's headings are what a draft needs" {
+@test "an owner template is a starting point: a draft under other headings passes" {
   p="$(owner_project owner-template)"
   printf '# Mine — my own template\n\n## Purpose\n\n## Steps\n\n- one\n' >"$p/my-template.md"
   jq '.catalogs."edge-cases".template = "my-template.md"' "$p/.nightshift/rules.json" >"$p/r.json"
   mv "$p/r.json" "$p/.nightshift/rules.json"
   run bash "$INDEX" --catalog edge-cases --project "$p" --template
   [ "$output" = "$p/my-template.md" ]
-  printf '# Draft — fits\n\n## Purpose\n\nWhy.\n' >"$p/draft.md"
-  run bash "$INDEX" --catalog edge-cases --project "$p" --check-draft "$p/draft.md"
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qF 'missing section Steps'
-  printf '\n## Steps\n\n- do it\n' >>"$p/draft.md"
+  printf 'Three lines about retries.\nWHEN the network drops THEN the job retries once.\nThat is all.\n' >"$p/draft.md"
   run bash "$INDEX" --catalog edge-cases --project "$p" --check-draft "$p/draft.md"
   [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
 }
@@ -190,7 +174,7 @@ ENTRY
   run env XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/xdg-owner-shift" bash "$INDEX" --catalog shifts --project "$p"
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF "$(printf 'nightly-docs\tfinite\tNightly docs\tkeep the docs in step with the code')"
-  printf '%s\n' "$output" | grep -qF 'the Item section has no pasteable box'
+  printf '%s\n' "$output" | grep -qF 'no pasteable item'
   if printf '%s\n' "$output" | grep -q "^broken$(printf '\t')"; then
     return 1
   fi

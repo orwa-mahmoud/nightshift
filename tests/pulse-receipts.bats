@@ -54,7 +54,7 @@ armed() {
   [[ "$(line '37. Plain.')" == *'Verification · Outputs · Parked decisions and snags.' ]] || false
   jq '.receipts.templatePath = "notes/item.md"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
-  [[ "$(line '36. Restyle the page.')" == *"follow the owner's template at notes/item.md, with an Evidence section; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively"* ]] || false
+  [[ "$(line '36. Restyle the page.')" == *"follow the owner's template at notes/item.md, linking the evidence wherever that template puts it; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively"* ]] || false
   [[ "$(line '37. Plain.')" == *"follow the owner's template at notes/item.md" ]] || false
   # Evidence the shift asks of every item reaches an item with no line of its own.
   jq '.receipts.templatePath = "" | .receipts.evidence.default = "the command run and its output"' \

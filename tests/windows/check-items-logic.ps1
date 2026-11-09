@@ -27,20 +27,22 @@ function Invoke-Check {
 $expected = @{
     'well-formed' = @('**1. Load one TOML file.**: ok', '**2. Drop the environment overrides.**: ok', 'checked 2 items: 0 with findings')
     'defects' = @('**1. No verify line.**: no Verify: line',
-        '**2. A verify line that checks nothing.**: Verify: names no command and no WHEN/THEN scenario',
+        '**2. A plain-language verify line.**: ok',
         '**3. No commit line.**: no Commit: line',
         '**4. A budget that does not parse.**: Budget: does not parse (about an hour)',
         '**5. A nested checkbox.**: line 23: a nested checkbox; only the item line may be a box',
         'line 26: a checkbox outside an item line counts as an open item',
         'line 29: a checkbox outside an item line counts as an open item',
-        'checked 5 items: 5 with findings, 2 stray checkboxes')
+        'checked 5 items: 4 with findings, 2 stray checkboxes')
     'mixed' = @('**1. Ship the site.**: ok', '**2. Write the about page.**: no Commit: line', 'checked 2 items: 1 with findings')
     'evidence' = @('**1. No evidence line.**: ok', '**2. Evidence on one line.**: ok', '**3. Evidence as a list.**: ok',
         '**4. Evidence that names nothing.**: Evidence: names nothing',
         '**5. Evidence that names nothing, last.**: Evidence: names nothing',
         'checked 5 items: 2 with findings')
 }
-foreach ($name in @('well-formed', 'defects', 'mixed', 'evidence')) {
+$expected['vague'] = @('**1. Vague.**: Verify: names no command, path, number or scenario; is it checkable?',
+    '**2. Plain but concrete.**: ok', '**3. Listed under.**: ok', 'checked 3 items: 1 with findings')
+foreach ($name in @('well-formed', 'defects', 'mixed', 'evidence', 'vague')) {
     $run = Invoke-Check (Join-Path $fixtures ($name + '.md'))
     Expect-True ($run.Code -eq 0 -and $run.Text -ceq ($expected[$name] -join "`n")) "${name}: $($run.Text)"
 }

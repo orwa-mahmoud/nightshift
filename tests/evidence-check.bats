@@ -63,13 +63,24 @@ EOF
   run ns_evidence_problems "$p" "$punch" "Shot."
   [ "$output" = "empty notes.txt" ]
 
+  # Review is the agent's work, never a gate: the file is present, so the tick stands whatever the
+  # receipt calls its sections.
   write_item "$p" 'the screen `shot.png` check: block review: on'
-  run ns_evidence_problems "$p" "$punch" "Shot."
-  [ "$output" = "reviewed" ]
   mkdir -p "$(dirname "$receipt")"
-  printf '## Reviewed\n\nThe shot shows the change.\n' >"$receipt"
+  printf '## What I saw\n\nThe shot shows the change.\n' >"$receipt"
   run ns_evidence_problems "$p" "$punch" "Shot."
   [ -z "$output" ]
+
+  # Any valid JSON is a JSON file, false and null included.
+  for value in false null true '{}'; do
+    printf '%s\n' "$value" >"$dir/result.json"
+    write_item "$p" 'the result `result.json` check: block'
+    run ns_evidence_problems "$p" "$punch" "Shot."
+    [ -z "$output" ] || { echo "$value: $output"; return 1; }
+  done
+  printf '{not json' >"$dir/result.json"
+  run ns_evidence_problems "$p" "$punch" "Shot."
+  [ "$output" = "type result.json" ]
 
   write_item "$p" 'the screen kind: ui check: report'
   rm -f "$dir/shot.png"

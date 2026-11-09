@@ -102,12 +102,11 @@ with open(p,"w") as f: json.dump(d,f)
   ' "$p/.nightshift/rules.json" >/dev/null
 }
 
-@test "fill keeps an owner's false and null and still adds a missing key" {
+@test "fill keeps an owner's false, adds a missing key, and refuses to write a file the runtime cannot load" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"
   jq '
     .watchAfterUsageLimit = false
-    | .notifyCommand = null
     | del(.longUnitWarnMinutes)
   ' "$p/.nightshift/rules.json" >"$p/rules.tmp"
   mv "$p/rules.tmp" "$p/.nightshift/rules.json"
@@ -134,9 +133,18 @@ JSON
   [ "$status" -eq 0 ]
   jq -e '
     .watchAfterUsageLimit == false
-    and .notifyCommand == null
     and .longUnitWarnMinutes == 9
   ' "$p/.nightshift/rules.json" >/dev/null
+  # A top-level null is a file the strict reader refuses; fill keeps the owner's value, so the
+  # result would not load either, and the owner file stays exactly as it was.
+  jq '.notifyCommand = null' "$p/.nightshift/rules.json" >"$p/rules.tmp"
+  mv "$p/rules.tmp" "$p/.nightshift/rules.json"
+  before="$(cksum "$p/.nightshift/rules.json")"
+  run bash "$plugincopy/plugins/nightshift/runtime/apply-profile.sh" --project "$p" \
+    --profile presence --mode fill --apply
+  [ "$status" -eq 2 ]
+  printf '%s' "$output" | grep -qF 'would not load (unknown type)'
+  [ "$(cksum "$p/.nightshift/rules.json")" = "$before" ]
 }
 
 @test "fill refuses an old file with no explicit Codex question policy" {
@@ -165,17 +173,38 @@ JSON
   fi
 }
 
-@test "v2 preview writes nothing and previews shift-defaults and the Gates block" {
+@test "v2 preview writes nothing, and the rules.json it previews is the file apply writes" {
   p="$(new_project)"
   rm -f "$p/.nightshift/.shift-armed"
   cp "$PUNCHLIST_TEMPLATE" "$p/.nightshift/punch-list.md"
+  before="$(cksum "$p/.nightshift/rules.json")"
   run bash "$APPLY" --project "$p" --profile fast --mode fill
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | grep -q 'Proposed shift-defaults.json'
-  printf '%s' "$output" | grep -q '"verificationProfile": "fast"'
   printf '%s' "$output" | grep -q 'Proposed ## Gates block'
+  [ "$(cksum "$p/.nightshift/rules.json")" = "$before" ]
   [ ! -f "$p/.nightshift/shift-defaults.json" ]
   gates_block "$p/.nightshift/punch-list.md" | grep -qF '_None configured._'
+  previewed="$(printf '%s\n' "$output" | awk '/^Proposed rules.json$/ { on = 1; next } on && /^$/ { exit } on' |
+    jq -S 'del(.shift.updatedAt)')"
+  printf '%s' "$previewed" | jq -e '.shift.verificationProfile == "fast"' >/dev/null
+  bash "$APPLY" --project "$p" --profile fast --mode fill --apply >/dev/null
+  [ "$(jq -S 'del(.shift.updatedAt)' "$p/.nightshift/rules.json")" = "$previewed" ]
+}
+
+@test "replace keeps every owner block, custom catalog folders and retention included" {
+  p="$(new_project)"
+  rm -f "$p/.nightshift/.shift-armed"
+  jq '.catalogs.evidence.paths = ["kinds"] | .retention.archiveDays = 30 | .planRoom.blockedCommands = "make deploy"' \
+    "$p/.nightshift/rules.json" >"$p/rules.tmp"
+  mv "$p/rules.tmp" "$p/.nightshift/rules.json"
+  run bash "$APPLY" --project "$p" --profile no-push --mode replace --apply
+  [ "$status" -eq 0 ]
+  jq -e '
+    .forbiddenCommands == "git .*push"
+    and .catalogs.evidence.paths == ["kinds"]
+    and .retention.archiveDays == 30
+    and .planRoom.blockedCommands == "make deploy"
+  ' "$p/.nightshift/rules.json" >/dev/null
 }
 
 # A profile writes the remembered choices where they are read from, so applying one cannot leave

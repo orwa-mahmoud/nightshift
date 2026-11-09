@@ -440,11 +440,13 @@ documented_pages() {
 
 # What every session pays for.
 #
-# The thirteen descriptions are loaded into every session in every project where the plugin is
-# installed, shift or not — the only Nightshift text a conversation about something else ever pays
-# for. A description's one job is to let the host pick the right skill.
+# Every description is loaded into every session where the plugin is installed. The Agent Skills
+# specification caps one description at 1,024 characters. Claude Code fits every installed skill's
+# description into one listing budgeted at 1% of the context window, Codex into one budgeted at 2%
+# (8,000 characters when the window is unknown), and both shorten or drop descriptions when it
+# overflows. A description says clearly what the skill does.
 
-@test "every skill description is one sentence, and the set stays small" {
+@test "every skill has one description, and the set fits a shared listing budget" {
   total=0
   for f in "$SKILLS"/*/SKILL.md; do
     name="$(basename "$(dirname "$f")")"
@@ -455,23 +457,12 @@ documented_pages() {
 
     text="$(grep -m1 '^description:' "$f" | sed 's/^description: //')"
     [ -n "$text" ] || { echo "$name has an empty description"; return 1; }
-
-    len="${#text}"
-    [ "$len" -lt 160 ] || { echo "$name: $len characters"; return 1; }
-    case "$text" in
-      *.) ;;
-      *) echo "$name does not end its sentence"; return 1 ;;
-    esac
-    # One sentence: no full stop before the last character.
-    case "${text%.}" in
-      *.\ *) echo "$name is more than one sentence"; return 1 ;;
-    esac
-    total=$((total + len))
+    [ "${#text}" -le 1024 ] || { echo "$name: ${#text} characters, over the specification's 1,024"; return 1; }
+    total=$((total + ${#text}))
   done
 
-  # Today's set is about 1,300 characters. A ceiling well above that still catches a slide back
-  # towards the 2,300 this replaced.
-  [ "$total" -lt 1600 ] || { echo "descriptions total $total characters"; return 1; }
+  # 16 skills total about 1,900 characters, about 500 tokens.
+  [ "$total" -lt 3200 ] || { echo "descriptions total $total characters"; return 1; }
 }
 
 @test "the skills.sh installer is the only root skill and ships in no plugin" {
@@ -506,27 +497,6 @@ documented_pages() {
       on { v = $0; sub(/^[ ]*[A-Za-z_-]+:[ ]*/, "", v)
            if (v !~ /^["'"'"']/ && (index(v, ": ") || index(v, " #"))) print }' "$f")"
     [ -z "$hits" ] || { echo "$(basename "$(dirname "$f")"): $hits"; return 1; }
-  done
-}
-
-@test "the main skill keeps the words a host matches intent against" {
-  text="$(grep -m1 '^description:' "$SKILLS/nightshift/SKILL.md")"
-  for word in 'punch list' 'autonomously' 'overnight' 'todo list' 'polish' 'receipts'; do
-    printf '%s\n' "$text" | grep -qF "$word" \
-      || { echo "the main skill lost its trigger word: $word"; return 1; }
-  done
-}
-
-@test "each skill's description says what that skill does" {
-  # A description that could belong to another skill cannot help a host choose between them.
-  for pair in "start:punch list" "hunt:catalog" "quality:quality debt" "setup:Scaffold" \
-    "status:Read-only" "doctor:diagnosis" "archive:archive" "schedule:fixed time" \
-    "import-issues:GitHub issues" "stop:stop-work" "reset:markers" "purge:delete" \
-    "plan:plan room" "plan-exit:Leave the plan room" "customize:one screen"; do
-    name="${pair%%:*}"
-    phrase="${pair#*:}"
-    grep -m1 '^description:' "$SKILLS/$name/SKILL.md" | grep -qF "$phrase" \
-      || { echo "$name does not say '$phrase'"; return 1; }
   done
 }
 
@@ -613,15 +583,6 @@ documented_pages() {
   grep -qF 'skills/nightshift/references/evidence/checkpoint.md' "$SKILLS/nightshift/SKILL.md"
   grep -qF 'skills/nightshift/references/evidence/baseline.md' \
     "$SKILLS/nightshift/references/receipts/evidence-ledger.md"
-}
-
-@test "archive pointers are taught as navigation, not entries" {
-  grep -qF 'Filed:' "$SKILLS/nightshift/SKILL.md"
-  grep -qF 'follow that pointer' "$SKILLS/nightshift/SKILL.md"
-  grep -qF 'Historical decisions are evidence' "$SKILLS/nightshift/SKILL.md"
-  grep -qF 'Filed:' "$SKILLS/archive/SKILL.md"
-  grep -qF 'Filed:' "$SKILLS/nightshift/references/templates/snag-log.md"
-  grep -qF 'Filed:' "$SKILLS/nightshift/references/templates/parking-lot.md"
 }
 
 # A file a skill points at has to reach the user, which means it has to be tracked. A repository

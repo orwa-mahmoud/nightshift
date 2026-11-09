@@ -57,10 +57,12 @@ ARCHIVED=0
 READINGS="$(
   ns_layout_set receipts "$NS" receipts
   ns_receipts_ticked_names "$WORKSPACE" | while IFS= read -r name; do
+    # shellcheck disable=SC2154 # assigned by name by the layout helper
     if [ -z "$name" ] || [ ! -f "$receipts/$name" ] || [ -L "$receipts/$name" ]; then continue; fi
     printf 'live %s\n' "$receipts/$name"
   done
   ns_layout_set archive "$NS" archive
+  # shellcheck disable=SC2154 # assigned by name by the layout helper
   if [ -d "$archive" ] && [ ! -L "$archive" ]; then
     find "$archive" -type f -path '*/receipts/*.md' ! -name 'README.md' ! -name 'morning-*.md' \
       ! -name 'previous-report.md' ! -name 'x-*.md' ! -name '*.original.md' ! -name 'shift-map.md' ! -name 'architecture.md' 2>/dev/null | LC_ALL=C sort |

@@ -140,7 +140,7 @@ _ns_evidence_image() {
 
 _ns_evidence_json() {
   if command -v jq >/dev/null 2>&1; then
-    jq -e . "$1" >/dev/null 2>&1
+    jq empty "$1" >/dev/null 2>&1
     return
   fi
   if command -v python3 >/dev/null 2>&1; then
@@ -237,11 +237,6 @@ FILES
   done <<KINDS
 $(ns_evidence_kinds "$line")
 KINDS
-  if [ "$(ns_evidence_effective "$project" "$line" review)" = on ] && [ "$(ns_evidence_effective "$project" "$line" check)" = block ]; then
-    if [ ! -f "$receipt" ] || [ -L "$receipt" ] || ! grep -qE '^## Reviewed([[:space:]]|$)' "$receipt"; then
-      printf 'reviewed\n'
-    fi
-  fi
 }
 
 # ns_evidence_hold <project> <punch-list> — the clock-out sentence when a ticked item's evidence

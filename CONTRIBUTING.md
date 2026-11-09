@@ -53,7 +53,7 @@ git clone https://github.com/orwa-mahmoud/nightshift.git
 tests/run-parallel.sh                # full suite in parallel (default 6 shards; ~wall-clock of slowest shard)
 tests/run-shard.sh 1 6               # one CI shard; use --list to print its files without running bats
 bats -r tests/                       # serial full suite (same coverage, slower)
-git ls-files '*.sh' | xargs shellcheck -x  # lint — the same set CI checks
+tests/lint-shell.sh  # lint — the same set CI checks
 tests/coverage.sh                    # line coverage via kcov (runs in docker on non-Linux)
 claude plugin validate . --strict    # manifest + marketplace validation
 evals/run.sh                         # catalog contract schema, case book, and size budgets
@@ -109,9 +109,7 @@ grows a catalog without growing the product. [Add to a catalog](docs/add-to-a-ca
 covers shifts, evidence kinds, gate stacks and edge-case packs. For a shift, read
 [`catalog-recipe.md`](plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md) first — an
 entry must declare its ending, how it discovers work, its definition of done, what
-it will never do, its verification, and the stacks it supports. Every catalog PR is
-read by a human before merge: a plausible entry can still be a bad night on someone
-else's repository, and no automated check catches that.
+it will never do, its verification, and the stacks it supports.
 
 Nightshift is an augmentation layer in the Claude Code, Codex, and Cursor
 ecosystems. It integrates through each host's native plugins, skills, and hooks —

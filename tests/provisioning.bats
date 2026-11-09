@@ -203,17 +203,6 @@ recover_seed_mutated() {
   printf '%s\n' "$output" | jq -e '.ok == true' >/dev/null
 }
 
-@test "Windows provision.ps1 names baseline diff recover rollback" {
-  [ -f "$WIN" ]
-  grep -qF 'baseline' "$WIN"
-  grep -qF 'diff' "$WIN"
-  grep -qF 'recover' "$WIN"
-  grep -qF 'rollback' "$WIN"
-  if grep -qF "'plan'" "$WIN"; then
-    return 1
-  fi
-}
-
 @test "Start and Hunt name the thin seatbelt" {
   grep -qF 'provision.sh' "$ENGINE"
   grep -qF 'baseline' "$ENGINE"

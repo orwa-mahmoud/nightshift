@@ -1,10 +1,6 @@
 README="$BATS_TEST_DIRNAME/../README.md"
 CHECKLIST="$BATS_TEST_DIRNAME/../docs/first-night-checklist.md"
 
-@test "README links the first-night checklist beside first-shift setup" {
-  grep -qF '[first-night safety checklist](docs/first-night-checklist.md#first-night-safety-checklist)' "$README"
-}
-
 @test "first-night checklist covers unattended safety boundaries" {
   for phrase in 'Start attended' 'Choose permissions deliberately' 'Prove STOP' \
     'Decide how stalls should end' 'Test notifications' 'Know the host boundary'; do
@@ -20,13 +16,6 @@ CHECKLIST="$BATS_TEST_DIRNAME/../docs/first-night-checklist.md"
   grep -qF 'reviewable commit' "$CHECKLIST"
   grep -qF 'evidence-capabilities.md#reviewing-a-shift' "$CHECKLIST"
   grep -qF '](archive.md#archive-and-continue)' "$CHECKLIST"
-}
-
-@test "first-night checklist relative links resolve" {
-  [ -f "$BATS_TEST_DIRNAME/../docs/knobs.md" ]
-  [ -f "$BATS_TEST_DIRNAME/../docs/commands.md" ]
-  [ -f "$BATS_TEST_DIRNAME/../docs/shift-modes.md" ]
-  grep -qF '[Shift modes](shift-modes.md#shift-modes)' "$CHECKLIST"
 }
 
 @test "first-run overnight guidance names persistent folders" {

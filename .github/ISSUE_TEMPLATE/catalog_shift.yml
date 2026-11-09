@@ -1,24 +1,16 @@
 name: Catalog shift proposal
-description: Propose a ready-made overnight shift. A merged entry is still one new file and human review.
+description: Propose a ready-made shift. An idea is enough; you do not need to know how Nightshift would run it.
 title: "[catalog]: "
 labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        Propose a shift the catalog does not yet have. This form does **not** add the shift —
-        a merged entry is still one new file plus human review, per
-        [Add to a catalog](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/add-to-a-catalog.md)
-        and the [catalog recipe](https://github.com/orwa-mahmoud/nightshift/blob/main/plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md).
-        The [contribution map](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/contribution-map.md)
-        lists the files and checks for catalog work.
+        Describe work you would hand an agent while you are away. Rough is fine. Discussion of shift
+        ideas also happens on [#21](https://github.com/orwa-mahmoud/nightshift/issues/21).
 
-        Discuss ideas on [#21](https://github.com/orwa-mahmoud/nightshift/issues/21). Open a pull
-        request that references `#21` when you implement one.
-
-        A shift is a contract handed to an agent that will work **unattended, on a stranger's workspace, while they sleep.** Every line below is followed literally. Narrow is better
-        than broad.
-        than broad.
+        To contribute a working entry instead, open a pull request with one file:
+        [Add to a catalog](https://github.com/orwa-mahmoud/nightshift/blob/main/docs/add-to-a-catalog.md).
   - type: input
     id: name
     attributes:
@@ -26,57 +18,35 @@ body:
       description: "Short title, e.g. Documentation drift."
     validations:
       required: true
+  - type: textarea
+    id: work
+    attributes:
+      label: The work
+      description: What the agent would do, and what you would want to find when you come back.
+    validations:
+      required: true
   - type: dropdown
     id: ending
     attributes:
-      label: Ending
-      description: Finite work is a known list and stops when it is clear. Open-ended work has no natural end but the clock and must not start without a deadline.
+      label: How it ends
+      description: Finite work is a known list that stops when it is clear. Open-ended work runs until the clock.
       options:
-        - finite — known list, ends when the list is clear
-        - open-ended — ends only at quitting time (or at stated convergence)
+        - finite — ends when the list is clear
+        - open-ended — ends at quitting time
+        - not sure
     validations:
-      required: true
-  - type: textarea
-    id: discovery
-    attributes:
-      label: Discovery
-      description: "How the work is found. Name the mechanism (gate commands, a directory scan, an outdated report). \"Look for problems\" is not a discovery method."
-    validations:
-      required: true
-  - type: textarea
-    id: done
-    attributes:
-      label: Definition of done
-      description: "What ends the shift, precisely. \"A full scan reports nothing new\" is testable. \"The code is better\" is not."
-    validations:
-      required: true
+      required: false
   - type: textarea
     id: refusals
     attributes:
-      label: What it will never do
-      description: The most important field. Unattended safety boundaries — what a tired model must not reach for at 4am (silencing linters, deleting tests, rewriting history, inventing product behaviour).
+      label: What it must never do
+      description: Anything an unattended agent must not reach for while doing this work.
     validations:
-      required: true
+      required: false
   - type: textarea
-    id: verification
+    id: example
     attributes:
-      label: Verification
-      description: Commands that must be green at every commit or artifact receipt for this entry's work. Artifact-mode completion is `.nightshift/receipts/`, not a git log.
+      label: An example
+      description: A project, a command, or a result that shows the shift working.
     validations:
-      required: true
-  - type: textarea
-    id: stacks
-    attributes:
-      label: Supported stacks
-      description: Which projects this makes sense on, and how it detects them. An entry that assumes vitest should say so rather than failing quietly on a Go repo. An entry that can run in artifact mode should say so and must not require a git history that cannot exist. An entry that cannot run in artifact mode must say Never select this entry in artifact mode. Do not `git init` a notes folder to make a commit-only entry fit.
-    validations:
-      required: true
-  - type: checkboxes
-    id: safety
-    attributes:
-      label: Unattended safety
-      options:
-        - label: I have listed concrete refusals, not "be careful".
-          required: true
-        - label: "I understand a merged shift still requires its entry file, written to catalog-recipe.md — this form does not replace it."
-          required: true
+      required: false

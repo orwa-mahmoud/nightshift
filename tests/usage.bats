@@ -1104,11 +1104,6 @@ parity_normalise() {
   [ ! -e "$p/.nightshift/usage" ]
 }
 
-@test "native Windows Start retires the finished shift's accounting like POSIX does" {
-  grep -qF 'Move-NSUsageRetire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/start-preflight.ps1"
-  grep -qF 'ns_usage_retire' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/start-preflight.sh"
-}
-
 # pause_fixture <project> — marks at 1000, 1600, 2800 and 4000; pauses at 1100 (Esc), 1300 (a
 # revival), 2000 (Esc) and 3900 (a usage limit), plus one at 4100 that no mark followed.
 pause_fixture() {

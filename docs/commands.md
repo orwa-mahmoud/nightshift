@@ -226,7 +226,8 @@ ns.ps1 check-items --project .
 prints the median and range per item; with `--items` it adds a total, a suggested deadline and a
 suggested `Budget:` line. These are estimates from your own history, never limits, and fewer than
 three readings estimate nothing. `check-items` names, per item, a missing or empty `Verify:`, a
-missing `Commit:`, a `Budget:` that does not parse, a nested checkbox, and any checkbox no item owns.
+`Verify:` that names nothing checkable (asked as a question), a missing `Commit:`, a `Budget:` that
+does not parse, a nested checkbox, and any checkbox no item owns.
 It refuses nothing.
 
 ### Start it at a fixed time

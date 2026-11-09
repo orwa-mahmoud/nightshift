@@ -229,9 +229,11 @@ can preview or copy every version-1 or version-2 JSON file in
 `plugins/nightshift/skills/nightshift/references/profiles/`; the shipped `balanced`, `fast`, and
 `strict` profiles are version 2 and also carry shift defaults and a Gates block. That is a
 one-time local write, not a policy subscription. Fill keeps every owner value and refuses a file
-missing either native question policy. Replace starts from the complete shipped template, applies
-the profile, and shows the full next file first. Apply only while unarmed. Native Windows uses
-PowerShell's JSON parser; it does not require `jq`.
+missing either native question policy. Replace rebuilds the guards from the shipped template,
+keeps every owner block (shift defaults, receipts, catalogs, retention and the rest), and applies
+the profile. The preview is the full file that is written, and a file the runtime could not load
+is never written. Apply only while unarmed. Native Windows uses PowerShell's JSON parser; it does
+not require `jq`.
 
 **Idle window.** `idleWindowMinutes` (shipped **30**, `NIGHTSHIFT_IDLE_WINDOW` for one session) is how long a live worker must stay quiet before the watchman stops its process tree and revives the shift. Quiet means a stale pulse, an unchanged transcript or rollout, under a second of CPU across that tree, and no build, test, or browser child. Any of those signals resets the window. Missing or unreadable is 30. Two failed revivals of that worker write one parking-lot notice and stop retrying until the worker is busy again or the next Start.
 
@@ -368,7 +370,7 @@ plus a runtime-written index. It never reaches a public commit message.
 | `evidence.fileMap` | `off` | `on` writes, at each tick, the item's changed files as a tree in its receipt and the whole shift's in `.nightshift/receipts/shift-map.md`, built from git |
 | `evidence.architecture` | `off` | `on` keeps one diagram of the components the shift touched, `.nightshift/receipts/architecture.md`, updated by the item that changes the structure |
 | `evidence.check` | `off` | What a missing named evidence file does to the tick. `off` leaves the tick alone. `report` lists each missing file on the receipt and the morning receipt, and the tick stands. `block` counts that ticked item as open until the files are present |
-| `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and writes a Reviewed section. With `check` at `block`, a missing Reviewed section counts as missing evidence |
+| `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and says in the receipt what it saw. It never affects the tick |
 | `evidence.unavailable` | `""` | What happens when the evidence cannot be produced. `hold` closes the item as stopped. `park` records the decision and keeps working. `note` ticks the item and the receipt says why. Empty means `hold` when `check` is `block`, and `note` otherwise |
 
 With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
@@ -389,8 +391,8 @@ highest precedence first:
 An entry of the same key replaces a lower one, and `ns catalog-index --catalog <catalog>` names the
 source that won and the ones it replaced. `ns catalog-new --catalog <catalog> --key <key>` starts an
 entry from the template in force (`--user` for every project), and
-`ns catalog-index --catalog <catalog> --check-draft <file>` names any section it still lacks. The
-template is the schema: its headings are the sections every entry needs.
+`ns catalog-index --catalog <catalog> --check-draft <file>` checks what Nightshift reads from it. The
+template is a starting point; an entry may use any headings.
 
 | Key | Default | Values |
 |---|---|---|
@@ -495,7 +497,7 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 | `automatic` | `false` | `true` files the shift when it ends. It never implies pruning |
 | `root` | `archive` | Directory the shift folders live in, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
 | `layout` | `date` | `date` files the first shift of a day under `YYYY-MM-DD` and each later one under `YYYY-MM-DD-shift-2`, `-shift-3` and so on; `shift` gives each shift a `shift-<id>` directory; `name` uses the name on the punch list's title line (`# Punch List — Archive follow-ups` files under `archive-follow-ups`); `date-name` uses both (`YYYY-MM-DD-archive-follow-ups`). A shift with no name files by date. Every way, one folder holds one shift, laid out like the live site, and filing a shift again returns to its own folder |
-| `templatePath` | `""` | A Markdown template for the archive summary |
+| `templatePath` | `""` | A Markdown template for the summary Archive prints: wording and layout only, on the same terms as the handoff template |
 
 Changing `root` never moves or hides what is already filed: an older history under the previous
 root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live

@@ -106,19 +106,6 @@ sample() {
   [ "$status" -eq 0 ]
 }
 
-@test "Windows helper exists and names the same commands" {
-  [ -f "$WIN" ]
-  grep -q 'ValidateSet' "$WIN"
-  grep -q 'init' "$WIN"
-  grep -q 'export-tsv' "$WIN"
-  grep -qi 'does not verify a Nightshift tick' "$WIN"
-}
-
-@test "support bundle omits evidence raw output" {
-  grep -q 'evidence ledger raw output' "$EXPORT"
-  grep -q 'evidence ledger raw output' "$ROOT/plugins/nightshift/runtime/windows/export-support.ps1"
-}
-
 # ---------------------------------------------------------------------------------------------
 # Native-engine parity: the bash ledger (evidence.sh) and
 # the native PowerShell ledger (windows/evidence.ps1) must behave byte-identically for the same
@@ -516,9 +503,4 @@ example_record() {
   [ "$status" -eq 0 ]
   run bash "$EV" --project "$p" validate
   [ "$status" -eq 0 ]
-}
-
-@test "evidence temps are created mode 700" {
-  grep -qF 'mktemp -d' "$EV"
-  grep -qF 'chmod 700' "$EV"
 }

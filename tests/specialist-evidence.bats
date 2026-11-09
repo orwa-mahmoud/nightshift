@@ -22,22 +22,3 @@ VULN="$ROOT/plugins/nightshift/skills/nightshift/references/compose/shifts/vulne
   grep -qi 'Accessibility journey' "$JOURNEY"
   grep -qF '# engineering / product-truth / specialist' "$TEMPLATES"
 }
-
-@test "parent contracts write receipts without calling the removed wrapper" {
-  if grep -qF 'runtime/specialist-evidence.sh' "$DOCS"; then
-    return 1
-  fi
-  if grep -qF 'runtime/specialist-evidence.sh' "$RESEARCH"; then
-    return 1
-  fi
-  if grep -qF 'runtime/specialist-evidence.sh' "$CLEAR"; then
-    return 1
-  fi
-  if grep -qF 'runtime/specialist-evidence.sh' "$VULN"; then
-    return 1
-  fi
-  grep -qF 'receipts/cycle-specialist-evidence.md' "$DOCS"
-  grep -qF 'receipts/cycle-specialist-evidence.md' "$RESEARCH"
-  grep -qF 'receipts/cycle-specialist-evidence.md' "$CLEAR"
-  grep -qF 'receipts/cycle-specialist-evidence.md' "$VULN"
-}

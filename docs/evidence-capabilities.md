@@ -94,7 +94,7 @@ on Windows), or in a folder named by `catalogs.evidence.paths`. Those files neve
 when a drafted item fits it. Adding a shipped kind is one new file, described in
 [`evidence/recipe.md`](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
 
-A file named in backticks on the `Evidence:` line lives in that item's evidence folder. `receipts.evidence.check` decides what a missing file does: `off` leaves the tick alone, `report` lists it on the receipt and the morning receipt, and `block` keeps the clock-out gate open until the file is present. `review` on asks the agent to open what it produced and write a `Reviewed` section. `unavailable` says what happens when the evidence cannot be produced at all: `hold` closes the item as stopped, `park` records one parking-lot entry and keeps working, and `note` ticks it with the reason. The command is `ns evidence-unavailable`.
+A file named in backticks on the `Evidence:` line lives in that item's evidence folder. `receipts.evidence.check` decides what a missing file does: `off` leaves the tick alone, `report` lists it on the receipt and the morning receipt, and `block` keeps the clock-out gate open until the file is present. `review` on asks the agent to open what it produced, fix what it sees, and say in the receipt what it saw; it never affects the tick. `unavailable` says what happens when the evidence cannot be produced at all: `hold` closes the item as stopped, `park` records one parking-lot entry and keeps working, and `note` ticks it with the reason. The command is `ns evidence-unavailable`.
 
 ## Policy behind a receipt
 
@@ -173,7 +173,7 @@ handoff.
 
 `evals/` holds the catalog contract schema, a versioned case book, frozen identifiers, and
 instruction-size budgets. `evals/run.sh`, `evals/validate.sh`, and `tests/evals.bats` check schema
-and size. They do not run a host-agent matrix; a catalog contribution is still read by a person.
+and size. They do not run a host-agent matrix.
 
 ## Limits
 

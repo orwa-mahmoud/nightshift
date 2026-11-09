@@ -9,15 +9,3 @@ TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-
   [ ! -e "$ROOT/plugins/nightshift/runtime/coverage-risk.sh" ]
   [ ! -e "$ROOT/plugins/nightshift/runtime/coverage-risk.py" ]
 }
-
-@test "coverage hunt writes a risk receipt without the wrapper" {
-  grep -qF 'receipts/cycle-specialist-evidence.md' "$COVERAGE"
-  if grep -qF 'runtime/coverage-risk.sh' "$COVERAGE"; then
-    return 1
-  fi
-  grep -qi 'behavior-protecting' "$COVERAGE"
-  grep -qi 'misleading high coverage' "$COVERAGE"
-  grep -qi 'mutation/property/fuzz' "$COVERAGE"
-  grep -qi 'receipt line' "$COVERAGE"
-  grep -qF '# coverage-risk' "$TEMPLATES"
-}

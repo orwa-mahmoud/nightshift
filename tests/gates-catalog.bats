@@ -54,34 +54,6 @@ The command needs nothing this test does not already have.
 EOF
 }
 
-@test "proposes the TypeScript toolchain for a package.json + tsconfig.json project" {
-  grep -q 'package.json' "$GATES/typescript.md"
-  grep -q 'tsconfig.json' "$GATES/typescript.md"
-  grep -qE 'eslint.*tsc.*(test|noEmit)' "$GATES/typescript.md"
-}
-
-@test "proposes the Python toolchain for a pyproject/requirements project" {
-  grep -qE 'pyproject.toml|requirements.txt' "$GATES/python.md"
-  grep -qE 'ruff.*mypy.*pytest' "$GATES/python.md"
-}
-
-@test "covers Go, Rust, Helm, and a Makefile fallback" {
-  grep -q 'go.mod' "$GATES/go.md"
-  grep -q 'Cargo.toml' "$GATES/rust.md"
-  grep -qiE 'chart.yaml|kustomize' "$GATES/helm.md"
-  grep -q 'Makefile' "$GATES/makefile.md"
-  grep -q 'Match: fallback' "$GATES/makefile.md"
-}
-
-@test "proposes bats, shellcheck, and plugin validate for a Claude or Codex plugin" {
-  grep -qE '\.claude-plugin/|\.codex-plugin/' "$GATES/plugin.md"
-  grep -qF 'plugins/<name>/' "$GATES/plugin.md"
-  grep -q 'bats -r tests/' "$GATES/plugin.md"
-  grep -q 'shellcheck' "$GATES/plugin.md"
-  grep -q 'claude plugin validate . --strict' "$GATES/plugin.md"
-  grep -q 'Match: plugin' "$GATES/plugin.md"
-}
-
 @test "plugin detection sits after language stacks and before the Makefile fallback" {
   run bash "$INDEX" --catalog gates
   [ "$status" -eq 0 ]
@@ -106,46 +78,6 @@ EOF
   fi
   run bash -c 'diff <(bash "$1" --catalog gates) <(pwsh -NoProfile -File "$2" --catalog gates)' _ "$INDEX" "$INDEX_PS1"
   [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
-}
-
-@test "every stack file and the template have the shape" {
-  # shellcheck disable=SC1090
-  . "$SOURCES"
-  NS_CATALOG_HEADINGS='Detect|Item gate|Site inspection|Notes'
-  NS_CATALOG_BULLET=
-  NS_CATALOG_FENCE=
-  NS_CATALOG_FENCE_KEYS=
-  NS_CATALOG_FENCE_TYPES=
-  NS_CATALOG_MATCH=yes
-  for f in "$GATES"/*.md "$TEMPLATE"; do
-    run ns_catalog_entry_problems "$f"
-    [ "$status" -eq 0 ] || { printf '%s\n%s\n' "$f" "$output"; return 1; }
-  done
-  ! grep -i gates "$SOURCES" || { echo "the helper names a catalog"; return 1; }
-  ! grep -i gates "$SOURCES_PS1" || { echo "the helper names a catalog"; return 1; }
-}
-
-@test "Setup treats a nested plugins/<name> manifest as a plugin-stack match" {
-  grep -qF 'plugins/<name>/.claude-plugin/' "$SETUP"
-  grep -qF 'plugins/<name>/.codex-plugin/' "$SETUP"
-  grep -qF 'plugins/<name>/' "$QUALITY"
-  grep -qF 'ns catalog-index --catalog gates' "$SETUP"
-  grep -qF 'ns catalog-index --catalog gates' "$QUALITY"
-  grep -qF 'where each proposal came from' "$SETUP"
-  grep -qF 'where the proposal came from' "$QUALITY"
-}
-
-@test "states that detection only proposes and the user decides" {
-  grep -qiE 'propose|user decides|opt-in' "$CAT"
-}
-
-@test "the item gate runs before a commit or artifact receipt" {
-  grep -qF 'right before its commit or artifact receipt' "$CAT"
-}
-
-@test "is Sonar-ready and keeps coverage a tripwire" {
-  grep -qi 'sonar' "$CAT"
-  grep -qi 'tripwire' "$CAT"
 }
 
 @test "an owner stack is listed with its source and replaces the shipped stack of the same key" {
@@ -177,19 +109,19 @@ EOF
   [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
 }
 
-@test "a malformed owner stack and a missing configured folder are reported and skipped" {
+@test "an owner stack with an invalid Match line and a missing configured folder are reported and skipped" {
   p="$(new_project owner-stacks-bad)"
   printf '2\n' >"$p/.nightshift/state-version"
   missing="$BATS_TEST_TMPDIR/no-such-stacks"
   write_stack "$p/.nightshift/gates/stacks/typescript.md" "Project TypeScript"
   cat >"$p/.nightshift/gates/stacks/broken.md" <<'EOF'
-# Broken — missing a required section
+# Broken — an unknown match value
 
 ## Detect
 
 `marker.toml`
 
-Match: stack
+Match: sometimes
 
 ## Item gate
 
@@ -206,7 +138,7 @@ EOF
 
   run bash "$INDEX" --catalog gates --project "$p"
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qF 'missing section Notes'
+  printf '%s\n' "$output" | grep -qF 'invalid match'
   printf '%s\n' "$output" | grep -qF 'broken.md'
   printf '%s\n' "$output" | grep -qF 'malformed file name'
   printf '%s\n' "$output" | grep -qF "configured folder missing: $missing"
@@ -220,7 +152,7 @@ EOF
   fi
   run pwsh -NoProfile -File "$INDEX_PS1" --catalog gates --project "$p"
   [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qF 'missing section Notes'
+  printf '%s\n' "$output" | grep -qF 'invalid match'
   printf '%s\n' "$output" | grep -qF "configured folder missing: $missing"
 }
 

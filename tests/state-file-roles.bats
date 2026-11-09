@@ -42,23 +42,6 @@ REF="$ROOT/nightshift/references"
   done
 }
 
-@test "state templates say what belongs and what does not" {
-  grep -qF 'Owner-approved active work belongs here' "$REF/templates/punch-list.md"
-  grep -qF 'known later work' "$REF/templates/drafting-table.md"
-  grep -qF 'Known tasks do not belong here' "$REF/templates/parking-lot.md"
-  grep -qF 'composed only through Nightshift: Hunt' "$REF/templates/work-orders.md"
-}
-
-@test "the work-order file is scaffolded from its template, not written by hand" {
-  # Hunt runs the scaffold for it the first time it stages an order.
-  grep -qE 'ns"? scaffold' "$ROOT/setup/SKILL.md"
-  grep -qF 'ns" scaffold work-orders' "$ROOT/hunt/SKILL.md"
-  [ -f "$REF/templates/work-orders.md" ]
-  if grep -qF 'work-orders.md` with a one-line header' "$ROOT/setup/SKILL.md"; then
-    return 1
-  fi
-}
-
 @test "only the owner puts work on the drafting table, and a bug is fixed on the shift that found it" {
   grep -qF "The drafting
 table is the owner's: write it only when the owner asks for it" "$ROOT/nightshift/SKILL.md"

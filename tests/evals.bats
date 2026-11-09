@@ -65,9 +65,6 @@ IDS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1/identifier
   run bash "$VALIDATE" "$EVALS/fixtures/malformed/broken-ref.md"
   [ "$status" -eq 2 ]
   printf '%s\n' "$output" | grep -q 'broken reference'
-  run bash "$VALIDATE" "$EVALS/fixtures/malformed/missing-refusal.md"
-  [ "$status" -eq 2 ]
-  printf '%s\n' "$output" | grep -q 'missing refusal'
 }
 
 @test "oversized instructions fail and print the budget versus the measured size" {

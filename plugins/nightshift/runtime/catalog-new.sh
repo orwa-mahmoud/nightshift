@@ -5,8 +5,8 @@
 #
 # Copies the template in force into the project folder (.nightshift/catalogs/<NAME>/), or with
 # --user into the user folder (<user config>/nightshift/catalogs/<NAME>/), as <KEY>.md, and prints
-# the new file's path. The owner fills its sections; catalog-index --check-draft names any that
-# are missing. Refuses a key that is not lowercase words joined by hyphens, and a file that
+# the new file's path. The owner writes it in any shape; catalog-index --check-draft checks
+# what code reads. Refuses a key that is not lowercase words joined by hyphens, and a file that
 # already exists: nothing is overwritten.
 #
 # Exit: 0 written · 1 usage · 2 refused

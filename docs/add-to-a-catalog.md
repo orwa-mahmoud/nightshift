@@ -14,14 +14,13 @@ file. It needs no code, and no other file changes: every listing finds a new fil
 
 1. **Copy the template** into the catalog's shipped folder. Name the file for your entry in
    lowercase words joined by hyphens and ending in .md, such as nightly-docs.md.
-2. **Fill every section.** Keep each heading and replace the guidance under it with your own
-   words. The headings are what an entry needs: Nightshift checks every entry against its
-   catalog's template. To check yours, run
-   `ns catalog-index --catalog <catalog> --check-draft <your-file>`; it names any section that is
-   still missing.
+2. **Write it your way.** The template is a starting point; its headings are not required.
+   Nightshift checks only what it reads: a shift's ending and its pasteable item, a gate stack's
+   `Match:` line, and an evidence kind's optional `evidence-check` block. To check yours from the
+   repository root, run
+   `plugins/nightshift/runtime/ns catalog-index --catalog <catalog> --check-draft <your-file>`.
 3. **Open a pull request** with that one file. For a shift, reference
-   [#21](https://github.com/orwa-mahmoud/nightshift/issues/21). A shift may also add one test,
-   `tests/shifts/<your-shift>.bats`, to lock its refusals.
+   [#21](https://github.com/orwa-mahmoud/nightshift/issues/21).
 
 ## Only for you
 
@@ -31,9 +30,7 @@ To use an entry without contributing it, keep it on your machine:
 Your entry wins over a shipped one of the same name. [Owner knobs](knobs.md#catalogs) lists every
 place an entry can live, and how to use your own template.
 
-## What a reviewer looks for
-
-Every entry is read by a person before it is merged.
+## What makes a good entry
 
 - **Shifts:** whether it is finite or open-ended, how it finds the work, when it is done (stated
   as something a check can confirm), what it will never do, and the Verify line. The full rules

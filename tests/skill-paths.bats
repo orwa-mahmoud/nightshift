@@ -27,15 +27,6 @@ DOCTOR_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   done
 }
 
-@test "setup leaves host permissions to the owner and saves only recovery preferences" {
-  grep -qF 'Never write permission modes,' "$SETUP"
-  grep -qF 'recovery.launchScope' "$SETUP"
-  if grep -qE 'defaultMode|bypassPermissions|Enable frictionless permissions' "$SETUP"; then
-    echo 'Setup still offers a host permission grant'
-    return 1
-  fi
-}
-
 @test "every skill takes the Nightshift directory from the dispatcher, not from a host rule" {
   for s in "$SKILLS"/*/SKILL.md; do
     grep -qF '`NS`' "$s" || { echo "does not name NS among the bound facts: $s"; return 1; }
@@ -126,21 +117,6 @@ PY
   grep -qF '`.lease-lock.d/`' "$SETUP"
 }
 
-@test "setup does not offer a project Cursor hooks file" {
-  if grep -qF 'Cursor CLI file hooks' "$SETUP"; then
-    echo "setup still offers a project Cursor hooks file"
-    return 1
-  fi
-  if grep -qF 'write a project `.cursor/hooks.json`' "$SETUP"; then
-    echo "setup still offers to write .cursor/hooks.json"
-    return 1
-  fi
-  if grep -qF 'hooks/cursor/hooks.json' "$SETUP"; then
-    echo "setup still copies the shipped Cursor hooks file"
-    return 1
-  fi
-}
-
 @test "setup refuses disposable ChatGPT scratch before writing" {
   grep -qF '/workspace/scratch/' "$SETUP"
   grep -qF 'Before creating or changing any file' "$SETUP"
@@ -148,12 +124,6 @@ PY
   grep -qF 'Open your project in Codex' "$SETUP"
   grep -qF 'persistent local folder' "$SETUP"
   grep -qF 'Do not mention Claude Code' "$SETUP"
-}
-
-@test "scratch detection does not reject legitimate non-git projects" {
-  grep -qF 'Do not infer “temporary” merely because the' "$SETUP"
-  grep -qF 'project is not a git repository' "$SETUP"
-  grep -qF 'A non-git project outside that explicit scratch path remains valid' "$SKILLS/nightshift/SKILL.md"
 }
 
 # Structural instruction contracts, not runtime E2E: pin the lifecycle words and shipped paths
@@ -468,13 +438,6 @@ PY
   grep -qF 'leftover Shift contract and Gates' "$DOCTOR_PS1"
   grep -qF 'pending Hunt work orders=' "$DOCTOR_PS1"
   grep -qF 'staged drafting-table items=' "$DOCTOR_PS1"
-}
-
-@test "the scaffold resolves the tokens a person could not paste, and Setup still forbids them in the owner's rules" {
-  # A person pasting a command out of their own punch list has no shell variable to expand.
-  grep -qF 'NIGHTSHIFT_WORKSPACE' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
-  grep -qF 'resolves' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh"
-  grep -qF 'revival and clock-out text stay owner-editable' "$SETUP"
 }
 
 @test "catalog prose uses Nightshift filenames, not a workspace prefix" {

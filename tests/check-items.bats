@@ -24,13 +24,13 @@ EOF
   [ "$status" -eq 0 ]
   [ "$output" = "$(cat <<'EOF'
 **1. No verify line.**: no Verify: line
-**2. A verify line that checks nothing.**: Verify: names no command and no WHEN/THEN scenario
+**2. A plain-language verify line.**: ok
 **3. No commit line.**: no Commit: line
 **4. A budget that does not parse.**: Budget: does not parse (about an hour)
 **5. A nested checkbox.**: line 23: a nested checkbox; only the item line may be a box
 line 26: a checkbox outside an item line counts as an open item
 line 29: a checkbox outside an item line counts as an open item
-checked 5 items: 5 with findings, 2 stray checkboxes
+checked 5 items: 4 with findings, 2 stray checkboxes
 EOF
 )" ] || { printf '%s\n' "$output"; return 1; }
 }
@@ -106,4 +106,16 @@ EOF
     got="$(pwsh -NoProfile -NonInteractive -File "$PLUGIN/runtime/windows/check-items.ps1" -Project "$BATS_TEST_TMPDIR" -File "$FIX/$f.md")"
     [ "$got" = "$want" ] || { echo "$f"; echo "bash:"; echo "$want"; echo "PowerShell:"; echo "$got"; return 1; }
   done
+}
+
+@test "a Verify line that names nothing checkable gets a question, and a plain concrete one does not" {
+  run bash "$CHECK" --project "$BATS_TEST_TMPDIR" --file "$FIX/vague.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(cat <<'OUT'
+**1. Vague.**: Verify: names no command, path, number or scenario; is it checkable?
+**2. Plain but concrete.**: ok
+**3. Listed under.**: ok
+checked 3 items: 1 with findings
+OUT
+)" ] || { printf '%s\n' "$output"; return 1; }
 }

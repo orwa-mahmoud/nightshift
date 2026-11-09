@@ -10,14 +10,3 @@ TEMPLATES="$ROOT/plugins/nightshift/skills/nightshift/references/receipts/cycle-
   [ ! -e "$ROOT/plugins/nightshift/runtime/history-context.sh" ]
   [ ! -e "$ROOT/plugins/nightshift/runtime/history-context.py" ]
 }
-
-@test "archive and setup write history from the template" {
-  if grep -qF 'history-context.sh' "$ARCHIVE"; then
-    return 1
-  fi
-  grep -qF 'references/receipts/cycle-specialist-evidence.md' "$ARCHIVE"
-  grep -qF 'history-context' "$TEMPLATES"
-  # The split moved the wording; the guarantee is that the file names these as NOT commands.
-  grep -qF 'these names are not' "$TEMPLATES"
-  grep -qF '# history-context / preset' "$TEMPLATES"
-}

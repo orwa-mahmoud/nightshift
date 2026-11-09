@@ -239,22 +239,21 @@ proposed="$(PROFILE_MODE="$MODE" jq -n --argjson cur "$current" \
         | map(select(.key as $k | $cur | has($k) | not))
         | from_entries
       );
+  # Replace rebuilds the guards from the shipped template: the top-level settings and the toolDeny
+  # and elevation blocks. Every other block is an owner preference no guard profile is asking
+  # about (shift defaults, receipts, catalogs, retention and the rest), so it is kept as it is.
   def replace:
     $t[0]
+    + ($cur | to_entries
+       | map(select((.value | type) == "object" and .key != "toolDeny" and .key != "elevation"))
+       | from_entries)
     + $p[0].rules
     + (
         if ($cur["$schema"] | type) == "string" and ($cur["$schema"] | length) > 0
         then {"$schema": $cur["$schema"]}
         else {}
         end
-      )
-    # Replace rebuilds the guards from the shipped template. It does not reach into the owner
-    # preference blocks, which no guard profile is asking about: a profile that forbids a push
-    # has nothing to say about the verification cadence or where archives are filed, and
-    # resetting those would take away a choice nobody made here.
-    + (["shift", "handoff", "archive", "recovery", "receipts"]
-       | map(select($cur[.] != null) | {(.): $cur[.]})
-       | add // {});
+      );
   if env.PROFILE_MODE == "fill" then fill else replace end
 ')"
 
@@ -342,6 +341,15 @@ render_gates_body() {
   fi
 }
 
+# The whole next owner file, shift block included, so the preview is exactly what --apply writes.
+final="$proposed"
+if [ "$SD_TYPE" = "object" ]; then
+  # The remembered choices live in the shift block of the owner file, where they are read from.
+  base="$(shift_defaults_base)"
+  block="$(merged_shift_defaults "$base" | jq -c 'del(.schemaVersion, .updatedAt)')" || exit 2
+  final="$(printf '%s' "$proposed" | jq -c --argjson b "$block" '.shift = ((.shift // {}) + $b)')" || exit 2
+fi
+
 printf 'Profile: %s\n' "$(jq -r '.name' "$SRC")"
 printf 'Risk:    %s\n' "$(jq -r '.risk' "$SRC")"
 printf 'Use:     %s\n' "$(jq -r '.use' "$SRC")"
@@ -349,14 +357,7 @@ printf 'Mode:    %s\n' "$MODE"
 printf 'Rules the profile sets:\n'
 jq -r '.rules | to_entries[] | "  \(.key)=\(.value|tojson)"' "$SRC"
 printf '\nProposed rules.json\n'
-printf '%s\n' "$proposed" | jq -S .
-
-if [ "$SD_TYPE" = "object" ]; then
-  base="$(shift_defaults_base)"
-  merged="$(merged_shift_defaults "$base")"
-  printf '\nProposed shift-defaults.json\n'
-  printf '%s\n' "$merged" | jq -S .
-fi
+printf '%s\n' "$final" | jq -S .
 
 if [ "$GATES_TYPE" = "object" ]; then
   printf '\nProposed ## Gates block\n%s\n' "$(render_gates_body)"
@@ -367,39 +368,23 @@ if [ "$APPLY" -eq 0 ]; then
   exit 0
 fi
 
+# One write: the next file is validated before it replaces the owner's, so a failure leaves the
+# owner file as it was.
 tmp="$NS/.rules.json.$$"
-printf '%s\n' "$proposed" | jq -S . >"$tmp" || {
+printf '%s\n' "$final" | jq -S . >"$tmp" || {
   rm -f "$tmp"
   exit 2
 }
+if ! ns_rules_load "$tmp" >/dev/null 2>&1; then
+  rm -f "$tmp"
+  printf 'apply-profile: the updated owner file would not load (%s); %s is unchanged\n' "$NS_RULES_ERR" "$RULES" >&2
+  exit 2
+fi
 mv "$tmp" "$RULES" || {
   rm -f "$tmp"
   exit 2
 }
 printf 'Wrote %s\n' "$RULES"
-
-if [ "$SD_TYPE" = "object" ]; then
-  # The remembered choices live in the shift block of the owner file. A profile writes them where
-  # they are read from, so applying one cannot split the same setting across two files.
-  base="$(shift_defaults_base)"
-  merged="$(merged_shift_defaults "$base")"
-  block="$(printf '%s' "$merged" | jq -c 'del(.schemaVersion, .updatedAt)')" || exit 2
-  tmp_sd="$NS/.rules-with-shift.json.$$"
-  ns_rules_set_block "$RULES" shift "$block" >"$tmp_sd" || {
-    rm -f "$tmp_sd"
-    exit 2
-  }
-  ns_rules_load "$tmp_sd" >/dev/null 2>&1 || {
-    rm -f "$tmp_sd"
-    printf 'apply-profile: the updated owner file would not load\n' >&2
-    exit 2
-  }
-  mv "$tmp_sd" "$RULES" || {
-    rm -f "$tmp_sd"
-    exit 2
-  }
-  printf 'Wrote the shift block of %s\n' "$RULES"
-fi
 
 if [ "$GATES_TYPE" = "object" ]; then
   gates_line="$(grep -n '^## Gates$' "$PUNCHLIST" | head -1 | cut -d: -f1)"

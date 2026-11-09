@@ -122,6 +122,7 @@ case "$NS_WATCHMAN_SCRIPT" in
   /*) ;;
   *) NS_WATCHMAN_SCRIPT="$(pwd)/$NS_WATCHMAN_SCRIPT" ;;
 esac
+# shellcheck disable=SC2034 # read by watchman-install.sh
 NS_WATCHMAN_SELF_VERSION="$(ns_plugin_version "$(ns_plugin_root_from_script "$NS_WATCHMAN_SCRIPT")")"
 
 cd "$PROJECT" 2>/dev/null || exit 1

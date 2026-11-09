@@ -3,8 +3,8 @@
 # name      the catalog's name: --catalog <name>, catalogs.<name> in rules.json, and the owner
 #           folder catalogs/<name> in the project and in the user folder
 # shipped   the shipped entries, relative to the plugin root
-# template  the shipped template, relative to the plugin root; its H2 headings are the sections
-#           every entry needs, and a section that shows a bullet needs one
+# template  the shipped template, relative to the plugin root; a starting point for a new entry;
+#           its headings are not required
 # order     alpha, or match (gates: stack, then plugin, then fallback)
 # rule      the one check the template cannot express: shift (an ending and an item block),
 #           fence:<lang> (a fence of that language with files, min and type), match (one Match

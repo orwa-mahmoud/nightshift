@@ -157,12 +157,8 @@ def check_catalog_sections(text, sections, errors):
         errors.append("missing punch-list item")
     if not sections["ending"]:
         errors.append("missing ending in title (finite|open-ended)")
-    if not sections["refusal"]:
-        errors.append("missing refusal rules")
     if not sections["verification"]:
         errors.append("missing verification section")
-    if not sections["workModes"]:
-        errors.append("missing supported work modes/stacks")
     if not sections["trigger"]:
         errors.append("missing trigger/applicability")
     return tm.group(1) if tm else None
@@ -185,10 +181,6 @@ def check_skill_sections(text, sections, errors):
     sections["capabilities"] = has_section(
         text, [r"artifact mode", r"work mode", r"applicable"]
     )
-    if not sections["ending"]:
-        errors.append("missing ending/time guidance")
-    if not sections["refusal"]:
-        errors.append("missing refusal rules")
     ending = None
     tm = TITLE.search(text)
     if tm:

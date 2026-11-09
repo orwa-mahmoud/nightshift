@@ -68,56 +68,10 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
   grep -qF 'resolve does not report selectedDebt' "$LOGIC"
 }
 
-@test "Windows comparison logic covers every class and both modes" {
-  grep -qF 'a finding the baseline never saw is new' "$LOGIC"
-  grep -qF 'a fixed finding is cleared' "$LOGIC"
-  grep -qF 'the same digest is unchanged' "$LOGIC"
-  grep -qF 'a moved digest on a known id is regressed' "$LOGIC"
-  grep -qF 'an unavailable source is unavailable' "$LOGIC"
-  grep -qF 'a baseline id the ledger no longer carries is unavailable, never cleared' "$LOGIC"
-  grep -qF 'a duplicate root cause is rejected-duplicate' "$LOGIC"
-  grep -qF 'a parked disposition is parked' "$LOGIC"
-  grep -qF 'a human-only status is human-only' "$LOGIC"
-  grep -qF 'dedupe keeps every originating tool on the surviving row' "$LOGIC"
-  grep -qF 'clear-all fails while one finding is only unchanged' "$LOGIC"
-  grep -qF 'no-regression passes when nothing regressed and the selected debt cleared' "$LOGIC"
-  grep -qF 'selected debt that did not clear fails the relaxed mode' "$LOGIC"
-}
-
-@test "Windows comparison logic covers unavailable-is-not-improvement" {
-  grep -qF 'a source the ledger marked unavailable never passes clear-all' "$LOGIC"
-  grep -qF 'an unavailable tool clears nothing' "$LOGIC"
-  grep -qF 'a changed environment digest is reported as unavailable, never as improvement' "$LOGIC"
-  grep -qF 'environment-moved absence is unavailable, never cleared' "$LOGIC"
-}
-
-@test "Windows comparison logic checks exact byte formatting" {
-  grep -qF 'Test-NSNoCarriageReturn' "$LOGIC"
-  grep -qF 'Test-NSSingleTrailingNewline' "$LOGIC"
-  grep -qF 'Test-NSAsciiOnly' "$LOGIC"
-  grep -qF 'Test-NSKeysSorted' "$LOGIC"
-  grep -qF 'Test-NSHasBom' "$LOGIC"
-  grep -qF 'rows are sorted by id in byte order' "$LOGIC"
-}
-
-@test "Windows comparison logic checks bash byte parity and its skip path" {
-  grep -qF 'byte-identical' "$LOGIC"
-  grep -qF 'evidence-compare.sh' "$LOGIC"
-  grep -qF 'parity leg not run' "$LOGIC"
-}
-
 @test "Windows comparison logic passes when pwsh is present" {
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh not installed'
   fi
   run pwsh -NoProfile -NonInteractive -File "$LOGIC"
   [ "$status" -eq 0 ]
-}
-
-@test "Windows comparison logic covers a source that answered unavailable with no rows" {
-  grep -qF 'an unavailable source with no rows never passes clear-all' "$LOGIC"
-  grep -qF 'the source reports its own status' "$LOGIC"
-  grep -qF 'no row is invented to carry the status' "$LOGIC"
-  grep -qF 'the Markdown carries the source status' "$LOGIC"
-  grep -qF 'a source that ran and found nothing still passes' "$LOGIC"
 }

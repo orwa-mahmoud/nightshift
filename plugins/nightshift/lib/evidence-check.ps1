@@ -200,15 +200,6 @@ function Get-NSEvidenceProblems {
         }
         if ($count -lt $min) { $problems.Add('pattern ' + $kind) }
     }
-    if ((Get-NSEvidenceEffective $Workspace $line 'review') -ceq 'on' -and (Get-NSEvidenceEffective $Workspace $line 'check') -ceq 'block') {
-        $reviewed = $false
-        if ((Test-Path -LiteralPath $receipt -PathType Leaf) -and -not (Test-NSReparsePoint $receipt)) {
-            foreach ($receiptLine in [IO.File]::ReadAllLines($receipt)) {
-                if ($receiptLine -cmatch '^## Reviewed(\s|$)') { $reviewed = $true; break }
-            }
-        }
-        if (-not $reviewed) { $problems.Add('reviewed') }
-    }
     return $problems.ToArray()
 }
 
