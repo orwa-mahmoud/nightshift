@@ -1799,7 +1799,7 @@ function Expand-NSInjectedPaths {
         foreach ($pair in $map) {
             $end = $i + $pair.From.Length
             if ($end -gt $text.Length -or -not $text.Substring($i).StartsWith($pair.From, [StringComparison]::Ordinal)) { continue }
-            if ($end -lt $text.Length -and $text[$end] -match '[A-Za-z0-9._-]') { continue }
+            if ($end -lt $text.Length -and $text[$end] -cmatch '[A-Za-z0-9._-]') { continue }
             $null = $builder.Append($pair.To)
             $i = $end
             break

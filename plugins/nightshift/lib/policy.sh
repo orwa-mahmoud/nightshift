@@ -268,7 +268,7 @@ _ns_json_hex() {
   esac
   s="${s#\"}"
   s="${s%\"}"
-  case "$s" in *[!0-9a-f]*) return 1 ;; esac
+  ns_ascii_only "$s" hex || return 1
   [ "${#s}" -eq "$2" ]
 }
 
@@ -860,7 +860,7 @@ _ns_policy_validate_shift() {
       ;;
     *) val="" ;;
   esac
-  case "$val" in *[!0-9a-f-]*) val="" ;; esac
+  ns_ascii_only "$val" hex - || val=""
   case "${#val}" in
     16 | 36) ;;
     *)
@@ -950,12 +950,10 @@ _ns_policy_validate_shift() {
     case "$rest" in *"$NS_POLICY_NL"*) rest="${rest#*"$NS_POLICY_NL"}" ;; *) rest="" ;; esac
     [ -n "$line" ] || continue
     _ns_pf_split "$line"
-    case "$NS_PF1" in
-      '' | *[!A-Za-z0-9_-]*)
-        _ns_policy_shift_fail budgets "has an unusable name: $NS_PF1"
-        return 1
-        ;;
-    esac
+    if [ -z "$NS_PF1" ] || ! ns_ascii_only "$NS_PF1" lower upper digit _-; then
+      _ns_policy_shift_fail budgets "has an unusable name: $NS_PF1"
+      return 1
+    fi
     _ns_json_uint "$NS_PF2" || {
       _ns_policy_shift_fail "budgets.$NS_PF1" "must be a whole number"
       return 1
@@ -1331,7 +1329,7 @@ ns_policy_replayed() {
   local id found
   id="$(ns_policy_shift_id "$1")" || return 1
   # A 16-hex token or a UUID, as the schema allows; nothing that could reach a pattern.
-  case "$id" in *[!0-9a-f-]*) return 1 ;; esac
+  ns_ascii_only "$id" hex - || return 1
   found="$(ns_archived_policy "$1" "$id")"
   [ -n "$found" ] || return 1
   printf '%s' "$found"
@@ -1673,7 +1671,8 @@ ns_new_shift_id() {
   while [ "$try" -lt 8 ]; do
     try=$((try + 1))
     id="$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
-    case "$id" in *[!0-9a-f]* | '') continue ;; esac
+    [ -n "$id" ] || continue
+    ns_ascii_only "$id" hex || continue
     [ "${#id}" -eq 16 ] || continue
     if [ -d "$archive" ] && grep -rqsF "$id" "$archive" 2>/dev/null; then continue; fi
     printf '%s' "$id"

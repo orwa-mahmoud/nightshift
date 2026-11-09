@@ -2,6 +2,7 @@
 # lib.sh — shared hook helpers. Compatibility entry: source this file.
 #
 # Modules load in dependency order (no cycles):
+#   charsets.sh   the ASCII characters name and id checks accept
 #   common.sh     generic shell helpers
 #   layout.sh     where each state file sits (state-layout.tsv)
 #   paths.sh      workspace / canonical path resolution
@@ -28,6 +29,8 @@
 # Pure-bash path: no dirname (hostile PATH).
 _ns_lib_dir="${BASH_SOURCE[0]%/*}"
 [ "$_ns_lib_dir" != "${BASH_SOURCE[0]}" ] || _ns_lib_dir=.
+# shellcheck source=plugins/nightshift/lib/charsets.sh
+. "$_ns_lib_dir/charsets.sh"
 # shellcheck source=plugins/nightshift/lib/common.sh
 . "$_ns_lib_dir/common.sh"
 # shellcheck source=plugins/nightshift/lib/layout.sh

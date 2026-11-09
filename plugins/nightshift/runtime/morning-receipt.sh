@@ -583,7 +583,8 @@ _find_policy() {
   fi
   id="$(ns_ended_field "$WORKSPACE" shiftId)"
   # A 16-hex token or a UUID, as the schema allows; nothing that could reach a pattern.
-  case "$id" in '' | *[!0-9a-f-]*) return 0 ;; esac
+  [ -n "$id" ] || return 0
+  ns_ascii_only "$id" hex - || return 0
   cand="$(ns_archived_policy "$WORKSPACE" "$id")"
   [ -n "$cand" ] || return 0
   POLICY_FILE="$cand"

@@ -183,8 +183,8 @@ ns_layout_set PARKING "$NS" parking-lot
 ns_layout_set LOG "$NS" shift-log
 ns_layout_set LEASE "$NS" lease
 
-# Claude Code keeps transcripts under ~/.claude/projects/<project path, non-alnum -> dashes>.
-TRANSCRIPTS="${NIGHTSHIFT_WATCH_TRANSCRIPTS:-$HOME/.claude/projects/$(printf '%s' "$PROJECT" | tr -c 'A-Za-z0-9' '-')}"
+# The project's Claude Code transcript folder; empty when it cannot be told.
+TRANSCRIPTS="${NIGHTSHIFT_WATCH_TRANSCRIPTS:-$(ns_claude_project_dir "$PROJECT")}"
 
 ts() { ns_local_now second; }
 log_line() { printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
@@ -387,6 +387,7 @@ resolve_transcript() {
   latest="$(shift_transcript)"
   if [ -n "$latest" ] && [ -f "$latest" ]; then printf '%s' "$latest"; return; fi
   latest=""
+  [ -n "$TRANSCRIPTS" ] || return 0
   for f in "$TRANSCRIPTS"/*.jsonl; do
     [ -f "$f" ] || continue
     if [ -z "$latest" ] || [ "$f" -nt "$latest" ]; then latest="$f"; fi

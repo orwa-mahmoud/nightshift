@@ -911,7 +911,7 @@ function Get-NSStatusLiveness {
     try {
         $line = ([IO.File]::ReadAllText($pulse, $script:NSUtf8NoBom)).Trim()
         $epochText = ($line -split '\s+', 2)[0]
-        if ($epochText -notmatch '^\d+$') { return 'absent' }
+        if ($epochText -cnotmatch '^[0-9]+$') { return 'absent' }
         $epoch = [long]$epochText
         $window = $WatchMinutes * 120
         if ($window -le 0) { $window = 1200 }
@@ -945,7 +945,7 @@ function Get-NSStatusStallAttempts {
         $lines = [IO.File]::ReadAllLines($stall, $script:NSUtf8NoBom)
         if ($lines.Length -lt 2) { return 0 }
         $n = $lines[1].Trim()
-        if ($n -match '^\d+$') { return [int]$n }
+        if ($n -cmatch '^[0-9]+$') { return [int]$n }
     }
     catch {
     }
@@ -1543,7 +1543,7 @@ function Get-NSMutexScope {
     catch {
         return ''
     }
-    if ($lines.Count -ne 1 -or $lines[0] -notmatch '^[a-f0-9]{32}$') {
+    if ($lines.Count -ne 1 -or $lines[0] -cnotmatch '^[a-f0-9]{32}$') {
         return ''
     }
     return $lines[0]
@@ -1897,8 +1897,8 @@ function Read-NSLease {
             return $null
         }
     }
-    if ($lines[1] -notin @('claude', 'codex', 'cursor') -or $lines[2] -notmatch '^[1-9][0-9]*$' `
-        -or $lines[3] -notmatch '^[A-Za-z0-9._-]*$' -or $lines[4] -notmatch '^[0-9]*$') {
+    if ($lines[1] -notin @('claude', 'codex', 'cursor') -or $lines[2] -cnotmatch '^[1-9][0-9]*$' `
+        -or $lines[3] -cnotmatch '^[A-Za-z0-9._-]*$' -or $lines[4] -cnotmatch '^[0-9]*$') {
         return $null
     }
     if ([string]::IsNullOrEmpty($lines[4]) -and -not [string]::IsNullOrEmpty($lines[5])) {
@@ -1927,7 +1927,7 @@ function Write-NSLease {
         [AllowEmptyString()][string]$ProcessId,
         [AllowEmptyString()][string]$Start
     )
-    if ($Generation -lt 1 -or $Nonce -notmatch '^[A-Za-z0-9._-]*$' -or $ProcessId -notmatch '^[0-9]*$') {
+    if ($Generation -lt 1 -or $Nonce -cnotmatch '^[A-Za-z0-9._-]*$' -or $ProcessId -cnotmatch '^[0-9]*$') {
         return $false
     }
     foreach ($value in @($SessionId, $Start)) {
@@ -3107,3 +3107,22 @@ function Get-NSWatchmanRemovedSentence {
     return ("watchman running from a removed install (version $version); current install is none. Replace it: kill $ProcessId; $cmd")
 }
 
+
+# Get-NSClaudeProjectDir - the folder Claude Code keeps the project's transcripts in. Mirrors
+# ns_claude_project_dir: the path with each UTF-16 unit outside A-Z, a-z and 0-9 turned into "-",
+# under $env:CLAUDE_CONFIG_DIR or ~/.claude. A name over 200 characters is cut to 200 and given a
+# hash suffix, so the one folder carrying that prefix is the answer. Empty when none qualifies.
+$script:NSClaudeProjectNameMax = 200
+function Get-NSClaudeProjectDir {
+    param([Parameter(Mandatory = $true)][string]$Project)
+    $base = if ([string]::IsNullOrEmpty($env:CLAUDE_CONFIG_DIR)) { Join-Path $HOME '.claude' } else { $env:CLAUDE_CONFIG_DIR }
+    $root = Join-Path $base 'projects'
+    $slug = $Project -creplace '[^A-Za-z0-9]', '-'
+    if ($slug.Length -le $script:NSClaudeProjectNameMax) { return (Join-Path $root $slug) }
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) { return '' }
+    $prefix = $slug.Substring(0, $script:NSClaudeProjectNameMax) + '-'
+    $found = @(Get-ChildItem -LiteralPath $root -Directory -Force |
+            Where-Object { $_.Name.StartsWith($prefix, [StringComparison]::Ordinal) })
+    if ($found.Count -ne 1) { return '' }
+    return $found[0].FullName
+}

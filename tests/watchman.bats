@@ -2132,3 +2132,41 @@ worker_alive() { kill -0 "$IDLE_WORKER" 2>/dev/null; }
   [ "$(grep -c 'revival failed twice' "$P/.nightshift/parking-lot.md")" -eq 1 ]
   stop_idle_worker
 }
+
+@test "the transcript folder is the one Claude Code names, on both runtimes and in any locale" {
+  LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  MOD="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
+  conf="$BATS_TEST_TMPDIR/claude-config"
+  base="$BATS_TEST_TMPDIR/p"
+  ascii="$(printf '%s' "$base" | LC_ALL=C tr -c 'A-Za-z0-9' '-')"
+  # é is one UTF-16 unit and one dash; the emoji is two units and two dashes.
+  project="$base/D$(printf '\xc3\xa9')v$(printf '\xf0\x9f\x98\x80')x"
+  expected="$conf/projects/$ascii-D-v--x"
+  long="$base/$(printf 'a%.0s' $(seq 1 240))"
+  prefix="$(printf '%s' "$long" | LC_ALL=C tr -c 'A-Za-z0-9' '-' | cut -c 1-200)"
+
+  run env LC_ALL=C CLAUDE_CONFIG_DIR="$conf" bash -c '. "$1"; ns_claude_project_dir "$2"' _ "$LIB" "$project"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$expected" ] || { printf '%s\n%s\n' "$output" "$expected"; return 1; }
+  mkdir -p "$conf/projects/$prefix-1x2y3z"
+  run env CLAUDE_CONFIG_DIR="$conf" bash -c '. "$1"; ns_claude_project_dir "$2"' _ "$LIB" "$long"
+  [ "$output" = "$conf/projects/$prefix-1x2y3z" ]
+  if command -v pwsh >/dev/null 2>&1; then
+    run env CLAUDE_CONFIG_DIR="$conf" NS_T_SHORT="$project" NS_T_LONG="$long" pwsh -NoProfile -Command \
+      "Import-Module '$MOD' -Force -DisableNameChecking; Get-NSClaudeProjectDir -Project \$env:NS_T_SHORT; Get-NSClaudeProjectDir -Project \$env:NS_T_LONG"
+    [ "$status" -eq 0 ]
+    [ "$output" = "$(printf '%s\n%s' "$expected" "$conf/projects/$prefix-1x2y3z")" ] || { printf '%s\n' "$output"; return 1; }
+  fi
+
+  # Two folders share the prefix: neither is claimed.
+  mkdir -p "$conf/projects/$prefix-4q5r6s"
+  run env CLAUDE_CONFIG_DIR="$conf" bash -c '. "$1"; ns_claude_project_dir "$2"' _ "$LIB" "$long"
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+  if command -v pwsh >/dev/null 2>&1; then
+    run env CLAUDE_CONFIG_DIR="$conf" NS_T_LONG="$long" pwsh -NoProfile -Command \
+      "Import-Module '$MOD' -Force -DisableNameChecking; Get-NSClaudeProjectDir -Project \$env:NS_T_LONG"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  fi
+}

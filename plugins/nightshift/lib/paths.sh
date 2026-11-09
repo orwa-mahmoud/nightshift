@@ -435,3 +435,36 @@ ns_layout_parent() {
   ns_layout_set _nsl_out "$1" "$2" || return 1
   mkdir -p "${_nsl_out%/*}" 2>/dev/null
 }
+
+# ns_claude_project_dir <project> — the folder Claude Code keeps the project's transcripts in:
+# ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/ and the path with each UTF-16 unit outside A-Z, a-z
+# and 0-9 turned into "-". A name over 200 characters is cut to 200 and given a hash suffix, so
+# the one folder carrying that prefix is the answer. Nothing when no single folder qualifies.
+NS_CLAUDE_PROJECT_NAME_MAX=200
+ns_claude_project_dir() {
+  local root slug d found="" alnum
+  root="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+  if ns_have_cmd perl; then
+    slug="$(perl -CA -e '
+      my $s = shift;
+      $s =~ s/[^\x{0}-\x{FFFF}]/--/g;
+      $s =~ s/[^A-Za-z0-9]/-/g;
+      print $s;
+    ' "$1")" || return 1
+  else
+    ns_ascii_set alnum upper lower digit
+    slug="$(printf '%s' "$1" | tr -c "$alnum" '-')"
+  fi
+  [ -n "$slug" ] || return 1
+  if [ "${#slug}" -le "$NS_CLAUDE_PROJECT_NAME_MAX" ]; then
+    printf '%s' "$root/$slug"
+    return 0
+  fi
+  for d in "$root/${slug:0:$NS_CLAUDE_PROJECT_NAME_MAX}"-*/; do
+    [ -d "$d" ] || continue
+    [ -z "$found" ] || return 1
+    found="${d%/}"
+  done
+  [ -n "$found" ] || return 1
+  printf '%s' "$found"
+}

@@ -112,7 +112,11 @@ fi
 # _shift_line <slug> <file> — slug, ending, title and summary. The summary is the H1's third part
 # onward, or the first line of prose when the H1 has none.
 _shift_line() {
-  LC_ALL=C awk -v slug="$1" '
+  LC_ALL=C awk -v slug="$1" "$NS_AWK_CATALOG_TEXT"'
+    {
+      $0 = ns_catalog_text($0)
+      if (ns_catalog_in_comment) next
+    }
     /^# / && !seen {
       seen = 1
       line = substr($0, 3)

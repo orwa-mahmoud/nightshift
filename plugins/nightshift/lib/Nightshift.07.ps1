@@ -2173,9 +2173,9 @@ function Test-NSUsageProgressDue {
     $window = Get-NSUsageWindow $ns $receipt
     if ($null -eq $window) { return $false }
     $minutes = Get-NSReceiptsField $Workspace 'progressMinutes'
-    if ($minutes -notmatch '^\d+$') { $minutes = '20' }
+    if ($minutes -cnotmatch '^[0-9]+$') { $minutes = '20' }
     $tokens = Get-NSReceiptsField $Workspace 'progressTokens'
-    if ($tokens -notmatch '^\d+$') { $tokens = '100000' }
+    if ($tokens -cnotmatch '^[0-9]+$') { $tokens = '100000' }
     $timeDue = ((Get-NSUnixTime) - $window.Epoch) -ge ([long]$minutes * 60)
     if ($mode -ceq 'time') { return $timeDue }
     if ($mode -cne 'tokens' -and $mode -cne 'either') { return $false }

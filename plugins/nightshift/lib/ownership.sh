@@ -154,7 +154,7 @@ ns_lease_load() { # $1 = the .nightshift dir; one descriptor gives one coherent 
   case "$NS_LEASE_HOST" in claude | codex | cursor) ;; *) return 1 ;; esac
   case "$NS_LEASE_GENERATION" in '' | *[!0-9]*) return 1 ;; esac
   [ "$NS_LEASE_GENERATION" -gt 0 ] 2>/dev/null || return 1
-  case "$NS_LEASE_NONCE" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+  ns_ascii_only "$NS_LEASE_NONCE" lower upper digit ._- || return 1
   case "$NS_LEASE_PID" in *[!0-9]*) return 1 ;; esac
   [ -n "$NS_LEASE_PID" ] || [ -z "$NS_LEASE_START" ] || return 1
   [ -n "$NS_LEASE_SID" ] || [ -n "$NS_LEASE_NONCE" ] || return 1
@@ -169,7 +169,7 @@ ns_lease_write_unlocked() { # <ns> <sid> <host> <generation> <nonce> <pid> <star
   case "$host" in claude | codex | cursor) ;; *) return 1 ;; esac
   case "$generation" in '' | *[!0-9]*) return 1 ;; esac
   [ "$generation" -gt 0 ] 2>/dev/null || return 1
-  case "$nonce" in *[!A-Za-z0-9._-]*) return 1 ;; esac
+  ns_ascii_only "$nonce" lower upper digit ._- || return 1
   case "$pid" in *[!0-9]*) return 1 ;; esac
   [ -n "$sid" ] || [ -n "$nonce" ] || return 1
   [ -n "$pid" ] || [ -z "$start" ] || return 1
@@ -1020,9 +1020,7 @@ ns_cursor_model_safe() {
   case "$1" in
     '' | -*) return 1 ;;
   esac
-  case "$1" in
-    *[!A-Za-z0-9._:-]*) return 1 ;;
-  esac
+  ns_ascii_only "$1" lower upper digit ._:- || return 1
   [ "${#1}" -le 80 ]
 }
 
