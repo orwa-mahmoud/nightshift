@@ -6,6 +6,7 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 
 ## Start and choose the work
 
+- [Install](install.md#install) — every host, skills.sh, Windows, WSL, and remote environments.
 - [First-night safety checklist](first-night-checklist.md#first-night-safety-checklist) — check permissions, stopping, and
   recovery during an attended run.
 - [Shift modes](shift-modes.md#shift-modes) — use an existing list, select catalog entries, or give Hunt a goal;
