@@ -12,10 +12,11 @@
 
 Nightshift gives [Claude Code](https://claude.com/claude-code),
 [OpenAI Codex](https://openai.com/codex/), and [Cursor](https://cursor.com) a durable work contract
-for long coding runs. Bring a task list, choose a ready-made shift, or give your agent an objective
-and hours to work. A clock-out gate holds unfinished work, progress survives on disk, and a watchman
-can recover failed sessions. Review the results, per-item token usage and time where available,
-then archive the shift with its evidence intact.
+for long coding runs. Plan the work with the agent first, then bring a task list, choose a
+ready-made shift, or give your agent an objective and hours to work. A clock-out gate holds
+unfinished work, each item can carry the evidence you ask for and a time or token budget, progress
+survives on disk, and a watchman can recover failed sessions. Review the results, per-item token
+usage and time where available, then archive the shift with its evidence intact.
 
 <div align="center">
 
@@ -31,19 +32,30 @@ then archive the shift with its evidence intact.
 
 | What you want | What Nightshift provides |
 | --- | --- |
-| **Finish the work you already planned** | A persistent punch list, item-by-item verification, and a gate that rejects premature clock-out. |
-| **Put a few hours into the project** | Open-ended product evolution, coverage hunts, or your own objective, with an explicit deadline and a continuation record. |
-| **Start without writing a backlog** | Ready-made shifts through Hunt and Quality. Choose the work yourself or let the agent compose it; review first or run directly. |
-| **Keep a long run moving** | Progress across compaction, parked decisions, deduplicated findings, and recovery under the host's supported signals. |
-| **See what the work consumed** | Runtime-measured token usage and duration per item, with host-specific gaps clearly marked. |
-| **Review today and continue tomorrow** | Live receipts, a morning receipt, and archived history that keeps unfinished work available for the next shift. |
+| **[Design the work before building it](docs/how-it-works.md#the-plan-room)** | A plan room that explores the code with you, offers a pre-mortem, an edge-case pass and an ordering check, sizes the plan from your past receipts, and builds nothing until you leave. |
+| **[Finish the work you already planned](docs/how-it-works.md#the-work-contract)** | A persistent punch list, item-by-item verification, and a gate that rejects premature clock-out. |
+| **[Put a few hours into the project](docs/shift-modes.md#shift-modes)** | Open-ended product evolution, coverage hunts, or your own objective, with an explicit deadline and a continuation record. |
+| **[Start without writing a backlog](docs/shift-modes.md#choose-the-right-starting-point)** | Ready-made shifts through Hunt and Quality. Choose the work yourself or let the agent compose it; review first or run directly. |
+| **[See proof, not just a tick](docs/receipts.md#evidence-a-reviewer-opens-first)** | An evidence line per item from a catalog of kinds, a file map in every receipt, and your choice of whether missing evidence holds the clock-out. |
+| **[Keep each item in bounds](docs/knobs.md#item-budgets)** | Soft and hard limits per item in working time, tokens, or both. A hard limit turns the agent to wrap-up and closes the item as stopped. |
+| **[Keep a long run moving](docs/how-it-works.md#recovery)** | Progress across compaction, parked decisions, deduplicated findings, and recovery under the host's supported signals. |
+| **[See what the work consumed](docs/receipts.md#receipts-and-token-usage)** | Runtime-measured token usage and duration per item, with host-specific gaps clearly marked. |
+| **[Review today and continue tomorrow](docs/archive.md#archive-and-continue)** | Live receipts, a morning receipt, and archived history that keeps unfinished work available for the next shift. |
+| **[Make it yours](docs/knobs.md#catalogs)** | One customize screen for every setting, template and catalog entry, and your own evidence kinds, gate stacks, edge-case packs and ready shifts beside the shipped ones. |
 
-[Choose a shift](#two-kinds-of-shift) · [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) ·
-[Archive and continue](docs/archive.md#archive-and-continue)
+**Real runs.** The [four-hour first night](examples/adapttable-overnight.md#example--an-overnight-run-on-a-production-library)
+left nine focused items as reviewable commits. A later
+[45-hour contract](examples/adapttable-continuity.md#flagship-example--one-contract-two-coding-agents-57-issues)
+survived a host handoff and became a human-reviewed 67-commit pull request. These are documented
+runs, not benchmarks.
 
-The [four-hour first night](examples/adapttable-overnight.md#example--an-overnight-run-on-a-production-library) left nine focused items as reviewable
-commits. A later [45-hour contract](examples/adapttable-continuity.md#flagship-example--one-contract-two-coding-agents-57-issues) survived a host handoff and
-became a human-reviewed 67-commit pull request. These are documented runs, not benchmarks.
+## See it work
+
+[![A recorded Claude Code shift: the agent tried to clock out with two items open, and the gate sent it back to work](https://nightshift.orwamahmoud.com/nightshift-demo-poster.jpg)](https://nightshift.orwamahmoud.com/#demo-title)
+
+A recorded Claude Code session, three items on the punch list. Midway the agent declares itself
+finished with two boxes still open; the gate hands back the contract, and the agent clocks out only
+once every box is ticked. [Watch the 36-second clip →](https://nightshift.orwamahmoud.com/#demo-title)
 
 ## Why Nightshift
 
@@ -57,69 +69,36 @@ sessions. The checks and your review still determine whether a completed item is
 
 ## Install
 
-### Codex and ChatGPT
-
-**Recommended: the full plugin for local Codex.** Install it from the repository marketplace:
-
-```text
-codex plugin marketplace add orwa-mahmoud/nightshift
-codex plugin add nightshift@nightshift
-```
-
-Add the marketplace once per Codex installation. Review and trust the plugin's hooks (`/hooks` in
-the CLI), then start a new conversation. The full plugin carries the clock-out gate, safety rules,
-session recovery, and per-item token usage and time.
-
-**Skills-only edition.** The
-[official OpenAI Plugin Directory listing](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
-works the punch list, receipts, parked decisions and continuation notes with the session's own
-tools. Directory versions up to 0.25.3 carry the full plugin; later versions are skills-only,
-because the directory does not accept
-[lifecycle hooks](https://developers.openai.com/plugins/build/plugins#bundled-mcp-servers-and-lifecycle-hooks).
-It has no clock-out gate, recovery or usage accounting, so it suits attended sessions and ChatGPT.
-Its Setup offers the full plugin; after installing it, turn the directory copy off so one
-Nightshift is enabled.
-
-Open the project you want Nightshift to change in Codex, or connect Codex to its GitHub repository.
-A Git repository or a persistent local folder works. A disposable ChatGPT scratch conversation
-cannot preserve project changes, so Setup redirects you to Codex before writing run state.
-
 ### Claude Code
-
-Run inside Claude Code:
 
 ```text
 /plugin marketplace add orwa-mahmoud/nightshift
 /plugin install nightshift
 ```
 
+### Codex
+
+```text
+codex plugin marketplace add orwa-mahmoud/nightshift
+codex plugin add nightshift@nightshift
+```
+
+Review and trust the plugin's hooks (`/hooks` in the CLI), then start a new conversation. The
+[OpenAI Plugin Directory listing](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
+is a skills-only edition for attended sessions and ChatGPT, without the clock-out gate, recovery or
+usage accounting.
+
 ### Cursor
 
 Open **Customize → Add → From GitHub Repository**, paste
-`https://github.com/orwa-mahmoud/nightshift`, choose a scope, and select **Import**.
-Then select Nightshift from the imported marketplace to install it.
-The [Cursor Directory listing](https://cursor.directory/plugins/nightshift) is for discovery;
-installation happens inside Cursor. Read the host-specific
-[recovery and CLI limitations](docs/how-it-works.md#recovery) before starting a shift.
+`https://github.com/orwa-mahmoud/nightshift`, select **Import**, then install Nightshift from the
+imported marketplace.
 
-### skills.sh
-
-```text
-npx skills add https://github.com/orwa-mahmoud/nightshift --skill install-nightshift
-```
-
-This adds one small skill, kept in this repository's root `skills/` folder, that installs the full
-plugin into Claude Code, Codex or Cursor. Nightshift's own skills need its hooks and runtime, so
-they are marked internal and install only as part of the plugin.
-
-### Platforms
-
-macOS and Linux use the bundled Bash runtime. Native Windows uses bundled PowerShell, with no
-Git Bash or WSL required. For WSL, keep the host, plugin, repository, and watchman in one Linux
-distribution. See [Native Windows](docs/windows.md#native-windows) and
-[Remote environments](docs/remote-environments.md#remote-ssh-and-devcontainers) for platform details.
-
-<a id="run-a-first-shift"></a>
+Open the project you want Nightshift to change: a Git repository or a persistent local folder. A
+disposable ChatGPT scratch conversation cannot preserve project changes. macOS and Linux use the
+bundled Bash runtime and native Windows uses bundled PowerShell.
+[Install details](docs/install.md#install) covers skills.sh, Windows, WSL, remote environments and
+each host's recovery limits.
 
 ## Your first shift
 
@@ -129,21 +108,20 @@ Start with one small task in a project you trust. Keep the first run attended an
 | Action | Codex: ask Nightshift | Claude Code |
 | --- | --- | --- |
 | Set up | “Set up Nightshift in this project.” | `/nightshift:setup` |
+| Plan before building | “Plan this with Nightshift.” | `/nightshift:plan` |
+| Leave the plan room | Type `$nightshift:plan-exit` | `/nightshift:plan-exit` |
 | Run for hours | “Improve this project for 5 hours.” | the same sentence, or `/nightshift:hunt` |
 | Start | “Start the Nightshift shift.” | `/nightshift:start` |
 | Check progress | “Show Nightshift status.” | `/nightshift:status` |
 | Diagnose | “Diagnose this Nightshift workspace.” | `/nightshift:doctor` |
 | Stop | “Stop the Nightshift shift.” | `/nightshift:stop` |
-| Plan before building | “Plan this with Nightshift.” | `/nightshift:plan` |
-| Leave the plan room | Type `$nightshift:plan-exit` | `/nightshift:plan-exit` |
 | Customize | “Customize Nightshift.” | `/nightshift:customize` |
 
 1. **Set up.** Setup asks at most four questions: your checks, then every default on one screen.
-   Accept them all, or name what to change. Or skip setting up: say *“improve this project for 5 hours”*
-   and Nightshift sets the project up, picks the work from the catalog, and starts. With no hours it
-   asks one question: how many hours.
-2. **Write one item** under `## Items` in `.nightshift/punch-list.md`. For a repository that
-   already has a test runner, a small first task could be:
+   Or skip it: say *“improve this project for 5 hours”* and Nightshift sets the project up, picks
+   the work from the catalog, and starts. With no hours it asks one question: how many hours.
+2. **Plan or write the work.** Design it with the agent in the plan room, or write one item under
+   `## Items` in `.nightshift/punch-list.md`:
 
    ```text
    - [ ] **1. Document how to run the tests.**
@@ -153,139 +131,77 @@ Start with one small task in a project you trust. Keep the first run attended an
      - Commit: `docs: explain how to run the tests`
    ```
 
-   Use an outcome that matters to your project. The title names the result, the bullets bound
-   the work, `Verify` states how to check it, and `Commit` names the local change. More filled
-   examples are in [the example punch list](examples/overnight-webapp.md#example--an-overnight-webapp-punch-list).
-3. **Start.** With work queued, Start checks the workspace and permissions, then arms the shift
-   and works the list without another question. If it refuses, it names the repair. An empty
-   list offers staged work instead of silently starting something new.
-4. **Review.** Inspect the change, the checks that ran, and each item's receipt. Push only when you
-   decide to. If progress looks wrong, Doctor reports the workspace state without changing it;
-   follow [Troubleshooting](docs/troubleshooting.md#troubleshooting).
+   The title names the result, the bullets bound the work, `Verify` states how to check it, and
+   `Commit` names the local change. More in [the example punch list](examples/overnight-webapp.md#example--an-overnight-webapp-punch-list).
+3. **Start.** Start checks the workspace and permissions, arms the shift, and works the list
+   without another question. If it refuses, it names the repair.
+4. **Review.** Read the morning receipt and each item's receipt, inspect the change, and push only
+   when you decide to. A tick is the agent's completion claim, not independent proof of quality.
 
-The **punch list** holds the work. **Gates** are the project checks, run on the verification
-cadence you choose. The **parking lot** records decisions and defaults; the **shift log** records
-progress and problems, and the [vocabulary](docs/vocabulary.md#vocabulary) names every working
-file. A tick is the agent's completion claim, not independent proof of quality.
-
-A persistent folder without Git works too: artifact mode completes an item through artifact receipts
-under `.nightshift/receipts/`. Source and checkpoint receipts stay local. See
-[Evidence and receipts](docs/evidence-capabilities.md#reviewing-a-shift) for what to review.
+A persistent folder without Git works too: artifact mode completes each item through
+artifact receipts under `.nightshift/receipts/`. The [vocabulary](docs/vocabulary.md#vocabulary) names every
+working file, and [Evidence and receipts](docs/evidence-capabilities.md#reviewing-a-shift) says what
+to review.
 
 ## The morning
 
-Start with the [morning receipt](docs/morning-receipt.md#the-morning-receipt): how the shift ended, what verification
-ran, what was unavailable or disabled, and what needs your attention. Then read in this order:
+[![The receipts index of a finished shift: nine ticked items, each with its tokens, working time and receipt](docs/assets/finished-shift-receipts.png)](docs/receipts.md#receipts-and-token-usage)
 
-- **The receipts index** — `.nightshift/receipts/README.md` lists every item with its state, its
-  tokens, and its time, so the shape of the night is one table.
-- **Any item's receipt** — `.nightshift/receipts/<NN>-<slug>-<id>.md` holds that item's story: what was
-  delivered, what was tried and rejected, how it was verified, and where the output landed. It
-  updates during the work, so you can read a long-running item before it finishes.
-- **The architecture diagram** — `.nightshift/receipts/architecture.md`, kept current item by item.
-- **The diff or output files** — the work you will accept, revise, or reject.
-- **The parking lot and the snag log** — `.nightshift/inbox/`: defaults to accept or reverse, and
-  the findings whose disposition is something other than fixed.
-
-### Token usage and time, per item
-
-The runtime appends a Tokens table and a Time table to each item's receipt at its tick, and
-repeats the figures in the index. Input, output, cache, and reasoning retain the host's counting
-rules; missing readings stay explicit. Choose progress updates by time, tokens,
-either, or completion only. These control what is written, not a spending limit.
-[Receipts and token usage](docs/receipts.md#receipts-and-token-usage) explains the measurements and
-limits; the [example receipts](examples/receipts.md#receipts) show them in context.
-
-### Archive the shift, keep the next step
-
-Ask Nightshift to archive the finished work (`/nightshift:archive` in Claude Code). Completed
-items and handled records move into dated history; open work, unanswered decisions, and the
-punch-list contract stay live. Filed receipts keep working links to their evidence, and a history
-index makes prior shifts easier to revisit. Enable automatic filing at clock-out if you want
-that part handled too. Pruning old history is a separate, explicit retention choice.
-[Archive and continue](docs/archive.md#archive-and-continue) explains what is filed and what the next shift inherits.
+The [morning receipt](docs/morning-receipt.md#the-morning-receipt) says how the shift ended, what
+verification ran, what was unavailable, and what needs you. The receipts index lists every item
+with its state, tokens and time. Each item's receipt holds what was delivered, what was tried and
+rejected, how it was verified, its evidence, and the files it changed; it updates during the work.
+Then [archive the shift](docs/archive.md#archive-and-continue): finished items and handled records
+move into dated history, while open work, unanswered decisions and the contract stay live for the
+next shift.
 
 The [real runs](examples/README.md#real-runs) library follows real shifts through their review,
-including a 45-hour contract that survived a host handoff and became a human-reviewed 67-commit
-pull request. It also includes a template for reporting a bad night without hiding what happened.
+with a template for reporting a bad night without hiding what happened.
 
 ## Two kinds of shift
 
 - **A finite list.** Write the items yourself or approve work staged on the drafting table, then
   Start works that list. It ends at the last tick; an optional deadline caps the run.
-- **A goal with a clock.** Hunt composes work from the ready-made catalog. Product evolution and
-  coverage hunts continue until quitting time; a defect hunt can finish earlier when a complete
-  pass finds no new defects. Each entry declares its ending.
+- **A goal with a clock.** Hunt composes work from the ready-made catalog: defect repair,
+  dependency upgrades, release readiness, documentation, accessibility, research and more.
+  Product evolution and coverage hunts continue until quitting time; an owner walkthrough keeps
+  your own objective verbatim and works it for the hours you set.
 
-Ask Hunt to select the work automatically, or choose catalog entries yourself. Independently,
-choose to review the plan first or start immediately. For example, after Setup:
-
-> Use Nightshift for four hours to improve this product's onboarding. Inspect the project,
-> propose the work, and wait for my approval before starting.
-
-Quality uses the same choices for tests, lint, dependencies, documentation, accessibility, and
-other applicable quality debt. Named GitHub issues can be staged with Import issues, then
-promoted into the punch list. Import issues searches nothing and writes nothing back to GitHub.
-The four combinations and ready-to-use requests are in [Shift modes](docs/shift-modes.md#shift-modes).
-
-### Ready-made work, with a contract
-
-The [ready-shift catalog](plugins/nightshift/skills/nightshift/references/compose/shifts/) covers
-work such as defect repair, dependency upgrades, release readiness, developer onboarding,
-documentation, accessibility, SEO audits, and research synthesis. Each entry carries its own
-discovery method, definition of done, verification, and ending. Hunt can combine compatible
-entries under one budget; the **Maintainer night** preset follows onboarding, documentation drift,
-CI warnings, and release readiness in order.
-
-**Product evolution** studies the project and its users, records evidence, ranks opportunities,
-and builds complete improvements until quitting time. Its opportunity map keeps completed work,
-rejected paths, the exact next action, and remaining verification available across sessions.
-
-**Owner walkthrough** keeps your own objective verbatim and works it in coherent units for the
-hours you set. Choose it in Guided mode. It can finish early when the objective's acceptance
-criteria are verified; product evolution and coverage hunts continue until their deadline.
-
-You can also plan with one model and execute with another: the on-disk contract and continuation
-records carry the work. [Cross-host continuity](docs/evidence-capabilities.md#cross-host-continuity)
-explains the handoff and its limits.
-
-To run later, Schedule prints the operating-system configuration and install command; it registers
-nothing itself. The [command reference](docs/commands.md#start-it-at-a-fixed-time) includes a
-terminal path that needs no live model session or remaining allowance.
+Quality composes a shift from the project's quality debt, and Import issues stages named GitHub
+issues without searching or writing back. Plan with one model and execute with another: the
+on-disk contract carries the work. Schedule prints the operating-system entry to start a shift at
+a fixed time. [Shift modes](docs/shift-modes.md#shift-modes) covers every combination.
 
 ## Before you leave it alone
 
 - **Choose permissions and checks.** An unattended run cannot approve prompts. Verification can
   run per item, at the end, on a custom cadence, or never; the receipts state what actually ran.
-  Configure optional guards through [Owner knobs](docs/knobs.md#owner-knobs). They are hardening, not a sandbox.
 - **Stop always wins.** Ask Nightshift to stop or use the [offline stop command](docs/commands.md#command-reference).
-  Unfinished boxes stay open; the terminal path needs no live model session.
-- **Bound retries.** A stalled finite shift remains held by default. Set a deadline or an explicit
-  stall limit when you need a cost boundary. Open-ended work always requires a deadline.
-- **Check your host's recovery limits.** The watchman requires positive failure evidence and
-  launches the replacement under the host's own configured permissions by default. Recovery and stale IDE views have
-  [host-specific boundaries](docs/how-it-works.md#recovery). The recovered
+  Unfinished boxes stay open.
+- **Bound retries.** A stalled finite shift remains held by default. Set a deadline, a stall limit
+  or [item budgets](docs/knobs.md#item-budgets) when you need a cost boundary.
+- **Check your host's recovery limits.** The watchman requires positive failure evidence, and
+  [recovery has host-specific boundaries](docs/how-it-works.md#recovery). The recovered
   headless worker can continue without you watching it.
-- **Review before publishing.** Commits stay local unless the contract authorizes otherwise.
-  Ticks are self-reported; item checks and human review determine whether the work is good.
 - **Keep your checkout free.** Set `shift.isolation` to `worktree` and each shift works in its own
-  git worktree and branch, so your checkout and uncommitted edits stay untouched and `.env` stays out
-  ([shift worktrees](docs/knobs.md#shift-worktrees)).
+  git worktree and branch ([shift worktrees](docs/knobs.md#shift-worktrees)).
+- **Review before publishing.** Commits stay local unless the contract authorizes otherwise.
+  Optional guards are hardening, not a sandbox ([owner knobs](docs/knobs.md#owner-knobs)).
 
-The recovery signals, process lease, host differences, and limits are in
-[How Nightshift works](docs/how-it-works.md#how-nightshift-works). The
-[why and cost of the workflow](docs/why-nightshift.md#why-nightshift-exists) explain the trade-offs behind the design.
+The recovery signals, process lease, host differences and limits are in
+[How Nightshift works](docs/how-it-works.md#how-nightshift-works).
 
 ## Documentation
 
 Use the [documentation index](docs/README.md#documentation) for the full reference, grouped by task.
 
+- [Install details](docs/install.md#install) — every host, skills.sh, and platforms.
 - [Vocabulary](docs/vocabulary.md#vocabulary) — the names of the working files and mechanisms.
-- [How Nightshift works](docs/how-it-works.md#how-nightshift-works) — lifecycle, policy, recovery, and limits.
+- [How Nightshift works](docs/how-it-works.md#how-nightshift-works) — lifecycle, plan room, policy, recovery, and limits.
 - [Shift modes](docs/shift-modes.md#shift-modes) — choose and compose the work.
 - [Command reference](docs/commands.md#command-reference) — skills, scheduling, and offline controls.
-- [Owner knobs](docs/knobs.md#owner-knobs) — permissions, verification, receipts, and retention.
-- [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) — live progress, per-item measurements, and host limits.
+- [Owner knobs](docs/knobs.md#owner-knobs) — permissions, verification, budgets, catalogs, receipts, and retention.
+- [Receipts and token usage](docs/receipts.md#receipts-and-token-usage) — live progress, evidence, per-item measurements, and host limits.
 - [Archive and continue](docs/archive.md#archive-and-continue) — preserve finished shifts and carry open work forward.
 - [Troubleshooting](docs/troubleshooting.md#troubleshooting) — diagnose before repairing.
 

@@ -195,12 +195,13 @@ that binds a shift to its session. Only the bound conversation is fenced; every 
 the project works normally. The conversation working an armed shift cannot bind it: the probe takes
 the room back and says why, because a fenced shift could neither work nor clock out.
 
-**Fence.** While the room binds a conversation, the hardhat on every host denies file edits and
-writes, `apply_patch`, unknown tools and mutating shell commands. It allows reads, searches,
-read-only commands, and the plan's own files: the staging folder (the drafting table and the plan
-record), and the parking lot and snag log for review decisions. The denial tells the agent to tell
-you that the plan room is open, that nothing was changed, and how to leave. No conversation may
-touch the marker or run `plan-exit`.
+**Reminder and limits.** While the room binds a conversation, each message you send carries a
+planning reminder on Claude Code and Codex. The edit tools write only the plan's own files: the
+staging folder (the drafting table and the plan record), and the parking lot and snag log for
+review decisions. The tools and commands on your `planRoom` lists in `rules.json` are blocked, by
+default `git commit`, `git push` and `git tag`; reading, search, the web, questions and every other
+tool run. A denial tells the agent to tell you that the plan room is open, that nothing was changed,
+and how to leave. No conversation may touch the marker or run `plan-exit`.
 
 **Leaving is yours.** The marker is removed only by something you typed. On Claude Code that is the
 `UserPromptExpansion` hook, which fires only for a command you type, on `/nightshift:plan-exit` or
