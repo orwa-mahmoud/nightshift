@@ -375,7 +375,7 @@ open_label() { bash -c '. "$1"; ns_item_rows "$2" open | head -n1 | cut -f1' _ "
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF 'ok punch-list open=0 ticked=0'
   printf '%s\n' "$output" | grep -qF 'ok staged orders=1 drafts=0'
-  printf '%s\n' "$output" | grep -qF 'warn punch-list empty - offer the staged orders and drafts'
+  printf '%s\n' "$output" | grep -qF 'warn punch-list empty - offer the staged orders, drafts and plans'
 }
 
 @test "a future state-version fails closed and never rewrites the marker" {

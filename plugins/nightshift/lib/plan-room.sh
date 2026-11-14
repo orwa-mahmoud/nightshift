@@ -308,3 +308,43 @@ ns_plan_review() {
   fi
   [ "$any" -eq 1 ] || printf 'review none\n'
 }
+
+# Plans. A plan is a punch list waiting its turn: one file per plan under the layout's `plans`
+# folder, named for the plan, with its own contract, gates and items. Start cuts one into the punch
+# list. A layout without the folder has no plans; the drafting table holds them there.
+
+# ns_plans_dir <nightshift-dir> — the folder plans live in; status 1 in a layout that has none.
+ns_plans_dir() {
+  ns_layout_path "$1" plans 2>/dev/null
+}
+
+# ns_plan_open_count <plan-file> — the open `- [ ]` boxes under its `## Items` heading.
+ns_plan_open_count() {
+  awk '
+    /^## Items[[:space:]]*$/ { items = 1; next }
+    /^## / { items = 0 }
+    items && /^- \[ \]/ { n++ }
+    END { print n + 0 }
+  ' "$1" 2>/dev/null || printf '0\n'
+}
+
+# ns_plan_list <nightshift-dir> — one line per plan, `<key>\t<name>\t<open items>`, in key order.
+# The name is the one on the plan's title line, or its key when the title carries none.
+ns_plan_list() {
+  local dir f key name
+  dir="$(ns_plans_dir "$1")" || return 0
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
+  for f in "$dir"/*.md; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    key="${f##*/}"
+    key="${key%.md}"
+    name="$(ns_shift_name "$f")"
+    [ -n "$name" ] || name="$key"
+    printf '%s\t%s\t%s\n' "$key" "$name" "$(ns_plan_open_count "$f")"
+  done | LC_ALL=C sort
+}
+
+# ns_plan_count <nightshift-dir> — how many plans are waiting.
+ns_plan_count() {
+  ns_plan_list "$1" | awk 'END { print NR }'
+}

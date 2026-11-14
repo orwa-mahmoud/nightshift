@@ -277,6 +277,10 @@ DRAFTS="$(ns_open_drafts "$DRAFTING_TABLE")"
 if [ "$DRAFTS" -gt 0 ]; then
   fact "staged drafting-table items=$DRAFTS"
 fi
+PLANS="$(ns_plan_count "$NS")"
+if [ "$PLANS" -gt 0 ]; then
+  fact "plans waiting=$PLANS"
+fi
 
 # Archive files only `- ` bullets, so an inbox entry written any other way stays live for good.
 INBOX_STRAYS=0
@@ -426,6 +430,9 @@ if [ "$ORDERS" -gt 0 ] && [ "$ARMED" -eq 0 ] && [ "$OPEN" -eq 0 ]; then
 fi
 if [ "$DRAFTS" -gt 0 ] && [ "$ARMED" -eq 0 ] && [ "$OPEN" -eq 0 ]; then
   act confirm "promote agreed drafting-table items into punch-list.md, or start to be offered them"
+fi
+if [ "$PLANS" -gt 0 ] && [ "$ARMED" -eq 0 ] && [ "$OPEN" -eq 0 ]; then
+  act confirm "start to choose one of the waiting plans"
 fi
 if [ "$OPEN" -gt 0 ] && { [ "$ORDERS" -gt 0 ] || [ "$DRAFTS" -gt 0 ]; }; then
   fact "staged work is informational while $OPEN punch-list items are open — start works the current list, and drafts and Hunt orders stay staged for a later shift"

@@ -679,10 +679,11 @@ else
 fi
 ORDERS="$(ns_open_boxes_file "$WORK_ORDERS")"
 DRAFTS="$(ns_open_drafts "$DRAFTING_TABLE")"
-ok "staged orders=$ORDERS drafts=$DRAFTS"
+PLANS="$(ns_plan_count "$NS")"
+ok "staged orders=$ORDERS drafts=$DRAFTS plans=$PLANS"
 if [ "$OPEN" -eq 0 ]; then
-  if [ "$ORDERS" -gt 0 ] || [ "$DRAFTS" -gt 0 ]; then
-    warn "punch-list empty - offer the staged orders and drafts, and cut the owner's choice"
+  if [ "$ORDERS" -gt 0 ] || [ "$DRAFTS" -gt 0 ] || [ "$PLANS" -gt 0 ]; then
+    warn "punch-list empty - offer the staged orders, drafts and plans, and cut the owner's choice"
   else
     warn "punch-list empty and nothing is staged - Setup, Hunt, or a hand-written item is the next step"
   fi

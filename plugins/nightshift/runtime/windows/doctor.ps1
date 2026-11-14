@@ -274,6 +274,10 @@ $drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
 if ($drafts -gt 0) {
     Add-NSFact "staged drafting-table items=$drafts"
 }
+$plans = (Get-NSPlanList $ns).Count
+if ($plans -gt 0) {
+    Add-NSFact "plans waiting=$plans"
+}
 
 # Archive files only `- ` bullets, so an inbox entry written any other way stays live for good.
 $inboxStrays = 0
@@ -445,6 +449,9 @@ if ($orders -gt 0 -and $armed -eq 0 -and $open -eq 0) {
 }
 if ($drafts -gt 0 -and $armed -eq 0 -and $open -eq 0) {
     Add-NSAct confirm 'promote agreed drafting-table items into punch-list.md, or start to be offered them'
+}
+if ($plans -gt 0 -and $armed -eq 0 -and $open -eq 0) {
+    Add-NSAct confirm 'start to choose one of the waiting plans'
 }
 if ($open -gt 0 -and ($orders -gt 0 -or $drafts -gt 0)) {
     Add-NSFact "staged work is informational while $open punch-list items are open - start works the current list, and drafts and Hunt orders stay staged for a later shift"

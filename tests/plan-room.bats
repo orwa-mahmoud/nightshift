@@ -214,6 +214,25 @@ submit() {
   [ "$status" -eq 0 ]
 }
 
+@test "importing selected issues runs in the plan room and stages them onto its drafting table" {
+  p="$(room import)"
+  table="$(lib ns_layout_path "$p/.nightshift" drafting-table)"
+  cp "$PLUGIN/skills/nightshift/references/templates/drafting-table.md" "$table"
+  for verb in --fetch --stage; do
+    cmd="\"$PLUGIN/runtime/ns\" import-issues $verb https://github.com/acme/widgets/issues/12"
+    run claude "$p" planner "$(bash_call "$cmd")"
+    [ -z "$(reason "$output")" ] || { echo "denied: $cmd -> $output"; return 1; }
+  done
+  run env PATH="$BATS_TEST_DIRNAME/fixtures/import-issues/bin:$PATH" \
+    IMPORT_GH_FIXTURES="$BATS_TEST_DIRNAME/fixtures/import-issues/issues" \
+    IMPORT_GH_LOG="$BATS_TEST_TMPDIR/gh.log" NIGHTSHIFT_IMPORT_TIME="2026-08-14T12:00:00Z" \
+    bash "$PLUGIN/runtime/import-issues.sh" --project "$p" --stage https://github.com/acme/widgets/issues/12
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  grep -q 'Add a dry-run flag' "$table"
+  grep -q 'Status: proposed' "$table"
+  lib ns_plan_room_open "$p/.nightshift"
+}
+
 @test "another conversation in the same project is not fenced" {
   p="$(room others)"
   run claude "$p" builder "$(edit Edit "$p/src/app.js")"

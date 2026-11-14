@@ -688,10 +688,11 @@ else {
 Write-Ok $(if ($stoppedItems -gt 0) { "punch-list open=$open ticked=$ticked stopped=$stoppedItems" } else { "punch-list open=$open ticked=$ticked" })
 $orders = Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')
 $drafts = Get-NSOpenDrafts (Get-NSLayoutPath $ns 'drafting-table')
-Write-Ok "staged orders=$orders drafts=$drafts"
+$plans = (Get-NSPlanList $ns).Count
+Write-Ok "staged orders=$orders drafts=$drafts plans=$plans"
 if ($open -eq 0) {
-    if ($orders -gt 0 -or $drafts -gt 0) {
-        Write-Warn 'punch-list empty - offer the staged orders and drafts, and cut the owner''s choice'
+    if ($orders -gt 0 -or $drafts -gt 0 -or $plans -gt 0) {
+        Write-Warn 'punch-list empty - offer the staged orders, drafts and plans, and cut the owner''s choice'
     }
     else {
         Write-Warn 'punch-list empty and nothing is staged - Setup, Hunt, or a hand-written item is the next step'
