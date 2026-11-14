@@ -4,11 +4,10 @@ The scaffolded rules file carries every supported key. Optional guards are off u
 the three explicit question-tool entries default to parking so an unattended shift does not wait
 for the owner.
 
-The contract itself is a knob too: the punch-list text above `## Items` and the rules file's
-`clockOutMessage` are the owner's words. The shipped default asks one commit per item in
-repository mode, and in artifact mode completes an item with its own item receipt — but
-the gate releases on ticks, and the stall guard counts a tick as progress on its own, so a contract
-with the commit rule stripped runs a full night with no commits at all (on Codex, such a night
+The contract is yours too: the punch-list text above `## Items` and the rules file's
+`clockOutMessage` are your words. The shipped contract asks for one commit per item in a
+repository, and a receipt per item in a plain folder. Change it to batch commits, or to no commits
+at all: the gate releases on ticks, so a shift without commits still finishes (on Codex it then
 needs only the `workspace-write` sandbox).
 
 **One file drives them all:** setup copies a ready template to `.nightshift/rules.json` —
@@ -20,7 +19,7 @@ you set or lift a rule. The env vars below remain as session-start overrides for
 one-off exceptions.
 
 **Three ways to change a setting, all equal:** edit the file, ask for the change in plain words in
-any conversation, or run `/nightshift:customize` (in Codex, ask Nightshift to customize), which
+any conversation, or run `/nightshift:customize`, which
 shows every setting, template and catalog entry on one screen with its current and shipped value
 and changes only what you name. None of them requires the others.
 
@@ -164,9 +163,8 @@ The installed host loads its own hook manifest, so the runtime knows which nativ
 Setup does not generate or persist a host-specific rules file; keeping all three entries makes one
 workspace portable between Claude Code, Codex, and Cursor.
 
-Workspaces created before `request_user_input` or `AskQuestion` was added are missing that host's
-key. After upgrading, re-run setup and accept the offered key; Setup adds nothing without
-confirmation.
+When a rules file lacks one of these keys, Setup offers to add it and adds nothing without your
+yes.
 
 Allowing the tool removes the mechanical denial. The scaffolded punch-list contract,
 `clockOutMessage`, and `freshRevivalPrompt` still say “park, don't ask”; owners who want an
@@ -205,7 +203,7 @@ and the next shift tool call reads the change.
 
 | Env var | Effect |
 |---|---|
-| `NIGHTSHIFT_TOOL_RULES` | Session override for the exact-name JSON map above (rules file: `toolDeny`). Include both question keys when replacing the map |
+| `NIGHTSHIFT_TOOL_RULES` | Session override for the exact-name JSON map above (rules file: `toolDeny`). Include all three question keys when replacing the map |
 | `NIGHTSHIFT_REVIVAL_PROMPT` | your wording for the order a **resumed** conversation gets — default is one line ("you were cut off, continue"), because the thread carries its own context (rules file: `revivalPrompt`) |
 | `NIGHTSHIFT_FRESH_PROMPT` | your wording for the **fresh-session** fallback's order — the only rung that starts with no context, so its default points at the punch list (rules file: `freshRevivalPrompt`) |
 | `NIGHTSHIFT_GATE_MESSAGE` | your wording for the clock-out gate's DO-NOT-STOP reinjection (rules file: `clockOutMessage`) |
@@ -219,10 +217,6 @@ and the next shift tool call reads the change.
 | `NIGHTSHIFT_RECEIPTS_AUTO_COMMIT` | session override for `receiptsAutoCommit`. Shipped **false**: even when Setup created a local receipts git under `.nightshift/`, clock-out and Archive do not commit it — the owner does. Set `true` only if you want the headless `nightshift@localhost` snapshot on every shift end / Archive |
 | `NIGHTSHIFT_STALL_MAX` | (rules file: `stallMax`) by default a stuck agent is held and red-flagged in the shift log, never clocked out; set `=N` to clock the shift out after N stuck attempts. |
 | `NIGHTSHIFT_NOTIFY_CMD` | (rules file: `notifyCommand`) shift-end ping; runs as unrestricted owner-provided shell with `$NIGHTSHIFT_SUMMARY` set. POSIX uses `sh -c` (e.g. `say "$NIGHTSHIFT_SUMMARY"`); native Windows runs it with `-Command` in a child PowerShell (e.g. `Write-Host $env:NIGHTSHIFT_SUMMARY`). It can access the network if your command does. The watchman rings it too — once per outage — when a dead session could not be revived: the one night event that needs you. A successful Claude revival never pages; after the headless subprocess exits, it lands as a notice in `parking-lot.md`, with the thread's resume command and deep links when a session id was recorded. Successful Codex revivals log to `shift-log.md` only |
-
-**Recovery display.** The watchman does not require an owner to monitor it. Reopening a revived
-thread is currently only how the owner refreshes a stale panel before inspecting or interacting;
-the linked upstream refresh work would make that handoff smoother, not enable recovery itself.
 
 **Local profiles.** `ns apply-profile` (native Windows: `ns.ps1 apply-profile`)
 can preview or copy every version-1 or version-2 JSON file in
@@ -314,19 +308,9 @@ none:
 
 Each level is optional, and each takes a time (`45m`, `1h 30m`, `90s`), a token count (`500k tokens`,
 `2.5M tokens`), or both. Time is working time on the item across every session; tokens are input plus
-output. A reading the host does not give never trips a limit.
-
-- **Soft** — once the item passes it, the next tool result tells the agent, once, to start finishing
-  the item, and the shift log records when.
-- **Hard** — from the next tool call the hardhat allows only wrap-up: reading, `git add` and
-  `git commit`, and writes to the receipts, the punch list and the inbox. Everything else is denied
-  with the reason. A response already being written finishes first; the limit acts at tool-call
-  granularity. The agent commits the work in progress, writes the receipt, and closes the item as
-  stopped: `- [-]` with a `Stopped:` sub-bullet naming the limit, what was spent and the commit.
-
-A stopped item is never ticked. The gate treats it as closed so the shift moves on. Status, Doctor and
-the preflight count it as `stopped=N`. The morning receipt lists it under decisions for you, and
-Archive keeps it live as open work. Reopening it is the owner's edit: change the box back to `- [ ]`.
+output. A reading the host does not give never trips a limit. A soft limit tells the agent once to
+finish the item; a hard limit allows only wrap-up and closes the item as stopped (`- [-]`), never
+ticked. [Item budgets](item-budgets.md#item-budgets) walks through both.
 `ns shift-estimate --items N` suggests a budget from your own past receipts.
 
 `handoff` is the morning receipt — presentation only. It never decides whether a check ran, and it
@@ -370,7 +354,7 @@ plus a runtime-written index. It never reaches a public commit message.
 | `evidence.fileMap` | `off` | `on` writes, at each tick, the item's changed files as a tree in its receipt and the whole shift's in `.nightshift/receipts/shift-map.md`, built from git |
 | `evidence.architecture` | `off` | `on` keeps one diagram of the components the shift touched, `.nightshift/receipts/architecture.md`, updated by the item that changes the structure |
 | `evidence.check` | `off` | What a missing named evidence file does to the tick. `off` leaves the tick alone. `report` lists each missing file on the receipt and the morning receipt, and the tick stands. `block` counts that ticked item as open until the files are present |
-| `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and the kind, fixes it, and says in the receipt what it saw. It never affects the tick |
+| `evidence.review` | `off` | `on` means the agent opens the evidence it produced, compares it with the item and its catalog entry, fixes it, and says in the receipt what it saw. It never affects the tick |
 | `evidence.unavailable` | `""` | What happens when the evidence cannot be produced. `hold` closes the item as stopped. `park` records the decision and keeps working. `note` ticks the item and the receipt says why. Empty means `hold` when `check` is `block`, and `note` otherwise |
 
 With every `evidence` setting off and no `Evidence:` line on an item, receipts are exactly as they
@@ -378,7 +362,7 @@ would be without these settings. A shift policy can turn any of them on for one 
 
 ## Catalogs
 
-Every catalog — shifts, evidence kinds, quality-gate stacks, edge-case packs — takes the owner's own
+Every catalog — shifts, evidence entries, quality-gate stacks, edge-case packs — takes the owner's own
 entries the same way. An entry is one Markdown file, named for its key, in one of these places,
 highest precedence first:
 
@@ -405,36 +389,9 @@ version read — `receipts.evidence.kindsPaths` and `kindTemplatePath`, `gates.s
 `.nightshift/gates/stacks/`, `.nightshift/edge-cases/packs/` — are still read, and Doctor names
 where each lives now.
 
-The measuring is the runtime's, not the model's. No host shows a model its own token counts from
-inside the conversation, so a model asked to measure could only report `unavailable`; the hooks
-Nightshift already registers do see the numbers, and they take the readings. A reading is taken at
-every tick, whenever the item being worked changes (the open item whose receipt was written last),
-and when a shift ends with an item open. Everything spent between two readings belongs to the item
-being worked, so an item set aside and picked up later is charged for each stretch and nothing
-else. At the tick the gate writes the item's usage and duration lines into its receipt, and every
-stretch is a row in the receipt's Sessions table, with totals that carry across shifts.
-
-Where each host's figures come from, and what each one leaves out:
-
-- **Claude Code** — the session transcript the hook is handed. One response is written once per
-  content block and every copy repeats the same usage, so readings are deduplicated on the request
-  id; summing lines instead would overstate a real session by more than half. Cache creation and
-  cache read are reported separately from input and are additive.
-- **Codex** — the rollout's running `token_count`, read with one tail. Codex counts cached input
-  inside its input figure and reasoning inside its output figure, and the receipt says so rather
-  than rearranging the numbers.
-- **Cursor** — the stop payload, which is the only place the figures appear; the local agent
-  transcripts carry none. Input overlaps the cache figures, and Cursor reports no reasoning and no
-  subagent tokens. A turn's reading goes to the items it covered: the item it ran alone is that
-  item's figure, and a turn across several items is listed on each of their receipts as one shared
-  reading, `not attributable` to any one of them. The Cursor CLI the watchman revives into has no
-  per-turn source at all, so a revived segment there is `unavailable`.
-
-A dimension a host does not report reads `unavailable` — never zero, because zero is a
-measurement and silence is not. Totals are never summed across hosts, and no token count is ever
-turned into a price.
-
-[`examples/receipts.md`](../examples/receipts.md#receipts) shows the index and one item receipt.
+Token usage and working time are measured by the hooks from each host's own records, never
+estimated by the agent. [Receipts and token usage](receipts.md#token-usage-is-measured-by-the-runtime)
+explains where each host's figures come from.
 
 ### When the gate repeats itself
 
@@ -512,13 +469,6 @@ The two commit knobs read git, so they work against the repository the commit la
 command names itself (`git -C <dir>`, `cd <dir> &&`), else the tool's working directory, the
 project dir, or the single repo below it. Where that is genuinely ambiguous, such as a workspace
 holding two repos with the commit run from the root, they deny and say so rather than guess.
-
-**Changed in v0.4.0:** the commit guards resolve the repository they inspect, so they hold in the
-recommended layout below as well as in-place. Commits there count as shift progress too.
-
-**Changed in v0.3.0:** by default a stalled agent is now held and red-flagged, never clocked out —
-in the clock-out gate. Set `NIGHTSHIFT_STALL_MAX=N` to restore
-auto-clock-out after N stuck attempts.
 
 ---
 

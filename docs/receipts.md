@@ -42,18 +42,13 @@ the shift began is excluded from its accounting.
 
 ### One section per item, one row per session
 
-Each item receipt has one Time and Tokens section, rewritten in place at every checkpoint and tick,
-never stacked. Its **Sessions** table has one row per session that worked the item: the shift, the
-host and model, from and to, working and paused time, the tokens in the host's own fields, and how it
-ended (`ticked`, `paused`, `switched away`, `blocked`, `stopped`). A restart, a Reset, a revival or a
-host switch opens a new row. The **Total** row is the item's figure, and the index, the morning
-receipt, Archive and Status all read it. Reset keeps an open item's spend: the next Start continues
-the same accounting and records the gap as a pause. The runtime keeps live session rows in its
-own state; receipt text is a view of those rows. Older receipt sections are imported on their
-first checkpoint, and narrative comments do not supply session data. Archiving a closed receipt
-retires its live ledger. A failed redraw is recovered before indexing or archiving, and a
-checkpoint retry is counted once. Existing legacy receipts repositories automatically ignore
-these runtime files.
+Each item receipt has one Time and Tokens section, rewritten in place at every checkpoint and tick.
+Its **Sessions** table has one row per session that worked the item: the shift, the host and model,
+from and to, working and paused time, the tokens in the host's own fields, and how it ended
+(`ticked`, `paused`, `switched away`, `blocked`, `stopped`). A restart, a Reset, a revival or a host
+switch opens a new row. The **Total** row is the item's figure, and the index, the morning receipt,
+Archive and Status all read it. Reset keeps an open item's spend, so the next Start continues the
+same total.
 
 When the next session on an item runs on another host or model, the section gains a **Handoffs**
 block, and the shift log gets the same line. It names the item, the host and model before and after,
@@ -79,8 +74,8 @@ Receipts default to progress updates after 20 minutes of work on an item. You ca
 - **Completion only:** write the finished receipt without intermediate updates.
 
 The runtime checks the cadence when a tool returns, so it does not interrupt a running command.
-These thresholds control how often the progress paragraph is refreshed; they do not end a shift
-or enforce a token budget. Use the shift's deadline and stall settings to bound continued work.
+These thresholds control how often the progress paragraph is refreshed; they never stop work. To
+limit what one item may spend, give it a [budget](item-budgets.md#item-budgets).
 
 The settings are `receipts.progressMode`, `receipts.progressMinutes`, and `receipts.progressTokens`.
 
@@ -97,17 +92,11 @@ with both off the item is still ticked and its sessions still recorded. `off` me
 measurement off, and `unavailable` means the host did not report it. See
 [Owner knobs](knobs.md#shift-handoff-and-archive) for the exact settings.
 
-## Evidence a reviewer opens first
+## Evidence
 
-An item can carry an `Evidence:` line beside `Verify:` naming what shows the work at a glance:
-screenshots at named widths, a benchmark's before and after, a sample response. Plan and Hunt offer
-these lines once, from an evidence catalog, and add none without your yes. `receipts.evidence.default`
-asks the same of every item for a shift.
-
-Such an item's receipt gets an `## Evidence` section. Short evidence sits inline; screenshots,
-recordings and data go in a folder named after the receipt, beside it, and are linked relatively.
-Evidence that could not be produced reads `unavailable — <reason>`. Archive files the folder with its
-receipt, a renamed receipt takes it along, and the index links it. check off leaves the tick alone, report names a missing file, and block keeps the stop open.
+An item that asked for [evidence](evidence.md#evidence) gets an `## Evidence` section in its receipt.
+Short evidence sits inline; screenshots, recordings and data go in a folder beside the receipt and
+are linked from it. Evidence that could not be produced reads `unavailable — <reason>`.
 
 ## Receipts and the morning receipt are separate switches
 

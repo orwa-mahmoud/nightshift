@@ -6,7 +6,7 @@ file. It needs no code, and no other file changes: every listing finds a new fil
 | Catalog | One entry is | Shipped folder | Template | A good one to copy |
 | --- | --- | --- | --- | --- |
 | Shifts | a ready-made night of work | [`compose/shifts/`](../plugins/nightshift/skills/nightshift/references/compose/shifts/) | [`shift-entry.md`](../plugins/nightshift/skills/nightshift/references/templates/shift-entry.md) | [`environment-example-drift.md`](../plugins/nightshift/skills/nightshift/references/compose/shifts/environment-example-drift.md) |
-| Evidence kinds | how to show one kind of work to a reviewer | [`evidence/kinds/`](../plugins/nightshift/skills/nightshift/references/evidence/kinds/) | [`evidence-kind.md`](../plugins/nightshift/skills/nightshift/references/templates/evidence-kind.md) | [`ui.md`](../plugins/nightshift/skills/nightshift/references/evidence/kinds/ui.md) |
+| Evidence | what a reviewer opens to judge one sort of change | [`evidence/kinds/`](../plugins/nightshift/skills/nightshift/references/evidence/kinds/) | [`evidence-kind.md`](../plugins/nightshift/skills/nightshift/references/templates/evidence-kind.md) | [`ui.md`](../plugins/nightshift/skills/nightshift/references/evidence/kinds/ui.md) |
 | Gate stacks | the checks one kind of project runs | [`compose/gates/`](../plugins/nightshift/skills/nightshift/references/compose/gates/) | [`gates-stack.md`](../plugins/nightshift/skills/nightshift/references/templates/gates-stack.md) | [`python.md`](../plugins/nightshift/skills/nightshift/references/compose/gates/python.md) |
 | Edge-case packs | situations worth a test | [`plan/edge-cases/`](../plugins/nightshift/skills/nightshift/references/plan/edge-cases/) | [`edge-case-pack.md`](../plugins/nightshift/skills/nightshift/references/templates/edge-case-pack.md) | [`input.md`](../plugins/nightshift/skills/nightshift/references/plan/edge-cases/input.md) |
 
@@ -16,7 +16,7 @@ file. It needs no code, and no other file changes: every listing finds a new fil
    lowercase words joined by hyphens and ending in .md, such as nightly-docs.md.
 2. **Write it your way.** The template is a starting point; its headings are not required.
    Nightshift checks only what it reads: a shift's ending and its pasteable item, a gate stack's
-   `Match:` line, and an evidence kind's optional `evidence-check` block. To check yours from the
+   `Match:` line, and an evidence entry's optional `evidence-check` block. To check yours from the
    repository root, run
    `plugins/nightshift/runtime/ns catalog-index --catalog <catalog> --check-draft <your-file>`.
 3. **Open a pull request** with that one file. For a shift, reference
@@ -35,9 +35,9 @@ place an entry can live, and how to use your own template.
 - **Shifts:** whether it is finite or open-ended, how it finds the work, when it is done (stated
   as something a check can confirm), what it will never do, and the Verify line. The full rules
   are in the [shift recipe](../plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md#the-six-things-an-entry-must-declare).
-- **Evidence kinds:** a concrete file name, width, command or figure in every line. The
+- **Evidence entries:** a concrete file name, width, command or figure in every line. The
   optional `evidence-check` block only counts files. Rules: the
-  [evidence recipe](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
+  [evidence recipe](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-catalog-entry).
 - **Gate stacks:** commands you have run on that kind of project, a Detect section naming the
   files that signal it, and one `Match:` line. Rules:
   [adding a stack](../plugins/nightshift/skills/nightshift/references/compose/gates-catalog.md#adding-a-stack).

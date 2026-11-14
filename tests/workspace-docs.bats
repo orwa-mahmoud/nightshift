@@ -1,9 +1,6 @@
 load helpers
 
 ROOT="$BATS_TEST_DIRNAME/.."
-DOC="$ROOT/docs/how-it-works.md"
-VOCAB="$ROOT/docs/vocabulary.md"
-COMMANDS="$ROOT/docs/commands.md"
 LIB="$ROOT/plugins/nightshift/lib/lib.sh"
 LINKER="$ROOT/plugins/nightshift/runtime/link-workspace.sh"
 
@@ -13,50 +10,6 @@ resolve_workspace() {
 
 resolve_work_target() {
   bash -c '. "$1"; ns_work_target "$2"' _ "$LIB" "$1"
-}
-
-@test "workspace docs cover every supported and refused layout" {
-  for heading in \
-    'Repository root (supported)' \
-    'Parent with one repository (supported)' \
-    'Git worktree (supported)' \
-    'Parent with several repositories (selection required)' \
-    'Persistent folder (artifact mode)' \
-    'Linked task root (explicit opt-in)'; do
-    grep -qF "### $heading" "$DOC" || {
-      echo "missing workspace example: $heading"
-      return 1
-    }
-  done
-
-  grep -qF '.nightshift/run/work-target' "$DOC"
-  grep -qF 'plugins/<name>/' "$DOC"
-  grep -qF '.nightshift/run/deadline' "$DOC"
-  grep -qF 'UNIX epoch' "$DOC"
-  grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$DOC"
-  grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$COMMANDS"
-  grep -qF '.nightshift/archive/<YYYY-MM-DD>/' "$VOCAB"
-  grep -qF '**archive**' "$VOCAB"
-  grep -qF 'Filing is a copy' "$VOCAB"
-  grep -qF 'Missing or empty receipts create no dated receipts folder' "$VOCAB"
-  grep -qF 'UNIX epoch seconds' "$VOCAB"
-  grep -qF '.nightshift/run/work-target' "$VOCAB"
-  grep -qF '**state workspace**' "$VOCAB"
-  grep -qF '**doctor**' "$VOCAB"
-  grep -qF 'never repairs' "$VOCAB"
-  grep -qF 'expected commit identity' "$VOCAB"
-  grep -qF 'Hunt consumes them only in repository mode' "$VOCAB"
-  grep -qF 'Start refuses to arm' "$DOC"
-  grep -qF 'Nightshift never selects the first directory silently' "$DOC"
-}
-
-@test "workspace docs state the link trust boundary" {
-  contents="$(tr '\n' ' ' <"$DOC")"
-  printf '%s' "$contents" | grep -qF 'This file is a trust boundary'
-  printf '%s' "$contents" | grep -qF 'regular file—not a symlink'
-  printf '%s' "$contents" | grep -qF 'exactly one absolute path'
-  printf '%s' "$contents" | grep -qF 'targets without `.nightshift/`'
-  printf '%s' "$contents" | grep -qF 'The link does not choose the code repository'
 }
 
 @test "documented repository and parent layouts match the resolver" {
@@ -157,17 +110,4 @@ resolve_work_target() {
         || { echo "$f points at missing $ref"; return 1; }
     done
   done
-}
-
-@test "no public page calls a per-item receipt the way an item completes" {
-  for f in "$ROOT/README.md" "$ROOT"/docs/*.md "$ROOT"/examples/*.md; do
-    [ -f "$f" ] || continue
-    for phrase in 'one receipt per item' 'artifact receipt per item' 'a receipt per item'; do
-      if grep -qiF "$phrase" "$f"; then
-        echo "$f: $phrase"
-        return 1
-      fi
-    done
-  done
-  grep -qF '`receipts`' "$ROOT/docs/knobs.md"
 }

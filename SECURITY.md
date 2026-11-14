@@ -32,7 +32,8 @@ include prompts, credentials, repository content, or a full transcript.
 
 When reporting, please include:
 
-- The Claude Code or Codex version and the plugin version.
+- The coding agent (Claude Code, Codex, or Cursor), its version, and the plugin version.
+- The operating system and shell version.
 - A minimal reproduction.
 
 You'll get a reply within a week.

@@ -48,6 +48,15 @@ function Write-PlanRecord {
     $open = Get-NSPlanRecordOpen $ns
     if ($open.Count -eq 0) { Write-Output 'open plan: none' }
     foreach ($line in $open) { Write-Output ('open plan: ' + $line) }
+    # The plan files waiting their turn, so the owner can continue one or start a new one.
+    if (Test-NSLayoutKey $ns 'plans') {
+        $plans = Get-NSPlanList $ns
+        if ($plans.Count -eq 0) { Write-Output 'plan file: none' }
+        foreach ($p in $plans) {
+            $f = $p.Split("`t")
+            Write-Output ('plan file: ' + $f[0] + ' ' + [char]0x00B7 + ' ' + $f[1] + ' ' + [char]0x00B7 + ' ' + $f[2] + ' open')
+        }
+    }
     foreach ($line in (Get-NSPlanReview $ns)) { Write-Output $line }
 }
 

@@ -57,8 +57,7 @@ recover a live session whose last turn ended on an API error; a usage limit wait
 Stop-work orders, completed shifts, and deadlines stand the watchman down.
 
 The host-specific signals, session-end behavior, and fallbacks are documented in
-[How Nightshift works](how-it-works.md#recovery). Recovery preserves the chance to continue;
-it cannot repair the upstream service or guarantee that the work itself is correct.
+[How Nightshift works](how-it-works.md#recovery).
 
 ## The design response
 
@@ -75,9 +74,8 @@ These failures need different mechanisms:
 - recovery outside the dead session;
 - local receipts for what actually happened.
 
-That is Nightshift's scope. It does not make generated code inherently correct, replace review, or
-repair a host's internal context engine. It keeps the working contract available until the list is
-done, the deadline arrives, or the owner stops the shift.
+Together they keep the working contract in force until the list is done, the deadline arrives, or
+the owner stops the shift.
 
 ## What a finished shift looks like
 
@@ -91,18 +89,14 @@ holds what was delivered and how it was verified.
 
 ## What it costs
 
-Nightshift adds work rather than removing it: a contract to read, gates to run, receipts to write,
-and a watchman that wakes up. **It is not a way to spend fewer tokens, and nothing here claims it
-is.** A shift may well use more than the same work done by hand.
+Nightshift is built to finish work, not to spend fewer tokens: a contract to read, checks to run,
+receipts to write, and a watchman that wakes up all cost something, and a shift may use more than
+the same work done by hand. What it saves is rework: a night that stops at the wrong place, a
+morning spent reconstructing what happened, a change nobody can review.
 
-What it can reduce is rework — a night that stops at the wrong place, a morning spent
-reconstructing what happened, a change nobody can review. Whether that trade is worth it depends
-on the work, and it is yours to judge. Where a receipt shows what an item cost, those are the
-numbers the host reported, kept separate from anything estimated; where the host reports nothing,
-the receipt says unavailable rather than guessing. A token count is never turned into a price.
-
-The [receipts and token usage guide](receipts.md#receipts-and-token-usage) explains how the runtime measures each
-item and preserves gaps in the host's data.
+Every receipt shows what an item actually cost, in the figures the host reported. The
+[receipts and token usage guide](receipts.md#receipts-and-token-usage) explains how each item is
+measured.
 
 ## Follow the story
 

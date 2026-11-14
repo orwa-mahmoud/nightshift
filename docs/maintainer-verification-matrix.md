@@ -38,9 +38,9 @@ Schemas: `plugins/nightshift/skills/nightshift/references/schemas/v1/`. Fixtures
 | Catalog contracts, one file per entry | `tests/catalog-index.bats`, `tests/catalog.bats` |
 | Every path a skill names resolves | `tests/skill-refs.bats`, `tests/skill-paths.bats` |
 | Every path the docs name resolves | `tests/doc-refs.bats` |
-| Selection and launch modes | `tests/shift-modes.bats`, `tests/walkthroughs.bats`, `tests/shift-planner.bats` |
+| Selection and launch modes | `tests/walkthroughs.bats`, `tests/shift-planner.bats` |
 | Contract schema and size budgets | `evals/run.sh`, `evals/validate.sh`, `tests/evals.bats` |
-| Public claims stay honest | `tests/security-claims.bats`, `tests/workspace-docs.bats`, `tests/troubleshooting.bats` |
+| Public pages show only real commands and references | `tests/workspace-docs.bats` |
 
 ## Host parity and recovery
 
@@ -80,7 +80,6 @@ tests/lint-shell.sh
 - Central telemetry or hosted accounts
 - Mandatory npm, Homebrew, or MCP for Setup → Start → tick
 - Independent proof of a self-reported tick (by design)
-- Competitor comparisons in public artifacts
 
 Public documentation: [`docs/evidence-capabilities.md`](evidence-capabilities.md#evidence-and-receipts),
 [`docs/how-it-works.md`](how-it-works.md#three-policy-layers-and-one-resolved-view).

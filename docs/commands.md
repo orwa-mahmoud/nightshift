@@ -3,175 +3,75 @@
 Choose work with [Shift modes](shift-modes.md#shift-modes), inspect [receipts and token usage](receipts.md#receipts-and-token-usage),
 or [archive finished shifts](archive.md#archive-and-continue). The commands below operate those workflows.
 
-```text
-/nightshift:setup      # at most four questions: gates, then every default on one screen
-/nightshift:quality    # survey quality debt; choose review first or run directly
-/nightshift:hunt       # compose tonight: pick ready shifts, set hours, add your scope
-/nightshift:import-issues  # stage explicitly named GitHub issues onto the drafting table
-/nightshift:plan       # open the plan room: explore and design with the agent; nothing is built
-/nightshift:plan-exit  # leave the plan room (or type /nightshift:start to leave and start)
-/nightshift:customize  # every setting, template and catalog entry on one screen; change what you name
-# or write your items in the punch list by hand — one checkbox per task
-#   item anatomy, with filled items: examples/overnight-webapp.md
-/nightshift:start      # works queued items without questions; offers drafts only when empty
-/nightshift:status     # morning: what got done, what got parked, what got stuck
-/nightshift:doctor     # diagnose the workspace: facts, warnings, next actions; never repairs
-                       # optional follow-up: export a local support bundle (never uploaded)
-/nightshift:stop       # pause now; open boxes stay open; deadline is preserved
-/nightshift:reset      # drop runtime markers and the deadline; keep punch list and history
-/nightshift:purge      # delete this project's .nightshift/; does not uninstall the plugin
-/nightshift:archive    # file the shift into its own folder, .nightshift/archive/<YYYY-MM-DD>/ by default, laid out like the live site; open work and the contract stay live
-# you review the local commits or artifact receipts — push only in repository mode, or forbid pushing outright (one env line below)
-```
+| Command | What it does |
+| --- | --- |
+| **Set up and plan** | |
+| `/nightshift:setup` | Asks at most four questions: the gates, then every default on one screen. |
+| `/nightshift:plan` | Opens the plan room: explore and design with the agent; nothing is built. |
+| `/nightshift:plan-exit` | Leaves the plan room. `/nightshift:start` leaves and starts in one step. |
+| `/nightshift:import-issues` | Stages explicitly named GitHub issues onto the drafting table. |
+| `/nightshift:customize` | Shows every setting, template and catalog entry on one screen, and changes what you name. |
+| **Choose and run the work** | |
+| `/nightshift:start` | Works the queued items without questions; offers drafts only when the list is empty. |
+| `/nightshift:hunt` | Composes tonight's shift: pick ready-made shifts, set the hours, add your scope. |
+| `/nightshift:quality` | Surveys quality debt; you choose review first or run directly. |
+| **While it runs** | |
+| `/nightshift:status` | What got done, what got parked, and what got stuck. |
+| `/nightshift:doctor` | Diagnoses the workspace: facts, warnings and next actions. Never repairs. Can export a local support bundle, never uploaded. |
+| `/nightshift:stop` | Pauses now. Open boxes stay open and the deadline is kept. |
+| **After the shift** | |
+| `/nightshift:archive` | Files the shift into its own folder, `.nightshift/archive/<YYYY-MM-DD>/` by default, laid out like the live site. Open work and the contract stay live. |
+| `/nightshift:reset` | Drops the runtime markers and the deadline; keeps the punch list and history. |
+| `/nightshift:purge` | Deletes this project's `.nightshift/`. Does not uninstall the plugin. |
 
-Setup asks at most four questions: the work target only when it is ambiguous, the detected gates
-(accept, edit, or none), one screen with every other default, and the ignored files a shift
-worktree should copy in when one was chosen. Answer the defaults screen with "accept all" or name
-what to change; a rerun shows the current values.
+You can also write items in the punch list by hand, one checkbox per task;
+[the example punch list](../examples/overnight-webapp.md) shows the anatomy with filled items. You
+review the local commits or artifact receipts yourself: push only in repository mode, or forbid
+pushing outright with `NIGHTSHIFT_FORBIDDEN_COMMANDS` set to `git .*push` ([tool rules](knobs.md#tool-rules)).
 
-With work in the punch list, Start asks nothing and promotes no other work. If the list is empty,
-it offers staged drafts and orders for approval; an empty unattended start cannot choose for the
-owner. It runs one native preflight —
-`ns start-preflight`, or
-`ns.ps1 start-preflight` on native Windows — which prints one
-verdict per line (`ok`, `warn`, `refuse`) and exits non-zero when the site must not arm. Those
-sentences are identical on every host, so a scheduled run behaves like an interactive one. Detail
-behind a host-specific verdict is in
-[`references/hosts/`](../plugins/nightshift/skills/nightshift/references/hosts/).
+## Start
 
-Quality uses the same Guided or Automatic selection and Review first or Run directly launch modes
-as Hunt. Both compose in the skill; the model plans. Copyable owner requests for each combination
-are in [Shift modes](shift-modes.md#shift-modes). A review-first survey is read-only until the owner chooses what happens next: **fix now**
-appends a Hunt work order then cuts and starts it, **draft for later** writes only to the drafting
-table, and **ignore** writes nothing. Run directly composes that same work order, arms, and starts
-the selected work without a second approval pause.
+With work in the punch list, `/nightshift:start` asks nothing and works it. With an empty list, it
+offers your staged drafts for approval. Before it arms, it runs a preflight that prints one `ok`,
+`warn` or `refuse` line per check, and it refuses to arm when something would stall the shift.
 
-Those are Claude Code's slash spellings. In Codex or repository-connected ChatGPT, mention
-Nightshift and ask naturally: “set up Nightshift,” “show me the ready-made shifts,” “run product
-evolution for four hours,” “start the shift,” or “show shift status.” A normal ChatGPT scratch
-conversation cannot affect the repository, so Setup redirects it to Codex before writing. The same
-skills and `.nightshift/` files are used in persistent project workspaces.
+[Setup](setup.md#setup) explains Setup's questions, [Shift modes](shift-modes.md#shift-modes) gives
+copyable Hunt and Quality requests, and [The plan room](plan-room.md#the-plan-room) covers planning.
 
-For a custom timed objective, use Hunt in **Guided** mode and choose **Owner walkthrough**. Its
-scope answer is required and becomes the objective verbatim; then set the hours and choose review
-first or run directly. Automatic mode never selects this entry because the goal must come from the
-owner rather than work-target discovery.
+## Terminal controls
 
-Automatic mode also skips the GitHub issue hunt in artifact mode. Imported drafts stay on the
-drafting table until the work target is a matching git repository.
-Automatic mode also skips the defect hunt in artifact mode.
-Automatic mode also skips documentation drift in artifact mode.
-Automatic mode also skips TODO and FIXME debt in artifact mode.
-Automatic mode also skips coverage hunt in artifact mode.
-Automatic mode also skips tooling quality-debt entries in artifact mode.
+These run from any terminal, with no model and no tokens, in the folder that holds `.nightshift/`
+(or pass `--project <path>`). Below, `ns` is `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"`; on native
+Windows, `ns.ps1` takes the same verbs.
 
-When the task root and Nightshift workspace differ, setup can create an explicit local link after
-showing both absolute paths and receiving confirmation. The offline equivalent is:
+| Command | What it does |
+| --- | --- |
+| `ns stop-shift` | Pauses the shift now, even if the agent is stuck. Open items and the deadline are kept. |
+| `ns reset-shift` | Drops the runtime markers, the deadline and a leftover STOP. Keeps the punch list, the history, and what open items have already spent. |
+| `ns purge-workspace --confirm-path <path to .nightshift>` | Resets, then deletes this project's `.nightshift/`. Does not uninstall the plugin. |
+| `ns plan-new --name <name>` | Starts a plan file from the punch list's contract and checks. Keeps a plan that already has the name. |
+| `ns plan-exit` | Leaves the plan room. |
+| `ns start-preflight` | Prints the checks Start runs before it arms. |
+| `ns shift-estimate --items 5` | Estimates time and tokens per item from your past receipts, with a suggested deadline and budget. Needs at least three readings. |
+| `ns check-items` | Names drafted items with a missing `Verify:` or `Commit:`, an `Evidence:` that names nothing, or a `Budget:` that does not parse. Refuses nothing. |
+| `ns link-workspace --host-root <path> --workspace <path>` | Points a task folder at the workspace that already holds `.nightshift/`. |
+| `ns export-support` | Writes a local support bundle, with known sensitive fields left out. Never uploaded. |
+| `ns archive-receipts` | Files a finished shift's receipts into its archive folder. |
+| `ns check-report --report <file> --manifest <file>` | Checks a cited research report against its source manifest. |
 
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" link-workspace --host-root /absolute/task/root --workspace /absolute/workspace
-```
+`touch .nightshift/STOP` also stops the shift, at the agent's next stop. Write it where
+`.nightshift/` is, not beside a `.nightshift-link`. When a stopped shift left an expired deadline,
+Start will not invent a new one: run Reset, then Start.
 
-Native Windows:
+When a shift is not where you expect, run `/nightshift:doctor`, then follow
+[Troubleshooting](troubleshooting.md#troubleshooting). Doctor reports; it never repairs.
 
-```powershell
-ns.ps1 link-workspace `
-  --host-root C:\absolute\task\root --workspace C:\absolute\workspace
-```
+## Permissions
 
-The target must already contain `.nightshift/`. Relative, missing, multiline, and symlink pointers
-are rejected; Nightshift never searches for a workspace automatically.
-
-Immediate pause, any time, without a model. `ns` resolves the workspace from where you run it and
-follows `.nightshift-link` when present; pass `--project <path>` when you are running from
-somewhere else, and it is used exactly as given.
-
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" reset-shift
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" purge-workspace \
-  --confirm-path /absolute/workspace/.nightshift
-```
-
-Native Windows:
-
-```powershell
-ns.ps1 stop-shift --project C:\absolute\task\root
-ns.ps1 reset-shift --project C:\absolute\task\root
-ns.ps1 purge-workspace --project C:\absolute\task\root `
-  --confirm-path C:\absolute\workspace\.nightshift
-```
-
-Stop writes `STOP` and stands a verified watchman down. Hardhat stays until clock-out writes
-`.nightshift/run/.ended`; Reset is the manual escape. The deadline is preserved. Reset also removes runtime
-markers, the deadline, and leftover STOP. It keeps the time and tokens an open item has already
-spent: the next Start continues that item's accounting and records the gap as a pause. Purge does Reset, then deletes only that project's
-`.nightshift/` after an exact `--confirm-path` match. None of them uninstall the plugin.
-
-A panic `touch .nightshift/STOP` (POSIX) or `New-Item -ItemType File -Force .nightshift\STOP`
-(native Windows PowerShell) still writes the stop-work order in the folder that contains
-`.nightshift/` — not beside `.nightshift-link`. A STOP next to `.nightshift-link` is not
-the order. That marker waits for the next Stop event or watchman wake; it does not disarm
-immediately. On Claude Code, Escape
-pauses the interactive session and its watchman reads that interrupt before reviving. Codex SessionEnd stands the watchman down: closing, archiving, or idle unload pauses recovery.
-Start re-arms the shift. A crash that fires no SessionEnd can still be recovered.
-
-When a paused Stop left an expired deadline, Start refuses to invent a new time budget. Write a
-new UNIX epoch to `.nightshift/run/deadline`, or run Reset then Start.
-
-When a shift is not where you think it is — wrong folder, broken `.nightshift-link`, leftover
-`STOP`, watchman stood down, or a stale process rejected by the process lease — run
-`/nightshift:doctor` on Claude Code or ask Nightshift to diagnose on Codex, then walk
-[Troubleshooting](troubleshooting.md#troubleshooting) before changing files. Doctor reports; it never repairs.
-In artifact mode it also reports `artifact receipts N`, `latest artifact receipt` with the
-filename of the most recently written receipt when any exist. Status and Doctor judge
-completion by the per-item receipt files under `.nightshift/receipts/`.
-It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
-
-A local support bundle from a terminal (never uploaded). Known sensitive fields
-are omitted:
-
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" export-support
-```
-
-Native Windows:
-
-```powershell
-ns.ps1 export-support --project .
-```
-
-File the shift into its archive folder, laid out like the live site. Name each ticked item's
-receipt with `--retire` so it leaves live storage; an open item's receipt stays live and is not filed.
-Missing or empty receipts create no dated receipts folder.
-
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" archive-receipts
-```
-
-Native Windows:
-
-```powershell
-ns.ps1 archive-receipts --project .
-```
-
-A cited research report against its source manifest:
-
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-report --report ./report.md --manifest ./sources.tsv --output ./report.md
-```
-
-Native Windows:
-
-```powershell
-ns.ps1 check-report --project . --report .\report.md --manifest .\sources.tsv --output .\report.md
-```
-
-**Permissions: the night cannot click Allow.** Configure unattended permissions directly in the
-host before starting. Setup never writes permission modes, allowlists, or approval settings.
-Recovery never adds bypass flags; `recovery.launchScope` chooses recorded restricted sandbox
-inheritance or independently configured host defaults. A prompt or denied tool can leave the
-shift needing your attention. Nightshift's guards stay active within the host's permissions.
+An unattended shift cannot click Allow, so set the host's permissions before you start. Setup never
+changes them, and recovery never adds bypass flags: `recovery.launchScope` decides whether a revived
+session uses your host's defaults or a recorded Codex sandbox. Nightshift's guards stay active
+within whatever the host allows.
 
 On Codex, unattended execution is `-a never` and the sandbox is a separate choice. A contract
 that does not commit runs under `-s workspace-write`, because ticks alone finish a night. Under
@@ -179,62 +79,10 @@ Codex's `workspace-write` sandbox `.git` is protected, so a contract that commit
 it and needs `codex -a never -s danger-full-access`. The owner-defined Nightshift guards remain
 active in either sandbox mode.
 
-### Plan before you build
-
-`/nightshift:plan` opens the plan room for the conversation that runs it. Nothing is implemented
-there. Each message you send carries a reminder that the conversation is planning, and the edit
-tools write only the plan's own files: the drafting table, the plan record and, for a morning
-review, the parking lot and the snag log. Commands and tools on your `planRoom` lists in `rules.json`
-are blocked, by default `git commit`, `git push` and `git tag` ([knobs](knobs.md)). Everything else
-runs: reading, search, the web, `gh`, the browser, helper agents, questions and tools a host adds
-later. Claude Code and Codex carry the reminder; Cursor's prompt hook cannot add context, so on
-Cursor the plan skill's own instructions and the edit check hold the room. Other conversations in
-the project work normally. The agent explores the code, lays out options with a recommendation,
-keeps the plan record current, and captures a plan into the drafting table only when you say yes.
-
-Only you leave the room. In Claude Code and Cursor, type `/nightshift:plan-exit`, or
-`/nightshift:start` to leave and start in one step. In Codex, type `$nightshift:plan-exit` or
-`$nightshift:start` at the start of a message. From any terminal:
-
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" plan-exit
-```
-
-Native Windows:
-
-```powershell
-ns.ps1 plan-exit --project .
-```
-
-Start refuses while a plan room is open, so the agent cannot leave it by starting a shift itself.
-Two read-only verbs size and check a plan; the plan room runs both, and either can run from a
-terminal:
-
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" shift-estimate --items 5   # figures from your past receipts
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" check-items                # the drafting table's item shape
-```
-
-Native Windows:
-
-```powershell
-ns.ps1 shift-estimate --project . --items 5
-ns.ps1 check-items --project .
-```
-
-`shift-estimate` reads the Time and Tokens totals of every ticked receipt, live and archived, and
-prints the median and range per item; with `--items` it adds a total, a suggested deadline and a
-suggested `Budget:` line. These are estimates from your own history, never limits, and fewer than
-three readings estimate nothing. `check-items` names, per item, a missing or empty `Verify:`, a
-`Verify:` that names nothing checkable (asked as a question), a missing `Commit:`, a `Budget:` that
-does not parse, a nested checkbox, and any checkbox no item owns.
-It refuses nothing.
-
-### Start it at a fixed time
+## Start at a fixed time
 
 ```text
-Claude Code: /nightshift:schedule
-Codex: ask Nightshift to schedule the shift
+/nightshift:schedule
 ```
 
 It checks the things that would otherwise surprise you at 4am — that work is actually queued in the
@@ -247,29 +95,27 @@ the scheduled time**, because a start works the list it finds and promotes nothi
 machine runs nothing** — launchd defers a missed job to the next wake, cron loses it, and only
 `pmset repeat wakeorpoweron` makes a Mac wake for it.
 
-#### When you have no credit left
+### When you have no credit left
 
 The moment you most want to schedule a run is often the moment your quota is gone — and then no
 slash command works, because a command is read by the model. The generator underneath is plain
 shell that spends no tokens and needs no session:
 
-```bash
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --preflight   # check both hosts; writes nothing
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --at 04:05    # print the config + the install command
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --at 04:05 --agent 'codex exec -s danger-full-access'
-                                              # same entry, run by Codex instead of Claude
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --at 04:05 --target systemd
-                                              # print user .service/.timer; never runs systemctl
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --list        # what is already registered for this project
-"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" schedule --remove      # the command that unregisters it
-```
+| Command (`ns` is `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"`) | What it does |
+| --- | --- |
+| `ns schedule --preflight` | Checks both hosts. Writes nothing. |
+| `ns schedule --at 04:05` | Prints the config and the command that installs it. |
+| `ns schedule --at 04:05 --agent 'codex exec -s danger-full-access'` | The same entry, run by Codex instead of Claude. |
+| `ns schedule --at 04:05 --target systemd` | Prints a user `.service` and `.timer`. Never runs `systemctl`. |
+| `ns schedule --list` | Shows what is already registered for this project. |
+| `ns schedule --remove` | Prints the command that unregisters it. |
 
 Run it from a terminal with `NIGHTSHIFT_PLUGIN_ROOT` set to the absolute installed plugin directory.
 Keep the bundled runtime and libraries together. It refuses a second entry for a project
 that already has one, and identifies projects by path rather than folder name, so two checkouts
 called `api` never collide. It cannot queue your work for you, though — that part has to be in the
-punch list already. Preflight also fails `work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm` when the mode file is missing and Setup would propose artifact.
-It also fails `work target could not be resolved - a scheduled start will refuse to arm` when the recorded work target cannot be read.
+punch list already. Preflight also fails when the work mode is unset or the work target cannot be
+read, because a scheduled start would refuse to arm.
 
 Native Windows uses the token-free PowerShell generator:
 
@@ -286,9 +132,9 @@ It emits a current-user Task Scheduler definition with overlap prevention and `S
 It does not wake the machine or run after logout as a stored-credential account; see
 [Native Windows](windows.md#native-windows).
 
-One more appears in Claude Code's slash menu: `/nightshift:nightshift` is the method itself — how to
-work an item, park a decision, keep a snag log, and run product evolution. The agent loads it on its
-own whenever a shift is running, so you rarely invoke it directly.
+`/nightshift:nightshift` is the method itself: how to work an item, park a decision, keep a snag
+log, and run product evolution. The agent loads it whenever a shift is running, so you rarely run it
+yourself.
 
 ---
 

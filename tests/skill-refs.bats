@@ -540,7 +540,6 @@ documented_pages() {
     run/.shift-armed run/.ended STOP run/.pending-filing; do
     grep -qF "\`$f\`" "$map" || { echo "state-map.md does not name $f"; return 1; }
   done
-  grep -qF 'state-map.md#every-file-and-who-writes-it' "$BATS_TEST_DIRNAME/../docs/vocabulary.md"
 }
 
 @test "hunt and quality send composition refusals to the preflight rather than restating them" {

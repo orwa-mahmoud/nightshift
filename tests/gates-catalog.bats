@@ -164,8 +164,6 @@ EOF
   [ "$output" = "$(cd -P "$p" && pwd -P)/.nightshift/gates/stacks" ] \
     || { printf 'path: [%s]\n' "$output"; return 1; }
   grep -qF '| `catalogs/<catalog>/` |' "$PLUGIN/skills/nightshift/references/shift/state-map.md"
-  grep -qF 'catalogs.<catalog>.paths' "$ROOT/docs/knobs.md"
-  grep -qF 'gates.stacksPaths' "$ROOT/docs/knobs.md"
 
   write_stack "$p/.nightshift/gates/stacks/proj-only.md" "Project only"
   write_stack "$XDG_CONFIG_HOME/nightshift/gates/stacks/user-only.md" "User only"

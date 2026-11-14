@@ -122,6 +122,7 @@ plan-room	0	.plan-room	file
 plan-room	2	run/plan-room	file
 plan-record	0	plan-record.md	file
 plan-record	2	staging/plan-record.md	file
+plans	2	staging/plans	dir
 pulse	0	.shift-pulse	file
 pulse	2	run/.shift-pulse	file
 session-end	0	.session-end	file

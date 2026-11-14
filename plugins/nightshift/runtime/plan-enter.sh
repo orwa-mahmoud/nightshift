@@ -48,7 +48,7 @@ fi
 # record — the plan record, created on first entry, every plan it holds open, and what waits for the
 # owner's review: entering resumes from both.
 record() {
-  local open
+  local open plans
   bash "$_here/scaffold.sh" --project "$WORKSPACE" plan-record >/dev/null 2>&1 \
     || printf 'plan-enter: could not create %s\n' "$(ns_layout_name "$NS" plan-record)" >&2
   printf 'plan record %s\n' "$(ns_layout_name "$NS" plan-record)"
@@ -57,6 +57,15 @@ record() {
     printf '%s\n' "$open" | sed 's/^/open plan: /'
   else
     printf 'open plan: none\n'
+  fi
+  # The plan files waiting their turn, so the owner can continue one or start a new one.
+  if ns_plans_dir "$NS" >/dev/null; then
+    plans="$(ns_plan_list "$NS")"
+    if [ -n "$plans" ]; then
+      printf '%s\n' "$plans" | awk -F '\t' '{ printf "plan file: %s · %s · %s open\n", $1, $2, $3 }'
+    else
+      printf 'plan file: none\n'
+    fi
   fi
   ns_plan_review "$NS"
 }

@@ -100,7 +100,7 @@ Nightshift separates **what the project always forbids**, **what the owner usual
 
 | File | Role |
 | --- | --- |
-| `rules.json` | Permanent boundaries: tool denies, commit guards, retention, and the five elevation categories (`sudo`, containers, global-packages, daemons, external-services). The shipped template denies each by default. Containers cover the Docker socket and create-state verbs (`run`, `create`, `compose up`, `start`, `build`); read-only forms such as `docker ps` and `brew list` are not gated. Hardhat is hardening, not a sandbox. |
+| `rules.json` | Permanent boundaries: tool denies, commit guards, retention, and the five elevation categories (`sudo`, containers, global-packages, daemons, external-services). The shipped template allows each; set any to `deny`. Containers cover the Docker socket and create-state verbs (`run`, `create`, `compose up`, `start`, `build`); read-only forms such as `docker ps` and `brew list` are not gated. Hardhat is hardening, not a sandbox. |
 | `shift-defaults.json` | Only in a workspace that has not migrated. The same four remembered choices now live in the `shift` block of `rules.json`; `ns shift-policy migrate` moves them, and until it runs they are still read from here. Neither file is ever the source of an effective value. |
 | `shift-policy.json` | Tonight's authoritative snapshot: deadline, verification level, tooling policy, one-shift elevation allowances with provenance, and the shift identity they bind to. Written by composition or Start; guarded while armed. |
 
@@ -109,9 +109,9 @@ and each elevation category with whether it is allowed permanently, for one shif
 Preflight compares punch-list needs against that view before arming.
 
 **Verification profiles** (`fast`, `balanced`, `strict`, `custom`) live in
-`references/profiles/`. `fast` is first-class: no automated checks, items and receipts only.
-`balanced` runs existing fast checks per item and a full suite at the end. `strict` runs applicable
-checks per item and at the end. Profiles propose defaults during Setup; owner rules remain
+`references/profiles/`. They decide when the punch list's `## Gates`
+run: `fast` never (items and receipts only), `balanced` once before clock-out, `strict` before every
+tick and once at the end, and `custom` on the cadence the punch list names. Profiles propose defaults during Setup; owner rules remain
 authoritative.
 
 **Tooling policies** are `existing-tools` (scan with what is already installed),
@@ -145,9 +145,9 @@ broadly permitted unattended session. That combination lets the host run without
 while hooks still enforce the owner's configured boundaries—a frictionless permission mode plus
 an owner-specific denylist that host permissions alone do not express.
 
-Hooks enforce command and stop boundaries. They do not prove that the work behind a checked box is
-good. Verification belongs in each item's gate, and a human still reviews the resulting commits.
-Doctor (`/nightshift:doctor` on Claude Code, or ask Nightshift to diagnose on Codex) prints what
+Hooks enforce the command and stop boundaries; each item's checks verify the work, and you review
+the commits.
+Doctor (`/nightshift:doctor`) prints what
 Nightshift resolved — facts, warnings, and classified next actions — and never repairs.
 
 ## Questions, stalls, and deadlines
@@ -160,9 +160,8 @@ That mechanical policy is explicit in `rules.json`: `toolDeny.AskUserQuestion` c
 Code, `toolDeny.request_user_input` controls Codex, and `toolDeny.AskQuestion` controls Cursor.
 A non-empty value denies that exact tool with the owner's message; an empty value allows it. The
 [tool-rules reference](knobs.md#tool-rules) explains the remaining contract text an owner changes
-for an interactive, ask-and-wait shift. Existing workspaces should re-run Setup after upgrade and
-accept the offered `request_user_input` or `AskQuestion` entry; Nightshift never inserts either
-without confirmation.
+for an interactive, ask-and-wait shift. When a workspace's rules file lacks one of these entries,
+Setup offers to add it.
 
 Run directly authorizes reasonable, reversible implementation defaults without a second approval
 pause. Significant decisions, rejected paths, and rollback instructions stay in `parking-lot.md`
@@ -179,11 +178,14 @@ in `.nightshift/run/deadline` as UNIX epoch seconds; Start refuses to arm one wi
 shifts may also use one as a cap.
 
 The stall guard reads checked items and commits as progress in repository mode, and checked
-items and artifact receipts in artifact mode. A deadline is therefore the final
-cost boundary when failed attempts could otherwise keep producing commits. Without a deadline or
-stall cap, a finite shift can remain held and retry until the owner intervenes.
+items and artifact receipts in artifact mode. A deadline bounds the whole shift, and an
+[item budget](item-budgets.md#item-budgets) bounds a single item. Without either, or a stall cap, a
+finite shift that keeps failing stays held for you.
 
 ## The plan room
+
+What you can do in the room, from stress-testing the plan to sizing it from past receipts, is in
+[The plan room](plan-room.md#the-plan-room). This section covers how the room holds.
 
 Planning is a conversation that must not drift into building. The plan room holds that line with the
 hooks rather than with a prompt, so it holds however the request is worded and however long the
@@ -206,7 +208,7 @@ and how to leave. No conversation may touch the marker or run `plan-exit`.
 **Leaving is yours.** The marker is removed only by something you typed. On Claude Code that is the
 `UserPromptExpansion` hook, which fires only for a command you type, on `/nightshift:plan-exit` or
 `/nightshift:start`. On Codex it is the `UserPromptSubmit` hook, on a message that starts with
-`$nightshift:plan-exit` or `$nightshift:start`. On Cursor it is `beforeSubmitPrompt`, on the same
+one of those commands. On Cursor it is `beforeSubmitPrompt`, on the same
 commands. A skill the agent invokes reaches none of these. `ns plan-exit` in a terminal works
 everywhere, and it is the exit wherever a host's prompt hook does not run. Start refuses while the
 room is open, and `/nightshift:start` clears the room before Start's preflight runs. The
@@ -233,12 +235,12 @@ No hook can recover the session it was running inside after that process dies. N
 watchman runs outside the session, records the active conversation identity, and wakes
 periodically. The default cadence is ten minutes and is owner-configurable.
 
-Both watchmen act only on a shift recorded for their own host and require positive evidence before
-reviving a dead session. When a resumable identity exists, they target that conversation first;
+Each host has its own watchman. It acts only on a shift recorded for its host and requires positive
+evidence before reviving a dead session. When a resumable identity exists, they target that conversation first;
 the host-specific continuation and fresh-session fallbacks below cover failed resume attempts or a
 missing identity. They never revive merely because a workspace “looks stuck”: builds, syncs, logs,
 and all other project-file activity do not vote on session life. They stand down for a completed
-shift, a stop-work order, quitting time, or a shift owned by the other host.
+shift, a stop-work order, quitting time, or a shift owned by another host.
 
 Immediately before each revival attempt, the watchman atomically advances `.shift-lease` to a new
 generation and passes that generation's ownership nonce to the child process. Every observable
@@ -330,21 +332,15 @@ fences observable tools in the stale process; it does not repair the display. Up
 [openai/codex#28259](https://github.com/openai/codex/issues/28259) and
 [openai/codex#21743](https://github.com/openai/codex/issues/21743).
 
-Those three reports concern display and session-index synchronization. If the hosts resolve them,
-the manual reopen can disappear and the recovery handoff can feel consistent across interactive
-and headless use. The watchman, on-disk contract, and process lease still provide the recovery and
-safety behavior; broader context-continuity reports discussed below can affect resume quality and
-are not merely interface polish.
-
 ## Stop means stop
 
 Escape and Ctrl+C remain available host interrupts; Nightshift cannot override the owner's
 keyboard. They pause or interrupt the current process without clearing the punch list. A clean
 Claude session exit is different: it tells the watchman to stand down until Start re-arms. A
 headless run has no Escape. On Claude Code, Escape in the shift transcript also tells the watchman
-to stand by. Codex exposes no equivalent owner-interrupt signal; closing an interactive Codex
-session with open Items leaves the armed shift to its watchman. To end the shift itself on either
-host, use the host Stop command or the terminal helper in the folder you opened:
+to stand by. On Codex, closing the session fires SessionEnd, which pauses recovery until Start
+re-arms. To end the shift itself on any host, use `/nightshift:stop` or the terminal helper in the
+folder you opened:
 
 ```bash
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift
@@ -358,7 +354,7 @@ ns.ps1 stop-shift --project C:\absolute\task\root
 
 That writes `STOP` and kills only a verified watchman. `.shift-armed` stays, so hardhat
 remains until clock-out writes `.nightshift/run/.ended`. Reset is the manual escape. The deadline and punch list
-stay. Reset (`ns reset-shift` / `ns reset-shift`) drops runtime markers and the deadline. Purge
+stay. Reset (`ns reset-shift`) drops runtime markers and the deadline. Purge
 deletes that project's `.nightshift/` after an exact `--confirm-path`. None of them uninstall the
 plugin.
 
@@ -395,11 +391,10 @@ For the review workflow, see [Receipts and token usage](receipts.md#receipts-and
 
 ## Different strengths on each host
 
-Claude Code and Codex expose the Stop event Nightshift uses to refuse an early clock-out while
-open Items remain. Both also receive the persistent contract, owner rules, bounded shifts,
-recovery after a dead resumable session, isolated changes, and reviewable progress. Those
-capabilities ship as native skills and hook wiring from one package; Nightshift wraps and proxies
-nothing.
+Claude Code, Codex, and Cursor each expose the stop event the clock-out gate uses to refuse an early
+clock-out while items remain open. All three get the persistent contract, owner rules, bounded
+shifts, recovery after a dead session, isolated changes, and reviewable progress, from one package
+of native skills and hook wiring; Nightshift wraps and proxies nothing.
 
 Cursor is a third native front door (`.cursor-plugin`, shared skills, Cursor-shaped hooks). It
 shares the same `.nightshift/` site. Clock-out reads Cursor's `stop.status` (`completed` | `aborted` | `error`). A live
@@ -418,8 +413,7 @@ the same project stay outside the gate. Closing the origin tab is not a clean se
 once a worker is recorded. Do not arm the Claude or Codex watchman from a Cursor session.
 Add the public GitHub repo as a Cursor marketplace source
 (`.cursor-plugin/marketplace.json` at the repo root, same role as the Claude
-marketplace file). Official marketplace listing waits on a
-verified Cursor shift with watchman recovery. The Cursor CLI (`agent`), including
+marketplace file). The Cursor CLI (`agent`), including
 print mode (`agent -p`), runs the hooks shipped with an installed plugin. When every box is
 ticked, a stop-work order is present, or the deadline has passed, and the bound session is gone
 or idle, the Cursor watchman runs the same ending as the stop hook and does not wait on a
@@ -442,19 +436,8 @@ scoped to the bound session; the watchman's private generation nonce supplies th
 once recovery begins. Native Windows hooks can walk the Codex process ancestry and record the
 same PID/start-time pair when the operating system exposes it.
 
-Nightshift does not claim to repair either host's conversation history. It keeps the important
-working state independent of that history. Claude Code's strongest host-specific behavior is the
-complete recovery ladder around its transcript and session signals. Codex's strongest additional
-value is a bounded shift, durable product-research and opportunity state, mechanical owner rules,
-and reviewable progress around a naturally persistent task.
-
-The host continuity failures around this boundary have been reported by Codex users in
-[#25900](https://github.com/openai/codex/issues/25900),
-[#8310](https://github.com/openai/codex/issues/8310), and
-[#29356](https://github.com/openai/codex/issues/29356), and by Claude Code users in
-[#6159](https://github.com/anthropics/claude-code/issues/6159) and
-[#43044](https://github.com/anthropics/claude-code/issues/43044). Nightshift preserves the working
-contract around those failures; it does not patch either host's context engine.
+Nightshift keeps the working state on disk, independent of each host's conversation history, so a
+shift continues even when that history is lost or compacted.
 
 ## Workspaces and repositories
 
@@ -468,8 +451,8 @@ Nightshift resolves two locations and persists both decisions:
   marketplace manifest may sit at a repository work-target root or under `plugins/<name>/`.
 
 State resolution never searches parent or sibling folders. Work-target resolution accepts the
-opened repository or exactly one immediate, non-hidden child repository. Skip a symlink or reparse child; it is not a nested checkout. Several candidates require
-an explicit choice.
+opened repository or exactly one immediate, non-hidden child repository. A symlinked child is not treated as a nested checkout. Several candidates require an
+explicit choice.
 
 ### Repository root (supported)
 
@@ -544,25 +527,19 @@ refuses `/workspace/scratch/` and any path under it — that ChatGPT workspace i
 Start, Status, Doctor, Archive, Schedule, and workspace links read the same mode record. Existing
 repository workspaces stay repository mode when `work-mode` is absent.
 
-Artifact mode records item completion in the per-item receipt files under `$NS/receipts/`.
-The stall guard treats a new receipt like a commit; Doctor reports `artifact receipts N` and, when any exist,
-`latest artifact receipt` with the filename only of the most recently written receipt;
-it warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land; Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts;
-Archive copies receipts with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
-into the shift's folder. A ticked item's receipt leaves live storage once the shift has ended; an
-open item's receipt stays live and is not filed. Missing or empty receipts create no dated receipts folder.
+Artifact mode records item completion in the per-item receipt files under `$NS/receipts/`, and the
+stall guard treats a new receipt the way it treats a commit. Doctor reports how many receipts exist
+and names the newest. When the receipts path is not a usable folder, Doctor offers to replace it,
+and Start, Hunt, Quality and Schedule refuse to begin until it is fixed. Archive files a ticked
+item's receipt with the shift and keeps an open item's receipt live.
 Repository mode follows the contract's commit policy: per-item commits, a coherent batch, or
 uncommitted work when requested.
 
 Cited reports in that folder follow `cited-research.md` and
 `ns check-report` (native Windows: `ns.ps1 check-report`). Hunt's SEO audit,
-documentation writing, and research-synthesis entries inherit that contract. Automatic Hunt skips
-quality-debt entries the folder cannot support and skips the GitHub issue hunt in artifact mode;
-imported drafts stay on the drafting table. It also skips the defect hunt in artifact mode.
-It also skips documentation drift in artifact mode.
-It also skips TODO and FIXME debt in artifact mode.
-It also skips coverage hunt in artifact mode.
-It also skips tooling quality-debt entries in artifact mode.
+documentation writing, and research-synthesis entries inherit that contract. Entries that need a
+repository are skipped in a plain folder; [Shift modes](shift-modes.md#tools-and-workspaces) lists
+them.
 
 ### Linked task root (explicit opt-in)
 
@@ -586,43 +563,26 @@ The linked workspace becomes authoritative for every state read and write; no st
 The link does not choose the code repository—that remains the linked workspace's persisted
 `.nightshift/run/work-target`. Project settings stay at the host task root.
 
-This repository is maintained with a parent state workspace and a nested public work target.
-
 Remote SSH and devcontainers use these same layouts only when the host process, plugin, repository,
 state workspace, hooks, and watchman all run inside the remote environment. The reproducible matrix
 and the refused split-runtime boundary are in [Remote environments](remote-environments.md#remote-ssh-and-devcontainers).
 
-## Guarantees and limits
+## What is enforced, and what is yours
 
-- **Mechanical:** hooks govern when either host may stop and which configured commands or paths are
-  denied during the shift.
-- **Conventional:** the skill and punch-list contract govern the quality represented by a tick.
-  The model reports its own completion; the owner and item checks verify it.
-- **No lint or tests is a first-class setup path:** setup does not invent project tooling. The
-  item's observable definition of done carries the verification instead.
-- **Contract reinjection is not proof:** every blocked stop receives the working standard again,
-  including no stubs, pass the item's gate, and never fake a tick, so that standard does not decay
-  out of context. This proves only that open Items prevented an early clock-out—not that a checked
-  item is good.
-- **Completion beats cost by default:** a stuck finite shift remains held and flagged. Add a
-  deadline or `NIGHTSHIFT_STALL_MAX` when a cost boundary matters more than indefinite retry.
-- **Progress is approximate:** the stall guard treats ticks, commits, and artifact receipts as progress, so a failed
-  attempt committed by the agent can look alive. Item checks and the deadline remain the backstop.
-- **No built-in push block:** pushing is allowed unless the owner adds it to the shift rules.
-- **Hardhat is hardening, not a sandbox:** shell-command rules match command text. The pattern
-  rules prevent accidental drift by a cooperative agent; they are not unbypassable isolation. The
-  hard-budget wrap-up is built on the same command classifier, under the same limit. The plan room
-  reminds the planning conversation and blocks only edits outside the plan and your `planRoom`
-  lists.
-- **The process lease fences observed tools:** it rejects stale-process calls delivered to the
-  host's PreToolUse hook after ownership transfers. It cannot revoke a call already admitted,
-  refresh the IDE, terminate a host process, suppress generated text, or control commands a human
-  runs directly in another terminal.
-- **Permissions still matter:** an unattended run cannot click an approval prompt. Configure the
-  required host permissions before leaving.
-- **First run attended:** use a trusted git repository or a persistent folder (never a disposable
-  ChatGPT scratch workspace), observe stop and recovery behavior, and review every local commit or
-  artifact receipt before relying on an overnight run.
+- **Enforced by hooks:** when the agent may stop, and which configured commands, paths, secrets and
+  commit identities are denied during the shift. These hold in every permission mode.
+- **Yours to verify:** each item's checks and your review decide whether a ticked item is good.
+  Setup never invents project tooling; with no tests or lint, the item's definition of done carries
+  the verification.
+- **Cost:** a stuck finite shift is held and flagged for you by default. A deadline bounds the shift,
+  an [item budget](item-budgets.md#item-budgets) bounds one item, and `stallMax` clocks out after a
+  number of stuck attempts.
+- **Pushing:** nothing blocks a push unless you add it to the rules, such as `git .*push` in
+  `forbiddenCommands`.
+- **Hardening, not a sandbox:** command rules match command text. They keep a cooperative agent
+  inside your boundaries; for isolation, use the host's sandbox or a container.
+- **Permissions:** an unattended shift cannot click an approval prompt, so set the host's
+  permissions before you leave.
 
 Continue with the [first-night safety checklist](first-night-checklist.md#first-night-safety-checklist),
 [Shift modes](shift-modes.md#shift-modes), the

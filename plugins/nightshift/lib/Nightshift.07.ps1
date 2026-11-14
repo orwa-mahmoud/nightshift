@@ -538,7 +538,9 @@ function Write-NSStatusReport {
     try { $orders = [int](Get-NSOpenBoxesInFile (Get-NSLayoutPath $ns 'work-orders')) } catch { $orders = 0 }
     # With approved work open, staged work is informational and nothing else: Start works the punch
     # list exactly as the owner left it.
-    $staged = 'drafts=' + $drafts + ' orders=' + $orders
+    $plans = 0
+    try { $plans = (Get-NSPlanList $ns).Count } catch { $plans = 0 }
+    $staged = 'drafts=' + $drafts + ' orders=' + $orders + ' plans=' + $plans
     if ($open -gt 0) { $staged += ' (informational while items are open)' }
     Fact 'staged' $staged
 
@@ -3733,4 +3735,43 @@ function Invoke-NSWatchmanDirectClockOut {
         Exit-NSMutex $mutex
     }
     return $result
+}
+
+# Plans. A plan is a punch list waiting its turn: one file per plan under the layout's `plans`
+# folder, named for the plan, with its own contract, gates and items. Start cuts one into the punch
+# list. A layout without the folder has no plans; the drafting table holds them there.
+
+# Get-NSPlanOpenCount <plan-file> - the open `- [ ]` boxes under its `## Items` heading.
+# Mirrors ns_plan_open_count.
+function Get-NSPlanOpenCount {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $n = 0
+    $items = $false
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ($line -cmatch '^## Items[ \t]*$') { $items = $true; continue }
+        if ($line.StartsWith('## ')) { $items = $false }
+        if ($items -and $line.StartsWith('- [ ]')) { $n++ }
+    }
+    return $n
+}
+
+# Get-NSPlanList <nightshift-dir> - one `<key>`t<name>`t<open items>` line per plan, in key order.
+# The name is the one on the plan's title line, or its key when the title carries none.
+# Mirrors ns_plan_list.
+function Get-NSPlanList {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $out = New-Object Collections.Generic.List[string]
+    if (-not (Test-NSLayoutKey $NightshiftDir 'plans')) { return , $out.ToArray() }
+    $dir = Get-NSLayoutPath $NightshiftDir 'plans'
+    if (-not (Test-Path -LiteralPath $dir -PathType Container) -or (Test-NSReparsePoint $dir)) { return , $out.ToArray() }
+    $files = @(Get-ChildItem -LiteralPath $dir -File -Filter '*.md' -Force -ErrorAction SilentlyContinue |
+        Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -and -not $_.Name.StartsWith('.') } |
+        Sort-Object -Property Name -CaseSensitive)
+    foreach ($f in $files) {
+        $key = $f.Name.Substring(0, $f.Name.Length - 3)
+        $name = Get-NSShiftName $f.FullName
+        if ($name.Length -eq 0) { $name = $key }
+        $out.Add($key + "`t" + $name + "`t" + (Get-NSPlanOpenCount $f.FullName))
+    }
+    return , $out.ToArray()
 }

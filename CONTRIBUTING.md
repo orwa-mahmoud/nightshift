@@ -1,23 +1,30 @@
 # Contributing to Nightshift
 
-Thanks for looking under the hood. The plugin is deliberately bounded — a punch-list contract,
-native enforcement and recovery on disk, transparent skills, and a ledger that records what was
-measured — so contributions should preserve explicit authority, local ownership, reversibility,
-cross-host alignment, and honest evidence.
+Contributions are welcome across planning, execution, receipts, customization, recovery, and
+supported hosts. Share something you use, improve a workflow, or help another developer get a
+successful first shift.
 
-The bounded core: on-disk work contract, stop-gate hook, watchman recovery, and skills that hold an
-agent to both. Contributions must not weaken owner gates, invent silent policy, or add mandatory
-hosted services, accounts, or connectors to the MIT core.
+## Choose a contribution
 
-Not sure where to start? Use the
-[contribution map](docs/contribution-map.md) to choose catalog, documentation, testing, runtime,
-recovery, hook, platform, or public-run work with the relevant files and checks.
+| Bring | Start here |
+| --- | --- |
+| A recurring workflow for code, research, documents, or other deliverables | [Shift catalog · #21](https://github.com/orwa-mahmoud/nightshift/issues/21) |
+| A way to capture evidence that helps you review work | [Evidence entries · #219](https://github.com/orwa-mahmoud/nightshift/issues/219) |
+| Project checks or edge cases that catch real defects | [Gate stacks and edge-case packs · #220](https://github.com/orwa-mahmoud/nightshift/issues/220) |
+| A shift and what you found in review, including an interrupted or unsuccessful run | [Run receipts · #22](https://github.com/orwa-mahmoud/nightshift/issues/22) |
+| An improvement to Nightshift | [Propose an enhancement](https://github.com/orwa-mahmoud/nightshift/issues/new?template=feature_request.yml) |
 
-## Ground rules
+Catalog entries are Markdown files. Use a shipped template or write your own headings and layout.
+[Add to a catalog](docs/add-to-a-catalog.md) describes the fields each catalog reads.
+For code contributions, the [contribution map](docs/contribution-map.md) identifies the relevant
+files and checks.
 
-- **Open an issue first** for anything beyond a typo or small fix. The gate's
-  behaviour is a contract; changes to it need discussion before code.
-- **One concern per PR.** A hook fix and a docs fix are two PRs.
+## Working on a change
+
+- **Use an existing issue or ongoing thread** when it fits. Open an issue for a new feature or
+  substantial behavior change before implementing it. Typos and small fixes can go straight to a PR.
+- **Keep one concern per PR.** Include the implementation, tests, and documentation needed for
+  that change together.
 - **Shell must stay portable.** Hooks run under bash, and must work on macOS's
   bash 3.2 — no bashisms newer than 3.2, no GNU-only flags (`xargs -d`, `sed -i`
   without a suffix, etc.). Where a GNU tool has no portable equivalent, try it
@@ -29,9 +36,8 @@ recovery, hook, platform, or public-run work with the relevant files and checks.
 - **PowerShell must stay portable.** Native Windows hooks and helpers run under
   Windows PowerShell 5.1 and PowerShell 7. Avoid syntax and APIs that exist on
   only one of those runtimes.
-- **Test both gate outcomes.** If your change touches the stop-gate, include the
-  transcript of an actual blocked stop and an actual permitted one in the PR
-  description. The tests in `tests/` must pass.
+- **Test both gate outcomes.** For a stop-gate change, demonstrate a blocked stop and a permitted
+  stop. Include the focused test results or sanitized reproduction output in the PR.
 
 ## AI-assisted contributions
 
@@ -43,35 +49,54 @@ The same review standards apply regardless of which tools were used.
 
 ```bash
 git clone https://github.com/orwa-mahmoud/nightshift.git
-# install as a local plugin, then run Nightshift: Setup in Codex or
-# /nightshift:setup in Claude Code inside a scratch project
+cd nightshift
 ```
+
+Run the repository checks from this checkout. Exercise plugin changes in a separate scratch
+project using the checkout's plugin.
+
+For Claude Code, start a session from the scratch project with the absolute path to the plugin:
+
+```sh
+claude --plugin-dir /absolute/path/to/nightshift/plugins/nightshift
+```
+
+For Codex, register the checkout as a local marketplace, then install its plugin:
+
+```sh
+codex plugin marketplace add /absolute/path/to/nightshift
+codex plugin add nightshift@nightshift
+```
+
+Review and trust the hooks, then open a new conversation in the scratch project. Enable one
+Nightshift copy for the test and run `/nightshift:setup`.
+[Installation and host setup](docs/install.md) covers hook trust and platform details.
 
 ## Checks
 
-```bash
-tests/run-parallel.sh                # full suite in parallel (default 6 shards; ~wall-clock of slowest shard)
-tests/run-shard.sh 1 6               # one CI shard; use --list to print its files without running bats
-bats -r tests/                       # serial full suite (same coverage, slower)
-tests/lint-shell.sh  # lint — the same set CI checks
-tests/coverage.sh                    # line coverage via kcov (runs in docker on non-Linux)
-claude plugin validate . --strict    # manifest + marketplace validation
-evals/run.sh                         # catalog contract schema, case book, and size budgets
-```
+Run the tests covering the behavior you changed and report the command and result in your PR.
+For example, a clock-out gate change starts with `bats tests/clock-out-gate.bats`. Run the matching
+Windows checks when shared behavior changes. For prose changes, check links, paths, and commands.
+
+The commands below cover broader verification when the change needs it. Coverage is a separate run.
+
+| Command | What it checks |
+| --- | --- |
+| `tests/run-parallel.sh` | The full suite in parallel, 6 shards by default; takes about as long as the slowest shard. |
+| `tests/run-shard.sh 1 6` | One CI shard. `--list` prints its files without running Bats. |
+| `bats -r tests/` | The full suite, serially: same coverage, slower. |
+| `tests/lint-shell.sh` | Shell lint, the same set CI checks. |
+| `tests/coverage.sh` | Line coverage through kcov, in Docker on non-Linux hosts. |
+| `claude plugin validate . --strict` | The manifests and the marketplace. |
+| `evals/run.sh` | The catalog contract schema, the case book, and the size budgets. |
 
 Shell must stay Python-free: the plugin ships no `.py` file, and `tests/armed-no-python-jq.bats`
 holds that line together with an armed shift that has neither `jq` nor `python3` installed.
 
-CI ([`ci.yaml`](.github/workflows/ci.yaml)) runs shellcheck, the bats suite, and plugin validation
-when the matching trees change. A docs-only edit runs `tests/run-docs-contract.sh` instead of the
-full shard matrix. A Release Please version bump validates manifests and skips Windows, remote, and
-shards. Required job names still report, so merge is not left waiting. Bats runs as six parallel
-shards on both Ubuntu and macOS (same partition as `tests/run-shard.sh`); the macOS job keeps the
-system Bash 3.2 first on `PATH`. A `windows-native` job always starts and runs
-`tests/windows/run.ps1` under Windows PowerShell 5.1 and PowerShell 7 when the suite changes;
-otherwise both matrix names report a skip. It stays on `windows-latest` so those shells parse. A `remote-ssh` job crosses an ephemeral OpenSSH connection; a
-`devcontainer` job starts the checked-in fixture. Both compare sanitized receipts — they do not
-load an authenticated host session.
+CI selects jobs from the paths changed. Documentation uses the docs contract checks; runtime
+changes run the Bats suite on Ubuntu and macOS, native Windows checks, and the relevant lint and
+plugin validation. macOS uses Bash 3.2; Windows runs PowerShell 5.1 and 7. Remote SSH and
+devcontainer jobs exercise their respective fixtures. [CI workflow](.github/workflows/ci.yaml)
 
 ## Releasing
 
@@ -96,30 +121,16 @@ does for someone running a shift, not how it was implemented. Do not tag by hand
 `plugins/nightshift/.claude-plugin/plugin.json` or `CHANGELOG.md` — a pull request that does will conflict with
 the release it is trying to describe.
 
-## What gets merged
+## Project fit
 
-Fixes that make the gate harder to fool, **new entries for the shift catalog**, and
-docs that shorten the path to a first successful shift.
+Nightshift integrates through the native plugins, skills, and hooks of Claude Code, Codex, and
+Cursor. Keep implementations in those extension points, with shared behavior aligned across hosts.
+OS scheduling and recovery run outside the session so a shift can start or resume when the agent
+is absent.
 
-The [contribution map](docs/contribution-map.md) links current issues and gives each area an entry
-path, prerequisite knowledge, likely files, and focused verification commands.
-
-Catalog entries are the easiest way in: each is one Markdown file, it touches no hooks, and it
-grows a catalog without growing the product. [Add to a catalog](docs/add-to-a-catalog.md#add-to-a-catalog)
-covers shifts, evidence kinds, gate stacks and edge-case packs. For a shift, read
-[`catalog-recipe.md`](plugins/nightshift/skills/nightshift/references/compose/catalog-recipe.md) first — an
-entry must declare its ending, how it discovers work, its definition of done, what
-it will never do, its verification, and the stacks it supports.
-
-Nightshift is an augmentation layer in the Claude Code, Codex, and Cursor
-ecosystems. It integrates through each host's native plugins, skills, and hooks —
-without introducing a separate agent runtime, proxy, or installation channel.
-Shared behaviour should stay aligned across all three hosts; host-specific code
-should be a thin integration, not a generic adapter layer. Changes that stand outside those
-extension points are declined, however useful they sound: dashboards, proxies,
-and second install channels such as npm or Homebrew. The exceptions are OS
-scheduling and recovery code that exist only to keep an *inside* promise when no
-live session can act.
+Preserve the owner's chosen rules, local state, and control over starting and stopping work.
+Make new policy explicit and configurable. The MIT plugin runs locally with the coding agent
+the owner selects. Keep additional hosted services, accounts, and connectors optional.
 
 ## License
 

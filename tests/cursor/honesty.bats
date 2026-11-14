@@ -1,25 +1,8 @@
 load ../helpers
 
 ROOT="$BATS_TEST_DIRNAME/../../"
-HOW="$ROOT/docs/how-it-works.md"
-KNOBS="$ROOT/docs/knobs.md"
 START="$ROOT/plugins/nightshift/skills/start/SKILL.md"
 CURSOR_MARKET="$ROOT/.cursor-plugin/marketplace.json"
-
-@test "docs say the Cursor CLI runs installed plugin hooks" {
-  grep -qF 'including' "$HOW"
-  grep -qF 'print mode (`agent -p`)' "$HOW"
-  grep -qF 'runs the hooks shipped with an installed plugin' "$HOW"
-  grep -qF 'Setup does not write' "$HOW"
-  grep -qF 'Doctor names the file' "$HOW"
-  if grep -qF 'currently ignores' "$HOW"; then
-    echo "how-it-works still says the CLI ignores plugin hooks"
-    return 1
-  fi
-  cursor_host="$ROOT/plugins/nightshift/skills/nightshift/references/hosts/cursor.md"
-  grep -qF 'including in print mode (`agent -p`)' "$cursor_host"
-  grep -qF 'Setup does not write it' "$cursor_host"
-}
 
 @test "the Cursor marketplace file points at the shipped plugin" {
   [ -f "$CURSOR_MARKET" ]

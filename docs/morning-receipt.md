@@ -1,31 +1,19 @@
 # The morning receipt
 
-Use this page for the compact clock-out summary. For live item progress and measured token usage,
-read [Receipts and token usage](receipts.md#receipts-and-token-usage). After reviewing, [archive the shift](archive.md#archive-and-continue)
-to preserve its receipts and evidence for later work.
+The morning receipt is the one page you read after a shift. It is written once, at clock-out, and
+answers two questions: how did the shift go, and what should you do next. Item progress and token
+usage live in the [receipts](receipts.md#receipts-and-token-usage); this page summarizes them and
+links each item to its receipt.
 
-Everything else in `.nightshift/` is a working file: the punch list changes as items tick, the
-parking lot empties as decisions get read, the ledger keeps growing. The receipts index is the live,
-per-item view while the shift runs. The morning receipt is written once, at clock-out, and answers
-two questions: how did the night go, and what should the owner do next. It renders Markdown from
-records that already exist — the evidence ledger, an accepted `shift-policy.json`, `punch-list.md`,
-the usage marks under `usage/`, `shift-log.md`, `parking-lot.md`, `snag-log.md`, and the work
-target's history — and invents nothing. A check that did not run is never described as passed, and
-a model's own claim about its work is never upgraded into proof; only a ledger record, a commit, or
-a receipt earns a line in the receipt. Shift identity and every other policy-derived fact come only
-from a policy that validates. A missing file is `absent`; a file that is present but unreadable or
-fails the schema is `malformed`. The rest of the page still renders from the punch list, the ledger,
-and the other working files. A malformed policy never blocks STOP, the deadline, or clock-out.
+It is built only from records the shift left: the evidence ledger, the shift policy, the punch
+list, the shift log, the parking lot, the snag log, and the work target's history. It invents
+nothing. A check that did not run is never described as passed, and the agent's own claim about its
+work never counts as proof. A record that is missing reads `absent`; one that cannot be read reads
+`malformed`, and the rest of the page still renders.
 
-`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" morning-receipt [--view owner|reviewer|release|artifact] [--out PATH]`
-(native Windows: `ns.ps1 morning-receipt`) renders it on demand. The clock-out gate
-also writes the owner view automatically, best effort, to
-`.nightshift/receipts/morning-<YYYY-MM-DD>-<shiftId>.md`, or
-`.nightshift/receipts/morning-<YYYY-MM-DD>.md` when the shift wrote no policy and so has no id —
-a failed render never blocks the shift from ending, and `/nightshift:archive` moves the file with
-the rest of the night's receipts. Both the live receipts index and the archived one link every
-morning page in their folder above the item table, so the summary is one click from the per-item
-view.
+The clock-out gate writes it to `.nightshift/receipts/morning-<YYYY-MM-DD>-<shiftId>.md`, linked
+from the top of the receipts index. `ns morning-receipt [--view owner|reviewer|release|artifact]`
+renders it again on demand, and `/nightshift:archive` files it with the shift.
 
 ## What each section means
 
@@ -34,8 +22,8 @@ that, a `Policy record:` line names `accepted`, `absent — the shift wrote no p
 `malformed — the policy file is present but unreadable or fails the schema`. Each section below
 carries its `handoff.sections` id in brackets.
 
-1. **How it ended** (`shift`) — the shift id, host, and work target; when it started and ended, both
-   in UTC with the zone written out; how it ended (done, a stop-work order, quitting time, or a
+1. **How it ended** (`shift`) — the shift id, host, and work target; when it started and ended, in your
+   local time with its offset; how it ended (done, a stop-work order, quitting time, or a
    stall); how many items were open versus ticked; commits or artifact receipts; with
    `receipts.evidence.fileMap` on, a `Files:` line with the shift map's totals; and the policy
    that actually ran — verification level, tooling policy, and every elevation allowance with its
@@ -51,8 +39,7 @@ carries its `handoff.sections` id in brackets.
    `none — no shift policy was written`, and `Disabled by owner:` reads `none`. A present but
    unreadable or schema-failing policy is named as malformed on both the `Policy record:` line and
    `Verified:`.
-2. **Time and tokens** (`usage`) — the whole shift, from the arming mark to the end: the span in
-   UTC, working time, paused time split by the reason each pause was recorded under (an owner stop
+2. **Time and tokens** (`usage`) — the whole shift, from the arming mark to the end: the span, working time, paused time split by the reason each pause was recorded under (an owner stop
    or Esc, a usage-limit wait, a revived session), and wall time. The reasons add up to the paused
    total. Below that, the host's token totals by kind in its own counting, with one sentence on
    which kinds already contain which. A kind the host does not report reads `unavailable`; a
@@ -117,21 +104,18 @@ disagree with another — they only differ in which sections they show.
 ## Review it in the plan room
 
 The page tells you what needs a decision; the plan room is where you make them. Open it with
-`/nightshift:plan` (ask Nightshift to plan on Codex). Entering lists the latest morning page and the
+`/nightshift:plan`. Entering lists the latest morning page and the
 receipts index, every parked decision and snag still open, and every item still open or stopped. The
 agent walks you through them one at a time and writes each answer where it belongs: ` · answered:`
 on a parked decision, a disposition on a snag, and a drafted item for work to carry into the next
 shift. Nothing is written without your answer, and the punch list stays yours to edit. After
 Archive, the review reads what Archive left live.
 
-## Determinism
+## Every line has a source
 
-Digests throughout are sha256, hex-encoded. Every comparison row cites the ledger record id and
-locator behind it, and every other line comes from a named record — nothing in the receipt lacks a
-source. Times are in the device's local time with its offset (`2026-10-08 07:12:05 (UTC+04:00)`) and
-honor `NIGHTSHIFT_EVIDENCE_NOW` in tests. The bash and PowerShell renderers produce byte-identical
-Markdown from the same records and the same time zone, and the bash
-side produces the same bytes whether it reads JSON with `jq` or its `python3` fallback.
+Every comparison row cites the ledger record behind it, and every other line comes from a named
+record. Times are in your local time with its offset, such as `2026-10-08 07:12:05 (UTC+04:00)`. The
+page reads the same on macOS, Linux, and native Windows.
 
 ---
 

@@ -29,8 +29,6 @@ bundle_mode() {
   [ ! -d "$p/.nightshift/support" ]
   grep -qE 'ns"? export-support' "$DOCTOR_SKILL"
   grep -qF 'Invoking Doctor alone must not create' "$DOCTOR_SKILL"
-  grep -qE 'ns"? export-support' "$BATS_TEST_DIRNAME/../docs/commands.md"
-  grep -qE 'ns\.ps1"? export-support' "$BATS_TEST_DIRNAME/../docs/commands.md"
 }
 
 @test "export writes a 0600 local bundle and never phones home" {

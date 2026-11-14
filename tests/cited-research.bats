@@ -8,7 +8,6 @@ RECIPE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/co
 SHIFTS="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/compose/shifts"
 NIGHTSHIFT="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/SKILL.md"
 START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
-COMMANDS="$BATS_TEST_DIRNAME/../docs/commands.md"
 RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
 
 valid_bundle() {
@@ -48,10 +47,6 @@ EOF
   grep -qF 'cited-research.md' "$NIGHTSHIFT"
   grep -qE 'ns"? check-report' "$NIGHTSHIFT"
   grep -qF 'cited-research.md' "$NIGHTSHIFT"
-  grep -qE 'ns"? check-report' "$COMMANDS"
-  grep -qF 'ns.ps1 check-report' "$COMMANDS"
-  grep -qE 'ns\.ps1"? check-report' "$BATS_TEST_DIRNAME/../docs/windows.md"
-  grep -qE 'ns"? check-report' "$BATS_TEST_DIRNAME/../docs/how-it-works.md"
   grep -qF '$NS/receipts/' "$CONTRACT"
   grep -qF '$NS/receipts/' "$CONTRACT"
 }

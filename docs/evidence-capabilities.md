@@ -1,11 +1,9 @@
 # Evidence and receipts
 
-A tick is a claim. The evidence surface is what turns that claim into something a reviewer can
-re-run: what the shift measured, against which baseline, and what changed by morning.
-
-The model writes the receipts. Nightshift ships the templates it writes them from, an append-only
-ledger it can record them in, and a renderer that turns those records into one morning page.
-Nothing here scans a project or judges a finding on the model's behalf.
+The evidence surface is what a reviewer re-runs: what the shift measured, against which baseline,
+and what changed by morning. The agent writes the receipts; Nightshift ships the templates it
+writes them from, an append-only ledger to record findings in, and the renderer that turns those
+records into the morning receipt. Everything stays on your machine: there is no telemetry.
 
 ## Reviewing a shift
 
@@ -34,14 +32,9 @@ and it does not make an unchecked output verified. The receipts and handoff sett
 In a persistent folder without Git, the item's receipt file records completion.
 Source and checkpoint receipts remain separate records under the same folder.
 
-Doctor names the most recently written file when artifact receipts exist. It warns
-`artifact receipts path is not a usable directory` when the path cannot hold receipt files.
-Start, Hunt, Quality, and Schedule refuse an unusable path rather than begin
-work that cannot land receipts. Use [Troubleshooting](troubleshooting.md#troubleshooting) to diagnose the workspace before changing it.
-
-Archive copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`).
-A ticked item's receipt leaves live storage once the shift has ended; an open item's receipt stays.
-Missing or empty receipts create no dated receipts folder.
+Doctor names the newest receipt. When the receipts path is not a usable folder, Doctor offers to
+replace it, and Start, Hunt, Quality and Schedule refuse to begin until it is fixed. Archive files a
+ticked item's receipt with the shift and keeps an open item's receipt live.
 Other finished records can be moved out of the live working files during Archive; open work and
 unanswered decisions stay live. Removing old archived history is a separate retention choice.
 See [Archive and continue](archive.md#archive-and-continue), the [Archive contract](../plugins/nightshift/skills/archive/SKILL.md), and
@@ -85,16 +78,14 @@ policies (`closed-list`, `bounded-discovery`, `connected-corpus`) decide what ma
 
 ## Evidence lines
 
-Plan and Hunt suggest an `Evidence:` line only after the owner asks for one. Each shipped kind is
-one file under `skills/nightshift/references/evidence/kinds/`. An owner adds a kind without a pull
-request: one file in the project's `.nightshift/catalogs/evidence/`, or in the user folder
-(`$XDG_CONFIG_HOME/nightshift/catalogs/evidence` on POSIX, `%APPDATA%\nightshift\catalogs\evidence`
-on Windows), or in a folder named by `catalogs.evidence.paths`. Those files never leave the machine.
-`ns catalog-index --catalog evidence` lists every source; a kind is read in full only
-when a drafted item fits it. Adding a shipped kind is one new file, described in
-[`evidence/recipe.md`](../plugins/nightshift/skills/nightshift/references/evidence/recipe.md#adding-an-evidence-kind).
-
-A file named in backticks on the `Evidence:` line lives in that item's evidence folder. `receipts.evidence.check` decides what a missing file does: `off` leaves the tick alone, `report` lists it on the receipt and the morning receipt, and `block` keeps the clock-out gate open until the file is present. `review` on asks the agent to open what it produced, fix what it sees, and say in the receipt what it saw; it never affects the tick. `unavailable` says what happens when the evidence cannot be produced at all: `hold` closes the item as stopped, `park` records one parking-lot entry and keeps working, and `note` ticks it with the reason. The command is `ns evidence-unavailable`.
+[Evidence](evidence.md#evidence) covers asking for evidence, the evidence catalog, and what a
+missing file does to the tick. Each shipped catalog entry is one file under
+`skills/nightshift/references/evidence/kinds/`; owner entries live in the project's
+`.nightshift/catalogs/evidence/`, the user folder (`$XDG_CONFIG_HOME/nightshift/catalogs/evidence`
+on POSIX, `%APPDATA%\nightshift\catalogs\evidence` on Windows), or a folder named by
+`catalogs.evidence.paths`, and never leave the machine. `ns catalog-index --catalog evidence`
+lists every source, and an entry is read in full only when a drafted item fits it. When evidence
+cannot be produced, the agent records it with `ns evidence-unavailable`.
 
 ## Policy behind a receipt
 
@@ -169,22 +160,11 @@ Start reads, so two workers are never admitted. Multi-night campaigns are indepe
 shifts: the next night begins only after the previous one archives or the owner accepts its
 handoff.
 
-## Contract schema and size budgets
+## Optional SonarQube inspection
 
-`evals/` holds the catalog contract schema, a versioned case book, frozen identifiers, and
-instruction-size budgets. `evals/run.sh`, `evals/validate.sh`, and `tests/evals.bats` check schema
-and size. They do not run a host-agent matrix.
-
-## Limits
-
-- Ticks are self-reported. A receipt records honestly; it does not certify independent proof.
-- A comparison is only as good as its baseline. A tool that failed mid-shift is reported
-  `unavailable`, never folded into the cleared count.
-- Connectors beyond local files and owner-supplied exports are not part of this package.
-- No telemetry. Product measures live in local receipts only.
-- Optional **SonarQube Community Edition** can back a site inspection when
-  `sonar-project.properties` exists and a local instance answers; Sonar is never a per-item gate.
-  See [`gates-catalog.md`](../plugins/nightshift/skills/nightshift/references/compose/gates-catalog.md#gates-catalog).
+A local SonarQube Community Edition instance can back the site inspection when the project has a
+`sonar-project.properties` file and the instance answers. It is never a per-item check; see
+[`gates-catalog.md`](../plugins/nightshift/skills/nightshift/references/compose/gates-catalog.md#gates-catalog).
 
 ---
 

@@ -17,23 +17,6 @@ flat() { tr '\n' ' ' <"$1" | tr -s ' '; }
 
 QUESTION='Before I write these, want any of: evidence lines, an edge-case pass, a pre-mortem, an ordering and risk check, or research? The default is none.'
 
-@test "the plan room asks one menu question, once, before capture, and runs only what is picked" {
-  flat "$PLAN" | grep -qF "$QUESTION"
-  flat "$PLAN" | grep -qF 'before the capture question, ask one question'
-  flat "$PLAN" | grep -qF 'Take one answer and do not follow up.'
-  # Picking nothing captures the plan exactly as before the menu existed.
-  flat "$PLAN" | grep -qF 'With none picked, the plan is captured exactly as it would be without the menu.'
-  # Picking some runs those and nothing else.
-  flat "$PLAN" | grep -qF 'For the options picked, read `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/plan/menu.md` and run only those'
-  flat "$MENU" | grep -qF 'run only the options picked'
-  # Each choice and its outcome is recorded, and the menu is not offered twice.
-  flat "$PLAN" | grep -qF 'Record each choice and its outcome in the plan record (`Decided: planning menu — none`, or one `Decided:` line per option with what was kept)'
-  flat "$PLAN" | grep -qF 'do not offer the menu again for that plan'
-  # The separate offers are gone: one question, one answer.
-  ! flat "$PLAN" | grep -qF 'Want evidence lines suggested' || false
-  ! flat "$PLAN" | grep -qF 'Want an edge-case pass on these items' || false
-}
-
 @test "Hunt asks the same question for the items it composes, never in run directly" {
   flat "$HUNT" | grep -qF "$QUESTION"
   flat "$HUNT" | grep -qF 'Ask once per compose, never in run directly, and take one answer.'

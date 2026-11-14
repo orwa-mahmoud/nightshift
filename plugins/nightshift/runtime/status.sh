@@ -119,12 +119,13 @@ done
 
 DRAFTS="$(ns_open_drafts "$DRAFTING_TABLE" 2>/dev/null)" || DRAFTS=0
 ORDERS="$(ns_open_boxes_file "$WORK_ORDERS" 2>/dev/null)" || ORDERS=0
+PLANS="$(ns_plan_count "$NS" 2>/dev/null)" || PLANS=0
 # With approved work open, staged work is informational and nothing else: Start works the punch
 # list exactly as the owner left it.
 if [ "${OPEN:-0}" -gt 0 ]; then
-  fact "staged" "drafts=$DRAFTS orders=$ORDERS (informational while items are open)"
+  fact "staged" "drafts=$DRAFTS orders=$ORDERS plans=$PLANS (informational while items are open)"
 else
-  fact "staged" "drafts=$DRAFTS orders=$ORDERS"
+  fact "staged" "drafts=$DRAFTS orders=$ORDERS plans=$PLANS"
 fi
 
 ns_status_entry_titles "$SNAGS" 3 | while IFS= read -r line; do

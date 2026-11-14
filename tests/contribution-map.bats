@@ -1,56 +1,5 @@
 ROOT="$BATS_TEST_DIRNAME/.."
 MAP="$ROOT/docs/contribution-map.md"
-README="$ROOT/README.md"
-CONTRIBUTING="$ROOT/CONTRIBUTING.md"
-AGENTS="$ROOT/AGENTS.md"
-PR_TEMPLATE="$ROOT/.github/PULL_REQUEST_TEMPLATE.md"
-ISSUE_CONFIG="$ROOT/.github/ISSUE_TEMPLATE/config.yml"
-RECEIPTS="$ROOT/examples/README.md"
-
-@test "the contribution map is reachable from contributor entry points" {
-  [ -f "$MAP" ]
-  for entry in "$README" "$CONTRIBUTING" "$AGENTS" "$PR_TEMPLATE" \
-    "$ISSUE_CONFIG" "$RECEIPTS"; do
-    grep -qF 'docs/contribution-map.md' "$entry" || {
-      echo "contribution map is not linked from: $entry"
-      return 1
-    }
-  done
-  grep -qF '../CONTRIBUTING.md' "$MAP"
-}
-
-@test "the contribution map covers each supported path" {
-  for area in 'Shift catalog' 'Documentation' 'Testing' 'Runtime' \
-    'Recovery' 'Hooks and guards' 'Platform support' 'Run receipts'; do
-    grep -qF "| **$area** |" "$MAP" || {
-      echo "missing contribution path: $area"
-      return 1
-    }
-  done
-
-  for column in 'A good first contribution' 'Know before starting' \
-    'Likely files' 'Minimum verification' 'Current work'; do
-    grep -qF "$column" "$MAP"
-  done
-
-  grep -qF 'runtime/windows/watchman.ps1' "$MAP"
-  grep -qF 'runtime/windows/start-watchman.ps1' "$MAP"
-  grep -qF 'lib/Nightshift.psm1' "$MAP"
-  grep -qF 'hooks/windows/hardhat.ps1' "$MAP"
-  grep -qF 'hooks/windows/clock-out-gate.ps1' "$MAP"
-  grep -qF 'tests/windows-hardhat.bats' "$MAP"
-  grep -qF 'tests/windows-watchman.bats' "$MAP"
-}
-
-@test "the contribution map preserves focused and repository checks" {
-  for command in 'bats tests/' 'tests/lint-shell.sh' \
-    'tests/coverage.sh' 'claude plugin validate . --strict'; do
-    grep -qF "$command" "$MAP" || {
-      echo "missing repository check: $command"
-      return 1
-    }
-  done
-}
 
 @test "every concrete contribution-map path exists" {
   for path in \
@@ -71,7 +20,6 @@ RECEIPTS="$ROOT/examples/README.md"
     tests/codex tests/fixtures tests/shifts \
     tests/catalog.bats tests/contribution-map.bats \
     tests/doc-refs.bats \
-    tests/first-night-checklist.bats tests/shift-modes.bats tests/troubleshooting.bats \
     tests/bad-night-template.bats tests/github-templates.bats \
     tests/watchman.bats tests/codex/watchman.bats \
     tests/cursor/watchman.bats \

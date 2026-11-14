@@ -57,9 +57,8 @@ with Windows PowerShell and an explicit execution-policy bypass.
 
 ## Setup and start
 
-Use the normal host skill: `/nightshift:setup` and `/nightshift:start` on Claude Code, or ask
-Nightshift to set up and start on Codex. The skills select their PowerShell commands when the host
-is native Windows.
+Use the normal commands, `/nightshift:setup` and `/nightshift:start`. The skills select their
+PowerShell commands when the host is native Windows.
 
 The mechanical scaffold is also available without a model turn:
 
@@ -151,20 +150,10 @@ Two optional read-only reports ship beside them and never need `jq` on this host
 helper prints for the same file — and `ns.ps1 inventory` prints one table per workspace package. Both
 write nothing, and both print one `unavailable` line and exit 3 rather than an empty report.
 
-Missing or empty receipts create no dated receipts folder.
-
-In artifact mode Doctor reports `artifact receipts N` and, when any exist, `latest artifact receipt`
-with the filename only of the most recently written receipt. Review the per-item receipts and
-output files.
-It warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts.
-Automatic Hunt and Quality skip quality-debt entries the folder cannot support.
-The GitHub issue hunt is skipped in artifact mode.
-The defect hunt is skipped in artifact mode.
-Documentation drift is skipped in artifact mode.
-TODO and FIXME debt is skipped in artifact mode.
-Coverage hunt is skipped in artifact mode.
-Tooling quality-debt entries are skipped in artifact mode.
-Do not `git init` a notes folder.
+In a plain folder without Git (artifact mode), Doctor reports how many item receipts exist and names
+the newest. When the receipts path is not a usable folder, Doctor warns and offers to replace it,
+and Start, Hunt, Quality and Schedule refuse to begin until it is fixed. Entries that need a
+repository are skipped there; [Shift modes](shift-modes.md#tools-and-workspaces) lists them.
 
 ## Process evidence and recovery
 
