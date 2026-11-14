@@ -6,7 +6,7 @@ The working files and the terms you will see during a shift. Who writes each fil
 
 | Term | File / mechanism | Meaning |
 |---|---|---|
-| **punch list** | `.nightshift/punch-list.md` | approved work and self-reported completion; the Shift contract above Items survives Archive and binds the next cut |
+| **punch list** | `.nightshift/punch-list.md` | the approved work and its checkboxes; the shift contract above the items survives Archive and binds the next shift |
 | **state workspace** | `.nightshift/` | the folder that owns run state — punch list, rules, receipts; may sit beside or above the work target |
 | **work target** | `.nightshift/run/work-target` | the folder that receives inspection and verification — a Git repository in repository mode, a persistent non-Git folder in artifact mode |
 | **work mode** | `.nightshift/run/work-mode` | `repository` or `artifact`; legacy repositories can omit it, but a non-Git folder needs Setup to record artifact mode |
@@ -14,10 +14,10 @@ The working files and the terms you will see during a shift. Who writes each fil
 | **hardhat** | PreToolUse hook | mandatory safety equipment — your forbidden commands, protected dirs, secret patterns, and expected commit identity; denied, not discouraged |
 | **process lease** | `.nightshift/run/.shift-lease` | transient ownership of the active shift process — each watchman recovery advances its generation, admitting the recovered worker and fencing stale processes on the same conversation without locking other tabs |
 | **item gate** | project verification commands | checks run at the selected cadence: per item, final, custom, or none; a check that runs must pass |
-| **receipt** | `.nightshift/receipts/` | the runtime's records: one file per item, the index, and the morning receipt; live progress, results, verification, output locations, and measured usage and duration where available |
-| **archive** | one folder per shift, `.nightshift/archive/<YYYY-MM-DD>/` by default and laid out like the live site; `archive.root` and `archive.layout` move and name it | filing of shipped items, the journal, handled snags, and copied artifact receipts. Filing is a copy. A ticked item's receipt leaves live storage once the shift has ended; an open item's receipt stays live and is not filed. Other records leave only when Archive names them. Missing or empty receipts create no dated receipts folder. |
+| **receipt** | `.nightshift/receipts/` | one file per item, written by the agent, plus the index and the morning receipt the runtime writes: progress, results, verification, outputs, and measured usage and duration |
+| **archive** | one folder per shift, `.nightshift/archive/<YYYY-MM-DD>/` by default and laid out like the live site; `archive.root` and `archive.layout` move and name it | where a finished shift is filed: ticked items, their receipts, handled snags and answered decisions; open work stays live |
 | **site inspection** | interval commands | the scheduled heavy inspection (coverage, dead code, Sonar) every N items or H hours |
-| **walkthrough** | catalog item | an ongoing work loop with a required deadline; some entries can finish early at convergence or verified objective satisfaction |
+| **owner walkthrough** | ready-made shift | your own objective, kept word for word, worked until quitting time or until its acceptance criteria are verified |
 | **hunt** | Nightshift Hunt | composes catalog work with Guided or Automatic selection and review-first or direct execution |
 | **work order** | `.nightshift/staging/work-orders.md` | a prepared job ticket — the item plus its hours, clock not running until the cut |
 | **snag log** | `.nightshift/inbox/snag-log.md` | findings ledger across runs — cycle 4 never re-reports cycle 1 |
@@ -27,8 +27,10 @@ The working files and the terms you will see during a shift. Who writes each fil
 | **park, don't ask** | `toolDeny` question entries | during a shift the host's ask tool is denied with the configured message — the question is parked with a default chosen; an empty native entry allows ask-and-wait instead |
 | **quality survey** | Nightshift Quality | the optional debt audit — review findings first or choose a direct run that fixes them |
 | **doctor** | `/nightshift:doctor` | read-only diagnosis — facts, warnings, classified next actions; invoking it never repairs |
-| **drafting table** | `.nightshift/staging/drafting-table.md` | where items are drawn before they're contracted |
-| **plan room** | `/nightshift:plan` + `.nightshift/run/plan-room` | a planning conversation reminded on each owner message that it builds nothing; its edit tools write only the plan, and the owner's `planRoom` lists block what they name; only the owner leaves it, by typing `/nightshift:plan-exit` or `/nightshift:start` (`$nightshift:…` on Codex) or running `ns plan-exit` |
+| **evidence catalog** | `catalogs/evidence/` and the shipped entries | what to capture for each sort of change, such as screenshots for a layout or figures for a speed-up; suggested per item in the plan room |
+| **plan** | `.nightshift/staging/plans/<name>.md` | a complete punch list with its own contract, checks and items, written in the plan room and waiting its turn; Start runs the one you pick |
+| **drafting table** | `.nightshift/staging/drafting-table.md` | loose items kept for a later shift |
+| **plan room** | `/nightshift:plan` + `.nightshift/run/plan-room` | a planning conversation reminded on each owner message that it builds nothing; its edit tools write only the plan, and the owner's `planRoom` lists block what they name; only the owner leaves it, by typing `/nightshift:plan-exit` or `/nightshift:start` or running `ns plan-exit` |
 | **plan record** | `.nightshift/staging/plan-record.md` | the plan room's notebook — decisions, rejected options, open questions and where the discussion stands, so a new conversation resumes; an entry closes as captured or dropped |
 | **item budget** | `Budget:` sub-bullet, `shift.itemBudget` | a soft and/or hard limit in working time and/or tokens; soft tells the agent once to finish up, hard allows only wrap-up |
 | **stopped item** | `- [-]` with a `Stopped:` line | an item closed at its hard budget — never ticked, closed for the gate, open work for the owner |

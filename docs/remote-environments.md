@@ -62,53 +62,11 @@ Do not run the host on the container host while forwarding individual tool comma
 container. PIDs, process start times, current directories, transcripts, and lease files would cross
 different trust boundaries, so recovery must stand down rather than guess.
 
-## Reproducible evidence
+## How support is verified
 
-The compatibility probe exercises a live Linux process and filesystem boundary with synthetic host
-events, then emits a sanitized JSON receipt. It checks:
-
-- workspace and work-target resolution through an explicit task-root link;
-- Claude Code and Codex hook-script execution against the authoritative state;
-- PID plus process-start-time identity;
-- private-file mode and same-filesystem rename replacement;
-- watchman PID placement, workspace current directory, STOP handling, and cleanup.
-
-The Remote SSH harness additionally closes the connection that launched a detached watchman,
-reconnects, and proves the same remote process is still alive before issuing STOP.
-The devcontainer harness does the equivalent across separate `devcontainer exec` connections.
-
-Remote SSH:
-
-```bash
-ssh target 'cd /absolute/nightshift-repository &&
-  tests/environments/probe.sh remote-ssh "$PWD"'
-```
-
-Devcontainer fixture:
-
-```bash
-npx --yes @devcontainers/cli@0.88.0 up \
-  --workspace-folder . \
-  --config tests/environments/devcontainer/devcontainer.json
-npx --yes @devcontainers/cli@0.88.0 exec \
-  --workspace-folder . \
-  --config tests/environments/devcontainer/devcontainer.json \
-  bash tests/environments/probe.sh devcontainer /workspaces/nightshift
-```
-
-CI crosses an actual OpenSSH connection for the first probe and starts the checked-in devcontainer
-for the second. The committed receipts are scoped to the Linux x86_64 runners that produced them;
-the probe records architecture so another architecture cannot be presented as the same evidence.
-Each generated receipt is compared byte-for-byte with
-`tests/environments/receipts/remote-ssh-linux.json` or
-`tests/environments/receipts/devcontainer-linux.json`, then uploaded with the run. The receipts
-contain no usernames, hostnames, paths, process IDs, credentials, or timestamps.
-
-The fixtures use local stub identities and never require a hosted account or subscription. They
-verify Nightshift's paths, hook scripts, process evidence, lease storage, and watchman placement;
-they do not pretend to verify plugin loading by an authenticated host, third-party authentication,
-editor UI synchronization, abrupt transport failure, or the target administrator's logout and
-container-lifecycle policy.
+CI runs a compatibility probe across a real OpenSSH connection and inside the checked-in
+devcontainer, on Linux x86_64. The probes and their recorded results are in
+[`tests/environments/`](../tests/environments/).
 
 ---
 

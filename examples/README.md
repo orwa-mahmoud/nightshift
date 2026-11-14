@@ -1,7 +1,7 @@
 # Real runs
 
-Documented runs with public evidence. These are not benchmarks and ticks are not treated as proof; each
-receipt separates the agent's work from the owner's review and links to the permanent result.
+Real shifts with public evidence. Each receipt separates the agent's work from the owner's review and
+links to the permanent result: the merged pull request, the release, the closed issues.
 
 ## Flagship — continuity at scale
 

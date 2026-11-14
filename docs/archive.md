@@ -1,8 +1,8 @@
 # Archive and continue
 
 Archive keeps completed shifts readable while leaving the next shift's work close at hand.
-Ask Nightshift to archive the finished shift, or use `/nightshift:archive` in Claude Code.
-It files the records; it does not complete tasks or reset the work contract.
+Run `/nightshift:archive` after you review a shift. It files the records; it does not complete
+tasks or reset the work contract.
 
 ## What happens to the records
 

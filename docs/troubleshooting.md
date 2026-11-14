@@ -1,28 +1,24 @@
 # Troubleshooting
 
 Read-only checks first. Do not delete markers, rewrite `rules.json`, or kill processes until the
-matching **Repair** says so. Doctor (`/nightshift:doctor` on Claude Code, or ask Nightshift to
-diagnose on Codex) prints what Nightshift resolved and classifies offers; invoking it changes
+matching **Repair** says so. Doctor
+(`/nightshift:doctor`) prints what Nightshift resolved and classifies offers; invoking it changes
 nothing. For a failed night you want to report, use the
 [Failed shift](https://github.com/orwa-mahmoud/nightshift/issues/new?template=failed_shift.yml)
 form — not a paste of the transcript.
 
-Host differences that matter here: both Stop hooks refuse an early clock-out. Claude Code's
-watchman can revive a live session sitting on a host API-error event. A Codex session whose last
-turn ended on an API error is revived the same way; a usage limit waits for the reset time Codex
-reported, or stands by when `watchAfterUsageLimit` is `false`. Codex SessionEnd
-(reason `other`) stands the watchman down — close, archive, or idle unload is pause-recovery;
-Start re-arms. A crash with no SessionEnd still revives. Cursor liveness is pulse + pid +
-transcript + lease pid; empty pid is not death. `touch .nightshift/STOP` is the POSIX panic stop-work order;
-`New-Item -ItemType File -Force .nightshift\STOP` is its native Windows PowerShell equivalent.
-Write it in the folder that contains `.nightshift/` — the workspace, or the target of
-`.nightshift-link`. A STOP next to the link file is not the order.
-That marker waits for the next Stop event or watchman wake. To pause immediately — including when
-the model is stuck — run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift` (native Windows:
-`ns.ps1 stop-shift`). Reset drops the deadline but keeps work.
-`ns purge-workspace` permanently deletes that project's `.nightshift/` after an exact
-`--confirm-path`. None of them uninstall the plugin.
-The full Windows boundary is in [Native Windows](windows.md#native-windows).
+Three controls work from any terminal, in the folder that holds `.nightshift/`:
+
+| To | Run | Native Windows |
+| --- | --- | --- |
+| Stop at the agent's next stop | `touch .nightshift/STOP` | `New-Item -ItemType File -Force .nightshift\STOP` |
+| Pause right now, even if the agent is stuck | `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" stop-shift` | `ns.ps1 stop-shift` |
+| Delete this project's `.nightshift/` | `ns purge-workspace --confirm-path <path to .nightshift>` | `ns.ps1 purge-workspace` |
+
+None of them uninstall the plugin. A STOP file next to a `.nightshift-link` is not the order: write
+it where `.nightshift/` is. How recovery differs per host is in
+[How Nightshift works](how-it-works.md#recovery), and the Windows boundary in
+[Native Windows](windows.md#native-windows).
 
 ## 0. Where is the site?
 
@@ -43,7 +39,7 @@ Native Windows PowerShell: `Get-Location` and
 | neither | Nightshift is not set up here. |
 
 An absent `.nightshift/` is not a crash. Run setup from the project you want Nightshift to change
-(`/nightshift:setup` on Claude Code, or ask Nightshift to set up on Codex). ChatGPT scratch paths
+(`/nightshift:setup`). ChatGPT scratch paths
 under `/workspace/scratch/` are refused on purpose — open the repository in Codex.
 
 **Repair (link only).** If the task is open on a different folder than the workspace that already
@@ -137,14 +133,11 @@ git -C "$(sed -n '1p' .nightshift/run/work-target 2>/dev/null || pwd)" rev-parse
 Two git repositories as siblings of `.nightshift/` with no `work-target` is undecidable: commit
 guards deny rather than pick one.
 
-In artifact mode the work target is the persistent folder itself. There is no work-target git
-history. Review `.nightshift/receipts/` and the output files first. For additional evidence,
-look at `.nightshift/receipts/` — Doctor reports `artifact receipts N` and, when any
-exist, `latest artifact receipt` with the filename of the most recently written receipt. Doctor warns `artifact receipts path is not a usable directory` when that path exists but is not a usable directory, and offers a confirm action to replace it so receipts can land. Start, Hunt, Quality, and Schedule refuse when that path is unusable rather than begin a notes-folder night that cannot land receipts. Archive
-copies those files with `ns archive-receipts` (native Windows: `ns.ps1 archive-receipts`)
-into the shift's folder. A ticked item's receipt leaves live storage once the shift has ended; an
-open item's receipt stays live and is not filed. Missing or empty receipts create no dated receipts folder. A failing `git -C … rev-parse` here is
-expected, not a broken site.
+In artifact mode the work target is the plain folder itself, so a failing `git -C … rev-parse`
+here is expected, not a broken site. Review the output files and `.nightshift/receipts/` instead.
+Doctor reports how many item receipts exist and names the newest. When the receipts path is not a
+usable folder, Doctor warns and offers to replace it, and Start, Hunt, Quality and Schedule refuse
+to begin until it is fixed.
 
 ```sh
 ls .nightshift/receipts 2>/dev/null
@@ -155,12 +148,6 @@ Native Windows: `Get-ChildItem .nightshift\receipts -ErrorAction SilentlyContinu
 **Repair.** Re-run setup and choose the folder explicitly. Do not invent a `work-target` by
 hand unless it is the absolute git top-level of the repo you mean. Do not `git init` an artifact
 folder to satisfy this page.
-The GitHub issue hunt is skipped in artifact mode.
-The defect hunt is skipped in artifact mode.
-Documentation drift is skipped in artifact mode.
-TODO and FIXME debt is skipped in artifact mode.
-Coverage hunt is skipped in artifact mode.
-Tooling quality-debt entries are skipped in artifact mode.
 
 ## 4. Unreadable rules
 
@@ -350,7 +337,7 @@ project remain ordinary and can work normally; only a second Start is refused wh
 active.
 
 If Doctor says the lease is malformed, or work was already interleaved before the fence took
-effect, run Stop (`/nightshift:stop` on Claude Code, or ask Nightshift to stop on Codex) from a
+effect, run Stop (`/nightshift:stop`) from a
 separate helper conversation, or run `ns` from a terminal — adding `--project <path>` when you are
 not already in the project.
 That disarms immediately and releases the lease. Wait for the active process to stop, inspect the work target and shift log, then run Start; do not rewrite `.shift-lease` by hand. A bare `touch` leaves the watchman running until it checks the marker after the current

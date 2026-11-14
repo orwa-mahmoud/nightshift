@@ -11,6 +11,9 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
   recovery during an attended run.
 - [Shift modes](shift-modes.md#shift-modes) — use an existing list, select catalog entries, or give Hunt a goal;
   choose review first or run directly.
+- [Setup](setup.md#setup) — what Setup creates, the questions it asks, and every default it offers.
+- [The plan room](plan-room.md#the-plan-room) — design the work with the agent, stress-test the plan, and size the
+  plan from past receipts.
 - [Why Nightshift exists](why-nightshift.md#why-nightshift-exists) — the failures behind the design and what the workflow costs.
 - [Vocabulary](vocabulary.md#vocabulary) — the names of the working files and mechanisms.
 
@@ -18,6 +21,7 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 
 - [Command reference](commands.md#command-reference) — every skill, scheduling, and terminal controls that need no model.
 - [Owner knobs](knobs.md#owner-knobs) — guards, verification cadence, tooling, receipts, recovery, and retention.
+- [Item budgets](item-budgets.md#item-budgets) — soft and hard limits that keep one stuck item from taking the shift.
 - [How Nightshift works](how-it-works.md#how-nightshift-works) — the contract, arming, session ownership, policy, and recovery.
 - [Troubleshooting](troubleshooting.md#troubleshooting) — diagnose the workspace, then choose the appropriate repair.
 
@@ -28,6 +32,7 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 - [Archive and continue](archive.md#archive-and-continue) — automatic or requested filing, linked evidence, history,
   and what stays live for the next shift.
 - [Morning receipt](morning-receipt.md#the-morning-receipt) — read the summary, its evidence, and its limits.
+- [Evidence](evidence.md#evidence) — ask for screenshots, figures, or diffs per item, and use the evidence catalog.
 - [Evidence and receipts](evidence-capabilities.md#evidence-and-receipts) — review receipts, commits, artifact outputs,
   comparisons, and cross-host handoffs.
 - [Example receipts](../examples/receipts.md#receipts) — the format for completed and unfinished items.
@@ -41,6 +46,6 @@ The [website](https://nightshift.orwamahmoud.com/) also offers guides organized 
 ## Maintain the plugin
 
 - [Contribution map](contribution-map.md#choose-your-contribution) — contribution areas, likely files, and focused checks.
-- [Add to a catalog](add-to-a-catalog.md#add-to-a-catalog) — one Markdown file for a shift, evidence kind, gate stack, or edge-case pack.
+- [Add to a catalog](add-to-a-catalog.md#add-to-a-catalog) — one Markdown file for a shift, evidence entry, gate stack, or edge-case pack.
 - [Maintainer verification matrix](maintainer-verification-matrix.md#maintainer-verification-matrix) — shipped surfaces and their tests.
 - [Contributing](../CONTRIBUTING.md#contributing-to-nightshift) — portability, review standards, and releases.

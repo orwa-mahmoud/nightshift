@@ -1,34 +1,7 @@
 # Install
 
-Nightshift installs as a plugin from this repository's marketplace on every host. After
-installing, run a [first shift](../README.md#your-first-shift).
-
-## Codex and ChatGPT
-
-**Recommended: the full plugin for local Codex.** Install it from the repository marketplace:
-
-```text
-codex plugin marketplace add orwa-mahmoud/nightshift
-codex plugin add nightshift@nightshift
-```
-
-Add the marketplace once per Codex installation. Review and trust the plugin's hooks (`/hooks` in
-the CLI), then start a new conversation. The full plugin carries the clock-out gate, safety rules,
-session recovery, and per-item token usage and time.
-
-**Skills-only edition.** The
-[official OpenAI Plugin Directory listing](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
-works the punch list, receipts, parked decisions and continuation notes with the session's own
-tools. Directory versions up to 0.25.3 carry the full plugin; later versions are skills-only,
-because the directory does not accept
-[lifecycle hooks](https://developers.openai.com/plugins/build/plugins#bundled-mcp-servers-and-lifecycle-hooks).
-It has no clock-out gate, recovery or usage accounting, so it suits attended sessions and ChatGPT.
-Its Setup offers the full plugin; after installing it, turn the directory copy off so one
-Nightshift is enabled.
-
-Open the project you want Nightshift to change in Codex, or connect Codex to its GitHub repository.
-A Git repository or a persistent local folder works. A disposable ChatGPT scratch conversation
-cannot preserve project changes, so Setup redirects you to Codex before writing run state.
+Nightshift installs as a native plugin from this repository's marketplace, with no separate app,
+service, or API key. Install it once, then run [your first shift](../README.md#your-first-shift).
 
 ## Claude Code
 
@@ -36,17 +9,41 @@ Run inside Claude Code:
 
 ```text
 /plugin marketplace add orwa-mahmoud/nightshift
-/plugin install nightshift
+/plugin install nightshift@nightshift
 ```
+
+## Codex
+
+```text
+codex plugin marketplace add orwa-mahmoud/nightshift
+codex plugin add nightshift@nightshift
+```
+
+Add the marketplace once per Codex installation. Then review and trust the plugin's hooks,
+with `/hooks` in the CLI or, in the Codex app, the **Review hooks** button (the hook icon in the
+message box) or **Settings → Hooks**.
+
+Open the project you want Nightshift to change, or connect Codex to its GitHub repository.
 
 ## Cursor
 
 Open **Customize → Add → From GitHub Repository**, paste
-`https://github.com/orwa-mahmoud/nightshift`, choose a scope, and select **Import**.
-Then select Nightshift from the imported marketplace to install it.
-The [Cursor Directory listing](https://cursor.directory/plugins/nightshift) is for discovery;
-installation happens inside Cursor. Read the host-specific
-[recovery and CLI limitations](how-it-works.md#recovery) before starting a shift.
+`https://github.com/orwa-mahmoud/nightshift`, choose a scope, and select **Import**. Then select
+Nightshift from the imported marketplace to install it. The
+[Cursor Directory listing](https://cursor.directory/plugins/nightshift) links here for discovery.
+
+## The skills-only edition for ChatGPT
+
+The [OpenAI Plugin Directory](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
+lists a skills-only edition. It works the punch list, receipts, and parked decisions with the
+session's own tools, but the directory does not accept
+[lifecycle hooks](https://developers.openai.com/plugins/build/plugins#bundled-mcp-servers-and-lifecycle-hooks),
+so it has no clock-out gate, recovery, or usage accounting. Use it while you watch the session, and
+the full plugin for a shift you leave alone. Its Setup offers the full plugin; once that is
+installed, turn the directory copy off so only one Nightshift is enabled.
+
+A ChatGPT chat with no project behind it cannot keep project changes, so Setup sends you to Codex
+before it writes anything.
 
 ## skills.sh
 
@@ -54,16 +51,14 @@ installation happens inside Cursor. Read the host-specific
 npx skills add https://github.com/orwa-mahmoud/nightshift --skill install-nightshift
 ```
 
-This adds one small skill, kept in this repository's root `skills/` folder, that installs the full
-plugin into Claude Code, Codex or Cursor. Nightshift's own skills need its hooks and runtime, so
-they are marked internal and install only as part of the plugin.
+This adds one small skill that installs the full plugin into Claude Code, Codex, or Cursor.
 
 ## Platforms
 
-macOS and Linux use the bundled Bash runtime. Native Windows uses bundled PowerShell, with no
-Git Bash or WSL required. For WSL, keep the host, plugin, repository, and watchman in one Linux
-distribution. See [Native Windows](windows.md#native-windows) and
-[Remote environments](remote-environments.md#remote-ssh-and-devcontainers) for platform details.
+macOS and Linux use the bundled Bash runtime. Native Windows uses bundled PowerShell, with no Git
+Bash or WSL needed. Under WSL, keep the host, the plugin, the repository, and the watchman in one
+Linux distribution. [Native Windows](windows.md#native-windows) and
+[Remote environments](remote-environments.md#remote-ssh-and-devcontainers) cover the details.
 
-[Run a first shift](../README.md#your-first-shift) · [Troubleshooting](troubleshooting.md#troubleshooting) ·
-[Documentation index](README.md#documentation)
+[Your first shift](../README.md#your-first-shift) · [Setup](setup.md#setup) ·
+[Troubleshooting](troubleshooting.md#troubleshooting) · [Documentation index](README.md#documentation)
