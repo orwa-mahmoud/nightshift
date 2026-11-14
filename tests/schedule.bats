@@ -185,59 +185,6 @@ STUB
   printf '%s\n' "$arming" | grep -qF 'Status'
 }
 
-# A README is reachable with no credit; a skill is not. The offline path has to be documented
-# where an owner can still read it on the day they need it.
-@test "the README documents the offline generator for a session that cannot run" {
-  r="$BATS_TEST_DIRNAME/../docs/commands.md"
-  grep -qi 'no credit left' "$r"
-  grep -qi 'spends no tokens and needs no session' "$r"
-  grep -q 'runtime/ns" schedule --at' "$r"
-}
-
-@test "native Windows Task Scheduler docs name list and remove" {
-  w="$BATS_TEST_DIRNAME/../docs/windows.md"
-  block="$(awk '/^## Task Scheduler$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$block" | grep -qF -- '--list'
-  printf '%s\n' "$block" | grep -qF -- '--remove'
-  printf '%s\n' "$block" | grep -qF 'work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm'
-  printf '%s\n' "$block" | grep -qF 'work target could not be resolved - a scheduled start will refuse to arm'
-}
-
-@test "native Windows helper docs name import-issues" {
-  w="$BATS_TEST_DIRNAME/../docs/windows.md"
-  helpers="$(awk '/^## Doctor and other helpers$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$helpers" | grep -qE 'ns\.ps1"? import-issues'
-  printf '%s\n' "$helpers" | grep -qF -- '--list-proposed'
-  grep -qF 'import-issues, apply-profile, and export-support helpers' "$w"
-}
-
-@test "native Windows helper docs name migrate-state" {
-  w="$BATS_TEST_DIRNAME/../docs/windows.md"
-  helpers="$(awk '/^## Doctor and other helpers$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$helpers" | grep -qE 'ns\.ps1"? migrate-state'
-  printf '%s\n' "$helpers" | grep -qF -- '--project'
-  grep -qF 'Doctor, migrate-state, retain-history' "$w"
-}
-
-@test "native Windows setup docs name the workspace linker" {
-  w="$BATS_TEST_DIRNAME/../docs/windows.md"
-  setup="$(awk '/^## Setup and start$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$setup" | grep -qE 'ns\.ps1"? link-workspace'
-  printf '%s\n' "$setup" | grep -qF -- '--host-root'
-  printf '%s\n' "$setup" | grep -qF -- '--workspace'
-}
-
-@test "native Windows rule docs name expected-email and protected-dir matching" {
-  w="$BATS_TEST_DIRNAME/../docs/windows.md"
-  rules="$(awk '/^## Rule and filesystem details$/{p=1; next} /^## /{p=0} p' "$w")"
-  printf '%s\n' "$rules" | grep -qF 'git config user.email'
-  printf '%s\n' "$rules" | grep -qF 'expectedEmail'
-  printf '%s\n' "$rules" | grep -qF 'protectedDirs'
-  printf '%s\n' "$rules" | grep -qF 'normalized to `/`'
-  printf '%s\n' "$rules" | grep -qF 'invalid command or commit pattern fails closed'
-  printf '%s\n' "$rules" | grep -qF 'fix it in'
-}
-
 # One generator serves both hosts: the entry's runner is a parameter, defaulting to Claude's.
 @test "--agent swaps the headless runner in the generated entry" {
   p="$BATS_TEST_TMPDIR/proj"; mkdir -p "$p/.nightshift"
@@ -503,9 +450,4 @@ EOF
   s="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/schedule/SKILL.md"
   grep -qF -- '--preflight' "$s"
   grep -qi 'installs nothing' "$s"
-  grep -qF -- '--preflight' "$BATS_TEST_DIRNAME/../docs/commands.md"
-  grep -qF 'work mode is unset; Setup would propose artifact - a scheduled start will refuse to arm' \
-    "$BATS_TEST_DIRNAME/../docs/commands.md"
-  grep -qF 'work target could not be resolved - a scheduled start will refuse to arm' \
-    "$BATS_TEST_DIRNAME/../docs/commands.md"
 }

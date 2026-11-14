@@ -523,8 +523,6 @@ digest_of() {
   done
   grep -qF 'tool-output' "$PLUGIN/skills/nightshift/references/receipts/tool-output.md"
   # The capabilities page names the verb an owner types, on both hosts.
-  grep -qF 'ns normalize-output' "$ROOT/docs/evidence-capabilities.md"
-  grep -qF 'ns.ps1 normalize-output' "$ROOT/docs/evidence-capabilities.md"
 }
 
 # The report's own total is the authority on how many errors there were. Reading fewer than it

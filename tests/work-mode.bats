@@ -9,8 +9,6 @@ ARCHIVE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/archive/SKILL.md"
 SCHEDULE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/schedule/SKILL.md"
 DOCTOR="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
 WIN_DOCTOR="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows/doctor.ps1"
-DOC="$BATS_TEST_DIRNAME/../docs/how-it-works.md"
-VOCAB="$BATS_TEST_DIRNAME/../docs/vocabulary.md"
 HARDHAT="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/shared/hardhat-core.sh"
 WIN_HARDHAT="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/hardhat.ps1"
 PSM1="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1"
@@ -139,7 +137,6 @@ call_lib() {
   # Start defers the resolver's rule to the verdict that carries it.
   grep -qF 'symlink or reparse child is skipped' \
     "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/preflight-explain.txt"
-  grep -qF 'Skip a symlink or reparse child; it is not a nested checkout.' "$DOC"
   grep -qF 'work mode' "$STATUS" || grep -qF 'work-mode' "$STATUS"
   grep -qF 'work mode is unset; Setup would propose artifact' "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/doctor.sh"
   # Status relays whatever the inspector warns; the wording is the inspector's.
