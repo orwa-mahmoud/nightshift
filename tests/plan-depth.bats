@@ -47,7 +47,7 @@ QUESTION='Before I write these, want any of: evidence lines, an edge-case pass, 
 
 @test "the edge-case catalog holds every kind of case, and the skills carry only the question" {
   PACKS="$SKILLS/nightshift/references/plan/edge-cases"
-  for kind in input state concurrency environment failure security; do
+  for kind in input state concurrency environment failure security time; do
     [ -f "$PACKS/$kind.md" ] || { echo "missing pack $kind"; return 1; }
   done
   for c in Empty Huge Malformed Unicode 'Paths with spaces' 'First run' 'Upgrade from the previous version' \
