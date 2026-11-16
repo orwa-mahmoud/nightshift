@@ -3,6 +3,13 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.35.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.34.0...v0.35.0) (2026-11-16)
+
+
+### Features
+
+* add a time edge-case pack for dates, zones and scheduling ([#232](https://github.com/orwa-mahmoud/nightshift/issues/232)) ([7967722](https://github.com/orwa-mahmoud/nightshift/commit/796772223fc10e1a8437ffa21dbfe449f9ae316d))
+
 ## [0.34.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.33.2...v0.34.0) (2026-11-14)
 
 
