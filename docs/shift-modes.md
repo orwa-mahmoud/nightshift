@@ -55,6 +55,7 @@ pass finds nothing new.
 | [Flaky-test repair](../plugins/nightshift/skills/nightshift/references/compose/shifts/flaky-test-repair.md) | Unstable tests reproduced and repaired without weakening coverage |
 | [GitHub issue hunt](../plugins/nightshift/skills/nightshift/references/compose/shifts/github-issue-hunt.md) | Work imported issues, one commit each, never write back |
 | [Incident follow-up](../plugins/nightshift/skills/nightshift/references/compose/shifts/incident-follow-up.md) | Repository actions from supplied incident evidence |
+| [License headers](../plugins/nightshift/skills/nightshift/references/compose/shifts/license-headers.md) | The project's own file header added where its convention requires one |
 | [Localization parity](../plugins/nightshift/skills/nightshift/references/compose/shifts/localization-parity.md) | Objective key drift in an existing localization system |
 | [Migration compatibility](../plugins/nightshift/skills/nightshift/references/compose/shifts/migration-compatibility.md) | Guarded framework, config, and data migrations |
 | [Performance regression](../plugins/nightshift/skills/nightshift/references/compose/shifts/performance-regression.md) | Measured change with an existing baseline |
