@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.36.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.35.0...v0.36.0) (2026-11-16)
+
+
+### Features
+
+* add a license header shift that restores a project's own file h… ([#234](https://github.com/orwa-mahmoud/nightshift/issues/234)) ([9635195](https://github.com/orwa-mahmoud/nightshift/commit/96351951cc8e88647c28643c5ed883353a18396b))
+* add a license header shift that restores a project's own file header ([56849d5](https://github.com/orwa-mahmoud/nightshift/commit/56849d54e05ac3b2265bbd2b897221195a818fe5)), closes [#21](https://github.com/orwa-mahmoud/nightshift/issues/21)
+
 ## [0.35.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.34.0...v0.35.0) (2026-11-16)
 
 
