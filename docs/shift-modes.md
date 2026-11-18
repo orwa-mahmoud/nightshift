@@ -43,6 +43,7 @@ pass finds nothing new.
 | [API contract drift](../plugins/nightshift/skills/nightshift/references/compose/shifts/api-contract-drift.md) | Checked-in server, schema, and client contracts brought back into agreement |
 | [Architecture health](../plugins/nightshift/skills/nightshift/references/compose/shifts/architecture-health.md) | Concrete dependency and boundary cost from repository evidence |
 | [Build reproducibility](../plugins/nightshift/skills/nightshift/references/compose/shifts/build-reproducibility.md) | Declared clean setup and build paths |
+| [Changelog tag drift](../plugins/nightshift/skills/nightshift/references/compose/shifts/changelog-tag-drift.md) | Changelog or release notes brought in line with the work since the last tag |
 | [CI warning cleanup](../plugins/nightshift/skills/nightshift/references/compose/shifts/ci-warning-cleanup.md) | Repository-owned warnings the pipeline already prints |
 | [Clear quality debt](../plugins/nightshift/skills/nightshift/references/compose/shifts/clear-quality-debt.md) | The backlog your tools already know about |
 | [Dead-code cleanup](../plugins/nightshift/skills/nightshift/references/compose/shifts/dead-code-cleanup.md) | Code proven unused by tooling the repository already trusts |
