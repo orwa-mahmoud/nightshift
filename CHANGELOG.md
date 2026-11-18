@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.37.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.36.0...v0.37.0) (2026-11-18)
+
+
+### Features
+
+* add a changelog tag drift shift that reconciles notes with the last tag ([4c1fdb5](https://github.com/orwa-mahmoud/nightshift/commit/4c1fdb5faa1acb03a17849979b112a5715b5ec1e)), closes [#21](https://github.com/orwa-mahmoud/nightshift/issues/21)
+* add a changelog tag drift shift that reconciles notes with the last tag ([#236](https://github.com/orwa-mahmoud/nightshift/issues/236)) ([5b4dc4f](https://github.com/orwa-mahmoud/nightshift/commit/5b4dc4fd071d092549339c55d4919e6f11d9e2a7))
+
 ## [0.36.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.35.0...v0.36.0) (2026-11-16)
 
 
