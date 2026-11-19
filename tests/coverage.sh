@@ -3,10 +3,12 @@
 # kcov's bash tracer is Linux-only: on Linux with kcov installed this runs natively; anywhere else
 # the same script runs inside a debian container (docker required).
 #
-# Each test file runs under its own kcov, NIGHTSHIFT_COVERAGE_JOBS at a time (default: one per CPU),
-# and kcov merges the parts. A file whose run is killed or writes no coverage report fails the whole
-# run with its name and the end of its log, and so does a merged report that counts no lines: an
-# incomplete measurement is never reported as a coverage figure.
+# kcov's memory grows with every test it traces: one heavy file alone passes 10 GB. So each test file
+# is cut into groups of NIGHTSHIFT_COVERAGE_CHUNK tests (default 10), each group runs under its own
+# kcov, NIGHTSHIFT_COVERAGE_JOBS groups at a time (default: one per CPU), and kcov merges the parts.
+# A group that is killed, writes no coverage report, or runs a different number of tests than it was
+# given fails the whole run with its file, its tests and the end of its log, and so does a merged
+# report that counts no lines: an incomplete measurement is never reported as a coverage figure.
 #
 # Output: coverage/ — kcov HTML, plus two reports with repository-relative paths:
 # coverage/cobertura.xml for Codecov and coverage/sonar-generic.xml for SonarQube.
@@ -15,44 +17,88 @@ cd "$(dirname "$0")/.."
 
 INCLUDE=plugins/nightshift/hooks,plugins/nightshift/runtime,plugins/nightshift/lib
 
-# run_file <index> <test-file> — one test file under its own kcov. Returns 1, after saying why on
-# standard error, when the run was killed or wrote no coverage report. A failing test still counts:
-# its coverage is measured all the same.
-run_file() {
-  local out="coverage/part-$1" log="coverage/part-$1.log" status=0
-  kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" "$2" >"$log" 2>&1 || status=$?
-  if [ "$status" -lt 128 ] && find "$out" -name cobertura.xml -print -quit 2>/dev/null | grep -q .; then
-    printf 'coverage: measured %s\n' "$2"
+CHUNKS=coverage/chunks.tsv
+
+# test_names <test-file> — every test name in the file as bats matches it, one per line: the text of
+# each `@test "..."` line exactly as written, backslashes included.
+test_names() {
+  sed -n 's/^@test "\(.*\)" {[[:space:]]*$/\1/p' "$1"
+}
+
+# ere_escape — standard input with every extended-regex special character escaped.
+ere_escape() {
+  sed 's#[]\[(){}.*+?^$|\\/]#\\&#g'
+}
+
+# write_chunks — one line per group in $CHUNKS: <test-file> TAB <test count> TAB <bats filter>.
+write_chunks() {
+  local file names count i group size
+  size="$CHUNK"
+  : >"$CHUNKS"
+  while IFS= read -r file; do
+    names="$(test_names "$file")"
+    count="$(printf '%s\n' "$names" | grep -c . || :)"
+    if [ "$count" -ne "$(grep -c '^@test ' "$file")" ]; then
+      printf 'coverage: %s has %s @test lines but %s readable test names\n' "$file" "$(grep -c '^@test ' "$file")" "$count" >&2
+      return 1
+    fi
+    i=0
+    while [ "$i" -lt "$count" ]; do
+      group="$(printf '%s\n' "$names" | sed -n "$((i + 1)),$((i + size))p")"
+      printf '%s\t%s\t^(%s)$\n' "$file" "$(printf '%s\n' "$group" | grep -c .)" \
+        "$(printf '%s\n' "$group" | ere_escape | paste -sd '|' -)" >>"$CHUNKS"
+      i=$((i + size))
+    done
+  done < <(tests/run-shard.sh 1 1 --list)
+}
+
+# run_chunk <line> — the group on that line of $CHUNKS under its own kcov. Returns 1, after saying
+# why on standard error, when the run was killed, wrote no coverage report, or ran a different
+# number of tests than the group holds. A failing test still counts: its coverage is measured.
+run_chunk() {
+  local line="$1" file count filter out="coverage/part-$1" log="coverage/part-$1.log" status=0 ran why=""
+  IFS=$'\t' read -r file count filter < <(sed -n "${line}p" "$CHUNKS")
+  kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 || status=$?
+  ran="$(sed -n 's/^1\.\.\([0-9][0-9]*\)$/\1/p' "$log" | head -n 1)"
+  if [ "$status" -ge 128 ]; then
+    why="was killed by signal $((status - 128))"
+  elif ! find "$out" -name cobertura.xml -print -quit 2>/dev/null | grep -q .; then
+    why="wrote no coverage report (kcov exit $status)"
+  elif [ "$ran" != "$count" ]; then
+    why="ran ${ran:-no} tests where the group holds $count"
+  fi
+  if [ -z "$why" ]; then
+    printf 'coverage: measured %s, group %s (%s tests)\n' "$file" "$line" "$count"
     return 0
   fi
   {
-    if [ "$status" -ge 128 ]; then
-      printf 'coverage: %s was killed by signal %s, so its coverage is missing\n' "$2" "$((status - 128))"
-    else
-      printf 'coverage: %s wrote no coverage report (kcov exit %s)\n' "$2" "$status"
-    fi
+    printf 'coverage: %s, group %s %s, so its coverage is missing\n' "$file" "$line" "$why"
+    printf -- '--- tests in the group: %s\n' "$filter"
     printf -- '--- last lines of %s\n' "$log"
     tail -n 25 "$log"
   } >&2
   return 1
 }
 
-# The parallel runner calls this script back once per test file.
-if [ "${1:-}" = --file ]; then
-  run_file "$2" "$3"
+# The parallel runner calls this script back once per group.
+if [ "${1:-}" = --chunk ]; then
+  run_chunk "$2"
   exit
 fi
 
 JOBS="${NIGHTSHIFT_COVERAGE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')}"
-case "$JOBS" in
-  '' | *[!0-9]* | 0)
-    printf 'coverage: NIGHTSHIFT_COVERAGE_JOBS must be a positive whole number, got "%s"\n' "$JOBS" >&2
-    exit 2
-    ;;
-esac
+CHUNK="${NIGHTSHIFT_COVERAGE_CHUNK:-10}"
+for setting in "NIGHTSHIFT_COVERAGE_JOBS=$JOBS" "NIGHTSHIFT_COVERAGE_CHUNK=$CHUNK"; do
+  case "${setting#*=}" in
+    '' | *[!0-9]* | 0)
+      printf 'coverage: %s must be a positive whole number, got "%s"\n' "${setting%%=*}" "${setting#*=}" >&2
+      exit 2
+      ;;
+  esac
+done
 
 if [ "$(uname -s)" != Linux ] || ! command -v kcov >/dev/null 2>&1; then
-  exec docker run --rm -v "$PWD:/src" -w /src -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" \
+  exec docker run --rm -v "$PWD:/src" -w /src -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" -e NIGHTSHIFT_COVERAGE_CHUNK="$CHUNK" \
     debian:stable-slim bash -c '
     set -e
     apt-get update -qq >/dev/null
@@ -65,18 +111,19 @@ fi
 
 rm -rf coverage
 mkdir -p coverage
-
+write_chunks
+groups="$(grep -c . "$CHUNKS" || :)"
+printf 'coverage: %s test groups of up to %s tests, %s at a time\n' "$groups" "$CHUNK" "$JOBS"
 
 failed=0
-tests/run-shard.sh 1 1 --list | awk '{ print NR, $0 }' |
-  xargs -n 2 -P "$JOBS" bash tests/coverage.sh --file || failed=1
+seq 1 "$groups" | xargs -n 1 -P "$JOBS" bash tests/coverage.sh --chunk || failed=1
 if [ "$failed" -ne 0 ]; then
-  printf 'coverage: one or more test files could not be measured (see above); no report written\n' >&2
+  printf 'coverage: one or more test groups could not be measured (see above); no report written\n' >&2
   exit 1
 fi
 
-if ! kcov --merge coverage/merged coverage/part-*; then
-  printf 'coverage: kcov could not merge the per-file reports in coverage/part-*\n' >&2
+if ! kcov --merge coverage/merged coverage/part-*/; then
+  printf 'coverage: kcov could not merge the per-group reports in coverage/part-*\n' >&2
   exit 1
 fi
 cob="$(find coverage/merged -name cobertura.xml 2>/dev/null | head -n 1)"
