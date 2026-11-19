@@ -53,6 +53,17 @@ npx skills add https://github.com/orwa-mahmoud/nightshift --skill install-nights
 
 This adds one small skill that installs the full plugin into Claude Code, Codex, or Cursor.
 
+## Requirements
+
+- **A supported host:** Claude Code, Codex, or Cursor.
+- **macOS or Linux:** Bash 3.2 or later and the standard POSIX tools. `jq` or `python3` reads JSON
+  when present. With neither, the owner's rules are still enforced and the agent writes the
+  morning receipt instead of the runtime rendering it.
+- **Native Windows:** PowerShell 5.1 or later. No Git Bash, WSL, Node.js, Python, or `jq`.
+- **Git:** for a shift that works a repository. A plain folder needs none.
+
+The plugin ships no binary and installs no package.
+
 ## Platforms
 
 macOS and Linux use the bundled Bash runtime. Native Windows uses bundled PowerShell, with no Git
