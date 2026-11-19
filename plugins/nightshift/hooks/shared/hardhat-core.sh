@@ -32,6 +32,29 @@ ns_hardhat_is_command_tool() {
   return 1
 }
 
+# The answer an armed shift gives a call whose hook payload is not a JSON object: no guard can see
+# what the call would do. hooks/windows/hardhat.ps1 carries the same two sentences for native Windows.
+NS_HARDHAT_UNREADABLE_DENY='BLOCKED: the hook payload is unreadable while a shift is active. Retry after the host can provide valid hook JSON.'
+NS_HARDHAT_UNREADABLE_LOG='hardhat: the host sent a hook payload that is not a JSON object, and the call was refused'
+
+# ns_hardhat_payload_unreadable <raw-payload> — status 0 when the payload is present and is not a
+# JSON object. An empty payload keeps the host's own fallbacks, and without jq the payload is read
+# field by field as before.
+ns_hardhat_payload_unreadable() {
+  [ -n "$1" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  ! printf '%s' "$1" | jq -e 'type == "object"' >/dev/null 2>&1
+}
+
+# ns_hardhat_refuse_unreadable <nightshift-dir> — record the refusal once in this shift's log, so the
+# owner sees it in the morning, and print the deny reason.
+ns_hardhat_refuse_unreadable() {
+  local log
+  ns_layout_set log "$1" shift-log
+  grep -qF -- "$NS_HARDHAT_UNREADABLE_LOG" "$log" 2>/dev/null || ns_shift_log "$1" "$NS_HARDHAT_UNREADABLE_LOG"
+  printf '%s' "$NS_HARDHAT_UNREADABLE_DENY"
+}
+
 ns_hardhat_binding_probe() { # $1 = canonical tool name, $2 = command
   case "$1" in
     Bash | Shell) [ "$2" = ": nightshift-binding-probe" ] ;;

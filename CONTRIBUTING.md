@@ -2,7 +2,8 @@
 
 Contributions are welcome across planning, execution, receipts, customization, recovery, and
 supported hosts. Share something you use, improve a workflow, or help another developer get a
-successful first shift.
+successful first shift. Pull requests are reviewed by the code owners in
+[`.github/CODEOWNERS`](.github/CODEOWNERS).
 
 ## Choose a contribution
 

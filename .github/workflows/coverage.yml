@@ -1,0 +1,38 @@
+name: coverage
+
+# Line coverage of the shipped bash on main, uploaded to Codecov. tests/coverage.sh runs the whole
+# Bats suite under kcov, shard by shard, and merges the parts. Pull requests run the suite in ci.yaml
+# without coverage; this workflow never gates one.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "plugins/**"
+      - "tests/**"
+      - "codecov.yml"
+      - ".github/workflows/coverage.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Measure line coverage
+        run: bash tests/coverage.sh
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/cobertura.xml
+          disable_search: true
+          fail_ci_if_error: true

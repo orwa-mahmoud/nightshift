@@ -130,15 +130,9 @@ if ! ns_gate_boxes; then
 fi
 
 honor_stop() {
-  local reason summary
-  if [ -f "$PUNCH" ]; then
-    reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-    summary="shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
-    end_and_stop "$summary"
-  else
-    reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-    end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
-  fi
+  local reason
+  reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
 }
 
 # Record conversation continuity and claim the original process lease if hardhat did not already
