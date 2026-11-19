@@ -62,7 +62,7 @@ or drop.
 | Option | What you get |
 | --- | --- |
 | **Evidence lines** | An `Evidence:` line on each item naming what you will open to judge it: screenshots at named widths, before-and-after figures, a schema diff. Suggested from the [evidence catalog](evidence.md#the-evidence-catalog). |
-| **Edge-case pass** | WHEN/THEN lines for the cases each item can meet, drawn from seven packs: concurrency, environment, failure partway through, untrusted input, security, state a later run will read, and dates and times. Your own packs are used first. |
+| **Edge-case pass** | WHEN/THEN lines for the cases each item can meet, drawn from the shipped packs, among them concurrency, environment, failure partway through, untrusted input, security, state a later run will read, and dates and times. Your own packs are used first. |
 | **Pre-mortem** | The agent answers "this shipped and failed a week later: why?" with two to five failure stories, each naming what broke, for whom, and what would have caught it. Each story you keep becomes a WHEN/THEN line, a new item, or a recorded non-goal. |
 | **Ordering and risk check** | The item whose failure would break the most others, such as a shared contract, a data shape or a migration. The agent proposes moving it first or adding a checkpoint item right after it that proves the contract. |
 | **Research** | Cited research on the questions the plan actually has, from the sources you name. Every source the plan relies on is cited in its design notes. |
