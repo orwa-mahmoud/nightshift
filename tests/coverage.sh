@@ -4,7 +4,7 @@
 # the same script runs inside a debian container (docker required).
 #
 # kcov's memory grows with every test it traces: one heavy file alone passes 10 GB. So each test file
-# is cut into groups of NIGHTSHIFT_COVERAGE_CHUNK tests (default 10), each group runs under its own
+# is cut into groups of NIGHTSHIFT_COVERAGE_CHUNK tests (default 5), each group runs under its own
 # kcov, NIGHTSHIFT_COVERAGE_JOBS groups at a time (default: one per CPU), and kcov merges the parts.
 # A group that is killed, writes no coverage report, or runs a different number of tests than it was
 # given fails the whole run with its file, its tests and the end of its log, and so does a merged
@@ -97,7 +97,7 @@ if [ "${1:-}" = --chunk ]; then
 fi
 
 JOBS="${NIGHTSHIFT_COVERAGE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')}"
-CHUNK="${NIGHTSHIFT_COVERAGE_CHUNK:-10}"
+CHUNK="${NIGHTSHIFT_COVERAGE_CHUNK:-5}"
 for setting in "NIGHTSHIFT_COVERAGE_JOBS=$JOBS" "NIGHTSHIFT_COVERAGE_CHUNK=$CHUNK"; do
   case "${setting#*=}" in
     '' | *[!0-9]* | 0)
