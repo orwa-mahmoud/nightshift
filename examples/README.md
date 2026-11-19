@@ -34,6 +34,14 @@ stop gate it gives users.
 An 11-item Codex maintenance shift stayed on one branch, passed the repository gates and became
 Nightshift v0.9.2.
 
+## Community receipts
+
+### [A first shift on align-cli, with its decisions imported](align-cli-trailers.md)
+
+One attended shift on a public CLI: two items, one commit each, merged as a pull request. The plan
+record and the answered parking lot were then read back by another tool, and the receipt records a
+verification setting that did not take.
+
 ## Contribute a receipt
 
 Use the [bad-night template](bad-night-template.md) for an interrupted, stalled, owner-stopped or
