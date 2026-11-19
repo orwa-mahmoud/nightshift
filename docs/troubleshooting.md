@@ -351,6 +351,25 @@ gaps would remove the manual reopen and make the handoff more consistent; it wou
 recovery on. The watchman already runs the recovery, and the process lease already fences the stale
 worker.
 
+## Known limitations
+
+- **A tick is the agent's claim.** The clock-out gate checks that every box is ticked, not that
+  the work behind it is right. Receipts and evidence are there for your review.
+- **The guards are hardening, not a sandbox.** They see the tool calls the host passes to its hooks.
+  A shift can do what the host session allows, minus the rules you set in
+  [Owner knobs](knobs.md#owner-knobs).
+- **An unattended shift cannot answer permission prompts.** Choose permissions before it starts;
+  the [first-night checklist](first-night-checklist.md#first-night-safety-checklist) covers it.
+- **Recovery needs evidence from the host.** Each host's watchman revives a session only on positive
+  evidence, and what counts differs per host: [Recovery](how-it-works.md#recovery).
+- **Cursor reports fewer token figures.** Claude Code and Codex give full figures for every item.
+  The Cursor app reports usage once per agent turn, so a turn that covers several items is shared
+  rather than split, and it reports no reasoning tokens. A Cursor session the watchman revives
+  through the CLI reports none: [Token usage](receipts.md#token-usage-is-measured-by-the-runtime).
+- **Native Windows:** Git Bash as the hook shell is not yet CI-verified, and a split Windows/WSL
+  run or a workspace on a network share is unsupported:
+  [Choose the runtime deliberately](windows.md#choose-the-runtime-deliberately).
+
 ## See also
 
 - [Command reference](commands.md#command-reference) — setup, start, status, doctor, stop, reset, purge, schedule
