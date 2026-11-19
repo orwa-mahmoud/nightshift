@@ -398,6 +398,22 @@ try {
         Expect-True ($doc.itemsDigest -ceq (Get-NSPunchItemsDigest $snapPunch)) 'the items digest is the list armed with'
     }
 
+    # A plain Start records the verification level and tooling policy the owner saved. Mirrors the
+    # Bash case in tests/start-preflight.bats.
+    foreach ($row in @(@('fast', 'none'), @('balanced', 'final'), @('strict', 'per-item'), @('custom', 'custom'))) {
+        $savedSite = New-Site (Join-Path $root ('snapshot-saved-' + $row[0]))
+        $savedRules = Join-Path (Join-Path $savedSite '.nightshift') 'rules.json'
+        $rulesDoc = [IO.File]::ReadAllText($savedRules) | ConvertFrom-Json
+        $rulesDoc.shift.verificationProfile = $row[0]
+        $rulesDoc.shift.toolingPolicy = 'review-missing'
+        [IO.File]::WriteAllText($savedRules, ($rulesDoc | ConvertTo-Json -Depth 20))
+        $savedRun = Invoke-Preflight $savedSite @('-Phase', 'snapshot')
+        Expect-True ($savedRun.ExitCode -eq 0) "saved-profile site arms: $($savedRun.Stdout) $($savedRun.Stderr)"
+        $savedDoc = [IO.File]::ReadAllText((Join-Path (Join-Path $savedSite '.nightshift') 'shift-policy.json')) | ConvertFrom-Json
+        Expect-True ($savedDoc.verificationLevel -ceq $row[1] -and $savedDoc.toolingPolicy -ceq 'review-missing') `
+            "a plain Start records the saved $($row[0]) profile: $($savedDoc.verificationLevel) $($savedDoc.toolingPolicy)"
+    }
+
     # A notes folder has no repository toolchain to add, so its snapshot keeps existing tools.
     $artifactSnap = New-Site (Join-Path $root 'snapshot-artifact')
     Write-NSWorkMode -Workspace $artifactSnap -Mode artifact

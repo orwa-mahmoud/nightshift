@@ -1386,8 +1386,9 @@ _ns_policy_shift_builtins() {
 
 # ns_policy_read_defaults <workspace>
 # The effective remembered choices as compact canonical JSON. Status 0 when the file is absent or
-# valid, 1 when it is malformed — either way the built-in defaults are printed, because these
-# choices only prefill a question and must never decide anything.
+# valid, 1 when it is malformed — either way the built-in defaults are printed. These choices never
+# decide on their own: they prefill a composition question, and Start copies them into tonight's
+# policy (ns_policy_shift_start), which is what decides.
 ns_policy_read_defaults() {
   local ws="$1" f facts line rc bad=0 canon v
   local profile hours tooling execution updated=null
@@ -1481,6 +1482,32 @@ EOF
   NS_POLICY_DEF_UPDATED="$updated"
   ns_policy_defaults_json || return 2
   [ "$bad" -eq 0 ]
+}
+
+# ns_policy_profile_level <profile> — the verification level a verification profile stands for, as
+# compact JSON: fast none, balanced final, strict per-item, custom custom. Status 1 for any other
+# name.
+ns_policy_profile_level() {
+  case "$1" in
+    fast) printf '"none"' ;;
+    balanced) printf '"final"' ;;
+    strict) printf '"per-item"' ;;
+    custom) printf '"custom"' ;;
+    *) return 1 ;;
+  esac
+}
+
+# ns_policy_shift_start <workspace> — the verification level and tooling policy a shift takes when
+# nothing composed it: the owner's saved shift defaults (ns_policy_read_defaults), the profile mapped
+# to its level. Prints `<level>\t<tooling>`, each as compact JSON.
+ns_policy_shift_start() {
+  local defaults profile tooling level
+  defaults="$(ns_policy_read_defaults "$1")" || :
+  profile="$(printf '%s' "$defaults" | sed -n 's/.*"verificationProfile":"\([a-z-]*\)".*/\1/p')"
+  tooling="$(printf '%s' "$defaults" | sed -n 's/.*"toolingPolicy":\("[a-z-]*"\).*/\1/p')"
+  level="$(ns_policy_profile_level "$profile")" || level="$(ns_policy_builtin verificationLevel)"
+  [ -n "$tooling" ] || tooling="$(ns_policy_builtin toolingPolicy)"
+  printf '%s\t%s' "$level" "$tooling"
 }
 
 # ns_policy_defaults_stated <workspace> <field> — the value the legacy file explicitly states
@@ -1684,12 +1711,13 @@ ns_new_shift_id() {
 # ns_start_snapshot <workspace> <shift-policy-helper> — tonight's snapshot for a Start with no
 # composition behind it. A composed shift has its policy written before arming; a plain Start had
 # none, so nothing recorded the contract and items it armed with and the gate could not tell a
-# deleted item from a finished one. This writes one with source `start-defaults` and the values the
-# resolved view already shows without a policy (the built-in verification level and tooling policy,
-# existing tools in artifact mode, and the deadline file's epoch or none) through the same writer composition uses, which records the digests and
-# freezes the owner's preference blocks. Prints the new shift id.
+# deleted item from a finished one. This writes one with source `start-defaults` through the same
+# writer composition uses, which records the digests and freezes the owner's preference blocks. Like
+# a composition step, it copies the owner's saved shift defaults into tonight's policy: the
+# verification level the saved profile stands for and the saved tooling policy (existing tools in
+# artifact mode), with the deadline file's epoch or none. Prints the new shift id.
 ns_start_snapshot() {
-  local ws="$1" helper="$2" ns="$1/.nightshift" id deadline policy file tooling
+  local ws="$1" helper="$2" ns="$1/.nightshift" id deadline policy file tooling start level
   ns_layout_set policy "$ns" shift-policy
   ns_layout_set file "$ns" deadline
   [ ! -e "$policy" ] || return 1
@@ -1699,13 +1727,15 @@ ns_start_snapshot() {
     deadline="$(tr -d '[:space:]' <"$file" 2>/dev/null)"
     case "$deadline" in '' | *[!0-9]*) deadline="null" ;; esac
   fi
+  start="$(ns_policy_shift_start "$ws")"
+  level="${start%%"$NS_POLICY_TAB"*}"
+  tooling="${start#*"$NS_POLICY_TAB"}"
   # A notes folder has no repository toolchain to add, so it keeps existing tools.
-  tooling="$(ns_policy_builtin toolingPolicy)"
   if [ "$(ns_work_mode "$ws" 2>/dev/null)" = artifact ]; then
     tooling='"existing-tools"'
   fi
   printf '{"schemaVersion":1,"shiftId":"%s","createdAt":"%s","source":"start-defaults","deadlineEpoch":%s,"verificationLevel":%s,"toolingPolicy":%s}\n' \
-    "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$deadline" "$(ns_policy_builtin verificationLevel)" "$tooling" |
+    "$id" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$deadline" "$level" "$tooling" |
     bash "$helper" --project "$ws" set --from-json - >/dev/null 2>&1 || return 1
   printf '%s' "$id"
 }

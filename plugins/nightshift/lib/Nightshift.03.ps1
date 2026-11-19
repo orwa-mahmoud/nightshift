@@ -904,6 +904,12 @@ $script:NSPolicyCategories = @('sudo', 'containers', 'global-packages', 'daemons
 $script:NSPolicyVerificationLevels = @('none', 'final', 'per-item', 'custom')
 $script:NSPolicyToolingPolicies = @('existing-tools', 'review-missing', 'auto-add')
 $script:NSPolicyProfiles = @('fast', 'balanced', 'strict', 'custom')
+# The verification level each profile stands for. Mirrors ns_policy_profile_level.
+$script:NSPolicyProfileLevels = New-Object 'Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
+$script:NSPolicyProfileLevels['fast'] = 'none'
+$script:NSPolicyProfileLevels['balanced'] = 'final'
+$script:NSPolicyProfileLevels['strict'] = 'per-item'
+$script:NSPolicyProfileLevels['custom'] = 'custom'
 $script:NSPolicyExecutions = @('review-first', 'run-direct')
 $script:NSPolicySources = @('composition', 'start-defaults')
 $script:NSPolicyScopes = @('category', 'exact-plan')
@@ -1495,13 +1501,29 @@ function New-NSShiftId {
     return ''
 }
 
+# Get-NSShiftStart <workspace> - the verification level and tooling policy a shift takes when
+# nothing composed it: the owner's saved shift defaults, the profile mapped to its level. Returns a
+# map with VerificationLevel and ToolingPolicy. Mirrors ns_policy_shift_start.
+function Get-NSShiftStart {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $level = [string]$script:NSPolicyBuiltins['verificationLevel']
+    $tooling = [string]$script:NSPolicyBuiltins['toolingPolicy']
+    $defaults = Get-NSShiftDefaults $Workspace
+    $profileName = [string]$defaults['verificationProfile']
+    if ($script:NSPolicyProfileLevels.ContainsKey($profileName)) { $level = $script:NSPolicyProfileLevels[$profileName] }
+    $saved = [string]$defaults['toolingPolicy']
+    if (Test-NSEvidenceEnum $saved $script:NSPolicyToolingPolicies) { $tooling = $saved }
+    return @{ VerificationLevel = $level; ToolingPolicy = $tooling }
+}
+
 # New-NSStartSnapshot <workspace> - tonight's snapshot for a Start with no composition behind it.
 # A composed shift has its policy written before arming; a plain Start had none, so nothing
 # recorded the contract and items it armed with and the gate could not tell a deleted item from a
 # finished one. This writes one with source start-defaults and the values the resolved view already
-# shows without a policy (no gate cadence, existing tools, and the deadline file's epoch or none)
-# through the same writer composition uses, which records the digests and freezes the owner's
-# preference blocks. Returns the new shift id, or '' when nothing was written.
+# shows without a policy (the verification level and tooling policy from the owner's saved shift
+# defaults, existing tools in artifact mode, and the deadline file's epoch or none) through the same
+# writer composition uses, which records the digests and freezes the owner's preference blocks.
+# Returns the new shift id, or '' when nothing was written.
 function New-NSStartSnapshot {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $ns = Join-Path $Workspace '.nightshift'
@@ -1515,14 +1537,15 @@ function New-NSStartSnapshot {
         if ($value -match '^[0-9]+$') { $deadline = $value }
     }
     $created = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+    $start = Get-NSShiftStart $Workspace
+    $tooling = [string]$start['ToolingPolicy']
     # A notes folder has no repository toolchain to add, so it keeps existing tools.
-    $tooling = [string]$script:NSPolicyBuiltins['toolingPolicy']
     $mode = ''
     try { $mode = Get-NSWorkMode $Workspace } catch { $mode = '' }
     if ($mode -ceq 'artifact') { $tooling = 'existing-tools' }
     $json = '{"schemaVersion":1,"shiftId":"' + $id + '","createdAt":"' + $created +
         '","source":"start-defaults","deadlineEpoch":' + $deadline +
-        ',"verificationLevel":"' + [string]$script:NSPolicyBuiltins['verificationLevel'] +
+        ',"verificationLevel":"' + [string]$start['VerificationLevel'] +
         '","toolingPolicy":"' + $tooling + '"}'
     if ((Set-NSShiftPolicy -Workspace $Workspace -Json $json) -ne 0) { return '' }
     return $id
