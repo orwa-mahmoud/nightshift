@@ -798,6 +798,23 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   [ "$(jq -r .itemsDigest "$pol")" = "$(bash -c '. "$1"; ns_punch_items_digest "$2"' _ "$lib" "$p/.nightshift/punch-list.md")" ]
 }
 
+@test "a plain Start records the verification level and tooling policy the owner saved" {
+  local profile level p pol
+  for row in fast:none balanced:final strict:per-item custom:custom; do
+    profile="${row%%:*}"
+    level="${row#*:}"
+    p="$(setup_site "preflight-snapshot-$profile")"
+    jq --arg v "$profile" '.shift.verificationProfile = $v | .shift.toolingPolicy = "review-missing"' \
+      "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
+    mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
+    run bash "$PREFLIGHT" --project "$p" --phase snapshot
+    [ "$status" -eq 0 ] || { printf '%s\n' "$output"; return 1; }
+    pol="$p/.nightshift/shift-policy.json"
+    jq -e --arg l "$level" '.verificationLevel == $l and .toolingPolicy == "review-missing"' "$pol" >/dev/null \
+      || { echo "$profile policy:"; cat "$pol"; return 1; }
+  done
+}
+
 @test "an artifact-mode Start snapshot keeps existing tools" {
   p="$(setup_site preflight-snapshot-artifact)"
   printf 'artifact\n' >"$p/.nightshift/work-mode"
