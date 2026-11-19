@@ -13,6 +13,37 @@ The primary Nightshift attack surface is therefore its local hook and runtime
 scripts, the permissions granted to the coding agent, and any owner-configured
 notification command.
 
+## What the runtime needs
+
+The plugin is shell scripts, PowerShell scripts, and Markdown. It ships no binary and installs no
+package. macOS and Linux use Bash 3.2 or later with the standard POSIX tools; native Windows uses
+PowerShell 5.1 or later. Git is needed for a shift that works a repository. On POSIX, `jq` or
+`python3` reads JSON when present, and neither is required to enforce the owner's rules.
+
+## Tightening an unattended shift
+
+Beyond protecting its own state files, Nightshift restricts only what the owner chooses: a shift
+can do what the host session allows. The owner narrows it in `.nightshift/rules.json`, and the
+hooks enforce those rules in every permission mode:
+
+- `forbiddenCommands` denies a command that matches a pattern, such as `git push`.
+- `protectedDirs` keeps named directories out of `git add` and every commit.
+- `neverCommitPatterns` refuses a commit whose diff matches a pattern, such as a key or a password.
+- `expectedEmail` refuses a commit made under another identity.
+- `toolDeny` denies named host tools.
+- `elevation` covers five categories that create system state (`sudo`, `containers`,
+  `global-packages`, `daemons`, `external-services`), each allowed or denied by the owner.
+
+Three shipped profiles set common combinations: `no-push`, `isolated-branch`, and
+`strict-secrets`. `ns apply-profile` previews a profile and writes it only with `--apply`.
+[Owner knobs](docs/knobs.md) lists every setting. These guards are hardening, not a sandbox.
+
+## Secrets
+
+During a shift the agent can neither read nor rewrite `rules.json`. `neverCommitPatterns` and
+`protectedDirs` keep credentials out of commits. The support bundle that `ns export-support`
+writes leaves known sensitive fields out, stays on the machine, and is never uploaded.
+
 ## Reporting
 
 A public issue is the default. Nightshift is a local plugin: gate, hardhat,

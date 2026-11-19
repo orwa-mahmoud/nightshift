@@ -134,7 +134,7 @@ If Nightshift is useful to you, [star the repository](https://github.com/orwa-ma
 
 ## Documentation
 
-[Documentation index](docs/README.md#documentation) · [Website](https://nightshift.orwamahmoud.com/) · [Command reference](docs/commands.md) · [Troubleshooting](docs/troubleshooting.md) · [Remote SSH and devcontainers](docs/remote-environments.md)
+[Documentation index](docs/README.md#documentation) · [Website](https://nightshift.orwamahmoud.com/) · [FAQ](https://nightshift.orwamahmoud.com/faq) · [Command reference](docs/commands.md) · [Troubleshooting](docs/troubleshooting.md) · [Remote SSH and devcontainers](docs/remote-environments.md) · [Changelog](CHANGELOG.md)
 
 ## License
 
