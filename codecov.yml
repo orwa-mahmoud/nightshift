@@ -1,0 +1,8 @@
+# Coverage is uploaded from main by .github/workflows/coverage.yml. Pull requests upload nothing, so
+# Codecov posts no comments or status checks on them.
+comment: false
+
+coverage:
+  status:
+    project: off
+    patch: off
