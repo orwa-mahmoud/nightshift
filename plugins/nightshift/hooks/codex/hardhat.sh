@@ -101,6 +101,11 @@ if ! ns_hardhat_active; then
   exit 0
 fi
 
+# A payload that is not a JSON object hides what the call would do from every guard below.
+if ns_hardhat_payload_unreadable "$CODEX_RAW"; then
+  deny "$(ns_hardhat_refuse_unreadable "$NS")"
+fi
+
 # Process ownership is runtime state for the whole site, not agent-editable state. This narrow
 # protection applies even to helper conversations; all of their ordinary project work stays free.
 if ns_hardhat_payload_targets_lease "$TOOL" "$CODEX_RAW" "$LEASE_COMMAND"; then

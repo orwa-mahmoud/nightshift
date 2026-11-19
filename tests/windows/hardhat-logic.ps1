@@ -640,6 +640,40 @@ try {
 finally {
     Remove-Item -LiteralPath $leaseRoot -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
 }
+
+# A payload that is not a JSON object is refused with the reason, and the shift log records it once.
+$rawRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-hardhat-raw-" + [guid]::NewGuid().ToString('N'))
+try {
+    $rawNs = Join-Path $rawRoot '.nightshift'
+    $null = New-Item -ItemType Directory -Path $rawNs -Force
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json') `
+        -Destination (Join-Path $rawNs 'rules.json') -Force
+    [IO.File]::WriteAllText((Join-Path $rawNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
+    [IO.File]::WriteAllText((Join-Path $rawNs '.shift-armed'), '')
+    $unreadable = 'BLOCKED: the hook payload is unreadable while a shift is active. Retry after the host can provide valid hook JSON.'
+    $saved = [Environment]::GetEnvironmentVariable('CLAUDE_PROJECT_DIR', 'Process')
+    $savedLib = [Environment]::GetEnvironmentVariable('NIGHTSHIFT_HARDHAT_LIB', 'Process')
+    [Environment]::SetEnvironmentVariable('CLAUDE_PROJECT_DIR', $rawRoot, 'Process')
+    [Environment]::SetEnvironmentVariable('NIGHTSHIFT_HARDHAT_LIB', $null, 'Process')
+    try {
+        foreach ($raw in @('{"tool_name":"Bash","tool_input":{"command":"ls"', 'not json at all', '[1,2]')) {
+            $out = (@($raw | & $hostExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $hardhat -HostName claude 2>$null) -join "`n")
+            $reason = ''
+            try { $reason = [string]($out | ConvertFrom-Json).hookSpecificOutput.permissionDecisionReason } catch { $reason = "unreadable output: $out" }
+            Expect-True ($reason -ceq $unreadable) "a payload that is not a JSON object is refused with the reason: $raw -> $reason"
+        }
+        $logged = @([IO.File]::ReadAllLines((Get-NSLayoutPath $rawNs 'shift-log')) |
+            Where-Object { $_.Contains('hardhat: the host sent a hook payload that is not a JSON object, and the call was refused') })
+        Expect-True ($logged.Count -eq 1) "the shift log records the refusal once (found $($logged.Count))"
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable('CLAUDE_PROJECT_DIR', $saved, 'Process')
+        [Environment]::SetEnvironmentVariable('NIGHTSHIFT_HARDHAT_LIB', $savedLib, 'Process')
+    }
+}
+finally {
+    Remove-Item -LiteralPath $rawRoot -Recurse -Force -Confirm:$false -ErrorAction SilentlyContinue
+}
 }
 finally {
     Set-Location $repository

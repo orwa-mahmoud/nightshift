@@ -1441,7 +1441,17 @@ if (-not $active) {
     exit 0
 }
 
-if ($null -eq $payload) {
+# A payload that is not a JSON object hides what the call would do from every guard below. The
+# refusal is recorded once in this shift's log, so the owner sees it in the morning. Mirrors
+# ns_hardhat_refuse_unreadable.
+if ($null -eq $payload -or $payload -isnot [Management.Automation.PSCustomObject]) {
+    $unreadableLog = 'hardhat: the host sent a hook payload that is not a JSON object, and the call was refused'
+    try {
+        $shiftLog = Get-NSLayoutPath $script:ns 'shift-log'
+        $logged = (Test-Path -LiteralPath $shiftLog -PathType Leaf) -and ([IO.File]::ReadAllText($shiftLog)).Contains($unreadableLog)
+        if (-not $logged) { Write-NSControlLog $script:ns $unreadableLog }
+    }
+    catch { [Console]::Error.WriteLine('nightshift: shift log not written - ' + $_.Exception.Message) }
     Write-Deny 'BLOCKED: the hook payload is unreadable while a shift is active. Retry after the host can provide valid hook JSON.'
 }
 
