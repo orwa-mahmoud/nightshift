@@ -5,7 +5,8 @@
 #
 # kcov's memory grows with every test it traces: one heavy file alone passes 10 GB. So each test file
 # is cut into groups of NIGHTSHIFT_COVERAGE_CHUNK tests (default 5), each group runs under its own
-# kcov, NIGHTSHIFT_COVERAGE_JOBS groups at a time (default: one per CPU), and kcov merges the parts.
+# kcov, NIGHTSHIFT_COVERAGE_JOBS groups at a time, and kcov merges the parts. The default is as many
+# groups as the available memory holds at GROUP_MB each, and never more than one per CPU.
 # A group that is killed, writes no coverage report, or runs a different number of tests than it was
 # given fails the whole run with its file, its tests and the end of its log, and so does a merged
 # report that counts no lines: an incomplete measurement is never reported as a coverage figure.
@@ -18,6 +19,9 @@ cd "$(dirname "$0")/.."
 INCLUDE=plugins/nightshift/hooks,plugins/nightshift/runtime,plugins/nightshift/lib
 
 CHUNKS=coverage/chunks.tsv
+# The memory one group of five tests can reach under kcov. On GitHub's 16 GB runner, four groups at
+# once left about 1 GB free before the step was killed.
+GROUP_MB=6000
 
 # test_names <test-file> — every test name in the file as bats matches it, one per line: the text of
 # each `@test "..."` line exactly as written, backslashes included.
@@ -96,12 +100,16 @@ if [ "${1:-}" = --chunk ]; then
   exit
 fi
 
-JOBS="${NIGHTSHIFT_COVERAGE_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')}"
+# Empty means the default, worked out where the measurement runs.
+JOBS="${NIGHTSHIFT_COVERAGE_JOBS:-}"
 CHUNK="${NIGHTSHIFT_COVERAGE_CHUNK:-5}"
 for setting in "NIGHTSHIFT_COVERAGE_JOBS=$JOBS" "NIGHTSHIFT_COVERAGE_CHUNK=$CHUNK"; do
-  case "${setting#*=}" in
+  name="${setting%%=*}"
+  value="${setting#*=}"
+  [ "$name" = NIGHTSHIFT_COVERAGE_JOBS ] && [ -z "$value" ] && continue
+  case "$value" in
     '' | *[!0-9]* | 0)
-      printf 'coverage: %s must be a positive whole number, got "%s"\n' "${setting%%=*}" "${setting#*=}" >&2
+      printf 'coverage: %s must be a positive whole number, got "%s"\n' "$name" "$value" >&2
       exit 2
       ;;
   esac
@@ -119,11 +127,20 @@ if [ "$(uname -s)" != Linux ] || ! command -v kcov >/dev/null 2>&1; then
     exec bash tests/coverage.sh'
 fi
 
+if [ -z "$JOBS" ]; then
+  cpus="$(getconf _NPROCESSORS_ONLN)"
+  free_mb="$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' /proc/meminfo)"
+  JOBS=$((free_mb / GROUP_MB))
+  [ "$JOBS" -le "$cpus" ] || JOBS="$cpus"
+  [ "$JOBS" -ge 1 ] || JOBS=1
+fi
+
 rm -rf coverage
 mkdir -p coverage
 write_chunks
 groups="$(grep -c . "$CHUNKS" || :)"
-printf 'coverage: %s test groups of up to %s tests, %s at a time\n' "$groups" "$CHUNK" "$JOBS"
+printf 'coverage: %s test groups of up to %s tests, %s at a time (%s MB available)\n' \
+  "$groups" "$CHUNK" "$JOBS" "$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' /proc/meminfo)"
 
 failed=0
 seq 1 "$groups" | xargs -n 1 -P "$JOBS" bash tests/coverage.sh --chunk || failed=1
