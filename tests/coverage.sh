@@ -52,13 +52,21 @@ write_chunks() {
   done < <(tests/run-shard.sh 1 1 --list)
 }
 
-# run_chunk <line> — the group on that line of $CHUNKS under its own kcov. Returns 1, after saying
-# why on standard error, when the run was killed, wrote no coverage report, or ran a different
-# number of tests than the group holds. A failing test still counts: its coverage is measured.
+# run_chunk <line> — the group on that line of $CHUNKS under its own kcov, in a session of its own.
+# Whatever the group's tests leave running is stopped once kcov exits, and counted, so leftover
+# processes cannot pile up across groups. Returns 1, after saying why on standard error, when the run
+# was killed, wrote no coverage report, or ran a different number of tests than the group holds. A
+# failing test still counts: its coverage is measured.
 run_chunk() {
   local line="$1" file count filter out="coverage/part-$1" log="coverage/part-$1.log" status=0 ran why=""
+  local session left free
   IFS=$'\t' read -r file count filter < <(sed -n "${line}p" "$CHUNKS")
-  kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 || status=$?
+  setsid kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
+  session=$!
+  wait "$session" || status=$?
+  left="$(pgrep -s "$session" | grep -c . || :)"
+  [ "$left" -eq 0 ] || pkill -KILL -s "$session" || :
+  free="$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' /proc/meminfo 2>/dev/null)" || free=unknown
   ran="$(sed -n 's/^1\.\.\([0-9][0-9]*\)$/\1/p' "$log" | head -n 1)"
   if [ "$status" -ge 128 ]; then
     why="was killed by signal $((status - 128))"
@@ -68,11 +76,13 @@ run_chunk() {
     why="ran ${ran:-no} tests where the group holds $count"
   fi
   if [ -z "$why" ]; then
-    printf 'coverage: measured %s, group %s (%s tests)\n' "$file" "$line" "$count"
+    printf 'coverage: measured %s, group %s (%s tests, %s leftover processes stopped, %s MB free)\n' \
+      "$file" "$line" "$count" "$left" "$free"
     return 0
   fi
   {
-    printf 'coverage: %s, group %s %s, so its coverage is missing\n' "$file" "$line" "$why"
+    printf 'coverage: %s, group %s %s, so its coverage is missing (%s leftover processes stopped, %s MB free)\n' \
+      "$file" "$line" "$why" "$left" "$free"
     printf -- '--- tests in the group: %s\n' "$filter"
     printf -- '--- last lines of %s\n' "$log"
     tail -n 25 "$log"
