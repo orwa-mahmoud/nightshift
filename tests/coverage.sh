@@ -7,9 +7,11 @@
 # is cut into groups of NIGHTSHIFT_COVERAGE_CHUNK tests (default 5), each group runs under its own
 # kcov, NIGHTSHIFT_COVERAGE_JOBS groups at a time, and kcov merges the parts. The default is as many
 # groups as the available memory holds at GROUP_MB each, and never more than one per CPU.
-# A group that is killed, writes no coverage report, or runs a different number of tests than it was
-# given fails the whole run with its file, its tests and the end of its log, and so does a merged
-# report that counts no lines: an incomplete measurement is never reported as a coverage figure.
+# A group killed for memory is measured again one test at a time, with nothing else running. A test
+# that still cannot be measured alone, or a group that writes no coverage report or runs a different
+# number of tests than it was given, fails the whole run with its file, its tests and the end of its
+# log, and so does a merged report that counts no lines: an incomplete measurement is never reported
+# as a coverage figure.
 #
 # Output: coverage/ — kcov HTML, plus two reports with repository-relative paths:
 # coverage/cobertura.xml for Codecov and coverage/sonar-generic.xml for SonarQube.
@@ -19,6 +21,8 @@ cd "$(dirname "$0")/.."
 INCLUDE=plugins/nightshift/hooks,plugins/nightshift/runtime,plugins/nightshift/lib
 
 CHUNKS=coverage/chunks.tsv
+# The groups killed in the parallel pass, one line number per line, measured again test by test.
+RETRY=coverage/retry.txt
 # The memory one group of five tests can reach under kcov. On GitHub's 16 GB runner, four groups at
 # once left about 1 GB free before the step was killed.
 GROUP_MB=6000
@@ -34,11 +38,23 @@ ere_escape() {
   sed 's#[]\[(){}.*+?^$|\\/]#\\&#g'
 }
 
+# add_chunk <test-file> — append one group to $CHUNKS from the test names on standard input, and keep
+# those names beside it in coverage/names-<line>.txt.
+add_chunk() {
+  local group line
+  group="$(cat)"
+  printf '%s\t%s\t^(%s)$\n' "$1" "$(printf '%s\n' "$group" | grep -c .)" \
+    "$(printf '%s\n' "$group" | ere_escape | paste -sd '|' -)" >>"$CHUNKS"
+  line="$(grep -c . "$CHUNKS")"
+  printf '%s\n' "$group" >"coverage/names-$line.txt"
+}
+
 # write_chunks — one line per group in $CHUNKS: <test-file> TAB <test count> TAB <bats filter>.
 write_chunks() {
-  local file names count i group size
+  local file names count i size
   size="$CHUNK"
   : >"$CHUNKS"
+  : >"$RETRY"
   while IFS= read -r file; do
     names="$(test_names "$file")"
     count="$(printf '%s\n' "$names" | grep -c . || :)"
@@ -48,9 +64,7 @@ write_chunks() {
     fi
     i=0
     while [ "$i" -lt "$count" ]; do
-      group="$(printf '%s\n' "$names" | sed -n "$((i + 1)),$((i + size))p")"
-      printf '%s\t%s\t^(%s)$\n' "$file" "$(printf '%s\n' "$group" | grep -c .)" \
-        "$(printf '%s\n' "$group" | ere_escape | paste -sd '|' -)" >>"$CHUNKS"
+      printf '%s\n' "$names" | sed -n "$((i + 1)),$((i + size))p" | add_chunk "$file"
       i=$((i + size))
     done
   done < <(tests/run-shard.sh 1 1 --list)
@@ -58,9 +72,10 @@ write_chunks() {
 
 # run_chunk <line> — the group on that line of $CHUNKS under its own kcov, in a session of its own.
 # Whatever the group's tests leave running is stopped once kcov exits, and counted, so leftover
-# processes cannot pile up across groups. Returns 1, after saying why on standard error, when the run
-# was killed, wrote no coverage report, or ran a different number of tests than the group holds. A
-# failing test still counts: its coverage is measured.
+# processes cannot pile up across groups. A group of several tests killed by a signal is recorded in
+# $RETRY and its partial output removed, to be measured again test by test. Returns 1, after saying
+# why on standard error, when a single test was killed, or the run wrote no coverage report or ran a
+# different number of tests than the group holds. A failing test still counts: it is measured.
 run_chunk() {
   local line="$1" file count filter out="coverage/part-$1" log="coverage/part-$1.log" status=0 ran why=""
   local session left free
@@ -82,6 +97,13 @@ run_chunk() {
   if [ -z "$why" ]; then
     printf 'coverage: measured %s, group %s (%s tests, %s leftover processes stopped, %s MB free)\n' \
       "$file" "$line" "$count" "$left" "$free"
+    return 0
+  fi
+  if [ "$status" -ge 128 ] && [ "$count" -gt 1 ]; then
+    rm -rf "$out"
+    printf '%s\n' "$line" >>"$RETRY"
+    printf 'coverage: %s, group %s %s (%s tests, %s MB free); its tests are measured again one at a time\n' \
+      "$file" "$line" "$why" "$count" "$free"
     return 0
   fi
   {
@@ -144,6 +166,14 @@ printf 'coverage: %s test groups of up to %s tests, %s at a time (%s MB availabl
 
 failed=0
 seq 1 "$groups" | xargs -n 1 -P "$JOBS" bash tests/coverage.sh --chunk || failed=1
+# Each group killed in the parallel pass, again one test at a time, with the machine to itself.
+while IFS= read -r group; do
+  file="$(sed -n "${group}p" "$CHUNKS" | cut -f1)"
+  while IFS= read -r name; do
+    printf '%s\n' "$name" | add_chunk "$file"
+    bash tests/coverage.sh --chunk "$(grep -c . "$CHUNKS")" </dev/null || failed=1
+  done <"coverage/names-$group.txt"
+done <"$RETRY"
 if [ "$failed" -ne 0 ]; then
   printf 'coverage: one or more test groups could not be measured (see above); no report written\n' >&2
   exit 1
