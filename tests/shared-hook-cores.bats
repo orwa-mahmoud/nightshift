@@ -108,3 +108,34 @@ parity_row() {
   codex_reason="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecisionReason')"
   [ "$claude_reason" != "$codex_reason" ]
 }
+
+@test "every host refuses a payload that is not a JSON object and logs it once" {
+  local host dir hook raw reason log
+  for host in claude codex cursor; do
+    p="$(new_project "unreadable-$host")"
+    punch_open "$p"
+    case "$host" in
+      claude) dir=CLAUDE_PROJECT_DIR hook="$HOOKS/hardhat.sh" ;;
+      codex) dir=CODEX_PROJECT_DIR hook="$HOOKS/codex/hardhat.sh" ;;
+      cursor) dir=CURSOR_PROJECT_DIR hook="$HOOKS/cursor/hardhat.sh" ;;
+    esac
+    for raw in '{"tool_name":"Bash","tool_input":{"command":"ls"' 'not json at all' '[1,2]'; do
+      run hook_payload "$raw" env "$dir=$p" bash "$hook"
+      # Cursor answers in its own shape: permission and agent_message.
+      if [ "$host" = cursor ]; then
+        [ "$(printf '%s' "$output" | jq -r .permission)" = deny ] || { echo "$host allowed: $raw -> $output"; return 1; }
+        reason="$(printf '%s' "$output" | jq -r .agent_message)"
+      else
+        is_deny "$output" || { echo "$host allowed: $raw -> $output"; return 1; }
+        reason="$(printf '%s' "$output" | jq -r .hookSpecificOutput.permissionDecisionReason)"
+      fi
+      [ "$reason" = 'BLOCKED: the hook payload is unreadable while a shift is active. Retry after the host can provide valid hook JSON.' ] \
+        || { echo "$host reason: $raw -> $reason"; return 1; }
+    done
+    log="$(bash -c '. "$1"; ns_layout_path "$2" shift-log' _ "$HOOKS/../lib/lib.sh" "$p/.nightshift")"
+    [ "$(grep -c 'hardhat: the host sent a hook payload that is not a JSON object, and the call was refused' "$log")" -eq 1 ] \
+      || { echo "$host log:"; cat "$log"; return 1; }
+    run hook_payload '{"tool_name":"Bash","tool_input":{"command":"ls"}}' env "$dir=$p" bash "$hook"
+    is_allow || { echo "$host refused a readable payload: $output"; return 1; }
+  done
+}

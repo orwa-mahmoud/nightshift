@@ -2,7 +2,8 @@
 # Line coverage for the shipped bash (plugins/nightshift/hooks + runtime + lib) — kcov over the bats suite.
 # kcov's bash tracer is Linux-only: on Linux with kcov installed this runs natively,
 # anywhere else it runs in a debian container (docker required).
-# Output: coverage/ — kcov HTML + cobertura, plus coverage/sonar-generic.xml.
+# Output: coverage/ — kcov HTML, plus two reports with repository-relative paths:
+# coverage/cobertura.xml for Codecov and coverage/sonar-generic.xml for SonarQube.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf coverage
@@ -52,7 +53,8 @@ cob="$(find coverage/merged -name cobertura.xml 2>/dev/null | head -n 1)"
 python3 - "$cob" <<'PY'
 import sys, xml.etree.ElementTree as ET
 
-root = ET.parse(sys.argv[1]).getroot()
+tree = ET.parse(sys.argv[1])
+root = tree.getroot()
 out = ['<coverage version="1">']
 for cls in root.iter('class'):
     path, lines = cls.get('filename'), cls.find('lines')
@@ -60,6 +62,7 @@ for cls in root.iter('class'):
         continue
     if path.startswith(('runtime/', 'hooks/', 'lib/')):
         path = 'plugins/nightshift/' + path
+    cls.set('filename', path)
     out.append(f'  <file path="{path}">')
     for ln in lines.iter('line'):
         covered = 'true' if int(ln.get('hits', '0')) > 0 else 'false'
@@ -67,6 +70,15 @@ for cls in root.iter('class'):
     out.append('  </file>')
 out.append('</coverage>')
 open('coverage/sonar-generic.xml', 'w').write('\n'.join(out) + '\n')
+
+# kcov names files relative to the directory it traced; the copy for Codecov names them from the
+# repository root, so its paths match the files in git.
+sources = root.find('sources')
+if sources is not None:
+    for source in list(sources):
+        sources.remove(source)
+    ET.SubElement(sources, 'source').text = '.'
+tree.write('coverage/cobertura.xml', encoding='utf-8', xml_declaration=True)
 PY
 
 jq -r '"coverage: " + .percent_covered + "% of " + (.total_lines|tostring) + " lines"' \

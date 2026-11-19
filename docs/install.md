@@ -61,8 +61,15 @@ This adds one small skill that installs the full plugin into Claude Code, Codex,
   morning receipt instead of the runtime rendering it.
 - **Native Windows:** PowerShell 5.1 or later. No Git Bash, WSL, Node.js, Python, or `jq`.
 - **Git:** for a shift that works a repository. A plain folder needs none.
+- **No network access** for Nightshift itself. The coding agent uses the network as it always does.
 
 The plugin ships no binary and installs no package.
+
+## Versions
+
+Each release carries one version number, shared by the Claude Code, Codex, and Cursor manifests.
+Release Please cuts releases from conventional commit subjects and writes the
+[changelog](../CHANGELOG.md). Only the latest release is supported.
 
 ## Platforms
 
