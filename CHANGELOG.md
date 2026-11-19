@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.37.2](https://github.com/orwa-mahmoud/nightshift/compare/v0.37.1...v0.37.2) (2026-11-19)
+
+
+### Bug Fixes
+
+* record the saved verification profile and tooling policy at Start ([aa665cf](https://github.com/orwa-mahmoud/nightshift/commit/aa665cf2b5c60380ffc04d7cd8e7ff30a729d96c))
+* refuse an unreadable hook payload with the true reason on every runtime ([1d3f711](https://github.com/orwa-mahmoud/nightshift/commit/1d3f7119cbd0c6e09ee91c61c41ee648d52917e8))
+
 ## [0.37.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.37.0...v0.37.1) (2026-11-19)
 
 
