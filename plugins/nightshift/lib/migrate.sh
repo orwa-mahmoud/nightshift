@@ -119,6 +119,7 @@ _ns_migrate_schema() {
   want="${want%\"}"
   [ -n "$want" ] || return 0
   while IFS= read -r old; do
+    old="${old%$'\r'}"
     [ -n "$old" ] || continue
     if [ "$cur" = "\"$old\"" ]; then
       printf 'schema\t%s\t%s\t%s\n' "$rel" "$old" "$want"

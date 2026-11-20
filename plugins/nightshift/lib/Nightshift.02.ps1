@@ -730,7 +730,7 @@ function Get-NSMigrationSchemaRecord {
     if (-not $template.Readable) { return '' }
     $want = (Get-NSMigrationJsonAt $template.Doc '$schema').Trim('"')
     if ($want.Length -eq 0) { return '' }
-    foreach ($old in (Read-NSMigrationLines $script:NSMigrationSchemaPrevious)) {
+    foreach ($old in [IO.File]::ReadAllLines($script:NSMigrationSchemaPrevious)) {
         if ($old.Length -eq 0) { continue }
         if ($cur -ceq ('"' + $old + '"')) { return "schema`t$rel`t$old`t$want" }
     }
