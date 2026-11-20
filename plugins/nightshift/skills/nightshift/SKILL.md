@@ -10,7 +10,7 @@ metadata:
 
 If no shift is armed, run Start first; it asks nothing. This skill is the work, not the door.
 A plain request that names work and a time budget — *"improve this project for 5 hours"*, or the
-same with no hours at all — is a Hunt request: follow Hunt (`skills/hunt/SKILL.md`),
+same with no hours at all — is a Hunt request: follow the Hunt skill,
 which sets the project up first when it is new.
 
 A **shift** is a stretch of autonomous work with a punch list you cannot walk away from. The list
@@ -309,7 +309,7 @@ and an answered entry is filed, never deleted.
 A `Filed:` pointer (label: id; target: relative path) is navigation, not an entry: follow that pointer and search the
 linked file by topic or identifier; do not open every archive. Historical decisions are evidence,
 not fresh authorization — a current rule always prevails over an archived allowance. A broken
-pointer is reported in the snag log; never guess or delete history.
+pointer is reported in the snag log; never guess, and keep history intact.
 
 ## Walkthroughs
 

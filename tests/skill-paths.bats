@@ -123,7 +123,7 @@ PY
   grep -qF 'create no `$NS/` directory' "$SETUP"
   grep -qF 'Open your project in Codex' "$SETUP"
   grep -qF 'persistent local folder' "$SETUP"
-  grep -qF 'Do not mention Claude Code' "$SETUP"
+  grep -qF 'Leave Claude Code out of this ChatGPT-specific redirect' "$SETUP"
 }
 
 # Structural instruction contracts, not runtime E2E: pin the lifecycle words and shipped paths
@@ -314,8 +314,12 @@ PY
   grep -qF '.claude/settings.local.json' "$PREFLIGHT"
   grep -qF '.claude/settings.json' "$PREFLIGHT"
   grep -qF '.claude/settings.local.json' "$PREFLIGHT_PS1"
-  grep -qF '$TASK_ROOT/.claude/settings.local.json' "$SCHEDULE"
-  grep -qF '$TASK_ROOT/.claude/settings.json' "$SCHEDULE"
+  runtime="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime"
+  grep -qF '.claude/settings.local.json' "$runtime/schedule.sh"
+  grep -qF '.claude/settings.json' "$runtime/schedule.sh"
+  grep -qF '.claude/settings.local.json' "$runtime/windows/schedule.ps1"
+  grep -qF '.claude/settings.json' "$runtime/windows/schedule.ps1"
+  grep -qF 'ns schedule --preflight`) checks the project'"'"'s Claude Code settings' "$SCHEDULE"
 }
 
 @test "setup writes gitignore and lists profiles on resolved roots" {

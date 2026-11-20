@@ -55,7 +55,7 @@ or other files.** Tell the user directly:
 > Open your project in Codex (a Git repository or a persistent local folder), or start Codex connected to its GitHub repository. Then mention
 > Nightshift and say: “Set up Nightshift in this project.”
 
-Do not mention Claude Code in this ChatGPT-specific redirect: the user is already in an OpenAI
+Leave Claude Code out of this ChatGPT-specific redirect: the user is already in an OpenAI
 product, so give them the shortest OpenAI-native route. Do not infer “temporary” merely because the
 project is not a git repository — local non-git projects and the recommended parent-workspace
 layout remain valid. The explicit disposable scratch path is the stop signal.
@@ -241,7 +241,7 @@ An unattended shift cannot answer permission prompts. Say once that the owner co
 permissions directly in the host before starting unattended work; this is a statement, not a
 question. Never write permission modes,
 allowlists, or approval settings, and never enable permission bypass on the owner's behalf.
-Nightshift adds no restriction of its own beyond what the host permits unless the owner sets one.
+Beyond what the host permits, Nightshift adds only the restrictions the owner sets.
 
 Recovery uses `recovery.launchScope` in `$NS/rules.json`. The shipped `host-default` adds no
 permission arguments and uses the owner's independently configured host permissions; it does not
@@ -276,8 +276,8 @@ https://github.com/orwa-mahmoud/nightshift/blob/main/docs/knobs.md#tool-rules ar
 The hooks read this file directly on every tool call: an owner's edit applies from their very next
 action. Nothing is synced anywhere, nothing needs a restart, and there is no second copy. Env vars
 of the matching names (`NIGHTSHIFT_FORBIDDEN_COMMANDS`, `NIGHTSHIFT_TOOL_RULES`, …) remain
-session-start overrides for tests and one-off exceptions — say so only if asked. If Claude Code's
-`$TASK_ROOT/.claude/settings.local.json` still carries `NIGHTSHIFT_*` env keys an earlier version
+session-start overrides for tests and one-off exceptions — say so only if asked. If Claude Code's local
+project settings still carry `NIGHTSHIFT_*` env keys an earlier version
 synced from this file, offer to remove them on the defaults screen: the file is the one copy.
 
 **Local rule profiles.** The defaults screen may list the shipped examples in

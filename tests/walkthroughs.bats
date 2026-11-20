@@ -47,7 +47,7 @@ START="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/start/SKILL.md"
 @test "quality routes a feature objective to Hunt and drops Python compose" {
   quality="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/quality/SKILL.md"
   grep -qF 'continue as Hunt / Product Evolution' "$quality"
-  grep -qF 'Do not show Quality catalog cards' "$quality"
+  grep -qF 'Skip the Quality catalog cards' "$quality"
   if grep -qF 'shift-planner' "$quality"; then
     return 1
   fi

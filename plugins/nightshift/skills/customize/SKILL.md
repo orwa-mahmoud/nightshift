@@ -21,7 +21,7 @@ verbs, and `ns bind` prints the six resolved facts (`TASK_ROOT`, `NIGHTSHIFT_WOR
 directory persists between calls. Each `$NS/...` path below is where the current layout keeps that file;
 `ns path <key>` prints where this workspace keeps it, and `ns path --list` names every key.
 
-If `$NS/` does not exist yet, run Setup's flow (`skills/setup/SKILL.md`) first, then come back.
+If `$NS/` does not exist yet, run the Setup skill first, then come back.
 
 ## 1. Read what is in force
 
