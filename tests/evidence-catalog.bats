@@ -356,11 +356,11 @@ EOF
 
 @test "the catalog settings are in both schemas and the template" {
   jq -e '.properties.catalogs.properties.evidence.properties.paths.type == "array"' \
-    "$PLUGIN/skills/nightshift/references/nightshift-rules.schema.json" >/dev/null
+    "$PLUGIN/config/nightshift-rules.schema.json" >/dev/null
   jq -e '.properties.catalogs.properties.evidence.properties.template.type == "string"' \
-    "$PLUGIN/skills/nightshift/references/schemas/v1/shift-policy.json" >/dev/null
+    "$PLUGIN/config/schemas/v1/shift-policy.json" >/dev/null
   jq -e '.catalogs.evidence.paths == [] and .catalogs.evidence.template == ""' \
-    "$PLUGIN/skills/nightshift/references/nightshift-rules-template.json" >/dev/null
+    "$PLUGIN/config/nightshift-rules-template.json" >/dev/null
 }
 
 @test "a kind with no evidence-check block passes the draft check with a note, on both runtimes" {

@@ -1,7 +1,7 @@
 load helpers
 
 APPLY="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/apply-profile.sh"
-PROFILES="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/profiles"
+PROFILES="$BATS_TEST_DIRNAME/../plugins/nightshift/config/profiles"
 SETUP="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/setup/SKILL.md"
 PUNCHLIST_TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/templates/punch-list.md"
 
@@ -12,7 +12,7 @@ gates_block() {
 }
 
 @test "shipped v1 profiles are version 1 and use only schema keys" {
-  schema="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json"
+  schema="$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules.schema.json"
   for name in no-push strict-secrets isolated-branch; do
     f="$PROFILES/$name.json"
     [ -f "$f" ]
@@ -113,7 +113,7 @@ with open(p,"w") as f: json.dump(d,f)
   plugincopy="$BATS_TEST_TMPDIR/fill-presence"
   mkdir -p "$plugincopy"
   cp -R "$BATS_TEST_DIRNAME/../plugins" "$plugincopy/plugins"
-  cat >"$plugincopy/plugins/nightshift/skills/nightshift/references/profiles/presence.json" <<'JSON'
+  cat >"$plugincopy/plugins/nightshift/config/profiles/presence.json" <<'JSON'
 {
   "name": "presence",
   "version": 2,
@@ -286,7 +286,7 @@ JSON
   plugincopy="$BATS_TEST_TMPDIR/plugincopy"
   mkdir -p "$plugincopy"
   cp -R "$BATS_TEST_DIRNAME/../plugins" "$plugincopy/plugins"
-  cat >"$plugincopy/plugins/nightshift/skills/nightshift/references/profiles/probe.json" <<'JSON'
+  cat >"$plugincopy/plugins/nightshift/config/profiles/probe.json" <<'JSON'
 {
   "name": "probe",
   "version": 2,
@@ -309,7 +309,7 @@ JSON
   printf '%s' "$gates" | grep -qF 'every 5 items'
   printf '%s' "$gates" | grep -qF '`knip`'
 
-  cat >"$plugincopy/plugins/nightshift/skills/nightshift/references/profiles/probe2.json" <<'JSON'
+  cat >"$plugincopy/plugins/nightshift/config/profiles/probe2.json" <<'JSON'
 {
   "name": "probe2",
   "version": 2,
@@ -336,7 +336,7 @@ JSON
   plugincopy="$BATS_TEST_TMPDIR/plugincopy-bad"
   mkdir -p "$plugincopy"
   cp -R "$BATS_TEST_DIRNAME/../plugins" "$plugincopy/plugins"
-  cat >"$plugincopy/plugins/nightshift/skills/nightshift/references/profiles/bad-sd.json" <<'JSON'
+  cat >"$plugincopy/plugins/nightshift/config/profiles/bad-sd.json" <<'JSON'
 {
   "name": "bad-sd", "version": 2, "risk": "low", "use": "t", "rules": {},
   "shiftDefaults": { "verificationProfile": "nope" }, "gates": null
@@ -347,7 +347,7 @@ JSON
   printf '%s' "$output" | grep -q 'verificationProfile'
   [ ! -f "$p/.nightshift/shift-defaults.json" ]
 
-  cat >"$plugincopy/plugins/nightshift/skills/nightshift/references/profiles/bad-gates.json" <<'JSON'
+  cat >"$plugincopy/plugins/nightshift/config/profiles/bad-gates.json" <<'JSON'
 {
   "name": "bad-gates", "version": 2, "risk": "low", "use": "t", "rules": {},
   "shiftDefaults": null,

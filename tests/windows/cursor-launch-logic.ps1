@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1') -Force -DisableNameChecking
-$template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+$template = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
 $utf8 = New-Object Text.UTF8Encoding($false)
 $failures = New-Object 'System.Collections.Generic.List[string]'
 

@@ -6,7 +6,7 @@ ROOT="$BATS_TEST_DIRNAME/.."
 SKILLS="$ROOT/plugins/nightshift/skills"
 HUNT="$SKILLS/hunt/SKILL.md"
 BRAIN="$SKILLS/nightshift/SKILL.md"
-TEMPLATE="$SKILLS/nightshift/references/nightshift-rules-template.json"
+TEMPLATE="$SKILLS/../config/nightshift-rules-template.json"
 
 @test "a plain request with a time budget reaches Hunt from every entry point" {
   # The description the host matches a sentence against names the plain form.

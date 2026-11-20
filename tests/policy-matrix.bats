@@ -10,7 +10,7 @@ ROOT="$BATS_TEST_DIRNAME/.."
 SP="$ROOT/plugins/nightshift/runtime/shift-policy.sh"
 PRE="$ROOT/plugins/nightshift/runtime/preflight-needs.sh"
 PARK="$ROOT/plugins/nightshift/runtime/park-needs.sh"
-SCHEMAS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1"
+SCHEMAS="$ROOT/plugins/nightshift/config/schemas/v1"
 VALIDATOR="$BATS_TEST_DIRNAME/helpers/validate-json-schema.py"
 
 sp() {

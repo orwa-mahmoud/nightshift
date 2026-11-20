@@ -320,8 +320,8 @@ PY
 
 @test "setup writes gitignore and lists profiles on resolved roots" {
   grep -qF '$NIGHTSHIFT_WORKSPACE/.gitignore' "$SETUP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/profiles/' "$SETUP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/nightshift-rules.schema.json' "$SETUP"
+  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/config/profiles/' "$SETUP"
+  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/config/nightshift-rules.schema.json' "$SETUP"
   grep -qF 'docs/knobs.md' "$SETUP"
 }
 
@@ -476,7 +476,7 @@ PY
 }
 
 @test "rules template keeps relative nightshift paths for owner editing" {
-  rules="$SKILLS/nightshift/references/nightshift-rules-template.json"
+  rules="$SKILLS/../config/nightshift-rules-template.json"
   grep -qF '.nightshift/punch-list.md' "$rules"
   grep -qF '.nightshift/STOP' "$rules"
   if grep -qF '$NIGHTSHIFT_WORKSPACE' "$rules"; then

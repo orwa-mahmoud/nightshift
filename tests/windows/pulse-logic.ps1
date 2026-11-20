@@ -102,7 +102,7 @@ try {
     $miss = Join-Path $root 'missing'
     $missNs = Join-Path $miss '.nightshift'
     $null = New-Item -ItemType Directory -Path (Join-Path $missNs 'receipts') -Force
-    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json') `
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json') `
         -Destination (Join-Path $missNs 'rules.json')
     [IO.File]::WriteAllText((Join-Path $missNs 'punch-list.md'), "## Items`n- [x] **36. First of the replay.**`n- [x] **37. Second of the replay.**`n", $utf8)
     [IO.File]::WriteAllText((Join-Path $missNs 'receipts/36-first-of-the-replay.md'), "# 36.`n`n**Usage:** input 1`n**Duration:** 1m`n", $utf8)

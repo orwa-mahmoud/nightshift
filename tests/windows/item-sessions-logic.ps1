@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1') -Force -DisableNameChecking
-$rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+$rulesTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $utf8 = New-Object Text.UTF8Encoding($false)
 $list3 = "## Items`n- [ ] **3. Blocked on a reply.** <!-- id: cc33 -->`n- [ ] **4. The next one.** <!-- id: dd44 -->`n- [ ] **5. Later.** <!-- id: ee55 -->`n"

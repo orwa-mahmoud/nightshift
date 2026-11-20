@@ -8,7 +8,7 @@ bats_require_minimum_version 1.5.0
 ROOT="$BATS_TEST_DIRNAME/.."
 EV="$ROOT/plugins/nightshift/runtime/evidence.sh"
 WIN="$ROOT/plugins/nightshift/runtime/windows/evidence.ps1"
-SCHEMA="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1/finding.json"
+SCHEMA="$ROOT/plugins/nightshift/config/schemas/v1/finding.json"
 EXPORT="$ROOT/plugins/nightshift/runtime/export-support.sh"
 
 # Resolved once per test process (Bats re-sources this whole file per @test). Empty when no

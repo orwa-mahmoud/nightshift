@@ -8,7 +8,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $hook = Join-Path $repository 'plugins/nightshift/hooks/windows/session-end.ps1'
-$template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+$template = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
 $pwsh = (Get-Process -Id $PID).Path
 $utf8 = New-Object Text.UTF8Encoding($false)
 $root = Join-Path ([IO.Path]::GetTempPath()) ('ns-session-end-' + [guid]::NewGuid().ToString('N'))

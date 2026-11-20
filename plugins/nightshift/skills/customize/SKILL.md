@@ -35,7 +35,7 @@ If `$NS/` does not exist yet, run Setup's flow (`skills/setup/SKILL.md`) first, 
 
 The resolved table gives every setting with its value and where it came from (`built-in`,
 `rules`, or tonight's policy). The shipped value of each is in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/nightshift-rules-template.json`, and the
+`$NIGHTSHIFT_PLUGIN_ROOT/config/nightshift-rules-template.json`, and the
 schema beside it (`nightshift-rules.schema.json`) says what each one means. The four catalog
 listings name each entry's source; an entry whose source is not `plugin` is the owner's.
 
@@ -58,7 +58,7 @@ line of meaning. Nothing is asked line by line.
   entries and what each replaces, `catalogs.<catalog>.paths`, and the template in force
   (`ns catalog-index --catalog <catalog> --template`).
 - **Profiles** — the shipped examples in
-  `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/profiles/`, any one of which can fill in
+  `$NIGHTSHIFT_PLUGIN_ROOT/config/profiles/`, any one of which can fill in
   or replace the shift defaults.
 
 The owner names what to change ("deny sudo, 6 hours, my own receipt template") or asks what a line

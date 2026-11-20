@@ -77,7 +77,7 @@ starting again with the new setting.
 Editors that honor JSON Schema (VS Code, Cursor, JetBrains) catch invalid names, types, and
 values in `.nightshift/rules.json` before a shift. The shipped template sets `$schema` to the
 schema file in this repository. If your copy has no `$schema` line, point the editor at
-[`nightshift-rules.schema.json`](../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json)
+[`nightshift-rules.schema.json`](../plugins/nightshift/config/nightshift-rules.schema.json)
 with a workspace setting — it does not change runtime behaviour:
 
 ```json
@@ -85,7 +85,7 @@ with a workspace setting — it does not change runtime behaviour:
   "json.schemas": [
     {
       "fileMatch": ["**/.nightshift/rules.json"],
-      "url": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json"
+      "url": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/nightshift-rules.schema.json"
     }
   ]
 }
@@ -220,7 +220,7 @@ and the next shift tool call reads the change.
 
 **Local profiles.** `ns apply-profile` (native Windows: `ns.ps1 apply-profile`)
 can preview or copy every version-1 or version-2 JSON file in
-`plugins/nightshift/skills/nightshift/references/profiles/`; the shipped `balanced`, `fast`, and
+`plugins/nightshift/config/profiles/`; the shipped `balanced`, `fast`, and
 `strict` profiles are version 2 and also carry shift defaults and a Gates block. That is a
 one-time local write, not a policy subscription. Fill keeps every owner value and refuses a file
 missing either native question policy. Replace rebuilds the guards from the shipped template,

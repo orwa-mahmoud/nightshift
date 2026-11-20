@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json",
+  "$schema": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/nightshift-rules.schema.json",
   "toolDeny": {
     "AskUserQuestion": "",
     "request_user_input": "park",

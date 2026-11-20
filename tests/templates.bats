@@ -103,7 +103,7 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
 
 # The rules template is the owner's whole config surface — every synced key ships in it.
 @test "the rules template is valid JSON and carries every synced key" {
-  t="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+  t="$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules-template.json"
   jq -e 'type == "object"' "$t" >/dev/null
   for k in toolDeny forbiddenCommands neverCommitPatterns expectedEmail protectedDirs \
     stallMax stallWarnEvery watchMinutes watchRetrySeconds notifyCommand revivalPrompt freshRevivalPrompt clockOutMessage; do

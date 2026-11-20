@@ -2,7 +2,7 @@
 # Paths are relative to this file so suites under tests/<host>/ resolve the plugin too.
 _TEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOKS="$_TEST_ROOT/../plugins/nightshift/hooks"
-RULES_TEMPLATE="$_TEST_ROOT/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+RULES_TEMPLATE="$_TEST_ROOT/../plugins/nightshift/config/nightshift-rules-template.json"
 
 # windows_module_source — the native Windows module as source text: its root and the parts it
 # loads, in load order.

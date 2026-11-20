@@ -37,7 +37,7 @@ temp_root="$(cd -P /tmp && pwd)"
 
 LIB="$ROOT/plugins/nightshift/lib/lib.sh"
 WATCHMAN="$ROOT/plugins/nightshift/runtime/claude/watchman.sh"
-RULES="$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+RULES="$ROOT/plugins/nightshift/config/nightshift-rules-template.json"
 
 read_watchman_pid() {
   local marker pid

@@ -28,7 +28,7 @@ attaches samples, and that comparison is never a release gate.
 | `fixtures/` | Representative repository and artifact trees |
 | `reports/` | Generated `latest.md` / `latest.json` (gitignored) |
 | `lib/sdk.py` | Schema and size-budget SDK |
-| `../plugins/nightshift/skills/nightshift/references/schemas/v1/identifiers.json` | Frozen host, work-mode, evidence, and capability identifiers |
+| `../plugins/nightshift/config/schemas/v1/identifiers.json` | Frozen host, work-mode, evidence, and capability identifiers |
 
 ## Reading a report
 

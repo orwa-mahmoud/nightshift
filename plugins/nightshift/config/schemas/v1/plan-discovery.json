@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/schemas/v1/plan-discovery.json",
+  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/schemas/v1/plan-discovery.json",
   "title": "Nightshift plan discovery input",
   "description": "Read-only inputs for shift-planner: applicable catalog contracts, evidence, overlaps, dependencies, and optional learning adjustments. Written by composition helpers or frozen fixtures; never mutated by the planner.",
   "type": "object",

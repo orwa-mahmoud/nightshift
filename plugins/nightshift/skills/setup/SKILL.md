@@ -125,7 +125,7 @@ the line). If it is not one — the recommended layout, where the code repo sits
 `.nightshift/` is already outside every repo, so write no `.gitignore` there. Run history is the
 owner's; it never enters the project repo.
 
-Copy `$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/nightshift-rules-template.json` to
+Copy `$NIGHTSHIFT_PLUGIN_ROOT/config/nightshift-rules-template.json` to
 `$NS/rules.json` as-is if it does not already exist, so section 3 shows real values (section 5
 covers the file).
 
@@ -262,7 +262,7 @@ Windows, validate with `Get-Content -Raw -LiteralPath "$NS\rules.json" | Convert
 PowerShell's JSON parser is built in, so native setup has no `jq` or Python prerequisite.
 
 The template's `$schema` field points at
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/nightshift-rules.schema.json` so editors
+`$NIGHTSHIFT_PLUGIN_ROOT/config/nightshift-rules.schema.json` so editors
 catch invalid names, types, and values; it is ignored at runtime. Editor discovery is documented
 in https://github.com/orwa-mahmoud/nightshift/blob/main/docs/knobs.md.
 
@@ -281,7 +281,7 @@ session-start overrides for tests and one-off exceptions — say so only if aske
 synced from this file, offer to remove them on the defaults screen: the file is the one copy.
 
 **Local rule profiles.** The defaults screen may list the shipped examples in
-`$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/profiles/` (every version-1 or version-2 JSON
+`$NIGHTSHIFT_PLUGIN_ROOT/config/profiles/` (every version-1 or version-2 JSON
 file there). Preview the one the owner names with
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" apply-profile --profile <name> --mode fill|replace`.
 The helper prints the preview and the complete next file; read it out rather than describing it.

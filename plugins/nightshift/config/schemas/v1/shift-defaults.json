@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/schemas/v1/shift-defaults.json",
+  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/schemas/v1/shift-defaults.json",
   "title": "Nightshift shift defaults",
   "description": "Remembered convenience choices in .nightshift/shift-defaults.json. They prefill the one question a composition step asks and nothing else: the resolver never reports them as the source of an effective value, and they never carry elevation. A missing or malformed file means the built-in defaults (fast, no hours, existing-tools, review-first).",
   "type": "object",

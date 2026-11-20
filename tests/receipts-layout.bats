@@ -6,7 +6,7 @@ load helpers
 LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
 CORE="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/shared/gate-core.sh"
 SLUGS="$BATS_TEST_DIRNAME/fixtures/receipts/slugs.tsv"
-SCHEMA="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json"
+SCHEMA="$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules.schema.json"
 
 lib() { bash -c '. "$1"; shift; "$@"' _ "$LIB" "$@"; }
 core() { bash -c '. "$1"; . "$2"; shift 2; "$@"' _ "$LIB" "$CORE" "$@"; }

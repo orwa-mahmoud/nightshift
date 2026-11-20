@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json",
+  "$schema": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/nightshift-rules.schema.json",
   "toolDeny": {
     "AskUserQuestion": "BLOCKED (park, don't ask): a shift is active and the owner is asleep. Choose the most sensible production-grade default yourself, record the decision and your reasoning in .nightshift/inbox/parking-lot.md, and KEEP WORKING. The owner reviews it in the morning.",
     "request_user_input": "BLOCKED (park, don't ask): a shift is active and the owner is asleep. Choose the most sensible production-grade default yourself, record the decision and your reasoning in .nightshift/inbox/parking-lot.md, and KEEP WORKING. The owner reviews it in the morning.",

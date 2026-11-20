@@ -12,9 +12,9 @@ $ErrorActionPreference = 'Stop'
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
-$profilesDir = Join-Path $pluginRoot 'skills/nightshift/references/profiles'
-$schemaPath = Join-Path $pluginRoot 'skills/nightshift/references/nightshift-rules.schema.json'
-$templatePath = Join-Path $pluginRoot 'skills/nightshift/references/nightshift-rules-template.json'
+$profilesDir = Join-Path $pluginRoot 'config/profiles'
+$schemaPath = Join-Path $pluginRoot 'config/nightshift-rules.schema.json'
+$templatePath = Join-Path $pluginRoot 'config/nightshift-rules-template.json'
 
 try {
     $hostPath = Resolve-NSCanonicalPath $Project

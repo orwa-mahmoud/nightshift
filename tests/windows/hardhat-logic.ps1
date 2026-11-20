@@ -295,7 +295,7 @@ try {
     $null = New-Item -ItemType Directory -Path $nightshift -Force
     $rulesPath = Join-Path $nightshift 'rules.json'
     $policyPath = Join-Path $nightshift 'shift-policy.json'
-    $template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $template = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
     Copy-Item -LiteralPath $template -Destination $rulesPath -Force
     # The shipped template allows every category. These rows test the guard itself, so they start
     # from the owner who sets every category to deny.
@@ -531,7 +531,7 @@ try {
     $leaseWorkspace = Join-Path $leaseRoot 'workspace'
     $leaseNs = Join-Path $leaseWorkspace '.nightshift'
     $null = New-Item -ItemType Directory -Path $leaseNs -Force
-    $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $rulesTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
     Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $leaseNs 'rules.json') -Force
     [IO.File]::WriteAllText((Join-Path $leaseNs 'punch-list.md'), "# Contract`n`n## Items`n- [ ] one`n")
     [IO.File]::WriteAllText((Join-Path $leaseNs '.shift-armed'), '')
@@ -646,7 +646,7 @@ $rawRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-hardhat-raw-" + [guid]::New
 try {
     $rawNs = Join-Path $rawRoot '.nightshift'
     $null = New-Item -ItemType Directory -Path $rawNs -Force
-    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json') `
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json') `
         -Destination (Join-Path $rawNs 'rules.json') -Force
     [IO.File]::WriteAllText((Join-Path $rawNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
     [IO.File]::WriteAllText((Join-Path $rawNs '.shift-armed'), '')

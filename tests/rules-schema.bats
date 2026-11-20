@@ -1,7 +1,7 @@
 load helpers
 
-SCHEMA="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json"
-TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+SCHEMA="$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules.schema.json"
+TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules-template.json"
 VALIDATOR="$BATS_TEST_DIRNAME/helpers/validate-json-schema.py"
 FIXTURES="$BATS_TEST_DIRNAME/fixtures/rules-schema"
 KNOBS="$BATS_TEST_DIRNAME/../docs/knobs.md"

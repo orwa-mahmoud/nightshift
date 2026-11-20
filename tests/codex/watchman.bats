@@ -8,7 +8,7 @@ setup() {
   WATCHMAN="$BATS_TEST_DIRNAME/../../plugins/nightshift/runtime/codex/watchman.sh"
   P="$BATS_TEST_TMPDIR/proj"
   mkdir -p "$P/.nightshift"
-  cp "$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" "$P/.nightshift/rules.json"
+  cp "$BATS_TEST_DIRNAME/../../plugins/nightshift/config/nightshift-rules-template.json" "$P/.nightshift/rules.json"
   printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
   # An unattended revival needs a scope it can vouch for, and these fixtures record none — the
   # shipped inherit setting would refuse. A site that means to be revived says which scope a

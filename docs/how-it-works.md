@@ -109,7 +109,7 @@ and each elevation category with whether it is allowed permanently, for one shif
 Preflight compares punch-list needs against that view before arming.
 
 **Verification profiles** (`fast`, `balanced`, `strict`, `custom`) live in
-`references/profiles/`. They decide when the punch list's `## Gates`
+`config/profiles/`. They decide when the punch list's `## Gates`
 run: `fast` never (items and receipts only), `balanced` once before clock-out, `strict` before every
 tick and once at the end, and `custom` on the cadence the punch list names. Profiles propose defaults during Setup; owner rules remain
 authoritative.

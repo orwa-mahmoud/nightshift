@@ -2,7 +2,7 @@ load helpers
 
 SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/shift-policy.sh"
 LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
-TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+TEMPLATE="$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules-template.json"
 
 # The skills are told to honour report, handoff, archive, recovery and shift settings, and they are
 # told to read them from the one resolved view. These hold that view to carrying them.

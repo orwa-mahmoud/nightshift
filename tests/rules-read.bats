@@ -7,7 +7,7 @@ load helpers
 
 ROOT="$BATS_TEST_DIRNAME/.."
 LIB="$ROOT/plugins/nightshift/lib/lib.sh"
-TEMPLATE="$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+TEMPLATE="$ROOT/plugins/nightshift/config/nightshift-rules-template.json"
 START="$ROOT/plugins/nightshift/skills/start/SKILL.md"
 DOCTOR="$ROOT/plugins/nightshift/runtime/doctor.sh"
 STATUS="$ROOT/plugins/nightshift/runtime/status.sh"

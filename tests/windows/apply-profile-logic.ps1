@@ -9,7 +9,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $helper = Join-Path $repository 'plugins/nightshift/runtime/windows/apply-profile.ps1'
-$template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+$template = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
 $punchListTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/templates/punch-list.md'
 $hostExecutable = (Get-Process -Id $PID).Path
 $failures = New-Object 'System.Collections.Generic.List[string]'
@@ -186,7 +186,7 @@ $renderRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-apply-profile-render-" +
 try {
     $pluginCopy = Join-Path $renderRoot 'plugincopy'
     Copy-Item -LiteralPath (Join-Path $repository 'plugins') (Join-Path $pluginCopy 'plugins') -Recurse
-    $profilesDir = Join-Path $pluginCopy 'plugins/nightshift/skills/nightshift/references/profiles'
+    $profilesDir = Join-Path $pluginCopy 'plugins/nightshift/config/profiles'
     $copiedHelper = Join-Path $pluginCopy 'plugins/nightshift/runtime/windows/apply-profile.ps1'
 
     @'
@@ -242,7 +242,7 @@ $badRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-apply-profile-bad-" + [guid
 try {
     $pluginCopy = Join-Path $badRoot 'plugincopy'
     Copy-Item -LiteralPath (Join-Path $repository 'plugins') (Join-Path $pluginCopy 'plugins') -Recurse
-    $profilesDir = Join-Path $pluginCopy 'plugins/nightshift/skills/nightshift/references/profiles'
+    $profilesDir = Join-Path $pluginCopy 'plugins/nightshift/config/profiles'
     $copiedHelper = Join-Path $pluginCopy 'plugins/nightshift/runtime/windows/apply-profile.ps1'
 
     @'
@@ -279,7 +279,7 @@ $presenceRoot = Join-Path ([IO.Path]::GetTempPath()) ("ns-apply-profile-presence
 try {
     $pluginCopy = Join-Path $presenceRoot 'plugincopy'
     Copy-Item -LiteralPath (Join-Path $repository 'plugins') (Join-Path $pluginCopy 'plugins') -Recurse
-    $profilesDir = Join-Path $pluginCopy 'plugins/nightshift/skills/nightshift/references/profiles'
+    $profilesDir = Join-Path $pluginCopy 'plugins/nightshift/config/profiles'
     $copiedHelper = Join-Path $pluginCopy 'plugins/nightshift/runtime/windows/apply-profile.ps1'
     @'
 {

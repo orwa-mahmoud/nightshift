@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/schemas/v1/plan-learning.json",
+  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/schemas/v1/plan-learning.json",
   "title": "Nightshift plan learning",
   "description": "Private project-local learning from receipts. Improves effort estimates and ranking; never silently invents owner policy. Stored at .nightshift/plan-learning.json.",
   "type": "object",
