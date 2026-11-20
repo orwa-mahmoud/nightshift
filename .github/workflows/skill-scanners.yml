@@ -1,0 +1,60 @@
+name: Skill scanners
+
+# Every shipped skill is scanned by two rule-based skill scanners. Both run offline, no model is
+# called, and each installs from the versions and hashes locked in .github/skill-scanners/.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/nightshift/skills/**'
+      - 'skills/**'
+      - '.github/skill-scanners/**'
+      - '.github/workflows/skill-scanners.yml'
+  pull_request:
+    paths:
+      - 'plugins/nightshift/skills/**'
+      - 'skills/**'
+      - '.github/skill-scanners/**'
+      - '.github/workflows/skill-scanners.yml'
+
+permissions:
+  contents: read
+
+env:
+  SKILL_DIRS: plugins/nightshift/skills skills
+  SKILLSPECTOR_SOURCE: git+https://github.com/NVIDIA/skillspector.git@e2674da339b0bddc6e565d059c0577c6d9cd25da # v2.13.6
+
+jobs:
+  cisco:
+    name: Cisco skill-scanner
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the locked scanner
+        run: |
+          python3 -m venv "$RUNNER_TEMP/scanner"
+          "$RUNNER_TEMP/scanner/bin/pip" install --quiet --require-hashes --no-deps \
+            -r .github/skill-scanners/cisco.txt
+      - name: Scan the skills
+        run: |
+          for dir in $SKILL_DIRS; do
+            "$RUNNER_TEMP/scanner/bin/skill-scanner" scan-all "$dir" --recursive \
+              --format summary --fail-on-severity high
+          done
+
+  skillspector:
+    name: NVIDIA SkillSpector
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the locked scanner
+        run: |
+          python3 -m venv "$RUNNER_TEMP/scanner"
+          "$RUNNER_TEMP/scanner/bin/pip" install --quiet --require-hashes --no-deps \
+            -r .github/skill-scanners/nvidia.txt
+          "$RUNNER_TEMP/scanner/bin/pip" install --quiet --no-deps "skillspector @ $SKILLSPECTOR_SOURCE"
+      - name: Scan the skills
+        run: |
+          for dir in $SKILL_DIRS; do
+            "$RUNNER_TEMP/scanner/bin/skillspector" scan "$dir" --recursive --no-llm
+          done
