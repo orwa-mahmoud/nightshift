@@ -3,7 +3,7 @@
 
 ROOT="$BATS_TEST_DIRNAME/.."
 FIX="$ROOT/tests/fixtures/seo"
-SCHEMAS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1"
+SCHEMAS="$ROOT/plugins/nightshift/config/schemas/v1"
 SCHEMA_PY="$ROOT/tests/helpers/validate-json-schema.py"
 CONTRACT="$ROOT/plugins/nightshift/skills/nightshift/references/compose/shifts/seo-audit.md"
 

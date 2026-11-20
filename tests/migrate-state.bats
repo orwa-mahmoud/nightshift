@@ -325,6 +325,25 @@ links_resolve() {
   if printf '%s\n' "$output" | grep -qF 'ignore'; then return 1; fi
 }
 
+@test "a rules file written before the schema moved gets its \$schema URL written again, in place" {
+  ws="$BATS_TEST_TMPDIR/schema"
+  mkdir -p "$ws"
+  run bash "$PLUGIN/runtime/scaffold.sh" --project "$ws"
+  [ "$status" -eq 0 ]
+  old="$(cat "$PLUGIN/lib/rules-schema-previous.txt")"
+  new="$(jq -r '."$schema"' "$PLUGIN/config/nightshift-rules-template.json")"
+  printf '{\n  "$schema": "%s",\n  "watchMinutes": 7\n}\n' "$old" >"$ws/.nightshift/rules.json"
+  run bash "$DOCTOR" --project "$ws"
+  printf '%s\n' "$output" | grep -qF "rules.json \$schema -> $new"
+  run bash "$MIGRATE" --project "$ws"
+  printf '%s\n' "$output" | grep -qF "schema    rules.json: \$schema -> $new"
+  run bash "$MIGRATE" --project "$ws" --apply
+  [ "$status" -eq 0 ]
+  [ "$(cat "$ws/.nightshift/rules.json")" = "$(printf '{\n  "$schema": "%s",\n  "watchMinutes": 7\n}' "$new")" ]
+  run bash "$MIGRATE" --project "$ws"
+  if printf '%s\n' "$output" | grep -qF 'schema    '; then return 1; fi
+}
+
 @test "Doctor names each file's old and new path, changes nothing, and waits while armed" {
   ws="$(v1_site)"
   before="$(fingerprint "$ws")"

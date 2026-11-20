@@ -6,7 +6,7 @@ load helpers
 ROOT="$BATS_TEST_DIRNAME/.."
 SP="$ROOT/plugins/nightshift/runtime/shift-policy.sh"
 LIB="$ROOT/plugins/nightshift/lib/lib.sh"
-SCHEMAS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1"
+SCHEMAS="$ROOT/plugins/nightshift/config/schemas/v1"
 VALIDATOR="$BATS_TEST_DIRNAME/helpers/validate-json-schema.py"
 
 sp() {
@@ -60,7 +60,7 @@ write_policy() { # <project> [extra JSON]
   # validate — and the whole file still does, not just the block that changed.
   sp "$p" defaults-set --verificationProfile strict --hours 8 >/dev/null
   python3 "$VALIDATOR" \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json" \
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules.schema.json" \
     "$p/.nightshift/rules.json"
   [ "$(jq -r '.shift.verificationProfile' "$p/.nightshift/rules.json")" = strict ]
   [ "$(jq -r '.shift.hours' "$p/.nightshift/rules.json")" = 8 ]
@@ -189,7 +189,7 @@ write_policy() { # <project> [extra JSON]
   mv "$p/rules.next" "$p/.nightshift/rules.json"
   run bash "$ROOT/plugins/nightshift/runtime/doctor.sh" --project "$p"
   [[ "$output" == *'rules.json receipts.evidence.architecture is "sometimes"; it must be off or on'* ]] || { printf '%s\n' "$output"; return 1; }
-  run python3 "$VALIDATOR" "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json" "$p/.nightshift/rules.json"
+  run python3 "$VALIDATOR" "$ROOT/plugins/nightshift/config/nightshift-rules.schema.json" "$p/.nightshift/rules.json"
   [ "$status" -ne 0 ]
   [[ "$output" == *'architecture'* ]] || { printf '%s\n' "$output"; return 1; }
 }

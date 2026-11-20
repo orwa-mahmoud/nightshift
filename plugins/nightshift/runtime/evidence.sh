@@ -19,7 +19,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/../lib/layout.sh"
 # shellcheck source=plugins/nightshift/lib/charsets.sh
 . "$_here/../lib/charsets.sh"
-SCHEMA_PATH="$_here/../skills/nightshift/references/schemas/v1/finding.json"
+SCHEMA_PATH="$_here/../config/schemas/v1/finding.json"
 EMIT_JQ="$_here/evidence-emit.jq"
 
 NL='

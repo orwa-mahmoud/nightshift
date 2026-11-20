@@ -59,7 +59,7 @@ foreach ($line in (Invoke-NSScaffold -Workspace $workspace -Keys (Get-NSScaffold
 }
 $rulesPath = Get-NSLayoutPath $ns 'rules'
 if (-not (Test-NSPathEntry $rulesPath)) {
-    Copy-NSOwnerTemplate -Source (Join-Path $pluginRoot 'skills/nightshift/references/nightshift-rules-template.json') `
+    Copy-NSOwnerTemplate -Source (Join-Path $pluginRoot 'config/nightshift-rules-template.json') `
         -Destination $rulesPath -Workspace $workspace
     $created.Add((Get-NSLayoutRelativePath $ns 'rules'))
 }

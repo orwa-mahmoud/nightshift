@@ -711,6 +711,32 @@ function Read-NSMigrationJson {
     return [pscustomobject]@{ Readable = $true; Doc = $doc }
 }
 
+$script:NSMigrationSchemaPrevious = Join-Path $PSScriptRoot 'rules-schema-previous.txt'
+$script:NSMigrationRulesTemplate = Join-Path (Split-Path -Parent $PSScriptRoot) 'config/nightshift-rules-template.json'
+
+# Get-NSMigrationSchemaRecord <ns> - a `schema` record when the rules file's $schema is a URL an
+# earlier plugin wrote, before the schema moved; empty otherwise. The current URL is the template's.
+function Get-NSMigrationSchemaRecord {
+    param([Parameter(Mandatory = $true)][string]$Ns)
+    $rel = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'rules'
+    if ($rel.Length -eq 0) { return '' }
+    $path = Get-NSMigrationNative $Ns $rel
+    if (-not (Test-NSMigrationFile $path)) { return '' }
+    $state = Read-NSMigrationJson $path
+    if (-not $state.Readable) { return '' }
+    $cur = Get-NSMigrationJsonAt $state.Doc '$schema'
+    if ($cur.Length -eq 0) { return '' }
+    $template = Read-NSMigrationJson $script:NSMigrationRulesTemplate
+    if (-not $template.Readable) { return '' }
+    $want = (Get-NSMigrationJsonAt $template.Doc '$schema').Trim('"')
+    if ($want.Length -eq 0) { return '' }
+    foreach ($old in [IO.File]::ReadAllLines($script:NSMigrationSchemaPrevious)) {
+        if ($old.Length -eq 0) { continue }
+        if ($cur -ceq ('"' + $old + '"')) { return "schema`t$rel`t$old`t$want" }
+    }
+    return ''
+}
+
 # Get-NSMigrationJsonAt <doc> <dotted-path> - the compact canonical JSON of the value there, or empty
 # when nothing is there.
 function Get-NSMigrationJsonAt {
@@ -1238,6 +1264,11 @@ function Get-NSMigrationPlan {
         $records.Add("ignore`t$ignoreRel`t/$run/")
     }
 
+    # A rules file written before the schema moved points its $schema at the old URL; it is written
+    # again so an editor keeps validating the file.
+    $schemaRecord = Get-NSMigrationSchemaRecord $ns
+    if ($schemaRecord.Length -gt 0) { $records.Add($schemaRecord) }
+
     # Anything this layout has no name for stays where it is, and is named so nothing is a surprise.
     $archiveRoot = Get-NSMigrationArchiveName $Workspace
     $known = New-Object Collections.Generic.List[string]
@@ -1324,6 +1355,7 @@ function Format-NSMigrationPlan {
             'retire' { $lines.Add("  retire    ${a}: $b (no version reads it)"); $n++ }
             'link' { $lines.Add("  link      ${a}: $b -> $c"); $n++ }
             'ignore' { $lines.Add("  ignore    ${a}: add $b"); $n++ }
+            'schema' { $lines.Add("  schema    ${a}: `$schema -> $c"); $n++ }
             'unknown' { $lines.Add("  unknown   $a (no Nightshift file has this name; left in place)") }
             'stray' { $lines.Add("  stray     $a (an earlier Setup copied a template here and nothing reads it; left in place, safe to delete)") }
             'note' { $lines.Add("  note      $a") }
@@ -1371,6 +1403,7 @@ function Get-NSMigrationOffer {
             'retire' { $settings++; $n++ }
             'link' { $links++; $n++ }
             'ignore' { $other += "; $a leaves $b out"; $n++ }
+            'schema' { $other += "; $a `$schema -> $c"; $n++ }
             'marker' { $marker = "; state-version $a -> $b"; $n++ }
         }
     }
@@ -1432,6 +1465,18 @@ function Invoke-NSMigrationApply {
             # A last line without its newline would otherwise run into the one added.
             if ($bytes.Length -gt 0 -and $bytes[$bytes.Length - 1] -ne 10) { $text = "`n" + $text }
             [IO.File]::AppendAllText($path, $text, $script:NSUtf8NoBom)
+        }
+        foreach ($record in $Records) {
+            $f = $record.Split("`t")
+            if ($f[0] -cne 'schema') { continue }
+            # Only the URL changes, in place, so the owner's layout of the file stands.
+            $path = Get-NSMigrationNative $ns $f[1]
+            $text = $script:NSUtf8NoBom.GetString([IO.File]::ReadAllBytes($path))
+            $old = '"' + $f[2] + '"'
+            $at = $text.IndexOf($old, [StringComparison]::Ordinal)
+            if ($at -lt 0) { return 3 }
+            $text = $text.Substring(0, $at) + '"' + $f[3] + '"' + $text.Substring($at + $old.Length)
+            [IO.File]::WriteAllBytes($path, $script:NSUtf8NoBom.GetBytes($text))
         }
         foreach ($record in $Records) {
             $f = $record.Split("`t")

@@ -599,7 +599,7 @@ if [ "$RULES_RC" -eq 0 ]; then
   # entries. A key the template has and the file lacks means a plugin update brought a knob
   # nobody has reviewed. Start names it once and never adds it.
   NEW_KEYS=""
-  TEMPLATE="$_here/../skills/nightshift/references/nightshift-rules-template.json"
+  TEMPLATE="$_here/../config/nightshift-rules-template.json"
   if [ -f "$TEMPLATE" ]; then
     present="$(ns_rules_keys "$RULES" 2>/dev/null || true)"
     for key in $(ns_rules_keys "$TEMPLATE" 2>/dev/null || true); do

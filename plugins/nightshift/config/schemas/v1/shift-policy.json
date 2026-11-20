@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/schemas/v1/shift-policy.json",
+  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/schemas/v1/shift-policy.json",
   "title": "Nightshift shift policy",
   "description": "Tonight's authoritative snapshot, written to .nightshift/run/shift-policy.json before the gate is armed. It carries the deadline, verification level, tooling policy, optional budgets, the elevation allowances the owner granted, and the shift identity those allowances are bound to. Composition (Hunt, Quality) writes it; Start writes safe defaults when it is absent. It is guarded while armed, archived at clock-out, and removed by Reset and Purge. Remembered convenience choices live in shift-defaults.json and decide nothing; permanent boundaries live in rules.json.",
   "type": "object",

@@ -20,9 +20,9 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
-PROFILES="$_here/../skills/nightshift/references/profiles"
-SCHEMA="$_here/../skills/nightshift/references/nightshift-rules.schema.json"
-TEMPLATE="$_here/../skills/nightshift/references/nightshift-rules-template.json"
+PROFILES="$_here/../config/profiles"
+SCHEMA="$_here/../config/nightshift-rules.schema.json"
+TEMPLATE="$_here/../config/nightshift-rules-template.json"
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
 MODE=""
 PROFILE=""

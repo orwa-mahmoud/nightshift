@@ -40,7 +40,7 @@ LINK="$ROOT/plugins/nightshift/runtime/link-workspace.sh"
 CLAUDE_HARDHAT="$ROOT/plugins/nightshift/hooks/hardhat.sh"
 CODEX_HARDHAT="$ROOT/plugins/nightshift/hooks/codex/hardhat.sh"
 WATCHMAN="$ROOT/plugins/nightshift/runtime/claude/watchman.sh"
-RULES="$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+RULES="$ROOT/plugins/nightshift/config/nightshift-rules-template.json"
 for shipped_file in "$LIB" "$LINK" "$CLAUDE_HARDHAT" "$CODEX_HARDHAT" "$WATCHMAN" "$RULES"; do
   [ -f "$shipped_file" ] || {
     printf 'environment probe: shipped file is missing: %s\n' "${shipped_file#"$ROOT"/}" >&2

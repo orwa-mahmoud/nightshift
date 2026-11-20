@@ -3,6 +3,7 @@ load helpers
 ROOT="$BATS_TEST_DIRNAME/.."
 RUNTIME="$ROOT/plugins/nightshift/runtime"
 REF="$ROOT/plugins/nightshift/skills/nightshift/references"
+CONFIG="$ROOT/plugins/nightshift/config"
 CODEX_HOOKS="$HOOKS/codex"
 CLAUDE_WM="$RUNTIME/claude/watchman.sh"
 CODEX_WM="$RUNTIME/codex/watchman.sh"
@@ -36,7 +37,7 @@ scaffold() { # <workspace> — the files setup copies, via the shipped templates
   for f in punch-list drafting-table parking-lot snag-log product-research opportunity-map work-orders; do
     cp "$REF/templates/$f.md" "$w/.nightshift/$f.md"
   done
-  cp "$REF/nightshift-rules-template.json" "$w/.nightshift/rules.json"
+  cp "$CONFIG/nightshift-rules-template.json" "$w/.nightshift/rules.json"
   printf '# Shift Log\n' >"$w/.nightshift/shift-log.md"
   printf '1\n' >"$w/.nightshift/state-version"
 }

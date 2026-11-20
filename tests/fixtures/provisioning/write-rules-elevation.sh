@@ -9,7 +9,7 @@ set -eu
 
 _here="${BASH_SOURCE[0]%/*}"
 [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
-TEMPLATE="$_here/../../../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+TEMPLATE="$_here/../../../plugins/nightshift/config/nightshift-rules-template.json"
 
 PROJECT=""
 CATEGORY=""

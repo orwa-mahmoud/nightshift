@@ -8,7 +8,7 @@ if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $helper = Join-Path $repository 'plugins/nightshift/runtime/windows/schedule.ps1'
-$rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+$rulesTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
 $hostExecutable = (Get-Process -Id $PID).Path
 $failures = New-Object 'System.Collections.Generic.List[string]'
 

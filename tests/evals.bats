@@ -6,7 +6,7 @@ EVALS="$ROOT/evals"
 VALIDATE="$EVALS/validate.sh"
 RUN="$EVALS/run.sh"
 SCHEMA_PY="$ROOT/tests/helpers/validate-json-schema.py"
-IDS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1/identifiers.json"
+IDS="$ROOT/plugins/nightshift/config/schemas/v1/identifiers.json"
 
 @test "validate.sh is executable and prints the configured size budget" {
   [ -x "$VALIDATE" ]

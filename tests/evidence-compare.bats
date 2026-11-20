@@ -7,7 +7,7 @@ ROOT="$BATS_TEST_DIRNAME/.."
 EC="$ROOT/plugins/nightshift/runtime/evidence-compare.sh"
 EV="$ROOT/plugins/nightshift/runtime/evidence.sh"
 SP="$ROOT/plugins/nightshift/runtime/shift-policy.sh"
-SCHEMAS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1"
+SCHEMAS="$ROOT/plugins/nightshift/config/schemas/v1"
 VALIDATOR="$BATS_TEST_DIRNAME/helpers/validate-json-schema.py"
 
 load helpers

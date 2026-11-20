@@ -49,6 +49,7 @@ say 'PATH has neither python3 nor jq'
 LIB="$PLUGIN_ROOT/lib/lib.sh"
 HOOKS="$PLUGIN_ROOT/hooks"
 REF="$PLUGIN_ROOT/skills/nightshift/references"
+CONFIG="$PLUGIN_ROOT/config"
 [ -f "$LIB" ] || die "missing $LIB"
 [ -f "$HOOKS/hardhat.sh" ] || die "missing hardhat.sh"
 [ -f "$HOOKS/clock-out-gate.sh" ] || die "missing clock-out-gate.sh"
@@ -62,10 +63,10 @@ for f in punch-list drafting-table parking-lot snag-log product-research opportu
   [ -f "$REF/templates/$f.md" ] || die "missing template templates/$f.md"
   cp "$REF/templates/$f.md" "$NS/$f.md"
 done
-[ -f "$REF/nightshift-rules-template.json" ] || die 'missing rules template'
+[ -f "$CONFIG/nightshift-rules-template.json" ] || die 'missing rules template'
 # The owner who guards every elevation category, so the hardhat has a deny to show. No jq here:
 # the shipped template's policies are rewritten with sed.
-sed 's/"policy": "allow"/"policy": "deny"/' "$REF/nightshift-rules-template.json" >"$NS/rules.json"
+sed 's/"policy": "allow"/"policy": "deny"/' "$CONFIG/nightshift-rules-template.json" >"$NS/rules.json"
 printf '# Shift Log\n' >"$NS/shift-log.md"
 printf '1\n' >"$NS/state-version"
 printf 'repository\n' >"$NS/work-mode"

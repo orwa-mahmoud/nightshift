@@ -8,9 +8,9 @@ bats_require_minimum_version 1.5.0
 load helpers
 
 ROOT="$BATS_TEST_DIRNAME/.."
-REFS="$ROOT/plugins/nightshift/skills/nightshift/references"
-SCHEMA="$REFS/nightshift-rules.schema.json"
-TEMPLATE="$REFS/nightshift-rules-template.json"
+CONFIG="$ROOT/plugins/nightshift/config"
+SCHEMA="$CONFIG/nightshift-rules.schema.json"
+TEMPLATE="$CONFIG/nightshift-rules-template.json"
 VALIDATOR="$BATS_TEST_DIRNAME/helpers/validate-json-schema.py"
 FIX="$BATS_TEST_DIRNAME/fixtures/policy-contract"
 

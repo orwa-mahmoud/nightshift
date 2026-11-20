@@ -610,7 +610,7 @@ if ($null -ne $rules) {
     # plugin update brought a knob nobody has reviewed. Start names it once and
     # never adds it.
     $newKeys = New-Object 'System.Collections.Generic.List[string]'
-    $templatePath = Join-Path $pluginRoot 'skills/nightshift/references/nightshift-rules-template.json'
+    $templatePath = Join-Path $pluginRoot 'config/nightshift-rules-template.json'
     if (Test-Path -LiteralPath $templatePath -PathType Leaf) {
         try {
             $template = Get-Content -Raw -LiteralPath $templatePath | ConvertFrom-Json

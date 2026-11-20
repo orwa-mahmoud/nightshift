@@ -16,7 +16,7 @@ $helper = Join-Path $plugin 'runtime/windows/shift-policy.ps1'
 $doctor = Join-Path $plugin 'runtime/windows/doctor.ps1'
 $exportSupport = Join-Path $plugin 'runtime/windows/export-support.ps1'
 $migrateState = Join-Path $plugin 'runtime/windows/migrate-state.ps1'
-$rulesTemplate = Join-Path $plugin 'skills/nightshift/references/nightshift-rules-template.json'
+$rulesTemplate = Join-Path $plugin 'config/nightshift-rules-template.json'
 $hostExecutable = (Get-Process -Id $PID).Path
 $failures = New-Object 'System.Collections.Generic.List[string]'
 $utf8 = New-Object Text.UTF8Encoding($false)
@@ -693,7 +693,7 @@ try {
     $patternProject = Join-Path $root 'elev-pattern'
     $patternNs = Join-Path $patternProject '.nightshift'
     $null = New-Item -ItemType Directory -Force -Path $patternNs
-    $patternTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $patternTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
     $patternText = [IO.File]::ReadAllText($patternTemplate, $utf8)
     $patternDoc = ConvertFrom-NSJsonText $patternText
     $currentPattern = [string]$patternDoc['elevation']['global-packages']['pattern']

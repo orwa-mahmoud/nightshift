@@ -123,7 +123,7 @@ PY
   grep -qF 'create no `$NS/` directory' "$SETUP"
   grep -qF 'Open your project in Codex' "$SETUP"
   grep -qF 'persistent local folder' "$SETUP"
-  grep -qF 'Do not mention Claude Code' "$SETUP"
+  grep -qF 'Leave Claude Code out of this ChatGPT-specific redirect' "$SETUP"
 }
 
 # Structural instruction contracts, not runtime E2E: pin the lifecycle words and shipped paths
@@ -314,14 +314,18 @@ PY
   grep -qF '.claude/settings.local.json' "$PREFLIGHT"
   grep -qF '.claude/settings.json' "$PREFLIGHT"
   grep -qF '.claude/settings.local.json' "$PREFLIGHT_PS1"
-  grep -qF '$TASK_ROOT/.claude/settings.local.json' "$SCHEDULE"
-  grep -qF '$TASK_ROOT/.claude/settings.json' "$SCHEDULE"
+  runtime="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime"
+  grep -qF '.claude/settings.local.json' "$runtime/schedule.sh"
+  grep -qF '.claude/settings.json' "$runtime/schedule.sh"
+  grep -qF '.claude/settings.local.json' "$runtime/windows/schedule.ps1"
+  grep -qF '.claude/settings.json' "$runtime/windows/schedule.ps1"
+  grep -qF 'ns schedule --preflight`) checks the project'"'"'s Claude Code settings' "$SCHEDULE"
 }
 
 @test "setup writes gitignore and lists profiles on resolved roots" {
   grep -qF '$NIGHTSHIFT_WORKSPACE/.gitignore' "$SETUP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/profiles/' "$SETUP"
-  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/skills/nightshift/references/nightshift-rules.schema.json' "$SETUP"
+  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/config/profiles/' "$SETUP"
+  grep -qF '$NIGHTSHIFT_PLUGIN_ROOT/config/nightshift-rules.schema.json' "$SETUP"
   grep -qF 'docs/knobs.md' "$SETUP"
 }
 
@@ -476,7 +480,7 @@ PY
 }
 
 @test "rules template keeps relative nightshift paths for owner editing" {
-  rules="$SKILLS/nightshift/references/nightshift-rules-template.json"
+  rules="$SKILLS/../config/nightshift-rules-template.json"
   grep -qF '.nightshift/punch-list.md' "$rules"
   grep -qF '.nightshift/STOP' "$rules"
   if grep -qF '$NIGHTSHIFT_WORKSPACE' "$rules"; then

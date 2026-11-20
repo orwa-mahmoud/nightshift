@@ -309,7 +309,7 @@ RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
   grep -qF 'retention.runtimeLogDays' "$ARCHIVE"
   grep -qF 'retention.archiveDays' "$ARCHIVE"
   jq -e '.properties.retention.properties.runtimeLogDays.minimum == 0' \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json" >/dev/null
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules.schema.json" >/dev/null
   jq -e '.retention.runtimeLogDays == 0 and .retention.archiveDays == 0' \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >/dev/null
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules-template.json" >/dev/null
 }

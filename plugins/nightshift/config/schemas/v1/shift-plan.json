@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/schemas/v1/shift-plan.json",
+  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/schemas/v1/shift-plan.json",
   "title": "Nightshift shift plan",
   "description": "Deterministic ordered plan for Automatic or Guided composition. Review-first and run-direct twins share identical ordering; launch mode affects only metadata and whether composition may write after approval.",
   "type": "object",

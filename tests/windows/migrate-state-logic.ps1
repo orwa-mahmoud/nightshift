@@ -16,7 +16,7 @@ $scaffold = Join-Path $plugin 'runtime/windows/scaffold.ps1'
 $pathHelper = Join-Path $plugin 'runtime/windows/path.ps1'
 $hardhat = Join-Path $plugin 'hooks/windows/hardhat.ps1'
 $gate = Join-Path $plugin 'hooks/windows/clock-out-gate.ps1'
-$rulesTemplate = Join-Path $plugin 'skills/nightshift/references/nightshift-rules-template.json'
+$rulesTemplate = Join-Path $plugin 'config/nightshift-rules-template.json'
 $hostExecutable = (Get-Process -Id $PID).Path
 $utf8 = New-Object Text.UTF8Encoding($false)
 Import-Module (Join-Path $plugin 'lib/Nightshift.psm1') -Force -DisableNameChecking
@@ -339,6 +339,19 @@ try {
     Expect-True ($ignored.Stdout.Contains('ignore    .gitignore: add /run/')) 'the receipts repository gets /run/ left out'
     Expect-True ((Read-Text (Join-Path $ns '.gitignore')) -ceq "STOP`n.stall`n/run/`n") '/run/ lands on its own line'
     Expect-True (-not (Invoke-Migrate $repo).Stdout.Contains('ignore')) '/run/ is added once'
+
+    # --- a rules file written before the schema moved gets its $schema URL written again, in place
+    $moved = Join-Path $root 'schema'
+    $null = New-Item -ItemType Directory -Path $moved -Force
+    $null = Invoke-Script $scaffold @('-Project', $moved)
+    $oldUrl = (Read-Text (Join-Path $plugin 'lib/rules-schema-previous.txt')).Trim()
+    $newUrl = (Get-Content -Raw -LiteralPath (Join-Path $plugin 'config/nightshift-rules-template.json') | ConvertFrom-Json).'$schema'
+    $rulesPath = Join-Path $moved '.nightshift/rules.json'
+    Write-Text $rulesPath ("{`n  `"`$schema`": `"$oldUrl`",`n  `"watchMinutes`": 7`n}`n")
+    $schemaRun = Invoke-Migrate $moved -Apply
+    Expect-True ($schemaRun.Stdout.Contains("schema    rules.json: `$schema -> $newUrl")) 'the old schema URL is named'
+    Expect-True ((Read-Text $rulesPath) -ceq ("{`n  `"`$schema`": `"$newUrl`",`n  `"watchMinutes`": 7`n}`n")) 'only the URL changes'
+    Expect-True (-not (Invoke-Migrate $moved).Stdout.Contains('schema    ')) 'the URL is written once'
 
     # --- Doctor names each move and changes nothing
     $described = Join-Path $root 'doctor'

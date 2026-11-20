@@ -29,7 +29,7 @@ parallel `tests/run-shard.sh` jobs.
 | Cross-host handoff | `plugins/nightshift/runtime/continuity-handoff.sh` | `tests/continuity-handoff.bats` |
 | Receipt templates the model writes from | `plugins/nightshift/skills/nightshift/references/receipts/cycle-specialist-evidence.md` | `tests/quality-workflow.bats`, `tests/coverage-risk.bats`, `tests/defect-cycle.bats`, `tests/history-context.bats`, `tests/shift-planner.bats`, `tests/source-policy-evidence.bats`, `tests/specialist-evidence.bats` |
 
-Schemas: `plugins/nightshift/skills/nightshift/references/schemas/v1/`. Fixtures: `tests/fixtures/`.
+Schemas: `plugins/nightshift/config/schemas/v1/`. Fixtures: `tests/fixtures/`.
 
 ## Catalog and skills
 

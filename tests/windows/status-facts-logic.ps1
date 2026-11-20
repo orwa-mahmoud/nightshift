@@ -112,7 +112,7 @@ finally {
 # The report says whether a watchman is alive, and warns when an armed shift with open work has
 # none, unless the owner switched it off with watchMinutes 0.
 $statusHelper = Join-Path $repository 'plugins/nightshift/runtime/windows/status.ps1'
-$rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+$rulesTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
 $watched = Join-Path ([IO.Path]::GetTempPath()) ("ns-status-watchman-" + [guid]::NewGuid().ToString('N'))
 function Get-NSStatusLine {
     param([string]$Label)

@@ -3,7 +3,7 @@ load ../helpers
 HOOKS="$BATS_TEST_DIRNAME/../../plugins/nightshift/hooks"
 CURSOR_HOOKS="$HOOKS/cursor"
 FIXTURES="$BATS_TEST_DIRNAME/../fixtures/hooks/v1/cursor"
-RULES_TEMPLATE="$BATS_TEST_DIRNAME/../../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+RULES_TEMPLATE="$BATS_TEST_DIRNAME/../../plugins/nightshift/config/nightshift-rules-template.json"
 
 is_cursor_deny() {
   [ "$status" -eq 0 ]

@@ -9,7 +9,7 @@ setup() {
   SESSION_END="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/session-end.sh"
   P="$BATS_TEST_TMPDIR/proj"
   mkdir -p "$P/.nightshift"
-  cp "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" "$P/.nightshift/rules.json"
+  cp "$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules-template.json" "$P/.nightshift/rules.json"
   printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
   : >"$P/.nightshift/.shift-armed" # as start does — the watchman only works an armed site
   # An unattended revival needs a scope it can vouch for. Claude Code names none, so the shipped
@@ -1005,7 +1005,7 @@ STUB
 # One copy: the watchman reads its orders from the rules file; env stays the override.
 @test "the revival order is read from the rules file" {
   jq '.revivalPrompt = "weld from the file" | .recovery.launchScope = "host-default"' \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$P/.nightshift/rules.json"
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/config/nightshift-rules-template.json" >"$P/.nightshift/rules.json"
   cat >"$BIN/hear2.sh" <<'STUB'
 #!/usr/bin/env bash
 echo called >>.nightshift/agent-calls

@@ -293,7 +293,7 @@ function Set-TestRecoveryScope {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     # Copied as text: the file is then byte-identical under Windows PowerShell 5.1 and PowerShell 7,
     # whose JSON serialisers differ.
-    $template = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $template = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
     $text = [IO.File]::ReadAllText($template)
     if (-not $text.Contains('"launchScope": "host-default"')) { throw 'the rules template no longer ships recovery.launchScope host-default' }
     [IO.File]::WriteAllText((Join-Path $Workspace '.nightshift/rules.json'), $text, (New-Object Text.UTF8Encoding($false)))

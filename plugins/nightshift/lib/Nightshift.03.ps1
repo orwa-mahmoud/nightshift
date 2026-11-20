@@ -297,7 +297,7 @@ function ConvertTo-NSCanonicalJson {
 
 function Get-NSSchemaDocument {
     param([Parameter(Mandatory = $true)][string]$Name)
-    $dir = Join-Path (Split-Path -Parent $PSScriptRoot) 'skills/nightshift/references/schemas/v1'
+    $dir = Join-Path (Split-Path -Parent $PSScriptRoot) 'config/schemas/v1'
     $raw = [IO.File]::ReadAllText((Join-Path $dir $Name))
     return ($raw | ConvertFrom-Json)
 }
@@ -1164,7 +1164,7 @@ function Test-NSPolicyDigest {
     return (($Value -is [string]) -and ($Value -cmatch '^[0-9a-f]{64}$'))
 }
 
-# The schema lives at references/schemas/v1/shift-policy.json; these are the same
+# The schema lives at config/schemas/v1/shift-policy.json; these are the same
 # constraints, applied without a file read so a helper still validates on a host
 # whose plugin tree is read-only or partially installed.
 function Test-NSShiftPolicyDocument {

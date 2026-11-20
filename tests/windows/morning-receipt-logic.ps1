@@ -704,7 +704,7 @@ try {
     # === 6c. How the receipts and handoff switches combine ===
     # One stop finds the first item ticked and holds for the second; the next finds both ticked
     # and clocks the shift out.
-    $rulesTemplate = Join-Path $plugin 'skills/nightshift/references/nightshift-rules-template.json'
+    $rulesTemplate = Join-Path $plugin 'config/nightshift-rules-template.json'
     $page = 'morning-2026-09-02-' + $shiftId + '.md'
     foreach ($combo in @(
             @{ Name = 'receipts-off'; Receipts = $false; Handoff = $true },
@@ -976,7 +976,7 @@ try {
 
     $offRules = Join-Path $verdictNs 'rules.json'
     $rules = ConvertFrom-NSJsonText ([IO.File]::ReadAllText(
-            (Join-Path $plugin 'skills/nightshift/references/nightshift-rules-template.json')))
+            (Join-Path $plugin 'config/nightshift-rules-template.json')))
     $rules['receipts']['usage'] = 'off'
     $rules['receipts']['duration'] = 'off'
     [IO.File]::WriteAllText($offRules, ((ConvertTo-NSCanonicalJson $rules) + "`n"), $utf8)

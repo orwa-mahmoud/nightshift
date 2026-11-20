@@ -2,7 +2,7 @@
 
 Read-only fixtures for the three SEO evidence modes defined in `seo-audit.md`.
 Schemas live under
-`plugins/nightshift/skills/nightshift/references/schemas/v1/`. Runtime helpers
+`plugins/nightshift/config/schemas/v1/`. Runtime helpers
 (`seo-evidence.sh`) are **planned for Wave 2** — these files validate contracts
 only.
 

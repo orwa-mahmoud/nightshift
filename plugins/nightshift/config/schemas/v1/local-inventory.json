@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/schemas/v1/local-inventory.json",
+  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/schemas/v1/local-inventory.json",
   "title": "Nightshift SEO local inventory evidence",
   "description": "Dependency-free page inventory from a static site tree, supplied routes, or local build output. Wave 1 schema; runtime helper is planned.",
   "type": "object",

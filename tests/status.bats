@@ -6,12 +6,13 @@ bats_require_minimum_version 1.5.0
 ROOT="$BATS_TEST_DIRNAME/.."
 STATUS="$ROOT/plugins/nightshift/runtime/status.sh"
 REF="$ROOT/plugins/nightshift/skills/nightshift/references"
+CONFIG="$ROOT/plugins/nightshift/config"
 
 load helpers
 
 @test "status reports evidence counts and separate lifecycle lines" {
   p="$(new_project status-basic)"
-  cp "$REF/nightshift-rules-template.json" "$p/.nightshift/rules.json"
+  cp "$CONFIG/nightshift-rules-template.json" "$p/.nightshift/rules.json"
   mkdir -p "$p/.nightshift/evidence"
   printf '{"schemaVersion":1,"id":"b1","domain":"baseline","severity":"low","confidence":"medium","impact":"local","status":"open","ladder":"declared","locator":"x","source":"fixture","sourceClass":"test","host":"local"}\n' \
     >"$p/.nightshift/evidence/findings.jsonl"
@@ -33,7 +34,7 @@ load helpers
 
 @test "checkpoint changes the stall fingerprint and resets the counter" {
   p="$(new_project status-stall)"
-  cp "$REF/nightshift-rules-template.json" "$p/.nightshift/rules.json"
+  cp "$CONFIG/nightshift-rules-template.json" "$p/.nightshift/rules.json"
   printf '## Items\n- [ ] **1. work.**\n' >"$p/.nightshift/punch-list.md"
   : >"$p/.nightshift/.shift-armed"
   git -C "$p" commit -q --allow-empty -m "progress"

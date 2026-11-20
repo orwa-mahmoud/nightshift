@@ -265,7 +265,7 @@ $review = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-review-" + [guid]::N
 try {
     $ns = Join-Path $review '.nightshift'
     $null = New-Item -ItemType Directory -Path $ns -Force
-    $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $rulesTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
     Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $ns 'rules.json')
     [IO.File]::WriteAllText((Join-Path $ns '.ended'), "shiftId=aaaa1111bbbb2222`narchiveRoot=archive`narchiveLayout=date`n")
     [IO.File]::WriteAllText((Join-Path $ns 'snag-log.md'),
@@ -370,7 +370,7 @@ $usageWork = Join-Path ([IO.Path]::GetTempPath()) ("ns-archive-usage-" + [guid]:
 try {
     $ns = Join-Path $usageWork '.nightshift'
     foreach ($name in @('usage-aaaa', 'usage-bbbb')) { $null = New-Item -ItemType Directory -Path (Join-Path $ns $name) -Force }
-    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json') `
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json') `
         -Destination (Join-Path $ns 'rules.json')
     [IO.File]::WriteAllText((Join-Path $ns 'usage-aaaa/segments.tsv'), "seg a`n")
     [IO.File]::WriteAllText((Join-Path $ns 'usage-aaaa/marks.tsv'), "marks a`n")
@@ -599,7 +599,7 @@ finally {
 $punchRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-punch-filing-' + [guid]::NewGuid().ToString('N'))
 try {
     $utf8 = New-Object Text.UTF8Encoding($false)
-    $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $rulesTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
     $body = "# Punch list`n`n## Shift`n`nThe contract.`n`n## Gates`n`n- run checks`n`n## Items`n`n- [x] **1. done.**`n  - its bullet`n`n- [ ] **2. open.**`n"
     function New-EndedSite {
         param([string]$Name, [string]$ShiftId, [string]$Punch, [switch]$Armed)
@@ -716,7 +716,7 @@ $mirror = Join-Path ([IO.Path]::GetTempPath()) ('ns-archive-mirror-' + [guid]::N
 try {
     $utf8 = New-Object Text.UTF8Encoding($false)
     $dash = [string][char]0x2014
-    $rulesTemplate = Join-Path $repository 'plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json'
+    $rulesTemplate = Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json'
     function Set-EndedShift {
         param([string]$Site, [string]$ShiftId)
         $siteNs = Join-Path $Site '.nightshift'

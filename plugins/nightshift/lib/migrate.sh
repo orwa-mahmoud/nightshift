@@ -19,6 +19,8 @@ _ns_migrate_dir="${BASH_SOURCE[0]%/*}"
 [ "$_ns_migrate_dir" != "${BASH_SOURCE[0]}" ] || _ns_migrate_dir=.
 NS_MIGRATE_LINKS_AWK="$_ns_migrate_dir/migrate-links.awk"
 NS_MIGRATE_JSON_AWK="$_ns_migrate_dir/rules-read.awk"
+NS_MIGRATE_SCHEMA_PREVIOUS="$_ns_migrate_dir/rules-schema-previous.txt"
+NS_MIGRATE_RULES_TEMPLATE="$_ns_migrate_dir/../config/nightshift-rules-template.json"
 unset _ns_migrate_dir
 
 _NS_MIG_TAB="$(printf '\t')"
@@ -102,6 +104,29 @@ _ns_migrate_judge() {
 # _ns_migrate_json <mode> <file> [key] [value] — the bundled JSON reader in one of its modes.
 _ns_migrate_json() {
   LC_ALL=C awk -v mode="$1" -v key="${3-}" -v value="${4-}" -f "$NS_MIGRATE_JSON_AWK" <"$2" 2>/dev/null
+}
+
+# _ns_migrate_schema <ns> — a `schema` record when the rules file's $schema is a URL an earlier
+# plugin wrote, before the schema moved; nothing otherwise. The current URL is the template's.
+_ns_migrate_schema() {
+  local ns="$1" rel cur want old
+  ns_layout_rel_at rel "$NS_LAYOUT_VERSION" rules || return 0
+  if [ ! -f "$ns/$rel" ] || [ -L "$ns/$rel" ]; then return 0; fi
+  cur="$(_ns_migrate_json canonat "$ns/$rel" "\$schema")"
+  [ -n "$cur" ] || return 0
+  want="$(_ns_migrate_json canonat "$NS_MIGRATE_RULES_TEMPLATE" "\$schema")"
+  want="${want#\"}"
+  want="${want%\"}"
+  [ -n "$want" ] || return 0
+  while IFS= read -r old; do
+    old="${old%$'\r'}"
+    [ -n "$old" ] || continue
+    if [ "$cur" = "\"$old\"" ]; then
+      printf 'schema\t%s\t%s\t%s\n' "$rel" "$old" "$want"
+      return 0
+    fi
+  done <"$NS_MIGRATE_SCHEMA_PREVIOUS"
+  return 0
 }
 
 # _ns_migrate_live_file <ns> <key> — where a file key sits right now, relative: its current path
@@ -324,6 +349,10 @@ EOF
     printf 'ignore\t%s\t/%s/\n' "$f" "$d"
   fi
 
+  # A rules file written before the schema moved points its $schema at the old URL; it is written
+  # again so an editor keeps validating the file.
+  _ns_migrate_schema "$ns"
+
   # Anything this layout has no name for stays where it is, and is named so nothing is a surprise.
   archive_root="$(ns_archive "$ws" root)"
   [ -n "$archive_root" ] || ns_layout_rel_at archive_root "$NS_LAYOUT_VERSION" archive
@@ -494,6 +523,7 @@ ns_migrate_render() {
     $1 == "retire" { printf "  retire    %s: %s (no version reads it)\n", $2, $3; n++; next }
     $1 == "link" { printf "  link      %s: %s -> %s\n", $2, $3, $4; n++; next }
     $1 == "ignore" { printf "  ignore    %s: add %s\n", $2, $3; n++; next }
+    $1 == "schema" { printf "  schema    %s: $schema -> %s\n", $2, $4; n++; next }
     $1 == "unknown" { printf "  unknown   %s (no Nightshift file has this name; left in place)\n", $2; next }
     $1 == "stray" { printf "  stray     %s (an earlier Setup copied a template here and nothing reads it; left in place, safe to delete)\n", $2; next }
     $1 == "note" { printf "  note      %s\n", $2; next }
@@ -521,6 +551,7 @@ ns_migrate_offer() {
     $1 == "drop" || $1 == "retire" { settings++; n++ }
     $1 == "link" { links++; n++ }
     $1 == "ignore" { other = other "; " $2 " leaves " $3 " out"; n++ }
+    $1 == "schema" { other = other "; " $2 " $schema -> " $4; n++ }
     $1 == "marker" { marker = "; state-version " $2 " -> " $3; n++ }
     END {
       if (n == 0) exit 1
@@ -577,6 +608,19 @@ ns_migrate_apply() {
       printf '\n' >>"$ns/$a" || return 3
     fi
     printf '%s\n' "$b" >>"$ns/$a" || return 3
+  done <"$plan"
+  while IFS="$_NS_MIG_TAB" read -r kind a b c; do
+    [ "$kind" = schema ] || continue
+    # Only the URL changes, in place, so the owner's layout of the file stands.
+    tmp="$ns/.${a##*/}.migrate.$$"
+    if ! LC_ALL=C awk -v old="\"$b\"" -v new="\"$c\"" '
+      !done && index($0, "\"$schema\"") && (i = index($0, old)) {
+        $0 = substr($0, 1, i - 1) new substr($0, i + length(old)); done = 1
+      }
+      { print }' "$ns/$a" >"$tmp" || [ ! -s "$tmp" ] || ! mv "$tmp" "$ns/$a"; then
+      rm -f "$tmp"
+      return 3
+    fi
   done <"$plan"
   d="$(awk -F '\t' '$1 == "marker" { print $3 }' "$plan")"
   if [ -n "$d" ]; then

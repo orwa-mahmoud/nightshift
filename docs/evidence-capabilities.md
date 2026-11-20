@@ -96,7 +96,7 @@ mode, and every elevation allowance with its provenance. The layers themselves a
 individual key in [Owner knobs](knobs.md#owner-knobs).
 
 Verification profiles (`fast`, `balanced`, `strict`, `custom`) live in
-[`references/profiles/`](../plugins/nightshift/skills/nightshift/references/profiles/) alongside the
+[`config/profiles/`](../plugins/nightshift/config/profiles/) alongside the
 `no-push`, `isolated-branch`, and `strict-secrets` rule profiles. A zero-gate `fast` shift is
 first-class: items and receipts land with no automated checks, and the receipt says so in the
 `Verified:` line rather than leaving it blank.

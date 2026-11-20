@@ -495,7 +495,7 @@ elevation_message() { # <project> <category>
   p="$(new_guarded_project)"
   punch_open "$p"
   recipe="$(jq -r '.rules.forbiddenCommands' \
-    "$BATS_TEST_DIRNAME/../plugins/nightshift/skills/nightshift/references/profiles/isolated-branch.json")"
+    "$BATS_TEST_DIRNAME/../plugins/nightshift/config/profiles/isolated-branch.json")"
   run hardhat_bash "$p" "git checkout main" NIGHTSHIFT_FORBIDDEN_COMMANDS="$recipe"
   is_deny "$output"
   run hardhat_bash "$p" "git switch master" NIGHTSHIFT_FORBIDDEN_COMMANDS="$recipe"

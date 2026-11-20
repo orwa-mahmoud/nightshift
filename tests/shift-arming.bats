@@ -2,7 +2,7 @@ load helpers
 
 ROOT="$BATS_TEST_DIRNAME/.."
 SP="$ROOT/plugins/nightshift/runtime/shift-policy.sh"
-SCHEMAS="$ROOT/plugins/nightshift/skills/nightshift/references/schemas/v1"
+SCHEMAS="$ROOT/plugins/nightshift/config/schemas/v1"
 VALIDATOR="$BATS_TEST_DIRNAME/helpers/validate-json-schema.py"
 
 sp() {

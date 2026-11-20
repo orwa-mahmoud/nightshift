@@ -9,7 +9,7 @@ load helpers
 ROOT="$BATS_TEST_DIRNAME/.."
 SP="$ROOT/plugins/nightshift/runtime/shift-policy.sh"
 VALIDATOR="$BATS_TEST_DIRNAME/helpers/validate-json-schema.py"
-SCHEMA="$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json"
+SCHEMA="$ROOT/plugins/nightshift/config/nightshift-rules.schema.json"
 FIX="$BATS_TEST_DIRNAME/fixtures/policy-contract"
 
 # case_site <case> — an unarmed workspace holding exactly what that case starts with.
@@ -167,7 +167,7 @@ want() { jq -r "$2" "$FIX/$1/expected.json"; }
   mkdir -p "$p/.nightshift"
   jq '.shift = {verificationProfile: "strict", hours: 6,
                 execution: "run-direct", toolingPolicy: "auto-add"}' \
-    "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
+    "$ROOT/plugins/nightshift/config/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
   run bash -c '. "$1"; ns_policy_read_defaults "$2"' _ "$ROOT/plugins/nightshift/lib/lib.sh" "$p"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -e '.verificationProfile == "strict" and .hours == 6' >/dev/null
@@ -177,7 +177,7 @@ want() { jq -r "$2" "$FIX/$1/expected.json"; }
 @test "a workspace that has not migrated still reports what it remembers" {
   p="$BATS_TEST_TMPDIR/read-legacy"
   mkdir -p "$p/.nightshift"
-  jq 'del(.shift)' "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
+  jq 'del(.shift)' "$ROOT/plugins/nightshift/config/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
   jq -n '{execution: "run-direct", hours: 3, schemaVersion: 1, toolingPolicy: "review-missing",
           updatedAt: "2026-09-05T10:42:17Z", verificationProfile: "balanced"}' \
     >"$p/.nightshift/shift-defaults.json"
@@ -190,7 +190,7 @@ want() { jq -r "$2" "$FIX/$1/expected.json"; }
 @test "a verbatim shipped elevation pattern is updated and a custom pattern is not" {
   p="$BATS_TEST_TMPDIR/elev-pattern"
   mkdir -p "$p/.nightshift"
-  tpl="$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json"
+  tpl="$ROOT/plugins/nightshift/config/nightshift-rules-template.json"
   prev="$ROOT/plugins/nightshift/lib/shipped-elevation-previous.tsv"
   jq '.elevation.daemons.pattern = "kept-by-owner"' "$tpl" >"$p/.nightshift/rules.json"
   old="$(awk -F '\t' '$1 == "global-packages" { sub(/^[^\t]*\t/, ""); print }' "$prev")"
@@ -220,7 +220,7 @@ file.write_text(text.replace(cur, old, 1))' \
   mkdir -p "$p/.nightshift"
   jq '.shift = {verificationProfile: "strict", hours: 6,
                 execution: "run-direct", toolingPolicy: "auto-add"}' \
-    "$ROOT/plugins/nightshift/skills/nightshift/references/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
+    "$ROOT/plugins/nightshift/config/nightshift-rules-template.json" >"$p/.nightshift/rules.json"
   jq -n '{execution: "review-first", hours: 3, schemaVersion: 1, toolingPolicy: "review-missing",
           updatedAt: "2026-09-05T10:42:17Z", verificationProfile: "balanced"}' \
     >"$p/.nightshift/shift-defaults.json"

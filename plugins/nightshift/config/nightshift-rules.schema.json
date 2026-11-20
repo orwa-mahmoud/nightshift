@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/skills/nightshift/references/nightshift-rules.schema.json",
+  "$id": "https://raw.githubusercontent.com/orwa-mahmoud/nightshift/main/plugins/nightshift/config/nightshift-rules.schema.json",
   "title": "Nightshift rules",
   "description": "Owner knobs for an unattended shift. Extra top-level keys are rejected; missing optional keys keep runtime defaults. toolDeny and the three host-native ask-tool entries are required so question behavior is never hidden. An empty string lifts a string rule. Schema validation never changes hook behaviour.",
   "type": "object",
