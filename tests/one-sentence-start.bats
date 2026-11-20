@@ -12,12 +12,12 @@ TEMPLATE="$SKILLS/../config/nightshift-rules-template.json"
   # The description the host matches a sentence against names the plain form.
   sed -n '1,5p' "$HUNT" | grep -qF 'improve this project for 5 hours'
   # The brain skill, which hosts may load first, hands such a sentence to Hunt instead of Start.
-  grep -qF 'is a Hunt request: follow Hunt' "$BRAIN"
+  grep -qF 'is a Hunt request: follow the Hunt skill' "$BRAIN"
   grep -qF 'improve this project for 5 hours' "$BRAIN"
 }
 
 @test "a new project is set up inside the same request, never sent away" {
-  grep -qF "run Setup's flow" "$HUNT"
+  grep -qF 'run the Setup skill' "$HUNT"
   grep -qF 'then continue with the same sentence' "$HUNT"
   grep -qF 'Never send the owner away to run Setup' "$HUNT"
   if grep -qF 'tell the owner to
