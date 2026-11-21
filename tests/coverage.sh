@@ -4,10 +4,12 @@
 # the same script runs inside a debian container (docker required).
 #
 # kcov's memory grows with every test it traces: one heavy file alone passes 10 GB. So each test file
-# is cut into groups of NIGHTSHIFT_COVERAGE_CHUNK tests (default 5), each group runs under its own
-# kcov, NIGHTSHIFT_COVERAGE_JOBS groups at a time, and kcov merges the parts. The default is as many
-# groups as the available memory holds at GROUP_MB each, and never more than one per CPU.
-# A group killed for memory is measured again one test at a time, with nothing else running. A test
+# is cut into groups of at most NIGHTSHIFT_COVERAGE_CHUNK tests (default 5), each group runs under
+# its own kcov, and kcov merges the parts. A test whose recorded peak fills the group budget runs
+# alone. NIGHTSHIFT_COVERAGE_JOBS groups run at a time: as many as fit in the memory left after
+# headroom, and never more than one per CPU. The limit is the smaller of host free memory and a
+# cgroup limit, when one is set. A group killed for memory is measured again one test at a time,
+# with nothing else running. A test
 # that still cannot be measured alone, or a group that writes no coverage report or runs a different
 # number of tests than it was given, fails the whole run with its file, its tests and the end of its
 # log, and so does a merged report that counts no lines: an incomplete measurement is never reported
@@ -23,9 +25,11 @@ INCLUDE=plugins/nightshift/hooks,plugins/nightshift/runtime,plugins/nightshift/l
 CHUNKS=coverage/chunks.tsv
 # The groups killed in the parallel pass, one line number per line, measured again test by test.
 RETRY=coverage/retry.txt
-# The memory one group of five tests can reach under kcov. On GitHub's 16 GB runner, four groups at
-# once left about 1 GB free before the step was killed.
+# The memory one group is planned to reach under kcov. Four groups at once on the 16 GB runner
+# left about 1 GB free before the step was killed, so a run keeps this much unused.
 GROUP_MB=6000
+HEADROOM_MB=2048
+PROFILE=tests/coverage-memory.tsv
 
 # test_names <test-file> — every test name in the file as bats matches it, one per line: the text of
 # each `@test "..."` line exactly as written, backslashes included.
@@ -49,10 +53,40 @@ add_chunk() {
   printf '%s\n' "$group" >"coverage/names-$line.txt"
 }
 
+# test_weight <file> <name> — megabytes to plan for one test. A profile row for the name wins,
+# then a row for the whole file, then an even share of the group budget.
+test_weight() {
+  local file="$1" name="$2" star="" exact="" line f n mb
+  if [ -f "$PROFILE" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        '' | '#'*) continue ;;
+      esac
+      IFS=$(printf '\t') read -r f n mb <<<"$line"
+      [ "$f" = "$file" ] || continue
+      case "$mb" in
+        '' | *[!0-9]*) continue ;;
+      esac
+      if [ "$n" = "$name" ]; then
+        exact="$mb"
+      elif [ "$n" = '*' ]; then
+        star="$mb"
+      fi
+    done <"$PROFILE"
+  fi
+  if [ -n "$exact" ]; then
+    printf '%s\n' "$exact"
+  elif [ -n "$star" ]; then
+    printf '%s\n' "$star"
+  else
+    printf '%s\n' "$UNIT_MB"
+  fi
+}
+
 # write_chunks — one line per group in $CHUNKS: <test-file> TAB <test count> TAB <bats filter>.
+# Tests stay in file order. A group stops before it passes the budget or the chunk cap.
 write_chunks() {
-  local file names count i size
-  size="$CHUNK"
+  local file names count name weight sum n batch
   : >"$CHUNKS"
   : >"$RETRY"
   while IFS= read -r file; do
@@ -62,12 +96,93 @@ write_chunks() {
       printf 'coverage: %s has %s @test lines but %s readable test names\n' "$file" "$(grep -c '^@test ' "$file")" "$count" >&2
       return 1
     fi
-    i=0
-    while [ "$i" -lt "$count" ]; do
-      printf '%s\n' "$names" | sed -n "$((i + 1)),$((i + size))p" | add_chunk "$file"
-      i=$((i + size))
-    done
+    sum=0
+    n=0
+    batch=""
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      weight="$(test_weight "$file" "$name")"
+      if [ "$n" -gt 0 ] && { [ $((sum + weight)) -gt "$BUDGET_MB" ] || [ "$n" -ge "$CHUNK" ]; }; then
+        printf '%s\n' "$batch" | sed '/^$/d' | add_chunk "$file"
+        sum=0
+        n=0
+        batch=""
+      fi
+      batch="${batch}${name}"$'\n'
+      sum=$((sum + weight))
+      n=$((n + 1))
+    done <<<"$names"
+    if [ "$n" -gt 0 ]; then
+      printf '%s\n' "$batch" | sed '/^$/d' | add_chunk "$file"
+    fi
   done < <(tests/run-shard.sh 1 1 --list)
+}
+
+# The memory a group may use, and how many groups may run. A cgroup limit counts when it is
+# tighter than the host. Headroom stays unused. An explicit job count is left alone.
+resolve_budget() {
+  local host="" cg="" max="" cur="" avail="" usable="" cpus="" root quota period
+  root="${NIGHTSHIFT_COVERAGE_CGROUP:-/sys/fs/cgroup}"
+  if [ -n "${NIGHTSHIFT_COVERAGE_MEM_MB:-}" ]; then
+    host="$NIGHTSHIFT_COVERAGE_MEM_MB"
+  else
+    host="$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' "${NIGHTSHIFT_COVERAGE_MEMINFO:-/proc/meminfo}" 2>/dev/null || true)"
+  fi
+  if [ -f "$root/memory.max" ]; then
+    max="$(tr -d '[:space:]' <"$root/memory.max")"
+    cur="$(tr -d '[:space:]' <"$root/memory.current" 2>/dev/null || echo 0)"
+  elif [ -f "$root/memory.limit_in_bytes" ]; then
+    max="$(tr -d '[:space:]' <"$root/memory.limit_in_bytes")"
+    cur="$(tr -d '[:space:]' <"$root/memory.usage_in_bytes" 2>/dev/null || echo 0)"
+  fi
+  case "$max" in
+    '' | max | *[!0-9]*) max="" ;;
+  esac
+  case "$cur" in
+    '' | *[!0-9]*) cur=0 ;;
+  esac
+  # A limit above a terabyte is the unlimited sentinel.
+  if [ -n "$max" ] && [ "$max" -lt 1099511627776 ] && [ "$max" -gt "$cur" ]; then
+    cg=$(((max - cur) / 1024 / 1024))
+  fi
+  avail=""
+  if [ -n "$host" ]; then avail="$host"; fi
+  if [ -n "$cg" ] && { [ -z "$avail" ] || [ "$cg" -lt "$avail" ]; }; then avail="$cg"; fi
+  [ -n "$avail" ] || avail=1024
+  AVAIL_MB="$avail"
+  usable=$((avail - HEADROOM_MB))
+  [ "$usable" -ge 1 ] || usable=1
+  if [ "$usable" -lt "$GROUP_MB" ]; then
+    BUDGET_MB="$usable"
+  else
+    BUDGET_MB="$GROUP_MB"
+  fi
+  UNIT_MB=$((BUDGET_MB / CHUNK))
+  [ "$UNIT_MB" -ge 1 ] || UNIT_MB=1
+  if [ -z "$JOBS" ]; then
+    if [ -n "${NIGHTSHIFT_COVERAGE_CPUS:-}" ]; then
+      cpus="$NIGHTSHIFT_COVERAGE_CPUS"
+    elif [ -f "$root/cpu.max" ]; then
+      read -r quota period <"$root/cpu.max" || true
+      case "$quota" in
+        '' | max | *[!0-9]*) quota="" ;;
+      esac
+      case "$period" in
+        '' | *[!0-9]* | 0) period="" ;;
+      esac
+      if [ -n "$quota" ] && [ -n "$period" ]; then
+        cpus=$(((quota + period - 1) / period))
+      fi
+    fi
+    [ -n "${cpus:-}" ] || cpus="$(getconf _NPROCESSORS_ONLN)"
+    if [ "$usable" -ge "$GROUP_MB" ]; then
+      JOBS=$((usable / GROUP_MB))
+    else
+      JOBS=1
+    fi
+    [ "$JOBS" -le "$cpus" ] || JOBS="$cpus"
+    [ "$JOBS" -ge 1 ] || JOBS=1
+  fi
 }
 
 # accept_tap <log> <count> — the plan and the terminal results against the group's selection.
@@ -125,14 +240,24 @@ report_ok() {
 # and a platform skip still count: they are measured, and named apart in the measured line.
 run_chunk() {
   local line="$1" file count filter out="coverage/part-$1" log="coverage/part-$1.log" status=0 why=""
-  local session left free tap_rc=0 summary failed_n=0 skipped_n=0
+  local session left free tap_rc=0 summary failed_n=0 skipped_n=0 started elapsed rss=""
   IFS=$'\t' read -r file count filter < <(sed -n "${line}p" "$CHUNKS")
-  setsid kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
+  started="$(date +%s)"
+  if command time --version >/dev/null 2>&1; then
+    setsid command time -f 'COVERAGE_RSS_KB %M' -o "$out.time" kcov --include-path="$PWD/$INCLUDE" "$out" \
+      "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
+  else
+    setsid kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
+  fi
   session=$!
   wait "$session" || status=$?
+  elapsed=$(($(date +%s) - started))
+  if [ -f "$out.time" ]; then
+    rss="$(awk '/^COVERAGE_RSS_KB / { printf "%d", $2 / 1024 }' "$out.time")"
+  fi
   left="$(pgrep -s "$session" | grep -c . || :)"
   [ "$left" -eq 0 ] || pkill -KILL -s "$session" || :
-  free="$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' /proc/meminfo 2>/dev/null)" || free=unknown
+  free="$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' "${NIGHTSHIFT_COVERAGE_MEMINFO:-/proc/meminfo}" 2>/dev/null)" || free=unknown
   if [ "$status" -ge 128 ]; then
     why="was killed by signal $((status - 128))"
   elif ! report_ok "$out"; then
@@ -150,15 +275,19 @@ run_chunk() {
     fi
   fi
   if [ -z "$why" ]; then
-    printf 'coverage: measured %s, group %s (%s tests, %s failed, %s skipped, %s leftover processes stopped, %s MB free)\n' \
-      "$file" "$line" "$count" "$failed_n" "$skipped_n" "$left" "$free"
+    printf 'coverage: measured %s, group %s (%s tests, %s failed, %s skipped, %s leftover processes stopped, %s MB free, %ss' \
+      "$file" "$line" "$count" "$failed_n" "$skipped_n" "$left" "$free" "$elapsed"
+    if [ -n "$rss" ]; then
+      printf ', peak %s MB' "$rss"
+    fi
+    printf ')\n'
     return 0
   fi
   if [ "$status" -ge 128 ] && [ "$count" -gt 1 ]; then
     rm -rf "$out"
     printf '%s\n' "$line" >>"$RETRY"
-    printf 'coverage: %s, group %s %s (%s tests, %s MB free); its tests are measured again one at a time\n' \
-      "$file" "$line" "$why" "$count" "$free"
+    printf 'coverage: %s, group %s %s (%s tests, %ss, %s MB free); its tests are measured again one at a time\n' \
+      "$file" "$line" "$why" "$count" "$elapsed" "$free"
     return 0
   fi
   rm -rf "$out"
@@ -193,32 +322,36 @@ for setting in "NIGHTSHIFT_COVERAGE_JOBS=$JOBS" "NIGHTSHIFT_COVERAGE_CHUNK=$CHUN
   esac
 done
 
+if [ "${1:-}" = --plan ]; then
+  resolve_budget
+  rm -rf coverage
+  mkdir -p coverage
+  write_chunks
+  printf 'coverage: %s test groups, budget %s MB, %s at a time (%s MB available, %s MB headroom)\n' \
+    "$(grep -c . "$CHUNKS" || :)" "$BUDGET_MB" "$JOBS" "$AVAIL_MB" "$HEADROOM_MB"
+  exit 0
+fi
+
 if [ "$(uname -s)" != Linux ] || ! command -v kcov >/dev/null 2>&1; then
   exec docker run --rm -v "$PWD:/src" -w /src -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" -e NIGHTSHIFT_COVERAGE_CHUNK="$CHUNK" \
     debian:stable-slim bash -c '
     set -e
     apt-get update -qq >/dev/null
-    apt-get install -y -qq kcov bats git jq shellcheck python3 procps >/dev/null
+    apt-get install -y -qq kcov bats git jq shellcheck python3 procps time >/dev/null
     git config --global user.email dev@example.com
     git config --global user.name dev
     git config --global --add safe.directory "*"
     exec bash tests/coverage.sh'
 fi
 
-if [ -z "$JOBS" ]; then
-  cpus="$(getconf _NPROCESSORS_ONLN)"
-  free_mb="$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' /proc/meminfo)"
-  JOBS=$((free_mb / GROUP_MB))
-  [ "$JOBS" -le "$cpus" ] || JOBS="$cpus"
-  [ "$JOBS" -ge 1 ] || JOBS=1
-fi
+resolve_budget
 
 rm -rf coverage
 mkdir -p coverage
 write_chunks
 groups="$(grep -c . "$CHUNKS" || :)"
-printf 'coverage: %s test groups of up to %s tests, %s at a time (%s MB available)\n' \
-  "$groups" "$CHUNK" "$JOBS" "$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' /proc/meminfo)"
+printf 'coverage: %s test groups, budget %s MB, %s at a time (%s MB available, %s MB headroom)\n' \
+  "$groups" "$BUDGET_MB" "$JOBS" "$AVAIL_MB" "$HEADROOM_MB"
 
 failed=0
 seq 1 "$groups" | xargs -n 1 -P "$JOBS" bash tests/coverage.sh --chunk || failed=1

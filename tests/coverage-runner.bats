@@ -104,6 +104,17 @@ combined() { printf '%s\n%s\n' "$output" "$stderr"; }
   [ ! -e "$ROOT/coverage/part-1/cobertura.xml" ]
 }
 
+@test "a killed group of several tests is measured again one at a time" {
+  COVERAGE_STATUS=137 COVERAGE_REPORT=ok
+  run_one 5 $'1..5\nok 1\nok 2\nok 3\nok 4\nok 5'
+  [ "$status" -eq 0 ]
+  combined | grep -q 'signal 9'
+  combined | grep -q 'one at a time'
+  [ ! -e "$ROOT/coverage/part-1/cobertura.xml" ]
+  [ -f "$ROOT/coverage/part-1.log" ]
+  [ "$(tr -d '[:space:]' <"$ROOT/coverage/retry.txt")" = 1 ]
+}
+
 @test "a group killed by a signal keeps the log and not the report" {
   COVERAGE_STATUS=130 COVERAGE_REPORT=ok
   run_one 1 $'1..1\nok 1'

@@ -1,0 +1,4 @@
+# file, test name or *, peak megabytes planned for that test.
+# A five-test group of tests/status.bats was killed with signal 9. The run did not
+# record a per-test peak, so every test in that file is given a full group budget.
+tests/status.bats	*	6000
