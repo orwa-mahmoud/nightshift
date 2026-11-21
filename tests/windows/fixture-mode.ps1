@@ -14,10 +14,11 @@ function Invoke-NSFixtureMode {
     }
     $user = $env:USERNAME
     switch ($Mode) {
-        '000' { & icacls.exe $Path /deny "${user}:R" | Out-Null }
-        '555' { & icacls.exe $Path /deny "${user}:(OI)(CI)W" | Out-Null }
-        '644' { & icacls.exe $Path /remove:d $user | Out-Null }
-        '755' { & icacls.exe $Path /remove:d $user | Out-Null }
+        # Drop inherited full control and leave the fixture readable, not writable.
+        '000' { & icacls.exe $Path /inheritance:r /grant:r "${user}:(N)" | Out-Null }
+        '555' { & icacls.exe $Path /inheritance:r /grant:r "${user}:(OI)(CI)(RX)" | Out-Null }
+        '644' { & icacls.exe $Path /inheritance:e /grant:r "${user}:(R,W)" | Out-Null }
+        '755' { & icacls.exe $Path /inheritance:e /grant:r "${user}:(OI)(CI)F" | Out-Null }
     }
     if ($LASTEXITCODE -ne 0) { throw "icacls $Mode failed for $Path" }
 }

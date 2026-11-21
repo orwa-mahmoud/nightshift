@@ -47,8 +47,31 @@ function Invoke-Estimate {
     param([string]$Project, [string]$Items = '')
     $arguments = @('-NoProfile', '-NonInteractive', '-File', $estimate, '-Project', $Project)
     if ($Items.Length -gt 0) { $arguments += @('-Items', $Items) }
-    $out = @(& $hostExe @arguments)
-    return [pscustomobject]@{ Code = $LASTEXITCODE; Text = (($out -join "`n") -replace "`r", '') }
+    $outFile = [IO.Path]::GetTempFileName()
+    $errFile = [IO.Path]::GetTempFileName()
+    try {
+        $process = Start-Process -FilePath $hostExe -ArgumentList $arguments -Wait -PassThru -NoNewWindow `
+            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+        $text = [IO.File]::ReadAllText($outFile, $utf8) -replace "`r", ''
+        $text = $text.TrimEnd("`n")
+        return [pscustomobject]@{ Code = $process.ExitCode; Text = $text; Err = ([IO.File]::ReadAllText($errFile, $utf8)).Trim() }
+    }
+    finally {
+        Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Format-EstimateMismatch {
+    param([string]$Got, [string]$Want, [int]$Code, [string]$Err)
+    $n = [Math]::Min($Got.Length, $Want.Length)
+    $at = -1
+    for ($i = 0; $i -lt $n; $i++) {
+        if ($Got[$i] -cne $Want[$i]) { $at = $i; break }
+    }
+    if ($at -lt 0 -and $Got.Length -ne $Want.Length) { $at = $n }
+    $g = if ($at -ge 0 -and $at -lt $Got.Length) { [int][char]$Got[$at] } else { -1 }
+    $w = if ($at -ge 0 -and $at -lt $Want.Length) { [int][char]$Want[$at] } else { -1 }
+    return "code=$Code len=$($Got.Length)/$($Want.Length) at=$at got=$g want=$w err=$Err"
 }
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ('ns-shift-estimate-' + [guid]::NewGuid().ToString('N'))
@@ -76,17 +99,18 @@ try {
     $want = @('estimate from 5 ticked items: 3 live, 2 archived',
         "time per item: median 30m 0s $dot range 10m 0s to 1h 0m $dot from 5 items",
         "tokens per item: median 1.5M $dot range 500.0k to 3.0M $dot from 4 items, 1 without a reading") -join "`n"
-    Expect-True ($run.Code -eq 0 -and $run.Text -ceq $want) "mixed: $($run.Text)"
+    Expect-True ($run.Code -eq 0 -and $run.Text -ceq $want) "mixed: $(Format-EstimateMismatch $run.Text $want $run.Code $run.Err) :: $($run.Text)"
     $run = Invoke-Estimate $mixed '4'
     $want = @("for 4 items: time 2h 0m to 4h 0m $dot tokens 6.0M to 12.0M", 'suggested deadline: 2h 30m from the start',
         'suggested budget: soft 30m / 1.5M tokens, hard 1h / 3M tokens') -join "`n"
-    Expect-True ($run.Text.EndsWith($want)) "suggestions: $($run.Text)"
+    Expect-True ($run.Text.EndsWith($want)) "suggestions: $(Format-EstimateMismatch $run.Text $want $run.Code $run.Err) :: $($run.Text)"
     $budget = ConvertFrom-NSBudget 'soft 30m / 1.5M tokens, hard 1h / 3M tokens'
     Expect-True ($null -ne $budget) 'the suggested budget parses as the punch list writes it'
 
     [IO.File]::WriteAllText((Join-Path $ns 'archive/2026-10-01/receipts/3-disabled.md'), "# Disabled.`n`n**Tokens:** off`n", $utf8)
     $run = Invoke-Estimate $mixed
-    Expect-True ($run.Text.Contains("tokens per item: median 1.5M $dot range 500.0k to 3.0M $dot from 4 items, 2 without a reading")) "disabled tokens are missing: $($run.Text)"
+    $disabledWant = "tokens per item: median 1.5M $dot range 500.0k to 3.0M $dot from 4 items, 2 without a reading"
+    Expect-True ($run.Text.Contains($disabledWant)) "disabled tokens are missing: $(Format-EstimateMismatch $run.Text $disabledWant $run.Code $run.Err) :: $($run.Text)"
 
     $few = Join-Path $root 'few'
     $fns = New-Workspace $few
