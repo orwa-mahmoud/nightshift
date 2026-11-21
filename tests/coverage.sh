@@ -70,15 +70,62 @@ write_chunks() {
   done < <(tests/run-shard.sh 1 1 --list)
 }
 
+# accept_tap <log> <count> — the plan and the terminal results against the group's selection.
+# A finished run prints `<failed> <skipped>` and returns 0. A completed failure and a platform
+# skip are both terminal results: they are counted apart, and they do not by themselves reject
+# the batch. A missing, duplicated or truncated sequence, a plan that is not the selection, or a
+# bailout prints the reason and returns 1.
+accept_tap() {
+  awk -v n="$2" '
+    BEGIN { fails = 0; skips = 0 }
+    function num(s) { return s + 0 }
+    /^1\.\.[0-9]+$/ {
+      plans++
+      plan = num(substr($0, 4))
+      next
+    }
+    /^Bail out!/ { bail = 1; next }
+    /^(ok|not ok) [0-9]+/ {
+      split($0, f, " ")
+      id = ($1 == "not") ? num(f[3]) : num(f[2])
+      if (id < 1 || (id in seen)) dup = 1
+      seen[id] = 1
+      results++
+      if (tolower($0) ~ /# *skip/) skips++
+      else if ($1 == "not") fails++
+      next
+    }
+    END {
+      if (bail) { print "bailed out"; exit 1 }
+      if (plans != 1 || plan != n) { print "plan does not match the selection"; exit 1 }
+      missing = 0
+      for (i = 1; i <= n; i++) if (!(i in seen)) missing = 1
+      if (dup || missing || results != n) { print "results are missing, duplicated or truncated"; exit 1 }
+      print fails, skips
+    }
+  ' "$1"
+}
+
+# report_ok <dir> — a cobertura.xml kcov wrote that parses as XML. Status 1 when it is missing
+# or not a report.
+report_ok() {
+  local cob
+  cob="$(find "$1" -name cobertura.xml -print -quit 2>/dev/null)" || true
+  [ -n "$cob" ] || return 1
+  python3 -c 'import sys, xml.etree.ElementTree as ET; ET.parse(sys.argv[1])' "$cob"
+}
+
 # run_chunk <line> — the group on that line of $CHUNKS under its own kcov, in a session of its own.
 # Whatever the group's tests leave running is stopped once kcov exits, and counted, so leftover
 # processes cannot pile up across groups. A group of several tests killed by a signal is recorded in
 # $RETRY and its partial output removed, to be measured again test by test. Returns 1, after saying
-# why on standard error, when a single test was killed, or the run wrote no coverage report or ran a
-# different number of tests than the group holds. A failing test still counts: it is measured.
+# why on standard error, when a single test was killed, the run wrote no usable coverage report, or
+# the TAP plan and the terminal results do not both match the selection. The log is kept. An
+# incomplete batch is removed so it cannot be merged into either published report. A failing test
+# and a platform skip still count: they are measured, and named apart in the measured line.
 run_chunk() {
-  local line="$1" file count filter out="coverage/part-$1" log="coverage/part-$1.log" status=0 ran why=""
-  local session left free
+  local line="$1" file count filter out="coverage/part-$1" log="coverage/part-$1.log" status=0 why=""
+  local session left free tap_rc=0 summary failed_n=0 skipped_n=0
   IFS=$'\t' read -r file count filter < <(sed -n "${line}p" "$CHUNKS")
   setsid kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
   session=$!
@@ -86,17 +133,25 @@ run_chunk() {
   left="$(pgrep -s "$session" | grep -c . || :)"
   [ "$left" -eq 0 ] || pkill -KILL -s "$session" || :
   free="$(awk '/^MemAvailable:/ { printf "%d", $2 / 1024 }' /proc/meminfo 2>/dev/null)" || free=unknown
-  ran="$(sed -n 's/^1\.\.\([0-9][0-9]*\)$/\1/p' "$log" | head -n 1)"
   if [ "$status" -ge 128 ]; then
     why="was killed by signal $((status - 128))"
-  elif ! find "$out" -name cobertura.xml -print -quit 2>/dev/null | grep -q .; then
-    why="wrote no coverage report (kcov exit $status)"
-  elif [ "$ran" != "$count" ]; then
-    why="ran ${ran:-no} tests where the group holds $count"
+  elif ! report_ok "$out"; then
+    if find "$out" -name cobertura.xml -print -quit 2>/dev/null | grep -q .; then
+      why="wrote an invalid coverage report (kcov exit $status)"
+    else
+      why="wrote no coverage report (kcov exit $status)"
+    fi
+  else
+    summary="$(accept_tap "$log" "$count")" || tap_rc=$?
+    if [ "$tap_rc" -ne 0 ]; then
+      why="$summary"
+    else
+      read -r failed_n skipped_n <<<"$summary"
+    fi
   fi
   if [ -z "$why" ]; then
-    printf 'coverage: measured %s, group %s (%s tests, %s leftover processes stopped, %s MB free)\n' \
-      "$file" "$line" "$count" "$left" "$free"
+    printf 'coverage: measured %s, group %s (%s tests, %s failed, %s skipped, %s leftover processes stopped, %s MB free)\n' \
+      "$file" "$line" "$count" "$failed_n" "$skipped_n" "$left" "$free"
     return 0
   fi
   if [ "$status" -ge 128 ] && [ "$count" -gt 1 ]; then
@@ -106,6 +161,7 @@ run_chunk() {
       "$file" "$line" "$why" "$count" "$free"
     return 0
   fi
+  rm -rf "$out"
   {
     printf 'coverage: %s, group %s %s, so its coverage is missing (%s leftover processes stopped, %s MB free)\n' \
       "$file" "$line" "$why" "$left" "$free"
