@@ -36,9 +36,10 @@ status_token() {
   unsigned="$header.$claims"
   signature=$(printf '%s' "$unsigned" | openssl dgst -sha256 \
     -sign <(printf '%s\n' "$RELEASE_GATE_PRIVATE_KEY") -binary | base64url)
+  gate_token=$unsigned.$signature
   jq -nc --arg name "${GITHUB_REPOSITORY#*/}" \
     '{repositories:[$name],permissions:{statuses:"write"}}' |
-    GH_TOKEN="$unsigned.$signature" gh api --method POST \
+    GH_TOKEN="${gate_token}" gh api --method POST \
       "app/installations/$RELEASE_GATE_INSTALLATION_ID/access_tokens" --input - --jq .token
 }
 
