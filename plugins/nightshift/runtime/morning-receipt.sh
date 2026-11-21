@@ -1074,6 +1074,87 @@ _lines_usage() {
   [ -n "$SEC" ]
 }
 
+# _item_signals <label> — what the item's own sessions and evidence check recorded.
+# SIG_PARKED, SIG_SNAGS, SIG_SESSIONS, SIG_PAUSED (seconds), SIG_WHY, SIG_EVIDENCE.
+_item_signals() {
+  local label="$1" receipt row n why
+  SIG_PARKED=0
+  SIG_SNAGS=0
+  SIG_SESSIONS=0
+  SIG_PAUSED=0
+  SIG_WHY=""
+  SIG_EVIDENCE=0
+  receipt="$(ns_receipt_path "$WORKSPACE" "$label" "$(ns_item_id_for "$PUNCH" "$label")")"
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    SIG_SESSIONS=$((SIG_SESSIONS + 1))
+    n="$(ns_session_extra "$row" parked)"
+    case "$n" in '' | *[!0-9]*) ;; *) SIG_PARKED=$((SIG_PARKED + n)) ;; esac
+    n="$(ns_session_extra "$row" snags)"
+    case "$n" in '' | *[!0-9]*) ;; *) SIG_SNAGS=$((SIG_SNAGS + n)) ;; esac
+    n="$(ns_session_extra "$row" paused)"
+    case "$n" in '' | *[!0-9]*) ;; *) SIG_PAUSED=$((SIG_PAUSED + n)) ;; esac
+    why="$(ns_session_extra "$row" why)"
+    [ -z "$why" ] || SIG_WHY="$(ns_receipt_decode "$why")"
+  done <<EOF
+$(ns_receipt_session_data "$receipt" 2>/dev/null || true)
+EOF
+  n="$(ns_evidence_problems "$WORKSPACE" "$PUNCH" "$label" 2>/dev/null | grep -c . || true)"
+  SIG_EVIDENCE="${n:-0}"
+}
+
+# _item_trouble <label> — the Items suffix, ` · …`, or empty when nothing troubled the item.
+_item_trouble() {
+  local label="$1" parts="" word dur
+  _item_signals "$label"
+  if [ "$SIG_PARKED" -gt 0 ]; then
+    word=decision
+    [ "$SIG_PARKED" -eq 1 ] || word=decisions
+    parts="$SIG_PARKED parked $word"
+  fi
+  if [ "$SIG_SNAGS" -gt 0 ]; then
+    word=snag
+    [ "$SIG_SNAGS" -eq 1 ] || word=snags
+    parts="${parts:+$parts $MIDDOT }$SIG_SNAGS $word"
+  fi
+  if [ "$SIG_SESSIONS" -gt 1 ]; then
+    parts="${parts:+$parts $MIDDOT }$SIG_SESSIONS sessions"
+  fi
+  if [ "$SIG_PAUSED" -gt 0 ]; then
+    dur="$(ns_usage_duration "$SIG_PAUSED")"
+    if [ -n "$SIG_WHY" ]; then
+      parts="${parts:+$parts $MIDDOT }paused $dur ($SIG_WHY)"
+    else
+      parts="${parts:+$parts $MIDDOT }paused $dur"
+    fi
+  fi
+  if [ -n "$parts" ]; then TROUBLE=" $MIDDOT $parts"; else TROUBLE=""; fi
+}
+
+# _review_signals — comma-separated non-zero review signals from the last _item_signals, or empty.
+_review_signals() {
+  local parts="" word
+  if [ "$SIG_EVIDENCE" -gt 0 ]; then
+    word=problem
+    [ "$SIG_EVIDENCE" -eq 1 ] || word=problems
+    parts="$SIG_EVIDENCE evidence $word"
+  fi
+  if [ "$SIG_PARKED" -gt 0 ]; then
+    word=decision
+    [ "$SIG_PARKED" -eq 1 ] || word=decisions
+    parts="${parts:+$parts, }$SIG_PARKED parked $word"
+  fi
+  if [ "$SIG_SNAGS" -gt 0 ]; then
+    word=snag
+    [ "$SIG_SNAGS" -eq 1 ] || word=snags
+    parts="${parts:+$parts, }$SIG_SNAGS $word"
+  fi
+  if [ "$SIG_SESSIONS" -gt 1 ]; then
+    parts="${parts:+$parts, }$SIG_SESSIONS sessions"
+  fi
+  REVIEW_SIGNALS="$parts"
+}
+
 # One line per item, in list order, linked to its item receipt where that file exists. The receipt
 # carries the item's own cost, sessions, checks and story; this page does not copy them.
 _lines_items() {
@@ -1083,7 +1164,8 @@ _lines_items() {
   while IFS=$'\t' read -r state label id || [ -n "$state" ]; do
     [ -n "$label" ] || continue
     _item_link "$label" "$id"
-    sec_add "- $ITEM_LINK $DASH $state"
+    _item_trouble "$label"
+    sec_add "- $ITEM_LINK $DASH $state$TROUBLE"
     missing="$(ns_evidence_problems "$WORKSPACE" "$PUNCH" "$label" 2>/dev/null || true)"
     if [ -n "$missing" ]; then
       flat="$(printf '%s\n' "$missing" | paste -sd ', ' -)"
@@ -1095,9 +1177,10 @@ EOF
   [ -n "$SEC" ]
 }
 
-# Where review should start: the three largest changes of the shift, by lines and then files, each
-# charged to the item whose span its commit landed in, and the one command that shows the range.
-# A commit outside every item's span stands on its own line.
+# Where review should start: up to three rows, ordered by evidence problems, parked decisions,
+# snags, sessions, then lines and files. An item with commits is a row, and so is an item with no
+# commits whose evidence, parked decisions or snags are above zero. A commit outside every item's
+# span stands on its own line. The range command is left out only when the shift has no commits.
 _lines_review() {
   local mode target first="" last="" range lines files add del commits kind k1 k2 display n=0
   local fcount lcount ccount
@@ -1114,44 +1197,96 @@ _lines_review() {
   # git runs inside the target rather than being handed its path: Git for Windows cannot resolve
   # the shell's /c/... form when path conversion is off.
   (cd -P "$target" 2>/dev/null && git log --no-merges --reverse --since "$SHIFT_SINCE" \
-    --format='@@%x09%h%x09%ct%x09%s' --numstat HEAD) >"$TMPD/review-log" 2>/dev/null || return 1
-  [ -s "$TMPD/review-log" ] || return 1
+    --format='@@%x09%h%x09%ct%x09%s' --numstat HEAD) >"$TMPD/review-log" 2>/dev/null || : >"$TMPD/review-log"
   : >"$TMPD/review-marks"
   n=0
   while [ "$n" -lt "$NMARK" ]; do
     printf '%s%s%s\n' "${M_EPOCH[$n]}" "$FS" "${M_LABEL[$n]}" >>"$TMPD/review-marks"
     n=$((n + 1))
   done
-  awk -v op=review -v fs="$FS" -f "$READ_AWK" "$TMPD/review-marks" "$TMPD/review-log" \
-    >"$TMPD/review-rows" || return 1
-  IFS="$FS" read -r first last <"$TMPD/review-rows" || return 1
-  [ -n "$first" ] || return 1
+  : >"$TMPD/review-rows"
+  if [ -s "$TMPD/review-log" ]; then
+    awk -v op=review -v fs="$FS" -f "$READ_AWK" "$TMPD/review-marks" "$TMPD/review-log" \
+      >"$TMPD/review-rows" || return 1
+    IFS="$FS" read -r first last <"$TMPD/review-rows" || first=""
+  fi
+  : >"$TMPD/review-signaled"
+  : >"$TMPD/review-seen"
+  if [ -s "$TMPD/review-rows" ]; then
+    while IFS="$FS" read -r lines files add del commits kind k1 k2; do
+      ev=0
+      park=0
+      snag=0
+      sess=0
+      if [ "$kind" = i ]; then
+        printf '%s\n' "$k1" >>"$TMPD/review-seen"
+        _item_signals "$k1"
+        ev=$SIG_EVIDENCE
+        park=$SIG_PARKED
+        snag=$SIG_SNAGS
+        sess=$SIG_SESSIONS
+      fi
+      printf '%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n' \
+        "$ev" "$FS" "$park" "$FS" "$snag" "$FS" "$sess" "$FS" \
+        "$lines" "$FS" "$files" "$FS" "$add" "$FS" "$del" "$FS" "$commits" "$FS" \
+        "$kind" "$FS" "$k1" "$FS" "$k2" >>"$TMPD/review-signaled"
+    done <<EOF
+$(tail -n +2 "$TMPD/review-rows")
+EOF
+  fi
+  while IFS=$'\t' read -r state label id || [ -n "$state" ]; do
+    [ -n "$label" ] || continue
+    grep -qxF -- "$label" "$TMPD/review-seen" 2>/dev/null && continue
+    _item_signals "$label"
+    [ "$SIG_EVIDENCE" -gt 0 ] || [ "$SIG_PARKED" -gt 0 ] || [ "$SIG_SNAGS" -gt 0 ] || continue
+    printf '%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n' \
+      "$SIG_EVIDENCE" "$FS" "$SIG_PARKED" "$FS" "$SIG_SNAGS" "$FS" "$SIG_SESSIONS" "$FS" \
+      0 "$FS" 0 "$FS" 0 "$FS" 0 "$FS" 0 "$FS" \
+      i "$FS" "$label" "$FS" >>"$TMPD/review-signaled"
+  done <<EOF
+$(ns_item_states "$PUNCH" 2>/dev/null || true)
+EOF
+  [ -s "$TMPD/review-signaled" ] || return 1
   n=0
-  while IFS="$FS" read -r lines files add del commits kind k1 k2; do
+  while IFS="$FS" read -r ev park snag sess lines files add del commits kind k1 k2; do
     [ "$n" -lt 3 ] || break
     n=$((n + 1))
     if [ "$kind" = i ]; then
       _item_link "$k1" "$(ns_item_id_for "$PUNCH" "$k1")"
       display="$ITEM_LINK"
+      _item_signals "$k1"
+      _review_signals
     else
       display="\`$k1\` $k2"
+      REVIEW_SIGNALS=""
     fi
-    _count "$files" file
-    fcount="$COUNTED"
-    _count "$lines" line
-    lcount="$COUNTED"
-    _count "$commits" commit
-    ccount="$COUNTED"
-    sec_add "- $display $DASH $fcount, $lcount (+$add/-$del), $ccount"
+    if [ "$kind" = i ] && [ "$commits" = 0 ]; then
+      ending="no commits"
+    else
+      _count "$files" file
+      fcount="$COUNTED"
+      _count "$lines" line
+      lcount="$COUNTED"
+      _count "$commits" commit
+      ccount="$COUNTED"
+      ending="$fcount, $lcount (+$add/-$del), $ccount"
+    fi
+    if [ -n "$REVIEW_SIGNALS" ]; then
+      sec_add "- $display $DASH $REVIEW_SIGNALS, $ending"
+    else
+      sec_add "- $display $DASH $ending"
+    fi
   done <<EOF
-$(tail -n +2 "$TMPD/review-rows" | LC_ALL=C sort -t "$FS" -k1,1nr -k2,2nr -k6)
+$(LC_ALL=C sort -t "$FS" -k1,1nr -k2,2nr -k3,3nr -k4,4nr -k5,5nr -k6,6nr -k10 "$TMPD/review-signaled")
 EOF
-  if (cd -P "$target" 2>/dev/null && git rev-parse --verify --quiet "$first^") >/dev/null 2>&1; then
-    range="$first^..$last"
-  else
-    range="$last"
+  if [ -n "$first" ]; then
+    if (cd -P "$target" 2>/dev/null && git rev-parse --verify --quiet "$first^") >/dev/null 2>&1; then
+      range="$first^..$last"
+    else
+      range="$last"
+    fi
+    sec_add "- Whole range: \`git log --stat $range\`"
   fi
-  sec_add "- Whole range: \`git log --stat $range\`"
   [ -n "$SEC" ]
 }
 

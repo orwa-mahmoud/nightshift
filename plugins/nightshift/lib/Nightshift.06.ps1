@@ -1580,6 +1580,81 @@ function Get-NSReceiptUsageLines {
     return , $lines.ToArray()
 }
 
+# Get-NSReceiptItemSignals <context> <label> - parked, snags, sessions, paused seconds, the last
+# pause reason, and the evidence-problem count for one item.
+function Get-NSReceiptItemSignals {
+    param($Context, [Parameter(Mandatory = $true)][string]$Label)
+    $parked = 0; $snags = 0; $sessions = 0; $paused = [long]0; $why = ''
+    $workspace = [string]$Context['workspace']
+    $punch = [string]$Context['punch']
+    $id = ''
+    foreach ($item in (Get-NSItemRows $punch 'all')) {
+        if ($item.Label -ceq $Label) { $id = [string]$item.Id; break }
+    }
+    $receipt = Get-NSReceiptPath $workspace $Label $id
+    foreach ($session in (Get-NSReceiptSessionData $receipt)) {
+        if ([string]::IsNullOrEmpty($session)) { continue }
+        $sessions++
+        $n = Get-NSSessionExtra $session 'parked'
+        if ($n -cmatch '^[0-9]+$') { $parked += [int]$n }
+        $n = Get-NSSessionExtra $session 'snags'
+        if ($n -cmatch '^[0-9]+$') { $snags += [int]$n }
+        $n = Get-NSSessionExtra $session 'paused'
+        if ($n -cmatch '^[0-9]+$') { $paused += [long]$n }
+        $w = Get-NSSessionExtra $session 'why'
+        if (-not [string]::IsNullOrEmpty($w)) { $why = ConvertFrom-NSReceiptEncoded $w }
+    }
+    $evidence = 0
+    try {
+        $evidence = @((Get-NSEvidenceProblems $workspace $punch $Label) | Where-Object { -not [string]::IsNullOrEmpty([string]$_) }).Count
+    }
+    catch { $evidence = 0 }
+    return [pscustomobject]@{
+        Parked = $parked; Snags = $snags; Sessions = $sessions; Paused = $paused; Why = $why; Evidence = $evidence
+    }
+}
+
+function Format-NSReceiptItemTrouble {
+    param($Signals)
+    $dot = ' ' + [char]0x00B7 + ' '
+    $parts = New-Object Collections.Generic.List[string]
+    if ($Signals.Parked -gt 0) {
+        $word = $(if ($Signals.Parked -eq 1) { 'decision' } else { 'decisions' })
+        $parts.Add([string]$Signals.Parked + ' parked ' + $word)
+    }
+    if ($Signals.Snags -gt 0) {
+        $word = $(if ($Signals.Snags -eq 1) { 'snag' } else { 'snags' })
+        $parts.Add([string]$Signals.Snags + ' ' + $word)
+    }
+    if ($Signals.Sessions -gt 1) { $parts.Add([string]$Signals.Sessions + ' sessions') }
+    if ($Signals.Paused -gt 0) {
+        $dur = Get-NSUsageDuration ([string]$Signals.Paused)
+        if ($Signals.Why.Length -gt 0) { $parts.Add('paused ' + $dur + ' (' + $Signals.Why + ')') }
+        else { $parts.Add('paused ' + $dur) }
+    }
+    if ($parts.Count -eq 0) { return '' }
+    return ($dot + ($parts -join $dot))
+}
+
+function Format-NSReceiptReviewSignals {
+    param($Signals)
+    $parts = New-Object Collections.Generic.List[string]
+    if ($Signals.Evidence -gt 0) {
+        $word = $(if ($Signals.Evidence -eq 1) { 'problem' } else { 'problems' })
+        $parts.Add([string]$Signals.Evidence + ' evidence ' + $word)
+    }
+    if ($Signals.Parked -gt 0) {
+        $word = $(if ($Signals.Parked -eq 1) { 'decision' } else { 'decisions' })
+        $parts.Add([string]$Signals.Parked + ' parked ' + $word)
+    }
+    if ($Signals.Snags -gt 0) {
+        $word = $(if ($Signals.Snags -eq 1) { 'snag' } else { 'snags' })
+        $parts.Add([string]$Signals.Snags + ' ' + $word)
+    }
+    if ($Signals.Sessions -gt 1) { $parts.Add([string]$Signals.Sessions + ' sessions') }
+    return ($parts -join ', ')
+}
+
 # One line per item, in list order, linked to its item receipt where that file exists. The receipt
 # carries the item's own cost, sessions, checks and story; this page does not copy them.
 function Get-NSReceiptItemsLines {
@@ -1588,7 +1663,8 @@ function Get-NSReceiptItemsLines {
     $workspace = [string]$Context['workspace']
     foreach ($row in (Get-NSItemRows ([string]$Context['punch']) 'all')) {
         $state = $row.State
-        $lines.Add(('- {0} {1} {2}' -f (Get-NSReceiptItemLink $workspace $row.Label $row.Id), (Get-NSEvidenceDash), $state))
+        $trouble = Format-NSReceiptItemTrouble (Get-NSReceiptItemSignals $Context $row.Label)
+        $lines.Add(('- {0} {1} {2}{3}' -f (Get-NSReceiptItemLink $workspace $row.Label $row.Id), (Get-NSEvidenceDash), $state, $trouble))
         try {
             $problems = @(Get-NSEvidenceProblems $workspace ([string]$Context['punch']) $row.Label | Where-Object { -not [string]::IsNullOrEmpty($_) })
             if ($problems.Count -gt 0) { $lines.Add(('  - evidence: ' + ($problems -join ', '))) }
@@ -1598,9 +1674,10 @@ function Get-NSReceiptItemsLines {
     return , $lines.ToArray()
 }
 
-# Where review should start: the three largest changes of the shift, by lines and then files, each
-# charged to the item whose span its commit landed in, and the one command that shows the range.
-# A commit outside every item's span stands on its own line.
+# Where review should start: up to three rows, ordered by evidence problems, parked decisions,
+# snags, sessions, then lines and files. An item with commits is a row, and so is an item with no
+# commits whose evidence, parked decisions or snags are above zero. A commit outside every item's
+# span stands on its own line. The range command is left out only when the shift has no commits.
 function Get-NSReceiptReviewLines {
     param($Context)
     $lines = New-Object Collections.Generic.List[string]
@@ -1613,7 +1690,7 @@ function Get-NSReceiptReviewLines {
     if ($since.Length -eq 0 -or $target.Length -eq 0) { return , @() }
     $log = Invoke-NSGitCommand $target @('log', '--no-merges', '--reverse', '--since', $since,
         '--format=@@%x09%h%x09%ct%x09%s', '--numstat', 'HEAD')
-    if ($log.ExitCode -ne 0) { return , @() }
+    if ($log.ExitCode -ne 0) { $log = [pscustomobject]@{ ExitCode = 0; Lines = @() } }
     $marks = @($Context['marks'])
     $separator = [string][char]0x1f
     $order = New-Object Collections.Generic.List[string]
@@ -1641,7 +1718,10 @@ function Get-NSReceiptReviewLines {
             if ($key.Length -eq 0) { $key = 'c' + $separator + $hash + $separator + $subject }
             if (-not $stats.ContainsKey($key)) {
                 $order.Add($key)
-                $stats[$key] = [pscustomobject]@{ Key = $key; Commits = 0L; Files = 0L; Added = 0L; Removed = 0L }
+                $stats[$key] = [pscustomobject]@{
+                    Key = $key; Commits = 0L; Files = 0L; Added = 0L; Removed = 0L
+                    Evidence = 0; Parked = 0; Snags = 0; Sessions = 0
+                }
             }
             $stats[$key].Commits++
             $current = $key
@@ -1653,37 +1733,69 @@ function Get-NSReceiptReviewLines {
         if ($numstat.Groups[1].Value -cmatch '^[0-9]+$') { $stats[$current].Added += [long]$numstat.Groups[1].Value }
         if ($numstat.Groups[2].Value -cmatch '^[0-9]+$') { $stats[$current].Removed += [long]$numstat.Groups[2].Value }
     }
-    if ($first.Length -eq 0) { return , @() }
+    $workspace = [string]$Context['workspace']
+    $punch = [string]$Context['punch']
+    foreach ($key in @($stats.Keys)) {
+        $parts = $key.Split($separator)
+        if ($parts[0] -cne 'i') { continue }
+        $sig = Get-NSReceiptItemSignals $Context $parts[1]
+        $stats[$key].Evidence = $sig.Evidence
+        $stats[$key].Parked = $sig.Parked
+        $stats[$key].Snags = $sig.Snags
+        $stats[$key].Sessions = $sig.Sessions
+    }
+    foreach ($item in (Get-NSItemRows $punch 'all')) {
+        $key = 'i' + $separator + $item.Label
+        if ($stats.ContainsKey($key)) { continue }
+        $sig = Get-NSReceiptItemSignals $Context $item.Label
+        if ($sig.Evidence -le 0 -and $sig.Parked -le 0 -and $sig.Snags -le 0) { continue }
+        $stats[$key] = [pscustomobject]@{
+            Key = $key; Commits = 0L; Files = 0L; Added = 0L; Removed = 0L
+            Evidence = $sig.Evidence; Parked = $sig.Parked; Snags = $sig.Snags; Sessions = $sig.Sessions
+        }
+    }
+    if ($stats.Count -eq 0) { return , @() }
     $ranked = New-Object 'Collections.Generic.List[object]'
-    foreach ($key in $order) { $ranked.Add($stats[$key]) }
+    foreach ($key in $stats.Keys) { $ranked.Add($stats[$key]) }
     $ranked.Sort([Comparison[object]] {
             param($left, $right)
+            if ($left.Evidence -ne $right.Evidence) { return $right.Evidence.CompareTo($left.Evidence) }
+            if ($left.Parked -ne $right.Parked) { return $right.Parked.CompareTo($left.Parked) }
+            if ($left.Snags -ne $right.Snags) { return $right.Snags.CompareTo($left.Snags) }
+            if ($left.Sessions -ne $right.Sessions) { return $right.Sessions.CompareTo($left.Sessions) }
             $leftLines = $left.Added + $left.Removed
             $rightLines = $right.Added + $right.Removed
             if ($leftLines -ne $rightLines) { return $rightLines.CompareTo($leftLines) }
             if ($left.Files -ne $right.Files) { return $right.Files.CompareTo($left.Files) }
             return [string]::CompareOrdinal($left.Key, $right.Key)
         })
-    $workspace = [string]$Context['workspace']
-    $punch = [string]$Context['punch']
     $shown = 0
     foreach ($row in $ranked) {
         if ($shown -ge 3) { break }
         $shown++
         $parts = $row.Key.Split($separator)
+        $signals = ''
         if ($parts[0] -ceq 'i') {
             $display = Get-NSReceiptItemLink $workspace $parts[1] (Get-NSItemIdFor $punch $parts[1])
+            $signals = Format-NSReceiptReviewSignals (Get-NSReceiptItemSignals $Context $parts[1])
         }
         else {
             $display = '`' + $parts[1] + '` ' + $parts[2]
         }
-        $lines.Add(('- {0} {1} {2}, {3} (+{4}/-{5}), {6}' -f $display, (Get-NSEvidenceDash),
-                (Get-NSReceiptCount $row.Files 'file'), (Get-NSReceiptCount ($row.Added + $row.Removed) 'line'),
-                $row.Added, $row.Removed, (Get-NSReceiptCount $row.Commits 'commit')))
+        if ($parts[0] -ceq 'i' -and $row.Commits -eq 0) { $ending = 'no commits' }
+        else {
+            $ending = ('{0}, {1} (+{2}/-{3}), {4}' -f (Get-NSReceiptCount $row.Files 'file'),
+                (Get-NSReceiptCount ($row.Added + $row.Removed) 'line'), $row.Added, $row.Removed,
+                (Get-NSReceiptCount $row.Commits 'commit'))
+        }
+        $body = $(if ($signals.Length -gt 0) { $signals + ', ' + $ending } else { $ending })
+        $lines.Add(('- {0} {1} {2}' -f $display, (Get-NSEvidenceDash), $body))
     }
-    $parent = Invoke-NSGitCommand $target @('rev-parse', '--verify', '--quiet', ($first + '^'))
-    $range = $(if ($parent.ExitCode -eq 0) { $first + '^..' + $last } else { $last })
-    $lines.Add('- Whole range: `git log --stat ' + $range + '`')
+    if ($first.Length -gt 0) {
+        $parent = Invoke-NSGitCommand $target @('rev-parse', '--verify', '--quiet', ($first + '^'))
+        $range = $(if ($parent.ExitCode -eq 0) { $first + '^..' + $last } else { $last })
+        $lines.Add('- Whole range: `git log --stat ' + $range + '`')
+    }
     return , $lines.ToArray()
 }
 

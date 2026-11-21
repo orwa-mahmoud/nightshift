@@ -596,3 +596,121 @@ work_through() {
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | grep '^## ' | tr '\n' '|')" = '## Next step|## Time and tokens|' ]
 }
+
+# commit_lines <project> <epoch> <file> <lines> <subject>
+commit_lines() {
+  local i
+  for i in $(seq 1 "$4"); do printf 'line %s\n' "$i"; done >>"$1/$3"
+  git -C "$1" add "$3"
+  GIT_COMMITTER_DATE="@$2 +0000" GIT_AUTHOR_DATE="@$2 +0000" \
+    git -C "$1" -c user.email=dev@example.com -c user.name=tester -c commit.gpgsign=false commit -qm "$5"
+}
+
+session_receipt() { # <project> <file> <body>
+  mkdir -p "$1/.nightshift/receipts"
+  printf '%s\n' "$3" >"$1/.nightshift/receipts/$2"
+}
+
+@test "review first ranks a troubled item above a larger quiet change" {
+  local p now u
+  now=1700000000
+  p="$(new_project morning-trouble)"
+  GIT_COMMITTER_DATE="@$((now - 10000)) +0000" GIT_AUTHOR_DATE="@$((now - 10000)) +0000" \
+    git -C "$p" commit -q --allow-empty --amend -m init
+  cat >"$p/.nightshift/punch-list.md" <<'EOF'
+## Items
+
+- [x] **1. Quiet.** <!-- id: aa11 -->
+- [x] **2. Large.** <!-- id: bb22 -->
+EOF
+  u="$p/.nightshift/usage"
+  mkdir -p "$u"
+  printf '%s\tarm\n%s\t1. Quiet.\n%s\t2. Large.\n' "$now" "$((now + 200))" "$((now + 400))" >"$u/marks.tsv"
+  commit_lines "$p" "$((now + 100))" quiet.txt 2 'feat: quiet'
+  commit_lines "$p" "$((now + 300))" large.txt 8 'feat: large'
+  session_receipt "$p" 01-quiet-aa11.md '# 1. Quiet.
+
+<!-- usage -->
+<!-- session-data
+- 1 100 200 100 - - ticked parked=1 paused=0
+-->
+<!-- /usage -->'
+  session_receipt "$p" 02-large-bb22.md '# 2. Large.
+
+<!-- usage -->
+<!-- session-data
+- 1 300 400 100 - - ticked paused=0
+-->
+<!-- /usage -->'
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'— ticked · 1 parked decision'* ]] || false
+  [[ "$output" == *$'— ticked\n'* ]] || false
+  review="$(printf '%s\n' "$output" | awk '/^## Review first$/ { on=1; next } /^## / { if (on) exit } on')"
+  quiet="$(printf '%s\n' "$review" | grep -n 'Quiet' | head -1 | cut -d: -f1)"
+  large="$(printf '%s\n' "$review" | grep -n 'Large' | head -1 | cut -d: -f1)"
+  [ -n "$quiet" ] && [ -n "$large" ] && [ "$quiet" -lt "$large" ]
+}
+
+@test "an item with three sessions names the pause on the morning page" {
+  local p
+  p="$(new_project morning-pause)"
+  printf '## Items\n\n- [x] **1. Waited.** <!-- id: cc33 -->\n' >"$p/.nightshift/punch-list.md"
+  session_receipt "$p" 01-waited-cc33.md '# 1. Waited.
+
+<!-- usage -->
+<!-- session-data
+- 1 100 200 50 - - ticked paused=0
+- 1 200 400 50 - - ticked paused=600 why=usage%20limit
+- 1 400 500 50 - - ticked paused=0
+-->
+<!-- /usage -->'
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'· 3 sessions · paused 10m 0s (usage limit)'* ]] || false
+}
+
+@test "missing evidence ranks above a parked item and a larger commit" {
+  local p now u
+  now=1700001000
+  p="$(new_project morning-evidence-rank)"
+  GIT_COMMITTER_DATE="@$((now - 10000)) +0000" GIT_AUTHOR_DATE="@$((now - 10000)) +0000" \
+    git -C "$p" commit -q --allow-empty --amend -m init
+  cat >"$p/.nightshift/punch-list.md" <<'EOF'
+## Items
+
+- [x] **1. Missing.** <!-- id: dd44 -->
+  - Evidence: the screen `shot.png` check: report
+- [x] **2. Parked.** <!-- id: ee55 -->
+- [x] **3. Biggest.** <!-- id: ff66 -->
+EOF
+  u="$p/.nightshift/usage"
+  mkdir -p "$u"
+  printf '%s\tarm\n%s\t1. Missing.\n%s\t2. Parked.\n%s\t3. Biggest.\n' \
+    "$now" "$((now + 100))" "$((now + 300))" "$((now + 500))" >"$u/marks.tsv"
+  commit_lines "$p" "$((now + 200))" small.txt 2 'feat: small'
+  commit_lines "$p" "$((now + 400))" big.txt 20 'feat: big'
+  session_receipt "$p" 02-parked-ee55.md '# 2. Parked.
+
+<!-- usage -->
+<!-- session-data
+- 1 200 300 50 - - ticked parked=2 paused=0
+-->
+<!-- /usage -->'
+  session_receipt "$p" 03-biggest-ff66.md '# 3. Biggest.
+
+<!-- usage -->
+<!-- session-data
+- 1 400 500 50 - - ticked paused=0
+-->
+<!-- /usage -->'
+  run bash "$RECEIPT" --project "$p" --view owner
+  [ "$status" -eq 0 ]
+  review="$(printf '%s\n' "$output" | awk '/^## Review first$/ { on=1; next } /^## / { if (on) exit } on')"
+  missing="$(printf '%s\n' "$review" | grep -n 'no commits' | head -1 | cut -d: -f1)"
+  parked="$(printf '%s\n' "$review" | grep -n '2 parked decisions' | head -1 | cut -d: -f1)"
+  biggest="$(printf '%s\n' "$review" | grep -n '20 lines' | head -1 | cut -d: -f1)"
+  [ -n "$missing" ] && [ -n "$parked" ] && [ -n "$biggest" ]
+  [ "$missing" -lt "$parked" ] && [ "$parked" -lt "$biggest" ]
+  [[ "$output" == *'1 evidence problem, no commits'* ]] || false
+}
