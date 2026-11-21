@@ -25,6 +25,7 @@ $claudeGateDispatch = Join-Path $plugin 'hooks/dispatch/claude-clock-out.ps1'
 $claudeSessionEndDispatch = Join-Path $plugin 'hooks/dispatch/claude-session-end.ps1'
 $codexHooksManifest = Join-Path $plugin 'hooks/codex/hooks.json'
 $hostExecutable = (Get-Process -Id $PID).Path
+. (Join-Path $PSScriptRoot 'logic-runner.ps1')
 $script:Assertions = 0
 $script:Skipped = 0
 $script:Failures = New-Object 'System.Collections.Generic.List[string]'
@@ -496,228 +497,75 @@ try {
     $expectedPunch = 'Read ' + ($workspace.TrimEnd('\', '/') + '/.nightshift/punch-list.md')
     Assert-Equal $expectedPunch $expanded 'injection qualifies a bare .nightshift path'
     Assert-True $importIssues.EndsWith('import-issues.ps1') 'import-issues helper is bundled'
-    $importLogic = Join-Path $PSScriptRoot 'import-issues-logic.ps1'
-    $importLogicRun = Invoke-TestScript $importLogic
-    Assert-Equal 0 $importLogicRun.ExitCode `
-        "import-issues list/promote: $($importLogicRun.Stdout) $($importLogicRun.Stderr)"
-    $doctorLogic = Join-Path $PSScriptRoot 'doctor-logic.ps1'
-    $doctorLogicRun = Invoke-TestScript $doctorLogic
-    Assert-Equal 0 $doctorLogicRun.ExitCode `
-        "doctor leftover/staged counts: $($doctorLogicRun.Stdout) $($doctorLogicRun.Stderr)"
-    $scheduleEmptyLogic = Join-Path $PSScriptRoot 'schedule-empty-logic.ps1'
-    $scheduleEmptyLogicRun = Invoke-TestScript $scheduleEmptyLogic
-    Assert-Equal 0 $scheduleEmptyLogicRun.ExitCode `
-        "schedule empty-list notes: $($scheduleEmptyLogicRun.Stdout) $($scheduleEmptyLogicRun.Stderr)"
     $scaffold = Join-Path $plugin 'runtime/windows/scaffold.ps1'
     Assert-True (Test-Path -LiteralPath $scaffold) 'the Windows scaffold ships'
-    $statusFactsLogic = Join-Path $PSScriptRoot 'status-facts-logic.ps1'
-    $statusFactsLogicRun = Invoke-TestScript $statusFactsLogic
-    Assert-Equal 0 $statusFactsLogicRun.ExitCode `
-        "status fact readers: $($statusFactsLogicRun.Stdout) $($statusFactsLogicRun.Stderr)"
-    $punchListLogic = Join-Path $PSScriptRoot 'punch-list-logic.ps1'
-    $punchListLogicRun = Invoke-TestScript $punchListLogic
-    Assert-Equal 0 $punchListLogicRun.ExitCode `
-        "punch-list reader and contract digests: $($punchListLogicRun.Stdout) $($punchListLogicRun.Stderr)"
-    $parityLogic = Join-Path $PSScriptRoot 'parity-logic.ps1'
-    $parityLogicRun = Invoke-TestScript $parityLogic
-    Assert-Equal 0 $parityLogicRun.ExitCode `
-        "shared Bash and PowerShell fixtures: $($parityLogicRun.Stdout) $($parityLogicRun.Stderr)"
-    $itemIdsLogic = Join-Path $PSScriptRoot 'item-ids-logic.ps1'
-    $itemIdsLogicRun = Invoke-TestScript $itemIdsLogic
-    Assert-Equal 0 $itemIdsLogicRun.ExitCode `
-        "permanent item ids: $($itemIdsLogicRun.Stdout) $($itemIdsLogicRun.Stderr)"
-    $itemSessionsLogic = Join-Path $PSScriptRoot 'item-sessions-logic.ps1'
-    $itemSessionsLogicRun = Invoke-TestScript $itemSessionsLogic
-    Assert-Equal 0 $itemSessionsLogicRun.ExitCode `
-        "item sessions: $($itemSessionsLogicRun.Stdout) $($itemSessionsLogicRun.Stderr)"
-    $itemTotalsLogic = Join-Path $PSScriptRoot 'item-totals-logic.ps1'
-    $itemTotalsLogicRun = Invoke-TestScript $itemTotalsLogic
-    Assert-Equal 0 $itemTotalsLogicRun.ExitCode `
-        "item totals: $($itemTotalsLogicRun.Stdout) $($itemTotalsLogicRun.Stderr)"
-    $itemBudgetsLogic = Join-Path $PSScriptRoot 'item-budgets-logic.ps1'
-    $itemBudgetsLogicRun = Invoke-TestScript $itemBudgetsLogic
-    Assert-Equal 0 $itemBudgetsLogicRun.ExitCode `
-        "item budgets: $($itemBudgetsLogicRun.Stdout) $($itemBudgetsLogicRun.Stderr)"
-    $planRoomLogic = Join-Path $PSScriptRoot 'plan-room-logic.ps1'
-    $planRoomLogicRun = Invoke-TestScript $planRoomLogic
-    Assert-Equal 0 $planRoomLogicRun.ExitCode `
-        "plan room: $($planRoomLogicRun.Stdout) $($planRoomLogicRun.Stderr)"
-    $shiftWorktreeLogic = Join-Path $PSScriptRoot 'shift-worktree-logic.ps1'
-    $shiftWorktreeLogicRun = Invoke-TestScript $shiftWorktreeLogic
-    Assert-Equal 0 $shiftWorktreeLogicRun.ExitCode `
-        "shift worktree: $($shiftWorktreeLogicRun.Stdout) $($shiftWorktreeLogicRun.Stderr)"
-    $shiftEstimateLogic = Join-Path $PSScriptRoot 'shift-estimate-logic.ps1'
-    $shiftEstimateLogicRun = Invoke-TestScript $shiftEstimateLogic
-    Assert-Equal 0 $shiftEstimateLogicRun.ExitCode `
-        "shift estimate: $($shiftEstimateLogicRun.Stdout) $($shiftEstimateLogicRun.Stderr)"
-    $fileMapLogic = Join-Path $PSScriptRoot 'receipt-file-map-logic.ps1'
-    $fileMapLogicRun = Invoke-TestScript $fileMapLogic
-    Assert-Equal 0 $fileMapLogicRun.ExitCode `
-        "file maps: $($fileMapLogicRun.Stdout) $($fileMapLogicRun.Stderr)"
-    $architectureLogic = Join-Path $PSScriptRoot 'receipt-architecture-logic.ps1'
-    $architectureLogicRun = Invoke-TestScript $architectureLogic
-    Assert-Equal 0 $architectureLogicRun.ExitCode `
-        "architecture diagram: $($architectureLogicRun.Stdout) $($architectureLogicRun.Stderr)"
-    $checkItemsLogic = Join-Path $PSScriptRoot 'check-items-logic.ps1'
-    $checkItemsLogicRun = Invoke-TestScript $checkItemsLogic
-    Assert-Equal 0 $checkItemsLogicRun.ExitCode `
-        "check items: $($checkItemsLogicRun.Stdout) $($checkItemsLogicRun.Stderr)"
-    $localTimeLogic = Join-Path $PSScriptRoot 'local-time-logic.ps1'
-    $localTimeLogicRun = Invoke-TestScript $localTimeLogic
-    Assert-Equal 0 $localTimeLogicRun.ExitCode `
-        "local times: $($localTimeLogicRun.Stdout) $($localTimeLogicRun.Stderr)"
-    $boxCountsLogic = Join-Path $PSScriptRoot 'box-counts-logic.ps1'
-    $boxCountsLogicRun = Invoke-TestScript $boxCountsLogic
-    Assert-Equal 0 $boxCountsLogicRun.ExitCode `
-        "box counts heading scope: $($boxCountsLogicRun.Stdout) $($boxCountsLogicRun.Stderr)"
-    $workModeLogic = Join-Path $PSScriptRoot 'work-mode-logic.ps1'
-    $workModeLogicRun = Invoke-TestScript $workModeLogic
-    Assert-Equal 0 $workModeLogicRun.ExitCode `
-        "work-mode discovery skips: $($workModeLogicRun.Stdout) $($workModeLogicRun.Stderr)"
-    $codexIdentityLogic = Join-Path $PSScriptRoot 'codex-identity-logic.ps1'
-    $codexIdentityLogicRun = Invoke-TestScript $codexIdentityLogic
-    Assert-Equal 0 $codexIdentityLogicRun.ExitCode `
-        "Codex identity kinds: $($codexIdentityLogicRun.Stdout) $($codexIdentityLogicRun.Stderr)"
-    $clockOutLogic = Join-Path $PSScriptRoot 'clock-out-logic.ps1'
-    $clockOutLogicRun = Invoke-TestScript $clockOutLogic
-    Assert-Equal 0 $clockOutLogicRun.ExitCode `
-        "direct cursor clock-out: $($clockOutLogicRun.Stdout) $($clockOutLogicRun.Stderr)"
-    $idleLogic = Join-Path $PSScriptRoot 'idle-logic.ps1'
-    $idleLogicRun = Invoke-TestScript $idleLogic
-    Assert-Equal 0 $idleLogicRun.ExitCode `
-        "alive-but-idle rule: $($idleLogicRun.Stdout) $($idleLogicRun.Stderr)"
-    $reasonLabelLogic = Join-Path $PSScriptRoot 'reason-label-logic.ps1'
-    $reasonLabelLogicRun = Invoke-TestScript $reasonLabelLogic
-    Assert-Equal 0 $reasonLabelLogicRun.ExitCode `
-        "watchman reason labels: $($reasonLabelLogicRun.Stdout) $($reasonLabelLogicRun.Stderr)"
-    $recoveryScopeLogic = Join-Path $PSScriptRoot 'recovery-scope-logic.ps1'
-    $recoveryScopeLogicRun = Invoke-TestScript $recoveryScopeLogic
-    Assert-Equal 0 $recoveryScopeLogicRun.ExitCode `
-        "recovery launch scope: $($recoveryScopeLogicRun.Stdout) $($recoveryScopeLogicRun.Stderr)"
-    $cursorLaunchLogic = Join-Path $PSScriptRoot 'cursor-launch-logic.ps1'
-    $cursorLaunchLogicRun = Invoke-TestScript $cursorLaunchLogic
-    Assert-Equal 0 $cursorLaunchLogicRun.ExitCode `
-        "cursor launch record: $($cursorLaunchLogicRun.Stdout) $($cursorLaunchLogicRun.Stderr)"
-    $watchmanInstallLogic = Join-Path $PSScriptRoot 'watchman-install-logic.ps1'
-    $watchmanInstallLogicRun = Invoke-TestScript $watchmanInstallLogic
-    Assert-Equal 0 $watchmanInstallLogicRun.ExitCode `
-        "watchman install handoff: $($watchmanInstallLogicRun.Stdout) $($watchmanInstallLogicRun.Stderr)"
-    $migrateStateLogic = Join-Path $PSScriptRoot 'migrate-state-logic.ps1'
-    $migrateStateLogicRun = Invoke-TestScript $migrateStateLogic
-    Assert-Equal 0 $migrateStateLogicRun.ExitCode `
-        "migrate-state armed refuse: $($migrateStateLogicRun.Stdout) $($migrateStateLogicRun.Stderr)"
-    $applyProfileLogic = Join-Path $PSScriptRoot 'apply-profile-logic.ps1'
-    $applyProfileLogicRun = Invoke-TestScript $applyProfileLogic
-    Assert-Equal 0 $applyProfileLogicRun.ExitCode `
-        "apply-profile armed refuse: $($applyProfileLogicRun.Stdout) $($applyProfileLogicRun.Stderr)"
-    $exportSupportLogic = Join-Path $PSScriptRoot 'export-support-logic.ps1'
-    $exportSupportLogicRun = Invoke-TestScript $exportSupportLogic
-    Assert-Equal 0 $exportSupportLogicRun.ExitCode `
-        "export-support allowlist: $($exportSupportLogicRun.Stdout) $($exportSupportLogicRun.Stderr)"
-    $receiptsLogic = Join-Path $PSScriptRoot 'receipts-logic.ps1'
-    $receiptsLogicRun = Invoke-TestScript $receiptsLogic
-    Assert-Equal 0 $receiptsLogicRun.ExitCode `
-        "receipts layout: $($receiptsLogicRun.Stdout) $($receiptsLogicRun.Stderr)"
-    $archiveReceiptsLogic = Join-Path $PSScriptRoot 'archive-receipts-logic.ps1'
-    $archiveReceiptsLogicRun = Invoke-TestScript $archiveReceiptsLogic
-    Assert-Equal 0 $archiveReceiptsLogicRun.ExitCode `
-        "archive-receipts copy: $($archiveReceiptsLogicRun.Stdout) $($archiveReceiptsLogicRun.Stderr)"
-    $checkReportLogic = Join-Path $PSScriptRoot 'check-report-logic.ps1'
-    $checkReportLogicRun = Invoke-TestScript $checkReportLogic
-    Assert-Equal 0 $checkReportLogicRun.ExitCode `
-        "check-report cited research: $($checkReportLogicRun.Stdout) $($checkReportLogicRun.Stderr)"
-    $retainHistoryLogic = Join-Path $PSScriptRoot 'retain-history-logic.ps1'
-    $retainHistoryLogicRun = Invoke-TestScript $retainHistoryLogic
-    Assert-Equal 0 $retainHistoryLogicRun.ExitCode `
-        "retain-history apply: $($retainHistoryLogicRun.Stdout) $($retainHistoryLogicRun.Stderr)"
-    $hardhatLogic = Join-Path $PSScriptRoot 'hardhat-logic.ps1'
-    $hardhatLogicRun = Invoke-TestScript $hardhatLogic
-    Assert-Equal 0 $hardhatLogicRun.ExitCode `
-        "hardhat expectedEmail: $($hardhatLogicRun.Stdout) $($hardhatLogicRun.Stderr)"
-    $controlLogic = Join-Path $PSScriptRoot 'control-logic.ps1'
-    $controlLogicRun = Invoke-TestScript $controlLogic
-    Assert-Equal 0 $controlLogicRun.ExitCode `
-        "control stop/reset/purge: $($controlLogicRun.Stdout) $($controlLogicRun.Stderr)"
-    $purgeWorkspaceLogic = Join-Path $PSScriptRoot 'purge-workspace-logic.ps1'
-    $purgeWorkspaceLogicRun = Invoke-TestScript $purgeWorkspaceLogic
-    Assert-Equal 0 $purgeWorkspaceLogicRun.ExitCode `
-        "purge-workspace entry point: $($purgeWorkspaceLogicRun.Stdout) $($purgeWorkspaceLogicRun.Stderr)"
-    $resetShiftLogic = Join-Path $PSScriptRoot 'reset-shift-logic.ps1'
-    $resetShiftLogicRun = Invoke-TestScript $resetShiftLogic
-    Assert-Equal 0 $resetShiftLogicRun.ExitCode `
-        "reset-shift entry point: $($resetShiftLogicRun.Stdout) $($resetShiftLogicRun.Stderr)"
-    $fenceCheckLogic = Join-Path $PSScriptRoot 'fence-check-logic.ps1'
-    $fenceCheckLogicRun = Invoke-TestScript $fenceCheckLogic
-    Assert-Equal 0 $fenceCheckLogicRun.ExitCode `
-        "fence-check on-disk lease: $($fenceCheckLogicRun.Stdout) $($fenceCheckLogicRun.Stderr)"
-    $linkWorkspaceLogic = Join-Path $PSScriptRoot 'link-workspace-logic.ps1'
-    $linkWorkspaceLogicRun = Invoke-TestScript $linkWorkspaceLogic
-    Assert-Equal 0 $linkWorkspaceLogicRun.ExitCode `
-        "link-workspace usage: $($linkWorkspaceLogicRun.Stdout) $($linkWorkspaceLogicRun.Stderr)"
-    $evidenceLogic = Join-Path $PSScriptRoot 'evidence-logic.ps1'
-    $evidenceLogicRun = Invoke-TestScript $evidenceLogic
-    Assert-Equal 0 $evidenceLogicRun.ExitCode `
-        "evidence ledger fixtures and canonical JSON: $($evidenceLogicRun.Stdout) $($evidenceLogicRun.Stderr)"
-    $shiftPolicyLogic = Join-Path $PSScriptRoot 'shift-policy-logic.ps1'
-    $shiftPolicyLogicRun = Invoke-TestScript $shiftPolicyLogic
-    Assert-Equal 0 $shiftPolicyLogicRun.ExitCode `
-        "shift policy precedence and exact-plan binding: $($shiftPolicyLogicRun.Stdout) $($shiftPolicyLogicRun.Stderr)"
-    $preflightNeedsLogic = Join-Path $PSScriptRoot 'preflight-needs-logic.ps1'
-    $preflightNeedsLogicRun = Invoke-TestScript $preflightNeedsLogic
-    Assert-Equal 0 $preflightNeedsLogicRun.ExitCode `
-        "permission preflight and parking: $($preflightNeedsLogicRun.Stdout) $($preflightNeedsLogicRun.Stderr)"
-    $evidenceCompareLogic = Join-Path $PSScriptRoot 'evidence-compare-logic.ps1'
-    $evidenceCompareLogicRun = Invoke-TestScript $evidenceCompareLogic
-    Assert-Equal 0 $evidenceCompareLogicRun.ExitCode `
-        "baseline, checkpoint and comparison classes: $($evidenceCompareLogicRun.Stdout) $($evidenceCompareLogicRun.Stderr)"
-    $morningReceiptLogic = Join-Path $PSScriptRoot 'morning-receipt-logic.ps1'
-    $morningReceiptLogicRun = Invoke-TestScript $morningReceiptLogic
-    Assert-Equal 0 $morningReceiptLogicRun.ExitCode `
-        "morning receipt sections and views: $($morningReceiptLogicRun.Stdout) $($morningReceiptLogicRun.Stderr)"
-    $provisionRecoverLogic = Join-Path $PSScriptRoot 'provision-recover-logic.ps1'
-    $provisionRecoverLogicRun = Invoke-TestScript $provisionRecoverLogic
-    Assert-Equal 0 $provisionRecoverLogicRun.ExitCode `
-        "provisioning recovery and rollback: $($provisionRecoverLogicRun.Stdout) $($provisionRecoverLogicRun.Stderr)"
-    $startPreflightLogic = Join-Path $PSScriptRoot 'start-preflight-logic.ps1'
-    $startPreflightLogicRun = Invoke-TestScript $startPreflightLogic
-    Assert-Equal 0 $startPreflightLogicRun.ExitCode `
-        "Start preflight verdicts: $($startPreflightLogicRun.Stdout) $($startPreflightLogicRun.Stderr)"
-    $sessionEndLogic = Join-Path $PSScriptRoot 'session-end-logic.ps1'
-    $sessionEndLogicRun = Invoke-TestScript $sessionEndLogic
-    Assert-Equal 0 $sessionEndLogicRun.ExitCode `
-        "session-end owner reasons and the Codex lease: $($sessionEndLogicRun.Stdout) $($sessionEndLogicRun.Stderr)"
-    $ownershipHostLogic = Join-Path $PSScriptRoot 'ownership-host-logic.ps1'
-    $ownershipHostLogicRun = Invoke-TestScript $ownershipHostLogic
-    Assert-Equal 0 $ownershipHostLogicRun.ExitCode `
-        "installing host and foreign copies: $($ownershipHostLogicRun.Stdout) $($ownershipHostLogicRun.Stderr)"
-    $normalizeOutputLogic = Join-Path $PSScriptRoot 'normalize-output-logic.ps1'
-    $normalizeOutputLogicRun = Invoke-TestScript $normalizeOutputLogic
-    Assert-Equal 0 $normalizeOutputLogicRun.ExitCode `
-        "tool-output summaries: $($normalizeOutputLogicRun.Stdout) $($normalizeOutputLogicRun.Stderr)"
-    $inventoryLogic = Join-Path $PSScriptRoot 'inventory-logic.ps1'
-    $inventoryLogicRun = Invoke-TestScript $inventoryLogic
-    Assert-Equal 0 $inventoryLogicRun.ExitCode `
-        "project inventory: $($inventoryLogicRun.Stdout) $($inventoryLogicRun.Stderr)"
-    $usageLogic = Join-Path $PSScriptRoot 'usage-logic.ps1'
-    $usageLogicRun = Invoke-TestScript $usageLogic
-    Assert-Equal 0 $usageLogicRun.ExitCode `
-        "usage accounting: $($usageLogicRun.Stdout) $($usageLogicRun.Stderr)"
-    $nsLogic = Join-Path $PSScriptRoot 'ns-logic.ps1'
-    $nsLogicRun = Invoke-TestScript $nsLogic
-    Assert-Equal 0 $nsLogicRun.ExitCode `
-        "dispatcher workspace binding: $($nsLogicRun.Stdout) $($nsLogicRun.Stderr)"
-    $sessionStartLogic = Join-Path $PSScriptRoot 'session-start-logic.ps1'
-    $sessionStartLogicRun = Invoke-TestScript $sessionStartLogic
-    Assert-Equal 0 $sessionStartLogicRun.ExitCode `
-        "SessionStart context reset: $($sessionStartLogicRun.Stdout) $($sessionStartLogicRun.Stderr)"
-    $pulseLogic = Join-Path $PSScriptRoot 'pulse-logic.ps1'
-    $pulseLogicRun = Invoke-TestScript $pulseLogic
-    Assert-Equal 0 $pulseLogicRun.ExitCode `
-        "receipt duty injection: $($pulseLogicRun.Stdout) $($pulseLogicRun.Stderr)"
-    $sessionClaimLogic = Join-Path $PSScriptRoot 'session-claim-logic.ps1'
-    $sessionClaimLogicRun = Invoke-TestScript $sessionClaimLogic
-    Assert-Equal 0 $sessionClaimLogicRun.ExitCode `
-        "unbound shift claims: $($sessionClaimLogicRun.Stdout) $($sessionClaimLogicRun.Stderr)"
+    $logicDegree = 2
+    if ($env:NIGHTSHIFT_LOGIC_DEGREE -match '^[1-9][0-9]*$') {
+        $logicDegree = [int]$env:NIGHTSHIFT_LOGIC_DEGREE
+    }
+    $logicSuites = @(
+        @{ Name = 'import-issues-logic.ps1'; Path = (Join-Path $PSScriptRoot 'import-issues-logic.ps1'); Label = 'import-issues list/promote' }
+        @{ Name = 'doctor-logic.ps1'; Path = (Join-Path $PSScriptRoot 'doctor-logic.ps1'); Label = 'doctor leftover/staged counts' }
+        @{ Name = 'schedule-empty-logic.ps1'; Path = (Join-Path $PSScriptRoot 'schedule-empty-logic.ps1'); Label = 'schedule empty-list notes' }
+        @{ Name = 'status-facts-logic.ps1'; Path = (Join-Path $PSScriptRoot 'status-facts-logic.ps1'); Label = 'status fact readers' }
+        @{ Name = 'punch-list-logic.ps1'; Path = (Join-Path $PSScriptRoot 'punch-list-logic.ps1'); Label = 'punch-list reader and contract digests' }
+        @{ Name = 'parity-logic.ps1'; Path = (Join-Path $PSScriptRoot 'parity-logic.ps1'); Label = 'shared Bash and PowerShell fixtures' }
+        @{ Name = 'item-ids-logic.ps1'; Path = (Join-Path $PSScriptRoot 'item-ids-logic.ps1'); Label = 'permanent item ids' }
+        @{ Name = 'item-sessions-logic.ps1'; Path = (Join-Path $PSScriptRoot 'item-sessions-logic.ps1'); Label = 'item sessions' }
+        @{ Name = 'item-totals-logic.ps1'; Path = (Join-Path $PSScriptRoot 'item-totals-logic.ps1'); Label = 'item totals' }
+        @{ Name = 'item-budgets-logic.ps1'; Path = (Join-Path $PSScriptRoot 'item-budgets-logic.ps1'); Label = 'item budgets' }
+        @{ Name = 'plan-room-logic.ps1'; Path = (Join-Path $PSScriptRoot 'plan-room-logic.ps1'); Label = 'plan room' }
+        @{ Name = 'shift-worktree-logic.ps1'; Path = (Join-Path $PSScriptRoot 'shift-worktree-logic.ps1'); Label = 'shift worktree' }
+        @{ Name = 'shift-estimate-logic.ps1'; Path = (Join-Path $PSScriptRoot 'shift-estimate-logic.ps1'); Label = 'shift estimate' }
+        @{ Name = 'receipt-file-map-logic.ps1'; Path = (Join-Path $PSScriptRoot 'receipt-file-map-logic.ps1'); Label = 'file maps' }
+        @{ Name = 'receipt-architecture-logic.ps1'; Path = (Join-Path $PSScriptRoot 'receipt-architecture-logic.ps1'); Label = 'architecture diagram' }
+        @{ Name = 'check-items-logic.ps1'; Path = (Join-Path $PSScriptRoot 'check-items-logic.ps1'); Label = 'check items' }
+        @{ Name = 'local-time-logic.ps1'; Path = (Join-Path $PSScriptRoot 'local-time-logic.ps1'); Label = 'local times' }
+        @{ Name = 'box-counts-logic.ps1'; Path = (Join-Path $PSScriptRoot 'box-counts-logic.ps1'); Label = 'box counts heading scope' }
+        @{ Name = 'work-mode-logic.ps1'; Path = (Join-Path $PSScriptRoot 'work-mode-logic.ps1'); Label = 'work-mode discovery skips' }
+        @{ Name = 'codex-identity-logic.ps1'; Path = (Join-Path $PSScriptRoot 'codex-identity-logic.ps1'); Label = 'Codex identity kinds' }
+        @{ Name = 'clock-out-logic.ps1'; Path = (Join-Path $PSScriptRoot 'clock-out-logic.ps1'); Label = 'direct cursor clock-out' }
+        @{ Name = 'idle-logic.ps1'; Path = (Join-Path $PSScriptRoot 'idle-logic.ps1'); Label = 'alive-but-idle rule' }
+        @{ Name = 'reason-label-logic.ps1'; Path = (Join-Path $PSScriptRoot 'reason-label-logic.ps1'); Label = 'watchman reason labels' }
+        @{ Name = 'recovery-scope-logic.ps1'; Path = (Join-Path $PSScriptRoot 'recovery-scope-logic.ps1'); Label = 'recovery launch scope' }
+        @{ Name = 'cursor-launch-logic.ps1'; Path = (Join-Path $PSScriptRoot 'cursor-launch-logic.ps1'); Label = 'cursor launch record' }
+        @{ Name = 'watchman-install-logic.ps1'; Path = (Join-Path $PSScriptRoot 'watchman-install-logic.ps1'); Label = 'watchman install handoff' }
+        @{ Name = 'migrate-state-logic.ps1'; Path = (Join-Path $PSScriptRoot 'migrate-state-logic.ps1'); Label = 'migrate-state armed refuse' }
+        @{ Name = 'apply-profile-logic.ps1'; Path = (Join-Path $PSScriptRoot 'apply-profile-logic.ps1'); Label = 'apply-profile armed refuse' }
+        @{ Name = 'export-support-logic.ps1'; Path = (Join-Path $PSScriptRoot 'export-support-logic.ps1'); Label = 'export-support allowlist' }
+        @{ Name = 'receipts-logic.ps1'; Path = (Join-Path $PSScriptRoot 'receipts-logic.ps1'); Label = 'receipts layout' }
+        @{ Name = 'archive-receipts-logic.ps1'; Path = (Join-Path $PSScriptRoot 'archive-receipts-logic.ps1'); Label = 'archive-receipts copy' }
+        @{ Name = 'check-report-logic.ps1'; Path = (Join-Path $PSScriptRoot 'check-report-logic.ps1'); Label = 'check-report cited research' }
+        @{ Name = 'retain-history-logic.ps1'; Path = (Join-Path $PSScriptRoot 'retain-history-logic.ps1'); Label = 'retain-history apply' }
+        @{ Name = 'hardhat-logic.ps1'; Path = (Join-Path $PSScriptRoot 'hardhat-logic.ps1'); Label = 'hardhat expectedEmail' }
+        @{ Name = 'control-logic.ps1'; Path = (Join-Path $PSScriptRoot 'control-logic.ps1'); Label = 'control stop/reset/purge' }
+        @{ Name = 'purge-workspace-logic.ps1'; Path = (Join-Path $PSScriptRoot 'purge-workspace-logic.ps1'); Label = 'purge-workspace entry point' }
+        @{ Name = 'reset-shift-logic.ps1'; Path = (Join-Path $PSScriptRoot 'reset-shift-logic.ps1'); Label = 'reset-shift entry point' }
+        @{ Name = 'fence-check-logic.ps1'; Path = (Join-Path $PSScriptRoot 'fence-check-logic.ps1'); Label = 'fence-check on-disk lease' }
+        @{ Name = 'link-workspace-logic.ps1'; Path = (Join-Path $PSScriptRoot 'link-workspace-logic.ps1'); Label = 'link-workspace usage' }
+        @{ Name = 'evidence-logic.ps1'; Path = (Join-Path $PSScriptRoot 'evidence-logic.ps1'); Label = 'evidence ledger fixtures and canonical JSON' }
+        @{ Name = 'shift-policy-logic.ps1'; Path = (Join-Path $PSScriptRoot 'shift-policy-logic.ps1'); Label = 'shift policy precedence and exact-plan binding' }
+        @{ Name = 'preflight-needs-logic.ps1'; Path = (Join-Path $PSScriptRoot 'preflight-needs-logic.ps1'); Label = 'permission preflight and parking' }
+        @{ Name = 'evidence-compare-logic.ps1'; Path = (Join-Path $PSScriptRoot 'evidence-compare-logic.ps1'); Label = 'baseline, checkpoint and comparison classes' }
+        @{ Name = 'morning-receipt-logic.ps1'; Path = (Join-Path $PSScriptRoot 'morning-receipt-logic.ps1'); Label = 'morning receipt sections and views' }
+        @{ Name = 'provision-recover-logic.ps1'; Path = (Join-Path $PSScriptRoot 'provision-recover-logic.ps1'); Label = 'provisioning recovery and rollback' }
+        @{ Name = 'start-preflight-logic.ps1'; Path = (Join-Path $PSScriptRoot 'start-preflight-logic.ps1'); Label = 'Start preflight verdicts' }
+        @{ Name = 'session-end-logic.ps1'; Path = (Join-Path $PSScriptRoot 'session-end-logic.ps1'); Label = 'session-end owner reasons and the Codex lease' }
+        @{ Name = 'ownership-host-logic.ps1'; Path = (Join-Path $PSScriptRoot 'ownership-host-logic.ps1'); Label = 'installing host and foreign copies' }
+        @{ Name = 'normalize-output-logic.ps1'; Path = (Join-Path $PSScriptRoot 'normalize-output-logic.ps1'); Label = 'tool-output summaries' }
+        @{ Name = 'inventory-logic.ps1'; Path = (Join-Path $PSScriptRoot 'inventory-logic.ps1'); Label = 'project inventory' }
+        @{ Name = 'usage-logic.ps1'; Path = (Join-Path $PSScriptRoot 'usage-logic.ps1'); Label = 'usage accounting' }
+        @{ Name = 'ns-logic.ps1'; Path = (Join-Path $PSScriptRoot 'ns-logic.ps1'); Label = 'dispatcher workspace binding' }
+        @{ Name = 'session-start-logic.ps1'; Path = (Join-Path $PSScriptRoot 'session-start-logic.ps1'); Label = 'SessionStart context reset' }
+        @{ Name = 'pulse-logic.ps1'; Path = (Join-Path $PSScriptRoot 'pulse-logic.ps1'); Label = 'receipt duty injection' }
+        @{ Name = 'session-claim-logic.ps1'; Path = (Join-Path $PSScriptRoot 'session-claim-logic.ps1'); Label = 'unbound shift claims' }
+        @{ Name = 'logic-runner-logic.ps1'; Path = (Join-Path $PSScriptRoot 'logic-runner-logic.ps1'); Label = 'logic runner overlap, failure and timeout' }
+    )
+    $logicBatch = Invoke-NSLogicSuites -Engine $hostExecutable -Suites $logicSuites -Degree $logicDegree
+    foreach ($logicResult in @($logicBatch.Results)) {
+        Assert-Equal 0 $logicResult.ExitCode `
+            "$($logicResult.Name) $($logicResult.Label): $($logicResult.Stdout) $($logicResult.Stderr)"
+    }
 
     $linkedHost = Join-Path $root 'linked host'
     $null = New-Item -ItemType Directory -Path $linkedHost
