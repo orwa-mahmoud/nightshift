@@ -12,15 +12,28 @@ function Invoke-NSFixtureMode {
         if ($LASTEXITCODE -ne 0) { throw "chmod $Mode failed for $Path" }
         return
     }
-    $user = $env:USERNAME
-    switch ($Mode) {
-        # (N) is not an icacls right. Denying read makes the file unreadable to this user.
-        # A directory that must reject a new child needs the add-subdirectory right denied,
-        # which generic write does not cover.
-        '000' { & icacls.exe $Path /deny "${user}:R" | Out-Null }
-        '555' { & icacls.exe $Path /deny "${user}:(OI)(CI)(W,WD,AD,DC)" | Out-Null }
-        '644' { & icacls.exe $Path /remove:d $user | Out-Null }
-        '755' { & icacls.exe $Path /remove:d $user | Out-Null }
+    # A deny entry wins over the inherited allow. icacls generic write does not stop
+    # creating a child directory, so the rights are the .NET ones Copy-Item actually needs.
+    $acl = Get-Acl -LiteralPath $Path
+    $who = New-Object System.Security.Principal.NTAccount($env:USERNAME)
+    foreach ($entry in @($acl.Access)) {
+        if ($entry.AccessControlType -eq 'Deny' -and $entry.IdentityReference.Value -like "*\$env:USERNAME") {
+            [void]$acl.RemoveAccessRule($entry)
+        }
     }
-    if ($LASTEXITCODE -ne 0) { throw "icacls $Mode failed for $Path" }
+    if ($Mode -eq '000' -or $Mode -eq '555') {
+        $rights = if ($Mode -eq '000') {
+            [System.Security.AccessControl.FileSystemRights]'ReadData,ReadAndExecute'
+        }
+        else {
+            [System.Security.AccessControl.FileSystemRights]'CreateFiles,CreateDirectories,WriteData,AppendData,Delete,DeleteSubdirectoriesAndFiles'
+        }
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $who, $rights,
+            ([System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'),
+            [System.Security.AccessControl.PropagationFlags]::None,
+            [System.Security.AccessControl.AccessControlType]::Deny)
+        $acl.AddAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $Path -AclObject $acl
 }
