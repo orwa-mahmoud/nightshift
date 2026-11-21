@@ -201,9 +201,9 @@ ns_pulse_receipts_sections() {
     [ -n "$folder" ] || return 0
     printf ', linking the evidence wherever that template puts it'
   elif [ -n "$folder" ]; then
-    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Evidence · Outputs · Parked decisions and snags'
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Not verified · Evidence · Check it yourself · Outputs · Parked decisions and snags'
   else
-    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Not verified · Check it yourself · Outputs · Parked decisions and snags.'
     return 0
   fi
   [ -z "$shift_default" ] || printf '; the shift asks every item for this evidence: %s' "$shift_default"

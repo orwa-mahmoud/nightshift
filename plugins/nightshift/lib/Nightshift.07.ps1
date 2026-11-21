@@ -2051,10 +2051,10 @@ function Get-NSPulseReceiptsSections {
         $clause += ', linking the evidence wherever that template puts it'
     }
     elseif ($folder.Length -gt 0) {
-        $clause = "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Evidence $script:NSDot Outputs $script:NSDot Parked decisions and snags"
+        $clause = "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Not verified $script:NSDot Evidence $script:NSDot Check it yourself $script:NSDot Outputs $script:NSDot Parked decisions and snags"
     }
     else {
-        return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Outputs $script:NSDot Parked decisions and snags."
+        return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Not verified $script:NSDot Check it yourself $script:NSDot Outputs $script:NSDot Parked decisions and snags."
     }
     $dash = [string][char]0x2014
     if ($shiftDefault.Length -gt 0) { $clause += '; the shift asks every item for this evidence: ' + $shiftDefault }

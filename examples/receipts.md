@@ -55,6 +55,14 @@ Normalising first, then checking the collapsed path. That is the comparison that
 
 `npm test -- resolver` — 41 passed, 0 failed. `npm run build` — clean.
 
+## Not verified
+
+Paths that use a backslash separator have no test; the fix is covered for forward-slash paths only.
+
+## Check it yourself
+
+Run `npm test -- resolver`, then import `../../lib` from a file under `src/deep/` and build.
+
 ## Outputs
 
 `fix(resolver): check containment before normalising`

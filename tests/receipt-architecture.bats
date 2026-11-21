@@ -101,7 +101,7 @@ three_items() {
   diagram "$p" on
   three_items "$p"
   line() { bash -c '. "$1"; . "$2"; ns_pulse_receipts_start_line "$3" "$4"' _ "$LIB" "$PULSE" "$p" "$1"; }
-  [[ "$(line '1. Add the parser.')" == *'Verification · Outputs · Parked decisions and snags; after the commit and before the tick, update .nightshift/receipts/architecture.md only if this item changed the structure, then write `Diagram: updated — <what changed>` or `Diagram: unchanged — <why>` in the receipt.' ]] || { line '1. Add the parser.'; return 1; }
+  [[ "$(line '1. Add the parser.')" == *'Verification · Not verified · Check it yourself · Outputs · Parked decisions and snags; after the commit and before the tick, update .nightshift/receipts/architecture.md only if this item changed the structure, then write `Diagram: updated — <what changed>` or `Diagram: unchanged — <why>` in the receipt.' ]] || { line '1. Add the parser.'; return 1; }
   command -v pwsh >/dev/null 2>&1 || return 0
   got="$(NS_MODULE="$PSM1" NS_WS="$p" pwsh -NoProfile -NonInteractive -Command '[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false); Import-Module $env:NS_MODULE -Force -DisableNameChecking; Get-NSPulseReceiptsStartLine -Workspace $env:NS_WS -Label "1. Add the parser."')"
   [ "$got" = "$(line '1. Add the parser.')" ] || { echo "PowerShell: $got"; return 1; }
