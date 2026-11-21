@@ -51,11 +51,20 @@ jobs:
       - name: Require changed paths
         if: needs.changes.result != 'success'
         run: |
+          python3 tests/skill-scan-report.py \
+            --tool "Cisco skill-scanner" \
+            --outcome classification-failed \
+            --why "Unable to determine changed paths for the skill scan."
           echo '::error::Unable to determine changed paths for the skill scan.'
           exit 1
       - name: Skip the scan
         if: needs.changes.outputs.skills == 'false'
-        run: echo 'No skill or scanner paths changed; the scan did not run.'
+        run: |
+          python3 tests/skill-scan-report.py \
+            --tool "Cisco skill-scanner" \
+            --outcome skip \
+            --why "No skill or scanner paths changed; the scan did not run."
+          echo 'No skill or scanner paths changed; the scan did not run.'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.changes.outputs.skills == 'true'
       - name: Install the locked scanner
@@ -67,10 +76,23 @@ jobs:
       - name: Scan the skills
         if: needs.changes.outputs.skills == 'true'
         run: |
+          set -eu
+          status=0
+          reports=""
           for dir in $SKILL_DIRS; do
+            safe="$(printf '%s' "$dir" | tr '/' '-')"
+            report="$RUNNER_TEMP/cisco-$safe.json"
             "$RUNNER_TEMP/scanner/bin/skill-scanner" scan-all "$dir" --recursive \
-              --format summary --fail-on-severity high
+              --format json --output "$report" --fail-on-severity high || status=$?
+            reports="$reports --json $report"
           done
+          # shellcheck disable=SC2086
+          python3 tests/skill-scan-report.py \
+            --tool "Cisco skill-scanner" \
+            --scope "$SKILL_DIRS" \
+            --exit "$status" \
+            $reports
+          exit "$status"
 
   skillspector:
     name: NVIDIA SkillSpector
@@ -81,11 +103,20 @@ jobs:
       - name: Require changed paths
         if: needs.changes.result != 'success'
         run: |
+          python3 tests/skill-scan-report.py \
+            --tool "NVIDIA SkillSpector" \
+            --outcome classification-failed \
+            --why "Unable to determine changed paths for the skill scan."
           echo '::error::Unable to determine changed paths for the skill scan.'
           exit 1
       - name: Skip the scan
         if: needs.changes.outputs.skills == 'false'
-        run: echo 'No skill or scanner paths changed; the scan did not run.'
+        run: |
+          python3 tests/skill-scan-report.py \
+            --tool "NVIDIA SkillSpector" \
+            --outcome skip \
+            --why "No skill or scanner paths changed; the scan did not run."
+          echo 'No skill or scanner paths changed; the scan did not run.'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.changes.outputs.skills == 'true'
       - name: Install the locked scanner
@@ -98,6 +129,20 @@ jobs:
       - name: Scan the skills
         if: needs.changes.outputs.skills == 'true'
         run: |
+          set -eu
+          status=0
+          reports=""
           for dir in $SKILL_DIRS; do
-            "$RUNNER_TEMP/scanner/bin/skillspector" scan "$dir" --recursive --no-llm
+            safe="$(printf '%s' "$dir" | tr '/' '-')"
+            report="$RUNNER_TEMP/skillspector-$safe.json"
+            "$RUNNER_TEMP/scanner/bin/skillspector" scan "$dir" --recursive --no-llm \
+              --format json --output "$report" || status=$?
+            reports="$reports --json $report"
           done
+          # shellcheck disable=SC2086
+          python3 tests/skill-scan-report.py \
+            --tool "NVIDIA SkillSpector" \
+            --scope "$SKILL_DIRS" \
+            --exit "$status" \
+            $reports
+          exit "$status"
