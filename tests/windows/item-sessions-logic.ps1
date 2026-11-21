@@ -187,6 +187,25 @@ finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+function Get-UsageText {
+    param([string]$Line)
+    return ((Get-NSReceiptUsageSection @($Line)) -join "`n")
+}
+
+$dot = [string][char]0x00B7
+$none = Get-UsageText 'abc 1000 1600 600 - - ticked cw=- cr=- rea=- paused=0'
+Expect-True ($none.Contains("**Tokens:** unavailable")) 'no figure says tokens are unavailable'
+Expect-True (-not $none.Contains('| Tokens | Amount |')) 'no figure draws no Tokens table'
+Expect-True ($none.Contains('| # | Shift | Host ' + $dot + ' model | Start | End | Working | Paused | Ended |')) `
+    'no figure leaves the token columns out of Sessions'
+$figures = Get-UsageText 'abc 1000 1600 600 1200 300 ticked cw=0 cr=0 rea=- paused=0'
+Expect-True ($figures.Contains('| Tokens | Amount |')) 'a figure keeps the Tokens table'
+Expect-True ($figures.Contains('| # | Shift | Host ' + $dot + ' model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |')) `
+    'a figure keeps the token columns'
+$sharedLine = Get-UsageText 'abc 1000 1600 600 - - ticked turn=g2/input=800,cache_read=4000,output=20/P01;P02'
+Expect-True ($sharedLine.Contains('**Tokens:** not attributable to this item')) 'a shared turn with no own figure says so'
+Expect-True ($sharedLine.Contains('**Shared turn**')) 'a shared turn keeps its paragraph'
+
 if ($failures.Count -gt 0) {
     Write-Host "item-sessions-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

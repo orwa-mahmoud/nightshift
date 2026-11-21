@@ -203,6 +203,22 @@ tick() { # <project> <number>
   [ "$status" -ne 0 ]
 }
 
+@test "a receipt draws token figures only where one exists" {
+  local out
+  out="$(lib ns_receipt_usage_section 'abc 1000 1600 600 - - ticked cw=- cr=- rea=- paused=0')"
+  printf '%s\n' "$out" | grep -qxF '**Tokens:** unavailable'
+  run grep -F '| Tokens | Amount |' <<<"$out"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$out" | grep -qxF '| # | Shift | Host · model | Start | End | Working | Paused | Ended |'
+  out="$(lib ns_receipt_usage_section 'abc 1000 1600 600 1200 300 ticked cw=0 cr=0 rea=- paused=0')"
+  printf '%s\n' "$out" | grep -qxF '| Tokens | Amount |'
+  printf '%s\n' "$out" | grep -qxF '| # | Shift | Host · model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |'
+  # The shared reading from "items ticked inside one Cursor turn share the turn's reading".
+  out="$(lib ns_receipt_usage_section 'abc 1000 1600 600 - - ticked turn=g2/input=800,cache_read=4000,output=20/P01;P02')"
+  printf '%s\n' "$out" | grep -qxF '**Tokens:** not attributable to this item'
+  printf '%s\n' "$out" | grep -qxF '**Shared turn**'
+}
+
 @test "the PowerShell half covers the same sessions and runs in the Windows suite" {
   grep -qF 'item-sessions-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
   if ! command -v pwsh >/dev/null 2>&1; then
