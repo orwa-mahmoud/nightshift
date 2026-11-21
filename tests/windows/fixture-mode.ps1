@@ -28,9 +28,16 @@ function Invoke-NSFixtureMode {
         else {
             [System.Security.AccessControl.FileSystemRights]'CreateFiles,CreateDirectories,WriteData,AppendData,Delete,DeleteSubdirectoriesAndFiles'
         }
+        # Inheritance flags are legal only on a directory. A file rejects them.
+        $isDir = (Get-Item -LiteralPath $Path).PSIsContainer
+        $inherit = if ($isDir) {
+            [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+        }
+        else {
+            [System.Security.AccessControl.InheritanceFlags]::None
+        }
         $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            $who, $rights,
-            ([System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'),
+            $who, $rights, $inherit,
             [System.Security.AccessControl.PropagationFlags]::None,
             [System.Security.AccessControl.AccessControlType]::Deny)
         $acl.AddAccessRule($rule)
