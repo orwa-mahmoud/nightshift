@@ -38,3 +38,31 @@ jobs:
           fail_on_severity: high
           format: sarif
           upload_sarif: true
+      - name: Record scan findings
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("ai-plugin-scanner.sarif")
+          if not path.is_file():
+              print("no sarif report")
+              raise SystemExit(0)
+          data = json.loads(path.read_text())
+          count = 0
+          for run in data.get("runs", []):
+              for result in run.get("results", []):
+                  count += 1
+                  rule = result.get("ruleId", "")
+                  level = result.get("level", "")
+                  message = ((result.get("message") or {}).get("text") or "").replace("\n", " ")
+                  uri = ""
+                  locations = result.get("locations") or []
+                  if locations:
+                      uri = (
+                          ((locations[0].get("physicalLocation") or {}).get("artifactLocation") or {}).get("uri")
+                          or ""
+                      )
+                  print(f"{level}\t{rule}\t{uri}\t{message[:400]}")
+          print(f"results {count}")
+          PY
