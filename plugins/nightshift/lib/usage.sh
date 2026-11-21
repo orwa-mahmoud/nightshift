@@ -540,7 +540,25 @@ ns_usage_mark_arm() {
   # The sixth cell distinguishes accounting starts even when the clock has not moved.
   generation="$(ns_new_shift_id "$ns")" || return 1
   printf '%s\t%s\t\t\t\t%s\n' "$(date +%s)" arm "$generation" >>"$file" 2>/dev/null || return 1
+  _ns_usage_write_inbox_seen "$ns" || return 1
   ns_receipts_write_index "${ns%/.nightshift}"
+}
+
+# _ns_usage_write_inbox_seen <nightshift-dir> — every current inbox key, so entries from before the
+# shift are never counted against an item. An empty file still marks that the shift looked.
+_ns_usage_write_inbox_seen() {
+  local dir file kind key
+  dir="$(ns_usage_dir "$1")"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  file="$dir/inbox-seen"
+  [ ! -L "$file" ] || return 1
+  : >"$file" || return 1
+  for kind in parking-lot snag-log; do
+    while IFS= read -r key; do
+      [ -n "$key" ] || continue
+      printf '%s\t%s\n' "$kind" "$key" >>"$file" || return 1
+    done < <(ns_inbox_keys "$1" "$kind")
+  done
 }
 
 # ns_usage_mark_count <nightshift-dir> — how many marks stand.

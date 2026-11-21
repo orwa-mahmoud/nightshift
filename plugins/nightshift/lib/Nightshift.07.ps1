@@ -1009,6 +1009,17 @@ function Write-NSUsageMarkArm {
     $generation = [guid]::NewGuid().ToString('N')
     [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`tarm`t`t`t`t$generation`n"),
         (New-Object Text.UTF8Encoding($false)))
+    $seen = Join-Path $dir 'inbox-seen'
+    if (-not (Test-NSReparsePoint $seen)) {
+        $body = New-Object System.Text.StringBuilder
+        foreach ($kind in @('parking-lot', 'snag-log')) {
+            foreach ($key in [string[]](Get-NSInboxKeys $NightshiftDir $kind)) {
+                if ([string]::IsNullOrEmpty($key)) { continue }
+                [void]$body.Append($kind + "`t" + $key + "`n")
+            }
+        }
+        [IO.File]::WriteAllText($seen, $body.ToString(), (New-Object Text.UTF8Encoding($false)))
+    }
     return $true
 }
 
@@ -1582,8 +1593,43 @@ function Invoke-NSGateSessionRow {
         Resolve-NSUsageTurns $NightshiftDir $Label $lines.Length
         foreach ($t in (Get-NSUsageTurnsFor $NightshiftDir $Label $lines.Length)) { $extras += ('turn=' + $t) }
     }
-    Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
-        $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
+    $seenFile = Join-Path (Get-NSUsageDir $NightshiftDir) 'inbox-seen'
+    $newPark = New-Object Collections.Generic.List[string]
+    $newSnag = New-Object Collections.Generic.List[string]
+    if ((Test-Path -LiteralPath $seenFile -PathType Leaf) -and -not (Test-NSReparsePoint $seenFile)) {
+        $known = @{}
+        foreach ($seenLine in @([IO.File]::ReadAllLines($seenFile))) {
+            if ([string]::IsNullOrEmpty($seenLine)) { continue }
+            $tab = $seenLine.IndexOf("`t")
+            if ($tab -lt 1) { continue }
+            $known[$seenLine.Substring(0, $tab) + "`t" + $seenLine.Substring($tab + 1)] = $true
+        }
+        foreach ($kind in @('parking-lot', 'snag-log')) {
+            if ($kind -ceq 'parking-lot') { $dest = $newPark } else { $dest = $newSnag }
+            $once = @{}
+            foreach ($key in [string[]](Get-NSInboxKeys $NightshiftDir $kind)) {
+                if ([string]::IsNullOrEmpty($key) -or $once.ContainsKey($key)) { continue }
+                $once[$key] = $true
+                if (-not $known.ContainsKey($kind + "`t" + $key)) { [void]$dest.Add($key) }
+            }
+        }
+    }
+    if ($newPark.Count -gt 0) { $extras += ('parked=' + $newPark.Count) }
+    if ($newSnag.Count -gt 0) { $extras += ('snags=' + $newSnag.Count) }
+    $wrote = $true
+    try {
+        Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
+            $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
+    }
+    catch { $wrote = $false }
+    if ($wrote -and (Test-Path -LiteralPath $seenFile -PathType Leaf) -and -not (Test-NSReparsePoint $seenFile)) {
+        $remember = New-Object System.Text.StringBuilder
+        foreach ($key in $newPark) { [void]$remember.Append('parking-lot' + "`t" + $key + "`n") }
+        foreach ($key in $newSnag) { [void]$remember.Append('snag-log' + "`t" + $key + "`n") }
+        if ($remember.Length -gt 0) {
+            [IO.File]::AppendAllText($seenFile, $remember.ToString(), (New-Object Text.UTF8Encoding($false)))
+        }
+    }
     Write-NSGateHandoffLog $NightshiftDir $Label $prevLine $hosts
 }
 

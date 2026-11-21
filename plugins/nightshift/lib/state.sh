@@ -2298,6 +2298,45 @@ ns_inbox_strays() {
   awk -v op=strays -f "$_NS_INBOX_AWK" "$1"
 }
 
+# ns_inbox_keys <nightshift-dir> <parking-lot|snag-log> — the key of every entry, one per line.
+# Nothing when the file is missing or is a symlink.
+ns_inbox_keys() {
+  local file
+  file="$(ns_layout_path "$1" "$2")" || return 0
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  awk -v op=keys -f "$_NS_INBOX_AWK" "$file"
+}
+
+# _ns_inbox_unseen_keys <nightshift-dir> <parking-lot|snag-log> — keys not yet in inbox-seen.
+# When that file is missing, every current key counts as already seen.
+_ns_inbox_unseen_keys() {
+  local seen
+  seen="$(ns_usage_dir "$1")/inbox-seen"
+  [ -f "$seen" ] && [ ! -L "$seen" ] || return 0
+  ns_inbox_keys "$1" "$2" | awk -v kind="$2" -v seen="$seen" '
+    BEGIN {
+      while ((getline line < seen) > 0) {
+        n = index(line, "\t")
+        if (n > 0 && substr(line, 1, n - 1) == kind) known[substr(line, n + 1)] = 1
+      }
+      close(seen)
+    }
+    $0 != "" && !($0 in known) && !printed[$0]++ { print }
+  '
+}
+
+# _ns_inbox_remember <nightshift-dir> <kind> <keys-file> — append those keys to inbox-seen.
+_ns_inbox_remember() {
+  local seen key
+  [ -s "$3" ] || return 0
+  seen="$(ns_usage_dir "$1")/inbox-seen"
+  [ -f "$seen" ] && [ ! -L "$seen" ] || return 0
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    printf '%s\t%s\n' "$2" "$key" >>"$seen" || return 1
+  done <"$3"
+}
+
 # ns_snag_open_lines <snag-log> — `<line> TAB <first line>` for each entry that carries none of the
 # five dispositions Archive files: the entries that stay live and wait for the owner.
 ns_snag_open_lines() {

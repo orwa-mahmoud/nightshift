@@ -296,8 +296,21 @@ ns_gate_session_row() {
       [ -z "$turn" ] || extras="$extras turn=$turn"
     done < <(ns_usage_turns_for "$ns" "$label" "$nr")
   fi
-  ns_receipt_add_session "$receipt" "$label" "${sid:--}" \
-    "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended" "$extras"
+  local park_keys snag_keys park_n snag_n
+  park_keys="$(mktemp)"
+  snag_keys="$(mktemp)"
+  _ns_inbox_unseen_keys "$ns" parking-lot >"$park_keys" || :
+  _ns_inbox_unseen_keys "$ns" snag-log >"$snag_keys" || :
+  park_n="$(grep -c . "$park_keys" 2>/dev/null || true)"
+  snag_n="$(grep -c . "$snag_keys" 2>/dev/null || true)"
+  [ "${park_n:-0}" -gt 0 ] && extras="$extras parked=$park_n"
+  [ "${snag_n:-0}" -gt 0 ] && extras="$extras snags=$snag_n"
+  if ns_receipt_add_session "$receipt" "$label" "${sid:--}" \
+    "$start" "$end" "$work" "${in:--}" "${out:--}" "$ended" "$extras"; then
+    _ns_inbox_remember "$ns" parking-lot "$park_keys" || :
+    _ns_inbox_remember "$ns" snag-log "$snag_keys" || :
+  fi
+  rm -f "$park_keys" "$snag_keys"
   ns_gate_handoff_log "$ns" "$label" "$prev" "$hosts"
 }
 
