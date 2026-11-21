@@ -1278,10 +1278,10 @@ ns_hardhat_command_reason() {
       fi
       REPO="$(target_repo "$CMD" "${CWD:-$PROJECT_DIR}")"
       case "$?" in
-        1) printf '%s' "BLOCKED: this $_verb names a directory that is not a git repository, so the protected-directory guard cannot inspect it. Do not retry a rephrased form."
+        1) printf '%s' "BLOCKED: cannot tell which Git repository this $_verb targets, so the protected-directory guard cannot run. Run it from inside the repository."
            return 0 ;;
         2) REPO="$(repo_root "$PROJECT_DIR" "$CWD")" || REPO="$(ns_work_target "$PROJECT_DIR")" || {
-             printf '%s' "BLOCKED: cannot tell which git repository this $_verb targets, so the protected-directory guard cannot run. Run it from inside the repository."
+             printf '%s' "BLOCKED: cannot tell which Git repository this $_verb targets, so the protected-directory guard cannot run. Run it from inside the repository."
              return 0
            } ;;
       esac
@@ -1342,10 +1342,10 @@ ns_hardhat_command_reason() {
     fi
     REPO="$(target_repo "$CMD" "${CWD:-$PROJECT_DIR}")"
     case "$?" in
-      1) printf '%s' "BLOCKED: this commit names a directory that is not a git repository, so the configured commit guards cannot inspect it. Do not retry a rephrased form."
+      1) printf '%s' "BLOCKED: cannot tell which Git repository this commit targets, so the configured commit guards cannot run. Run the commit from inside the repository."
          return 0 ;;
       2) REPO="$(repo_root "$PROJECT_DIR" "$CWD")" || REPO="$(ns_work_target "$PROJECT_DIR")" || {
-           printf '%s' "BLOCKED: cannot tell which git repository this commit targets, so the configured commit guards cannot run. Run the commit from inside the repository."
+           printf '%s' "BLOCKED: cannot tell which Git repository this commit targets, so the configured commit guards cannot run. Run the commit from inside the repository."
            return 0
          } ;;
     esac

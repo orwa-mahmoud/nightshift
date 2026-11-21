@@ -164,7 +164,7 @@ own_rc=$?
 # shellcheck disable=SC2034 # read by hardhat-core.sh
 TOOL_RULES="$(ns_tool_rules "$PROJECT_DIR" "${NIGHTSHIFT_TOOL_RULES:-}")"
 if ns_hardhat_tool_deny_broken; then
-  deny "BLOCKED: the toolDeny rules are not a JSON object, so the tool rules cannot run. Fix $(ns_hardhat_state_name rules) or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex or Cursor)."
+  deny "BLOCKED: toolDeny is not a JSON object of string values, so the tool rules cannot run. Fix $(ns_hardhat_state_name rules) or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex or Cursor)."
 fi
 
 # The active agent never inspects or changes the owner's rules through any observable tool.
