@@ -169,6 +169,7 @@ if [ "$AGENT_IS_DEFAULT" -eq 1 ]; then
   fi
 fi
 NOTIFY="$(rule "$PROJECT" notifyCommand "${NIGHTSHIFT_NOTIFY_CMD:-}")" # empty = silent, a configured value
+# shellcheck disable=SC2034 # ARMED is read by watchman-core.sh; LOG by common.sh
 declare PUNCH PIDFILE SENTINEL ARMED SESSION_FILE SESSION_END ENDED DEADLINE STOP PARKING LOG LEASE
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set PIDFILE "$NS" watchman
@@ -185,8 +186,6 @@ ns_layout_set LEASE "$NS" lease
 
 # The project's Claude Code transcript folder; empty when it cannot be told.
 TRANSCRIPTS="${NIGHTSHIFT_WATCH_TRANSCRIPTS:-$(ns_claude_project_dir "$PROJECT")}"
-
-log_line() { printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
 
 # One watchman per site. A stale pidfile (dead pid) is taken over silently.
 # A planted symlink is not a live owner — replace it rather than follow it.
