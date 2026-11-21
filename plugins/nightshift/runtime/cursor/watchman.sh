@@ -127,6 +127,7 @@ done
 
 # The marker is the shift. Without it there is nothing to revive and no reading to take, and
 # the watchman never writes the marker back.
+# shellcheck disable=SC2034 # ARMED is read by watchman-core.sh
 declare ARMED
 ns_layout_set ARMED "$NS" armed
 
@@ -134,6 +135,7 @@ declare PIDFILE
 ns_layout_set PIDFILE "$NS" watchman
 ns_watchman_claim "$PIDFILE" "$NS_WATCHMAN_SCRIPT" || exit 1
 trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
+# shellcheck disable=SC2034 # WATCH_CLOCK is read by watchman-core.sh
 WATCH_CLOCK="$(date +%s)"
 
 transcript() { [ -L "$SESSION_FILE" ] && return; sed -n 2p "$SESSION_FILE" 2>/dev/null; }

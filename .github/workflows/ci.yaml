@@ -72,8 +72,10 @@ jobs:
     steps:
       - name: Require a successful change classification
         if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
         run: |
-          echo "change classification ${{ needs.changes.result }}"
+          echo "change classification $CLASSIFICATION"
           exit 1
       - name: Skip lint
         if: needs.changes.outputs.lint != 'true'
@@ -101,8 +103,10 @@ jobs:
     steps:
       - name: Require a successful change classification
         if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
         run: |
-          echo "change classification ${{ needs.changes.result }}"
+          echo "change classification $CLASSIFICATION"
           exit 1
       - name: Skip shard
         if: needs.changes.outputs.suite != 'true' && ((needs.changes.outputs.docs != 'true' && needs.changes.outputs.prose != 'true') || matrix.shard != 1)
@@ -116,6 +120,7 @@ jobs:
         if: needs.changes.outputs.suite == 'true'
         env:
           NIGHTSHIFT_CLASSIFIED_AT: ${{ needs.changes.outputs.classified_at }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -eu
           if ! ls tests/*.bats >/dev/null 2>&1; then
@@ -123,7 +128,7 @@ jobs:
             exit 0
           fi
           chmod +x tests/run-shard.sh
-          tests/run-shard.sh "${{ matrix.shard }}" 6
+          tests/run-shard.sh "$SHARD" 6
       - name: Install bats
         if: needs.changes.outputs.suite != 'true' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.prose == 'true') && matrix.shard == 1
         run: sudo apt-get update && sudo apt-get install -y bats
@@ -135,10 +140,12 @@ jobs:
           tests/run-docs-contract.sh
       - name: Run skills contract
         if: needs.changes.outputs.suite != 'true' && needs.changes.outputs.prose == 'true' && matrix.shard == 1
+        env:
+          DOCS_CHANGED: ${{ needs.changes.outputs.docs }}
         run: |
           set -eu
           chmod +x tests/run-skills-contract.sh
-          if [ "${{ needs.changes.outputs.docs }}" = "true" ]; then
+          if [ "$DOCS_CHANGED" = "true" ]; then
             tests/run-skills-contract.sh --skip-shared
           else
             tests/run-skills-contract.sh
@@ -155,8 +162,10 @@ jobs:
     steps:
       - name: Require a successful change classification
         if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
         run: |
-          echo "change classification ${{ needs.changes.result }}"
+          echo "change classification $CLASSIFICATION"
           exit 1
       - name: Skip shard
         if: needs.changes.outputs.suite != 'true'
@@ -170,6 +179,7 @@ jobs:
         if: needs.changes.outputs.suite == 'true'
         env:
           NIGHTSHIFT_CLASSIFIED_AT: ${{ needs.changes.outputs.classified_at }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -eu
           bats_bin="$(command -v bats)"
@@ -178,7 +188,7 @@ jobs:
           command -v bash
           bash --version
           chmod +x tests/run-shard.sh
-          tests/run-shard.sh "${{ matrix.shard }}" 6
+          tests/run-shard.sh "$SHARD" 6
 
   windows-native:
     needs: changes
@@ -195,8 +205,10 @@ jobs:
     steps:
       - name: Require a successful change classification
         if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
         run: |
-          echo "change classification ${{ needs.changes.result }}"
+          echo "change classification $CLASSIFICATION"
           exit 1
       - name: Skip suite
         if: needs.changes.outputs.suite != 'true'
@@ -307,8 +319,10 @@ jobs:
     steps:
       - name: Require a successful change classification
         if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
         run: |
-          echo "change classification ${{ needs.changes.result }}"
+          echo "change classification $CLASSIFICATION"
           exit 1
       - name: Skip validate
         if: needs.changes.outputs.validate != 'true'

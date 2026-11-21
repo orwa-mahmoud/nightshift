@@ -92,7 +92,7 @@ paths_of() {
   grep -q '^  bats:' "$wf"
   grep -q '^  bats-macos:' "$wf"
   [ "$(grep -c 'shard: \[1, 2, 3, 4, 5, 6\]' "$wf")" -eq 2 ]
-  [ "$(grep -c 'tests/run-shard.sh "${{ matrix.shard }}" 6' "$wf")" -eq 2 ]
+  [ "$(grep -c 'tests/run-shard.sh "$SHARD" 6' "$wf")" -eq 2 ]
 }
 
 @test "weights separate two heavy files that round-robin stacks" {

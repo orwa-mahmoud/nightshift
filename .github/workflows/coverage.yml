@@ -37,14 +37,17 @@ jobs:
           fetch-depth: 0
       - name: Decide whether this revision changes coverage
         id: d
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -eu
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "trace=true" >> "$GITHUB_OUTPUT"
             echo "reason=manual" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          before="${{ github.event.before }}"
+          before="$BEFORE_SHA"
           if [ "$before" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
             echo "trace=true" >> "$GITHUB_OUTPUT"
             echo "reason=unproved" >> "$GITHUB_OUTPUT"
