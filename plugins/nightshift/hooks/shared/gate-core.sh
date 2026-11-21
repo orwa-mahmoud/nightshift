@@ -787,3 +787,16 @@ ns_shift_end() {
   ns_shift_whistle "$summary"
   [ -f "$ended" ] && [ ! -L "$ended" ] && [ ! -e "$armed" ]
 }
+
+# Stall progress is a tick plus either work-target HEAD (repository mode) or the artifact
+# receipts fingerprint (artifact mode). ns_gate_progress_token chooses.
+deadline_passed() { ns_gate_deadline_passed; }
+
+# The terminal sequence lives once, in gate-core.sh. The watchman calls the same function.
+end_shift() { ns_shift_end "$PROJECT_DIR" "$1"; }
+
+honor_stop() {
+  local reason
+  reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
+}

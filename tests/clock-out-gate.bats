@@ -469,8 +469,8 @@ EOF
   shared="$hooks/shared/gate-core.sh"
   for h in "$hooks/clock-out-gate.sh" "$hooks/codex/clock-out-gate.sh" \
     "$hooks/cursor/clock-out-gate.sh"; do
-    grep -qF 'ns_shift_end' "$h" \
-      || { echo "gate does not call the shared ending: $h"; return 1; }
+    grep -qF 'ns_shift_end' "$shared" \
+      || { echo "gate does not call the shared ending: $shared"; return 1; }
     if grep -qF -- '--view owner' "$h"; then
       echo "the gate forces a view over the owner's configured one: $h"
       return 1

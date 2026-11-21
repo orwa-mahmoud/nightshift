@@ -25,6 +25,12 @@ ns_local_time() {
 # ns_local_now [second] — now, as ns_local_time writes it.
 ns_local_now() { ns_local_time "$(date +%s)" "${1:-}"; }
 
+# A local timestamp to the second, the form the shift log writes.
+ts() { ns_local_now second; }
+
+# One shift-log line, skipped when the workspace folder is already gone.
+log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
+
 ns_mtime() {
   case "$(uname -s)" in
     Darwin) stat -f %m "$1" 2>/dev/null ;;

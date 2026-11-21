@@ -43,6 +43,8 @@ set -u
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh"
+# shellcheck source=plugins/nightshift/runtime/shared/watchman-core.sh
+. "$_here/../shared/watchman-core.sh"
 # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
 . "$_here/../../hooks/shared/gate-core.sh"
 ns_copy_serves_host "$_here/../.." cursor || exit 0
@@ -53,7 +55,6 @@ AGENT=""
 MAX_WAKES=0
 
 usage() { sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
-need_value() { [ "$2" -ge 2 ] || { printf 'watchman: %s needs a value\n' "$1" >&2; usage; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) need_value "$1" $#; PROJECT="$2"; shift 2 ;;
@@ -80,6 +81,7 @@ PROJECT_DIR="$PROJECT"
 NS="$PROJECT/.nightshift"
 WORK_TARGET="$(ns_work_target "$PROJECT" 2>/dev/null || true)"
 [ -n "$WORK_TARGET" ] || WORK_TARGET="$PROJECT"
+# shellcheck disable=SC2034 # read by common.sh
 declare PUNCH LOG LOT TICK SESSION_FILE SESSION_END ENDED DEADLINE STOP MINT_FAILED
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set LOG "$NS" shift-log
@@ -91,7 +93,6 @@ ns_layout_set ENDED "$NS" ended
 ns_layout_set DEADLINE "$NS" deadline
 ns_layout_set STOP "$NS" stop
 ns_layout_set MINT_FAILED "$NS" mint-failed
-note() { ns_record_reason "$NS" "$1" "${2:-}"; }
 STATE_KIND="$(ns_state_kind "$PROJECT")"
 case "$STATE_KIND" in
   malformed | future)
@@ -124,64 +125,18 @@ for _req in "watchRetrySeconds:$RETRY_SPACING" "revivalPrompt:$PROMPT_RESUME" "f
   fi
 done
 
-ts() { ns_local_now second; }
-log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
-
 # The marker is the shift. Without it there is nothing to revive and no reading to take, and
 # the watchman never writes the marker back.
 declare ARMED
 ns_layout_set ARMED "$NS" armed
-armed() { [ -f "$ARMED" ]; }
-stand_down_disarmed() {
-  note owner-disarm
-  log_line "watchman: the armed marker is gone — standing down"
-  exit 0
-}
-stand_down_unclaimed() {
-  if [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ]; then
-    trap - EXIT
-    note stand-down "watchman pidfile taken over"
-    log_line "watchman: another watchman owns this site — standing down"
-    exit 0
-  fi
-  note stand-down "watchman pidfile gone"
-  log_line "watchman: the watchman pidfile is gone — standing down"
-  exit 0
-}
 
 declare PIDFILE
 ns_layout_set PIDFILE "$NS" watchman
 ns_watchman_claim "$PIDFILE" "$NS_WATCHMAN_SCRIPT" || exit 1
-# The pidfile is this loop's claim on the site, and a claim can change hands: Reset and Purge
-# remove it, a takeover replaces the pid inside it. Removing it on the way out is only right while
-# it still names this process — otherwise a watchman that has already been replaced would delete
-# the new one's claim as it exits, and the site would be left watched by a loop nothing records.
-holds_pidfile() {
-  [ -f "$PIDFILE" ] || return 1
-  [ ! -L "$PIDFILE" ] || return 1
-  [ "$(sed -n 1p "$PIDFILE" 2>/dev/null)" = "$$" ]
-}
 trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
 WATCH_CLOCK="$(date +%s)"
 
-sid()        { [ -L "$SESSION_FILE" ] && return; sed -n 1p "$SESSION_FILE" 2>/dev/null; }
 transcript() { [ -L "$SESSION_FILE" ] && return; sed -n 2p "$SESSION_FILE" 2>/dev/null; }
-rec_pid()    { [ -L "$SESSION_FILE" ] && return; sed -n 3p "$SESSION_FILE" 2>/dev/null | tr -d '[:space:]'; }
-rec_start()  { [ -L "$SESSION_FILE" ] && return; sed -n 4p "$SESSION_FILE" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'; }
-open_boxes() { ns_open_boxes "$PUNCH"; }
-
-recorded_process_alive() {
-  local p s
-  p="$(rec_pid)"; s="$(rec_start)"
-  [ -n "$p" ] || return 1
-  ns_recorded_process "$p" "$s"
-}
-
-pulse_alive() {
-  ns_pulse_fresh "$NS" "$INTERVAL_MIN" && return 0
-  ns_pulse_stale "$NS" "$INTERVAL_MIN" "$WATCH_CLOCK" && return 1
-  return 0
-}
 
 lease_pid_live() {
   ns_lease_pid_live "$NS"
