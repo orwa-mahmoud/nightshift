@@ -656,7 +656,7 @@ try {
     [Environment]::SetEnvironmentVariable('CLAUDE_PROJECT_DIR', $rawRoot, 'Process')
     [Environment]::SetEnvironmentVariable('NIGHTSHIFT_HARDHAT_LIB', $null, 'Process')
     try {
-        foreach ($raw in @('{"tool_name":"Bash","tool_input":{"command":"ls"', 'not json at all', '[1,2]')) {
+        foreach ($raw in @('', '{"tool_name":"Bash","tool_input":{"command":"ls"', 'not json at all', '[1,2]')) {
             $out = (@($raw | & $hostExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $hardhat -HostName claude 2>$null) -join "`n")
             $reason = ''
             try { $reason = [string]($out | ConvertFrom-Json).hookSpecificOutput.permissionDecisionReason } catch { $reason = "unreadable output: $out" }

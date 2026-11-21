@@ -119,7 +119,7 @@ parity_row() {
       codex) dir=CODEX_PROJECT_DIR hook="$HOOKS/codex/hardhat.sh" ;;
       cursor) dir=CURSOR_PROJECT_DIR hook="$HOOKS/cursor/hardhat.sh" ;;
     esac
-    for raw in '{"tool_name":"Bash","tool_input":{"command":"ls"' 'not json at all' '[1,2]'; do
+    for raw in '' '{"tool_name":"Bash","tool_input":{"command":"ls"' 'not json at all' '[1,2]'; do
       run hook_payload "$raw" env "$dir=$p" bash "$hook"
       # Cursor answers in its own shape: permission and agent_message.
       if [ "$host" = cursor ]; then

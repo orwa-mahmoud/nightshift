@@ -37,11 +37,12 @@ ns_hardhat_is_command_tool() {
 NS_HARDHAT_UNREADABLE_DENY='BLOCKED: the hook payload is unreadable while a shift is active. Retry after the host can provide valid hook JSON.'
 NS_HARDHAT_UNREADABLE_LOG='hardhat: the host sent a hook payload that is not a JSON object, and the call was refused'
 
-# ns_hardhat_payload_unreadable <raw-payload> — status 0 when the payload is present and is not a
-# JSON object. An empty payload keeps the host's own fallbacks, and without jq the payload is read
-# field by field as before.
+# ns_hardhat_payload_unreadable <raw-payload> — status 0 when the payload is empty or is not a
+# JSON object. An empty payload is unreadable with or without jq: no guard can see the call.
+# A non-empty payload without jq is read field by field as before. Cursor's fallbacks run before
+# this check, so only a payload that is still empty after them is refused.
 ns_hardhat_payload_unreadable() {
-  [ -n "$1" ] || return 1
+  [ -n "$1" ] || return 0
   command -v jq >/dev/null 2>&1 || return 1
   ! printf '%s' "$1" | jq -e 'type == "object"' >/dev/null 2>&1
 }
