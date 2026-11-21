@@ -188,6 +188,89 @@ finally {
     Remove-Item -LiteralPath $pauseRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+function New-HardhatDecisionSite {
+    param([Parameter(Mandatory = $true)][string]$Root, [Parameter(Mandatory = $true)][string]$Name,
+          [Parameter(Mandatory = $true)][string]$State)
+    $site = Join-Path $Root $Name
+    $ns = Join-Path $site '.nightshift'
+    $null = New-Item -ItemType Directory -Path $ns -Force
+    Copy-Item -LiteralPath (Join-Path $repository 'plugins/nightshift/config/nightshift-rules-template.json') `
+        -Destination (Join-Path $ns 'rules.json') -Force
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText((Join-Path $ns '.shift-armed'), '', $utf8)
+    $punch = $(if ($State -ceq 'done') {
+            "## Items`n- [x] **1. first.**`n- [x] **2. done.**`n"
+        } else {
+            "## Items`n- [ ] **1. first.**`n- [x] **2. done.**`n"
+        })
+    [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), $punch, $utf8)
+    & git -C $site init --quiet
+    & git -C $site config user.email dev@example.com
+    & git -C $site config user.name tester
+    & git -C $site commit --quiet --allow-empty -m init
+    if ($LASTEXITCODE -ne 0) { throw "git init failed for $Name" }
+    return $site
+}
+
+function Invoke-HardhatDecision {
+    param([Parameter(Mandatory = $true)][string]$Site, [Parameter(Mandatory = $true)][string]$Command)
+    $hardhat = Join-Path $repository 'plugins/nightshift/hooks/windows/hardhat.ps1'
+    $hostExe = (Get-Process -Id $PID).Path
+    $payload = @{ tool_name = 'Bash'; cwd = $Site; tool_input = @{ command = $Command } } | ConvertTo-Json -Compress -Depth 5
+    $previous = $env:CLAUDE_PROJECT_DIR
+    $env:CLAUDE_PROJECT_DIR = $Site
+    try {
+        return (@($payload | & $hostExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $hardhat -HostName claude 2>&1) -join "`n")
+    }
+    finally {
+        if ($null -eq $previous) { Remove-Item Env:CLAUDE_PROJECT_DIR -ErrorAction SilentlyContinue }
+        else { $env:CLAUDE_PROJECT_DIR = $previous }
+    }
+}
+
+$hardhatRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-parity-hardhat-' + [guid]::NewGuid().ToString('N'))
+$savedNightshift = @{}
+foreach ($entry in @(Get-ChildItem Env:NIGHTSHIFT_* -ErrorAction SilentlyContinue)) {
+    $savedNightshift[$entry.Name] = $entry.Value
+    Remove-Item -Path "Env:$($entry.Name)"
+}
+try {
+    $null = New-Item -ItemType Directory -Path $hardhatRoot -Force
+    foreach ($row in (Get-FixtureRows 'hardhat-decisions.tsv')) {
+        $site = New-HardhatDecisionSite $hardhatRoot $row[0] $row[1]
+        $assigned = New-Object Collections.Generic.List[string]
+        if ($row[2] -cne '-') {
+            foreach ($pair in ($row[2] -split ';')) {
+                $eq = $pair.IndexOf('=')
+                $name = $pair.Substring(0, $eq)
+                Set-Item -Path "Env:$name" -Value $pair.Substring($eq + 1)
+                $assigned.Add($name)
+            }
+        }
+        try {
+            $out = Invoke-HardhatDecision $site $row[3]
+            $got = 'allow'
+            if (-not [string]::IsNullOrWhiteSpace($out)) {
+                $parsed = $out | ConvertFrom-Json
+                $got = [string]$parsed.hookSpecificOutput.permissionDecisionReason
+            }
+            if ($row[4] -ceq 'allow') {
+                Expect-Equal 'allow' $(if ([string]::IsNullOrWhiteSpace($out)) { 'allow' } else { $got }) "hardhat $($row[0])"
+            }
+            elseif (-not $got.StartsWith($row[4], [StringComparison]::Ordinal)) {
+                Expect-Equal $row[4] $got "hardhat $($row[0])"
+            }
+        }
+        finally {
+            foreach ($name in $assigned) { Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue }
+        }
+    }
+}
+finally {
+    foreach ($name in @($savedNightshift.Keys)) { Set-Item -Path "Env:$name" -Value $savedNightshift[$name] }
+    Remove-Item -LiteralPath $hardhatRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "parity-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

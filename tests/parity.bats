@@ -159,6 +159,34 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
   done < <(rows pauses.tsv)
 }
 
+@test "hardhat decisions match the fixture on Bash" {
+  local name state envset command want p setting reason
+  local -a settings=()
+  while IFS=$'\t' read -r name state envset command want; do
+    p="$(new_project "hh-$name")"
+    if [ "$state" = done ]; then
+      punch_done "$p"
+    else
+      punch_open "$p"
+    fi
+    settings=()
+    if [ "$envset" != - ]; then
+      IFS=';' read -ra settings <<<"$envset"
+    fi
+    run hardhat_bash "$p" "$command" "${settings[@]}"
+    if [ "$want" = allow ]; then
+      is_allow || { echo "$name: status $status output $output"; return 1; }
+    else
+      is_deny "$output" || { echo "$name deny: $output"; return 1; }
+      reason="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.permissionDecisionReason')"
+      case "$reason" in
+        "$want"*) ;;
+        *) echo "$name: got $reason"; echo "want prefix $want"; return 1 ;;
+      esac
+    fi
+  done < <(rows hardhat-decisions.tsv)
+}
+
 @test "the PowerShell half reads the same fixtures and runs in the Windows suite" {
   grep -qF 'fixtures/parity' "$BATS_TEST_DIRNAME/windows/parity-logic.ps1"
   grep -qF 'parity-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
