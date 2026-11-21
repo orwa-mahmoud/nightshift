@@ -36,6 +36,7 @@ jobs:
       validate: ${{ steps.class.outputs.validate }}
       docs: ${{ steps.class.outputs.docs }}
       prose: ${{ steps.class.outputs.prose }}
+      classified_at: ${{ steps.class.outputs.classified_at }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +63,7 @@ jobs:
           print("\n".join(files))
           PY
           tests/ci-paths.sh <"${RUNNER_TEMP}/changed-paths.txt" >>"$GITHUB_OUTPUT"
+          printf 'classified_at=%s\n' "$(date +%s)" >>"$GITHUB_OUTPUT"
 
   shellcheck:
     needs: changes
@@ -112,6 +114,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats shellcheck
       - name: Run bats shard ${{ matrix.shard }}/6
         if: needs.changes.outputs.suite == 'true'
+        env:
+          NIGHTSHIFT_CLASSIFIED_AT: ${{ needs.changes.outputs.classified_at }}
         run: |
           set -eu
           if ! ls tests/*.bats >/dev/null 2>&1; then
@@ -164,6 +168,8 @@ jobs:
         run: brew install bats-core
       - name: Run bats shard ${{ matrix.shard }}/6 under macOS system bash
         if: needs.changes.outputs.suite == 'true'
+        env:
+          NIGHTSHIFT_CLASSIFIED_AT: ${{ needs.changes.outputs.classified_at }}
         run: |
           set -eu
           bats_bin="$(command -v bats)"
