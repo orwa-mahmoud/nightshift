@@ -1369,26 +1369,44 @@ function Get-NSUsageResumedAt {
 # Get-NSUsagePausedBetween <nightshift-dir> <from> <to> - how long was recorded as not-work inside one
 # span, and why: `<seconds>`t<reason>`, empty when the runtime knows of no gap.
 #
-# A pause is closed by the next thing that happens, never past <to>. Where nothing followed, the gap
-# is open and is reported as such rather than guessed at.
+# Only a pause at or after <from> and before <to> counts. Lines that share one epoch are one pause,
+# and the first line gives the reason. A counted pause ends at the earliest of the first mark after
+# it, the next later pause epoch anywhere in pauses.tsv, and <to>. A pause no mark followed is still
+# open and is left out rather than guessed at.
 function Get-NSUsagePausedBetween {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From,
           [Parameter(Mandatory = $true)][long]$To)
     $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'pauses.tsv'
     if (Test-NSReparsePoint $file) { return '' }
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
-    $total = [long]0
-    $lastReason = ''
+    $epochs = New-Object Collections.Generic.List[long]
+    $reasons = New-Object Collections.Generic.List[string]
+    $seen = New-Object 'System.Collections.Generic.HashSet[long]'
     foreach ($line in @([IO.File]::ReadAllLines($file))) {
         $parts = $line.Split("`t")
-        $at = $parts[0]
-        if ($at -notmatch '^[0-9]+$') { continue }
-        if ([long]$at -lt $From -or [long]$at -ge $To) { continue }
-        $next = Get-NSUsageResumedAt $NightshiftDir ([long]$at)
+        $atText = $parts[0]
+        if ($atText -notmatch '^[0-9]+$') { continue }
+        $at = [long]$atText
+        if (-not $seen.Add($at)) { continue }
+        $epochs.Add($at)
+        $reasons.Add($(if ($parts.Length -ge 2) { $parts[1] } else { '' }))
+    }
+    $total = [long]0
+    $lastReason = ''
+    for ($i = 0; $i -lt $epochs.Count; $i++) {
+        $at = $epochs[$i]
+        if ($at -lt $From -or $at -ge $To) { continue }
+        $next = Get-NSUsageResumedAt $NightshiftDir $at
         if ([string]::IsNullOrEmpty($next)) { continue }
-        $end = [math]::Min([long]$next, $To)
-        $total += ($end - [long]$at)
-        $lastReason = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
+        $end = [long]$next
+        $nextPause = -1L
+        foreach ($other in $epochs) {
+            if ($other -gt $at -and ($nextPause -lt 0 -or $other -lt $nextPause)) { $nextPause = $other }
+        }
+        if ($nextPause -ge 0 -and $nextPause -lt $end) { $end = $nextPause }
+        if ($To -lt $end) { $end = $To }
+        $total += ($end - $at)
+        $lastReason = $reasons[$i]
     }
     if ($total -le 0) { return '' }
     return ([string]$total + "`t" + $lastReason)
@@ -1396,7 +1414,8 @@ function Get-NSUsagePausedBetween {
 
 # Get-NSUsagePausesByReason <nightshift-dir> <from> <to> - the not-work inside one span, one entry
 # per reason in the order each was first recorded. Each gap is measured exactly as
-# Get-NSUsagePausedBetween measures it, so the entries sum to its total.
+# Get-NSUsagePausedBetween measures it, so the entries sum to its total. A reason whose total is 0
+# is left out.
 function Get-NSUsagePausesByReason {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From,
           [Parameter(Mandatory = $true)][long]$To)
@@ -1410,25 +1429,40 @@ function Get-NSUsagePausesByReason {
         $at = $line.Split("`t")[0]
         if ($at -cmatch '^[0-9]+$') { $marks.Add([long]$at) }
     }
-    $order = New-Object Collections.Generic.List[string]
-    $totals = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+    $epochs = New-Object Collections.Generic.List[long]
+    $whys = New-Object Collections.Generic.List[string]
+    $seen = New-Object 'System.Collections.Generic.HashSet[long]'
     foreach ($line in @([IO.File]::ReadAllLines($file))) {
         $parts = $line.Split("`t")
         if ($parts[0] -cnotmatch '^[0-9]+$') { continue }
         $at = [long]$parts[0]
+        if (-not $seen.Add($at)) { continue }
+        $epochs.Add($at)
+        $whys.Add($(if ($parts.Length -ge 2 -and $parts[1].Length -gt 0) { $parts[1] } else { 'paused' }))
+    }
+    $order = New-Object Collections.Generic.List[string]
+    $totals = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+    for ($i = 0; $i -lt $epochs.Count; $i++) {
+        $at = $epochs[$i]
         if ($at -lt $From -or $at -ge $To) { continue }
         $resumed = -1L
         foreach ($mark in $marks) {
             if ($mark -gt $at) { $resumed = $mark; break }
         }
         if ($resumed -lt 0) { continue }
-        if ($resumed -gt $To) { $resumed = $To }
-        $why = $(if ($parts.Length -ge 2 -and $parts[1].Length -gt 0) { $parts[1] } else { 'paused' })
+        $nextPause = -1L
+        foreach ($other in $epochs) {
+            if ($other -gt $at -and ($nextPause -lt 0 -or $other -lt $nextPause)) { $nextPause = $other }
+        }
+        $end = $resumed
+        if ($nextPause -ge 0 -and $nextPause -lt $end) { $end = $nextPause }
+        if ($end -gt $To) { $end = $To }
+        $why = $whys[$i]
         if (-not $totals.ContainsKey($why)) {
             $order.Add($why)
             $totals[$why] = 0
         }
-        $totals[$why] += ($resumed - $at)
+        $totals[$why] += ($end - $at)
     }
     foreach ($why in $order) {
         if ($totals[$why] -gt 0) { $result.Add([pscustomobject]@{ Reason = $why; Seconds = $totals[$why] }) }

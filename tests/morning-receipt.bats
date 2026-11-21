@@ -342,8 +342,8 @@ _verdict_commit() { # <project> <epoch> <file> <lines> <subject>
   run env TZ=America/Sao_Paulo bash "$RECEIPT" --project "$p" --view owner
   [ "$status" -eq 0 ]
   [[ "$output" == *'- Span: 2026-09-21 11:13:20 (UTC-03:00) → 2026-09-21 12:10:05 (UTC-03:00)'* ]] || false
-  # Esc gaps 1100s and 1000s, the revival 800s: 2900s paused inside a 3405s wall.
-  [[ "$output" == *$'- Working: 8m 25s\n- Paused: 48m 20s\n  - owner pressed Esc: 35m 0s\n  - the session ended and the shift was revived: 13m 20s\n- Wall: 56m 45s'* ]] || false
+  # Esc 700→1000 and 2000→3000, the revival 1000→1800: 2100s paused inside a 3405s wall.
+  [[ "$output" == *$'- Working: 21m 45s\n- Paused: 35m 0s\n  - owner pressed Esc: 21m 40s\n  - the session ended and the shift was revived: 13m 20s\n- Wall: 56m 45s'* ]] || false
   [[ "$output" == *'| input | 400 |'* ]] || false
   [[ "$output" == *'| cache write | unavailable |'* ]] || false
   [[ "$output" == *'| cache read | 12.0k |'* ]] || false

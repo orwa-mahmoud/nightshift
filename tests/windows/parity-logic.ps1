@@ -151,6 +151,43 @@ foreach ($row in (Get-FixtureRows 'punch.tsv')) {
     Expect-Equal $row[7] (Get-NSPunchItemsDigest $list) "$($row[0]) items digest"
 }
 
+$pauseRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-parity-pauses-' + [guid]::NewGuid().ToString('N'))
+try {
+    $n = 0
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    foreach ($row in (Get-FixtureRows 'pauses.tsv')) {
+        $n++
+        $site = Join-Path $pauseRoot ([string]$n)
+        $ns = Join-Path $site '.nightshift'
+        $usage = Get-NSUsageDir $ns
+        $null = New-Item -ItemType Directory -Path $usage -Force
+        $markText = New-Object System.Text.StringBuilder
+        foreach ($epoch in ($row[0] -split ' ')) {
+            [void]$markText.Append($epoch + "`tx`n")
+        }
+        [IO.File]::WriteAllText((Join-Path $usage 'marks.tsv'), $markText.ToString(), $utf8)
+        $pauseText = New-Object System.Text.StringBuilder
+        foreach ($pair in ($row[1] -split '\|')) {
+            $eq = $pair.IndexOf('=')
+            [void]$pauseText.Append($pair.Substring(0, $eq) + "`t" + $pair.Substring($eq + 1) + "`n")
+        }
+        [IO.File]::WriteAllText((Join-Path $usage 'pauses.tsv'), $pauseText.ToString(), $utf8)
+        $between = Get-NSUsagePausedBetween $ns ([long]$row[2]) ([long]$row[3])
+        if ([string]::IsNullOrEmpty($between)) { $between = 'none' } else { $between = $between.Replace("`t", '=') }
+        $parts = New-Object Collections.Generic.List[string]
+        foreach ($entry in (Get-NSUsagePausesByReason $ns ([long]$row[2]) ([long]$row[3]))) {
+            if ($null -eq $entry) { continue }
+            $parts.Add([string]$entry.Reason + '=' + [string]$entry.Seconds)
+        }
+        $reasons = $(if ($parts.Count -eq 0) { 'none' } else { $parts -join '|' })
+        Expect-Equal $row[4] $between "paused between case $n"
+        Expect-Equal $row[5] $reasons "pauses by reason case $n"
+    }
+}
+finally {
+    Remove-Item -LiteralPath $pauseRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "parity-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

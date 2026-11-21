@@ -950,7 +950,7 @@ try {
     Expect-True ($verdict.Contains('- Started: ' + (Get-NSLocalTime '1790000000' -Seconds)) -and
         $verdict.Contains('- Ended: ' + (Get-NSLocalTime '1790003405' -Seconds))) `
         'both ends of the shift are in local time with the offset'
-    Expect-True $verdict.Contains(("- Working: 8m 25s`n- Paused: 48m 20s`n  - owner pressed Esc: 35m 0s`n" +
+    Expect-True $verdict.Contains(("- Working: 21m 45s`n- Paused: 35m 0s`n  - owner pressed Esc: 21m 40s`n" +
             "  - the session ended and the shift was revived: 13m 20s`n- Wall: 56m 45s")) `
         'pause reasons sum to the paused total'
     Expect-True ($verdict.Contains('| cache write | unavailable |') -and $verdict.Contains('| cache read | 12.0k |')) `

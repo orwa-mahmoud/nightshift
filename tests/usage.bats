@@ -1119,10 +1119,10 @@ pause_fixture() {
   pause_fixture "$p"
   run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 4200
   [ "$status" -eq 0 ]
-  # Esc: 1100→1600 and 2000→2800; the revival 1300→1600; the usage limit 3900→4000. The pause at
+  # Esc 1100→1300 and 2000→2800, the revival 1300→1600, the usage limit 3900→4000. The pause at
   # 4100 has no mark after it and is left out.
-  [ "$output" = $'owner pressed Esc\t1300\nthe session ended and the shift was revived\t300\nusage limit\t100' ]
-  [ "$(lib ns_usage_paused_between "$p/.nightshift" 1000 4200 | cut -f1)" = 1700 ]
+  [ "$output" = $'owner pressed Esc\t1000\nthe session ended and the shift was revived\t300\nusage limit\t100' ]
+  [ "$(lib ns_usage_paused_between "$p/.nightshift" 1000 4200 | cut -f1)" = 1400 ]
 }
 
 @test "a pause is cut at the end of the span it is measured in" {
@@ -1130,7 +1130,7 @@ pause_fixture() {
   pause_fixture "$p"
   run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 1500
   [ "$status" -eq 0 ]
-  [ "$output" = $'owner pressed Esc\t400\nthe session ended and the shift was revived\t200' ]
+  [ "$output" = $'owner pressed Esc\t200\nthe session ended and the shift was revived\t200' ]
 }
 
 @test "a recorded pause with no reason is listed without one" {

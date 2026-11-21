@@ -127,6 +127,38 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
   done < <(rows punch.tsv)
 }
 
+@test "paused time matches the fixture on Bash" {
+  local marks pauses from to between reasons n=0 site ns usage pair epoch reason
+  local got_between got_reasons
+  while IFS=$'\t' read -r marks pauses from to between reasons; do
+    n=$((n + 1))
+    site="$BATS_TEST_TMPDIR/pauses-$n"
+    ns="$site/.nightshift"
+    mkdir -p "$ns"
+    usage="$(lib ns_usage_dir "$ns")"
+    mkdir -p "$usage"
+    : >"$usage/marks.tsv"
+    for epoch in $marks; do
+      printf '%s\tx\n' "$epoch" >>"$usage/marks.tsv"
+    done
+    : >"$usage/pauses.tsv"
+    local -a pairs=()
+    IFS='|' read -ra pairs <<<"$pauses"
+    for pair in "${pairs[@]}"; do
+      epoch="${pair%%=*}"
+      reason="${pair#*=}"
+      printf '%s\t%s\n' "$epoch" "$reason" >>"$usage/pauses.tsv"
+    done
+    got_between="$(lib ns_usage_paused_between "$ns" "$from" "$to" || true)"
+    got_between="${got_between//$'\t'/=}"
+    [ -n "$got_between" ] || got_between=none
+    got_reasons="$(lib ns_usage_pauses_by_reason "$ns" "$from" "$to" | tr '\t' '=' | paste -sd'|' -)"
+    [ -n "$got_reasons" ] || got_reasons=none
+    [ "$got_between" = "$between" ] || { echo "case $n between: got $got_between, want $between"; return 1; }
+    [ "$got_reasons" = "$reasons" ] || { echo "case $n reasons: got $got_reasons, want $reasons"; return 1; }
+  done < <(rows pauses.tsv)
+}
+
 @test "the PowerShell half reads the same fixtures and runs in the Windows suite" {
   grep -qF 'fixtures/parity' "$BATS_TEST_DIRNAME/windows/parity-logic.ps1"
   grep -qF 'parity-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"

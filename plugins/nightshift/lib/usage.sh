@@ -758,23 +758,52 @@ ns_usage_last_pause() {
 # ns_usage_paused_between <nightshift-dir> <from> <to> — how long was recorded as not-work inside
 # one span, and why: `<seconds>\t<reason>`, empty when the runtime knows of no gap.
 #
-# A pause is closed by the next thing that happens: the gap runs from the pause to the reading
-# that follows it, never past <to>. Where nothing followed, the gap is open and is reported as such
-# rather than guessed at.
+# Only a pause at or after <from> and before <to> counts. Lines that share one epoch are one
+# pause, and the first line gives the reason. A counted pause ends at the earliest of the first
+# mark after it, the next later pause epoch anywhere in pauses.tsv, and <to>. A pause no mark
+# followed is still open and is left out rather than guessed at.
 ns_usage_paused_between() {
-  local ns="$1" from="$2" to="$3" file line at reason total=0 last_reason="" next
+  local ns="$1" from="$2" to="$3" file line at reason total=0 last_reason="" next end
+  local -a epochs=() reasons=()
+  local i j n=0 next_pause="" duplicate
   file="$(ns_usage_dir "$ns")/pauses.tsv"
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   while IFS= read -r line; do
     at="$(printf '%s' "$line" | cut -f1)"
     reason="$(printf '%s' "$line" | cut -f2)"
     case "$at" in '' | *[!0-9]*) continue ;; esac
+    duplicate=0
+    for ((j = 0; j < n; j++)); do
+      if [ "${epochs[$j]}" = "$at" ]; then
+        duplicate=1
+        break
+      fi
+    done
+    [ "$duplicate" -eq 0 ] || continue
+    epochs[n]="$at"
+    reasons[n]="$reason"
+    n=$((n + 1))
+  done <"$file"
+  for ((i = 0; i < n; i++)); do
+    at="${epochs[$i]}"
     { [ "$at" -ge "$from" ] && [ "$at" -lt "$to" ]; } || continue
     next="$(_ns_usage_resumed_at "$ns" "$at")" || continue
-    [ "$next" -le "$to" ] || next="$to"
-    total=$((total + next - at))
-    last_reason="$reason"
-  done <"$file"
+    next_pause=""
+    for ((j = 0; j < n; j++)); do
+      if [ "${epochs[$j]}" -gt "$at" ]; then
+        if [ -z "$next_pause" ] || [ "${epochs[$j]}" -lt "$next_pause" ]; then
+          next_pause="${epochs[$j]}"
+        fi
+      fi
+    done
+    end="$next"
+    if [ -n "$next_pause" ] && [ "$next_pause" -lt "$end" ]; then
+      end="$next_pause"
+    fi
+    [ "$end" -le "$to" ] || end="$to"
+    total=$((total + end - at))
+    last_reason="${reasons[$i]}"
+  done
   [ "$total" -gt 0 ] || return 1
   printf '%s\t%s' "$total" "$last_reason"
 }
