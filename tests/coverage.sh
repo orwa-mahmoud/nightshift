@@ -22,9 +22,11 @@ cd "$(dirname "$0")/.."
 
 INCLUDE=plugins/nightshift/hooks,plugins/nightshift/runtime,plugins/nightshift/lib
 
-CHUNKS=coverage/chunks.tsv
+# A shard run sets NIGHTSHIFT_COVERAGE_ROOT to its own directory. A local run uses coverage/.
+COVERAGE_ROOT="${NIGHTSHIFT_COVERAGE_ROOT:-coverage}"
+CHUNKS="$COVERAGE_ROOT/chunks.tsv"
 # The groups killed in the parallel pass, one line number per line, measured again test by test.
-RETRY=coverage/retry.txt
+RETRY="$COVERAGE_ROOT/retry.txt"
 # The memory one group is planned to reach under kcov. Four groups at once on the 16 GB runner
 # left about 1 GB free before the step was killed, so a run keeps this much unused.
 GROUP_MB=6000
@@ -50,7 +52,7 @@ add_chunk() {
   printf '%s\t%s\t^(%s)$\n' "$1" "$(printf '%s\n' "$group" | grep -c .)" \
     "$(printf '%s\n' "$group" | ere_escape | paste -sd '|' -)" >>"$CHUNKS"
   line="$(grep -c . "$CHUNKS")"
-  printf '%s\n' "$group" >"coverage/names-$line.txt"
+  printf '%s\n' "$group" >"$COVERAGE_ROOT/names-$line.txt"
 }
 
 # test_weight <file> <name> — megabytes to plan for one test. A profile row for the name wins,
@@ -239,7 +241,7 @@ report_ok() {
 # incomplete batch is removed so it cannot be merged into either published report. A failing test
 # and a platform skip still count: they are measured, and named apart in the measured line.
 run_chunk() {
-  local line="$1" file count filter out="coverage/part-$1" log="coverage/part-$1.log" status=0 why=""
+  local line="$1" file count filter out="$COVERAGE_ROOT/part-$1" log="$COVERAGE_ROOT/part-$1.log" status=0 why=""
   local session left free tap_rc=0 summary failed_n=0 skipped_n=0 started elapsed rss=""
   IFS=$'\t' read -r file count filter < <(sed -n "${line}p" "$CHUNKS")
   started="$(date +%s)"
@@ -322,70 +324,22 @@ for setting in "NIGHTSHIFT_COVERAGE_JOBS=$JOBS" "NIGHTSHIFT_COVERAGE_CHUNK=$CHUN
   esac
 done
 
-if [ "${1:-}" = --plan ]; then
-  resolve_budget
-  rm -rf coverage
-  mkdir -p coverage
-  write_chunks
-  printf 'coverage: %s test groups, budget %s MB, %s at a time (%s MB available, %s MB headroom)\n' \
-    "$(grep -c . "$CHUNKS" || :)" "$BUDGET_MB" "$JOBS" "$AVAIL_MB" "$HEADROOM_MB"
-  exit 0
-fi
-
-if [ "$(uname -s)" != Linux ] || ! command -v kcov >/dev/null 2>&1; then
-  exec docker run --rm -v "$PWD:/src" -w /src -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" -e NIGHTSHIFT_COVERAGE_CHUNK="$CHUNK" \
-    debian:stable-slim bash -c '
-    set -e
-    apt-get update -qq >/dev/null
-    apt-get install -y -qq kcov bats git jq shellcheck python3 procps time >/dev/null
-    git config --global user.email dev@example.com
-    git config --global user.name dev
-    git config --global --add safe.directory "*"
-    exec bash tests/coverage.sh'
-fi
-
-resolve_budget
-
-rm -rf coverage
-mkdir -p coverage
-write_chunks
-groups="$(grep -c . "$CHUNKS" || :)"
-printf 'coverage: %s test groups, budget %s MB, %s at a time (%s MB available, %s MB headroom)\n' \
-  "$groups" "$BUDGET_MB" "$JOBS" "$AVAIL_MB" "$HEADROOM_MB"
-
-failed=0
-seq 1 "$groups" | xargs -n 1 -P "$JOBS" bash tests/coverage.sh --chunk || failed=1
-# Each group killed in the parallel pass, again one test at a time, with the machine to itself.
-while IFS= read -r group; do
-  file="$(sed -n "${group}p" "$CHUNKS" | cut -f1)"
-  while IFS= read -r name; do
-    printf '%s\n' "$name" | add_chunk "$file"
-    bash tests/coverage.sh --chunk "$(grep -c . "$CHUNKS")" </dev/null || failed=1
-  done <"coverage/names-$group.txt"
-done <"$RETRY"
-if [ "$failed" -ne 0 ]; then
-  printf 'coverage: one or more test groups could not be measured (see above); no report written\n' >&2
-  exit 1
-fi
-
-if ! kcov --merge coverage/merged coverage/part-*/; then
-  printf 'coverage: kcov could not merge the per-group reports in coverage/part-*\n' >&2
-  exit 1
-fi
-cob="$(find coverage/merged -name cobertura.xml 2>/dev/null | head -n 1)"
-if [ -z "$cob" ]; then
-  printf 'coverage: the merged kcov output in coverage/merged has no cobertura.xml\n' >&2
-  exit 1
-fi
-lines="$(jq -r '.total_lines' "$(dirname "$cob")/coverage.json")"
-case "$lines" in
-  '' | *[!0-9]* | 0)
-    printf 'coverage: the merged report counts no lines (total_lines "%s"); nothing was measured\n' "$lines" >&2
-    exit 1
-    ;;
-esac
-
-python3 - "$cob" <<'PY'
+# publish_coverage <merged-dir> — cobertura.xml and sonar-generic.xml at coverage/.
+publish_coverage() {
+  local cob lines
+  cob="$(find "$1" -name cobertura.xml 2>/dev/null | head -n 1)"
+  if [ -z "$cob" ]; then
+    printf 'coverage: the merged kcov output in %s has no cobertura.xml\n' "$1" >&2
+    return 1
+  fi
+  lines="$(jq -r '.total_lines' "$(dirname "$cob")/coverage.json")"
+  case "$lines" in
+    '' | *[!0-9]* | 0)
+      printf 'coverage: the merged report counts no lines (total_lines "%s"); nothing was measured\n' "$lines" >&2
+      return 1
+      ;;
+  esac
+  python3 - "$cob" <<'PY'
 import sys, xml.etree.ElementTree as ET
 
 tree = ET.parse(sys.argv[1])
@@ -406,8 +360,6 @@ for cls in root.iter('class'):
 out.append('</coverage>')
 open('coverage/sonar-generic.xml', 'w').write('\n'.join(out) + '\n')
 
-# kcov names files relative to the directory it traced; the copy for Codecov names them from the
-# repository root, so its paths match the files in git.
 sources = root.find('sources')
 if sources is not None:
     for source in list(sources):
@@ -415,6 +367,243 @@ if sources is not None:
     ET.SubElement(sources, 'source').text = '.'
 tree.write('coverage/cobertura.xml', encoding='utf-8', xml_declaration=True)
 PY
+  jq -r '"coverage: " + .percent_covered + "% of " + (.total_lines|tostring) + " lines"' \
+    "$(dirname "$cob")/coverage.json"
+}
 
-jq -r '"coverage: " + .percent_covered + "% of " + (.total_lines|tostring) + " lines"' \
-  "$(dirname "$cob")/coverage.json"
+# merge_coverage — one report from coverage/shard-*/ when those manifests agree.
+# shellcheck disable=SC2094
+merge_coverage() {
+  local expected="" dir commit shard shards result id total="" rest line
+  local plan manifests ids groups
+  expected="${NIGHTSHIFT_COVERAGE_COMMIT:-}"
+  if [ -z "$expected" ]; then
+    expected="$(git rev-parse HEAD 2>/dev/null || true)"
+  fi
+  if [ -z "$expected" ]; then
+    printf 'coverage: merge has no commit to compare\n' >&2
+    return 1
+  fi
+  manifests="$(mktemp)"
+  ids="$(mktemp)"
+  groups="$(mktemp)"
+  : >"$manifests"
+  : >"$ids"
+  : >"$groups"
+  for dir in coverage/shard-*; do
+    [ -f "$dir/manifest.txt" ] || continue
+    printf '%s\n' "$dir" >>"$manifests"
+  done
+  if [ ! -s "$manifests" ]; then
+    printf 'coverage: merge found no shard manifests in coverage/shard-*\n' >&2
+    rm -f "$manifests" "$ids" "$groups"
+    return 1
+  fi
+  while IFS= read -r dir; do
+    commit="$(awk '$1 == "commit" { print $2 }' "$dir/manifest.txt")"
+    shard="$(awk '$1 == "shard" && $2 ~ /^[0-9]+$/ { print $2 }' "$dir/manifest.txt")"
+    shards="$(awk '$1 == "shards" { print $2 }' "$dir/manifest.txt")"
+    result="$(awk '$1 == "result" { print $2 }' "$dir/manifest.txt")"
+    if [ "$commit" != "$expected" ] || [ "$result" != ok ] || [ -z "$shard" ] || [ -z "$shards" ]; then
+      printf 'coverage: %s is not a successful manifest for %s\n' "$dir" "$expected" >&2
+      rm -f "$manifests" "$ids" "$groups"
+      return 1
+    fi
+    if [ -n "$total" ] && [ "$shards" != "$total" ]; then
+      printf 'coverage: %s says %s shards, another says %s\n' "$dir" "$shards" "$total" >&2
+      rm -f "$manifests" "$ids" "$groups"
+      return 1
+    fi
+    total="$shards"
+    if grep -qx "$shard" "$ids"; then
+      printf 'coverage: shard %s is reported more than once\n' "$shard" >&2
+      rm -f "$manifests" "$ids" "$groups"
+      return 1
+    fi
+    printf '%s\n' "$shard" >>"$ids"
+    awk 'NF && $1 ~ /^[0-9]+$/ { print }' "$dir/manifest.txt" >>"$groups"
+  done <"$manifests"
+  id=1
+  while [ "$id" -le "$total" ]; do
+    if ! grep -qx "$id" "$ids"; then
+      printf 'coverage: shard %s of %s is missing\n' "$id" "$total" >&2
+      rm -f "$manifests" "$ids" "$groups"
+      return 1
+    fi
+    id=$((id + 1))
+  done
+  plan="$(mktemp -d)"
+  COVERAGE_ROOT="$plan"
+  CHUNKS="$plan/chunks.tsv"
+  RETRY="$plan/retry.txt"
+  mkdir -p "$plan"
+  resolve_budget
+  write_chunks
+  while IFS= read -r line; do
+    id="${line%%$'\t'*}"
+    rest="${line#*$'\t'}"
+    if [ "$id" != "$(printf '%s\n' "$line" | cut -f1)" ]; then
+      printf 'coverage: a shard group line is not the plan\n' >&2
+      rm -rf "$plan"
+      rm -f "$manifests" "$ids" "$groups"
+      return 1
+    fi
+    if [ "$(sed -n "${id}p" "$CHUNKS")" != "$rest" ]; then
+      printf 'coverage: shard group %s does not match the plan\n' "$id" >&2
+      rm -rf "$plan"
+      rm -f "$manifests" "$ids" "$groups"
+      return 1
+    fi
+    found=0
+    while IFS= read -r dir; do
+      if [ -d "$dir/part-$id" ]; then found=1; break; fi
+    done <"$manifests"
+    if [ "$found" -ne 1 ]; then
+      printf 'coverage: shard group %s has no report directory\n' "$id" >&2
+      rm -rf "$plan"
+      rm -f "$manifests" "$ids" "$groups"
+      return 1
+    fi
+  done <"$groups"
+  if [ "$(cut -f1 "$groups" | sort | uniq -d | grep -c . || true)" -ne 0 ]; then
+    printf 'coverage: a group is listed by more than one shard\n' >&2
+    rm -rf "$plan"
+    rm -f "$manifests" "$ids" "$groups"
+    return 1
+  fi
+  if [ "$(grep -c . "$groups" || :)" -ne "$(grep -c . "$CHUNKS" || :)" ]; then
+    printf 'coverage: shard groups do not cover the plan\n' >&2
+    rm -rf "$plan"
+    rm -f "$manifests" "$ids" "$groups"
+    return 1
+  fi
+  rm -rf "$plan"
+  parts=""
+  while IFS= read -r dir; do
+    for part in "$dir"/part-*; do
+      [ -d "$part" ] || continue
+      parts="$parts $part"
+    done
+  done <"$manifests"
+  rm -f "$manifests" "$ids" "$groups"
+  # shellcheck disable=SC2086
+  if ! kcov --merge coverage/merged $parts; then
+    printf 'coverage: kcov could not merge the shard reports\n' >&2
+    return 1
+  fi
+  publish_coverage coverage/merged
+}
+
+if [ "${1:-}" = --merge ]; then
+  merge_coverage
+  exit
+fi
+
+if [ "${1:-}" = --plan ]; then
+  resolve_budget
+  rm -rf coverage
+  mkdir -p coverage
+  write_chunks
+  printf 'coverage: %s test groups, budget %s MB, %s at a time (%s MB available, %s MB headroom)\n' \
+    "$(grep -c . "$CHUNKS" || :)" "$BUDGET_MB" "$JOBS" "$AVAIL_MB" "$HEADROOM_MB"
+  exit 0
+fi
+
+if [ "$(uname -s)" != Linux ] || ! command -v kcov >/dev/null 2>&1; then
+  exec docker run --rm -v "$PWD:/src" -w /src \
+    -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" -e NIGHTSHIFT_COVERAGE_CHUNK="$CHUNK" \
+    -e NIGHTSHIFT_COVERAGE_SHARD="${NIGHTSHIFT_COVERAGE_SHARD:-}" \
+    -e NIGHTSHIFT_COVERAGE_SHARDS="${NIGHTSHIFT_COVERAGE_SHARDS:-}" \
+    -e NIGHTSHIFT_COVERAGE_COMMIT="${NIGHTSHIFT_COVERAGE_COMMIT:-}" \
+    debian:stable-slim bash -c '
+    set -e
+    apt-get update -qq >/dev/null
+    apt-get install -y -qq kcov bats git jq shellcheck python3 procps time >/dev/null
+    git config --global user.email dev@example.com
+    git config --global user.name dev
+    git config --global --add safe.directory "*"
+    exec bash tests/coverage.sh'
+fi
+
+resolve_budget
+
+shard="${NIGHTSHIFT_COVERAGE_SHARD:-}"
+shards="${NIGHTSHIFT_COVERAGE_SHARDS:-}"
+if [ -n "$shard" ] || [ -n "$shards" ]; then
+  case "$shard$shards" in
+    *[!0-9]*)
+      printf 'coverage: NIGHTSHIFT_COVERAGE_SHARD and NIGHTSHIFT_COVERAGE_SHARDS must be positive numbers\n' >&2
+      exit 2
+      ;;
+  esac
+  if [ "$shard" -lt 1 ] || [ "$shards" -lt 1 ] || [ "$shard" -gt "$shards" ]; then
+    printf 'coverage: shard %s is not inside 1..%s\n' "$shard" "$shards" >&2
+    exit 2
+  fi
+  COVERAGE_ROOT="coverage/shard-$shard"
+  export NIGHTSHIFT_COVERAGE_ROOT="$COVERAGE_ROOT"
+  CHUNKS="$COVERAGE_ROOT/chunks.tsv"
+  RETRY="$COVERAGE_ROOT/retry.txt"
+  rm -rf "$COVERAGE_ROOT"
+else
+  rm -rf coverage
+fi
+mkdir -p "$COVERAGE_ROOT"
+write_chunks
+groups="$(grep -c . "$CHUNKS" || :)"
+printf 'coverage: %s test groups, budget %s MB, %s at a time (%s MB available, %s MB headroom)\n' \
+  "$groups" "$BUDGET_MB" "$JOBS" "$AVAIL_MB" "$HEADROOM_MB"
+
+: >"$COVERAGE_ROOT/run-list.txt"
+n=0
+while IFS= read -r _; do
+  n=$((n + 1))
+  if [ -z "$shard" ] || [ $(((n - 1) % shards)) -eq $((shard - 1)) ]; then
+    printf '%s\n' "$n" >>"$COVERAGE_ROOT/run-list.txt"
+  fi
+done <"$CHUNKS"
+
+failed=0
+if [ -s "$COVERAGE_ROOT/run-list.txt" ]; then
+  xargs -n 1 -P "$JOBS" bash tests/coverage.sh --chunk <"$COVERAGE_ROOT/run-list.txt" || failed=1
+fi
+# Each group killed in the parallel pass, again one test at a time, with the machine to itself.
+while IFS= read -r group; do
+  file="$(sed -n "${group}p" "$CHUNKS" | cut -f1)"
+  while IFS= read -r name; do
+    printf '%s\n' "$name" | add_chunk "$file"
+    bash tests/coverage.sh --chunk "$(grep -c . "$CHUNKS")" </dev/null || failed=1
+  done <"$COVERAGE_ROOT/names-$group.txt"
+done <"$RETRY"
+if [ -n "$shard" ]; then
+  commit="${NIGHTSHIFT_COVERAGE_COMMIT:-$(git rev-parse HEAD)}"
+  {
+    printf 'commit %s\n' "$commit"
+    printf 'shard %s\n' "$shard"
+    printf 'shards %s\n' "$shards"
+    if [ "$failed" -eq 0 ]; then printf 'result ok\n'; else printf 'result failed\n'; fi
+    n=0
+    while IFS= read -r row; do
+      n=$((n + 1))
+      if [ $(((n - 1) % shards)) -eq $((shard - 1)) ]; then
+        printf '%s\t%s\n' "$n" "$row"
+      fi
+    done <"$CHUNKS"
+  } >"$COVERAGE_ROOT/manifest.txt"
+  if [ "$failed" -ne 0 ]; then
+    printf 'coverage: shard %s could not measure every group (see above)\n' "$shard" >&2
+    exit 1
+  fi
+  printf 'coverage: shard %s of %s wrote %s\n' "$shard" "$shards" "$COVERAGE_ROOT"
+  exit 0
+fi
+if [ "$failed" -ne 0 ]; then
+  printf 'coverage: one or more test groups could not be measured (see above); no report written\n' >&2
+  exit 1
+fi
+
+if ! kcov --merge coverage/merged "$COVERAGE_ROOT"/part-*/; then
+  printf 'coverage: kcov could not merge the per-group reports in %s/part-*\n' "$COVERAGE_ROOT" >&2
+  exit 1
+fi
+publish_coverage coverage/merged
