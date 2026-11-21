@@ -18,29 +18,47 @@ fi
 cd "$(dirname "$0")/.."
 
 tmpdir="${TMPDIR:-/tmp}/nightshift-bats-parallel-$$"
-mkdir -p "$tmpdir"
+command mkdir -p "$tmpdir"
 trap 'rm -rf "$tmpdir"' EXIT
 
 failed=0
 for s in $(seq 1 "$jobs"); do
+  # set +e so a setup failure is recorded. A worker killed before that write leaves no result,
+  # which the parent treats as a failure of its own.
   (
+    set +e
     export BATS_TMPDIR="$tmpdir/bats-shard-${s}"
-    mkdir -p "$BATS_TMPDIR"
-    if ! tests/run-shard.sh "$s" "$jobs" >"$tmpdir/shard-${s}.log" 2>&1; then
-      echo 1 >"$tmpdir/shard-${s}.failed"
-    fi
+    code=0
+    {
+      command mkdir -p "$BATS_TMPDIR"
+      code=$?
+      if [ "$code" -eq 0 ]; then
+        tests/run-shard.sh "$s" "$jobs"
+        code=$?
+      fi
+    } >"$tmpdir/shard-${s}.log" 2>&1
+    printf '%s\n' "$code" >"$tmpdir/shard-${s}.exit"
+    exit "$code"
   ) &
-done
-
-for job in $(jobs -p); do
-  wait "$job" || true
+  printf '%s\n' "$!" >"$tmpdir/shard-${s}.pid"
 done
 
 for s in $(seq 1 "$jobs"); do
-  if [ -f "$tmpdir/shard-${s}.failed" ]; then
+  pid="$(cat "$tmpdir/shard-${s}.pid")"
+  status=0
+  wait "$pid" || status=$?
+  result=""
+  if [ -f "$tmpdir/shard-${s}.exit" ]; then
+    result="$(tr -d '[:space:]' <"$tmpdir/shard-${s}.exit")"
+  fi
+  if [ -z "$result" ] || [ "$status" -ne 0 ] || [ "$result" -ne 0 ]; then
     failed=1
-    echo "=== shard $s/$jobs FAILED ===" >&2
-    cat "$tmpdir/shard-${s}.log" >&2
+    echo "=== shard $s/$jobs FAILED (worker $pid exit ${status}, result ${result:-missing}) ===" >&2
+    if [ -s "$tmpdir/shard-${s}.log" ]; then
+      cat "$tmpdir/shard-${s}.log" >&2
+    else
+      echo "shard $s: no log" >&2
+    fi
   fi
 done
 
