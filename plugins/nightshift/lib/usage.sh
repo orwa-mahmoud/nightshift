@@ -763,6 +763,23 @@ ns_usage_pause() {
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$dir/pauses.tsv"
   printf '%s\t%s\n' "$at" "${2:-paused}" >>"$file" 2>/dev/null || return 1
+  file="$dir/pause-open"
+  [ ! -L "$file" ] || return 1
+  : >"$file" 2>/dev/null || return 1
+}
+
+# ns_usage_resume <nightshift-dir> — work is under way again. Append the current epoch to
+# resumes.tsv and remove the open-pause marker. A symlink is not written through.
+ns_usage_resume() {
+  local dir file at
+  dir="$(ns_usage_dir "$1")"
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+  file="$dir/resumes.tsv"
+  [ ! -L "$file" ] || return 1
+  [ ! -L "$dir/pause-open" ] || return 1
+  at="$(date +%s)"
+  printf '%s\n' "$at" >>"$file" 2>/dev/null || return 1
+  rm -f "$dir/pause-open" 2>/dev/null || return 1
 }
 
 # ns_usage_last_pause <nightshift-dir> — the epoch of the most recent recorded pause, or nothing.
@@ -778,8 +795,9 @@ ns_usage_last_pause() {
 #
 # Only a pause at or after <from> and before <to> counts. Lines that share one epoch are one
 # pause, and the first line gives the reason. A counted pause ends at the earliest of the first
-# mark after it, the next later pause epoch anywhere in pauses.tsv, and <to>. A pause no mark
-# followed is still open and is left out rather than guessed at.
+# mark after it, the first resume at or after it, the next later pause epoch anywhere in
+# pauses.tsv, and <to>. A pause neither a mark nor a resume followed is still open and is left
+# out rather than guessed at.
 ns_usage_paused_between() {
   local ns="$1" from="$2" to="$3" file line at reason total=0 last_reason="" next end
   local -a epochs=() reasons=()
@@ -830,29 +848,47 @@ ns_usage_paused_between() {
 # `<reason>\t<seconds>` line per reason in the order each was first recorded. Each gap is measured
 # exactly as ns_usage_paused_between measures it, so the lines sum to its total.
 ns_usage_pauses_by_reason() {
-  local file marks bin
+  local file marks bin resumes
   file="$(ns_usage_dir "$1")/pauses.tsv"
   marks="$(_ns_usage_marks "$1")"
+  resumes="$(ns_usage_dir "$1")/resumes.tsv"
   [ -f "$file" ] && [ ! -L "$file" ] && [ -f "$marks" ] || return 1
+  [ -f "$resumes" ] && [ ! -L "$resumes" ] || resumes=/dev/null
   bin="$(ns_usage_awk_bin)" || return 1
-  "$bin" -v from="$2" -v to="$3" -f "$_NS_USAGE_PAUSES_AWK" "$marks" "$file"
+  "$bin" -v from="$2" -v to="$3" -f "$_NS_USAGE_PAUSES_AWK" "$marks" "$resumes" "$file"
 }
 
-# _ns_usage_resumed_at <nightshift-dir> <epoch> — when work was next seen after a pause, from the
-# marks the runtime was already keeping.
+# _ns_usage_resumed_at <nightshift-dir> <epoch> — when work was next seen after a pause: the earlier
+# of the first mark after it and the first resume at or after it. Fails when there is neither.
 _ns_usage_resumed_at() {
-  local file line at
+  local file line at mark="" resume=""
   file="$(_ns_usage_marks "$1")"
-  [ -f "$file" ] || return 1
-  while IFS= read -r line; do
-    at="$(printf '%s' "$line" | cut -f1)"
-    case "$at" in '' | *[!0-9]*) continue ;; esac
-    if [ "$at" -gt "$2" ]; then
-      printf '%s' "$at"
-      return 0
-    fi
-  done <"$file"
-  return 1
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    while IFS= read -r line; do
+      at="$(printf '%s' "$line" | cut -f1)"
+      case "$at" in '' | *[!0-9]*) continue ;; esac
+      if [ "$at" -gt "$2" ]; then
+        mark="$at"
+        break
+      fi
+    done <"$file"
+  fi
+  file="$(ns_usage_dir "$1")/resumes.tsv"
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    while IFS= read -r line; do
+      at="$(printf '%s' "$line" | cut -f1)"
+      case "$at" in '' | *[!0-9]*) continue ;; esac
+      if [ "$at" -ge "$2" ] && { [ -z "$resume" ] || [ "$at" -lt "$resume" ]; }; then
+        resume="$at"
+      fi
+    done <"$file"
+  fi
+  if [ -z "$mark" ] && [ -z "$resume" ]; then return 1; fi
+  if [ -z "$mark" ] || { [ -n "$resume" ] && [ "$resume" -lt "$mark" ]; }; then
+    printf '%s' "$resume"
+    return 0
+  fi
+  printf '%s' "$mark"
 }
 
 # ns_usage_overlap <host> — the one sentence that says what is already counted inside what, so a

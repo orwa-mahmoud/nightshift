@@ -128,9 +128,9 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
 }
 
 @test "paused time matches the fixture on Bash" {
-  local marks pauses from to between reasons n=0 site ns usage pair epoch reason
+  local marks resumes pauses from to between reasons n=0 site ns usage pair epoch reason
   local got_between got_reasons
-  while IFS=$'\t' read -r marks pauses from to between reasons; do
+  while IFS=$'\t' read -r marks resumes pauses from to between reasons; do
     n=$((n + 1))
     site="$BATS_TEST_TMPDIR/pauses-$n"
     ns="$site/.nightshift"
@@ -141,6 +141,12 @@ rows() { grep -v -e '^#' -e '^$' "$FIX/$1"; }
     for epoch in $marks; do
       printf '%s\tx\n' "$epoch" >>"$usage/marks.tsv"
     done
+    if [ "$resumes" != - ]; then
+      : >"$usage/resumes.tsv"
+      for epoch in $resumes; do
+        printf '%s\n' "$epoch" >>"$usage/resumes.tsv"
+      done
+    fi
     : >"$usage/pauses.tsv"
     local -a pairs=()
     IFS='|' read -ra pairs <<<"$pauses"

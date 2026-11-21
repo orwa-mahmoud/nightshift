@@ -24,7 +24,8 @@ useful attribution, not a profiler of individual edits. Cursor reports usage onc
 turn that covers several items is one shared reading: each of their receipts lists it once, their
 own figures read `not attributable`, and the index counts it once.
 Duration is working time first: wall clock minus pauses the runtime recorded (owner stop, Esc, a
-usage-limit wait, a session that ended and was revived). The wall span, the pauses, and the from/to
+usage-limit wait, a session that ended and was revived). A pause ends when work is next seen,
+which is the first tool call after it or the next mark. The wall span, the pauses, and the from/to
 times stay listed so the subtraction is checkable. The index Usage column lists input, cache write,
 cache read, output, and reasoning. Time lists working and paused time; the totals row sums both.
 

@@ -381,6 +381,34 @@ try {
     Set-ReceiptsPolicy $ns '{"progressMode":"completion-only"}'
     [IO.File]::WriteAllText($marksFile, "$($now - 90 * 60)`tarm`t`n", $utf8)
     Expect-True (-not (Test-NSUsageProgressDue $w 'P01')) 'completion-only never fires'
+
+    # A pause stays open until the next pulse, and a stop-work order keeps it open.
+    $w = Join-Path $root 'resume'
+    $ns = New-Workspace $w "## Items`n- [ ] **P01 - item 1.**`n"
+    $usage = Get-NSUsageDir $ns
+    Expect-True (Write-NSUsagePause $ns 'owner stop-work') 'recording a pause leaves the marker'
+    Expect-True (Test-Path -LiteralPath (Join-Path $usage 'pause-open') -PathType Leaf) 'pause-open exists'
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs'
+    $resumeFile = Join-Path $usage 'resumes.tsv'
+    $resumeLines = @([IO.File]::ReadAllLines($resumeFile) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    Expect-True ($resumeLines.Count -eq 1) "resumes.tsv holds one line (got $($resumeLines.Count))"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $usage 'pause-open'))) 'the first pulse removes pause-open'
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs again'
+    $resumeLines = @([IO.File]::ReadAllLines($resumeFile) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    Expect-True ($resumeLines.Count -eq 1) "a second pulse does not record another resume (got $($resumeLines.Count))"
+
+    $w = Join-Path $root 'resume-stop'
+    $ns = New-Workspace $w "## Items`n- [ ] **P01 - item 1.**`n"
+    $usage = Get-NSUsageDir $ns
+    [IO.File]::WriteAllText((Join-Path $ns 'STOP'), '', (New-Object Text.UTF8Encoding($false)))
+    Expect-True (Write-NSUsagePause $ns 'owner stop-work') 'a pause is recorded while stopped'
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs under STOP'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $usage 'resumes.tsv'))) 'STOP writes no resume'
+    Expect-True (Test-Path -LiteralPath (Join-Path $usage 'pause-open') -PathType Leaf) 'STOP leaves pause-open'
+    Remove-Item -LiteralPath (Join-Path $ns 'STOP') -Force
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs after STOP is gone'
+    $resumeLines = @([IO.File]::ReadAllLines((Join-Path $usage 'resumes.tsv')) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    Expect-True ($resumeLines.Count -eq 1) "removing STOP lets the next pulse record one resume (got $($resumeLines.Count))"
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

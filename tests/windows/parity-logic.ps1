@@ -166,22 +166,29 @@ try {
             [void]$markText.Append($epoch + "`tx`n")
         }
         [IO.File]::WriteAllText((Join-Path $usage 'marks.tsv'), $markText.ToString(), $utf8)
+        if ($row[1] -cne '-') {
+            $resumeText = New-Object System.Text.StringBuilder
+            foreach ($epoch in ($row[1] -split ' ')) {
+                [void]$resumeText.Append($epoch + "`n")
+            }
+            [IO.File]::WriteAllText((Join-Path $usage 'resumes.tsv'), $resumeText.ToString(), $utf8)
+        }
         $pauseText = New-Object System.Text.StringBuilder
-        foreach ($pair in ($row[1] -split '\|')) {
+        foreach ($pair in ($row[2] -split '\|')) {
             $eq = $pair.IndexOf('=')
             [void]$pauseText.Append($pair.Substring(0, $eq) + "`t" + $pair.Substring($eq + 1) + "`n")
         }
         [IO.File]::WriteAllText((Join-Path $usage 'pauses.tsv'), $pauseText.ToString(), $utf8)
-        $between = Get-NSUsagePausedBetween $ns ([long]$row[2]) ([long]$row[3])
+        $between = Get-NSUsagePausedBetween $ns ([long]$row[3]) ([long]$row[4])
         if ([string]::IsNullOrEmpty($between)) { $between = 'none' } else { $between = $between.Replace("`t", '=') }
         $parts = New-Object Collections.Generic.List[string]
-        foreach ($entry in (Get-NSUsagePausesByReason $ns ([long]$row[2]) ([long]$row[3]))) {
+        foreach ($entry in (Get-NSUsagePausesByReason $ns ([long]$row[3]) ([long]$row[4]))) {
             if ($null -eq $entry) { continue }
             $parts.Add([string]$entry.Reason + '=' + [string]$entry.Seconds)
         }
         $reasons = $(if ($parts.Count -eq 0) { 'none' } else { $parts -join '|' })
-        Expect-Equal $row[4] $between "paused between case $n"
-        Expect-Equal $row[5] $reasons "pauses by reason case $n"
+        Expect-Equal $row[5] $between "paused between case $n"
+        Expect-Equal $row[6] $reasons "pauses by reason case $n"
     }
 }
 finally {

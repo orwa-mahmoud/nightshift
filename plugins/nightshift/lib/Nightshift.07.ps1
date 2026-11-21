@@ -1346,6 +1346,27 @@ function Write-NSUsagePause {
     $when = $(if ($At -gt 0) { $At } else { Get-NSUnixTime })
     try { [IO.File]::AppendAllText($file, ($when.ToString() + "`t" + $why + "`n"), $utf8) }
     catch { return $false }
+    $marker = Join-Path $dir 'pause-open'
+    if (Test-NSReparsePoint $marker) { return $false }
+    try { [IO.File]::WriteAllText($marker, '', $utf8) }
+    catch { return $false }
+    return $true
+}
+
+# Write-NSUsageResume <nightshift-dir> - work is under way again. Append the current epoch to
+# resumes.tsv and remove the open-pause marker. A symlink is not written through.
+function Write-NSUsageResume {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $dir = Get-NSUsageDir $NightshiftDir
+    if ((Test-NSReparsePoint $dir) -or -not (Test-Path -LiteralPath $dir -PathType Container)) { return $false }
+    $file = Join-Path $dir 'resumes.tsv'
+    $marker = Join-Path $dir 'pause-open'
+    if ((Test-NSReparsePoint $file) -or (Test-NSReparsePoint $marker)) { return $false }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    try { [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`n"), $utf8) }
+    catch { return $false }
+    try { Remove-Item -LiteralPath $marker -Force -ErrorAction Stop }
+    catch { return $false }
     return $true
 }
 
@@ -1363,18 +1384,38 @@ function Get-NSUsageLastPause {
     return $last
 }
 
-# Get-NSUsageResumedAt <nightshift-dir> <epoch> - when work was next seen after a pause, from the
-# marks the runtime was already keeping.
+# Get-NSUsageResumedAt <nightshift-dir> <epoch> - when work was next seen after a pause: the earlier
+# of the first mark after it and the first resume at or after it. Empty when there is neither.
 function Get-NSUsageResumedAt {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$After)
+    $mark = ''
     $file = Get-NSUsageMarksPath $NightshiftDir
-    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
-    foreach ($line in @([IO.File]::ReadAllLines($file))) {
-        $at = $line.Split("`t")[0]
-        if ($at -notmatch '^[0-9]+$') { continue }
-        if ([long]$at -gt $After) { return $at }
+    if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
+        foreach ($line in @([IO.File]::ReadAllLines($file))) {
+            if ([string]::IsNullOrEmpty($line)) { continue }
+            $at = $line.Split("`t")[0]
+            if ($at -notmatch '^[0-9]+$') { continue }
+            if ([long]$at -gt $After) { $mark = $at; break }
+        }
     }
-    return ''
+    $resume = ''
+    $resumeFile = Join-Path (Get-NSUsageDir $NightshiftDir) 'resumes.tsv'
+    if ((Test-Path -LiteralPath $resumeFile -PathType Leaf) -and -not (Test-NSReparsePoint $resumeFile)) {
+        $best = -1L
+        foreach ($line in @([IO.File]::ReadAllLines($resumeFile))) {
+            if ([string]::IsNullOrEmpty($line)) { continue }
+            $atText = ($line -split "`t")[0]
+            if ($atText -notmatch '^[0-9]+$') { continue }
+            $at = [long]$atText
+            if ($at -ge $After -and ($best -lt 0 -or $at -lt $best)) { $best = $at }
+        }
+        if ($best -ge 0) { $resume = [string]$best }
+    }
+    if ($mark.Length -eq 0 -and $resume.Length -eq 0) { return '' }
+    if ($mark.Length -eq 0) { return $resume }
+    if ($resume.Length -eq 0) { return $mark }
+    if ([long]$resume -lt [long]$mark) { return $resume }
+    return $mark
 }
 
 # Get-NSUsagePausedBetween <nightshift-dir> <from> <to> - how long was recorded as not-work inside one
@@ -1382,8 +1423,8 @@ function Get-NSUsageResumedAt {
 #
 # Only a pause at or after <from> and before <to> counts. Lines that share one epoch are one pause,
 # and the first line gives the reason. A counted pause ends at the earliest of the first mark after
-# it, the next later pause epoch anywhere in pauses.tsv, and <to>. A pause no mark followed is still
-# open and is left out rather than guessed at.
+# it, the first resume at or after it, the next later pause epoch anywhere in pauses.tsv, and <to>.
+# A pause neither a mark nor a resume followed is still open and is left out rather than guessed at.
 function Get-NSUsagePausedBetween {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From,
           [Parameter(Mandatory = $true)][long]$To)
@@ -1435,11 +1476,6 @@ function Get-NSUsagePausesByReason {
     $marksFile = Get-NSUsageMarksPath $NightshiftDir
     if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf) -or
         -not (Test-Path -LiteralPath $marksFile -PathType Leaf)) { return , $result.ToArray() }
-    $marks = New-Object Collections.Generic.List[long]
-    foreach ($line in @([IO.File]::ReadAllLines($marksFile))) {
-        $at = $line.Split("`t")[0]
-        if ($at -cmatch '^[0-9]+$') { $marks.Add([long]$at) }
-    }
     $epochs = New-Object Collections.Generic.List[long]
     $whys = New-Object Collections.Generic.List[string]
     $seen = New-Object 'System.Collections.Generic.HashSet[long]'
@@ -1456,11 +1492,9 @@ function Get-NSUsagePausesByReason {
     for ($i = 0; $i -lt $epochs.Count; $i++) {
         $at = $epochs[$i]
         if ($at -lt $From -or $at -ge $To) { continue }
-        $resumed = -1L
-        foreach ($mark in $marks) {
-            if ($mark -gt $at) { $resumed = $mark; break }
-        }
-        if ($resumed -lt 0) { continue }
+        $next = Get-NSUsageResumedAt $NightshiftDir $at
+        if ([string]::IsNullOrEmpty($next)) { continue }
+        $resumed = [long]$next
         $nextPause = -1L
         foreach ($other in $epochs) {
             if ($other -gt $at -and ($nextPause -lt 0 -or $other -lt $nextPause)) { $nextPause = $other }
@@ -1915,6 +1949,13 @@ function Invoke-NSPulseMarks {
     $mutex = Enter-NSMutex $NightshiftDir '.lock.d'
     if ($null -eq $mutex) { return $false }
     try {
+        # A pause stays open until the next tool call. A shift told to stop keeps making calls until
+        # it stops, and those calls are not a resume.
+        $marker = Join-Path (Get-NSUsageDir $NightshiftDir) 'pause-open'
+        $stop = Get-NSLayoutPath $NightshiftDir 'stop'
+        if ((Test-Path -LiteralPath $marker -PathType Leaf) -and -not (Test-Path -LiteralPath $stop)) {
+            $null = Write-NSUsageResume $NightshiftDir
+        }
         $synced = Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts
         # Then follow the item being worked, so a stretch spent on one item is not charged to another.
         Invoke-NSGateUsageSwitch $NightshiftDir $Project (Get-NSActiveItem $Project)

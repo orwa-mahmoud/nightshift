@@ -1137,6 +1137,36 @@ pause_fixture() {
   [ "$output" = $'owner pressed Esc\t200\nthe session ended and the shift was revived\t200' ]
 }
 
+pulse_marks() {
+  bash -c '. "$1"; . "$2"; ns_pulse_marks "$3" "$4" c1' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
+    "$1/.nightshift" "$1"
+}
+
+@test "a pulse records one resume and a stop-work order keeps the pause open" {
+  local p usage
+  p="$(cursor_project usage-resume 1)"
+  usage="$p/.nightshift/usage"
+  lib ns_usage_pause "$p/.nightshift" 'owner stop-work'
+  [ -f "$usage/pause-open" ]
+  pulse_marks "$p"
+  [ "$(wc -l <"$usage/resumes.tsv" | tr -d ' ')" = 1 ]
+  [ ! -e "$usage/pause-open" ]
+  pulse_marks "$p"
+  [ "$(wc -l <"$usage/resumes.tsv" | tr -d ' ')" = 1 ]
+
+  p="$(cursor_project usage-resume-stop 1)"
+  usage="$p/.nightshift/usage"
+  : >"$p/.nightshift/STOP"
+  lib ns_usage_pause "$p/.nightshift" 'owner stop-work'
+  pulse_marks "$p"
+  [ ! -e "$usage/resumes.tsv" ]
+  [ -f "$usage/pause-open" ]
+  rm -f "$p/.nightshift/STOP"
+  pulse_marks "$p"
+  [ "$(wc -l <"$usage/resumes.tsv" | tr -d ' ')" = 1 ]
+  [ ! -e "$usage/pause-open" ]
+}
+
 @test "a recorded pause with no reason is listed without one" {
   run lib ns_receipt_usage_section '- 1000 1600 540 5 1 ticked cw=- cr=- rea=- paused=60 host=claude/claude-opus-5'
   [ "$status" -eq 0 ]
