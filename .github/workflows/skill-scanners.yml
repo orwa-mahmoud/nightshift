@@ -2,20 +2,13 @@ name: Skill scanners
 
 # Every shipped skill is scanned by two rule-based skill scanners. Both run offline, no model is
 # called, and each installs from the versions and hashes locked in .github/skill-scanners/.
+#
+# Both jobs report on every pull request so they can be required by branch protection.
+# The path filter determines when they install and run the scanners.
 on:
   push:
     branches: [main]
-    paths:
-      - 'plugins/nightshift/skills/**'
-      - 'skills/**'
-      - '.github/skill-scanners/**'
-      - '.github/workflows/skill-scanners.yml'
   pull_request:
-    paths:
-      - 'plugins/nightshift/skills/**'
-      - 'skills/**'
-      - '.github/skill-scanners/**'
-      - '.github/workflows/skill-scanners.yml'
 
 permissions:
   contents: read
@@ -25,17 +18,54 @@ env:
   SKILLSPECTOR_SOURCE: git+https://github.com/NVIDIA/skillspector.git@e2674da339b0bddc6e565d059c0577c6d9cd25da # v2.13.6
 
 jobs:
-  cisco:
-    name: Cisco skill-scanner
-    runs-on: ubuntu-24.04
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      skills: ${{ steps.filter.outputs.skills }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            skills:
+              - 'plugins/nightshift/skills/**'
+              - 'skills/**'
+              - '.github/skill-scanners/**'
+              - '.github/workflows/skill-scanners.yml'
+      - name: Verify the path filter result
+        if: steps.filter.outputs.skills != 'true' && steps.filter.outputs.skills != 'false'
+        run: |
+          echo '::error::The skill path filter returned no decision.'
+          exit 1
+
+  cisco:
+    name: Cisco skill-scanner
+    needs: changes
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require changed paths
+        if: needs.changes.result != 'success'
+        run: |
+          echo '::error::Unable to determine changed paths for the skill scan.'
+          exit 1
+      - name: Skip the scan
+        if: needs.changes.outputs.skills == 'false'
+        run: echo 'No skill or scanner paths changed; the scan did not run.'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.skills == 'true'
       - name: Install the locked scanner
+        if: needs.changes.outputs.skills == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/scanner"
           "$RUNNER_TEMP/scanner/bin/pip" install --quiet --require-hashes --no-deps \
             -r .github/skill-scanners/cisco.txt
       - name: Scan the skills
+        if: needs.changes.outputs.skills == 'true'
         run: |
           for dir in $SKILL_DIRS; do
             "$RUNNER_TEMP/scanner/bin/skill-scanner" scan-all "$dir" --recursive \
@@ -44,16 +74,29 @@ jobs:
 
   skillspector:
     name: NVIDIA SkillSpector
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
+      - name: Require changed paths
+        if: needs.changes.result != 'success'
+        run: |
+          echo '::error::Unable to determine changed paths for the skill scan.'
+          exit 1
+      - name: Skip the scan
+        if: needs.changes.outputs.skills == 'false'
+        run: echo 'No skill or scanner paths changed; the scan did not run.'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.skills == 'true'
       - name: Install the locked scanner
+        if: needs.changes.outputs.skills == 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/scanner"
           "$RUNNER_TEMP/scanner/bin/pip" install --quiet --require-hashes --no-deps \
             -r .github/skill-scanners/nvidia.txt
           "$RUNNER_TEMP/scanner/bin/pip" install --quiet --no-deps "skillspector @ $SKILLSPECTOR_SOURCE"
       - name: Scan the skills
+        if: needs.changes.outputs.skills == 'true'
         run: |
           for dir in $SKILL_DIRS; do
             "$RUNNER_TEMP/scanner/bin/skillspector" scan "$dir" --recursive --no-llm
