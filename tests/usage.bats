@@ -322,8 +322,9 @@ tick_to() {
   # P01's span carried the first turn, its own; the second is shared and adds nothing to either item.
   grep -qF '| input | 500 + not attributable |' "$r1"
   grep -qF -- '- input 800 · cache read 4.0k · output 20 across items P01, P02, not split by item.' "$r1"
-  grep -qF '| input | not attributable |' "$r2"
-  grep -qF '| not attributable | not attributable | unavailable | not attributable | unavailable |' "$r2"
+  grep -qF '**Tokens:** not attributable to this item' "$r2"
+  run grep -qF '| Tokens | Amount |' "$r2"
+  [ "$status" -ne 0 ]
   grep -qF -- '- input 800 · cache read 4.0k · output 20 across items P01, P02, not split by item.' "$r2"
   run grep -qF "| input | 0 |" "$r2"
   [ "$status" -ne 0 ]
@@ -359,7 +360,7 @@ tick_to() {
   for n in 2 3 4 5; do
     r="$p/.nightshift/receipts/P0$n.md"
     grep -qF -- '- input 15.9M · cache read 15.0M · output 60.2k across items P02, P03, P04, P05, not split by item.' "$r"
-    grep -qF '| input | not attributable |' "$r"
+    grep -qF '**Tokens:** not attributable to this item' "$r"
     grep -qF '<!-- tokens - - - - - -->' "$r"
   done
   # Counted once in the index, not once per item.
@@ -375,8 +376,9 @@ tick_to() {
   cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g2","status":"completed"}'
   tick_to "$p" 2
   r="$p/.nightshift/receipts/P02.md"
-  grep -qF '| input | unavailable |' "$r"
-  grep -qF '| output | unavailable |' "$r"
+  grep -qF '**Tokens:** unavailable' "$r"
+  run grep -qF '| Tokens | Amount |' "$r"
+  [ "$status" -ne 0 ]
   grep -qF '<!-- tokens - - - - - -->' "$r"
   run grep -qE '\| (input|output) \| 0 \|' "$r"
   [ "$status" -ne 0 ]
@@ -426,7 +428,9 @@ tick_to() {
   lib ns_usage_record "$p/.nightshift" cursor cursor-model stop-payload cursor:c1 0 \
     'input=200,cache_write=60,cache_read=1500,output=44'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  grep -qF '| reasoning | unavailable |' "$p/.nightshift/receipts/P01.md"
+  grep -qF '**Tokens:** unavailable' "$p/.nightshift/receipts/P01.md"
+  run grep -qF '| reasoning | 0 |' "$p/.nightshift/receipts/P01.md"
+  [ "$status" -ne 0 ]
 }
 
 # receipts_policy <project> <receipts-json> — set through the policy the shift was composed with,

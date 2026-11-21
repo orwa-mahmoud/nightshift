@@ -80,8 +80,8 @@ try {
     $sharedLine = "- input 800 $([char]0x00B7) cache read 4.0k $([char]0x00B7) output 20 across items P01, P02, not split by item."
     Expect-True $r1.Contains('| input | 500 + not attributable |') 'an item with its own reading shows the shared turn as not attributable beside it'
     Expect-True $r1.Contains($sharedLine) 'the first receipt lists the shared turn and its items'
-    Expect-True $r2.Contains('| input | not attributable |') 'an item with no reading of its own is not attributable'
-    Expect-True $r2.Contains('| not attributable | not attributable | unavailable | not attributable | unavailable |') 'the session row marks each shared figure'
+    Expect-True $r2.Contains('**Tokens:** not attributable to this item') 'an item with no reading of its own is not attributable'
+    Expect-True (-not $r2.Contains('| Tokens | Amount |')) 'an item with no figure draws no Tokens table'
     Expect-True $r2.Contains($sharedLine) 'the second receipt lists the same shared turn'
     Expect-True (-not $r2.Contains('| input | 0 |')) 'no item sharing the turn shows zero'
     $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' $turn2
@@ -118,7 +118,7 @@ try {
     foreach ($k in 2..5) {
         $r = [IO.File]::ReadAllText((Join-Path $ns "receipts/P0$k.md"))
         Expect-True $r.Contains("- input 15.9M $([char]0x00B7) cache read 15.0M $([char]0x00B7) output 60.2k across items P02, P03, P04, P05, not split by item.") "item $k lists the shared turn"
-        Expect-True $r.Contains('| input | not attributable |') "item $k has no figure of its own"
+        Expect-True $r.Contains('**Tokens:** not attributable to this item') "item $k has no figure of its own"
         Expect-True $r.Contains('<!-- tokens - - - - - -->') "item $k marks every dimension unmeasured"
     }
     $index = [IO.File]::ReadAllText((Join-Path $ns 'receipts/README.md'))
@@ -136,7 +136,7 @@ try {
     [IO.File]::WriteAllText($punch, "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n- [x] **P02 - second.**`n")
     $null = Invoke-NSGateUsageSync $ns $w $punch 2
     $r = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P02.md'))
-    Expect-True ($r.Contains('| input | unavailable |') -and $r.Contains('| output | unavailable |')) 'an item with no reading is unavailable'
+    Expect-True ($r.Contains('**Tokens:** unavailable') -and -not $r.Contains('| Tokens | Amount |')) 'an item with no reading is unavailable'
     Expect-True $r.Contains('<!-- tokens - - - - - -->') 'the marker records no measurement, not zero'
     Expect-True (-not ($r -cmatch '\| (input|output) \| 0 \|')) 'no reading never reads zero'
     $index = [IO.File]::ReadAllText((Join-Path $ns 'receipts/README.md'))
