@@ -16,6 +16,7 @@ permissions: {}
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    environment: release-version
     permissions:
       contents: write # tag the commit and create the release
       pull-requests: write # open and refresh the release pull request

@@ -1,0 +1,33 @@
+name: Release merge gate
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  check:
+    name: Report release merge authorization
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release-merge-check
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Report through the release gate app
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_GATE_APP_ID: ${{ vars.RELEASE_GATE_APP_ID }}
+          RELEASE_GATE_INSTALLATION_ID: ${{ vars.RELEASE_GATE_INSTALLATION_ID }}
+          RELEASE_GATE_PRIVATE_KEY: ${{ secrets.RELEASE_GATE_PRIVATE_KEY }}
+        run: bash .github/release-merge-gate.sh
