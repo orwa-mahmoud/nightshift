@@ -9,9 +9,12 @@ CURSOR_HOOKS="$HOOKS/cursor"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   cursor_worker_ran "$p" live-cli-worker
   run env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/before-submit.sh" \
-    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"continue"}')"
+    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"continue"}')" </dev/null
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | jq -e '.continue == false' >/dev/null
+  printf '%s' "$output" | jq -e '.continue == false' >/dev/null || {
+    printf 'hook output: [%s]\n' "$output" >&2
+    return 1
+  }
   printf '%s' "$output" | grep -q 'agent --resume='
   printf '%s' "$output" | grep -q 'live-cli-worker'
   printf '%s' "$output" | grep -q 'terminal'
@@ -24,7 +27,7 @@ CURSOR_HOOKS="$HOOKS/cursor"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   cursor_worker_ran "$p" live-cli-worker
   run env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/before-submit.sh" \
-    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"ask Nightshift to stop"}')"
+    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"ask Nightshift to stop"}')" </dev/null
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -35,7 +38,7 @@ CURSOR_HOOKS="$HOOKS/cursor"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   cursor_worker_ran "$p" live-cli-worker
   run env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/before-submit.sh" \
-    "$(jq -nc --arg p "$p" '{conversation_id:"helper-tab",cwd:$p,prompt:"hi"}')"
+    "$(jq -nc --arg p "$p" '{conversation_id:"helper-tab",cwd:$p,prompt:"hi"}')" </dev/null
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -46,7 +49,7 @@ CURSOR_HOOKS="$HOOKS/cursor"
   printf 'origin-ide\n\n\n\ncursor\n' >"$p/.nightshift/.shift-session"
   printf 'never-ran-worker\n' >"$p/.nightshift/.shift-worker"
   run env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/before-submit.sh" \
-    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"continue"}')"
+    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"continue"}')" </dev/null
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -58,7 +61,7 @@ CURSOR_HOOKS="$HOOKS/cursor"
   printf 'kept-cli-worker\n' >"$p/.nightshift/.shift-worker"
   lease_record "$p" origin-ide cursor 3 "" "" ""
   run env CURSOR_PROJECT_DIR="$p" bash "$CURSOR_HOOKS/before-submit.sh" \
-    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"continue"}')"
+    "$(jq -nc --arg p "$p" '{conversation_id:"origin-ide",cwd:$p,prompt:"continue"}')" </dev/null
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
