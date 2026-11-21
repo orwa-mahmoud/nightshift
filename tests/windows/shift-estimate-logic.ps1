@@ -48,7 +48,7 @@ function Invoke-Estimate {
     $arguments = @('-NoProfile', '-NonInteractive', '-File', $estimate, '-Project', $Project)
     if ($Items.Length -gt 0) { $arguments += @('-Items', $Items) }
     $out = @(& $hostExe @arguments)
-    return [pscustomobject]@{ Code = $LASTEXITCODE; Text = ($out -join "`n") }
+    return [pscustomobject]@{ Code = $LASTEXITCODE; Text = (($out -join "`n") -replace "`r", '') }
 }
 
 $root = Join-Path ([IO.Path]::GetTempPath()) ('ns-shift-estimate-' + [guid]::NewGuid().ToString('N'))

@@ -1,6 +1,7 @@
 # Charging the item being worked on native Windows: the PowerShell half of tests/item-sessions.bats.
 # Run on macOS or Windows: pwsh -File tests/windows/item-sessions-logic.ps1
 Set-StrictMode -Version 2.0
+if (-not (Test-Path Variable:\IsWindows)) { $global:IsWindows = ($env:OS -eq 'Windows_NT') }
 $ErrorActionPreference = 'Stop'
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')

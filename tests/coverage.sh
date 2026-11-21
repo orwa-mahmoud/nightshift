@@ -242,11 +242,20 @@ report_ok() {
 # and a platform skip still count: they are measured, and named apart in the measured line.
 run_chunk() {
   local line="$1" file count filter out="$COVERAGE_ROOT/part-$1" log="$COVERAGE_ROOT/part-$1.log" status=0 why=""
-  local session left free tap_rc=0 summary failed_n=0 skipped_n=0 started elapsed rss=""
+  local session left free tap_rc=0 summary failed_n=0 skipped_n=0 started elapsed rss="" gnu_time="" candidate
   IFS=$'\t' read -r file count filter < <(sed -n "${line}p" "$CHUNKS")
   started="$(date +%s)"
-  if command time --version >/dev/null 2>&1; then
-    setsid command time -f 'COVERAGE_RSS_KB %M' -o "$out.time" kcov --include-path="$PWD/$INCLUDE" "$out" \
+  # setsid executes a program, not a shell keyword. `command time` is the shell's own word, so the
+  # session must be given the GNU time binary, and only when that binary records a peak.
+  gnu_time=""
+  for candidate in /usr/bin/time /bin/time; do
+    if [ -x "$candidate" ] && "$candidate" --version >/dev/null 2>&1; then
+      gnu_time="$candidate"
+      break
+    fi
+  done
+  if [ -n "$gnu_time" ]; then
+    setsid "$gnu_time" -f 'COVERAGE_RSS_KB %M' -o "$out.time" kcov --include-path="$PWD/$INCLUDE" "$out" \
       "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
   else
     setsid kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &

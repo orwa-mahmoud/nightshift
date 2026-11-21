@@ -2,6 +2,7 @@
 # Run on macOS or Windows: pwsh -File tests/windows/start-preflight-logic.ps1
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'fixture-mode.ps1')
 if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
     $PSNativeCommandUseErrorActionPreference = $false
 }
@@ -156,22 +157,22 @@ try {
     [IO.File]::WriteAllText((Join-Path $keepFail '.nightshift/.ended'), "shiftId=1111222233334444`n")
     $null = New-Item -ItemType Directory -Force -Path (Join-Path $keepFail '.nightshift/usage')
     [IO.File]::WriteAllText((Join-Path $keepFail '.nightshift/usage/marks.tsv'), "arm`n")
-    & chmod 555 (Join-Path $keepFail '.nightshift')
+    Invoke-NSFixtureMode (Join-Path $keepFail '.nightshift') '555'
     try {
         $keepFailRun = Invoke-Preflight $keepFail
     }
-    finally { & chmod 755 (Join-Path $keepFail '.nightshift') }
+    finally { Invoke-NSFixtureMode (Join-Path $keepFail '.nightshift') '755' }
     Expect-True ($keepFailRun.Stdout.Contains('warn usage readings of shift 1111222233334444 could not be kept - ')) `
         "a copy that cannot be written warns ($($keepFailRun.Stdout))"
     $asideFail = New-Site (Join-Path $root 'usage-aside-fail') "## Items`n- [x] **1. work.**`n"
     [IO.File]::WriteAllText((Join-Path $asideFail '.nightshift/.ended'), "shiftId=1111222233334444`n")
     $null = New-Item -ItemType Directory -Force -Path (Join-Path $asideFail '.nightshift/usage')
     [IO.File]::WriteAllText((Join-Path $asideFail '.nightshift/usage/marks.tsv'), "arm`n")
-    & chmod 555 (Join-Path $asideFail '.nightshift')
+    Invoke-NSFixtureMode (Join-Path $asideFail '.nightshift') '555'
     try {
         $asideFailRun = Invoke-Preflight $asideFail
     }
-    finally { & chmod 755 (Join-Path $asideFail '.nightshift') }
+    finally { Invoke-NSFixtureMode (Join-Path $asideFail '.nightshift') '755' }
     Expect-True ($asideFailRun.Stdout.Contains('warn usage readings of shift 1111222233334444 could not be set aside - ')) `
         "a move that cannot be written warns ($($asideFailRun.Stdout))"
     $interrupted = New-Site (Join-Path $root 'interrupted')

@@ -9,6 +9,7 @@
 # renderer when it is on the branch.
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'fixture-mode.ps1')
 if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
     $PSNativeCommandUseErrorActionPreference = $false
 }
@@ -1137,11 +1138,11 @@ try {
         -Items "- [x] **1. Shot.** <!-- id: ab12 -->`n  - Evidence: the screen ``shot.png`` check: report`n"
     $unreadableReceipt = Join-Path $unreadableNs 'receipts/01-shot-ab12.md'
     [IO.File]::WriteAllText($unreadableReceipt, "# 1. Shot.`n", $utf8)
-    & /bin/chmod 000 $unreadableReceipt
+    Invoke-NSFixtureMode $unreadableReceipt '000'
     try {
         $unreadableRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $unreadableProject, '-View', 'owner')
     }
-    finally { & /bin/chmod 644 $unreadableReceipt }
+    finally { Invoke-NSFixtureMode $unreadableReceipt '644' }
     Expect-Equal 0 $unreadableRun.ExitCode "an unreadable receipt still renders ($($unreadableRun.StderrText))"
     Expect-True $unreadableRun.StdoutText.Contains('evidence: could not be checked - ') `
         "an unreadable receipt names the failed check ($($unreadableRun.StdoutText))"
