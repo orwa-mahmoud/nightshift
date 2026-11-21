@@ -981,7 +981,8 @@ try {
                     $owner = @([IO.File]::ReadAllLines($pidFile))
                     if ($owner.Count -gt 0 -and [string]$owner[0] -eq [string]$child.Id) { break }
                 }
-                catch { }
+                # The pid file is being rewritten; keep waiting, as this loop already does.
+                catch { continue }
             } while ([DateTime]::UtcNow -lt $deadline)
             exit 0
         }

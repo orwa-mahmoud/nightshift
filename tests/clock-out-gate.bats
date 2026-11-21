@@ -502,6 +502,20 @@ EOF
   grep -q 'quitting time' "$p/.nightshift/shift-log.md"
 }
 
+@test "an unreadable deadline file falls back to the shift-policy deadlineEpoch" {
+  p="$(new_project)"
+  punch_open "$p"
+  past=$(( $(date +%s) - 60 ))
+  printf '%s\n' "$past" >"$p/.nightshift/deadline"
+  chmod 000 "$p/.nightshift/deadline"
+  write_policy_with_deadline "$p" "$past"
+  run gate "$p"
+  chmod 644 "$p/.nightshift/deadline"
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/STOP" ]
+  grep -q 'quitting time' "$p/.nightshift/shift-log.md"
+}
+
 @test "a shift-policy deadlineEpoch alone ends the shift when the projected file is absent" {
   p="$(new_project)"
   punch_open "$p"

@@ -1732,14 +1732,16 @@ function Get-NSInstallingHost {
     if ([string]::IsNullOrWhiteSpace($PluginRoot)) { return 'any' }
     $root = $PluginRoot
     if (Test-Path -LiteralPath $PluginRoot) {
-        try { $root = (Resolve-Path -LiteralPath $PluginRoot -ErrorAction Stop).ProviderPath } catch { }
+        # Resolve-Path fails for a path that still names the root; keep the path as given.
+        try { $root = (Resolve-Path -LiteralPath $PluginRoot -ErrorAction Stop).ProviderPath } catch { $root = $PluginRoot }
     }
     $root = $root.TrimEnd('\', '/')
     $home = $env:USERPROFILE
     if ([string]::IsNullOrEmpty($home)) { $home = $env:HOME }
     if ([string]::IsNullOrEmpty($home)) { return 'any' }
     if (Test-Path -LiteralPath $home) {
-        try { $home = (Resolve-Path -LiteralPath $home -ErrorAction Stop).ProviderPath } catch { }
+        # Resolve-Path fails for a home path that still names the directory; keep it as given.
+        try { $home = (Resolve-Path -LiteralPath $home -ErrorAction Stop).ProviderPath } catch { $home = $home }
     }
     $home = $home.TrimEnd('\', '/')
     foreach ($name in @('claude', 'cursor', 'codex')) {
@@ -1772,7 +1774,8 @@ function Write-NSOwnershipRefusal {
     $owner = Get-NSInstallingHost $PluginRoot
     $root = $PluginRoot
     if (Test-Path -LiteralPath $PluginRoot) {
-        try { $root = (Resolve-Path -LiteralPath $PluginRoot -ErrorAction Stop).ProviderPath } catch { }
+        # Resolve-Path fails for a path that still names the root; keep the path as given.
+        try { $root = (Resolve-Path -LiteralPath $PluginRoot -ErrorAction Stop).ProviderPath } catch { $root = $PluginRoot }
     }
     [Console]::Out.WriteLine("refuse ownership this copy was installed for $owner ($root); this session is $SessionHost")
     if ($SessionHost -ceq 'unknown') {
@@ -2459,7 +2462,8 @@ function Test-NSWatchmanCommandForProject {
 function Find-NSWatchmanForProject {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $ws = $Workspace
-    try { $ws = Resolve-NSCanonicalPath $Workspace } catch { }
+    # Resolve-NSCanonicalPath fails for a workspace that still names itself; keep the path as given.
+    try { $ws = Resolve-NSCanonicalPath $Workspace } catch { $ws = $Workspace }
     if ($env:OS -eq 'Windows_NT') {
         try {
             $rows = @(Get-CimInstance Win32_Process -ErrorAction Stop)
@@ -2715,7 +2719,8 @@ function Test-NSTrustedShiftControl {
         try {
             if ((Resolve-NSCanonicalPath $h) -eq $script) { $ok = $true; break }
         }
-        catch { }
+        # A helper path that cannot be resolved is not a match; try the next helper.
+        catch { continue }
     }
     if (-not $ok) { return $false }
     $project = ''

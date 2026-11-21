@@ -64,7 +64,7 @@ try {
     try {
         $liveStart = (Get-Process -Id $livePid).StartTime.ToUniversalTime().ToString('o')
     }
-    catch { }
+    catch { $null = $_.Exception.Message }
     $ok = Write-NSLease -NightshiftDir $ns -SessionId 'shift-session' -HostName 'claude' `
         -Generation 1 -Nonce '' -ProcessId ([string]$livePid) -Start $liveStart
     Expect-True $ok 'live-pid lease writes'

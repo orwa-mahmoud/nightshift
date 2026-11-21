@@ -222,6 +222,31 @@ setup_site() { # <name> [punch-body]
   [ -f "$p/.nightshift/usage-1111222233334444/marks.tsv" ]
 }
 
+@test "a copy that cannot be written warns that the readings could not be kept" {
+  p="$(setup_site preflight-usage-keep-fail)"
+  printf 'shiftId=1111222233334444\n' >"$p/.nightshift/.ended"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  chmod 555 "$p/.nightshift"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  chmod 755 "$p/.nightshift"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -q 'warn usage readings of shift 1111222233334444 could not be kept - '
+}
+
+@test "a move that cannot be written warns that the readings could not be set aside" {
+  p="$(setup_site preflight-usage-aside-fail '## Items
+- [x] **1. work.**
+')"
+  printf 'shiftId=1111222233334444\n' >"$p/.nightshift/.ended"
+  mkdir -p "$p/.nightshift/usage"
+  printf 'arm\n' >"$p/.nightshift/usage/marks.tsv"
+  chmod 555 "$p/.nightshift"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  chmod 755 "$p/.nightshift"
+  printf '%s\n' "$output" | grep -q 'warn usage readings of shift 1111222233334444 could not be set aside - '
+}
+
 # A shift that died while armed, with no stop and no ending, resumes with its readings, and the gap
 # from its last sign of work is on the timeline.
 @test "Start after an interrupted shift keeps the readings and records the gap from its last work" {

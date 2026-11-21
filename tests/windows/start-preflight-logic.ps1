@@ -152,6 +152,28 @@ try {
     Expect-True ((Test-Path -LiteralPath (Join-Path $continueEnded '.nightshift/usage/marks.tsv') -PathType Leaf) -and
         (Test-Path -LiteralPath (Join-Path $continueEnded '.nightshift/usage-1111222233334444/marks.tsv') -PathType Leaf)) `
         'a shift that ended with items open keeps its readings and copies them for its archive'
+    $keepFail = New-Site (Join-Path $root 'usage-keep-fail')
+    [IO.File]::WriteAllText((Join-Path $keepFail '.nightshift/.ended'), "shiftId=1111222233334444`n")
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $keepFail '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $keepFail '.nightshift/usage/marks.tsv'), "arm`n")
+    & chmod 555 (Join-Path $keepFail '.nightshift')
+    try {
+        $keepFailRun = Invoke-Preflight $keepFail
+    }
+    finally { & chmod 755 (Join-Path $keepFail '.nightshift') }
+    Expect-True ($keepFailRun.Stdout.Contains('warn usage readings of shift 1111222233334444 could not be kept - ')) `
+        "a copy that cannot be written warns ($($keepFailRun.Stdout))"
+    $asideFail = New-Site (Join-Path $root 'usage-aside-fail') "## Items`n- [x] **1. work.**`n"
+    [IO.File]::WriteAllText((Join-Path $asideFail '.nightshift/.ended'), "shiftId=1111222233334444`n")
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $asideFail '.nightshift/usage')
+    [IO.File]::WriteAllText((Join-Path $asideFail '.nightshift/usage/marks.tsv'), "arm`n")
+    & chmod 555 (Join-Path $asideFail '.nightshift')
+    try {
+        $asideFailRun = Invoke-Preflight $asideFail
+    }
+    finally { & chmod 755 (Join-Path $asideFail '.nightshift') }
+    Expect-True ($asideFailRun.Stdout.Contains('warn usage readings of shift 1111222233334444 could not be set aside - ')) `
+        "a move that cannot be written warns ($($asideFailRun.Stdout))"
     $interrupted = New-Site (Join-Path $root 'interrupted')
     [IO.File]::WriteAllText((Join-Path $interrupted '.nightshift/.shift-armed'), '')
     $null = New-Item -ItemType Directory -Force -Path (Join-Path $interrupted '.nightshift/usage')

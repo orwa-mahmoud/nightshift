@@ -2433,9 +2433,15 @@ function Copy-NSUsageSnapshot {
     if ([string]::IsNullOrEmpty($id) -or $id -match '[\\/]' -or $id.StartsWith('.')) {
         $id = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
     }
+    $global:NSUsageHandoverError = ''
     $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' $id
     if (Test-Path -LiteralPath $dest) { $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' ($id + '-' + (Get-NSUnixTime)) }
-    try { Copy-Item -LiteralPath $dir -Destination $dest -Recurse -Force } catch { return '' }
+    try { Copy-Item -LiteralPath $dir -Destination $dest -Recurse -Force -ErrorAction Stop }
+    catch {
+        $global:NSUsageHandoverError = "usage readings: copy $dir -> $dest failed: $([string]$_.Exception.Message)"
+        [Console]::Error.WriteLine($global:NSUsageHandoverError)
+        return ''
+    }
     return $dest
 }
 
@@ -2449,9 +2455,15 @@ function Move-NSUsageRetire {
     if ([string]::IsNullOrEmpty($id) -or $id -match '[\\/]' -or $id.StartsWith('.')) {
         $id = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
     }
+    $global:NSUsageHandoverError = ''
     $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' $id
     if (Test-Path -LiteralPath $dest) { $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' ($id + '-' + (Get-NSUnixTime)) }
-    try { Move-Item -LiteralPath $dir -Destination $dest -Force } catch { return '' }
+    try { Move-Item -LiteralPath $dir -Destination $dest -Force -ErrorAction Stop }
+    catch {
+        $global:NSUsageHandoverError = "usage readings: move $dir -> $dest failed: $([string]$_.Exception.Message)"
+        [Console]::Error.WriteLine($global:NSUsageHandoverError)
+        return ''
+    }
     return $dest
 }
 
@@ -3741,7 +3753,8 @@ function Invoke-NSShiftEnd {
                 $env:NIGHTSHIFT_SUMMARY = $Summary
                 $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $notify 2>$null
             }
-            catch { }
+            # A desktop notification is best effort; the shift carries on without it.
+            catch { $owned = $true }
             finally { $env:NIGHTSHIFT_SUMMARY = $oldSummary }
         }
     }
@@ -3779,7 +3792,16 @@ function Invoke-NSWatchmanDirectClockOut {
             $raw = ([IO.File]::ReadAllText($deadlinePath)).Trim()
             if ($raw -match '^[0-9]+$' -and (Get-NSUnixTime) -ge [long]$raw) { $deadline = $true }
         }
-        catch { }
+        # The deadline file cannot be read. The policy epoch is the fallback, as the gate uses it.
+        catch {
+            $deadline = $false
+            try {
+                $resolution = Get-NSPolicyResolution $Workspace
+                $policyTarget = $resolution['deadlinePolicy']
+                if ($null -ne $policyTarget -and (Get-NSUnixTime) -ge [long]$policyTarget) { $deadline = $true }
+            }
+            catch { $deadline = $false }
+        }
     }
     $why = ''
     if ($stopPresent) { $why = 'stop' }

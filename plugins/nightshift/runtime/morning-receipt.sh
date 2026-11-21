@@ -1166,11 +1166,17 @@ _lines_items() {
     _item_link "$label" "$id"
     _item_trouble "$label"
     sec_add "- $ITEM_LINK $DASH $state$TROUBLE"
-    missing="$(ns_evidence_problems "$WORKSPACE" "$PUNCH" "$label" 2>/dev/null || true)"
-    if [ -n "$missing" ]; then
-      flat="$(printf '%s\n' "$missing" | paste -sd ', ' -)"
-      sec_add "  - evidence: $flat"
+    errf="$(mktemp)"
+    if missing="$(ns_evidence_problems "$WORKSPACE" "$PUNCH" "$label" 2>"$errf")"; then
+      if [ -n "$missing" ]; then
+        flat="$(printf '%s\n' "$missing" | paste -sd ', ' -)"
+        sec_add "  - evidence: $flat"
+      fi
+    else
+      first="$(head -n 1 "$errf")"
+      sec_add "  - evidence: could not be checked - $first"
     fi
+    rm -f "$errf"
   done <<EOF
 $(ns_item_states "$PUNCH")
 EOF

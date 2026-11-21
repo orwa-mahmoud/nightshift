@@ -56,6 +56,20 @@ Expect-True (Test-Path -LiteralPath (Join-Path $stopped '.nightshift/.ended') -P
 Expect-True ((Read-Log $stopped).Contains('watchman: clocking out')) 'STOP names the clock-out'
 Remove-Item -LiteralPath $stopped -Recurse -Force
 
+$unread = New-Workspace "## Items`n- [ ] **1.**`n"
+$pastEpoch = [string]((Get-NSUnixTime) - 60)
+[IO.File]::WriteAllText((Join-Path $unread '.nightshift/deadline'), ($pastEpoch + "`n"))
+& /bin/chmod 000 (Join-Path $unread '.nightshift/deadline')
+[IO.File]::WriteAllText((Join-Path $unread '.nightshift/shift-policy.json'),
+    ('{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T02:30:00Z","source":"composition","deadlineEpoch":' +
+        $pastEpoch + ',"verificationLevel":"final","toolingPolicy":"existing-tools"}' + "`n"))
+try {
+    $unreadResult = Invoke-NSWatchmanDirectClockOut -Workspace $unread -HostName cursor -IntervalMinutes 20
+}
+finally { & /bin/chmod 644 (Join-Path $unread '.nightshift/deadline') }
+Expect-True $unreadResult.Released 'an unreadable deadline file falls back to the policy epoch'
+Remove-Item -LiteralPath $unread -Recurse -Force
+
 $open = New-Workspace "## Items`n- [ ] **1.**`n"
 $openResult = Invoke-NSWatchmanDirectClockOut -Workspace $open -HostName cursor -IntervalMinutes 20
 Expect-True (-not $openResult.Released) 'an open shift is not clocked out'

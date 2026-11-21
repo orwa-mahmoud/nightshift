@@ -1592,18 +1592,22 @@ function Get-NSReceiptItemSignals {
         if ($item.Label -ceq $Label) { $id = [string]$item.Id; break }
     }
     $receipt = Get-NSReceiptPath $workspace $Label $id
-    foreach ($session in (Get-NSReceiptSessionData $receipt)) {
-        if ([string]::IsNullOrEmpty($session)) { continue }
-        $sessions++
-        $n = Get-NSSessionExtra $session 'parked'
-        if ($n -cmatch '^[0-9]+$') { $parked += [int]$n }
-        $n = Get-NSSessionExtra $session 'snags'
-        if ($n -cmatch '^[0-9]+$') { $snags += [int]$n }
-        $n = Get-NSSessionExtra $session 'paused'
-        if ($n -cmatch '^[0-9]+$') { $paused += [long]$n }
-        $w = Get-NSSessionExtra $session 'why'
-        if (-not [string]::IsNullOrEmpty($w)) { $why = ConvertFrom-NSReceiptEncoded $w }
+    # A receipt that cannot be read has no session rows. The evidence line names that failure.
+    try {
+        foreach ($session in (Get-NSReceiptSessionData $receipt)) {
+            if ([string]::IsNullOrEmpty($session)) { continue }
+            $sessions++
+            $n = Get-NSSessionExtra $session 'parked'
+            if ($n -cmatch '^[0-9]+$') { $parked += [int]$n }
+            $n = Get-NSSessionExtra $session 'snags'
+            if ($n -cmatch '^[0-9]+$') { $snags += [int]$n }
+            $n = Get-NSSessionExtra $session 'paused'
+            if ($n -cmatch '^[0-9]+$') { $paused += [long]$n }
+            $w = Get-NSSessionExtra $session 'why'
+            if (-not [string]::IsNullOrEmpty($w)) { $why = ConvertFrom-NSReceiptEncoded $w }
+        }
     }
+    catch { $sessions = 0 }
     $evidence = 0
     try {
         $evidence = @((Get-NSEvidenceProblems $workspace $punch $Label) | Where-Object { -not [string]::IsNullOrEmpty([string]$_) }).Count
@@ -1665,11 +1669,15 @@ function Get-NSReceiptItemsLines {
         $state = $row.State
         $trouble = Format-NSReceiptItemTrouble (Get-NSReceiptItemSignals $Context $row.Label)
         $lines.Add(('- {0} {1} {2}{3}' -f (Get-NSReceiptItemLink $workspace $row.Label $row.Id), (Get-NSEvidenceDash), $state, $trouble))
+        # The evidence checker failed. Say so, instead of looking like a clean result.
         try {
             $problems = @(Get-NSEvidenceProblems $workspace ([string]$Context['punch']) $row.Label | Where-Object { -not [string]::IsNullOrEmpty($_) })
             if ($problems.Count -gt 0) { $lines.Add(('  - evidence: ' + ($problems -join ', '))) }
         }
-        catch { }
+        catch {
+            $first = ([string]$_.Exception.Message).Split([char]10)[0].TrimEnd("`r")
+            $lines.Add('  - evidence: could not be checked - ' + $first)
+        }
     }
     return , $lines.ToArray()
 }

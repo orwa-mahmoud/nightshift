@@ -215,7 +215,7 @@ try {
     if ($IsWindows) { & icacls.exe $sessionsDir /deny "${env:USERNAME}:(OI)(CI)W" | Out-Null }
     else { & chmod 555 $sessionsDir }
     Set-Tick $ns '4'
-    try { Invoke-Step $ns $w } catch { }
+    try { Invoke-Step $ns $w } catch { $null = $_.Exception.Message }
     if ($IsWindows) { & icacls.exe $sessionsDir /remove:d $env:USERNAME | Out-Null }
     else { & chmod 755 $sessionsDir }
     Set-Tick $ns '5'

@@ -194,7 +194,8 @@ function Get-NSIdleStatusSentence {
                 $null = Get-Process -Id ([int]$pidText) -ErrorAction Stop
                 $alive = $true
             }
-            catch { }
+            # The process id is not running; it is not alive.
+            catch { $alive = $false }
         }
     }
     if (-not $alive) { return '' }

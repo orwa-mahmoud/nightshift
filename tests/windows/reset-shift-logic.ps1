@@ -107,7 +107,7 @@ try {
 finally {
     if ($null -ne $sleeper -and -not $sleeper.HasExited) {
         Stop-Process -Id $sleeper.Id -Force -ErrorAction SilentlyContinue
-        try { $null = $sleeper.WaitForExit(5000) } catch { }
+        try { $null = $sleeper.WaitForExit(5000) } catch { $null = $_.Exception.Message }
     }
     if (Test-Path -LiteralPath $root) {
         Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

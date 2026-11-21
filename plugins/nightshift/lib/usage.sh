@@ -47,7 +47,7 @@ ns_usage_retire() {
   ns_layout_set dest "$ns" usage-shift "$id"
   # A second shift ending under the same id would otherwise clobber the first one's record.
   [ ! -e "$dest" ] || ns_layout_set dest "$ns" usage-shift "$id-$(date +%s)"
-  mv "$dir" "$dest" 2>/dev/null || return 1
+  mv "$dir" "$dest" || return 1
   printf '%s' "$dest"
 }
 
@@ -62,7 +62,7 @@ ns_usage_snapshot() {
   [ -n "$id" ] || id="$(date +%Y%m%dT%H%M%SZ)"
   ns_layout_set dest "$ns" usage-shift "$id"
   [ ! -e "$dest" ] || ns_layout_set dest "$ns" usage-shift "$id-$(date +%s)"
-  cp -Rp "$dir" "$dest" 2>/dev/null || return 1
+  cp -Rp "$dir" "$dest" || return 1
   printf '%s' "$dest"
 }
 

@@ -714,3 +714,19 @@ EOF
   [ "$missing" -lt "$parked" ] && [ "$parked" -lt "$biggest" ]
   [[ "$output" == *'1 evidence problem, no commits'* ]] || false
 }
+
+@test "an unreadable receipt is an evidence check that failed" {
+  local p receipt
+  p="$(new_project morning-evidence-unreadable)"
+  printf '## Items\n\n- [x] **1. Shot.** <!-- id: ab12 -->\n  - Evidence: the screen `shot.png` check: report\n' \
+    >"$p/.nightshift/punch-list.md"
+  mkdir -p "$p/.nightshift/receipts"
+  receipt="$p/.nightshift/receipts/01-shot-ab12.md"
+  printf '# 1. Shot.\n' >"$receipt"
+  chmod 000 "$receipt"
+  run bash "$RECEIPT" --project "$p" --view owner
+  chmod 644 "$receipt"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'evidence: could not be checked - '* ]] || { printf '%s\n' "$output"; return 1; }
+  [[ "$output" != *'evidence: missing shot.png'* ]] || false
+}
