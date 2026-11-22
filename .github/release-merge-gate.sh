@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 
+# release_merge_requirement <pull-json> <files-json-path> — why the release owner must merge, or
+# nothing. Neither document travels as a jq argument: one argument is capped at 128 KiB, which a
+# large pull request's file list passes.
 release_merge_requirement() {
-  jq -nr --argjson pull "$1" --argjson files "$2" --slurpfile config release-please-config.json '
+  jq -r --slurpfile files "$2" --slurpfile config release-please-config.json '
+    . as $pull | $files[0] as $files |
     def release_file:
       . == ".release-please-manifest.json" or
       . == "release-please-config.json" or
@@ -20,11 +24,23 @@ release_merge_requirement() {
       "Release files or workflows require the release owner to merge"
     else
       ""
-    end'
+    end' <<<"$1"
 }
 
 base64url() {
   openssl base64 -A | tr '/+' '_-' | tr -d '='
+}
+
+# require_gate_app — the release gate app's id, installation and key are all configured.
+require_gate_app() {
+  local name missing=""
+  for name in RELEASE_GATE_APP_ID RELEASE_GATE_INSTALLATION_ID RELEASE_GATE_PRIVATE_KEY; do
+    [ -n "${!name:-}" ] || missing="$missing $name"
+  done
+  [ -z "$missing" ] && return 0
+  printf '::error::The release-merge-check environment is missing:%s. No authorization status was reported.\n' \
+    "$missing" >&2
+  return 1
 }
 
 status_token() {
@@ -58,7 +74,10 @@ report_release_merge_status() {
   set -euo pipefail
   local head numbers number repo pull files requirement current token
   local state=success description='Standard pull request'
+  require_gate_app
   head=$(jq -er '.workflow_run.head_sha' "$GITHUB_EVENT_PATH")
+  files=$(mktemp)
+  trap 'rm -f "$files"' RETURN
   numbers=$(matching_pulls "$head")
   [ -n "$numbers" ] || return 0
   repo="repos/$GITHUB_REPOSITORY"
@@ -69,7 +88,8 @@ report_release_merge_status() {
       >/dev/null <<< "$pull"; then
       return 0
     fi
-    files=$(gh api --paginate --slurp "$repo/pulls/$number/files?per_page=100" | jq -c 'add // []')
+    gh api --paginate --slurp "$repo/pulls/$number/files?per_page=100" |
+      jq -c 'add // [] | map({filename, previous_filename})' >"$files"
     requirement=$(release_merge_requirement "$pull" "$files")
     current=$(gh api "$repo/pulls/$number" | pull_snapshot)
     [ "$(pull_snapshot <<< "$pull")" = "$current" ] || return 0
