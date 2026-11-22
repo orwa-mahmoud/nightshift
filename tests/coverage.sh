@@ -516,7 +516,39 @@ merge_coverage() {
   publish_coverage coverage/merged
 }
 
+# in_container [--merge] — this script again inside a debian container that has kcov, for a host
+# without it. The container installs as root and runs as the caller's user id. The suite assumes an
+# unprivileged user, as on every CI leg: as root, a file made unreadable or unwritable is neither.
+in_container() {
+  exec docker run --rm -v "$PWD:/src" -w /src \
+    -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" -e NIGHTSHIFT_COVERAGE_CHUNK="$CHUNK" \
+    -e NIGHTSHIFT_COVERAGE_SHARD="${NIGHTSHIFT_COVERAGE_SHARD:-}" \
+    -e NIGHTSHIFT_COVERAGE_SHARDS="${NIGHTSHIFT_COVERAGE_SHARDS:-}" \
+    -e NIGHTSHIFT_COVERAGE_COMMIT="${NIGHTSHIFT_COVERAGE_COMMIT:-}" \
+    -e NIGHTSHIFT_COVERAGE_MEM_MB="${NIGHTSHIFT_COVERAGE_MEM_MB:-}" \
+    -e NIGHTSHIFT_COVERAGE_CPUS="${NIGHTSHIFT_COVERAGE_CPUS:-}" \
+    -e COVERAGE_UID="$(id -u)" \
+    debian:stable-slim bash -c '
+    set -e
+    apt-get update -qq >/dev/null
+    apt-get install -y -qq kcov bats git jq shellcheck python3 ruby procps time >/dev/null
+    run_coverage() {
+      git config --global user.email dev@example.com
+      git config --global user.name dev
+      git config --global --add safe.directory "*"
+      exec bash tests/coverage.sh "$@"
+    }
+    if [ "$COVERAGE_UID" -eq 0 ]; then
+      run_coverage "$@"
+    fi
+    useradd --create-home --non-unique --uid "$COVERAGE_UID" coverage
+    exec runuser -u coverage -- env HOME=/home/coverage bash -c "$(declare -f run_coverage); run_coverage \"\$@\"" _ "$@"' \
+    _ "$@"
+}
+
+# The merge needs only kcov, on any system; tracing bash also needs Linux.
 if [ "${1:-}" = --merge ]; then
+  command -v kcov >/dev/null 2>&1 || in_container --merge
   merge_coverage
   exit
 fi
@@ -531,30 +563,8 @@ if [ "${1:-}" = --plan ]; then
   exit 0
 fi
 
-# The container installs as root and measures as the caller's user id. The suite assumes an
-# unprivileged user, as on every CI leg: as root, a file made unreadable or unwritable is neither.
 if [ "$(uname -s)" != Linux ] || ! command -v kcov >/dev/null 2>&1; then
-  exec docker run --rm -v "$PWD:/src" -w /src \
-    -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" -e NIGHTSHIFT_COVERAGE_CHUNK="$CHUNK" \
-    -e NIGHTSHIFT_COVERAGE_SHARD="${NIGHTSHIFT_COVERAGE_SHARD:-}" \
-    -e NIGHTSHIFT_COVERAGE_SHARDS="${NIGHTSHIFT_COVERAGE_SHARDS:-}" \
-    -e NIGHTSHIFT_COVERAGE_COMMIT="${NIGHTSHIFT_COVERAGE_COMMIT:-}" \
-    -e COVERAGE_UID="$(id -u)" \
-    debian:stable-slim bash -c '
-    set -e
-    apt-get update -qq >/dev/null
-    apt-get install -y -qq kcov bats git jq shellcheck python3 ruby procps time >/dev/null
-    measure() {
-      git config --global user.email dev@example.com
-      git config --global user.name dev
-      git config --global --add safe.directory "*"
-      exec bash tests/coverage.sh
-    }
-    if [ "$COVERAGE_UID" -eq 0 ]; then
-      measure
-    fi
-    useradd --create-home --non-unique --uid "$COVERAGE_UID" coverage
-    exec runuser -u coverage -- env HOME=/home/coverage bash -c "$(declare -f measure); measure"'
+  in_container
 fi
 
 resolve_budget

@@ -107,3 +107,22 @@ merge_run() {
   [ "$status" -ne 0 ]
   printf '%s\n' "$output" "$stderr" | grep -q 'does not match the plan'
 }
+
+@test "a host without kcov merges inside the kcov container" {
+  if command -v kcov >/dev/null 2>&1; then
+    skip "kcov is installed on this host"
+  fi
+  rm "$ROOT/bin/kcov"
+  cat >"$ROOT/bin/docker" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$@" >"$DOCKER_ARGS"
+STUB
+  chmod +x "$ROOT/bin/docker"
+  cd "$ROOT"
+  run env PATH="$ROOT/bin:$PATH" DOCKER_ARGS="$BATS_TEST_TMPDIR/docker-args" \
+    bash "$ROOT/tests/coverage.sh" --merge
+  [ "$status" -eq 0 ]
+  [[ $output != *'kcov: command not found'* ]] || false
+  grep -qx 'debian:stable-slim' "$BATS_TEST_TMPDIR/docker-args"
+  [ "$(tail -n 1 "$BATS_TEST_TMPDIR/docker-args")" = --merge ]
+}
