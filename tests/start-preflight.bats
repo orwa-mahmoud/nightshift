@@ -91,6 +91,38 @@ setup_site() { # <name> [punch-body]
   printf '%s\n' "$output" | grep -qF 'repair run Nightshift setup in this project'
 }
 
+@test "a .nightshift/ holding only hook bookkeeping is not a site, and the repair names link-workspace" {
+  p="$BATS_TEST_TMPDIR/bookkeeping-only"
+  mkdir -p "$p/.nightshift/run"
+  : >"$p/.nightshift/run/pulse"
+  run bash "$PREFLIGHT" --project "$p"
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF "refuse workspace $(cd -P "$p" && pwd) has no Nightshift site"
+  printf '%s\n' "$output" | grep -qF 'repair if the shift lives in another folder, link it from here with ns link-workspace'
+  ! printf '%s\n' "$output" | grep -qF 'work-target'
+}
+
+@test "a site with no repository anywhere says so instead of blaming several child repositories" {
+  p="$BATS_TEST_TMPDIR/no-repo-site"
+  mkdir -p "$p/.nightshift" "$p/notes"
+  cp "$RULES_TEMPLATE" "$p/.nightshift/rules.json"
+  run bash "$PREFLIGHT" --project "$p"
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'refuse work-target no Git repository at'
+  ! printf '%s\n' "$output" | grep -qF 'several child repositories'
+}
+
+@test "several child repositories still refuse as ambiguous" {
+  p="$BATS_TEST_TMPDIR/two-repo-site"
+  mkdir -p "$p/.nightshift" "$p/a" "$p/b"
+  cp "$RULES_TEMPLATE" "$p/.nightshift/rules.json"
+  git -C "$p/a" init -q
+  git -C "$p/b" init -q
+  run bash "$PREFLIGHT" --project "$p"
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'several child repositories hold one'
+}
+
 @test "an invalid workspace link refuses rather than guessing a workspace" {
   p="$(setup_site preflight-link)"
   printf '/nowhere/at/all\n' >"$p/.nightshift-link"

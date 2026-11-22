@@ -98,7 +98,7 @@ if [ -e "$HOST_ROOT/.nightshift-link" ] || [ -L "$HOST_ROOT/.nightshift-link" ];
 fi
 
 NS="$WORKSPACE/.nightshift"
-declare PUNCH LOG DEADLINE WATCHMAN_PID STOP POLICY RULES PROVISION_TXN PENDING_FILING LEASE ENDED WORK_ORDERS WORK_MODE_FILE DRAFTING_TABLE ARMED
+declare PUNCH LOG DEADLINE WATCHMAN_PID STOP POLICY RULES PROVISION_TXN PENDING_FILING LEASE ENDED WORK_ORDERS WORK_MODE_FILE WORK_TARGET_FILE DRAFTING_TABLE ARMED
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set LOG "$NS" shift-log
 ns_layout_set DEADLINE "$NS" deadline
@@ -112,6 +112,7 @@ ns_layout_set LEASE "$NS" lease
 ns_layout_set ENDED "$NS" ended
 ns_layout_set WORK_ORDERS "$NS" work-orders
 ns_layout_set WORK_MODE_FILE "$NS" work-mode
+ns_layout_set WORK_TARGET_FILE "$NS" work-target
 ns_layout_set DRAFTING_TABLE "$NS" drafting-table
 ns_layout_set ARMED "$NS" armed
 ok "host $HOST_NAME"
@@ -145,6 +146,24 @@ fi
 if [ ! -d "$NS" ] || [ -L "$NS" ]; then
   refuse "workspace no usable .nightshift/ at $WORKSPACE"
   repair "run Nightshift setup in this project before starting a shift"
+  exit 1
+fi
+
+# Hooks keep their bookkeeping in whatever folder the host opened, so a .nightshift/ alone is not a
+# site. Setup leaves at least one of these behind; with none of them there is no shift here to run.
+declare SITE_FILE
+SITE_FOUND=0
+for key in punch-list rules work-orders drafting-table work-mode work-target; do
+  ns_layout_set SITE_FILE "$NS" "$key"
+  if [ -e "$SITE_FILE" ] || [ -L "$SITE_FILE" ]; then
+    SITE_FOUND=1
+    break
+  fi
+done
+if [ "$SITE_FOUND" -eq 0 ]; then
+  refuse "workspace $WORKSPACE has no Nightshift site - .nightshift/ holds no punch list, rules, staged work or work target"
+  repair "if the shift lives in another folder, link it from here with ns link-workspace --host-root \"$HOST_ROOT\" --workspace <that folder>, then run Start again"
+  repair "otherwise run Nightshift setup in this project before starting a shift"
   exit 1
 fi
 
@@ -379,9 +398,15 @@ else
   if [ "$rc" -eq 3 ]; then
     refuse "work-target resolves to a disposable scratch path"
     repair "open the project from a persistent folder or Git repository, then run Setup there"
-  else
-    refuse "work-target cannot be resolved from $WORKSPACE"
+  elif [ "$rc" -eq 2 ]; then
+    refuse "work-target cannot be resolved from $WORKSPACE - several child repositories hold one"
     repair "run Setup to record one work target; several child repositories make the choice ambiguous and Nightshift never guesses"
+  elif [ ! -e "$WORK_TARGET_FILE" ] && [ ! -L "$WORK_TARGET_FILE" ]; then
+    refuse "work-target no Git repository at $WORKSPACE or in one immediate child folder, and none is recorded"
+    repair "open the project from its Git checkout, or link the workspace where the shift lives with ns link-workspace; run Setup here only to start a new site"
+  else
+    refuse "work-target cannot be resolved from $WORKSPACE - the recorded target is not a usable folder"
+    repair "run Setup to record the work target again"
   fi
 fi
 
