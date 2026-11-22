@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.39.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.39.0...v0.39.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* name a missing site and a missing repository in Start preflight ([9c364fc](https://github.com/orwa-mahmoud/nightshift/commit/9c364fca942d312e59f92327f180757efcaf716a))
+* recognize Codex desktop sessions as the codex host ([4abdb6f](https://github.com/orwa-mahmoud/nightshift/commit/4abdb6faf4a0614a9573566ed9ae352e552d28d1))
+
 ## [0.39.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.38.0...v0.39.0) (2026-11-22)
 
 
