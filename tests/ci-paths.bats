@@ -45,11 +45,29 @@ flags() {
   printf '%s\n' "$output" | grep -qx 'suite=true'
 }
 
-@test "a workflow-only change is lint and not the suite" {
+@test "a change to the ci workflow alone runs the suite, lint and validate" {
   run flags '.github/workflows/ci.yaml'
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'suite=true'
+  printf '%s\n' "$output" | grep -qx 'lint=true'
+  printf '%s\n' "$output" | grep -qx 'validate=true'
+}
+
+@test "another workflow alone is lint and not the suite" {
+  run flags '.github/workflows/coverage.yml'
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qx 'lint=true'
   printf '%s\n' "$output" | grep -qx 'suite=false'
+}
+
+@test "runtime code, tests, templates and skill prose each select validate" {
+  for path in plugins/nightshift/hooks/hooks.json tests/status.bats \
+    plugins/nightshift/skills/nightshift/references/templates/receipt-item.md \
+    plugins/nightshift/skills/nightshift/SKILL.md; do
+    run flags "$path"
+    [ "$status" -eq 0 ] || return 1
+    printf '%s\n' "$output" | grep -qx 'validate=true' || { echo "$path skips validate"; return 1; }
+  done
 }
 
 @test "no paths is an incomplete classification" {
