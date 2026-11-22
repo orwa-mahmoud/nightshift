@@ -40,3 +40,6 @@ explain	state-version	Start never writes the state marker, and a newer marker is
 
 explain	plan-room	A planning conversation implements nothing until the owner leaves the plan room, and Start is not a way out of it. Never remove the marker or run plan-exit yourself: tell the owner the plan room is still open, relay the repair line, and stop.
 repair	plan-room	the owner leaves the plan room by typing /nightshift:plan-exit or /nightshift:start (in Codex, $nightshift:plan-exit or $nightshift:start) at the start of a message, or by running ns plan-exit in a terminal, then starts the shift
+
+explain	tree	With shift.isolation none the shift works in the owner's checkout, next to changes it did not make. The contract already says never to commit the owner's pre-existing edits; this verdict says they are there before work starts. Nothing is changed and the shift still arms.
+repair	tree	commit or stash the changes before the shift, or set shift.isolation to worktree in rules.json so the shift gets its own checkout

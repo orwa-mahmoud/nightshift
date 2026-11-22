@@ -387,7 +387,9 @@ else
   repair "run Setup to record repository or artifact as one word"
 fi
 
+WORK_TARGET_OK=0
 if WORK_TARGET="$(ns_work_target "$WORKSPACE" 2>/dev/null)"; then
+  WORK_TARGET_OK=1
   ok "work-target $WORK_TARGET"
   if [ "$DRY_RUN" -eq 0 ]; then
     ns_ensure_work_target_link "$WORKSPACE" || true
@@ -407,6 +409,23 @@ else
   else
     refuse "work-target cannot be resolved from $WORKSPACE - the recorded target is not a usable folder"
     repair "run Setup to record the work target again"
+  fi
+fi
+
+# A shift with no worktree of its own works beside whatever the owner left uncommitted. Read-only:
+# the count is reported, the tree is never touched, and the shift still arms.
+if [ "$WORK_TARGET_OK" -eq 1 ] && [ "$WORK_MODE" = repository ]; then
+  ISOLATION_NOW="$(ns_policy_pref "$WORKSPACE" shift isolation)"
+  if [ -z "$ISOLATION_NOW" ] || [ "$ISOLATION_NOW" = none ]; then
+    if TREE_STATUS="$(git -C "$WORK_TARGET" status --porcelain -- . ':(exclude).nightshift' ':(exclude).nightshift-link' 2>/dev/null)"; then
+      TREE_UNTRACKED="$(printf '%s\n' "$TREE_STATUS" | grep -c '^??')" || TREE_UNTRACKED=0
+      TREE_MODIFIED="$(printf '%s\n' "$TREE_STATUS" | grep -c '^[^?]')" || TREE_MODIFIED=0
+      if [ "$TREE_MODIFIED" -eq 0 ] && [ "$TREE_UNTRACKED" -eq 0 ]; then
+        ok "tree clean - no uncommitted changes in $WORK_TARGET"
+      else
+        warn "tree $TREE_MODIFIED modified and $TREE_UNTRACKED untracked path(s) in $WORK_TARGET while shift.isolation is none - the shift works beside them"
+      fi
+    fi
   fi
 fi
 

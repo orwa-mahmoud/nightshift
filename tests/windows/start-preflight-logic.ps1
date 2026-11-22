@@ -77,6 +77,14 @@ try {
     Expect-True ($cleanRun.Stdout.Contains('ok rules readable')) 'clean site reads the rules file'
     Expect-True ($cleanRun.Stdout.Contains('ok punch-list open=1 ticked=0')) 'clean site counts the punch list'
     Expect-True ($cleanRun.Stdout.Contains('ok deadline none (finite list')) 'a finite list needs no clock'
+    Expect-True ($cleanRun.Stdout.Contains('ok tree clean - no uncommitted changes in')) "a clean work target reports a clean tree: $($cleanRun.Stdout)"
+    # Uncommitted changes with isolation none warn with their counts; the shift still arms.
+    $dirty = New-Site (Join-Path $root 'dirty-tree')
+    [IO.File]::WriteAllText((Join-Path $dirty 'untracked.txt'), "new`n")
+    $dirtyRun = Invoke-Preflight $dirty @('-HostName', 'claude')
+    Expect-True ($dirtyRun.ExitCode -eq 0) "a dirty tree still arms: $($dirtyRun.Stdout)"
+    Expect-True ($dirtyRun.Stdout.Contains('warn tree 0 modified and 1 untracked path(s) in')) "the dirty tree is counted: $($dirtyRun.Stdout)"
+
 
     $budgetSite = New-Site (Join-Path $root 'default-budget')
     foreach ($value in @('hard eventually', '', 'soft 30m / 1M tokens, hard 45m / 2M tokens')) {

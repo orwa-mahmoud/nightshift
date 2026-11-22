@@ -387,8 +387,10 @@ catch {
     Write-Repair 'run Setup to record repository or artifact as one word'
 }
 
+$workTargetOk = $false
 try {
     $workTarget = Resolve-NSWorkTarget $workspace
+    $workTargetOk = $true
     Write-Ok "work-target $workTarget"
     if (-not $DryRun) {
         $null = Confirm-NSWorkTargetLink $workspace
@@ -410,6 +412,25 @@ catch {
     else {
         Write-Refuse "work-target cannot be resolved from $workspace - the recorded target is not a usable folder"
         Write-Repair 'run Setup to record the work target again'
+    }
+}
+
+# A shift with no worktree of its own works beside whatever the owner left uncommitted. Read-only:
+# the count is reported, the tree is never touched, and the shift still arms. Mirrors start-preflight.sh.
+if ($workTargetOk -and $workMode -ceq 'repository') {
+    $isolationNow = [string](Get-NSPolicyGroupSetting $workspace 'shift.isolation')['value']
+    if ($isolationNow.Length -eq 0 -or $isolationNow -ceq 'none') {
+        $treeStatus = Invoke-NSGitCommand $workTarget @('status', '--porcelain', '--', '.', ':(exclude).nightshift', ':(exclude).nightshift-link')
+        if ($treeStatus.ExitCode -eq 0) {
+            $treeUntracked = @($treeStatus.Lines | Where-Object { $_.StartsWith('??') }).Count
+            $treeModified = @($treeStatus.Lines | Where-Object { -not $_.StartsWith('??') }).Count
+            if ($treeModified -eq 0 -and $treeUntracked -eq 0) {
+                Write-Ok "tree clean - no uncommitted changes in $workTarget"
+            }
+            else {
+                Write-Warn "tree $treeModified modified and $treeUntracked untracked path(s) in $workTarget while shift.isolation is none - the shift works beside them"
+            }
+        }
     }
 }
 

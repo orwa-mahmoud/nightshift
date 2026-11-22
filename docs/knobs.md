@@ -278,7 +278,7 @@ the default in the table.
 | `execution` | `run-direct` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
 | `toolingPolicy` | `auto-add` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
 | `itemBudget` | `""` | The budget every item gets when it names none of its own, in the words of an item's `Budget:` line. Empty means no limit |
-| `isolation` | `none` | `none` works in the work target itself. `worktree` gives each shift its own git worktree and branch: the owner's checkout, index and uncommitted edits stay untouched, and ignored files such as `.env` are absent unless listed in `copyIn`. Artifact mode ignores it |
+| `isolation` | `none` | `none` works in the work target itself, and Start warns when that work target has uncommitted changes. `worktree` gives each shift its own git worktree and branch: the owner's checkout, index and uncommitted edits stay untouched, and ignored files such as `.env` are absent unless listed in `copyIn`. Artifact mode ignores it |
 | `prepare` | `""` | One command run in a new shift worktree before the first item, such as `pnpm install --frozen-lockfile`. A failure stops Start and arms nothing |
 | `copyIn` | `[]` | Ignored files, relative to the work target, copied into a new shift worktree, such as `.env.test`. Nothing else ignored is copied |
 | `worktreeRoot` | `.nightshift/worktrees` | The folder that holds shift worktrees, relative to the workspace |
