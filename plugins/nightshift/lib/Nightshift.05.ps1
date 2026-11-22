@@ -139,7 +139,9 @@ function Get-NSPolicyHostName {
     if (-not [string]::IsNullOrEmpty($env:CURSOR_PLUGIN_ROOT)) { return 'cursor' }
     if (-not [string]::IsNullOrEmpty($env:CODEX_PROJECT_DIR) -or
         -not [string]::IsNullOrEmpty($env:CODEX_SANDBOX) -or
-        -not [string]::IsNullOrEmpty($env:CODEX_SANDBOX_MODE)) { return 'codex' }
+        -not [string]::IsNullOrEmpty($env:CODEX_SANDBOX_MODE) -or
+        -not [string]::IsNullOrEmpty($env:CODEX_THREAD_ID) -or
+        -not [string]::IsNullOrEmpty($env:CODEX_SESSION_ID)) { return 'codex' }
     if (-not [string]::IsNullOrEmpty($env:CLAUDE_PLUGIN_ROOT) -or
         -not [string]::IsNullOrEmpty($env:CLAUDE_PROJECT_DIR)) { return 'claude' }
     return 'unknown'

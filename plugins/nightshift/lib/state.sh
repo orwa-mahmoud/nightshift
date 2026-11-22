@@ -2587,7 +2587,7 @@ ns_recovery_launch_scope() {
 ns_policy_host_name() {
   if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
     printf 'cursor'
-  elif [ -n "${CODEX_PROJECT_DIR:-}${CODEX_SANDBOX:-}${CODEX_SANDBOX_MODE:-}" ]; then
+  elif [ -n "${CODEX_PROJECT_DIR:-}${CODEX_SANDBOX:-}${CODEX_SANDBOX_MODE:-}${CODEX_THREAD_ID:-}${CODEX_SESSION_ID:-}" ]; then
     printf 'codex'
   elif [ -n "${CLAUDE_PLUGIN_ROOT:-}${CLAUDE_PROJECT_DIR:-}" ]; then
     printf 'claude'
