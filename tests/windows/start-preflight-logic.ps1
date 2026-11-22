@@ -113,6 +113,24 @@ try {
     Expect-True ($bareRun.Stdout.Contains('refuse workspace no usable .nightshift/')) 'the missing site is named'
     Expect-True ($bareRun.Stdout.Contains('repair run Nightshift setup in this project')) 'the repair is Setup'
 
+    # Hook bookkeeping alone is not a site; the repair names link-workspace.
+    $bookkeeping = Join-Path $root 'bookkeeping-only'
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $bookkeeping '.nightshift/run')
+    [IO.File]::WriteAllText((Join-Path $bookkeeping '.nightshift/run/pulse'), '')
+    $bookkeepingRun = Invoke-Preflight $bookkeeping
+    Expect-True ($bookkeepingRun.ExitCode -eq 1) 'a bookkeeping-only folder refuses'
+    Expect-True ($bookkeepingRun.Stdout.Contains('has no Nightshift site')) "the empty site is named: $($bookkeepingRun.Stdout)"
+    Expect-True ($bookkeepingRun.Stdout.Contains('repair if the shift lives in another folder, link it from here with ns link-workspace')) 'the repair names link-workspace'
+
+    # No repository anywhere is not blamed on several child repositories.
+    $noRepo = Join-Path $root 'no-repo-site'
+    $null = New-Item -ItemType Directory -Force -Path (Join-Path $noRepo '.nightshift'), (Join-Path $noRepo 'notes')
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $noRepo '.nightshift/rules.json') -Force
+    $noRepoRun = Invoke-Preflight $noRepo
+    Expect-True ($noRepoRun.ExitCode -eq 1) 'a site with no repository refuses'
+    Expect-True ($noRepoRun.Stdout.Contains('refuse work-target no Git repository at')) "the missing repository is named: $($noRepoRun.Stdout)"
+    Expect-True (-not $noRepoRun.Stdout.Contains('several child repositories')) 'no ambiguity is claimed'
+
     # A paused shift with a spent deadline never gets a silent new budget, and STOP survives.
     $spent = New-Site (Join-Path $root 'spent')
     [IO.File]::WriteAllText((Join-Path $spent '.nightshift/STOP'), "stopped by owner`n")

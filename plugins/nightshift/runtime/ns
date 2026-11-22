@@ -56,7 +56,7 @@ ns_env_names_host() {
       [ -n "${CLAUDE_PROJECT_DIR:-}${CLAUDECODE:-}${CLAUDE_PLUGIN_ROOT:-}" ]
       ;;
     codex)
-      [ -n "${CODEX_PROJECT_DIR:-}${CODEX_HOME:-}${CODEX_SANDBOX:-}" ]
+      [ -n "${CODEX_PROJECT_DIR:-}${CODEX_HOME:-}${CODEX_SANDBOX:-}${CODEX_THREAD_ID:-}${CODEX_SESSION_ID:-}" ]
       ;;
     *) return 1 ;;
   esac

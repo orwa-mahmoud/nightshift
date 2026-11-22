@@ -31,7 +31,7 @@ $saved = @{}
 foreach ($name in @(
         'USERPROFILE', 'HOME', 'NIGHTSHIFT_HOST',
         'CLAUDE_PROJECT_DIR', 'CLAUDECODE', 'CLAUDE_PLUGIN_ROOT',
-        'CODEX_PROJECT_DIR', 'CODEX_HOME', 'CODEX_SANDBOX',
+        'CODEX_PROJECT_DIR', 'CODEX_HOME', 'CODEX_SANDBOX', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID',
         'CURSOR_PROJECT_DIR', 'CURSOR_PLUGIN_ROOT', 'CURSOR_TRACE_ID',
         'CURSOR_AGENT', 'CURSOR_VERSION')) {
     $saved[$name] = [Environment]::GetEnvironmentVariable($name)

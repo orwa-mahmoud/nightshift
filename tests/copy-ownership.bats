@@ -16,7 +16,7 @@ host_env() {
   shift
   env -u NIGHTSHIFT_HOST -u NIGHTSHIFT_WORKSPACE \
     -u CLAUDE_PROJECT_DIR -u CLAUDECODE -u CLAUDE_PLUGIN_ROOT \
-    -u CODEX_PROJECT_DIR -u CODEX_HOME -u CODEX_SANDBOX -u CODEX_SANDBOX_MODE \
+    -u CODEX_PROJECT_DIR -u CODEX_HOME -u CODEX_SANDBOX -u CODEX_SANDBOX_MODE -u CODEX_THREAD_ID -u CODEX_SESSION_ID \
     -u CURSOR_PROJECT_DIR -u CURSOR_PLUGIN_ROOT -u CURSOR_TRACE_ID \
     -u CURSOR_AGENT -u CURSOR_VERSION -u CURSOR_CONVERSATION_ID \
     "HOME=$home" "$@"
@@ -53,6 +53,14 @@ host_env() {
     _ "$p" "$NS_BIN"
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qx 'HOST	cursor'
+}
+
+@test "ns bind reports codex from the Codex desktop shell's thread and session ids" {
+  p="$(new_project own-bind-codex-desktop)"
+  run host_env "$HOME" bash -c 'cd "$1" && CODEX_THREAD_ID=t-1 CODEX_SESSION_ID=s-1 "$2" bind' \
+    _ "$p" "$NS_BIN"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'HOST	codex'
 }
 
 @test "each installed copy answers only its own host" {

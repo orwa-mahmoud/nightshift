@@ -52,7 +52,7 @@ function Test-NSEnvNamesHost {
             return -not [string]::IsNullOrEmpty([string]$env:CLAUDE_PROJECT_DIR + [string]$env:CLAUDECODE + [string]$env:CLAUDE_PLUGIN_ROOT)
         }
         'codex' {
-            return -not [string]::IsNullOrEmpty([string]$env:CODEX_PROJECT_DIR + [string]$env:CODEX_HOME + [string]$env:CODEX_SANDBOX)
+            return -not [string]::IsNullOrEmpty([string]$env:CODEX_PROJECT_DIR + [string]$env:CODEX_HOME + [string]$env:CODEX_SANDBOX + [string]$env:CODEX_THREAD_ID + [string]$env:CODEX_SESSION_ID)
         }
         default { return $false }
     }

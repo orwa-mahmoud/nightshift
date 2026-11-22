@@ -82,7 +82,7 @@ function Write-Refuse {
 
 if ([string]::IsNullOrEmpty($HostName)) {
     if (-not [string]::IsNullOrEmpty([string]$env:CURSOR_PLUGIN_ROOT)) { $HostName = 'cursor' }
-    elseif (-not [string]::IsNullOrEmpty([string]$env:CODEX_PROJECT_DIR + [string]$env:CODEX_SANDBOX + [string]$env:CODEX_SANDBOX_MODE)) { $HostName = 'codex' }
+    elseif (-not [string]::IsNullOrEmpty([string]$env:CODEX_PROJECT_DIR + [string]$env:CODEX_SANDBOX + [string]$env:CODEX_SANDBOX_MODE + [string]$env:CODEX_THREAD_ID + [string]$env:CODEX_SESSION_ID)) { $HostName = 'codex' }
     elseif (-not [string]::IsNullOrEmpty([string]$env:CLAUDE_PLUGIN_ROOT + [string]$env:CLAUDE_PROJECT_DIR)) { $HostName = 'claude' }
     else { $HostName = 'unknown' }
 }
@@ -117,6 +117,16 @@ Write-Ok "workspace $workspace"
 if (-not (Test-Path -LiteralPath $ns -PathType Container) -or (Test-NSReparsePoint $ns)) {
     Write-Refuse "workspace no usable .nightshift/ at $workspace"
     Write-Repair 'run Nightshift setup in this project before starting a shift'
+    exit 1
+}
+
+# Hooks keep their bookkeeping in whatever folder the host opened, so a .nightshift/ alone is not
+# a site. Setup leaves at least one of these behind; with none of them there is no shift here.
+$siteKeys = @('punch-list', 'rules', 'work-orders', 'drafting-table', 'work-mode', 'work-target')
+if (-not ($siteKeys | Where-Object { Test-NSPathEntry (Get-NSLayoutPath $ns $_) })) {
+    Write-Refuse "workspace $workspace has no Nightshift site - .nightshift/ holds no punch list, rules, staged work or work target"
+    Write-Repair "if the shift lives in another folder, link it from here with ns link-workspace --host-root `"$hostRoot`" --workspace <that folder>, then run Start again"
+    Write-Repair 'otherwise run Nightshift setup in this project before starting a shift'
     exit 1
 }
 
@@ -389,9 +399,17 @@ catch {
         Write-Refuse 'work-target resolves to a disposable scratch path'
         Write-Repair 'open the project from a persistent folder or Git repository, then run Setup there'
     }
-    else {
-        Write-Refuse "work-target cannot be resolved from $workspace"
+    elseif ([string]$_.Exception.Message -match 'several') {
+        Write-Refuse "work-target cannot be resolved from $workspace - several child repositories hold one"
         Write-Repair 'run Setup to record one work target; several child repositories make the choice ambiguous and Nightshift never guesses'
+    }
+    elseif (-not (Test-NSPathEntry (Get-NSLayoutPath $ns 'work-target'))) {
+        Write-Refuse "work-target no Git repository at $workspace or in one immediate child folder, and none is recorded"
+        Write-Repair 'open the project from its Git checkout, or link the workspace where the shift lives with ns link-workspace; run Setup here only to start a new site'
+    }
+    else {
+        Write-Refuse "work-target cannot be resolved from $workspace - the recorded target is not a usable folder"
+        Write-Repair 'run Setup to record the work target again'
     }
 }
 
