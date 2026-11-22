@@ -99,7 +99,7 @@ setup_site() { # <name> [punch-body]
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF "refuse workspace $(cd -P "$p" && pwd) has no Nightshift site"
   printf '%s\n' "$output" | grep -qF 'repair if the shift lives in another folder, link it from here with ns link-workspace'
-  ! printf '%s\n' "$output" | grep -qF 'work-target'
+  ! printf '%s\n' "$output" | grep -qF 'work-target' || false
 }
 
 @test "a site with no repository anywhere says so instead of blaming several child repositories" {
@@ -109,7 +109,7 @@ setup_site() { # <name> [punch-body]
   run bash "$PREFLIGHT" --project "$p"
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF 'refuse work-target no Git repository at'
-  ! printf '%s\n' "$output" | grep -qF 'several child repositories'
+  ! printf '%s\n' "$output" | grep -qF 'several child repositories' || false
 }
 
 @test "several child repositories still refuse as ambiguous" {
