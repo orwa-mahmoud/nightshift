@@ -864,6 +864,7 @@ ns_receipt_usage_section() {
   local data="$1" line sid start end work in out ended rest n=0 word dim v key
   local cw cr rea paused why host commits note prev_host="" prev_end="" prev_commits="" prev_note=""
   local twork=0 tpause=0 twall=0 first="" last="" last_why="" hosts_seen="" handoffs="" rows="" rows_plain=""
+  local row_lead row_end
   local budget="" budget_events="" t tkey tfields titems with shared_list="" own shared_union d
   local -a tot have off miss shared
   local i
@@ -969,14 +970,14 @@ ns_receipt_usage_section() {
       hosts_seen="$hosts_seen${hosts_seen:+$'\n'}$host"
     fi
     [ "$sid" != - ] || sid='—'
-    rows="$rows$(printf '| %s | %s | %s | %s | %s | %s | %s%s | %s |' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
+    # One row two ways: with the token cells, and without them for a receipt that holds no figure.
+    row_lead="$(printf '| %s | %s | %s | %s | %s | %s | %s' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
       "$(if [ -n "$host" ]; then ns_session_host_words "$host"; else printf '—'; fi)" \
       "$(ns_local_time "$start" || printf '—')" "$(ns_local_time "$end" || printf '—')" \
-      "$v" "$pcell" "$cells" "$(printf '%s' "$ended" | tr '-' ' ')")"$'\n'
-    rows_plain="$rows_plain$(printf '| %s | %s | %s | %s | %s | %s | %s | %s |' "$n" "$(printf '%s' "$sid" | cut -c1-8)" \
-      "$(if [ -n "$host" ]; then ns_session_host_words "$host"; else printf '—'; fi)" \
-      "$(ns_local_time "$start" || printf '—')" "$(ns_local_time "$end" || printf '—')" \
-      "$v" "$pcell" "$(printf '%s' "$ended" | tr '-' ' ')")"$'\n'
+      "$v" "$pcell")"
+    row_end=" | $(printf '%s' "$ended" | tr '-' ' ') |"
+    rows="$rows$row_lead$cells$row_end"$'\n'
+    rows_plain="$rows_plain$row_lead$row_end"$'\n'
     if [ -n "$prev_host" ] && [ -n "$host" ] && [ "$prev_host" != "$host" ]; then
       handoffs="$handoffs- $(ns_local_time "$prev_end" || printf '—') · $(ns_session_host_words "$prev_host") → $(ns_session_host_words "$host") · outgoing commits: $(printf '%s' "${prev_commits:-none}" | sed 's/,/, /g')"
       [ -z "$prev_note" ] || handoffs="$handoffs · last note: $prev_note"
@@ -1061,21 +1062,20 @@ EOF
     printf '| # | Shift | Host · model | Start | End | Working | Paused | Ended |\n'
     printf '| --- | --- | --- | --- | --- | --- | --- | --- |\n'
     printf '%s' "$rows_plain"
-    printf '| **Total** | %s %s | %s |  |  | **%s** | **%s** |  |\n' "$n" "$word" "${key:-—}" \
-      "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
-      "$(if [ "$tpause" -gt 0 ]; then ns_usage_duration "$tpause"; elif [ "$havepause" -eq 1 ]; then printf '—'; elif [ "$offpause" -eq 1 ]; then printf off; else printf unavailable; fi)"
   else
     printf '| # | Shift | Host · model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |\n'
     printf '| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |\n'
     printf '%s' "$rows"
-    printf '| **Total** | %s %s | %s |  |  | **%s** | **%s**' "$n" "$word" "${key:-—}" \
-      "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
-      "$(if [ "$tpause" -gt 0 ]; then ns_usage_duration "$tpause"; elif [ "$havepause" -eq 1 ]; then printf '—'; elif [ "$offpause" -eq 1 ]; then printf off; else printf unavailable; fi)"
+  fi
+  printf '| **Total** | %s %s | %s |  |  | **%s** | **%s**' "$n" "$word" "${key:-—}" \
+    "$(_ns_session_total "$havework" "$offwork" "$(ns_usage_duration "$twork")")" \
+    "$(if [ "$tpause" -gt 0 ]; then ns_usage_duration "$tpause"; elif [ "$havepause" -eq 1 ]; then printf '—'; elif [ "$offpause" -eq 1 ]; then printf off; else printf unavailable; fi)"
+  if [ "$no_figure" -eq 0 ]; then
     for j in 0 1 2 3 4; do
       printf ' | **%s**' "$(_ns_session_shared "${shared[j]}" "${have[j]}" "$(_ns_session_total "${have[j]}" "${off[j]}" "$(ns_usage_scale "${tot[j]}")" "${miss[j]}")" "${tot[j]}")"
     done
-    printf ' |  |\n'
   fi
+  printf ' |  |\n'
   if [ -n "$shared_list" ]; then
     printf '\n**Shared turn**\n\nCursor reports usage once per agent turn. A turn that covers several items is one reading: it is shown on each of their receipts, not split between them, and counted once in the receipts index.\n\n'
     while IFS=$'\t' read -r tkey tfields titems; do

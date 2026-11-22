@@ -48,6 +48,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Require changed paths
         if: needs.changes.result != 'success'
         run: |
@@ -65,8 +66,6 @@ jobs:
             --outcome skip \
             --why "No skill or scanner paths changed; the scan did not run."
           echo 'No skill or scanner paths changed; the scan did not run.'
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.changes.outputs.skills == 'true'
       - name: Install the locked scanner
         if: needs.changes.outputs.skills == 'true'
         run: |
@@ -78,20 +77,19 @@ jobs:
         run: |
           set -eu
           status=0
-          reports=""
+          reports=()
           for dir in $SKILL_DIRS; do
             safe="$(printf '%s' "$dir" | tr '/' '-')"
             report="$RUNNER_TEMP/cisco-$safe.json"
             "$RUNNER_TEMP/scanner/bin/skill-scanner" scan-all "$dir" --recursive \
               --format json --output "$report" --fail-on-severity high || status=$?
-            reports="$reports --json $report"
+            reports+=(--json "$report")
           done
-          # shellcheck disable=SC2086
           python3 tests/skill-scan-report.py \
             --tool "Cisco skill-scanner" \
             --scope "$SKILL_DIRS" \
             --exit "$status" \
-            $reports
+            "${reports[@]}"
           exit "$status"
 
   skillspector:
@@ -100,6 +98,7 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Require changed paths
         if: needs.changes.result != 'success'
         run: |
@@ -117,8 +116,6 @@ jobs:
             --outcome skip \
             --why "No skill or scanner paths changed; the scan did not run."
           echo 'No skill or scanner paths changed; the scan did not run.'
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: needs.changes.outputs.skills == 'true'
       - name: Install the locked scanner
         if: needs.changes.outputs.skills == 'true'
         run: |
@@ -131,18 +128,17 @@ jobs:
         run: |
           set -eu
           status=0
-          reports=""
+          reports=()
           for dir in $SKILL_DIRS; do
             safe="$(printf '%s' "$dir" | tr '/' '-')"
             report="$RUNNER_TEMP/skillspector-$safe.json"
             "$RUNNER_TEMP/scanner/bin/skillspector" scan "$dir" --recursive --no-llm \
               --format json --output "$report" || status=$?
-            reports="$reports --json $report"
+            reports+=(--json "$report")
           done
-          # shellcheck disable=SC2086
           python3 tests/skill-scan-report.py \
             --tool "NVIDIA SkillSpector" \
             --scope "$SKILL_DIRS" \
             --exit "$status" \
-            $reports
+            "${reports[@]}"
           exit "$status"

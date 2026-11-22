@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
 # Library layout: lib.sh is the public entry; modules load relative to it.
 
+bats_require_minimum_version 1.5.0
+
 LIB="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
 LIB_DIR="$BATS_TEST_DIRNAME/../plugins/nightshift/lib"
 
@@ -19,7 +21,9 @@ LIB_DIR="$BATS_TEST_DIRNAME/../plugins/nightshift/lib"
 }
 
 @test "lib.sh loads under set -u" {
-  run bash -c 'set -u; . "$1"; type ns_lock >/dev/null; printf ok' _ "$LIB"
+  # A line tracer that does not expect set -u writes to standard error; an unbound variable in the
+  # library still exits non-zero.
+  run --separate-stderr bash -c 'set -u; . "$1"; type ns_lock >/dev/null; printf ok' _ "$LIB"
   [ "$status" -eq 0 ]
   [ "$output" = ok ]
 }
@@ -38,7 +42,7 @@ LIB_DIR="$BATS_TEST_DIRNAME/../plugins/nightshift/lib"
 @test "layout.sh loads on its own, and only the callers that answer before the library load it" {
   ns="$BATS_TEST_TMPDIR/site/.nightshift"
   mkdir -p "$ns"
-  run bash -c 'set -u; . "$1"; ns_layout_set a "$2" armed; printf "%s\n" "$a"
+  run --separate-stderr bash -c 'set -u; . "$1"; ns_layout_set a "$2" armed; printf "%s\n" "$a"
     printf "2\n" >"$2/state-version"; ns_layout_set a "$2" armed; printf "%s\n" "$a"
     if type ns_workspace_root >/dev/null 2>&1; then exit 1; fi' _ "$LIB_DIR/layout.sh" "$ns"
   [ "$status" -eq 0 ]

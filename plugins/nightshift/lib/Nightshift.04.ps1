@@ -1877,10 +1877,12 @@ function Get-NSReceiptUsageSection {
         $startCell = $(if ($from) { $from } else { $dash })
         $endCell = $(if ($to) { $to } else { $dash })
         $endedCell = $ended.Replace('-', ' ')
-        $rows.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6}{7} | {8} |' -f $n, $sidCell,
-                $hostCellRow, $startCell, $endCell, $wcell, $pcell, $cells, $endedCell))
-        $rowsPlain.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} |' -f $n, $sidCell,
-                $hostCellRow, $startCell, $endCell, $wcell, $pcell, $endedCell))
+        # One row two ways: with the token cells, and without them for a receipt that holds no figure.
+        $rowLead = ('| {0} | {1} | {2} | {3} | {4} | {5} | {6}' -f $n, $sidCell,
+            $hostCellRow, $startCell, $endCell, $wcell, $pcell)
+        $rowEnd = ' | ' + $endedCell + ' |'
+        $rows.Add($rowLead + $cells + $rowEnd)
+        $rowsPlain.Add($rowLead + $rowEnd)
         if ($prevHost.Length -gt 0 -and $hostKey.Length -gt 0 -and $prevHost -cne $hostKey) {
             $at = Get-NSLocalTime $prevEnd
             $h = ('- {0} {1} {2} {3} {4} {1} outgoing commits: {5}' -f $(if ($at) { $at } else { $dash }), $script:NSDot,
@@ -1978,16 +1980,17 @@ function Get-NSReceiptUsageSection {
         $out.Add('| # | Shift | Host ' + $script:NSDot + ' model | Start | End | Working | Paused | Ended |')
         $out.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
         foreach ($r in $rowsPlain) { $out.Add($r) }
-        $out.Add(('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}** |  |' -f $n, $word, $hostCell, $workTotal, $pauseTotal))
     }
     else {
         $out.Add('| # | Shift | Host ' + $script:NSDot + ' model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |')
         $out.Add('| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |')
         foreach ($r in $rows) { $out.Add($r) }
-        $totalRow = ('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}**' -f $n, $word, $hostCell, $workTotal, $pauseTotal)
-        for ($i = 0; $i -lt 5; $i++) { $totalRow += ' | **' + (& $total $i) + '**' }
-        $out.Add($totalRow + ' |  |')
     }
+    $totalRow = ('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}**' -f $n, $word, $hostCell, $workTotal, $pauseTotal)
+    if (-not $noFigure) {
+        for ($i = 0; $i -lt 5; $i++) { $totalRow += ' | **' + (& $total $i) + '**' }
+    }
+    $out.Add($totalRow + ' |  |')
     if ($sharedTurns.Count -gt 0) {
         $out.Add('')
         $out.Add('**Shared turn**')

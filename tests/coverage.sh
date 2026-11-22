@@ -242,7 +242,14 @@ report_ok() {
 # and a platform skip still count: they are measured, and named apart in the measured line.
 run_chunk() {
   local line="$1" file count filter out="$COVERAGE_ROOT/part-$1" log="$COVERAGE_ROOT/part-$1.log" status=0 why=""
+  local err="$COVERAGE_ROOT/part-$1.err" name
   local session left free tap_rc=0 summary failed_n=0 skipped_n=0 started elapsed rss="" gnu_time="" candidate
+  # The traced tests see none of this run's own settings: a test that drives coverage.sh in a
+  # fixture would otherwise write into this run's shard.
+  local -a clean=(env)
+  while IFS= read -r name; do
+    clean+=(-u "$name")
+  done < <(compgen -e | grep '^NIGHTSHIFT_COVERAGE_' || :)
   IFS=$'\t' read -r file count filter < <(sed -n "${line}p" "$CHUNKS")
   started="$(date +%s)"
   # setsid executes a program, not a shell keyword. `command time` is the shell's own word, so the
@@ -254,11 +261,15 @@ run_chunk() {
       break
     fi
   done
+  # Bats writes TAP on standard output. kcov's bash tracer passes lines it does not parse to standard
+  # error, among them the rest of a traced multi-line value, which can look like a TAP result. Only
+  # standard output is read as TAP.
   if [ -n "$gnu_time" ]; then
-    setsid "$gnu_time" -f 'COVERAGE_RSS_KB %M' -o "$out.time" kcov --include-path="$PWD/$INCLUDE" "$out" \
-      "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
+    setsid "${clean[@]}" "$gnu_time" -f 'COVERAGE_RSS_KB %M' -o "$out.time" kcov --include-path="$PWD/$INCLUDE" "$out" \
+      "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>"$err" &
   else
-    setsid kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" >"$log" 2>&1 &
+    setsid "${clean[@]}" kcov --include-path="$PWD/$INCLUDE" "$out" "$(command -v bats)" --filter "$filter" "$file" \
+      >"$log" 2>"$err" &
   fi
   session=$!
   wait "$session" || status=$?
@@ -308,6 +319,8 @@ run_chunk() {
     printf -- '--- tests in the group: %s\n' "$filter"
     printf -- '--- last lines of %s\n' "$log"
     tail -n 25 "$log"
+    printf -- '--- last lines of %s\n' "$err"
+    tail -n 25 "$err"
   } >&2
   return 1
 }
@@ -518,20 +531,30 @@ if [ "${1:-}" = --plan ]; then
   exit 0
 fi
 
+# The container installs as root and measures as the caller's user id. The suite assumes an
+# unprivileged user, as on every CI leg: as root, a file made unreadable or unwritable is neither.
 if [ "$(uname -s)" != Linux ] || ! command -v kcov >/dev/null 2>&1; then
   exec docker run --rm -v "$PWD:/src" -w /src \
     -e NIGHTSHIFT_COVERAGE_JOBS="$JOBS" -e NIGHTSHIFT_COVERAGE_CHUNK="$CHUNK" \
     -e NIGHTSHIFT_COVERAGE_SHARD="${NIGHTSHIFT_COVERAGE_SHARD:-}" \
     -e NIGHTSHIFT_COVERAGE_SHARDS="${NIGHTSHIFT_COVERAGE_SHARDS:-}" \
     -e NIGHTSHIFT_COVERAGE_COMMIT="${NIGHTSHIFT_COVERAGE_COMMIT:-}" \
+    -e COVERAGE_UID="$(id -u)" \
     debian:stable-slim bash -c '
     set -e
     apt-get update -qq >/dev/null
-    apt-get install -y -qq kcov bats git jq shellcheck python3 procps time >/dev/null
-    git config --global user.email dev@example.com
-    git config --global user.name dev
-    git config --global --add safe.directory "*"
-    exec bash tests/coverage.sh'
+    apt-get install -y -qq kcov bats git jq shellcheck python3 ruby procps time >/dev/null
+    measure() {
+      git config --global user.email dev@example.com
+      git config --global user.name dev
+      git config --global --add safe.directory "*"
+      exec bash tests/coverage.sh
+    }
+    if [ "$COVERAGE_UID" -eq 0 ]; then
+      measure
+    fi
+    useradd --create-home --non-unique --uid "$COVERAGE_UID" coverage
+    exec runuser -u coverage -- env HOME=/home/coverage bash -c "$(declare -f measure); measure"'
 fi
 
 resolve_budget

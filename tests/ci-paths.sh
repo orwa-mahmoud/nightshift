@@ -26,15 +26,23 @@ while IFS= read -r path || [ -n "$path" ]; do
       ;;
     plugins/nightshift/skills/nightshift/references/templates/*)
       suite=true
+      validate=true
       ;;
     plugins/*)
       case "$path" in
         *.md) prose=true ;;
         *) suite=true ;;
       esac
+      validate=true
       ;;
     tests/* | evals/* | .claude-plugin/* | .agents/* | .cursor-plugin/*)
       suite=true
+      validate=true
+      ;;
+    .github/workflows/ci.yaml)
+      suite=true
+      lint=true
+      validate=true
       ;;
     .github/workflows/*)
       lint=true
