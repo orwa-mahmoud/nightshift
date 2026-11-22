@@ -90,6 +90,8 @@ set -u
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh" # pure-bash path — no dirname dependency
+# shellcheck source=plugins/nightshift/runtime/shared/watchman-core.sh
+. "$_here/../shared/watchman-core.sh"
 ns_copy_serves_host "$_here/../.." claude || exit 0
 
 PROJECT="$PWD"
@@ -104,7 +106,6 @@ usage() {
   awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
   exit 1
 }
-need_value() { [ "$2" -ge 2 ] || { printf 'watchman: %s needs a value\n' "$1" >&2; usage; }; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -138,7 +139,6 @@ PROJECT="$PWD"
 # and a missing knob refuses to arm, loudly, naming the repair.
 NS="$PROJECT/.nightshift"
 [ -d "$NS" ] || { printf 'watchman: no .nightshift at %s\n' "$PROJECT" >&2; exit 1; }
-note() { ns_record_reason "$NS" "$1" "${2:-}"; }
 STATE_KIND="$(ns_state_kind "$PROJECT")"
 case "$STATE_KIND" in
   malformed | future)
@@ -169,6 +169,7 @@ if [ "$AGENT_IS_DEFAULT" -eq 1 ]; then
   fi
 fi
 NOTIFY="$(rule "$PROJECT" notifyCommand "${NIGHTSHIFT_NOTIFY_CMD:-}")" # empty = silent, a configured value
+# shellcheck disable=SC2034 # ARMED is read by watchman-core.sh; LOG by common.sh
 declare PUNCH PIDFILE SENTINEL ARMED SESSION_FILE SESSION_END ENDED DEADLINE STOP PARKING LOG LEASE
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set PIDFILE "$NS" watchman
@@ -186,47 +187,10 @@ ns_layout_set LEASE "$NS" lease
 # The project's Claude Code transcript folder; empty when it cannot be told.
 TRANSCRIPTS="${NIGHTSHIFT_WATCH_TRANSCRIPTS:-$(ns_claude_project_dir "$PROJECT")}"
 
-ts() { ns_local_now second; }
-log_line() { printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
-
-# The marker is the shift. Without it there is nothing to revive, nothing to clock out, and no
-# reading to take — the owner ended the arming, and the watchman is the outside half of a shift
-# that no longer exists.
-armed() { [ -f "$ARMED" ]; }
-stand_down_disarmed() {
-  note owner-disarm
-  log_line "watchman: the armed marker is gone — standing down"
-  exit 0
-}
-
-# The pidfile is this loop's claim on the site. Reset and purge remove it; a takeover replaces
-# the pid inside it. Either way the watching is somebody else's now, and a pidfile that is no
-# longer ours is never cleaned up on the way out — not here, and not from the exit trap.
-stand_down_unclaimed() {
-  if [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ]; then
-    trap - EXIT
-    note stand-down "watchman pidfile taken over"
-    log_line "watchman: another watchman owns this site — standing down"
-    exit 0
-  fi
-  note stand-down "watchman pidfile gone"
-  log_line "watchman: the watchman pidfile is gone — standing down"
-  exit 0
-}
-holds_pidfile() {
-  [ -f "$PIDFILE" ] || return 1
-  [ ! -L "$PIDFILE" ] || return 1
-  [ "$(sed -n 1p "$PIDFILE" 2>/dev/null)" = "$$" ]
-}
-
 # One watchman per site. A stale pidfile (dead pid) is taken over silently.
 # A planted symlink is not a live owner — replace it rather than follow it.
 ns_watchman_claim "$PIDFILE" "$NS_WATCHMAN_SCRIPT" || exit 1
 trap 'holds_pidfile && rm -f "$PIDFILE"' EXIT
-
-# Counted below the `## Items` heading only, exactly as the gate counts them — a watchman that
-# read a checkbox out of the contract prose would keep reviving a shift the gate considers done.
-open_boxes() { ns_open_boxes "$PUNCH"; }
 
 deadline_passed() {
   local dl

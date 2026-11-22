@@ -26,7 +26,7 @@ armed() {
   armed "$p"
   run pulse "$p"
   [ "$status" -eq 0 ]
-  [[ "$output" == *'receipts: item 36. First of the replay. started — open .nightshift/receipts/36-first-of-the-replay.md with one paragraph on the approach; sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'* ]] || false
+  [[ "$output" == *'receipts: item 36. First of the replay. started — open .nightshift/receipts/36-first-of-the-replay.md with one paragraph on the approach; sections: What was delivered · Why · Tried and rejected · Verification · Not verified · Check it yourself · Outputs · Parked decisions and snags.'* ]] || false
   run pulse "$p"
   [[ "$output" != *'started —'* ]] || false
 }
@@ -48,10 +48,10 @@ armed() {
     >"$p/.nightshift/punch-list.md"
   armed "$p"
   run pulse "$p"
-  [[ "$output" == *'.nightshift/receipts/36-restyle-the-page.md with one paragraph on the approach; sections: What was delivered · Why · Tried and rejected · Verification · Evidence · Outputs · Parked decisions and snags; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively, and evidence that could not be produced written as `unavailable — <reason>`.'* ]] || { printf '%s\n' "$output"; return 1; }
+  [[ "$output" == *'.nightshift/receipts/36-restyle-the-page.md with one paragraph on the approach; sections: What was delivered · Why · Tried and rejected · Verification · Not verified · Evidence · Check it yourself · Outputs · Parked decisions and snags; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively, and evidence that could not be produced written as `unavailable — <reason>`.'* ]] || { printf '%s\n' "$output"; return 1; }
   line() { bash -c '. "$1"; . "$2"; ns_pulse_receipts_start_line "$3" "$4"' _ "$LIB" "$PULSE" "$p" "$1"; }
   # An item without the line reads exactly as before.
-  [[ "$(line '37. Plain.')" == *'Verification · Outputs · Parked decisions and snags.' ]] || false
+  [[ "$(line '37. Plain.')" == *'Verification · Not verified · Check it yourself · Outputs · Parked decisions and snags.' ]] || false
   jq '.receipts.templatePath = "notes/item.md"' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
   [[ "$(line '36. Restyle the page.')" == *"follow the owner's template at notes/item.md, linking the evidence wherever that template puts it; short evidence inline, large files in .nightshift/receipts/36-restyle-the-page/ linked relatively"* ]] || false
@@ -60,7 +60,7 @@ armed() {
   jq '.receipts.templatePath = "" | .receipts.evidence.default = "the command run and its output"' \
     "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
-  [[ "$(line '37. Plain.')" == *'Verification · Evidence · Outputs · Parked decisions and snags; the shift asks every item for this evidence: the command run and its output; short evidence inline, large files in .nightshift/receipts/37-plain/ linked relatively'* ]] || { line '37. Plain.'; return 1; }
+  [[ "$(line '37. Plain.')" == *'Verification · Not verified · Evidence · Check it yourself · Outputs · Parked decisions and snags; the shift asks every item for this evidence: the command run and its output; short evidence inline, large files in .nightshift/receipts/37-plain/ linked relatively'* ]] || { line '37. Plain.'; return 1; }
   command -v pwsh >/dev/null 2>&1 || return 0
   for label in '36. Restyle the page.' '37. Plain.'; do
     got="$(NS_MODULE="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/Nightshift.psm1" NS_WS="$p" NS_LABEL="$label" \

@@ -1,8 +1,8 @@
 name: coverage
 
-# Line coverage of the shipped bash on main, uploaded to Codecov. tests/coverage.sh runs the whole
-# Bats suite under kcov, shard by shard, and merges the parts. Pull requests run the suite in ci.yaml
-# without coverage; this workflow never gates one.
+# Line coverage of the shipped bash on main, uploaded to Codecov. Two Linux runners
+# trace disjoint groups and a merge job publishes one report. Pull requests run the
+# suite in ci.yaml without coverage; this workflow never gates one.
 on:
   push:
     branches: [main]
@@ -13,23 +13,117 @@ on:
       - ".github/workflows/coverage.yml"
   workflow_dispatch:
 
+# A later push must not cancel a trace that is already running. A manifest-only
+# release used to do that, and the replacement run measured nothing new. The
+# queued run skips the trace when the covered inputs are unchanged.
 concurrency:
   group: coverage-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
+  decide:
+    name: Coverage inputs
+    runs-on: ubuntu-latest
+    outputs:
+      trace: ${{ steps.d.outputs.trace }}
+      reason: ${{ steps.d.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Decide whether this revision changes coverage
+        id: d
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "trace=true" >> "$GITHUB_OUTPUT"
+            echo "reason=manual" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          before="$BEFORE_SHA"
+          if [ "$before" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            echo "trace=true" >> "$GITHUB_OUTPUT"
+            echo "reason=unproved" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$before" HEAD > "${RUNNER_TEMP}/coverage-paths"
+          tests/coverage-decide.sh < "${RUNNER_TEMP}/coverage-paths" >> "$GITHUB_OUTPUT"
+
   coverage:
     name: Coverage
+    needs: decide
+    if: needs.decide.outputs.trace == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Measure line coverage
+        env:
+          NIGHTSHIFT_COVERAGE_SHARD: ${{ matrix.shard }}
+          NIGHTSHIFT_COVERAGE_SHARDS: 2
         run: bash tests/coverage.sh
+      - name: Upload the shard report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: coverage/shard-${{ matrix.shard }}
+          if-no-files-found: error
+
+  merge:
+    name: Coverage merge
+    needs: [decide, coverage]
+    if: needs.decide.outputs.trace == 'true' && needs.coverage.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download shard reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-shard-*
+          path: coverage-incoming
+      - name: Place shard reports
+        run: |
+          set -eu
+          mkdir -p coverage
+          for dir in coverage-incoming/coverage-shard-*; do
+            n="${dir##*-}"
+            mkdir -p "coverage/shard-$n"
+            cp -a "$dir"/. "coverage/shard-$n/"
+          done
+      - name: Merge shard reports
+        run: bash tests/coverage.sh --merge
+      - name: Record the covered revision
+        run: |
+          set -eu
+          sha="$(git rev-parse HEAD)"
+          printf 'covered %s\n' "$sha" | tee coverage/covered-revision.txt
+          printf 'Codecov receives coverage/cobertura.xml for %s when this push is still the covered tip of main.\n' "$sha" >> "$GITHUB_STEP_SUMMARY"
+      - name: Skip upload when a newer covered revision exists
+        id: fresh
+        run: |
+          set -eu
+          git fetch origin main
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+            echo "reason=current" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only HEAD origin/main > "${RUNNER_TEMP}/coverage-since"
+          tests/coverage-decide.sh --upload < "${RUNNER_TEMP}/coverage-since" >> "$GITHUB_OUTPUT"
       - name: Upload to Codecov
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.fresh.outputs.upload == 'true'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

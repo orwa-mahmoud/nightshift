@@ -6,15 +6,25 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-bats \
-  tests/catalog-index.bats \
-  tests/catalog.bats \
-  tests/evidence-catalog.bats \
-  tests/gates-catalog.bats \
-  tests/plan-depth.bats \
-  tests/skill-refs.bats \
-  tests/skill-paths.bats \
-  tests/one-sentence-start.bats \
-  tests/doc-refs.bats \
-  tests/evals.bats \
+# doc-refs and skill-refs also run in the docs contract. When both lanes run, the
+# docs lane owns them so the two files are not executed twice.
+shared=true
+if [ "${1:-}" = --skip-shared ]; then
+  shared=false
+fi
+
+files=(
+  tests/catalog-index.bats
+  tests/catalog.bats
+  tests/evidence-catalog.bats
+  tests/gates-catalog.bats
+  tests/plan-depth.bats
+  tests/skill-paths.bats
+  tests/one-sentence-start.bats
+  tests/evals.bats
   tests/shifts/
+)
+if [ "$shared" = true ]; then
+  files+=(tests/skill-refs.bats tests/doc-refs.bats)
+fi
+bats "${files[@]}"

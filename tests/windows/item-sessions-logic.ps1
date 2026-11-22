@@ -1,6 +1,7 @@
 # Charging the item being worked on native Windows: the PowerShell half of tests/item-sessions.bats.
 # Run on macOS or Windows: pwsh -File tests/windows/item-sessions-logic.ps1
 Set-StrictMode -Version 2.0
+if (-not (Test-Path Variable:\IsWindows)) { $global:IsWindows = ($env:OS -eq 'Windows_NT') }
 $ErrorActionPreference = 'Stop'
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
@@ -182,10 +183,74 @@ try {
     Add-NSReceiptSession $rf '6. Runtime only.' '1111222233334444' '1790210000' '1790210600' '600' '12' '3' 'ticked'
     Expect-True (@([IO.File]::ReadAllLines($rf))[0] -ceq '# 6. Runtime only.') 'a new receipt gets its heading'
     Expect-True (-not (Test-NSReceiptHasModelText $rf)) 'the Sessions table is not model text'
+
+    # A session records the decisions and snags added while the item was worked.
+    $w = Join-Path $root 'inbox'
+    $ns = New-Site $w
+    $five = "## Items`n- [ ] **1. First.** <!-- id: a1a1 -->`n- [ ] **2. Second.** <!-- id: b2b2 -->`n" +
+        "- [ ] **3. Third.** <!-- id: c3c3 -->`n- [ ] **4. Fourth.** <!-- id: d4d4 -->`n- [ ] **5. Fifth.** <!-- id: e5e5 -->`n"
+    [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), $five, $utf8)
+    $lot = Get-NSLayoutPath $ns 'parking-lot'
+    $snag = Get-NSLayoutPath $ns 'snag-log'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $lot), (Split-Path -Parent $snag) -Force
+    [IO.File]::WriteAllText($lot, "# Parking Lot`n`n---`n`n- one decision`n- another decision`n", $utf8)
+    [IO.File]::WriteAllText($snag, "# Snag Log`n`n---`n`n- one finding`n", $utf8)
+    Set-Tick $ns '1'
+    Invoke-Step $ns $w
+    $first = [IO.File]::ReadAllText((Get-NSReceiptPath $w '1. First.'))
+    Expect-True ($first.Contains(' parked=2')) 'the first item records two parked decisions'
+    Expect-True ($first.Contains(' snags=1')) 'the first item records one snag'
+    Set-Tick $ns '2'
+    Invoke-Step $ns $w
+    $second = [IO.File]::ReadAllText((Get-NSReceiptPath $w '2. Second.'))
+    Expect-True (-not $second.Contains('parked=')) 'a quiet item records no parked count'
+    Expect-True (-not $second.Contains('snags=')) 'a quiet item records no snag count'
+    [IO.File]::WriteAllText($lot, (($firstLot = [IO.File]::ReadAllText($lot)) -replace '(?m)^- another decision\r?\n', '') + "- a different decision`n", $utf8)
+    Set-Tick $ns '3'
+    Invoke-Step $ns $w
+    $third = [IO.File]::ReadAllText((Get-NSReceiptPath $w '3. Third.'))
+    Expect-True ($third.Contains(' parked=1')) 'a replaced decision counts the new one'
+    Expect-True (-not $third.Contains('snags=')) 'the snag is not counted again'
+    [IO.File]::AppendAllText($lot, "- late one`n- late two`n", $utf8)
+    $sessionsDir = Get-NSLayoutPath $ns 'item-sessions'
+    if ($IsWindows) { & icacls.exe $sessionsDir /deny "${env:USERNAME}:(OI)(CI)W" | Out-Null }
+    else { & chmod 555 $sessionsDir }
+    Set-Tick $ns '4'
+    try { Invoke-Step $ns $w } catch { $null = $_.Exception.Message }
+    if ($IsWindows) { & icacls.exe $sessionsDir /remove:d $env:USERNAME | Out-Null }
+    else { & chmod 755 $sessionsDir }
+    Set-Tick $ns '5'
+    Invoke-Step $ns $w
+    $fifth = [IO.File]::ReadAllText((Get-NSReceiptPath $w '5. Fifth.'))
+    Expect-True ($fifth.Contains(' parked=2')) 'a failed write is counted on the next session'
+    $fourthPath = Get-NSReceiptPath $w '4. Fourth.'
+    if (Test-Path -LiteralPath $fourthPath) {
+        Expect-True (-not ([IO.File]::ReadAllText($fourthPath).Contains('parked='))) 'the failed write left no parked count'
+    }
+    Expect-True (([regex]::Matches($fifth, 'parked=2')).Count -eq 1) 'the fifth item counts those two once'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+function Get-UsageText {
+    param([string]$Line)
+    return ((Get-NSReceiptUsageSection @($Line)) -join "`n")
+}
+
+$dot = [string][char]0x00B7
+$none = Get-UsageText 'abc 1000 1600 600 - - ticked cw=- cr=- rea=- paused=0'
+Expect-True ($none.Contains("**Tokens:** unavailable")) 'no figure says tokens are unavailable'
+Expect-True (-not $none.Contains('| Tokens | Amount |')) 'no figure draws no Tokens table'
+Expect-True ($none.Contains('| # | Shift | Host ' + $dot + ' model | Start | End | Working | Paused | Ended |')) `
+    'no figure leaves the token columns out of Sessions'
+$figures = Get-UsageText 'abc 1000 1600 600 1200 300 ticked cw=0 cr=0 rea=- paused=0'
+Expect-True ($figures.Contains('| Tokens | Amount |')) 'a figure keeps the Tokens table'
+Expect-True ($figures.Contains('| # | Shift | Host ' + $dot + ' model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |')) `
+    'a figure keeps the token columns'
+$sharedLine = Get-UsageText 'abc 1000 1600 600 - - ticked turn=g2/input=800,cache_read=4000,output=20/P01;P02'
+Expect-True ($sharedLine.Contains('**Tokens:** not attributable to this item')) 'a shared turn with no own figure says so'
+Expect-True ($sharedLine.Contains('**Shared turn**')) 'a shared turn keeps its paragraph'
 
 if ($failures.Count -gt 0) {
     Write-Host "item-sessions-logic failed ($($failures.Count)):"

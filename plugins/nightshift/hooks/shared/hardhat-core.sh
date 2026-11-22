@@ -37,11 +37,12 @@ ns_hardhat_is_command_tool() {
 NS_HARDHAT_UNREADABLE_DENY='BLOCKED: the hook payload is unreadable while a shift is active. Retry after the host can provide valid hook JSON.'
 NS_HARDHAT_UNREADABLE_LOG='hardhat: the host sent a hook payload that is not a JSON object, and the call was refused'
 
-# ns_hardhat_payload_unreadable <raw-payload> — status 0 when the payload is present and is not a
-# JSON object. An empty payload keeps the host's own fallbacks, and without jq the payload is read
-# field by field as before.
+# ns_hardhat_payload_unreadable <raw-payload> — status 0 when the payload is empty or is not a
+# JSON object. An empty payload is unreadable with or without jq: no guard can see the call.
+# A non-empty payload without jq is read field by field as before. Cursor's fallbacks run before
+# this check, so only a payload that is still empty after them is refused.
 ns_hardhat_payload_unreadable() {
-  [ -n "$1" ] || return 1
+  [ -n "$1" ] || return 0
   command -v jq >/dev/null 2>&1 || return 1
   ! printf '%s' "$1" | jq -e 'type == "object"' >/dev/null 2>&1
 }
@@ -1278,10 +1279,10 @@ ns_hardhat_command_reason() {
       fi
       REPO="$(target_repo "$CMD" "${CWD:-$PROJECT_DIR}")"
       case "$?" in
-        1) printf '%s' "BLOCKED: this $_verb names a directory that is not a git repository, so the protected-directory guard cannot inspect it. Do not retry a rephrased form."
+        1) printf '%s' "BLOCKED: cannot tell which Git repository this $_verb targets, so the protected-directory guard cannot run. Run it from inside the repository."
            return 0 ;;
         2) REPO="$(repo_root "$PROJECT_DIR" "$CWD")" || REPO="$(ns_work_target "$PROJECT_DIR")" || {
-             printf '%s' "BLOCKED: cannot tell which git repository this $_verb targets, so the protected-directory guard cannot run. Run it from inside the repository."
+             printf '%s' "BLOCKED: cannot tell which Git repository this $_verb targets, so the protected-directory guard cannot run. Run it from inside the repository."
              return 0
            } ;;
       esac
@@ -1342,10 +1343,10 @@ ns_hardhat_command_reason() {
     fi
     REPO="$(target_repo "$CMD" "${CWD:-$PROJECT_DIR}")"
     case "$?" in
-      1) printf '%s' "BLOCKED: this commit names a directory that is not a git repository, so the configured commit guards cannot inspect it. Do not retry a rephrased form."
+      1) printf '%s' "BLOCKED: cannot tell which Git repository this commit targets, so the configured commit guards cannot run. Run the commit from inside the repository."
          return 0 ;;
       2) REPO="$(repo_root "$PROJECT_DIR" "$CWD")" || REPO="$(ns_work_target "$PROJECT_DIR")" || {
-           printf '%s' "BLOCKED: cannot tell which git repository this commit targets, so the configured commit guards cannot run. Run the commit from inside the repository."
+           printf '%s' "BLOCKED: cannot tell which Git repository this commit targets, so the configured commit guards cannot run. Run the commit from inside the repository."
            return 0
          } ;;
     esac

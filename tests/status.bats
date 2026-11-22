@@ -76,6 +76,11 @@ fact_of() { # <project> <label>
   facts "$1" | grep -E "^$2 " | head -1 | cut -d' ' -f"$(($(printf '%s' "$2" | wc -w) + 1))-"
 }
 
+# fact_from <report> <label> — a field of a status report the caller already captured.
+fact_from() {
+  printf '%s\n' "$1" | sed -n '/^facts$/,/^resolved policy$/p' | grep -E "^$2 " | head -1 | cut -d' ' -f"$(($(printf '%s' "$2" | wc -w) + 1))-"
+}
+
 @test "the current open item is named, and a ticked list says none" {
   p="$(new_project status-open-item)"
   printf '## Items\n\n- [x] **P01 - done.**\n\n- [ ] **P02 - the live one.**\n\n  Detail.\n' \
@@ -102,20 +107,24 @@ fact_of() { # <project> <label>
     >"$p/.nightshift/parking-lot.md"
   printf '# Snag log\n\n- **A snag.**\n\nFiled: [2026-09-09](archive/2026-09-09/snag-log.md)\n' \
     >"$p/.nightshift/snag-log.md"
-  [ "$(fact_of "$p" 'parked')" = '1' ]
-  facts "$p" | grep -qF 'parked entry First decision.'
-  ! facts "$p" | grep -qF 'Filed:' || false
-  facts "$p" | grep -qF 'snag A snag.'
-  ! facts "$p" | grep -qF 'snag Filed' || false
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(fact_from "$output" 'parked')" = '1' ]
+  printf '%s\n' "$output" | grep -qF 'parked entry First decision.'
+  ! printf '%s\n' "$output" | grep -qF 'Filed:' || false
+  printf '%s\n' "$output" | grep -qF 'snag A snag.'
+  ! printf '%s\n' "$output" | grep -qF 'snag Filed' || false
 }
 
 @test "parked entries are counted and titled, one line each" {
   p="$(new_project status-parked)"
   printf '# Parking lot\n\n- **First decision.** Body that should not appear.\n\n- **Second one.**\n' \
     >"$p/.nightshift/parking-lot.md"
-  [ "$(fact_of "$p" 'parked')" = '2' ]
-  facts "$p" | grep -qF 'parked entry First decision. Body that should not appear.'
-  facts "$p" | grep -qF 'parked entry Second one.'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(fact_from "$output" 'parked')" = '2' ]
+  printf '%s\n' "$output" | grep -qF 'parked entry First decision. Body that should not appear.'
+  printf '%s\n' "$output" | grep -qF 'parked entry Second one.'
 }
 
 @test "drafting-table boxes are counted only after the first rule" {
@@ -143,9 +152,11 @@ fact_of() { # <project> <label>
     printf '# Snag log\n\n'
     for n in 1 2 3 4 5; do printf -- '- **Snag %s.** Detail.\n\n' "$n"; done
   } >"$p/.nightshift/snag-log.md"
-  [ "$(facts "$p" | grep -c '^snag ')" -eq 3 ]
-  facts "$p" | grep -qF 'snag Snag 5. Detail.'
-  ! facts "$p" | grep -qF 'snag Snag 1.' || false
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c '^snag ')" -eq 3 ]
+  printf '%s\n' "$output" | grep -qF 'snag Snag 5. Detail.'
+  ! printf '%s\n' "$output" | grep -qF 'snag Snag 1.' || false
 }
 
 @test "the shipped opportunity template counts as no opportunities at all" {
@@ -153,8 +164,10 @@ fact_of() { # <project> <label>
   cp "$REF/../assets/opportunity-map.md" "$p/.nightshift/opportunity-map.md" 2>/dev/null ||
     printf '# Opportunity map\n\n<!--\n### <title>\nStatus: building\nNext: <action>\n-->\n' \
       >"$p/.nightshift/opportunity-map.md"
-  [ "$(fact_of "$p" 'opportunities')" = 'candidate=0 building=0 shipped=0 rejected=0 parked=0' ]
-  ! facts "$p" | grep -q '^building ' || false
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(fact_from "$output" 'opportunities')" = 'candidate=0 building=0 shipped=0 rejected=0 parked=0' ]
+  ! printf '%s\n' "$output" | grep -q '^building ' || false
 }
 
 @test "a building entry carries its phase, next action and remaining verification" {
@@ -179,11 +192,13 @@ Verify remaining: the two fixtures and one native run
 ### Old idea
 Status: rejected
 MAP
-  [ "$(fact_of "$p" 'opportunities')" = 'candidate=1 building=1 shipped=0 rejected=1 parked=0' ]
-  facts "$p" | grep -qF 'building title Receipts index'
-  facts "$p" | grep -qF 'building phase build'
-  facts "$p" | grep -qF 'building next write the index renderer'
-  facts "$p" | grep -qF 'building verify remaining the two fixtures and one native run'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(fact_from "$output" 'opportunities')" = 'candidate=1 building=1 shipped=0 rejected=1 parked=0' ]
+  printf '%s\n' "$output" | grep -qF 'building title Receipts index'
+  printf '%s\n' "$output" | grep -qF 'building phase build'
+  printf '%s\n' "$output" | grep -qF 'building next write the index renderer'
+  printf '%s\n' "$output" | grep -qF 'building verify remaining the two fixtures and one native run'
 }
 
 @test "two building entries are visible as an inconsistency, and neither is changed" {
@@ -199,10 +214,12 @@ Status: building
 Next: second
 MAP
   before="$(cksum <"$p/.nightshift/opportunity-map.md")"
-  fact_of "$p" 'opportunities' | grep -qF 'building=2'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  fact_from "$output" 'opportunities' | grep -qF 'building=2'
   # Only the first is detailed; the count is what says there is more than one.
-  facts "$p" | grep -qF 'building title One'
-  ! facts "$p" | grep -qF 'building title Two' || false
+  printf '%s\n' "$output" | grep -qF 'building title One'
+  ! printf '%s\n' "$output" | grep -qF 'building title Two' || false
   [ "$(cksum <"$p/.nightshift/opportunity-map.md")" = "$before" ]
 }
 
@@ -227,37 +244,49 @@ MAP
 @test "status says whether a watchman is alive, and warns when an armed shift with work has none" {
   p="$(new_project status-watchman)"
   printf '## Items\n- [ ] **1. open.**\n' >"$p/.nightshift/punch-list.md"
-  [ "$(fact_of "$p" 'watchman')" = 'none' ]
-  fact_of "$p" 'watchman warning' | grep -qF 'nothing is watching it'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(fact_from "$output" 'watchman')" = 'none' ]
+  fact_from "$output" 'watchman warning' | grep -qF 'nothing is watching it'
   printf '99999\n' >"$p/.nightshift/.watchman"
-  [ "$(fact_of "$p" 'watchman')" = 'stale (pid 99999)' ]
-  fact_of "$p" 'watchman warning' | grep -qF 'nothing is watching it'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(fact_from "$output" 'watchman')" = 'stale (pid 99999)' ]
+  fact_from "$output" 'watchman warning' | grep -qF 'nothing is watching it'
   printf '%s\n' "$$" >"$p/.nightshift/.watchman"
-  [ "$(fact_of "$p" 'watchman')" = "alive (pid $$)" ]
-  [ -z "$(fact_of "$p" 'watchman warning')" ]
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ "$(fact_from "$output" 'watchman')" = "alive (pid $$)" ]
+  [ -z "$(fact_from "$output" 'watchman warning')" ]
   # watchMinutes 0 is the owner saying no watchman, and a shift with nothing open needs none.
   rm "$p/.nightshift/.watchman"
   jq '.watchMinutes = 0' "$p/.nightshift/rules.json" >"$p/.nightshift/r.json"
   mv "$p/.nightshift/r.json" "$p/.nightshift/rules.json"
-  [ -z "$(fact_of "$p" 'watchman warning')" ]
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  [ -z "$(fact_from "$output" 'watchman warning')" ]
 }
 
 @test "the watch reason carries its code and the label Doctor prints" {
   p="$(new_project status-watch-reason)"
   [ "$(fact_of "$p" 'watch reason')" = 'none' ]
   printf 'session-died\nnon-sensitive detail\n' >"$p/.nightshift/.watch-reason"
-  fact_of "$p" 'watch reason' | grep -qE '^session-died \(.+\)$'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  fact_from "$output" 'watch reason' | grep -qE '^session-died \(.+\)$'
   # With no watchman running, the reason is what the last one said, and reads that way.
-  fact_of "$p" 'watch reason' | grep -qF 'the watchman that recorded it is not running'
+  fact_from "$output" 'watch reason' | grep -qF 'the watchman that recorded it is not running'
 }
 
 @test "a stuck revival is a warning, not a watchman that is merely alive" {
   p="$(new_project status-recovery-stuck)"
   printf 'recovery-stuck\nunavailable:unrecorded\n' >"$p/.nightshift/.watch-reason"
-  fact_of "$p" 'watch reason' | grep -qF 'recovery-stuck'
-  fact_of "$p" 'watch reason' | grep -qF 'unattended revival is stuck'
-  fact_of "$p" 'watchman warning' | grep -qF 'unattended revival and watchman clock-out are stuck'
-  fact_of "$p" 'watchman warning' | grep -qF 'nothing to inherit'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  fact_from "$output" 'watch reason' | grep -qF 'recovery-stuck'
+  fact_from "$output" 'watch reason' | grep -qF 'unattended revival is stuck'
+  fact_from "$output" 'watchman warning' | grep -qF 'unattended revival and watchman clock-out are stuck'
+  fact_from "$output" 'watchman warning' | grep -qF 'nothing to inherit'
 }
 
 @test "a transition is a line whose subject is the shift changing hands" {
@@ -267,22 +296,28 @@ MAP
 2026-09-06 11:00:00 · watchman armed · every 10m
 2026-09-06 12:00:00 · watchman: the armed marker is gone — standing down
 LOG
-  facts "$p" | grep -qF 'transition watchman armed'
-  facts "$p" | grep -qF 'transition watchman: the armed marker is gone'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'transition watchman armed'
+  printf '%s\n' "$output" | grep -qF 'transition watchman: the armed marker is gone'
   # An item summary that merely mentions a handoff is not a transition.
-  ! facts "$p" | grep -qF 'P14 done' || false
+  ! printf '%s\n' "$output" | grep -qF 'P14 done' || false
 }
 
 @test "artifact ticks with no receipts are called out as unreviewable" {
   p="$(new_project status-artifact)"
   printf 'artifact\n' >"$p/.nightshift/work-mode"
   printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
-  facts "$p" | grep -qF 'completion record per-item receipt'
-  facts "$p" | grep -qF 'receipts missing model text 1'
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'completion record per-item receipt'
+  printf '%s\n' "$output" | grep -qF 'receipts missing model text 1'
 
   mkdir -p "$p/.nightshift/receipts"
   printf '# P01\n\nThe work is done.\n' >"$p/.nightshift/receipts/P01.md"
-  ! facts "$p" | grep -q 'receipts missing model text' || false
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  ! printf '%s\n' "$output" | grep -q 'receipts missing model text' || false
 }
 
 @test "disabled receipts are a fact, never a missing-text warning" {
@@ -290,8 +325,10 @@ LOG
   jq '.receipts.enabled = false' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.next"
   mv "$p/.nightshift/rules.next" "$p/.nightshift/rules.json"
   printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
-  facts "$p" | grep -qF 'completion record none; the owner disabled receipts'
-  ! facts "$p" | grep -q 'receipts missing model text' || false
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'completion record none; the owner disabled receipts'
+  ! printf '%s\n' "$output" | grep -q 'receipts missing model text' || false
 }
 
 @test "nothing sensitive reaches the output" {
@@ -364,13 +401,17 @@ LOG
   printf '## Items\n\n- [x] **P01 - done.**\n' >"$p/.nightshift/punch-list.md"
   # Not an empty night: something is there, and it is not a directory.
   printf 'not a directory\n' >"$p/.nightshift/receipts"
-  facts "$p" | grep -qF 'receipts warning the artifact receipts path is not a usable directory'
-  ! facts "$p" | grep -qF 'receipts missing model text' || false
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'receipts warning the artifact receipts path is not a usable directory'
+  ! printf '%s\n' "$output" | grep -qF 'receipts missing model text' || false
 
   # An absent path is the empty case, not the planted one.
   rm -f "$p/.nightshift/receipts"
-  facts "$p" | grep -qF 'receipts missing model text 1'
-  ! facts "$p" | grep -qF 'not a usable directory' || false
+  run bash "$STATUS" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'receipts missing model text 1'
+  ! printf '%s\n' "$output" | grep -qF 'not a usable directory' || false
 }
 
 @test "status names a worker that is alive but idle" {

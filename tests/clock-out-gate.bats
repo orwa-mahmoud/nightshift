@@ -469,8 +469,8 @@ EOF
   shared="$hooks/shared/gate-core.sh"
   for h in "$hooks/clock-out-gate.sh" "$hooks/codex/clock-out-gate.sh" \
     "$hooks/cursor/clock-out-gate.sh"; do
-    grep -qF 'ns_shift_end' "$h" \
-      || { echo "gate does not call the shared ending: $h"; return 1; }
+    grep -qF 'ns_shift_end' "$shared" \
+      || { echo "gate does not call the shared ending: $shared"; return 1; }
     if grep -qF -- '--view owner' "$h"; then
       echo "the gate forces a view over the owner's configured one: $h"
       return 1
@@ -499,6 +499,20 @@ EOF
   [ -f "$p/.nightshift/STOP" ]
   grep -qF "deadline mismatch — deadline file $future does not match shift-policy deadlineEpoch $past; honoring the earlier value" \
     "$p/.nightshift/shift-log.md"
+  grep -q 'quitting time' "$p/.nightshift/shift-log.md"
+}
+
+@test "an unreadable deadline file falls back to the shift-policy deadlineEpoch" {
+  p="$(new_project)"
+  punch_open "$p"
+  past=$(( $(date +%s) - 60 ))
+  printf '%s\n' "$past" >"$p/.nightshift/deadline"
+  chmod 000 "$p/.nightshift/deadline"
+  write_policy_with_deadline "$p" "$past"
+  run gate "$p"
+  chmod 644 "$p/.nightshift/deadline"
+  [ "$status" -eq 0 ]
+  [ -f "$p/.nightshift/STOP" ]
   grep -q 'quitting time' "$p/.nightshift/shift-log.md"
 }
 

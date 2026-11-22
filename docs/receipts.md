@@ -24,7 +24,8 @@ useful attribution, not a profiler of individual edits. Cursor reports usage onc
 turn that covers several items is one shared reading: each of their receipts lists it once, their
 own figures read `not attributable`, and the index counts it once.
 Duration is working time first: wall clock minus pauses the runtime recorded (owner stop, Esc, a
-usage-limit wait, a session that ended and was revived). The wall span, the pauses, and the from/to
+usage-limit wait, a session that ended and was revived). A pause ends when work is next seen,
+which is the first tool call after it or the next mark. The wall span, the pauses, and the from/to
 times stay listed so the subtraction is checkable. The index Usage column lists input, cache write,
 cache read, output, and reasoning. Time lists working and paused time; the totals row sums both.
 
@@ -45,7 +46,9 @@ the shift began is excluded from its accounting.
 Each item receipt has one Time and Tokens section, rewritten in place at every checkpoint and tick.
 Its **Sessions** table has one row per session that worked the item: the shift, the host and model,
 from and to, working and paused time, the tokens in the host's own fields, and how it ended
-(`ticked`, `paused`, `switched away`, `blocked`, `stopped`). A restart, a Reset, a revival or a host
+(`ticked`, `paused`, `switched away`, `blocked`, `stopped`). When none of the item's sessions holds
+a token figure, the Tokens table is one line and the Sessions table leaves those columns out; a
+figure in any dimension draws both tables in full. A restart, a Reset, a revival or a host
 switch opens a new row. The **Total** row is the item's figure, and the index, the morning receipt,
 Archive and Status all read it. Reset keeps an open item's spend, so the next Start continues the
 same total.

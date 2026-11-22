@@ -47,7 +47,7 @@ ns_usage_retire() {
   ns_layout_set dest "$ns" usage-shift "$id"
   # A second shift ending under the same id would otherwise clobber the first one's record.
   [ ! -e "$dest" ] || ns_layout_set dest "$ns" usage-shift "$id-$(date +%s)"
-  mv "$dir" "$dest" 2>/dev/null || return 1
+  mv "$dir" "$dest" || return 1
   printf '%s' "$dest"
 }
 
@@ -62,7 +62,7 @@ ns_usage_snapshot() {
   [ -n "$id" ] || id="$(date +%Y%m%dT%H%M%SZ)"
   ns_layout_set dest "$ns" usage-shift "$id"
   [ ! -e "$dest" ] || ns_layout_set dest "$ns" usage-shift "$id-$(date +%s)"
-  cp -Rp "$dir" "$dest" 2>/dev/null || return 1
+  cp -Rp "$dir" "$dest" || return 1
   printf '%s' "$dest"
 }
 
@@ -540,7 +540,25 @@ ns_usage_mark_arm() {
   # The sixth cell distinguishes accounting starts even when the clock has not moved.
   generation="$(ns_new_shift_id "$ns")" || return 1
   printf '%s\t%s\t\t\t\t%s\n' "$(date +%s)" arm "$generation" >>"$file" 2>/dev/null || return 1
+  _ns_usage_write_inbox_seen "$ns" || return 1
   ns_receipts_write_index "${ns%/.nightshift}"
+}
+
+# _ns_usage_write_inbox_seen <nightshift-dir> — every current inbox key, so entries from before the
+# shift are never counted against an item. An empty file still marks that the shift looked.
+_ns_usage_write_inbox_seen() {
+  local dir file kind key
+  dir="$(ns_usage_dir "$1")"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  file="$dir/inbox-seen"
+  [ ! -L "$file" ] || return 1
+  : >"$file" || return 1
+  for kind in parking-lot snag-log; do
+    while IFS= read -r key; do
+      [ -n "$key" ] || continue
+      printf '%s\t%s\n' "$kind" "$key" >>"$file" || return 1
+    done < <(ns_inbox_keys "$1" "$kind")
+  done
 }
 
 # ns_usage_mark_count <nightshift-dir> — how many marks stand.
@@ -745,6 +763,23 @@ ns_usage_pause() {
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$dir/pauses.tsv"
   printf '%s\t%s\n' "$at" "${2:-paused}" >>"$file" 2>/dev/null || return 1
+  file="$dir/pause-open"
+  [ ! -L "$file" ] || return 1
+  : >"$file" 2>/dev/null || return 1
+}
+
+# ns_usage_resume <nightshift-dir> — work is under way again. Append the current epoch to
+# resumes.tsv and remove the open-pause marker. A symlink is not written through.
+ns_usage_resume() {
+  local dir file at
+  dir="$(ns_usage_dir "$1")"
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+  file="$dir/resumes.tsv"
+  [ ! -L "$file" ] || return 1
+  [ ! -L "$dir/pause-open" ] || return 1
+  at="$(date +%s)"
+  printf '%s\n' "$at" >>"$file" 2>/dev/null || return 1
+  rm -f "$dir/pause-open" 2>/dev/null || return 1
 }
 
 # ns_usage_last_pause <nightshift-dir> — the epoch of the most recent recorded pause, or nothing.
@@ -758,23 +793,53 @@ ns_usage_last_pause() {
 # ns_usage_paused_between <nightshift-dir> <from> <to> — how long was recorded as not-work inside
 # one span, and why: `<seconds>\t<reason>`, empty when the runtime knows of no gap.
 #
-# A pause is closed by the next thing that happens: the gap runs from the pause to the reading
-# that follows it, never past <to>. Where nothing followed, the gap is open and is reported as such
-# rather than guessed at.
+# Only a pause at or after <from> and before <to> counts. Lines that share one epoch are one
+# pause, and the first line gives the reason. A counted pause ends at the earliest of the first
+# mark after it, the first resume at or after it, the next later pause epoch anywhere in
+# pauses.tsv, and <to>. A pause neither a mark nor a resume followed is still open and is left
+# out rather than guessed at.
 ns_usage_paused_between() {
-  local ns="$1" from="$2" to="$3" file line at reason total=0 last_reason="" next
+  local ns="$1" from="$2" to="$3" file line at reason total=0 last_reason="" next end
+  local -a epochs=() reasons=()
+  local i j n=0 next_pause="" duplicate
   file="$(ns_usage_dir "$ns")/pauses.tsv"
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   while IFS= read -r line; do
     at="$(printf '%s' "$line" | cut -f1)"
     reason="$(printf '%s' "$line" | cut -f2)"
     case "$at" in '' | *[!0-9]*) continue ;; esac
+    duplicate=0
+    for ((j = 0; j < n; j++)); do
+      if [ "${epochs[$j]}" = "$at" ]; then
+        duplicate=1
+        break
+      fi
+    done
+    [ "$duplicate" -eq 0 ] || continue
+    epochs[n]="$at"
+    reasons[n]="$reason"
+    n=$((n + 1))
+  done <"$file"
+  for ((i = 0; i < n; i++)); do
+    at="${epochs[$i]}"
     { [ "$at" -ge "$from" ] && [ "$at" -lt "$to" ]; } || continue
     next="$(_ns_usage_resumed_at "$ns" "$at")" || continue
-    [ "$next" -le "$to" ] || next="$to"
-    total=$((total + next - at))
-    last_reason="$reason"
-  done <"$file"
+    next_pause=""
+    for ((j = 0; j < n; j++)); do
+      if [ "${epochs[$j]}" -gt "$at" ]; then
+        if [ -z "$next_pause" ] || [ "${epochs[$j]}" -lt "$next_pause" ]; then
+          next_pause="${epochs[$j]}"
+        fi
+      fi
+    done
+    end="$next"
+    if [ -n "$next_pause" ] && [ "$next_pause" -lt "$end" ]; then
+      end="$next_pause"
+    fi
+    [ "$end" -le "$to" ] || end="$to"
+    total=$((total + end - at))
+    last_reason="${reasons[$i]}"
+  done
   [ "$total" -gt 0 ] || return 1
   printf '%s\t%s' "$total" "$last_reason"
 }
@@ -783,29 +848,47 @@ ns_usage_paused_between() {
 # `<reason>\t<seconds>` line per reason in the order each was first recorded. Each gap is measured
 # exactly as ns_usage_paused_between measures it, so the lines sum to its total.
 ns_usage_pauses_by_reason() {
-  local file marks bin
+  local file marks bin resumes
   file="$(ns_usage_dir "$1")/pauses.tsv"
   marks="$(_ns_usage_marks "$1")"
+  resumes="$(ns_usage_dir "$1")/resumes.tsv"
   [ -f "$file" ] && [ ! -L "$file" ] && [ -f "$marks" ] || return 1
+  [ -f "$resumes" ] && [ ! -L "$resumes" ] || resumes=/dev/null
   bin="$(ns_usage_awk_bin)" || return 1
-  "$bin" -v from="$2" -v to="$3" -f "$_NS_USAGE_PAUSES_AWK" "$marks" "$file"
+  "$bin" -v from="$2" -v to="$3" -f "$_NS_USAGE_PAUSES_AWK" "$marks" "$resumes" "$file"
 }
 
-# _ns_usage_resumed_at <nightshift-dir> <epoch> — when work was next seen after a pause, from the
-# marks the runtime was already keeping.
+# _ns_usage_resumed_at <nightshift-dir> <epoch> — when work was next seen after a pause: the earlier
+# of the first mark after it and the first resume at or after it. Fails when there is neither.
 _ns_usage_resumed_at() {
-  local file line at
+  local file line at mark="" resume=""
   file="$(_ns_usage_marks "$1")"
-  [ -f "$file" ] || return 1
-  while IFS= read -r line; do
-    at="$(printf '%s' "$line" | cut -f1)"
-    case "$at" in '' | *[!0-9]*) continue ;; esac
-    if [ "$at" -gt "$2" ]; then
-      printf '%s' "$at"
-      return 0
-    fi
-  done <"$file"
-  return 1
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    while IFS= read -r line; do
+      at="$(printf '%s' "$line" | cut -f1)"
+      case "$at" in '' | *[!0-9]*) continue ;; esac
+      if [ "$at" -gt "$2" ]; then
+        mark="$at"
+        break
+      fi
+    done <"$file"
+  fi
+  file="$(ns_usage_dir "$1")/resumes.tsv"
+  if [ -f "$file" ] && [ ! -L "$file" ]; then
+    while IFS= read -r line; do
+      at="$(printf '%s' "$line" | cut -f1)"
+      case "$at" in '' | *[!0-9]*) continue ;; esac
+      if [ "$at" -ge "$2" ] && { [ -z "$resume" ] || [ "$at" -lt "$resume" ]; }; then
+        resume="$at"
+      fi
+    done <"$file"
+  fi
+  if [ -z "$mark" ] && [ -z "$resume" ]; then return 1; fi
+  if [ -z "$mark" ] || { [ -n "$resume" ] && [ "$resume" -lt "$mark" ]; }; then
+    printf '%s' "$resume"
+    return 0
+  fi
+  printf '%s' "$mark"
 }
 
 # ns_usage_overlap <host> — the one sentence that says what is already counted inside what, so a

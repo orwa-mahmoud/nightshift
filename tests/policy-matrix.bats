@@ -58,13 +58,27 @@ policy_json() { # <shiftId> <toolingPolicy> <verificationLevel> [source]
 @test "every tooling policy x verification level combination is accepted and resolves as one-shift" {
   p="$(unarmed mtx-repo)"
   i=0
+  base=""
   for tooling in existing-tools review-missing auto-add; do
     for level in none final per-item custom; do
       i=$((i + 1))
       sid="$(printf '1%015x' "$i")"
-      policy_json "$sid" "$tooling" "$level" >"$p/candidate.json"
+      # The first write is the full set: digests, launch scope, and the frozen
+      # preference blocks. The other eleven start from that file and change only
+      # the two fields this case is about, so set does not rebuild them.
+      if [ -n "$base" ]; then
+        jq -c --arg t "$tooling" --arg l "$level" --arg s "$sid" \
+          '.toolingPolicy = $t | .verificationLevel = $l | .shiftId = $s' \
+          "$base" >"$p/candidate.json"
+      else
+        policy_json "$sid" "$tooling" "$level" >"$p/candidate.json"
+      fi
       run sp "$p" set --from-json "$p/candidate.json"
       [ "$status" -eq 0 ] || { echo "set refused for $tooling/$level: $output"; return 1; }
+      if [ -z "$base" ]; then
+        base="$p/base-policy.json"
+        cp "$(printf '%s\n' "$output" | tail -1)" "$base"
+      fi
       run sp "$p" resolve --json
       [ "$status" -eq 0 ] || { echo "resolve failed for $tooling/$level: $output"; return 1; }
       printf '%s' "$output" | jq -e --arg t "$tooling" --arg l "$level" '

@@ -232,21 +232,92 @@ a_new_item() {
 }
 
 @test "a stale worker from the old shift cannot tear down the new one" {
+  # The worker has to be the old shift's. Starting it after the new shift is armed makes it the
+  # new claim, and a dummy agent that moves nothing then sits through the real 30s and 120s
+  # retries. Capture it at the sleep that begins its first wake, install the new shift, then
+  # release that sleep. The retry override keeps a missed stand-down from spending those delays.
   p="$(new_project term-stale-worker)"
+  punch_open "$p"
+  bin="$BATS_TEST_TMPDIR/stale-bin"
+  ready="$BATS_TEST_TMPDIR/stale-ready"
+  release="$BATS_TEST_TMPDIR/stale-release"
+  mkdir -p "$bin"
+  cat >"$bin/sleep" <<'EOF'
+#!/bin/bash
+if [ ! -s "${NS_SLEEP_READY:?}" ]; then
+  printf '%s\n' "$PPID" >"$NS_SLEEP_READY"
+  i=0
+  while [ "$i" -lt 400 ]; do
+    [ -f "${NS_SLEEP_RELEASE:?}" ] && exit 0
+    i=$((i + 1))
+    /bin/sleep 0.05
+  done
+  exit 0
+fi
+exit 0
+EOF
+  cat >"$bin/agent" <<EOF
+#!/bin/bash
+printf 'ran\n' >"$p/.nightshift/recovery-started"
+exit 0
+EOF
+  chmod +x "$bin/sleep" "$bin/agent"
+
+  env PATH="$bin:$PATH" \
+    NS_SLEEP_READY="$ready" \
+    NS_SLEEP_RELEASE="$release" \
+    NIGHTSHIFT_WATCH_SLEEP=1 \
+    NIGHTSHIFT_WATCH_RETRY="0 0" \
+    bash "$WATCHMAN" --project "$p" --max-wakes 1 --agent "$bin/agent" --interval 10 \
+    >"$BATS_TEST_TMPDIR/stale.out" 2>"$BATS_TEST_TMPDIR/stale.err" &
+  old=$!
+
+  claimed=""
+  for _ in $(seq 1 100); do
+    if [ -s "$ready" ]; then
+      claimed="$(tr -d '[:space:]' <"$ready")"
+      break
+    fi
+    /bin/sleep 0.05
+  done
+  if [ "$claimed" != "$old" ]; then
+    kill "$old" 2>/dev/null || true
+    echo "old worker was not waiting as pid $old (saw ${claimed:-nothing})"
+    return 1
+  fi
+  [ "$(sed -n 1p "$p/.nightshift/.watchman" | tr -d '[:space:]')" = "$old" ]
+
+  # The old shift ends and the owner starts another. The new claim is in place before the
+  # old worker is allowed to wake.
   punch_done "$p"
   run gate "$p"
   is_release
-  # The owner starts a fresh shift over the same folder.
   a_new_item "$p"
   rm -f "$p/.nightshift/.ended"
   : >"$p/.nightshift/.shift-armed"
-  # The old shift's watchman finally wakes up and takes a real wake, long enough to look at the
-  # site and decide. --interval is in minutes, so the sleep itself is set in seconds: a genuine
-  # wake, not the degenerate one an interval of zero produces.
-  run env NIGHTSHIFT_WATCH_SLEEP=1 bash "$WATCHMAN" \
-    --project "$p" --max-wakes 1 --agent 'true' --interval 10
+  printf '424242\n' >"$p/.nightshift/.watchman"
+  : >"$release"
+
+  gone=0
+  for _ in $(seq 1 100); do
+    kill -0 "$old" 2>/dev/null || { gone=1; break; }
+    /bin/sleep 0.05
+  done
+  if [ "$gone" -ne 1 ]; then
+    kill "$old" 2>/dev/null || true
+    echo "old worker did not stand down within five seconds"
+    return 1
+  fi
+  wait "$old" 2>/dev/null || true
+
+  [ "$(sed -n 1p "$p/.nightshift/.watchman" | tr -d '[:space:]')" = 424242 ]
+  [ ! -f "$p/.nightshift/recovery-started" ]
   [ -f "$p/.nightshift/.shift-armed" ]
   [ ! -f "$p/.nightshift/.ended" ]
+  if [ -f "$p/.nightshift/shift-log.md" ] && grep -qF 'resume attempt' "$p/.nightshift/shift-log.md"; then
+    echo "old worker started a recovery"
+    return 1
+  fi
   run gate "$p"
   is_block "$output"
 }

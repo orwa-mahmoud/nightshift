@@ -3,6 +3,7 @@
 # Windows CI also runs it via tests/windows/run.ps1.
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'fixture-mode.ps1')
 
 $repository = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $repository 'plugins/nightshift/lib/Nightshift.psm1') -Force -DisableNameChecking
@@ -55,6 +56,20 @@ Expect-True $stopResult.Released 'STOP clocks out when the session is gone'
 Expect-True (Test-Path -LiteralPath (Join-Path $stopped '.nightshift/.ended') -PathType Leaf) 'STOP writes .ended'
 Expect-True ((Read-Log $stopped).Contains('watchman: clocking out')) 'STOP names the clock-out'
 Remove-Item -LiteralPath $stopped -Recurse -Force
+
+$unread = New-Workspace "## Items`n- [ ] **1.**`n"
+$pastEpoch = [string]((Get-NSUnixTime) - 60)
+[IO.File]::WriteAllText((Join-Path $unread '.nightshift/deadline'), ($pastEpoch + "`n"))
+Invoke-NSFixtureMode (Join-Path $unread '.nightshift/deadline') '000'
+[IO.File]::WriteAllText((Join-Path $unread '.nightshift/shift-policy.json'),
+    ('{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T02:30:00Z","source":"composition","deadlineEpoch":' +
+        $pastEpoch + ',"verificationLevel":"final","toolingPolicy":"existing-tools"}' + "`n"))
+try {
+    $unreadResult = Invoke-NSWatchmanDirectClockOut -Workspace $unread -HostName cursor -IntervalMinutes 20
+}
+finally { Invoke-NSFixtureMode (Join-Path $unread '.nightshift/deadline') '644' }
+Expect-True $unreadResult.Released 'an unreadable deadline file falls back to the policy epoch'
+Remove-Item -LiteralPath $unread -Recurse -Force
 
 $open = New-Workspace "## Items`n- [ ] **1.**`n"
 $openResult = Invoke-NSWatchmanDirectClockOut -Workspace $open -HostName cursor -IntervalMinutes 20

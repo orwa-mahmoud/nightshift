@@ -9,6 +9,7 @@
 # renderer when it is on the branch.
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'fixture-mode.ps1')
 if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
     $PSNativeCommandUseErrorActionPreference = $false
 }
@@ -950,7 +951,7 @@ try {
     Expect-True ($verdict.Contains('- Started: ' + (Get-NSLocalTime '1790000000' -Seconds)) -and
         $verdict.Contains('- Ended: ' + (Get-NSLocalTime '1790003405' -Seconds))) `
         'both ends of the shift are in local time with the offset'
-    Expect-True $verdict.Contains(("- Working: 8m 25s`n- Paused: 48m 20s`n  - owner pressed Esc: 35m 0s`n" +
+    Expect-True $verdict.Contains(("- Working: 21m 45s`n- Paused: 35m 0s`n  - owner pressed Esc: 21m 40s`n" +
             "  - the session ended and the shift was revived: 13m 20s`n- Wall: 56m 45s")) `
         'pause reasons sum to the paused total'
     Expect-True ($verdict.Contains('| cache write | unavailable |') -and $verdict.Contains('| cache read | 12.0k |')) `
@@ -996,6 +997,131 @@ try {
     Expect-True $artifactVerdict.StdoutText.Contains("## Review first`n`n- Does not apply: an artifact shift is reviewed through its receipts.`n") `
         'review first does not apply in artifact mode'
     [IO.File]::WriteAllText((Join-Path $verdictNs 'work-mode'), "repository`n", $utf8)
+
+    # === 12. Item trouble on the morning page, and review ranked by it ===
+    function Add-DatedCommit {
+        param(
+            [Parameter(Mandatory = $true)][string]$Project,
+            [Parameter(Mandatory = $true)][long]$At,
+            [Parameter(Mandatory = $true)][string]$File,
+            [Parameter(Mandatory = $true)][int]$Lines,
+            [Parameter(Mandatory = $true)][string]$Subject
+        )
+        $body = (1..$Lines | ForEach-Object { "line $_" }) -join "`n"
+        [IO.File]::WriteAllText((Join-Path $Project $File), ($body + "`n"), $utf8)
+        & git -C $Project add -- $File
+        $env:GIT_AUTHOR_DATE = "@$At +0000"
+        $env:GIT_COMMITTER_DATE = "@$At +0000"
+        try {
+            & git -C $Project -c user.name=nightshift -c user.email=nightshift@localhost `
+                -c commit.gpgsign=false commit --quiet -m $Subject
+        }
+        finally {
+            Remove-Item Env:GIT_AUTHOR_DATE, Env:GIT_COMMITTER_DATE -ErrorAction SilentlyContinue
+        }
+    }
+    function Write-SessionReceipt {
+        param(
+            [Parameter(Mandatory = $true)][string]$Path,
+            [Parameter(Mandatory = $true)][string]$Title,
+            [Parameter(Mandatory = $true)][string[]]$Rows
+        )
+        $text = "# $Title`n`n<!-- usage -->`n<!-- session-data`n" + ($Rows -join "`n") + "`n-->`n<!-- /usage -->`n"
+        [IO.File]::WriteAllText($Path, $text, $utf8)
+    }
+
+    $troubleProject = Join-Path $root 'trouble'
+    $troubleNs = New-ReceiptProject -Path $troubleProject -WithPolicy $false `
+        -Items ("- [x] **1. Quiet.** <!-- id: aa11 -->`n" +
+            "- [x] **2. Large.** <!-- id: bb22 -->`n")
+    $troubleNow = 1700000000
+    $troubleUsage = Join-Path $troubleNs 'usage'
+    $null = New-Item -ItemType Directory -Path $troubleUsage -Force
+    [IO.File]::WriteAllText((Join-Path $troubleUsage 'marks.tsv'), (
+            "$troubleNow`tarm`n" +
+            "$($troubleNow + 200)`t1. Quiet.`n" +
+            "$($troubleNow + 400)`t2. Large.`n"), $utf8)
+    & git -C $troubleProject init --quiet
+    Add-DatedCommit -Project $troubleProject -At ($troubleNow - 10000) -File 'base.txt' -Lines 1 -Subject 'chore: base'
+    Add-DatedCommit -Project $troubleProject -At ($troubleNow + 100) -File 'quiet.txt' -Lines 2 -Subject 'feat: quiet'
+    Add-DatedCommit -Project $troubleProject -At ($troubleNow + 300) -File 'large.txt' -Lines 8 -Subject 'feat: large'
+    Write-SessionReceipt -Path (Join-Path $troubleNs 'receipts/01-quiet-aa11.md') -Title '1. Quiet.' `
+        -Rows @('- 1 100 200 100 - - ticked parked=1 paused=0')
+    Write-SessionReceipt -Path (Join-Path $troubleNs 'receipts/02-large-bb22.md') -Title '2. Large.' `
+        -Rows @('- 1 300 400 100 - - ticked paused=0')
+    $troubleRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $troubleProject, '-View', 'owner')
+    Expect-Equal 0 $troubleRun.ExitCode "the troubled review renders ($($troubleRun.StderrText))"
+    $troublePage = $troubleRun.StdoutText
+    Expect-True $troublePage.Contains("$dash ticked $middot 1 parked decision") `
+        'a parked item names that decision on its line'
+    Expect-True $troublePage.Contains("$dash ticked`n") `
+        'an item with no signals reads as today'
+    $reviewStart = $troublePage.IndexOf("## Review first")
+    Expect-True ($reviewStart -ge 0) 'review first lists the parked item above the larger quiet change'
+    if ($reviewStart -ge 0) {
+        $reviewEnd = $troublePage.IndexOf("`n## ", $reviewStart + 1)
+        if ($reviewEnd -lt 0) { $reviewEnd = $troublePage.Length }
+        $review = $troublePage.Substring($reviewStart, $reviewEnd - $reviewStart)
+    }
+    else { $review = '' }
+    $quietAt = $review.IndexOf('Quiet')
+    $largeAt = $review.IndexOf('Large')
+    Expect-True ($quietAt -ge 0 -and $largeAt -gt $quietAt) `
+        'review first lists the parked item above the larger quiet change'
+
+    $pauseProject = Join-Path $root 'pause'
+    $pauseNs = New-ReceiptProject -Path $pauseProject -WithPolicy $false `
+        -Items "- [x] **1. Waited.** <!-- id: cc33 -->`n"
+    Write-SessionReceipt -Path (Join-Path $pauseNs 'receipts/01-waited-cc33.md') -Title '1. Waited.' -Rows @(
+        '- 1 100 200 50 - - ticked paused=0',
+        '- 1 200 400 50 - - ticked paused=600 why=usage%20limit',
+        '- 1 400 500 50 - - ticked paused=0')
+    $pauseRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $pauseProject, '-View', 'owner')
+    Expect-Equal 0 $pauseRun.ExitCode "the paused item renders ($($pauseRun.StderrText))"
+    Expect-True $pauseRun.StdoutText.Contains("$middot 3 sessions $middot paused 10m 0s (usage limit)") `
+        'three sessions name the pause on the items line'
+
+    $rankProject = Join-Path $root 'evidence-rank'
+    $rankNs = New-ReceiptProject -Path $rankProject -WithPolicy $false `
+        -Items ("- [x] **1. Missing.** <!-- id: dd44 -->`n" +
+            "  - Evidence: the screen ``shot.png`` check: report`n" +
+            "- [x] **2. Parked.** <!-- id: ee55 -->`n" +
+            "- [x] **3. Biggest.** <!-- id: ff66 -->`n")
+    $rankNow = 1700001000
+    $rankUsage = Join-Path $rankNs 'usage'
+    $null = New-Item -ItemType Directory -Path $rankUsage -Force
+    [IO.File]::WriteAllText((Join-Path $rankUsage 'marks.tsv'), (
+            "$rankNow`tarm`n" +
+            "$($rankNow + 100)`t1. Missing.`n" +
+            "$($rankNow + 300)`t2. Parked.`n" +
+            "$($rankNow + 500)`t3. Biggest.`n"), $utf8)
+    & git -C $rankProject init --quiet
+    Add-DatedCommit -Project $rankProject -At ($rankNow - 10000) -File 'base.txt' -Lines 1 -Subject 'chore: base'
+    Add-DatedCommit -Project $rankProject -At ($rankNow + 200) -File 'small.txt' -Lines 2 -Subject 'feat: small'
+    Add-DatedCommit -Project $rankProject -At ($rankNow + 400) -File 'big.txt' -Lines 20 -Subject 'feat: big'
+    Write-SessionReceipt -Path (Join-Path $rankNs 'receipts/02-parked-ee55.md') -Title '2. Parked.' `
+        -Rows @('- 1 200 300 50 - - ticked parked=2 paused=0')
+    Write-SessionReceipt -Path (Join-Path $rankNs 'receipts/03-biggest-ff66.md') -Title '3. Biggest.' `
+        -Rows @('- 1 400 500 50 - - ticked paused=0')
+    $rankRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $rankProject, '-View', 'owner')
+    Expect-Equal 0 $rankRun.ExitCode "the evidence ranking renders ($($rankRun.StderrText))"
+    $rankPage = $rankRun.StdoutText
+    $reviewStart = $rankPage.IndexOf("## Review first")
+    Expect-True ($reviewStart -ge 0) 'missing evidence ranks above a parked item and a larger commit'
+    if ($reviewStart -ge 0) {
+        $reviewEnd = $rankPage.IndexOf("`n## ", $reviewStart + 1)
+        if ($reviewEnd -lt 0) { $reviewEnd = $rankPage.Length }
+        $review = $rankPage.Substring($reviewStart, $reviewEnd - $reviewStart)
+    }
+    else { $review = '' }
+    $missingAt = $review.IndexOf('no commits')
+    $parkedAt = $review.IndexOf('2 parked decisions')
+    $biggestAt = $review.IndexOf('20 lines')
+    Expect-True ($missingAt -ge 0 -and $parkedAt -gt $missingAt -and $biggestAt -gt $parkedAt) `
+        'missing evidence ranks above a parked item and a larger commit'
+    Expect-True $rankPage.Contains('1 evidence problem, no commits') `
+        'an item with no commits ends with no commits'
+
     if ((Test-Path -LiteralPath $bashReceipt -PathType Leaf) -and $null -ne $bashCommand) {
         foreach ($view in @('owner', 'reviewer', 'release', 'artifact')) {
             $bashRun = Invoke-ProcessBytes -FileName $bashCommand.Source `
@@ -1005,6 +1131,23 @@ try {
             Expect-NSRendererParity $nativeRun $bashRun "both renderers write the same verdict for the $view view"
         }
     }
+
+    # An unreadable receipt is a checker failure, not a missing file.
+    $unreadableProject = Join-Path $root 'evidence-unreadable'
+    $unreadableNs = New-ReceiptProject -Path $unreadableProject -WithPolicy $false `
+        -Items "- [x] **1. Shot.** <!-- id: ab12 -->`n  - Evidence: the screen ``shot.png`` check: report`n"
+    $unreadableReceipt = Join-Path $unreadableNs 'receipts/01-shot-ab12.md'
+    [IO.File]::WriteAllText($unreadableReceipt, "# 1. Shot.`n", $utf8)
+    Invoke-NSFixtureMode $unreadableReceipt '000'
+    try {
+        $unreadableRun = Invoke-Script -Path $receiptHelper -Arguments @('-Project', $unreadableProject, '-View', 'owner')
+    }
+    finally { Invoke-NSFixtureMode $unreadableReceipt '644' }
+    Expect-Equal 0 $unreadableRun.ExitCode "an unreadable receipt still renders ($($unreadableRun.StderrText))"
+    Expect-True $unreadableRun.StdoutText.Contains('evidence: could not be checked - ') `
+        "an unreadable receipt names the failed check ($($unreadableRun.StdoutText))"
+    Expect-True (-not $unreadableRun.StdoutText.Contains('evidence: missing shot.png')) `
+        'an unreadable receipt is not reported as a missing file'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

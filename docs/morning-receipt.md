@@ -46,13 +46,19 @@ carries its `handoff.sections` id in brackets.
    measurement the owner turned off (`receipts.usage` or `receipts.duration`) reads `off`. Nothing
    is converted to a price.
 3. **Items** (`items`) — one line per punch-list item with its state, linked to its item receipt
-   where that file exists. The item's own cost, sessions, checks and story live there; this page
-   does not copy the per-item table.
-4. **Review first** (`review`) — in repository mode, the three largest changes of the shift, ranked
-   by lines and then files from their commits. Each commit is charged to the item whose span it
-   landed in; a commit outside every item's span stands on its own line. Then the one command that
-   shows the whole range, `git log --stat <first>^..<last>`. In artifact mode it states that it
-   does not apply.
+   where that file exists. After the state word, the same line names what troubled the item when
+   that is not zero, joined by ` · `: parked decisions, snags, more than one session, and paused
+   time with the reason recorded on the last session that has one. The item's own cost, checks and
+   story live in its receipt; this page does not copy the per-item table. The evidence sub-line
+   under an item is unchanged.
+4. **Review first** (`review`) — in repository mode, up to three rows. A row is every item a commit
+   landed in, plus any item with no commits whose evidence problems, parked decisions or snags are
+   above zero. Rows are ordered from high to low by evidence problems, parked decisions, snags,
+   sessions, lines changed, then files changed. A non-zero signal is written before the change
+   figures. An item with no commits ends with `no commits`. A commit outside every item's span
+   stands on its own line, with no signals. Then the one command that shows the whole range,
+   `git log --stat <first>^..<last>`, left out only when the shift has no commits. In artifact mode
+   it states that it does not apply.
 5. **Interruptions** (`interruptions`) — what the runtime wrote into the shift log since the shift
    started: watchman revivals and resume attempts, API failures, stalls, usage-limit waits, and
    how the shift was stopped.

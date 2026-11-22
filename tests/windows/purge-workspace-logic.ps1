@@ -82,7 +82,7 @@ try {
         'wrong ConfirmPath leaves project files'
 
     $confirm = $ns
-    try { $confirm = Resolve-NSCanonicalPath $ns } catch { }
+    try { $confirm = Resolve-NSCanonicalPath $ns } catch { $null = $_.Exception.Message }
     $ok = Invoke-Purge @('-Project', $project, '-ConfirmPath', $confirm)
     Expect-True ($ok.ExitCode -eq 0) "canonical ConfirmPath exits 0: $($ok.Text)"
     Expect-True ($ok.Text -like '*plugin install was not touched*') "success names the plugin: $($ok.Text)"

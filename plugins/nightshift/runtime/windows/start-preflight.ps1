@@ -62,6 +62,17 @@ function Write-Warn {
     Write-Verdict "warn $Text"
     Write-Explain $Text
 }
+function Invoke-NSPreflightUsageHandover {
+    param([Parameter(Mandatory = $true)][string]$Kind, [AllowEmptyString()][string]$ShiftId)
+    $global:NSUsageHandoverError = ''
+    $dest = $(if ($Kind -ceq 'keep') { Copy-NSUsageSnapshot $ns $ShiftId } else { Move-NSUsageRetire $ns $ShiftId })
+    if (-not [string]::IsNullOrEmpty([string]$global:NSUsageHandoverError)) {
+        $first = ([string]$global:NSUsageHandoverError).Split([char]10)[0].TrimEnd("`r")
+        $verb = $(if ($Kind -ceq 'keep') { 'kept' } else { 'set aside' })
+        Write-Warn "usage readings of shift $ShiftId could not be $verb - $first"
+    }
+    return $dest
+}
 function Write-Refuse {
     param([string]$Text)
     $script:Refused = $true
@@ -512,11 +523,11 @@ if (-not $DryRun) {
     if ($ended) {
         if ($openNow -gt 0) {
             $continued = $true
-            $keptUsage = Copy-NSUsageSnapshot $ns (Get-NSEndedField $workspace 'shiftId')
+            $keptUsage = Invoke-NSPreflightUsageHandover 'keep' (Get-NSEndedField $workspace 'shiftId')
             if (-not [string]::IsNullOrEmpty($keptUsage)) { $null = $cleared.Add('usage=>' + (Split-Path -Leaf $keptUsage)) }
         }
         else {
-            $retiredUsage = Move-NSUsageRetire $ns (Get-NSEndedField $workspace 'shiftId')
+            $retiredUsage = Invoke-NSPreflightUsageHandover 'aside' (Get-NSEndedField $workspace 'shiftId')
             if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
         }
     }
@@ -529,7 +540,7 @@ if (-not $DryRun) {
         $continued = $true
     }
     else {
-        $retiredUsage = Move-NSUsageRetire $ns (Get-NSEndedField $workspace 'shiftId')
+        $retiredUsage = Invoke-NSPreflightUsageHandover 'aside' (Get-NSEndedField $workspace 'shiftId')
         if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
     }
     if ($continued -and $null -ne $lastActivity -and (Test-Path -LiteralPath (Get-NSUsageDir $ns) -PathType Container) -and

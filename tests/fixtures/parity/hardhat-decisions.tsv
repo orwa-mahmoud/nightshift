@@ -1,0 +1,14 @@
+# name<TAB>state<TAB>env<TAB>command<TAB>decision
+push-default	open	-	git push origin main	allow
+push-all-ticked	done	-	git push	allow
+forbidden-push	open	NIGHTSHIFT_FORBIDDEN_COMMANDS=git push	git push origin main	BLOCKED: the command matches the owner's forbidden list for this shift.
+forbidden-word-in-message	open	NIGHTSHIFT_FORBIDDEN_COMMANDS=git push	git commit -m 'push it real good'	allow
+forbidden-inert-when-ticked	done	NIGHTSHIFT_FORBIDDEN_COMMANDS=git push	git push origin main	allow
+wrong-identity	open	NIGHTSHIFT_EXPECTED_EMAIL=owner@example.com	git commit -m x	BLOCKED: committer identity ('dev@example.com') is not the expected 'owner@example.com'.
+right-identity	open	NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com	git commit -m x	allow
+author-override	open	NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com	git commit --author=someone -m x	BLOCKED: this commit overrides the author identity on the command line
+git-dir-commit	open	NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com	git --git-dir=/tmp/x commit -m x	BLOCKED: --git-dir/--work-tree point this commit somewhere the configured commit guards cannot verify.
+bad-pattern	open	NIGHTSHIFT_FORBIDDEN_COMMANDS=(	git status	BLOCKED: NIGHTSHIFT_FORBIDDEN_COMMANDS is not a valid extended regular expression
+tooldeny-not-a-map	open	NIGHTSHIFT_TOOL_RULES=[1]	git status	BLOCKED: toolDeny is not a JSON object of string values, so the tool rules cannot run.
+commit-in-non-repo	open	NIGHTSHIFT_EXPECTED_EMAIL=dev@example.com	git -C /nonexistent-nightshift-dir commit -m x	BLOCKED: cannot tell which Git repository this commit targets, so the configured commit guards cannot run.
+add-in-non-repo	open	NIGHTSHIFT_PROTECTED_DIRS=secrets	git -C /nonexistent-nightshift-dir add secrets/key	BLOCKED: cannot tell which Git repository this add targets, so the protected-directory guard cannot run.

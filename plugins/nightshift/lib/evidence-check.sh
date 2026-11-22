@@ -196,13 +196,18 @@ ns_evidence_file_problem() {
 
 # ns_evidence_problems <project> <punch-list> <label> — one problem per line. Nothing when check is off.
 ns_evidence_problems() {
-  local project="$1" punch="$2" label="$3" line id receipt dir kind file block files min type count f
+  local project="$1" punch="$2" label="$3" line id receipt dir kind file block files min type count f rc
   line="$(ns_evidence_item_line "$punch" "$label")"
   [ "$(ns_evidence_effective "$project" "$line" check)" = off ] && return 0
   id="$(ns_item_id_for "$punch" "$label")"
   receipt="$(ns_receipt_path "$project" "$label" "$id")"
-  if [ -f "$receipt" ] && [ ! -L "$receipt" ] && grep -qxF '<!-- nightshift:evidence-unavailable -->' "$receipt"; then
-    return 0
+  # A receipt the checker cannot read is a failure, not an empty result. grep's 1 means the marker
+  # is absent; anything above that means the file could not be read.
+  if [ -f "$receipt" ] && [ ! -L "$receipt" ]; then
+    grep -qxF '<!-- nightshift:evidence-unavailable -->' "$receipt"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then return 0; fi
+    if [ "$rc" -gt 1 ]; then return "$rc"; fi
   fi
   dir="${receipt%.md}"
   while IFS= read -r file; do

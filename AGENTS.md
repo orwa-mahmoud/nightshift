@@ -7,7 +7,7 @@ testing, and quality standards apply regardless of which tools are used.
 - Use the [contribution map](docs/contribution-map.md) to choose an area, likely files, and focused
   checks.
 - Work from an open issue for anything beyond a typo or small fix.
-- Keep Nightshift inside the native Codex and Claude Code plugin, skill, and hook
+- Keep Nightshift inside the native Claude Code, Codex, and Cursor plugin, skill, and hook
   ecosystems; do not introduce another runtime or installation channel.
 - Keep each pull request focused on one concern.
 - Run the checks required by `CONTRIBUTING.md` and report their exact results.

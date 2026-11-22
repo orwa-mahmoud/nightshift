@@ -322,8 +322,9 @@ tick_to() {
   # P01's span carried the first turn, its own; the second is shared and adds nothing to either item.
   grep -qF '| input | 500 + not attributable |' "$r1"
   grep -qF -- '- input 800 · cache read 4.0k · output 20 across items P01, P02, not split by item.' "$r1"
-  grep -qF '| input | not attributable |' "$r2"
-  grep -qF '| not attributable | not attributable | unavailable | not attributable | unavailable |' "$r2"
+  grep -qF '**Tokens:** not attributable to this item' "$r2"
+  run grep -qF '| Tokens | Amount |' "$r2"
+  [ "$status" -ne 0 ]
   grep -qF -- '- input 800 · cache read 4.0k · output 20 across items P01, P02, not split by item.' "$r2"
   run grep -qF "| input | 0 |" "$r2"
   [ "$status" -ne 0 ]
@@ -359,7 +360,7 @@ tick_to() {
   for n in 2 3 4 5; do
     r="$p/.nightshift/receipts/P0$n.md"
     grep -qF -- '- input 15.9M · cache read 15.0M · output 60.2k across items P02, P03, P04, P05, not split by item.' "$r"
-    grep -qF '| input | not attributable |' "$r"
+    grep -qF '**Tokens:** not attributable to this item' "$r"
     grep -qF '<!-- tokens - - - - - -->' "$r"
   done
   # Counted once in the index, not once per item.
@@ -375,8 +376,9 @@ tick_to() {
   cursor_turn "$p" '{"conversation_id":"c1","generation_id":"g2","status":"completed"}'
   tick_to "$p" 2
   r="$p/.nightshift/receipts/P02.md"
-  grep -qF '| input | unavailable |' "$r"
-  grep -qF '| output | unavailable |' "$r"
+  grep -qF '**Tokens:** unavailable' "$r"
+  run grep -qF '| Tokens | Amount |' "$r"
+  [ "$status" -ne 0 ]
   grep -qF '<!-- tokens - - - - - -->' "$r"
   run grep -qE '\| (input|output) \| 0 \|' "$r"
   [ "$status" -ne 0 ]
@@ -426,7 +428,9 @@ tick_to() {
   lib ns_usage_record "$p/.nightshift" cursor cursor-model stop-payload cursor:c1 0 \
     'input=200,cache_write=60,cache_read=1500,output=44'
   core ns_gate_usage_sync "$p/.nightshift" "$p" "$p/.nightshift/punch-list.md" 1
-  grep -qF '| reasoning | unavailable |' "$p/.nightshift/receipts/P01.md"
+  grep -qF '**Tokens:** unavailable' "$p/.nightshift/receipts/P01.md"
+  run grep -qF '| reasoning | 0 |' "$p/.nightshift/receipts/P01.md"
+  [ "$status" -ne 0 ]
 }
 
 # receipts_policy <project> <receipts-json> — set through the policy the shift was composed with,
@@ -1119,10 +1123,10 @@ pause_fixture() {
   pause_fixture "$p"
   run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 4200
   [ "$status" -eq 0 ]
-  # Esc: 1100→1600 and 2000→2800; the revival 1300→1600; the usage limit 3900→4000. The pause at
+  # Esc 1100→1300 and 2000→2800, the revival 1300→1600, the usage limit 3900→4000. The pause at
   # 4100 has no mark after it and is left out.
-  [ "$output" = $'owner pressed Esc\t1300\nthe session ended and the shift was revived\t300\nusage limit\t100' ]
-  [ "$(lib ns_usage_paused_between "$p/.nightshift" 1000 4200 | cut -f1)" = 1700 ]
+  [ "$output" = $'owner pressed Esc\t1000\nthe session ended and the shift was revived\t300\nusage limit\t100' ]
+  [ "$(lib ns_usage_paused_between "$p/.nightshift" 1000 4200 | cut -f1)" = 1400 ]
 }
 
 @test "a pause is cut at the end of the span it is measured in" {
@@ -1130,7 +1134,37 @@ pause_fixture() {
   pause_fixture "$p"
   run lib ns_usage_pauses_by_reason "$p/.nightshift" 1000 1500
   [ "$status" -eq 0 ]
-  [ "$output" = $'owner pressed Esc\t400\nthe session ended and the shift was revived\t200' ]
+  [ "$output" = $'owner pressed Esc\t200\nthe session ended and the shift was revived\t200' ]
+}
+
+pulse_marks() {
+  bash -c '. "$1"; . "$2"; ns_pulse_marks "$3" "$4" c1' _ "$LIB" "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/pulse.sh" \
+    "$1/.nightshift" "$1"
+}
+
+@test "a pulse records one resume and a stop-work order keeps the pause open" {
+  local p usage
+  p="$(cursor_project usage-resume 1)"
+  usage="$p/.nightshift/usage"
+  lib ns_usage_pause "$p/.nightshift" 'owner stop-work'
+  [ -f "$usage/pause-open" ]
+  pulse_marks "$p"
+  [ "$(wc -l <"$usage/resumes.tsv" | tr -d ' ')" = 1 ]
+  [ ! -e "$usage/pause-open" ]
+  pulse_marks "$p"
+  [ "$(wc -l <"$usage/resumes.tsv" | tr -d ' ')" = 1 ]
+
+  p="$(cursor_project usage-resume-stop 1)"
+  usage="$p/.nightshift/usage"
+  : >"$p/.nightshift/STOP"
+  lib ns_usage_pause "$p/.nightshift" 'owner stop-work'
+  pulse_marks "$p"
+  [ ! -e "$usage/resumes.tsv" ]
+  [ -f "$usage/pause-open" ]
+  rm -f "$p/.nightshift/STOP"
+  pulse_marks "$p"
+  [ "$(wc -l <"$usage/resumes.tsv" | tr -d ' ')" = 1 ]
+  [ ! -e "$usage/pause-open" ]
 }
 
 @test "a recorded pause with no reason is listed without one" {

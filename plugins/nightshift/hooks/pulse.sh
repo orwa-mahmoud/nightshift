@@ -201,9 +201,9 @@ ns_pulse_receipts_sections() {
     [ -n "$folder" ] || return 0
     printf ', linking the evidence wherever that template puts it'
   elif [ -n "$folder" ]; then
-    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Evidence · Outputs · Parked decisions and snags'
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Not verified · Evidence · Check it yourself · Outputs · Parked decisions and snags'
   else
-    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Outputs · Parked decisions and snags.'
+    printf 'sections: What was delivered · Why · Tried and rejected · Verification · Not verified · Check it yourself · Outputs · Parked decisions and snags.'
     return 0
   fi
   [ -z "$shift_default" ] || printf '; the shift asks every item for this evidence: %s' "$shift_default"
@@ -448,6 +448,11 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   # mark it, and the second mark closes an empty span. They are written under the site lock; a pulse
   # that cannot take it leaves the marks to the holder, and the gate catches up on its next stop.
   ns_lock "$ns" || return 0
+  # A pause stays open until the next tool call. A shift told to stop keeps making calls until it
+  # stops, and those calls are not a resume.
+  if [ -f "$(ns_usage_dir "$ns")/pause-open" ] && [ ! -e "$(ns_layout_path "$ns" stop)" ]; then
+    ns_usage_resume "$ns" || :
+  fi
   ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || :
   # Then follow the item being worked, so a stretch spent on one item is not charged to another.
   ns_gate_usage_switch "$ns" "$project" "$(ns_pulse_active_item "$project")"

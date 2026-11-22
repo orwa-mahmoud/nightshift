@@ -415,5 +415,5 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qx '## Evidence' "$receipt"
   flat "$receipt" | grep -qF '`unavailable — <reason>`'
   # The section sits between Verification and Outputs.
-  [ "$(grep -n '^## ' "$receipt" | sed 's/^[0-9]*:## //' | tr '\n' '|')" = 'What was delivered|Why|Tried and rejected|Verification|Evidence|Outputs|Parked decisions and snags|' ]
+  [ "$(grep -n '^## ' "$receipt" | sed 's/^[0-9]*:## //' | tr '\n' '|')" = 'What was delivered|Why|Tried and rejected|Verification|Not verified|Evidence|Check it yourself|Outputs|Parked decisions and snags|' ]
 }

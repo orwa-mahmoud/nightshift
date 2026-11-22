@@ -693,6 +693,35 @@ function Get-NSInboxBlocks {
     return , $blocks.ToArray()
 }
 
+# Get-NSInboxKeys <nightshift-dir> <parking-lot|snag-log> - the key of every entry below the first
+# --- rule, or anywhere in a file that has none. The key is the entry's first line without the
+# leading "- ", cut at the first middle-dot separator, with surrounding spaces trimmed.
+function Get-NSInboxKeys {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Kind)
+    $keys = New-Object Collections.Generic.List[string]
+    $path = Get-NSLayoutPath $NightshiftDir $Kind
+    if ((Test-NSReparsePoint $path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return , $keys.ToArray() }
+    $lines = @([IO.File]::ReadAllLines($path, $script:NSUtf8NoBom))
+    $rule = 0
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ((($lines[$i] -creplace '[\x00-\x1f\x7f]', ' ').TrimEnd(' ')) -cmatch '^--- *$') { $rule = $i + 1; break }
+    }
+    $dot = ' ' + [string][char]0x00B7 + ' '
+    $seen = @{}
+    foreach ($block in (Get-NSInboxBlocks $lines)) {
+        if ($block.Kind -cne 'entry' -or ($rule -gt 0 -and $block.Line -le $rule)) { continue }
+        $first = ($block.Lines[0] -creplace '[\x00-\x1f\x7f]', ' ').TrimEnd(' ')
+        if ($first.StartsWith('- ', [StringComparison]::Ordinal)) { $first = $first.Substring(2) }
+        $at = $first.IndexOf($dot, [StringComparison]::Ordinal)
+        if ($at -ge 0) { $first = $first.Substring(0, $at) }
+        $first = $first.Trim()
+        if ($first.Length -eq 0 -or $seen.ContainsKey($first)) { continue }
+        $seen[$first] = $true
+        $keys.Add($first)
+    }
+    return , $keys.ToArray()
+}
+
 # Get-NSInboxStrays <path> - the first line of each paragraph below the first `---` rule of a
 # parking lot or snag log, or anywhere in a file that has none: text that is not a `- ` bullet,
 # which Archive never files. Each is Line and Text.
@@ -1747,6 +1776,7 @@ function Get-NSReceiptUsageSection {
     $first = $null; $last = $null; $lastWhy = ''
     $hostsSeen = New-Object Collections.Generic.List[string]
     $rows = New-Object Collections.Generic.List[string]
+    $rowsPlain = New-Object Collections.Generic.List[string]
     $handoffs = New-Object Collections.Generic.List[string]
     $prevHost = ''; $prevEnd = ''; $prevCommits = ''; $prevNote = ''
     $budget = ''
@@ -1843,10 +1873,14 @@ function Get-NSReceiptUsageSection {
         if ($hostKey.Length -gt 0 -and -not $hostsSeen.Contains($hostKey)) { $hostsSeen.Add($hostKey) }
         $sidCell = $(if ($sid -ceq '-') { $dash } else { $sid.Substring(0, [math]::Min(8, $sid.Length)) })
         $from = Get-NSLocalTime $start; $to = Get-NSLocalTime $end
+        $hostCellRow = $(if ($hostKey.Length -gt 0) { Get-NSSessionHostWords $hostKey } else { $dash })
+        $startCell = $(if ($from) { $from } else { $dash })
+        $endCell = $(if ($to) { $to } else { $dash })
+        $endedCell = $ended.Replace('-', ' ')
         $rows.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6}{7} | {8} |' -f $n, $sidCell,
-                $(if ($hostKey.Length -gt 0) { Get-NSSessionHostWords $hostKey } else { $dash }),
-                $(if ($from) { $from } else { $dash }), $(if ($to) { $to } else { $dash }),
-                $wcell, $pcell, $cells, $ended.Replace('-', ' ')))
+                $hostCellRow, $startCell, $endCell, $wcell, $pcell, $cells, $endedCell))
+        $rowsPlain.Add(('| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} |' -f $n, $sidCell,
+                $hostCellRow, $startCell, $endCell, $wcell, $pcell, $endedCell))
         if ($prevHost.Length -gt 0 -and $hostKey.Length -gt 0 -and $prevHost -cne $hostKey) {
             $at = Get-NSLocalTime $prevEnd
             $h = ('- {0} {1} {2} {3} {4} {1} outgoing commits: {5}' -f $(if ($at) { $at } else { $dash }), $script:NSDot,
@@ -1876,15 +1910,27 @@ function Get-NSReceiptUsageSection {
     }
     $out = New-Object Collections.Generic.List[string]
     $out.Add('<!-- usage -->')
+    $noFigure = $false
     if (-not ($have -contains $true) -and $off[0]) {
         $out.Add('**Tokens:** off')
     }
     else {
-        $out.Add('| Tokens | Amount |')
-        $out.Add('| --- | ---: |')
+        $noFigure = -not ($have -contains $true)
+        if ($noFigure) {
+            $anyShared = $false
+            foreach ($flag in $shared) { if ($flag) { $anyShared = $true } }
+            if ($anyShared) { $out.Add('**Tokens:** not attributable to this item') }
+            else { $out.Add('**Tokens:** unavailable') }
+        }
+        else {
+            $out.Add('| Tokens | Amount |')
+            $out.Add('| --- | ---: |')
+        }
         $comment = @()
         foreach ($d in @(@('input', 0), @('cache_write', 2), @('cache_read', 3), @('output', 1), @('reasoning', 4))) {
-            $out.Add(('| {0} | {1} |' -f (Get-NSUsageDimLabel $d[0]), (& $total $d[1])))
+            if (-not $noFigure) {
+                $out.Add(('| {0} | {1} |' -f (Get-NSUsageDimLabel $d[0]), (& $total $d[1])))
+            }
             $comment += $(if ($have[$d[1]]) { [string]$tot[$d[1]] } else { '-' })
         }
         $hostline = (@($hostsSeen | ForEach-Object {
@@ -1924,16 +1970,24 @@ function Get-NSReceiptUsageSection {
     $out.Add('')
     $out.Add('**Sessions**')
     $out.Add('')
-    $out.Add('| # | Shift | Host ' + $script:NSDot + ' model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |')
-    $out.Add('| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |')
-    foreach ($r in $rows) { $out.Add($r) }
     $hostCell = (@($hostsSeen | ForEach-Object { Get-NSSessionHostWords $_ }) -join ', ')
     if ($hostCell.Length -eq 0) { $hostCell = $dash }
     $workTotal = $(if ($havework) { Get-NSUsageDuration ([string]$twork) } elseif ($offwork) { 'off' } else { 'unavailable' })
     $pauseTotal = $(if ($tpause -gt 0) { Get-NSUsageDuration ([string]$tpause) } elseif ($havepause) { $dash } elseif ($offpause) { 'off' } else { 'unavailable' })
-    $totalRow = ('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}**' -f $n, $word, $hostCell, $workTotal, $pauseTotal)
-    for ($i = 0; $i -lt 5; $i++) { $totalRow += ' | **' + (& $total $i) + '**' }
-    $out.Add($totalRow + ' |  |')
+    if ($noFigure) {
+        $out.Add('| # | Shift | Host ' + $script:NSDot + ' model | Start | End | Working | Paused | Ended |')
+        $out.Add('| --- | --- | --- | --- | --- | --- | --- | --- |')
+        foreach ($r in $rowsPlain) { $out.Add($r) }
+        $out.Add(('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}** |  |' -f $n, $word, $hostCell, $workTotal, $pauseTotal))
+    }
+    else {
+        $out.Add('| # | Shift | Host ' + $script:NSDot + ' model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |')
+        $out.Add('| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |')
+        foreach ($r in $rows) { $out.Add($r) }
+        $totalRow = ('| **Total** | {0} {1} | {2} |  |  | **{3}** | **{4}**' -f $n, $word, $hostCell, $workTotal, $pauseTotal)
+        for ($i = 0; $i -lt 5; $i++) { $totalRow += ' | **' + (& $total $i) + '**' }
+        $out.Add($totalRow + ' |  |')
+    }
     if ($sharedTurns.Count -gt 0) {
         $out.Add('')
         $out.Add('**Shared turn**')

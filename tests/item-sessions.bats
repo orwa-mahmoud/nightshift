@@ -203,6 +203,78 @@ tick() { # <project> <number>
   [ "$status" -ne 0 ]
 }
 
+@test "a session records the decisions and snags added while the item was worked" {
+  local p lot snag sessions_dir row f
+  p="$(site inbox-count)"
+  cat >"$p/.nightshift/punch-list.md" <<'EOF'
+## Items
+- [ ] **1. First.** <!-- id: a1a1 -->
+- [ ] **2. Second.** <!-- id: b2b2 -->
+- [ ] **3. Third.** <!-- id: c3c3 -->
+- [ ] **4. Fourth.** <!-- id: d4d4 -->
+- [ ] **5. Fifth.** <!-- id: e5e5 -->
+EOF
+  lot="$(lib ns_layout_path "$p/.nightshift" parking-lot)"
+  snag="$(lib ns_layout_path "$p/.nightshift" snag-log)"
+  mkdir -p "$(dirname "$lot")" "$(dirname "$snag")"
+  printf '%s\n' '# Parking Lot' '' '---' '' '- one decision' '- another decision' >"$lot"
+  printf '%s\n' '# Snag Log' '' '---' '' '- one finding' >"$snag"
+  tick "$p" 1
+  step "$p"
+  f="$(lib ns_receipt_path "$p" '1. First.')"
+  row="$(sessions "$f")"
+  printf '%s\n' "$row" | grep -q ' parked=2'
+  printf '%s\n' "$row" | grep -q ' snags=1'
+  printf 'MEASURE %s\n' "$row" >&2
+
+  tick "$p" 2
+  step "$p"
+  row="$(sessions "$(lib ns_receipt_path "$p" '2. Second.')")"
+  printf '%s\n' "$row" | grep -q 'parked=' && return 1
+  printf '%s\n' "$row" | grep -q 'snags=' && return 1
+
+  grep -v '^- another decision$' "$lot" >"$lot.new"
+  printf '%s\n' '- a different decision' >>"$lot.new"
+  mv "$lot.new" "$lot"
+  tick "$p" 3
+  step "$p"
+  row="$(sessions "$(lib ns_receipt_path "$p" '3. Third.')")"
+  printf '%s\n' "$row" | grep -q ' parked=1'
+  printf '%s\n' "$row" | grep -q 'snags=' && return 1
+
+  printf '%s\n' '- late one' '- late two' >>"$lot"
+  sessions_dir="$(lib ns_layout_path "$p/.nightshift" item-sessions)"
+  chmod 555 "$sessions_dir"
+  tick "$p" 4
+  step "$p" || true
+  chmod 755 "$sessions_dir"
+  tick "$p" 5
+  step "$p"
+  row="$(sessions "$(lib ns_receipt_path "$p" '5. Fifth.')")"
+  printf '%s\n' "$row" | grep -q ' parked=2'
+  f="$(lib ns_receipt_path "$p" '4. Fourth.')"
+  if [ -f "$f" ]; then
+    sessions "$f" | grep -q 'parked=' && return 1
+  fi
+  [ "$(printf '%s\n' "$row" | grep -c 'parked=2')" = 1 ]
+}
+
+@test "a receipt draws token figures only where one exists" {
+  local out
+  out="$(lib ns_receipt_usage_section 'abc 1000 1600 600 - - ticked cw=- cr=- rea=- paused=0')"
+  printf '%s\n' "$out" | grep -qxF '**Tokens:** unavailable'
+  run grep -F '| Tokens | Amount |' <<<"$out"
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$out" | grep -qxF '| # | Shift | Host · model | Start | End | Working | Paused | Ended |'
+  out="$(lib ns_receipt_usage_section 'abc 1000 1600 600 1200 300 ticked cw=0 cr=0 rea=- paused=0')"
+  printf '%s\n' "$out" | grep -qxF '| Tokens | Amount |'
+  printf '%s\n' "$out" | grep -qxF '| # | Shift | Host · model | Start | End | Working | Paused | Input | Output | Cache write | Cache read | Reasoning | Ended |'
+  # The shared reading from "items ticked inside one Cursor turn share the turn's reading".
+  out="$(lib ns_receipt_usage_section 'abc 1000 1600 600 - - ticked turn=g2/input=800,cache_read=4000,output=20/P01;P02')"
+  printf '%s\n' "$out" | grep -qxF '**Tokens:** not attributable to this item'
+  printf '%s\n' "$out" | grep -qxF '**Shared turn**'
+}
+
 @test "the PowerShell half covers the same sessions and runs in the Windows suite" {
   grep -qF 'item-sessions-logic.ps1' "$BATS_TEST_DIRNAME/windows/run.ps1"
   if ! command -v pwsh >/dev/null 2>&1; then

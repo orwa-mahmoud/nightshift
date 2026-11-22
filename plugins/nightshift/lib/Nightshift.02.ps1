@@ -2058,14 +2058,16 @@ function Get-NSParentPid {
         $proc = Get-Process -Id $ProcessId -ErrorAction Stop
         if ($null -ne $proc.Parent -and $proc.Parent.Id -gt 1) { return [int]$proc.Parent.Id }
     }
-    catch { }
+    # The process is already gone; the next lookup below is the fallback.
+    catch { $proc = $null }
     if ($env:OS -eq 'Windows_NT') {
         try {
             $row = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction Stop
             $parent = [int]$row.ParentProcessId
             if ($parent -gt 1) { return $parent }
         }
-        catch { }
+        # The CIM row is gone; there is no parent to report.
+        catch { return 0 }
         return 0
     }
     $raw = & ps -o ppid= -p $ProcessId 2>$null

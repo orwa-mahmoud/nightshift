@@ -94,20 +94,10 @@ _ns_clock_out_block() {
   printf '{"decision":"block","reason":"%s"}\n' "$escaped"
 }
 
-ts() { ns_local_now second; }
-log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
-
 # Only the Items list is the shift. A checkbox above it is prose — an owner's note, an example in
 # the contract — and counting it would hold a session over something nobody queued. The heading
 # must stand alone on its line, so the contract's inline `## Items` references never match.
 # ns_gate_boxes reads those counts.
-
-# Stall progress is a tick plus either work-target HEAD (repository mode) or the artifact
-# receipts fingerprint (artifact mode). ns_gate_progress_token chooses.
-deadline_passed() { ns_gate_deadline_passed; }
-
-# The terminal sequence lives once, in gate-core.sh. The watchman calls the same function.
-end_shift() { ns_shift_end "$PROJECT_DIR" "$1"; }
 
 # Every ending runs through here. The shift is over by now — the marker is written and the site is
 # disarmed — so asking the model to file is a request it can actually carry out, and the one hold
@@ -128,12 +118,6 @@ PUNCH_UNREADABLE=0
 if ! ns_gate_boxes; then
   PUNCH_UNREADABLE=1
 fi
-
-honor_stop() {
-  local reason
-  reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-  end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
-}
 
 # Record conversation continuity and claim the original process lease if hardhat did not already
 # do it. A watchman child must present its exact nonce + generation before this Stop event may

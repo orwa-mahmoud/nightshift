@@ -2170,3 +2170,43 @@ worker_alive() { kill -0 "$IDLE_WORKER" 2>/dev/null; }
     [ -z "$output" ]
   fi
 }
+
+@test "removing the workspace folder makes the watchman stand down without a log error" {
+  local pid i
+  watch >"$BATS_TEST_TMPDIR/watch.out" 2>"$BATS_TEST_TMPDIR/watch.err" &
+  pid=$!
+  i=0
+  while [ "$i" -lt 50 ]; do
+    [ -f "$P/.nightshift/.watchman-tick" ] && break
+    i=$((i + 1))
+    sleep 0.05
+  done
+  if [ ! -f "$P/.nightshift/.watchman-tick" ]; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    echo "watchman never reached its loop"
+    return 1
+  fi
+  rm -rf "$P/.nightshift"
+  i=0
+  while [ "$i" -lt 50 ]; do
+    kill -0 "$pid" 2>/dev/null || break
+    i=$((i + 1))
+    sleep 0.05
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    echo "watchman did not stand down"
+    cat "$BATS_TEST_TMPDIR/watch.err"
+    return 1
+  fi
+  rc=0
+  wait "$pid" || rc=$?
+  if grep -q 'shift-log' "$BATS_TEST_TMPDIR/watch.err"; then
+    echo "stderr mentioned the shift log:"
+    cat "$BATS_TEST_TMPDIR/watch.err"
+    return 1
+  fi
+  [ "$rc" -eq 0 ]
+}

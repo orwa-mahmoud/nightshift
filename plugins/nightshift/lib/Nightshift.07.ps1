@@ -1009,6 +1009,17 @@ function Write-NSUsageMarkArm {
     $generation = [guid]::NewGuid().ToString('N')
     [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`tarm`t`t`t`t$generation`n"),
         (New-Object Text.UTF8Encoding($false)))
+    $seen = Join-Path $dir 'inbox-seen'
+    if (-not (Test-NSReparsePoint $seen)) {
+        $body = New-Object System.Text.StringBuilder
+        foreach ($kind in @('parking-lot', 'snag-log')) {
+            foreach ($key in [string[]](Get-NSInboxKeys $NightshiftDir $kind)) {
+                if ([string]::IsNullOrEmpty($key)) { continue }
+                [void]$body.Append($kind + "`t" + $key + "`n")
+            }
+        }
+        [IO.File]::WriteAllText($seen, $body.ToString(), (New-Object Text.UTF8Encoding($false)))
+    }
     return $true
 }
 
@@ -1335,6 +1346,27 @@ function Write-NSUsagePause {
     $when = $(if ($At -gt 0) { $At } else { Get-NSUnixTime })
     try { [IO.File]::AppendAllText($file, ($when.ToString() + "`t" + $why + "`n"), $utf8) }
     catch { return $false }
+    $marker = Join-Path $dir 'pause-open'
+    if (Test-NSReparsePoint $marker) { return $false }
+    try { [IO.File]::WriteAllText($marker, '', $utf8) }
+    catch { return $false }
+    return $true
+}
+
+# Write-NSUsageResume <nightshift-dir> - work is under way again. Append the current epoch to
+# resumes.tsv and remove the open-pause marker. A symlink is not written through.
+function Write-NSUsageResume {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $dir = Get-NSUsageDir $NightshiftDir
+    if ((Test-NSReparsePoint $dir) -or -not (Test-Path -LiteralPath $dir -PathType Container)) { return $false }
+    $file = Join-Path $dir 'resumes.tsv'
+    $marker = Join-Path $dir 'pause-open'
+    if ((Test-NSReparsePoint $file) -or (Test-NSReparsePoint $marker)) { return $false }
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    try { [IO.File]::AppendAllText($file, ((Get-NSUnixTime).ToString() + "`n"), $utf8) }
+    catch { return $false }
+    try { Remove-Item -LiteralPath $marker -Force -ErrorAction Stop }
+    catch { return $false }
     return $true
 }
 
@@ -1352,43 +1384,81 @@ function Get-NSUsageLastPause {
     return $last
 }
 
-# Get-NSUsageResumedAt <nightshift-dir> <epoch> - when work was next seen after a pause, from the
-# marks the runtime was already keeping.
+# Get-NSUsageResumedAt <nightshift-dir> <epoch> - when work was next seen after a pause: the earlier
+# of the first mark after it and the first resume at or after it. Empty when there is neither.
 function Get-NSUsageResumedAt {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$After)
+    $mark = ''
     $file = Get-NSUsageMarksPath $NightshiftDir
-    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
-    foreach ($line in @([IO.File]::ReadAllLines($file))) {
-        $at = $line.Split("`t")[0]
-        if ($at -notmatch '^[0-9]+$') { continue }
-        if ([long]$at -gt $After) { return $at }
+    if ((Test-Path -LiteralPath $file -PathType Leaf) -and -not (Test-NSReparsePoint $file)) {
+        foreach ($line in @([IO.File]::ReadAllLines($file))) {
+            if ([string]::IsNullOrEmpty($line)) { continue }
+            $at = $line.Split("`t")[0]
+            if ($at -notmatch '^[0-9]+$') { continue }
+            if ([long]$at -gt $After) { $mark = $at; break }
+        }
     }
-    return ''
+    $resume = ''
+    $resumeFile = Join-Path (Get-NSUsageDir $NightshiftDir) 'resumes.tsv'
+    if ((Test-Path -LiteralPath $resumeFile -PathType Leaf) -and -not (Test-NSReparsePoint $resumeFile)) {
+        $best = -1L
+        foreach ($line in @([IO.File]::ReadAllLines($resumeFile))) {
+            if ([string]::IsNullOrEmpty($line)) { continue }
+            $atText = ($line -split "`t")[0]
+            if ($atText -notmatch '^[0-9]+$') { continue }
+            $at = [long]$atText
+            if ($at -ge $After -and ($best -lt 0 -or $at -lt $best)) { $best = $at }
+        }
+        if ($best -ge 0) { $resume = [string]$best }
+    }
+    if ($mark.Length -eq 0 -and $resume.Length -eq 0) { return '' }
+    if ($mark.Length -eq 0) { return $resume }
+    if ($resume.Length -eq 0) { return $mark }
+    if ([long]$resume -lt [long]$mark) { return $resume }
+    return $mark
 }
 
 # Get-NSUsagePausedBetween <nightshift-dir> <from> <to> - how long was recorded as not-work inside one
 # span, and why: `<seconds>`t<reason>`, empty when the runtime knows of no gap.
 #
-# A pause is closed by the next thing that happens, never past <to>. Where nothing followed, the gap
-# is open and is reported as such rather than guessed at.
+# Only a pause at or after <from> and before <to> counts. Lines that share one epoch are one pause,
+# and the first line gives the reason. A counted pause ends at the earliest of the first mark after
+# it, the first resume at or after it, the next later pause epoch anywhere in pauses.tsv, and <to>.
+# A pause neither a mark nor a resume followed is still open and is left out rather than guessed at.
 function Get-NSUsagePausedBetween {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From,
           [Parameter(Mandatory = $true)][long]$To)
     $file = Join-Path (Get-NSUsageDir $NightshiftDir) 'pauses.tsv'
     if (Test-NSReparsePoint $file) { return '' }
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
-    $total = [long]0
-    $lastReason = ''
+    $epochs = New-Object Collections.Generic.List[long]
+    $reasons = New-Object Collections.Generic.List[string]
+    $seen = New-Object 'System.Collections.Generic.HashSet[long]'
     foreach ($line in @([IO.File]::ReadAllLines($file))) {
         $parts = $line.Split("`t")
-        $at = $parts[0]
-        if ($at -notmatch '^[0-9]+$') { continue }
-        if ([long]$at -lt $From -or [long]$at -ge $To) { continue }
-        $next = Get-NSUsageResumedAt $NightshiftDir ([long]$at)
+        $atText = $parts[0]
+        if ($atText -notmatch '^[0-9]+$') { continue }
+        $at = [long]$atText
+        if (-not $seen.Add($at)) { continue }
+        $epochs.Add($at)
+        $reasons.Add($(if ($parts.Length -ge 2) { $parts[1] } else { '' }))
+    }
+    $total = [long]0
+    $lastReason = ''
+    for ($i = 0; $i -lt $epochs.Count; $i++) {
+        $at = $epochs[$i]
+        if ($at -lt $From -or $at -ge $To) { continue }
+        $next = Get-NSUsageResumedAt $NightshiftDir $at
         if ([string]::IsNullOrEmpty($next)) { continue }
-        $end = [math]::Min([long]$next, $To)
-        $total += ($end - [long]$at)
-        $lastReason = $(if ($parts.Length -ge 2) { $parts[1] } else { '' })
+        $end = [long]$next
+        $nextPause = -1L
+        foreach ($other in $epochs) {
+            if ($other -gt $at -and ($nextPause -lt 0 -or $other -lt $nextPause)) { $nextPause = $other }
+        }
+        if ($nextPause -ge 0 -and $nextPause -lt $end) { $end = $nextPause }
+        if ($To -lt $end) { $end = $To }
+        $total += ($end - $at)
+        $lastReason = $reasons[$i]
     }
     if ($total -le 0) { return '' }
     return ([string]$total + "`t" + $lastReason)
@@ -1396,7 +1466,8 @@ function Get-NSUsagePausedBetween {
 
 # Get-NSUsagePausesByReason <nightshift-dir> <from> <to> - the not-work inside one span, one entry
 # per reason in the order each was first recorded. Each gap is measured exactly as
-# Get-NSUsagePausedBetween measures it, so the entries sum to its total.
+# Get-NSUsagePausedBetween measures it, so the entries sum to its total. A reason whose total is 0
+# is left out.
 function Get-NSUsagePausesByReason {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][long]$From,
           [Parameter(Mandatory = $true)][long]$To)
@@ -1405,30 +1476,38 @@ function Get-NSUsagePausesByReason {
     $marksFile = Get-NSUsageMarksPath $NightshiftDir
     if ((Test-NSReparsePoint $file) -or -not (Test-Path -LiteralPath $file -PathType Leaf) -or
         -not (Test-Path -LiteralPath $marksFile -PathType Leaf)) { return , $result.ToArray() }
-    $marks = New-Object Collections.Generic.List[long]
-    foreach ($line in @([IO.File]::ReadAllLines($marksFile))) {
-        $at = $line.Split("`t")[0]
-        if ($at -cmatch '^[0-9]+$') { $marks.Add([long]$at) }
-    }
-    $order = New-Object Collections.Generic.List[string]
-    $totals = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+    $epochs = New-Object Collections.Generic.List[long]
+    $whys = New-Object Collections.Generic.List[string]
+    $seen = New-Object 'System.Collections.Generic.HashSet[long]'
     foreach ($line in @([IO.File]::ReadAllLines($file))) {
         $parts = $line.Split("`t")
         if ($parts[0] -cnotmatch '^[0-9]+$') { continue }
         $at = [long]$parts[0]
+        if (-not $seen.Add($at)) { continue }
+        $epochs.Add($at)
+        $whys.Add($(if ($parts.Length -ge 2 -and $parts[1].Length -gt 0) { $parts[1] } else { 'paused' }))
+    }
+    $order = New-Object Collections.Generic.List[string]
+    $totals = New-Object 'Collections.Generic.Dictionary[string,long]' ([StringComparer]::Ordinal)
+    for ($i = 0; $i -lt $epochs.Count; $i++) {
+        $at = $epochs[$i]
         if ($at -lt $From -or $at -ge $To) { continue }
-        $resumed = -1L
-        foreach ($mark in $marks) {
-            if ($mark -gt $at) { $resumed = $mark; break }
+        $next = Get-NSUsageResumedAt $NightshiftDir $at
+        if ([string]::IsNullOrEmpty($next)) { continue }
+        $resumed = [long]$next
+        $nextPause = -1L
+        foreach ($other in $epochs) {
+            if ($other -gt $at -and ($nextPause -lt 0 -or $other -lt $nextPause)) { $nextPause = $other }
         }
-        if ($resumed -lt 0) { continue }
-        if ($resumed -gt $To) { $resumed = $To }
-        $why = $(if ($parts.Length -ge 2 -and $parts[1].Length -gt 0) { $parts[1] } else { 'paused' })
+        $end = $resumed
+        if ($nextPause -ge 0 -and $nextPause -lt $end) { $end = $nextPause }
+        if ($end -gt $To) { $end = $To }
+        $why = $whys[$i]
         if (-not $totals.ContainsKey($why)) {
             $order.Add($why)
             $totals[$why] = 0
         }
-        $totals[$why] += ($resumed - $at)
+        $totals[$why] += ($end - $at)
     }
     foreach ($why in $order) {
         if ($totals[$why] -gt 0) { $result.Add([pscustomobject]@{ Reason = $why; Seconds = $totals[$why] }) }
@@ -1548,8 +1627,43 @@ function Invoke-NSGateSessionRow {
         Resolve-NSUsageTurns $NightshiftDir $Label $lines.Length
         foreach ($t in (Get-NSUsageTurnsFor $NightshiftDir $Label $lines.Length)) { $extras += ('turn=' + $t) }
     }
-    Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
-        $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
+    $seenFile = Join-Path (Get-NSUsageDir $NightshiftDir) 'inbox-seen'
+    $newPark = New-Object Collections.Generic.List[string]
+    $newSnag = New-Object Collections.Generic.List[string]
+    if ((Test-Path -LiteralPath $seenFile -PathType Leaf) -and -not (Test-NSReparsePoint $seenFile)) {
+        $known = @{}
+        foreach ($seenLine in @([IO.File]::ReadAllLines($seenFile))) {
+            if ([string]::IsNullOrEmpty($seenLine)) { continue }
+            $tab = $seenLine.IndexOf("`t")
+            if ($tab -lt 1) { continue }
+            $known[$seenLine.Substring(0, $tab) + "`t" + $seenLine.Substring($tab + 1)] = $true
+        }
+        foreach ($kind in @('parking-lot', 'snag-log')) {
+            if ($kind -ceq 'parking-lot') { $dest = $newPark } else { $dest = $newSnag }
+            $once = @{}
+            foreach ($key in [string[]](Get-NSInboxKeys $NightshiftDir $kind)) {
+                if ([string]::IsNullOrEmpty($key) -or $once.ContainsKey($key)) { continue }
+                $once[$key] = $true
+                if (-not $known.ContainsKey($kind + "`t" + $key)) { [void]$dest.Add($key) }
+            }
+        }
+    }
+    if ($newPark.Count -gt 0) { $extras += ('parked=' + $newPark.Count) }
+    if ($newSnag.Count -gt 0) { $extras += ('snags=' + $newSnag.Count) }
+    $wrote = $true
+    try {
+        Add-NSReceiptSession $receipt $Label $(if ($sid) { $sid } else { '-' }) `
+            $start $end $work $(if ($in) { $in } else { '-' }) $(if ($out) { $out } else { '-' }) $Ended ($extras -join ' ')
+    }
+    catch { $wrote = $false }
+    if ($wrote -and (Test-Path -LiteralPath $seenFile -PathType Leaf) -and -not (Test-NSReparsePoint $seenFile)) {
+        $remember = New-Object System.Text.StringBuilder
+        foreach ($key in $newPark) { [void]$remember.Append('parking-lot' + "`t" + $key + "`n") }
+        foreach ($key in $newSnag) { [void]$remember.Append('snag-log' + "`t" + $key + "`n") }
+        if ($remember.Length -gt 0) {
+            [IO.File]::AppendAllText($seenFile, $remember.ToString(), (New-Object Text.UTF8Encoding($false)))
+        }
+    }
     Write-NSGateHandoffLog $NightshiftDir $Label $prevLine $hosts
 }
 
@@ -1835,6 +1949,13 @@ function Invoke-NSPulseMarks {
     $mutex = Enter-NSMutex $NightshiftDir '.lock.d'
     if ($null -eq $mutex) { return $false }
     try {
+        # A pause stays open until the next tool call. A shift told to stop keeps making calls until
+        # it stops, and those calls are not a resume.
+        $marker = Join-Path (Get-NSUsageDir $NightshiftDir) 'pause-open'
+        $stop = Get-NSLayoutPath $NightshiftDir 'stop'
+        if ((Test-Path -LiteralPath $marker -PathType Leaf) -and -not (Test-Path -LiteralPath $stop)) {
+            $null = Write-NSUsageResume $NightshiftDir
+        }
         $synced = Invoke-NSGateUsageSync $NightshiftDir $Project $punch $counts.Ticked $transcripts
         # Then follow the item being worked, so a stretch spent on one item is not charged to another.
         Invoke-NSGateUsageSwitch $NightshiftDir $Project (Get-NSActiveItem $Project)
@@ -1971,10 +2092,10 @@ function Get-NSPulseReceiptsSections {
         $clause += ', linking the evidence wherever that template puts it'
     }
     elseif ($folder.Length -gt 0) {
-        $clause = "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Evidence $script:NSDot Outputs $script:NSDot Parked decisions and snags"
+        $clause = "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Not verified $script:NSDot Evidence $script:NSDot Check it yourself $script:NSDot Outputs $script:NSDot Parked decisions and snags"
     }
     else {
-        return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Outputs $script:NSDot Parked decisions and snags."
+        return "sections: What was delivered $script:NSDot Why $script:NSDot Tried and rejected $script:NSDot Verification $script:NSDot Not verified $script:NSDot Check it yourself $script:NSDot Outputs $script:NSDot Parked decisions and snags."
     }
     $dash = [string][char]0x2014
     if ($shiftDefault.Length -gt 0) { $clause += '; the shift asks every item for this evidence: ' + $shiftDefault }
@@ -2312,9 +2433,15 @@ function Copy-NSUsageSnapshot {
     if ([string]::IsNullOrEmpty($id) -or $id -match '[\\/]' -or $id.StartsWith('.')) {
         $id = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
     }
+    $global:NSUsageHandoverError = ''
     $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' $id
     if (Test-Path -LiteralPath $dest) { $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' ($id + '-' + (Get-NSUnixTime)) }
-    try { Copy-Item -LiteralPath $dir -Destination $dest -Recurse -Force } catch { return '' }
+    try { Copy-Item -LiteralPath $dir -Destination $dest -Recurse -Force -ErrorAction Stop }
+    catch {
+        $global:NSUsageHandoverError = "usage readings: copy $dir -> $dest failed: $([string]$_.Exception.Message)"
+        [Console]::Error.WriteLine($global:NSUsageHandoverError)
+        return ''
+    }
     return $dest
 }
 
@@ -2328,9 +2455,15 @@ function Move-NSUsageRetire {
     if ([string]::IsNullOrEmpty($id) -or $id -match '[\\/]' -or $id.StartsWith('.')) {
         $id = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
     }
+    $global:NSUsageHandoverError = ''
     $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' $id
     if (Test-Path -LiteralPath $dest) { $dest = Get-NSLayoutPath $NightshiftDir 'usage-shift' ($id + '-' + (Get-NSUnixTime)) }
-    try { Move-Item -LiteralPath $dir -Destination $dest -Force } catch { return '' }
+    try { Move-Item -LiteralPath $dir -Destination $dest -Force -ErrorAction Stop }
+    catch {
+        $global:NSUsageHandoverError = "usage readings: move $dir -> $dest failed: $([string]$_.Exception.Message)"
+        [Console]::Error.WriteLine($global:NSUsageHandoverError)
+        return ''
+    }
     return $dest
 }
 
@@ -3620,7 +3753,8 @@ function Invoke-NSShiftEnd {
                 $env:NIGHTSHIFT_SUMMARY = $Summary
                 $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $notify 2>$null
             }
-            catch { }
+            # A desktop notification is best effort; the shift carries on without it.
+            catch { $owned = $true }
             finally { $env:NIGHTSHIFT_SUMMARY = $oldSummary }
         }
     }
@@ -3658,7 +3792,16 @@ function Invoke-NSWatchmanDirectClockOut {
             $raw = ([IO.File]::ReadAllText($deadlinePath)).Trim()
             if ($raw -match '^[0-9]+$' -and (Get-NSUnixTime) -ge [long]$raw) { $deadline = $true }
         }
-        catch { }
+        # The deadline file cannot be read. The policy epoch is the fallback, as the gate uses it.
+        catch {
+            $deadline = $false
+            try {
+                $resolution = Get-NSPolicyResolution $Workspace
+                $policyTarget = $resolution['deadlinePolicy']
+                if ($null -ne $policyTarget -and (Get-NSUnixTime) -ge [long]$policyTarget) { $deadline = $true }
+            }
+            catch { $deadline = $false }
+        }
     }
     $why = ''
     if ($stopPresent) { $why = 'stop' }

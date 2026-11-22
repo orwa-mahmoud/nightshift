@@ -16,12 +16,35 @@
 #              first `---` rule, or anywhere in a file that has none: the open plans, decisions and
 #              snags.
 #   op=openlines  the same entries as <line> TAB <first line>.
+#   op=keys    prints the key of every entry, one per line, below the first `---` rule, or
+#              anywhere in a file that has none. The key is the entry's first line without the
+#              leading `- `, cut at the first ` · `, with surrounding spaces trimmed. A disposition
+#              or an answer appended later does not change it.
 
 function handled(s) {
   return tolower(s) ~ (" · (" dispositions ")")
 }
 
+function entry_key(s,    first, cut) {
+  first = s
+  sub(/\n.*/, "", first)
+  sub(/^- /, "", first)
+  cut = index(first, " · ")
+  if (cut > 0) first = substr(first, 1, cut - 1)
+  sub(/^ +/, "", first)
+  sub(/ +$/, "", first)
+  return first
+}
+
 function flush() {
+  if (buf != "" && op == "keys") {
+    key = entry_key(buf)
+    if (key != "") {
+      m++
+      openat[m] = start
+      opened[m] = key
+    }
+  }
   if (buf != "" && op == "file") {
     if (handled(buf)) printf "%s\n", buf >>filed
     else printf "%s\n", buf
@@ -114,6 +137,11 @@ END {
   if (op == "openlines") {
     for (i = 1; i <= m; i++) {
       if (!rule || openat[i] > rule) printf "%d\t%s\n", openat[i], opened[i]
+    }
+  }
+  if (op == "keys") {
+    for (i = 1; i <= m; i++) {
+      if (!rule || openat[i] > rule) print opened[i]
     }
   }
   if (op == "strays") {

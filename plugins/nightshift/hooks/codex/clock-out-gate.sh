@@ -49,6 +49,7 @@ case "$STATE_KIND" in
     ;;
 esac
 NS="$PROJECT_DIR/.nightshift"
+# shellcheck disable=SC2034 # read by common.sh
 declare PUNCH STOP DEADLINE STALL ARMED LOG
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set STOP "$NS" stop
@@ -67,18 +68,8 @@ case "$STALL_MAX" in '' | *[!0-9]*) STALL_OK=0 ;; esac
 case "$STALL_WARN" in '' | *[!0-9]* | 0) STALL_OK=0 ;; esac
 GATE_MESSAGE="$(ns_expand_injected_paths "$PROJECT_DIR" "$(rule "$PROJECT_DIR" clockOutMessage "${NIGHTSHIFT_GATE_MESSAGE:-}")")"
 
-ts() { ns_local_now second; }
-log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
-
 # Only the Items list is the shift — a checkbox above the heading is prose and holds nobody.
 # ns_gate_boxes reads those counts.
-
-# Stall progress is a tick plus either work-target HEAD (repository mode) or the artifact
-# receipts fingerprint (artifact mode). ns_gate_progress_token chooses.
-deadline_passed() { ns_gate_deadline_passed; }
-
-# The terminal sequence lives once, in gate-core.sh. The watchman calls the same function.
-end_shift() { ns_shift_end "$PROJECT_DIR" "$1"; }
 
 # Every ending runs through here. The shift is over by now, so asking the model to file is a
 # request it can carry out, and that request is the one hold left in a finished shift. Asking is
@@ -99,12 +90,6 @@ PUNCH_UNREADABLE=0
 if ! ns_gate_boxes; then
   PUNCH_UNREADABLE=1
 fi
-
-honor_stop() {
-  local reason
-  reason="$(head -n1 "$STOP" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
-  end_and_stop "shift ended${reason:+ ($reason)}: $TICKED/$TOTAL done"
-}
 
 # Codex cannot vouch for interactive process ancestry, so those record lines remain empty.
 # A shift exists because the owner started one, never because a list exists. Nightshift Start

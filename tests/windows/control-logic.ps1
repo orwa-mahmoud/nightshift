@@ -86,7 +86,7 @@ try {
             $home = Resolve-NSCanonicalPath $env:HOME
             Expect-True (Test-NSBroadWorkspace $home) 'home is broad'
         }
-        catch { }
+        catch { $null = $_.Exception.Message }
     }
 
     # A fresh policy snapshot, written after Reset already cleared the first one, so Purge's own
@@ -118,7 +118,7 @@ try {
         Remove-Item -LiteralPath $purgeOut -Force -ErrorAction SilentlyContinue
     }
     $confirm = Join-Path $root '.nightshift'
-    try { $confirm = Resolve-NSCanonicalPath $ns } catch { }
+    try { $confirm = Resolve-NSCanonicalPath $ns } catch { $null = $_.Exception.Message }
     $null = Remove-NSNightshiftWorkspace -Project $root -ConfirmPath $confirm
     Expect-True (-not (Test-Path -LiteralPath $ns)) 'purge removes .nightshift'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $ns 'shift-policy.json'))) 'purge removes the shift policy'
@@ -216,7 +216,7 @@ try {
         [IO.File]::WriteAllText((Join-Path $purgeNs 'punch-list.md'), "## Items`n- [ ] **1. first.**`n")
         [IO.File]::WriteAllText((Get-NSLayoutPath $purgeNs 'watchman'), "$($purgeProc.Id)`nscript:$scriptPath`nversion:0.30.2`n")
         $purgeConfirm = $purgeNs
-        try { $purgeConfirm = Resolve-NSCanonicalPath $purgeNs } catch { }
+        try { $purgeConfirm = Resolve-NSCanonicalPath $purgeNs } catch { $null = $_.Exception.Message }
         $purgeLines = @(Remove-NSNightshiftWorkspace -Project $purgeRoot -ConfirmPath $purgeConfirm)
         Expect-True (($purgeLines -join "`n") -match 'watchman stopped') "purge stops the three-line watchman: $($purgeLines -join ' | ')"
         $purgeProc.Refresh()
@@ -229,7 +229,7 @@ try {
                 $proc.Refresh()
                 if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
             }
-            catch { }
+            catch { $null = $_.Exception.Message }
         }
         foreach ($dir in @($watchRoot, $(if (Test-Path Variable:purgeRoot) { $purgeRoot } else { '' }))) {
             if (-not [string]::IsNullOrEmpty($dir) -and (Test-Path -LiteralPath $dir)) {

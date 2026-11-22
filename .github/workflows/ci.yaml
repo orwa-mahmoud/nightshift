@@ -9,6 +9,7 @@ on:
 # a job that starts wanting more fails rather than inheriting whatever the default happens to be.
 permissions:
   contents: read
+  pull-requests: read
 
 # Path buckets decide which expensive steps run. Required job names (shellcheck, validate,
 # bats (1-6), bats-macos (1-6), windows-native (powershell), windows-native (pwsh)) always
@@ -30,65 +31,52 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      suite: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.code == 'true' || steps.filter.outputs.templates == 'true' || steps.filter.outputs.workflow == 'true' }}
-      lint: ${{ steps.filter.outputs.shell == 'true' || steps.filter.outputs.workflow == 'true' }}
-      validate: ${{ steps.filter.outputs.runtime == 'true' || steps.plugin.outputs.code == 'true' || steps.filter.outputs.templates == 'true' || steps.filter.outputs.prose == 'true' || steps.filter.outputs.manifest == 'true' || steps.filter.outputs.workflow == 'true' }}
-      docs: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.runtime != 'true' && steps.plugin.outputs.code != 'true' && steps.filter.outputs.templates != 'true' && steps.filter.outputs.workflow != 'true' }}
-      prose: ${{ steps.filter.outputs.prose == 'true' && steps.filter.outputs.runtime != 'true' && steps.plugin.outputs.code != 'true' && steps.filter.outputs.templates != 'true' && steps.filter.outputs.workflow != 'true' }}
+      suite: ${{ steps.class.outputs.suite }}
+      lint: ${{ steps.class.outputs.lint }}
+      validate: ${{ steps.class.outputs.validate }}
+      docs: ${{ steps.class.outputs.docs }}
+      prose: ${{ steps.class.outputs.prose }}
+      classified_at: ${{ steps.class.outputs.classified_at }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: plugin
         with:
-          predicate-quantifier: every
-          filters: |
-            code:
-              - 'plugins/**'
-              - '!plugins/**/*.md'
-              - '!plugins/nightshift/.claude-plugin/plugin.json'
-              - '!plugins/nightshift/.codex-plugin/plugin.json'
-              - '!plugins/nightshift/.cursor-plugin/plugin.json'
+          fetch-depth: 0
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
+        id: listed
         with:
+          list-files: json
           filters: |
-            workflow:
-              - '.github/workflows/ci.yaml'
-            shell:
-              - '**/*.sh'
-            templates:
-              - 'plugins/nightshift/skills/nightshift/references/templates/**'
-            prose:
-              - 'plugins/**/*.md'
-            runtime:
-              - 'tests/**'
-              - 'evals/**'
-              - '.claude-plugin/**'
-              - '.agents/**'
-              - '.cursor-plugin/**'
-            docs:
-              - 'README.md'
-              - 'CONTRIBUTING.md'
-              - 'SECURITY.md'
-              - 'docs/**'
-              - 'examples/**'
-              - '.github/ISSUE_TEMPLATE/**'
-              - '.github/PULL_REQUEST_TEMPLATE.md'
-            manifest:
-              - 'plugins/nightshift/.claude-plugin/plugin.json'
-              - 'plugins/nightshift/.codex-plugin/plugin.json'
-              - 'plugins/nightshift/.cursor-plugin/plugin.json'
-              - '.release-please-manifest.json'
-              - 'release-please-config.json'
-              - 'CHANGELOG.md'
-              - '.claude-plugin/marketplace.json'
-              - '.agents/plugins/marketplace.json'
-              - '.cursor-plugin/marketplace.json'
+            all:
+              - '**'
+      - name: Classify changes
+        id: class
+        env:
+          ALL_FILES: ${{ steps.listed.outputs.all_files }}
+        run: |
+          set -eu
+          python3 - <<'PY' >"${RUNNER_TEMP}/changed-paths.txt"
+          import json, os
+          raw = os.environ.get("ALL_FILES", "").strip()
+          if not raw:
+              raise SystemExit(0)
+          files = json.loads(raw) if raw.startswith("[") else [line for line in raw.splitlines() if line]
+          print("\n".join(files))
+          PY
+          tests/ci-paths.sh <"${RUNNER_TEMP}/changed-paths.txt" >>"$GITHUB_OUTPUT"
+          printf 'classified_at=%s\n' "$(date +%s)" >>"$GITHUB_OUTPUT"
 
   shellcheck:
     needs: changes
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
+      - name: Require a successful change classification
+        if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
+        run: |
+          echo "change classification $CLASSIFICATION"
+          exit 1
       - name: Skip lint
         if: needs.changes.outputs.lint != 'true'
         run: echo 'No shell or workflow paths; shellcheck not executed.'
@@ -106,12 +94,20 @@ jobs:
 
   bats:
     needs: changes
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6]
     steps:
+      - name: Require a successful change classification
+        if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
+        run: |
+          echo "change classification $CLASSIFICATION"
+          exit 1
       - name: Skip shard
         if: needs.changes.outputs.suite != 'true' && ((needs.changes.outputs.docs != 'true' && needs.changes.outputs.prose != 'true') || matrix.shard != 1)
         run: echo 'No suite paths for this shard.'
@@ -122,6 +118,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bats shellcheck
       - name: Run bats shard ${{ matrix.shard }}/6
         if: needs.changes.outputs.suite == 'true'
+        env:
+          NIGHTSHIFT_CLASSIFIED_AT: ${{ needs.changes.outputs.classified_at }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -eu
           if ! ls tests/*.bats >/dev/null 2>&1; then
@@ -129,7 +128,7 @@ jobs:
             exit 0
           fi
           chmod +x tests/run-shard.sh
-          tests/run-shard.sh "${{ matrix.shard }}" 6
+          tests/run-shard.sh "$SHARD" 6
       - name: Install bats
         if: needs.changes.outputs.suite != 'true' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.prose == 'true') && matrix.shard == 1
         run: sudo apt-get update && sudo apt-get install -y bats
@@ -141,19 +140,33 @@ jobs:
           tests/run-docs-contract.sh
       - name: Run skills contract
         if: needs.changes.outputs.suite != 'true' && needs.changes.outputs.prose == 'true' && matrix.shard == 1
+        env:
+          DOCS_CHANGED: ${{ needs.changes.outputs.docs }}
         run: |
           set -eu
           chmod +x tests/run-skills-contract.sh
-          tests/run-skills-contract.sh
+          if [ "$DOCS_CHANGED" = "true" ]; then
+            tests/run-skills-contract.sh --skip-shared
+          else
+            tests/run-skills-contract.sh
+          fi
 
   bats-macos:
     needs: changes
+    if: always() && !cancelled()
     runs-on: ${{ needs.changes.outputs.suite == 'true' && 'macos-latest' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6]
     steps:
+      - name: Require a successful change classification
+        if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
+        run: |
+          echo "change classification $CLASSIFICATION"
+          exit 1
       - name: Skip shard
         if: needs.changes.outputs.suite != 'true'
         run: echo 'No suite paths; macOS shard not executed.'
@@ -164,6 +177,9 @@ jobs:
         run: brew install bats-core
       - name: Run bats shard ${{ matrix.shard }}/6 under macOS system bash
         if: needs.changes.outputs.suite == 'true'
+        env:
+          NIGHTSHIFT_CLASSIFIED_AT: ${{ needs.changes.outputs.classified_at }}
+          SHARD: ${{ matrix.shard }}
         run: |
           set -eu
           bats_bin="$(command -v bats)"
@@ -172,10 +188,11 @@ jobs:
           command -v bash
           bash --version
           chmod +x tests/run-shard.sh
-          tests/run-shard.sh "${{ matrix.shard }}" 6
+          tests/run-shard.sh "$SHARD" 6
 
   windows-native:
     needs: changes
+    if: always() && !cancelled()
     runs-on: windows-latest
     timeout-minutes: 60
     strategy:
@@ -186,6 +203,13 @@ jobs:
       run:
         shell: ${{ matrix.shell }}
     steps:
+      - name: Require a successful change classification
+        if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
+        run: |
+          echo "change classification $CLASSIFICATION"
+          exit 1
       - name: Skip suite
         if: needs.changes.outputs.suite != 'true'
         run: echo 'No suite paths; Windows native suite not executed.'
@@ -290,8 +314,16 @@ jobs:
 
   validate:
     needs: changes
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
+      - name: Require a successful change classification
+        if: needs.changes.result != 'success'
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
+        run: |
+          echo "change classification $CLASSIFICATION"
+          exit 1
       - name: Skip validate
         if: needs.changes.outputs.validate != 'true'
         run: echo 'No manifest, runtime, or workflow paths; validate not executed.'

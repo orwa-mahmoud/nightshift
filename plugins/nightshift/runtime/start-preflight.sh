@@ -514,6 +514,28 @@ if [ "$DRY_RUN" -eq 0 ]; then
       CLEARED="${CLEARED}${CLEARED:+ }${marker##*/}"
     fi
   done
+  # _ns_preflight_usage_handover <keep|aside> <shift-id> — copy or move the live readings.
+  # A failure leaves the command's own error on standard error and warns with its first line.
+  _ns_preflight_usage_handover() {
+    local kind="$1" id="$2" err dest first verb
+    err="$(mktemp)"
+    if [ "$kind" = keep ]; then
+      dest="$(ns_usage_snapshot "$NS" "$id" 2>"$err")" || dest=""
+      verb=kept
+    else
+      dest="$(ns_usage_retire "$NS" "$id" 2>"$err")" || dest=""
+      verb="set aside"
+    fi
+    if [ -s "$err" ]; then
+      cat "$err" >&2
+      if [ -z "$dest" ]; then
+        first="$(head -n 1 "$err")"
+        warn "usage readings of shift $id could not be $verb - $first"
+      fi
+    fi
+    rm -f "$err"
+    HANDOVER="$dest"
+  }
   # Accounting follows the work. A shift that finished its list has its readings set aside, so the
   # next list starts clean. One that stopped, reached quitting time, died or was reset with items
   # still open is continued, and an open item keeps the time and tokens already spent on it: the
@@ -526,10 +548,12 @@ if [ "$DRY_RUN" -eq 0 ]; then
   if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then
     if [ "${OPEN_NOW:-0}" -gt 0 ]; then
       CONTINUED=1
-      KEPT_USAGE="$(ns_usage_snapshot "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || KEPT_USAGE=""
+      _ns_preflight_usage_handover keep "$(ns_ended_field "$WORKSPACE" shiftId)"
+      KEPT_USAGE="$HANDOVER"
       [ -z "$KEPT_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage=>${KEPT_USAGE##*/}"
     else
-      RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
+      _ns_preflight_usage_handover aside "$(ns_ended_field "$WORKSPACE" shiftId)"
+      RETIRED_USAGE="$HANDOVER"
       [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
     fi
   elif { [ -f "$STOP" ] && [ ! -L "$STOP" ]; } || [ "$WAS_ARMED" -eq 1 ]; then
@@ -539,7 +563,8 @@ if [ "$DRY_RUN" -eq 0 ]; then
     # work going on.
     CONTINUED=1
   else
-    RETIRED_USAGE="$(ns_usage_retire "$NS" "$(ns_ended_field "$WORKSPACE" shiftId)")" || RETIRED_USAGE=""
+    _ns_preflight_usage_handover aside "$(ns_ended_field "$WORKSPACE" shiftId)"
+    RETIRED_USAGE="$HANDOVER"
     [ -z "$RETIRED_USAGE" ] || CLEARED="${CLEARED}${CLEARED:+ }usage->${RETIRED_USAGE##*/}"
   fi
   LAST_PAUSE="$(ns_usage_last_pause "$NS")"

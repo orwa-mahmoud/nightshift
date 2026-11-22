@@ -3,5 +3,6 @@
 /CLAUDE.md
 .nightshift/
 coverage/
+tests/shard-timings/observed/
 .scannerwork/
 .env

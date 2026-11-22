@@ -229,7 +229,7 @@ try {
             $null = New-Item -ItemType Junction -Path $twin -Target $root -ErrorAction Stop
             $twinCreated = $true
         }
-        catch { }
+        catch { $null = $_.Exception.Message }
     }
     if ($twinCreated) {
         try {
@@ -244,11 +244,11 @@ try {
             try {
                 Remove-Item -LiteralPath $twin -Force -Confirm:$false -ErrorAction SilentlyContinue
             }
-            catch { }
+            catch { $null = $_.Exception.Message }
         }
     }
     $canonRoot = $null
-    try { $canonRoot = Resolve-NSCanonicalPath $root } catch { }
+    try { $canonRoot = Resolve-NSCanonicalPath $root } catch { $null = $_.Exception.Message }
     if (-not [string]::IsNullOrEmpty($canonRoot) -and $canonRoot -cne $root) {
         $canonStop = Join-Path $canonRoot '.nightshift/STOP'
         Expect-True (Test-NSControlTarget $canonStop) "absolute twin via canonical root $canonStop"
@@ -279,7 +279,7 @@ try {
             -Target (Join-Path $script:ns 'rules.json') -ErrorAction Stop
         $linkedLot = $true
     }
-    catch { }
+    catch { $null = $_.Exception.Message }
     if ($linkedLot) {
         Expect-True (-not (Test-NSInertParkingLotWrite 'Bash' $null $lotAppend)) `
             'a parking-lot append through a symlink to the rules file does not qualify'
@@ -656,7 +656,7 @@ try {
     [Environment]::SetEnvironmentVariable('CLAUDE_PROJECT_DIR', $rawRoot, 'Process')
     [Environment]::SetEnvironmentVariable('NIGHTSHIFT_HARDHAT_LIB', $null, 'Process')
     try {
-        foreach ($raw in @('{"tool_name":"Bash","tool_input":{"command":"ls"', 'not json at all', '[1,2]')) {
+        foreach ($raw in @('', '{"tool_name":"Bash","tool_input":{"command":"ls"', 'not json at all', '[1,2]')) {
             $out = (@($raw | & $hostExe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $hardhat -HostName claude 2>$null) -join "`n")
             $reason = ''
             try { $reason = [string]($out | ConvertFrom-Json).hookSpecificOutput.permissionDecisionReason } catch { $reason = "unreadable output: $out" }

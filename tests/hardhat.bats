@@ -417,7 +417,7 @@ elevation_message() { # <project> <category>
   punch_open "$w"
   run hardhat_bash "$w" "git commit -m x" NIGHTSHIFT_EXPECTED_EMAIL="dev@example.com"
   is_deny "$output"
-  printf '%s' "$output" | grep -q "cannot tell which git repository"
+  printf '%s' "$output" | grep -q "cannot tell which Git repository"
 }
 
 @test "an unresolvable repo leaves the string-matching guards untouched" {

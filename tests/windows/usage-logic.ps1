@@ -80,8 +80,8 @@ try {
     $sharedLine = "- input 800 $([char]0x00B7) cache read 4.0k $([char]0x00B7) output 20 across items P01, P02, not split by item."
     Expect-True $r1.Contains('| input | 500 + not attributable |') 'an item with its own reading shows the shared turn as not attributable beside it'
     Expect-True $r1.Contains($sharedLine) 'the first receipt lists the shared turn and its items'
-    Expect-True $r2.Contains('| input | not attributable |') 'an item with no reading of its own is not attributable'
-    Expect-True $r2.Contains('| not attributable | not attributable | unavailable | not attributable | unavailable |') 'the session row marks each shared figure'
+    Expect-True $r2.Contains('**Tokens:** not attributable to this item') 'an item with no reading of its own is not attributable'
+    Expect-True (-not $r2.Contains('| Tokens | Amount |')) 'an item with no figure draws no Tokens table'
     Expect-True $r2.Contains($sharedLine) 'the second receipt lists the same shared turn'
     Expect-True (-not $r2.Contains('| input | 0 |')) 'no item sharing the turn shows zero'
     $null = Invoke-NSPulseUsage $ns 'cursor' 'c1' $turn2
@@ -118,7 +118,7 @@ try {
     foreach ($k in 2..5) {
         $r = [IO.File]::ReadAllText((Join-Path $ns "receipts/P0$k.md"))
         Expect-True $r.Contains("- input 15.9M $([char]0x00B7) cache read 15.0M $([char]0x00B7) output 60.2k across items P02, P03, P04, P05, not split by item.") "item $k lists the shared turn"
-        Expect-True $r.Contains('| input | not attributable |') "item $k has no figure of its own"
+        Expect-True $r.Contains('**Tokens:** not attributable to this item') "item $k has no figure of its own"
         Expect-True $r.Contains('<!-- tokens - - - - - -->') "item $k marks every dimension unmeasured"
     }
     $index = [IO.File]::ReadAllText((Join-Path $ns 'receipts/README.md'))
@@ -136,7 +136,7 @@ try {
     [IO.File]::WriteAllText($punch, "# Punch list`n`n## Items`n`n- [x] **P01 - first.**`n- [x] **P02 - second.**`n")
     $null = Invoke-NSGateUsageSync $ns $w $punch 2
     $r = [IO.File]::ReadAllText((Join-Path $ns 'receipts/P02.md'))
-    Expect-True ($r.Contains('| input | unavailable |') -and $r.Contains('| output | unavailable |')) 'an item with no reading is unavailable'
+    Expect-True ($r.Contains('**Tokens:** unavailable') -and -not $r.Contains('| Tokens | Amount |')) 'an item with no reading is unavailable'
     Expect-True $r.Contains('<!-- tokens - - - - - -->') 'the marker records no measurement, not zero'
     Expect-True (-not ($r -cmatch '\| (input|output) \| 0 \|')) 'no reading never reads zero'
     $index = [IO.File]::ReadAllText((Join-Path $ns 'receipts/README.md'))
@@ -381,6 +381,34 @@ try {
     Set-ReceiptsPolicy $ns '{"progressMode":"completion-only"}'
     [IO.File]::WriteAllText($marksFile, "$($now - 90 * 60)`tarm`t`n", $utf8)
     Expect-True (-not (Test-NSUsageProgressDue $w 'P01')) 'completion-only never fires'
+
+    # A pause stays open until the next pulse, and a stop-work order keeps it open.
+    $w = Join-Path $root 'resume'
+    $ns = New-Workspace $w "## Items`n- [ ] **P01 - item 1.**`n"
+    $usage = Get-NSUsageDir $ns
+    Expect-True (Write-NSUsagePause $ns 'owner stop-work') 'recording a pause leaves the marker'
+    Expect-True (Test-Path -LiteralPath (Join-Path $usage 'pause-open') -PathType Leaf) 'pause-open exists'
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs'
+    $resumeFile = Join-Path $usage 'resumes.tsv'
+    $resumeLines = @([IO.File]::ReadAllLines($resumeFile) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    Expect-True ($resumeLines.Count -eq 1) "resumes.tsv holds one line (got $($resumeLines.Count))"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $usage 'pause-open'))) 'the first pulse removes pause-open'
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs again'
+    $resumeLines = @([IO.File]::ReadAllLines($resumeFile) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    Expect-True ($resumeLines.Count -eq 1) "a second pulse does not record another resume (got $($resumeLines.Count))"
+
+    $w = Join-Path $root 'resume-stop'
+    $ns = New-Workspace $w "## Items`n- [ ] **P01 - item 1.**`n"
+    $usage = Get-NSUsageDir $ns
+    [IO.File]::WriteAllText((Join-Path $ns 'STOP'), '', (New-Object Text.UTF8Encoding($false)))
+    Expect-True (Write-NSUsagePause $ns 'owner stop-work') 'a pause is recorded while stopped'
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs under STOP'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $usage 'resumes.tsv'))) 'STOP writes no resume'
+    Expect-True (Test-Path -LiteralPath (Join-Path $usage 'pause-open') -PathType Leaf) 'STOP leaves pause-open'
+    Remove-Item -LiteralPath (Join-Path $ns 'STOP') -Force
+    Expect-True (Invoke-NSPulseMarks $ns $w) 'the pulse runs after STOP is gone'
+    $resumeLines = @([IO.File]::ReadAllLines((Join-Path $usage 'resumes.tsv')) | Where-Object { -not [string]::IsNullOrEmpty($_) })
+    Expect-True ($resumeLines.Count -eq 1) "removing STOP lets the next pulse record one resume (got $($resumeLines.Count))"
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
