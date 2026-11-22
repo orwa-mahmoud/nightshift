@@ -3,6 +3,19 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.40.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.39.1...v0.40.0) (2026-11-22)
+
+
+### Features
+
+* add baselineGates to record red gates before a shift arms ([dbd380d](https://github.com/orwa-mahmoud/nightshift/commit/dbd380de003e5f5f0651a4c68f5a4c6abefef008)), closes [#259](https://github.com/orwa-mahmoud/nightshift/issues/259)
+* warn at Start when the work target has uncommitted changes ([a26c909](https://github.com/orwa-mahmoud/nightshift/commit/a26c9094c99eb6f603e7923fd33c2e4ee7c9ab89)), closes [#260](https://github.com/orwa-mahmoud/nightshift/issues/260)
+
+
+### Bug Fixes
+
+* record a failed notifyCommand in the shift log ([bc98370](https://github.com/orwa-mahmoud/nightshift/commit/bc98370cfbf578863d014d7190feb9bfae144668)), closes [#258](https://github.com/orwa-mahmoud/nightshift/issues/258)
+
 ## [0.39.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.39.0...v0.39.1) (2026-11-22)
 
 
