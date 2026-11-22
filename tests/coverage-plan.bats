@@ -71,3 +71,14 @@ plan() {
 @test "the shipped profile isolates every status test" {
   grep -q '^tests/status.bats	\*	6000$' "$BATS_TEST_DIRNAME/coverage-memory.tsv"
 }
+
+@test "shards are packed by recorded seconds, every group on exactly one shard" {
+  cp "$BATS_TEST_DIRNAME/run-shard.sh" "$ROOT/tests/run-shard.sh"
+  printf 'tests/light.bats\t600\ntests/status.bats\t30\n' >"$ROOT/tests/coverage-timings.tsv"
+  run env NIGHTSHIFT_COVERAGE_SHARDS=2 bash -c 'cd "$1" && NIGHTSHIFT_COVERAGE_MEM_MB=16000 NIGHTSHIFT_COVERAGE_CPUS=4 bash tests/coverage.sh --plan' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  # light.bats splits 5 + 1 (500 s and 100 s); status.bats is three 10 s groups. Longest first puts
+  # the 500 s group alone; taking groups in turn would put 520 s on one shard and 110 s on the other.
+  printf '%s\n' "$output" | grep -qx 'coverage: shard 1 of 2 measures 1 groups, 500 recorded seconds'
+  printf '%s\n' "$output" | grep -qx 'coverage: shard 2 of 2 measures 4 groups, 130 recorded seconds'
+}

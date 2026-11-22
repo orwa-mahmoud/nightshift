@@ -1,7 +1,7 @@
 name: coverage
 
-# Line coverage of the shipped bash on main, uploaded to Codecov. Two Linux runners
-# trace disjoint groups and a merge job publishes one report. Pull requests run the
+# Line coverage of the shipped bash on main, uploaded to Codecov. Six Linux runners
+# trace disjoint groups, packed by their recorded cost, and a merge job publishes one report. Pull requests run the
 # suite in ci.yaml without coverage; this workflow never gates one.
 on:
   push:
@@ -64,13 +64,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Measure line coverage
         env:
           NIGHTSHIFT_COVERAGE_SHARD: ${{ matrix.shard }}
-          NIGHTSHIFT_COVERAGE_SHARDS: 2
+          NIGHTSHIFT_COVERAGE_SHARDS: ${{ strategy.job-total }}
         run: bash tests/coverage.sh
       - name: Upload the shard report
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
