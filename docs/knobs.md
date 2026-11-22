@@ -286,6 +286,11 @@ the default in the table.
 A new workspace verifies nothing, because the gates a new owner has not written yet should not fail
 a shift. Set a profile once you have commands worth running.
 
+`baselineGates`, at the top level of `rules.json`, defaults to `false`. Set it to `true` and Start
+runs each `## Gates` command once in the work target before arming: a green gate is reported, and a
+red one is a warning recorded in `shift-log.md` as red before the shift, so it is not read as a
+failure of the night's work. The shift still arms.
+
 ### Shift worktrees
 
 With `isolation` set to `worktree`, Start adds `<worktreeRoot>/<shift-id>` on a branch named

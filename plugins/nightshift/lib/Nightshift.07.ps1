@@ -60,6 +60,17 @@ function Get-NSPunchGates {
     return $out.ToArray()
 }
 
+# Get-NSPunchGateCommands <punch-list> - the gates block's commands from its ``- `command` ``
+# bullets, in the order written. Twin of ns_punch_gate_commands.
+function Get-NSPunchGateCommands {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($line in (Get-NSPunchGates $PunchList)) {
+        if ($line -cmatch '^[ \t]*- `(.*)`[ \t]*$') { $out.Add($Matches[1]) }
+    }
+    return $out.ToArray()
+}
+
 # Get-NSPunchItemsSection <punch-list> - the lines under `## Items`, up to the next top-level
 # heading.
 function Get-NSPunchItemsSection {

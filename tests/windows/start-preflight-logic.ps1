@@ -78,6 +78,8 @@ try {
     Expect-True ($cleanRun.Stdout.Contains('ok punch-list open=1 ticked=0')) 'clean site counts the punch list'
     Expect-True ($cleanRun.Stdout.Contains('ok deadline none (finite list')) 'a finite list needs no clock'
     Expect-True ($cleanRun.Stdout.Contains('ok tree clean - no uncommitted changes in')) "a clean work target reports a clean tree: $($cleanRun.Stdout)"
+    Expect-True (-not $cleanRun.Stdout.Contains('gate-baseline')) 'baselineGates is off by default'
+
     # Uncommitted changes with isolation none warn with their counts; the shift still arms.
     $dirty = New-Site (Join-Path $root 'dirty-tree')
     [IO.File]::WriteAllText((Join-Path $dirty 'untracked.txt'), "new`n")
@@ -85,6 +87,22 @@ try {
     Expect-True ($dirtyRun.ExitCode -eq 0) "a dirty tree still arms: $($dirtyRun.Stdout)"
     Expect-True ($dirtyRun.Stdout.Contains('warn tree 0 modified and 1 untracked path(s) in')) "the dirty tree is counted: $($dirtyRun.Stdout)"
 
+    # baselineGates on: each gate runs once in the work target, and a red one is recorded, not refused.
+    $baselinePunch = [string]::Join("`n", @(
+            '## Gates', '',
+            '- `if (-not (Test-Path .nightshift)) { exit 1 }`',
+            '- `exit 3`', '',
+            '## Items', '- [ ] **1. work.**', ''))
+    $baseline = New-Site (Join-Path $root 'baseline-on') $baselinePunch
+    $baselineRules = Join-Path $baseline '.nightshift/rules.json'
+    $baselineDoc = Get-Content -Raw -LiteralPath $baselineRules | ConvertFrom-Json
+    $baselineDoc | Add-Member -NotePropertyName baselineGates -NotePropertyValue $true -Force
+    [IO.File]::WriteAllText($baselineRules, ($baselineDoc | ConvertTo-Json -Depth 20))
+    $baselineRun = Invoke-Preflight $baseline @('-HostName', 'claude')
+    Expect-True ($baselineRun.ExitCode -eq 0) "a red baseline gate still arms: $($baselineRun.Stdout)"
+    Expect-True ($baselineRun.Stdout.Contains('ok gate-baseline green before the shift: if (-not (Test-Path .nightshift)) { exit 1 }')) "a green gate is reported: $($baselineRun.Stdout)"
+    Expect-True ($baselineRun.Stdout.Contains('warn gate-baseline red before the shift (exit 3): exit 3')) 'a red gate warns'
+    Expect-True ([IO.File]::ReadAllText((Join-Path $baseline '.nightshift/shift-log.md')).Contains('gate-baseline: red before the shift (exit 3): exit 3')) 'the red gate is in the shift log'
 
     $budgetSite = New-Site (Join-Path $root 'default-budget')
     foreach ($value in @('hard eventually', '', 'soft 30m / 1M tokens, hard 45m / 2M tokens')) {

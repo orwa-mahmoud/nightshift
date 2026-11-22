@@ -3270,6 +3270,13 @@ ns_punch_gates() {
   ' "$1" 2>/dev/null
 }
 
+# ns_punch_gate_commands <punch-list> — the gates block's commands, one per line, from its
+# ``- `command` `` bullets in the order written.
+ns_punch_gate_commands() {
+  local tick='`'
+  ns_punch_gates "$1" | sed -n "s/^[[:space:]]*- ${tick}\(.*\)${tick}[[:space:]]*\$/\1/p"
+}
+
 # ns_punch_items <punch-list> — the lines under `## Items`, stopping at the next top-level heading.
 #
 # Not ns_items_section, which runs to the end of the file: that is the right boundary for counting

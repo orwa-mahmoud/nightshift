@@ -848,5 +848,30 @@ case "$HOST_NAME" in
     ok "permissions host unknown - no permission-mode note" ;;
 esac
 
+# ------------------------------------------------------------ gate baseline
+# Opt-in through baselineGates. Each `## Gates` command runs once in the work target before arming,
+# so a gate that is already red is on record as the baseline and is not read as tonight's failure.
+# Only on a real run that refused nothing; a red gate warns, and the shift still arms.
+if [ "$REFUSED" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ "$WORK_TARGET_OK" -eq 1 ]; then
+  case "$(rule "$WORKSPACE" baselineGates "")" in
+    true)
+      GATE_COUNT=0
+      while IFS= read -r gate_cmd; do
+        [ -n "$gate_cmd" ] || continue
+        GATE_COUNT=$((GATE_COUNT + 1))
+        gate_rc=0
+        (cd "$WORK_TARGET" && sh -c "$gate_cmd") </dev/null >/dev/null 2>&1 || gate_rc=$?
+        if [ "$gate_rc" -eq 0 ]; then
+          ok "gate-baseline green before the shift: $gate_cmd"
+        else
+          warn "gate-baseline red before the shift (exit $gate_rc): $gate_cmd"
+          ns_shift_log "$NS" "gate-baseline: red before the shift (exit $gate_rc): $gate_cmd"
+        fi
+      done < <(ns_punch_gate_commands "$PUNCH")
+      [ "$GATE_COUNT" -gt 0 ] || ok "gate-baseline no gate commands in the punch list"
+      ;;
+  esac
+fi
+
 [ "$REFUSED" -eq 0 ] || exit 1
 exit 0

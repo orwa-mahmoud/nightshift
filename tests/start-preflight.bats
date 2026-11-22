@@ -152,6 +152,54 @@ setup_site() { # <name> [punch-body]
   ! printf '%s\n' "$output" | grep -qE '^(ok|warn) tree ' || false
 }
 
+@test "baselineGates is off by default and Start runs no gate" {
+  p="$(setup_site preflight-baseline-off "## Gates
+
+- \`touch $BATS_TEST_TMPDIR/gate-ran\`
+
+## Items
+- [ ] **1. work.**
+")"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$BATS_TEST_TMPDIR/gate-ran" ]
+  ! printf '%s\n' "$output" | grep -qF 'gate-baseline' || false
+}
+
+@test "with baselineGates on, each gate runs once in the work target and a red one is recorded, not refused" {
+  p="$(setup_site preflight-baseline-on "## Gates
+
+**Item gate** — runs every item:
+
+- \`test -d .nightshift\`
+- \`exit 3\`
+
+## Items
+- [ ] **1. work.**
+")"
+  jq '.baselineGates = true' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'ok gate-baseline green before the shift: test -d .nightshift'
+  printf '%s\n' "$output" | grep -qxF 'warn gate-baseline red before the shift (exit 3): exit 3'
+  grep -rqF 'gate-baseline: red before the shift (exit 3): exit 3' "$p/.nightshift"
+}
+
+@test "a dry run never runs the baseline gates" {
+  p="$(setup_site preflight-baseline-dry "## Gates
+
+- \`touch $BATS_TEST_TMPDIR/dry-gate-ran\`
+
+## Items
+- [ ] **1. work.**
+")"
+  jq '.baselineGates = true' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash "$PREFLIGHT" --project "$p" --host claude --dry-run
+  [ ! -e "$BATS_TEST_TMPDIR/dry-gate-ran" ]
+}
+
 @test "an invalid workspace link refuses rather than guessing a workspace" {
   p="$(setup_site preflight-link)"
   printf '/nowhere/at/all\n' >"$p/.nightshift-link"

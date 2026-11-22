@@ -855,5 +855,33 @@ else {
     Write-Ok 'permissions host unknown - no permission-mode note'
 }
 
+# --------------------------------------------------------- gate baseline
+# Opt-in through baselineGates. Each `## Gates` command runs once in the work target before arming,
+# so a gate that is already red is on record as the baseline and is not read as tonight's failure.
+# Only on a real run that refused nothing; a red gate warns, and the shift still arms.
+# Mirrors start-preflight.sh.
+if (-not $script:Refused -and -not $DryRun -and $workTargetOk -and
+    ([string](Get-NSRule $workspace 'baselineGates' '')) -match '^(?i:true)$') {
+    $gateCommands = @(Get-NSPunchGateCommands (Get-NSLayoutPath $ns 'punch-list'))
+    foreach ($gateCommand in $gateCommands) {
+        $gateCode = 0
+        Push-Location -LiteralPath $workTarget
+        try {
+            $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $gateCommand 2>$null
+            $gateCode = $LASTEXITCODE
+        }
+        catch { $gateCode = 1 }
+        finally { Pop-Location }
+        if ($gateCode -eq 0) {
+            Write-Ok "gate-baseline green before the shift: $gateCommand"
+        }
+        else {
+            Write-Warn "gate-baseline red before the shift (exit $gateCode): $gateCommand"
+            Write-NSShiftEndLog $ns "gate-baseline: red before the shift (exit $gateCode): $gateCommand"
+        }
+    }
+    if ($gateCommands.Count -eq 0) { Write-Ok 'gate-baseline no gate commands in the punch list' }
+}
+
 if ($script:Refused) { exit 1 }
 exit 0
