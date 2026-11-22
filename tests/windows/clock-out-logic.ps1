@@ -49,6 +49,16 @@ Expect-True ($morning.Count -ge 1) 'the morning receipt is written'
 Expect-True ((Read-Log $ticked).Contains('watchman: clocking out')) 'the shift log names the clock-out'
 Remove-Item -LiteralPath $ticked -Recurse -Force
 
+$failedNotify = New-Workspace "## Items`n- [x] **1.**`n"
+$env:NIGHTSHIFT_NOTIFY_CMD = 'exit 6'
+try {
+    $notifyResult = Invoke-NSWatchmanDirectClockOut -Workspace $failedNotify -HostName cursor -IntervalMinutes 20
+}
+finally { Remove-Item Env:NIGHTSHIFT_NOTIFY_CMD -ErrorAction SilentlyContinue }
+Expect-True $notifyResult.Released 'a failed notifyCommand does not hold the clock-out'
+Expect-True ((Read-Log $failedNotify).Contains('whistle: notifyCommand exited 6')) "the failed notifyCommand is logged: $(Read-Log $failedNotify)"
+Remove-Item -LiteralPath $failedNotify -Recurse -Force
+
 $stopped = New-Workspace "## Items`n- [ ] **1.**`n"
 [IO.File]::WriteAllText((Join-Path $stopped '.nightshift/STOP'), "owner stop`n")
 $stopResult = Invoke-NSWatchmanDirectClockOut -Workspace $stopped -HostName cursor -IntervalMinutes 20

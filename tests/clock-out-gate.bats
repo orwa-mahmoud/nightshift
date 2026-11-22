@@ -167,6 +167,15 @@ EOF
   grep -qF 'plant' "$p/.nightshift/notified-plant"
 }
 
+@test "a failed notifyCommand is recorded in the shift log with its exit status" {
+  p="$(new_project)"
+  punch_done "$p"
+  run gate "$p" NIGHTSHIFT_NOTIFY_CMD="echo secret-token; exit 6"
+  is_release
+  grep -rqF 'whistle: notifyCommand exited 6' "$p/.nightshift"
+  ! grep -rqF 'secret-token' "$p/.nightshift" || false
+}
+
 @test "stop-work order releases even with open boxes" {
   p="$(new_project)"
   punch_open "$p"

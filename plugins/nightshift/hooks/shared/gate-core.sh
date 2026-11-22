@@ -754,13 +754,15 @@ receipts_commit() { # <summary>
 }
 
 ns_shift_whistle() { # <summary>
-  local project="$NS_SHIFT_END_PROJECT" ns="$NS_SHIFT_END_NS" notify notified
+  local project="$NS_SHIFT_END_PROJECT" ns="$NS_SHIFT_END_NS" notify notified rc=0
   notify="$(rule "$project" notifyCommand "${NIGHTSHIFT_NOTIFY_CMD:-}")"
   [ -n "$notify" ] || return 0
   ns_layout_set notified "$ns" notified
   [ -L "$notified" ] && rm -f "$notified"
   (set -C; : >"$notified") 2>/dev/null || return 0
-  NIGHTSHIFT_SUMMARY="$1" sh -c "$notify" nightshift "$1" >/dev/null 2>&1 || true
+  # The command's output stays discarded, since it may carry a token; its status is the record.
+  NIGHTSHIFT_SUMMARY="$1" sh -c "$notify" nightshift "$1" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || ns_shift_log "$ns" "whistle: notifyCommand exited $rc"
 }
 
 # ns_shift_end <project-dir> <summary>

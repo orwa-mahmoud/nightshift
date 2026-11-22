@@ -3752,9 +3752,10 @@ function Invoke-NSShiftEnd {
             try {
                 $env:NIGHTSHIFT_SUMMARY = $Summary
                 $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $notify 2>$null
+                if ($LASTEXITCODE -ne 0) { Write-NSShiftEndLog $ns "whistle: notifyCommand exited $LASTEXITCODE" }
             }
-            # A desktop notification is best effort; the shift carries on without it.
-            catch { $owned = $true }
+            # A desktop notification is best effort; the shift carries on without it, and the log says why.
+            catch { Write-NSShiftEndLog $ns ('whistle: notifyCommand failed: ' + $_.Exception.Message) }
             finally { $env:NIGHTSHIFT_SUMMARY = $oldSummary }
         }
     }
