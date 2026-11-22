@@ -3,6 +3,26 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.39.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.38.0...v0.39.0) (2026-11-22)
+
+
+### Features
+
+* add Not verified and Check it yourself to the item receipt ([44db1a2](https://github.com/orwa-mahmoud/nightshift/commit/44db1a224f6a3283e18dfdc280365a067fceb8f0))
+* draw token figures in a receipt only where one exists ([6ae678b](https://github.com/orwa-mahmoud/nightshift/commit/6ae678ba8f9faea7f5279fc62432f5440831722c))
+* record parked decisions and snags against the item being worked ([02b7946](https://github.com/orwa-mahmoud/nightshift/commit/02b7946a137ec8ab30035a2017f0d42035dc42c8))
+* show what troubled each item on the morning page and rank the review by it ([57548e7](https://github.com/orwa-mahmoud/nightshift/commit/57548e7cac778bbcd2470c3bf1de22afe142ca53))
+
+
+### Bug Fixes
+
+* count overlapping pauses once in working time ([7b9e500](https://github.com/orwa-mahmoud/nightshift/commit/7b9e5006c617945b32b28be626752b648cdb598c))
+* end a pause when work resumes, not at the next tick ([25e92df](https://github.com/orwa-mahmoud/nightshift/commit/25e92df2846bc4f0c07e62ea175bb48066ceac42))
+* refuse an empty hook payload during a shift on every runtime ([0080d95](https://github.com/orwa-mahmoud/nightshift/commit/0080d955890f86afc367447fd1a5a5a66f6ccab4))
+* report a failed usage hand-over or evidence check instead of dropping it ([f94785e](https://github.com/orwa-mahmoud/nightshift/commit/f94785ef07dc894104bb2849d2bd9156bf77a4a9))
+* skip the Claude watchman's log line when the workspace folder is gone ([c192057](https://github.com/orwa-mahmoud/nightshift/commit/c192057c4dd48545279c4dd1f438a0b01ffac1d0))
+* word hardhat denials the same on every runtime ([c1cf8ce](https://github.com/orwa-mahmoud/nightshift/commit/c1cf8cef704f273d2ed4e93bc95106ddfdc8f9af))
+
 ## [0.38.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.37.2...v0.38.0) (2026-11-20)
 
 
