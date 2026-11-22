@@ -62,10 +62,10 @@ merge_run() {
   run env PATH="$ROOT/bin:$PATH" bash "$ROOT/tests/coverage.sh" --merge
 }
 
-@test "the workflow traces two shards and merges them before upload" {
+@test "the workflow traces its matrix of shards and merges them before upload" {
   wf="$BATS_TEST_DIRNAME/../.github/workflows/coverage.yml"
-  grep -q 'shard: \[1, 2\]' "$wf"
-  grep -q 'NIGHTSHIFT_COVERAGE_SHARDS: 2' "$wf"
+  grep -q 'shard: \[1, 2, 3, 4, 5, 6\]' "$wf"
+  grep -q 'NIGHTSHIFT_COVERAGE_SHARDS: ${{ strategy.job-total }}' "$wf"
   grep -q 'tests/coverage.sh --merge' "$wf"
   grep -q 'coverage/cobertura.xml' "$wf"
 }
@@ -125,4 +125,25 @@ STUB
   [[ $output != *'kcov: command not found'* ]] || false
   grep -qx 'debian:stable-slim' "$BATS_TEST_TMPDIR/docker-args"
   [ "$(tail -n 1 "$BATS_TEST_TMPDIR/docker-args")" = --merge ]
+}
+
+@test "a group killed in its shard merges from the single-test groups measured for it" {
+  lay
+  rm -rf "$ROOT/coverage/shard-1/part-1"
+  mkdir -p "$ROOT/coverage/shard-1/part-3"
+  printf 'retried 1 3\n' >>"$ROOT/coverage/shard-1/manifest.txt"
+  cd "$ROOT"
+  merge_run
+  [ "$status" -eq 0 ]
+  [ -f "$ROOT/coverage/cobertura.xml" ]
+}
+
+@test "a killed group with a missing single-test report fails the merge" {
+  lay
+  rm -rf "$ROOT/coverage/shard-1/part-1"
+  printf 'retried 1 3\n' >>"$ROOT/coverage/shard-1/manifest.txt"
+  cd "$ROOT"
+  merge_run
+  [ "$status" -ne 0 ]
+  printf '%s\n' "$output" | grep -q 'shard group 1 has no report directory'
 }
