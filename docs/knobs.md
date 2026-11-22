@@ -216,7 +216,7 @@ and the next shift tool call reads the change.
 | `NIGHTSHIFT_WATCH_AGENT` | session override for the rules file's `watchAgent`. Empty (shipped) keeps each host's default resume ladder. A non-empty value is the spawn command used verbatim on every revival attempt — for example `claude -p` forces a fresh Claude session and skips resume/`--continue`. Codex uses the same key for a verbatim `codex exec …` override |
 | `NIGHTSHIFT_RECEIPTS_AUTO_COMMIT` | session override for `receiptsAutoCommit`. Shipped **false**: even when Setup created a local receipts git under `.nightshift/`, clock-out and Archive do not commit it — the owner does. Set `true` only if you want the headless `nightshift@localhost` snapshot on every shift end / Archive |
 | `NIGHTSHIFT_STALL_MAX` | (rules file: `stallMax`) by default a stuck agent is held and red-flagged in the shift log, never clocked out; set `=N` to clock the shift out after N stuck attempts. |
-| `NIGHTSHIFT_NOTIFY_CMD` | (rules file: `notifyCommand`) shift-end ping; runs as unrestricted owner-provided shell with `$NIGHTSHIFT_SUMMARY` set. POSIX uses `sh -c` (e.g. `say "$NIGHTSHIFT_SUMMARY"`); native Windows runs it with `-Command` in a child PowerShell (e.g. `Write-Host $env:NIGHTSHIFT_SUMMARY`). It can access the network if your command does. The watchman rings it too — once per outage — when a dead session could not be revived: the one night event that needs you. A successful Claude revival never pages; after the headless subprocess exits, it lands as a notice in `parking-lot.md`, with the thread's resume command and deep links when a session id was recorded. Successful Codex revivals log to `shift-log.md` only |
+| `NIGHTSHIFT_NOTIFY_CMD` | (rules file: `notifyCommand`) shift-end ping; runs as unrestricted owner-provided shell with `$NIGHTSHIFT_SUMMARY` set. POSIX uses `sh -c` (e.g. `say "$NIGHTSHIFT_SUMMARY"`); native Windows runs it with `-Command` in a child PowerShell (e.g. `Write-Host $env:NIGHTSHIFT_SUMMARY`). It can access the network if your command does. The watchman rings it too — once per outage — when a dead session could not be revived: the one night event that needs you. A successful Claude revival never pages; after the headless subprocess exits, it lands as a notice in `parking-lot.md`, with the thread's resume command and deep links when a session id was recorded. Successful Codex revivals log to `shift-log.md` only. A command that exits non-zero is recorded in `shift-log.md` with its exit status; its output is never kept |
 
 **Local profiles.** `ns apply-profile` (native Windows: `ns.ps1 apply-profile`)
 can preview or copy every version-1 or version-2 JSON file in
@@ -278,13 +278,18 @@ the default in the table.
 | `execution` | `run-direct` | `review-first` shows the composed shift before it runs; `run-direct` starts it. Neither widens what the shift may do |
 | `toolingPolicy` | `auto-add` | `existing-tools`, `review-missing`, or `auto-add`. Artifact mode is always `existing-tools` |
 | `itemBudget` | `""` | The budget every item gets when it names none of its own, in the words of an item's `Budget:` line. Empty means no limit |
-| `isolation` | `none` | `none` works in the work target itself. `worktree` gives each shift its own git worktree and branch: the owner's checkout, index and uncommitted edits stay untouched, and ignored files such as `.env` are absent unless listed in `copyIn`. Artifact mode ignores it |
+| `isolation` | `none` | `none` works in the work target itself, and Start warns when that work target has uncommitted changes. `worktree` gives each shift its own git worktree and branch: the owner's checkout, index and uncommitted edits stay untouched, and ignored files such as `.env` are absent unless listed in `copyIn`. Artifact mode ignores it |
 | `prepare` | `""` | One command run in a new shift worktree before the first item, such as `pnpm install --frozen-lockfile`. A failure stops Start and arms nothing |
 | `copyIn` | `[]` | Ignored files, relative to the work target, copied into a new shift worktree, such as `.env.test`. Nothing else ignored is copied |
 | `worktreeRoot` | `.nightshift/worktrees` | The folder that holds shift worktrees, relative to the workspace |
 
 A new workspace verifies nothing, because the gates a new owner has not written yet should not fail
 a shift. Set a profile once you have commands worth running.
+
+`baselineGates`, at the top level of `rules.json`, defaults to `false`. Set it to `true` and Start
+runs each `## Gates` command once in the work target before arming: a green gate is reported, and a
+red one is a warning recorded in `shift-log.md` as red before the shift, so it is not read as a
+failure of the night's work. The shift still arms.
 
 ### Shift worktrees
 

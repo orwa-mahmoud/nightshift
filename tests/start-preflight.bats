@@ -123,6 +123,83 @@ setup_site() { # <name> [punch-body]
   printf '%s\n' "$output" | grep -qF 'several child repositories hold one'
 }
 
+@test "a clean work target reports a clean tree, and the site's own folder never counts" {
+  p="$(setup_site preflight-tree-clean)"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qE '^ok tree clean - no uncommitted changes in '
+}
+
+@test "uncommitted changes with isolation none warn with their counts, and the shift still arms" {
+  p="$(setup_site preflight-tree-dirty)"
+  printf 'one\n' >"$p/tracked.txt"
+  git -C "$p" add tracked.txt
+  git -C "$p" commit -q -m tracked
+  printf 'two\n' >>"$p/tracked.txt"
+  printf 'new\n' >"$p/untracked.txt"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qE '^warn tree 1 modified and 1 untracked path\(s\) in .* while shift.isolation is none'
+  printf '%s\n' "$output" | grep -qF 'set shift.isolation to worktree'
+}
+
+@test "a worktree shift gets no tree verdict" {
+  p="$(setup_site preflight-tree-worktree)"
+  printf 'new\n' >"$p/untracked.txt"
+  jq '.shift.isolation = "worktree"' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash "$PREFLIGHT" --project "$p" --host claude --dry-run
+  ! printf '%s\n' "$output" | grep -qE '^(ok|warn) tree ' || false
+}
+
+@test "baselineGates is off by default and Start runs no gate" {
+  p="$(setup_site preflight-baseline-off "## Gates
+
+- \`touch $BATS_TEST_TMPDIR/gate-ran\`
+
+## Items
+- [ ] **1. work.**
+")"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$BATS_TEST_TMPDIR/gate-ran" ]
+  ! printf '%s\n' "$output" | grep -qF 'gate-baseline' || false
+}
+
+@test "with baselineGates on, each gate runs once in the work target and a red one is recorded, not refused" {
+  p="$(setup_site preflight-baseline-on "## Gates
+
+**Item gate** — runs every item:
+
+- \`test -d .nightshift\`
+- \`exit 3\`
+
+## Items
+- [ ] **1. work.**
+")"
+  jq '.baselineGates = true' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF 'ok gate-baseline green before the shift: test -d .nightshift'
+  printf '%s\n' "$output" | grep -qxF 'warn gate-baseline red before the shift (exit 3): exit 3'
+  grep -rqF 'gate-baseline: red before the shift (exit 3): exit 3' "$p/.nightshift"
+}
+
+@test "a dry run never runs the baseline gates" {
+  p="$(setup_site preflight-baseline-dry "## Gates
+
+- \`touch $BATS_TEST_TMPDIR/dry-gate-ran\`
+
+## Items
+- [ ] **1. work.**
+")"
+  jq '.baselineGates = true' "$p/.nightshift/rules.json" >"$p/r.json"
+  mv "$p/r.json" "$p/.nightshift/rules.json"
+  run bash "$PREFLIGHT" --project "$p" --host claude --dry-run
+  [ ! -e "$BATS_TEST_TMPDIR/dry-gate-ran" ]
+}
+
 @test "an invalid workspace link refuses rather than guessing a workspace" {
   p="$(setup_site preflight-link)"
   printf '/nowhere/at/all\n' >"$p/.nightshift-link"

@@ -796,7 +796,9 @@ while :; do
           if [ -n "$NOTIFY" ] && [ "$down_notified" -eq 0 ]; then
             down_notified=1
             summary="nightshift: the shift session is down and revival failed — it needs you${sid:+: claude --resume $sid}"
-            NIGHTSHIFT_SUMMARY="$summary" sh -c "$NOTIFY" nightshift "$summary" >/dev/null 2>&1 || true
+            notify_rc=0
+            NIGHTSHIFT_SUMMARY="$summary" sh -c "$NOTIFY" nightshift "$summary" >/dev/null 2>&1 || notify_rc=$?
+            [ "$notify_rc" -eq 0 ] || log_line "watchman: notifyCommand exited $notify_rc"
           fi
         fi
         ;;

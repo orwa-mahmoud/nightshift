@@ -1244,8 +1244,10 @@ try {
                     try {
                         $env:NIGHTSHIFT_SUMMARY = $summary
                         $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $notify 2>$null
+                        if ($LASTEXITCODE -ne 0) { Write-NSLogLine "watchman: notifyCommand exited $LASTEXITCODE" }
                     }
                     catch {
+                        Write-NSLogLine ('watchman: notifyCommand failed: ' + $_.Exception.Message)
                     }
                     finally {
                         $env:NIGHTSHIFT_SUMMARY = $oldSummary

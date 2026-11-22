@@ -223,6 +223,10 @@
       "type": "string",
       "description": "Unrestricted owner-provided shell run at shift-end or unrecoverable outage. Empty is silent."
     },
+    "baselineGates": {
+      "type": "boolean",
+      "description": "When true, Start runs each `## Gates` command once in the work target before arming and records a red one in the shift log as red before the shift. The shift still arms. Default false: Start runs no gate. Missing is treated as false."
+    },
     "revivalPrompt": {
       "type": "string",
       "description": "Order a resumed conversation receives after a crash or outage."

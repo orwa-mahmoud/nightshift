@@ -60,6 +60,17 @@ function Get-NSPunchGates {
     return $out.ToArray()
 }
 
+# Get-NSPunchGateCommands <punch-list> - the gates block's commands from its ``- `command` ``
+# bullets, in the order written. Twin of ns_punch_gate_commands.
+function Get-NSPunchGateCommands {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($line in (Get-NSPunchGates $PunchList)) {
+        if ($line -cmatch '^[ \t]*- `(.*)`[ \t]*$') { $out.Add($Matches[1]) }
+    }
+    return $out.ToArray()
+}
+
 # Get-NSPunchItemsSection <punch-list> - the lines under `## Items`, up to the next top-level
 # heading.
 function Get-NSPunchItemsSection {
@@ -3752,9 +3763,10 @@ function Invoke-NSShiftEnd {
             try {
                 $env:NIGHTSHIFT_SUMMARY = $Summary
                 $null = & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -Command $notify 2>$null
+                if ($LASTEXITCODE -ne 0) { Write-NSShiftEndLog $ns "whistle: notifyCommand exited $LASTEXITCODE" }
             }
-            # A desktop notification is best effort; the shift carries on without it.
-            catch { $owned = $true }
+            # A desktop notification is best effort; the shift carries on without it, and the log says why.
+            catch { Write-NSShiftEndLog $ns ('whistle: notifyCommand failed: ' + $_.Exception.Message) }
             finally { $env:NIGHTSHIFT_SUMMARY = $oldSummary }
         }
     }

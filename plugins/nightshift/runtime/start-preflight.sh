@@ -387,7 +387,9 @@ else
   repair "run Setup to record repository or artifact as one word"
 fi
 
+WORK_TARGET_OK=0
 if WORK_TARGET="$(ns_work_target "$WORKSPACE" 2>/dev/null)"; then
+  WORK_TARGET_OK=1
   ok "work-target $WORK_TARGET"
   if [ "$DRY_RUN" -eq 0 ]; then
     ns_ensure_work_target_link "$WORKSPACE" || true
@@ -407,6 +409,23 @@ else
   else
     refuse "work-target cannot be resolved from $WORKSPACE - the recorded target is not a usable folder"
     repair "run Setup to record the work target again"
+  fi
+fi
+
+# A shift with no worktree of its own works beside whatever the owner left uncommitted. Read-only:
+# the count is reported, the tree is never touched, and the shift still arms.
+if [ "$WORK_TARGET_OK" -eq 1 ] && [ "$WORK_MODE" = repository ]; then
+  ISOLATION_NOW="$(ns_policy_pref "$WORKSPACE" shift isolation)"
+  if [ -z "$ISOLATION_NOW" ] || [ "$ISOLATION_NOW" = none ]; then
+    if TREE_STATUS="$(git -C "$WORK_TARGET" status --porcelain -- . ':(exclude).nightshift' ':(exclude).nightshift-link' 2>/dev/null)"; then
+      TREE_UNTRACKED="$(printf '%s\n' "$TREE_STATUS" | grep -c '^??')" || TREE_UNTRACKED=0
+      TREE_MODIFIED="$(printf '%s\n' "$TREE_STATUS" | grep -c '^[^?]')" || TREE_MODIFIED=0
+      if [ "$TREE_MODIFIED" -eq 0 ] && [ "$TREE_UNTRACKED" -eq 0 ]; then
+        ok "tree clean - no uncommitted changes in $WORK_TARGET"
+      else
+        warn "tree $TREE_MODIFIED modified and $TREE_UNTRACKED untracked path(s) in $WORK_TARGET while shift.isolation is none - the shift works beside them"
+      fi
+    fi
   fi
 fi
 
@@ -828,6 +847,31 @@ case "$HOST_NAME" in
   *)
     ok "permissions host unknown - no permission-mode note" ;;
 esac
+
+# ------------------------------------------------------------ gate baseline
+# Opt-in through baselineGates. Each `## Gates` command runs once in the work target before arming,
+# so a gate that is already red is on record as the baseline and is not read as tonight's failure.
+# Only on a real run that refused nothing; a red gate warns, and the shift still arms.
+if [ "$REFUSED" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ "$WORK_TARGET_OK" -eq 1 ]; then
+  case "$(rule "$WORKSPACE" baselineGates "")" in
+    true)
+      GATE_COUNT=0
+      while IFS= read -r gate_cmd; do
+        [ -n "$gate_cmd" ] || continue
+        GATE_COUNT=$((GATE_COUNT + 1))
+        gate_rc=0
+        (cd "$WORK_TARGET" && sh -c "$gate_cmd") </dev/null >/dev/null 2>&1 || gate_rc=$?
+        if [ "$gate_rc" -eq 0 ]; then
+          ok "gate-baseline green before the shift: $gate_cmd"
+        else
+          warn "gate-baseline red before the shift (exit $gate_rc): $gate_cmd"
+          ns_shift_log "$NS" "gate-baseline: red before the shift (exit $gate_rc): $gate_cmd"
+        fi
+      done < <(ns_punch_gate_commands "$PUNCH")
+      [ "$GATE_COUNT" -gt 0 ] || ok "gate-baseline no gate commands in the punch list"
+      ;;
+  esac
+fi
 
 [ "$REFUSED" -eq 0 ] || exit 1
 exit 0
