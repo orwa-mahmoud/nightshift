@@ -9,6 +9,7 @@ Nightshift is a plugin for **Claude Code, Codex, and Cursor**.
 [![Coverage](https://codecov.io/gh/orwa-mahmoud/nightshift/graph/badge.svg)](https://codecov.io/gh/orwa-mahmoud/nightshift)
 
 <a href="https://trendshift.io/repositories/95784"><img src="https://trendshift.io/api/badge/trendshift/repositories/95784/daily?language=Shell" alt="Trendshift #10 Repository of the Day in Shell" width="250" height="55"></a>
+<a href="https://trendshift.io/repositories/95784"><img src="https://trendshift.io/api/badge/trendshift/repositories/95784/weekly?language=Shell" alt="Trendshift Repository of the Week in Shell" width="250" height="55"></a>
 
 </div>
 
@@ -66,6 +67,8 @@ Open **Customize → Add → From GitHub Repository**, paste `https://github.com
 [Installation and host support](docs/install.md#install)
 
 ## Your first shift
+
+In Codex, type `$` and select the matching Nightshift skill, such as `$nightshift:setup` or `$nightshift:plan`.
 
 Open the project you want to work on and run `/nightshift:setup`. Answer a few questions to set your preferences. [What Setup asks](docs/setup.md)
 
