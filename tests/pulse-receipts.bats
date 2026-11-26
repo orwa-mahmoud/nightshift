@@ -194,26 +194,26 @@ pulse_sid() {
   [ "$output" = "$p/.nightshift/runs/b/inbox/messages.md" ]
   # Run a's worker never sees it.
   ctx="$(pulse_sid "$p" sid-a)"
-  [[ "$ctx" != *"$msg"* ]]
+  [[ "$ctx" != *"$msg"* ]] || false
   # Run b's worker sees it whole at its next tool call, and is told where to answer.
   ctx="$(pulse_sid "$p" sid-b)"
-  [[ "$ctx" == *"$msg"* ]]
-  [[ "$ctx" == *"$p/.nightshift/runs/b/inbox/messages.md"* ]]
+  [[ "$ctx" == *"$msg"* ]] || false
+  [[ "$ctx" == *"$p/.nightshift/runs/b/inbox/messages.md"* ]] || false
   # Not again on the next call.
   ctx="$(pulse_sid "$p" sid-b)"
-  [[ "$ctx" != *"$msg"* ]]
+  [[ "$ctx" != *"$msg"* ]] || false
   # The worker's own reply is never shown back to it; the owner's next message is, alone.
   bash -c '. "$1"; NIGHTSHIFT_RUN=b ns_message_append "$2/.nightshift" Worker "the answer"' _ "$LIB" "$p"
   printf 'a second "question"\nover two lines' |
     env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$SEND" --project "$p" --run b >/dev/null
   ctx="$(pulse_sid "$p" sid-b)"
-  [[ "$ctx" == *'a second "question"'$'\n''over two lines'* ]]
-  [[ "$ctx" != *"the answer"* ]]
-  [[ "$ctx" != *"$msg"* ]]
+  [[ "$ctx" == *'a second "question"'$'\n''over two lines'* ]] || false
+  [[ "$ctx" != *"the answer"* ]] || false
+  [[ "$ctx" != *"$msg"* ]] || false
   # The file keeps every message exactly, in order.
   grep -qF '## Worker · ' "$p/.nightshift/runs/b/inbox/messages.md"
   [ "$(grep -c '^## Owner · ' "$p/.nightshift/runs/b/inbox/messages.md")" -eq 2 ]
-  [[ "$(cat "$p/.nightshift/runs/b/inbox/messages.md")" == *"$msg"* ]]
+  [[ "$(cat "$p/.nightshift/runs/b/inbox/messages.md")" == *"$msg"* ]] || false
   [ ! -e "$p/.nightshift/runs/a/inbox/messages.md" ]
 }
 
