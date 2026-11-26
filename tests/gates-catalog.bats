@@ -72,7 +72,7 @@ EOF
   run bash "$INDEX" --catalog gates
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | awk -F '\t' '{ print $1 }' | paste -sd ' ' -)" \
-    = "go helm python rust typescript plugin makefile nothing" ]
+    = "go helm python ruby rust typescript plugin makefile nothing" ]
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh is not installed'
   fi
