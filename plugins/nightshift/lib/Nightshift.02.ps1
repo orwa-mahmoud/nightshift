@@ -1853,16 +1853,32 @@ function Expand-NSInjectedPaths {
     return $builder.ToString()
 }
 
+# Get-NSTemplatesDir - the folder of shipped state templates (punch-list.md, parking-lot.md, ...).
+# Mirrors ns_templates_dir.
+function Get-NSTemplatesDir {
+    return (Join-Path (Split-Path -Parent $PSScriptRoot) 'skills/nightshift/references/templates')
+}
+
+# Get-NSOwnerTemplateText <source> <workspace> - the template's text with `$NIGHTSHIFT_WORKSPACE`
+# and `$NS` replaced by that workspace's paths, character for character. Mirrors ns_owner_template.
+function Get-NSOwnerTemplateText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Workspace
+    )
+    $text = [IO.File]::ReadAllText($Source)
+    $text = $text.Replace('$NIGHTSHIFT_WORKSPACE', $Workspace)
+    $ns = Join-Path $Workspace.TrimEnd('\', '/') '.nightshift'
+    return $text.Replace('$NS', $ns)
+}
+
 function Copy-NSOwnerTemplate {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
         [Parameter(Mandatory = $true)][string]$Destination,
         [Parameter(Mandatory = $true)][string]$Workspace
     )
-    $text = [IO.File]::ReadAllText($Source)
-    $text = $text.Replace('$NIGHTSHIFT_WORKSPACE', $Workspace)
-    $ns = Join-Path $Workspace.TrimEnd('\', '/') '.nightshift'
-    $text = $text.Replace('$NS', $ns)
+    $text = Get-NSOwnerTemplateText -Source $Source -Workspace $Workspace
     [IO.File]::WriteAllText($Destination, $text, $script:NSUtf8NoBom)
 }
 

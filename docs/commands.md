@@ -49,7 +49,7 @@ Windows, `ns.ps1` takes the same verbs.
 | `ns stop-shift` | Pauses the shift now, even if the agent is stuck. Open items and the deadline are kept. |
 | `ns reset-shift` | Drops the runtime markers, the deadline and a leftover STOP. Keeps the punch list, the history, and what open items have already spent. |
 | `ns purge-workspace --confirm-path <path to .nightshift>` | Resets, then deletes this project's `.nightshift/`. Does not uninstall the plugin. |
-| `ns plan-new --name <name>` | Starts a plan file from the punch list's contract and checks. Keeps a plan that already has the name. |
+| `ns plan-new --name <name>` | Starts a plan file from the shipped contract with no checks. Keeps a plan that already has the name. |
 | `ns plan-exit` | Leaves the plan room. |
 | `ns start-preflight` | Prints the checks Start runs before it arms. |
 | `ns shift-estimate --items 5` | Estimates time and tokens per item from your past receipts, with a suggested deadline and budget. Needs at least three readings. |

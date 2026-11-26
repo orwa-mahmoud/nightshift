@@ -62,6 +62,15 @@ ns_sed_escape() {
   printf '%s' "$1" | sed 's/[][\\.*^$]/\\&/g'
 }
 
+# The folder of shipped state templates, fixed when this file is sourced: lib.sh clears its own
+# directory variable once every module has loaded.
+_NS_TEMPLATES_DIR="${BASH_SOURCE[0]%/*}/../skills/nightshift/references/templates"
+
+# ns_templates_dir — the folder of shipped state templates (punch-list.md, parking-lot.md, …).
+ns_templates_dir() {
+  printf '%s' "$_NS_TEMPLATES_DIR"
+}
+
 # ns_owner_template <template> <workspace> — the template's text with `$NIGHTSHIFT_WORKSPACE` and
 # `$NS` replaced by that workspace's paths, character for character: a path holding `&`, `|` or a
 # backslash is written as it is.

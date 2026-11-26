@@ -342,12 +342,12 @@ $bound = Set-NSPlanRoomBinding $Ns 'second' 'claude'
     Expect-True ([IO.File]::ReadAllText($result) -ceq 'False') 'the competing binder refuses the claimed room'
     Expect-True ((Get-NSPlanRoomLine $cns 1) -ceq 'first') 'the first claim stays bound'
 
-    # Plans: each one a complete punch list in its own file, created from the punch list's contract.
+    # Plans: each one a complete punch list in its own file, started from the shipped contract.
     $pw = Join-Path $root 'plans'
     $pns = Join-Path $pw '.nightshift'
     $null = New-Item -ItemType Directory -Path (Join-Path $pns 'staging') -Force
     [IO.File]::WriteAllText((Join-Path $pns 'state-version'), "2`n", $utf8)
-    [IO.File]::WriteAllText((Join-Path $pns 'punch-list.md'), "# Punch List`n`nRules.`n`n## Plan`n`nWhy: old.`n`n## Items`n", $utf8)
+    [IO.File]::WriteAllText((Join-Path $pns 'punch-list.md'), "# Punch List`n`nWork on the branch shift/old-campaign.`nItem 9 pushes it and opens the pull request.`n`n## Gates`n`n- ``make sonar```n`n## Plan`n`nWhy: old.`n`n## Items`n", $utf8)
     & git -C $pw init --quiet
     $planNew = Join-Path $plugin 'runtime/windows/plan-new.ps1'
     $out = @(& $hostExe -NoProfile -NonInteractive -File $planNew -Project $pw -Name 'Session export')
@@ -355,7 +355,9 @@ $bound = Set-NSPlanRoomBinding $Ns 'second' 'claude'
     $plan = Join-Path $pns 'staging/plans/session-export.md'
     $text = [IO.File]::ReadAllText($plan)
     Expect-True ($text.StartsWith('# Punch List ' + [char]0x2014 + ' Session export' + "`n")) 'the plan carries its name on the title line'
-    Expect-True ($text.Contains("Rules.`n") -and -not $text.Contains('Why: old.')) 'the contract is copied and an earlier plan''s notes are not'
+    Expect-True ($text.Contains("## Never idle, never ask, never wait`n") -and $text.Contains("_None configured._`n")) 'the plan starts from the shipped contract and empty gates'
+    Expect-True (-not $text.Contains('shift/old-campaign') -and -not $text.Contains('opens the pull request') -and -not $text.Contains('make sonar') -and -not $text.Contains('Why: old.')) 'nothing of the last shift''s punch list reaches the new plan'
+    Expect-True (-not $text.Contains('$NS')) 'the workspace paths are written in'
     [IO.File]::AppendAllText($plan, "- [ ] **1. Stream it.**`n", $utf8)
     $out = @(& $hostExe -NoProfile -NonInteractive -File $planNew -Project $pw -Name 'session export')
     Expect-True ($out[-1] -ceq 'kept .nightshift/staging/plans/session-export.md') 'an existing plan is kept'

@@ -6,8 +6,10 @@ param(
 # plan-new.ps1  -  start a named plan: a punch list that waits its turn. Mirrors plan-new.sh.
 #   plan-new.ps1 -Project DIR -Name NAME
 # Writes <plans>\<key>.md, where <key> is the name lowercased with every other character a hyphen.
-# The file is a copy of the punch list's contract and gates under the title `# Punch List - NAME`,
-# with an empty `## Items` section. A plan that already has the key is kept exactly as it is.
+# The file holds the shipped punch-list contract and its empty gates block, with the workspace's
+# paths written in as Setup writes them, under the title `# Punch List - NAME` and an empty
+# `## Items` section. The live punch list is not read. A plan that already has the key is kept
+# exactly as it is.
 # Prints `wrote <path>` or `kept <path>`, relative to the workspace.
 # Exit: 0 done - 1 usage/resolve - 2 refused
 
@@ -45,9 +47,9 @@ if (-not (Test-NSLayoutKey $ns 'plans')) {
     exit 2
 }
 $dir = Get-NSLayoutPath $ns 'plans'
-$punch = Get-NSLayoutPath $ns 'punch-list'
-if (-not (Test-Path -LiteralPath $punch -PathType Leaf) -or (Test-NSReparsePoint $punch)) {
-    [Console]::Error.WriteLine('plan-new: no ' + (Get-NSLayoutName $ns 'punch-list') + ' to copy the contract from ' + [char]0x2014 + ' run Setup first')
+$template = Join-Path (Get-NSTemplatesDir) 'punch-list.md'
+if (-not (Test-Path -LiteralPath $template -PathType Leaf)) {
+    [Console]::Error.WriteLine('plan-new: no shipped punch-list template at ' + $template)
     exit 1
 }
 
@@ -75,18 +77,15 @@ if (Test-Path -LiteralPath $file) {
 $tmp = ''
 try {
     $null = New-Item -ItemType Directory -Force -Path $dir
-    # The contract and gates: everything after the title line and before `## Items`, without the
-    # `## Plan` notes of a plan the punch list was cut from.
+    # The shipped contract and gates: everything after the template's title line and before
+    # `## Items`.
     $body = New-Object Text.StringBuilder
     $null = $body.Append('# Punch List ' + [char]0x2014 + ' ' + $Name + "`n")
-    $lines = [IO.File]::ReadAllLines($punch)
-    $skip = $false
+    $lines = (Get-NSOwnerTemplateText -Source $template -Workspace $workspace) -split "`n"
     for ($i = 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i].TrimEnd([char]"`r")
         if ($line -cmatch '^## Items[ \t]*$') { break }
-        if ($line -cmatch '^## Plan[ \t]*$') { $skip = $true; continue }
-        if ($line.StartsWith('## ')) { $skip = $false }
-        if (-not $skip) { $null = $body.Append($line + "`n") }
+        $null = $body.Append($line + "`n")
     }
     $null = $body.Append("## Items`n`n")
     $tmp = Join-Path $dir ('.' + $key + '.md.tmp.' + $PID)

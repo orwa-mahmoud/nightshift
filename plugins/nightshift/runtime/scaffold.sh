@@ -63,7 +63,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$NAMES" ] || NAMES="punch-list parking-lot snag-log drafting-table"
 
-TEMPLATES="$_here/../skills/nightshift/references/templates"
+TEMPLATES="$(ns_templates_dir)"
 [ -d "$TEMPLATES" ] || {
   printf 'scaffold: no templates at %s\n' "$TEMPLATES" >&2
   exit 2

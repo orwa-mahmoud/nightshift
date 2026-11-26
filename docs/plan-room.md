@@ -12,7 +12,8 @@ project keeps working normally.
 Each plan is its own file in `.nightshift/staging/plans/`: a complete punch list with its own
 contract, checks, notes and items, so plans never mix. When you enter the room, the agent lists your
 plans with their open items and asks whether to continue one or start a new one. A new plan takes
-the name you give it and starts from your punch list's contract and checks.
+the name you give it and starts from the shipped contract with no checks; the agent writes the
+plan's own contract and checks with you, so nothing carries over from the last shift.
 
 Prepare as many plans as you like. When the punch list is empty, `/nightshift:start` offers them by
 name and runs the one you pick; the next one waits its turn. The drafting table stays for loose
