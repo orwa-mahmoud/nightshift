@@ -3,6 +3,14 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.40.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.40.0...v0.40.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* account for sessions when items reopen ([24cf74b](https://github.com/orwa-mahmoud/nightshift/commit/24cf74bfdc307e28d576142a885c15c6be1d355f))
+* resume Codex when exhausted quota windows reset ([c78351a](https://github.com/orwa-mahmoud/nightshift/commit/c78351a5586751813d708f3c27015c69761e91ef))
+
 ## [0.40.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.39.1...v0.40.0) (2026-11-22)
 
 
