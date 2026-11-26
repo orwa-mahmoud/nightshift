@@ -3,6 +3,17 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.41.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.40.1...v0.41.0) (2026-11-26)
+
+
+### Features
+
+* add a Ruby gate stack ([#270](https://github.com/orwa-mahmoud/nightshift/issues/270)) ([fb68a4a](https://github.com/orwa-mahmoud/nightshift/commit/fb68a4ad53d6df8364ae7ef48e769ba55b001e19))
+* add Ruby gate stack to the gates catalog ([12ef85e](https://github.com/orwa-mahmoud/nightshift/commit/12ef85e19185a49b9a0d043885768b2c6ef2b7fa))
+* add Ruby gate stack to the gates catalog ([#273](https://github.com/orwa-mahmoud/nightshift/issues/273)) ([f0da4f0](https://github.com/orwa-mahmoud/nightshift/commit/f0da4f000d675b59747cee1c5dd664f2a2ae1d05))
+* include accessibility evidence in the next release ([#269](https://github.com/orwa-mahmoud/nightshift/issues/269)) ([ff6a7c3](https://github.com/orwa-mahmoud/nightshift/commit/ff6a7c344ae2972ab8c01b93b962b3d5fe9c7909))
+* include Ruby in the shipped gate stack index ([1f7b3d2](https://github.com/orwa-mahmoud/nightshift/commit/1f7b3d2f30a912005c658e076f6e2511c419f491))
+
 ## [0.40.1](https://github.com/orwa-mahmoud/nightshift/compare/v0.40.0...v0.40.1) (2026-11-26)
 
 
