@@ -227,16 +227,25 @@ ns_gate_usage_tick() {
 ns_gate_session_row() {
   local ns="$1" project="$2" label="$3" ended="$4" span start end fields paused work in out sid
   local marks two hosts dim v extras="" paused_sec why receipt prev target commits note generation
-  local earlier later nr turn
+  local earlier later nr turn host source
   span="$(ns_usage_last_item "$ns")" || return 0
   fields="$(printf '%s' "$span" | cut -f1)"
   marks="$(ns_usage_dir "$ns")/marks.tsv"
   two="$(tail -n2 "$marks")"
   earlier="$(printf '%s\n' "$two" | head -n1 | cut -f5)"
   later="$(printf '%s\n' "$two" | tail -n1 | cut -f5)"
-  # Cursor's readings are attributed by turn (ns_usage_turns_for), so what moved on Cursor between
-  # the two marks is left out here rather than booked to whichever item was open when it arrived.
-  [ -z "$earlier$later" ] || fields="$(ns_usage_span_fields "$earlier" "$later" cursor)"
+  hosts="$(ns_usage_span_hosts "$earlier" "$later")"
+  source="$hosts"
+  if [ -z "$hosts" ] && ns_session_present "$ns"; then
+    host="$(ns_session_host "$ns")"
+    source="$(ns_usage_bound_source "$ns" "$host")"
+    hosts="${source:-$host/-}"
+    [ -n "$source" ] || fields=""
+  fi
+  # Cursor's readings are attributed by turn. The other hosts contribute only their own figures.
+  if [ -n "$earlier$later" ] && { [ -n "$source" ] || [ -z "$hosts" ]; }; then
+    fields="$(ns_usage_span_fields "$earlier" "$later" cursor "$source")"
+  fi
   end="$(tail -n1 "$marks" | cut -f1)"
   case "$end" in '' | *[!0-9]*) return 0 ;; esac
   start=$((end - $(printf '%s' "$span" | cut -f2)))
@@ -264,7 +273,6 @@ ns_gate_session_row() {
   fi
   extras="$extras paused=$paused_sec"
   [ -z "$why" ] || extras="$extras why=$(ns_receipt_encode "$why")"
-  hosts="$(ns_usage_span_hosts "$earlier" "$later")"
   if [ -z "$hosts" ]; then
     hosts="$(ns_usage_hosts "$ns" 2>/dev/null | sed 's/; /+/g; s/ /\//g')" || hosts=""
   fi
@@ -374,27 +382,51 @@ ns_gate_usage_switch() {
   ns_usage_set_active "$ns" "$active"
 }
 
-# ns_gate_usage_flush <nightshift-dir> <project-dir> — a shift ending with an item open closes that
+# ns_gate_usage_flush <nightshift-dir> <project-dir> [epoch] — a shift ending with an item open closes that
 # item's session as paused. The next shift continues the same receipt.
 ns_gate_usage_flush() {
-  local ns="$1" project="$2" owner
+  local ns="$1" project="$2" at="${3:-}" owner
   ns_gate_usage_accounting "$ns" "$project" || return 0
   owner="$(ns_usage_active "$ns")"
   [ -n "$owner" ] || return 0
   if ns_gate_item_is_open "$(ns_layout_path "$ns" punch-list)" "$owner"; then
-    ns_usage_mark "$ns" "$owner" pause || return 0
+    ns_usage_mark "$ns" "$owner" pause "$at" || return 1
     ns_gate_session_row "$ns" "$project" "$owner" paused
   fi
   ns_usage_set_active "$ns"
+}
+
+# A continued ledger keeps its checkpoints. Each Start gives the new work its own baseline and
+# selects the first open box. Only a receipt written during this run can move that selection.
+ns_gate_usage_start() { # <nightshift-dir> <project-dir> <punch-list> [prior-end]
+  local ns="$1" project="$2" list="$3" prior_end="${4:-}" ref marks last first
+  ns_receipts_enabled "$project" || return 0
+  first="$(ns_item_rows "$list" open | awk -F '\t' 'NR == 1 { print $1 }')"
+  [ -n "$first" ] || return 0
+  ref="$(ns_usage_start_ref "$ns")"
+  [ ! -L "$ref" ] || return 1
+  mkdir -p "${ref%/*}" || return 1
+  marks="$(_ns_usage_marks "$ns")"
+  [ ! -L "$marks" ] || return 1
+  if [ -s "$marks" ]; then
+    last="$(tail -n1 "$marks" | cut -f1)"
+    # A Stop from an older runtime can leave an open span. Close it at the recorded pause.
+    if [ -n "$prior_end" ] && [ "$last" -lt "$prior_end" ] 2>/dev/null; then
+      ns_gate_usage_flush "$ns" "$project" "$prior_end" || return 1
+    fi
+    ns_gate_uncharged_labels "$ns" "$list" observe >/dev/null || return 1
+    ns_usage_mark "$ns" '' resume || return 1
+  fi
+  : >"$ref" || return 1
+  ns_usage_set_active "$ns" "$first"
 }
 
 # ns_gate_usage_sync <nightshift-dir> <project-dir> <punch-list> <ticked> — catch the marks up to
 # the boxes.
 #
 # The gate does not see a tick happen; it sees which boxes are ticked when a stop is attempted.
-# Every mark names the item it charged, so it closes each ticked item no mark names yet, in list
-# order. One mark per item, written once: a second stop attempt with nothing newly ticked adds
-# nothing, and an item ticked out of list order is charged to itself.
+# Each completion gets one mark. An observed open box supersedes its earlier completion, so its
+# next tick closes a new span. A second stop attempt with nothing newly ticked adds nothing.
 ns_gate_usage_sync() {
   local ns="$1" project="$2" list="$3" ticked="$4" marked labels label owner
   [ -d "$ns" ] || return 0
@@ -412,7 +444,7 @@ ns_gate_usage_sync() {
     shift 4
     ns_usage_mark_arm "$ns" "$@"
   fi
-  labels="$(ns_gate_uncharged_labels "$ns" "$list")"
+  labels="$(ns_gate_uncharged_labels "$ns" "$list" observe)" || return 1
   [ -n "$labels" ] || return 0
   # The span running now belongs to the item being worked. When that item is among the newly
   # ticked it closes first; when it is still open it closes as a switch, so a box ticked for work
@@ -432,14 +464,29 @@ ns_gate_usage_sync() {
   ns_usage_set_active "$ns"
 }
 
-# ns_gate_uncharged_labels <nightshift-dir> <punch-list> — the ticked items no mark names yet, list
-# order, one per line. A label ticked twice under the same name is charged twice, once per mark.
+# ns_gate_uncharged_labels <nightshift-dir> <punch-list> [observe] — closed items that still need
+# a mark, in list order. Observing an open box records how many of its marks belong to earlier
+# completions. The counts are cumulative so every later hook can ignore just those marks.
 ns_gate_uncharged_labels() {
-  local marks
-  marks="$(ns_usage_dir "$1")/marks.tsv"
+  local dir marks reopened observed=""
+  dir="$(ns_usage_dir "$1")"
+  marks="$dir/marks.tsv"
+  reopened="$dir/reopened.tsv"
   [ -f "$marks" ] && [ ! -L "$marks" ] || marks=/dev/null
-  ns_gate_ticked_labels "$2" | awk -v marks="$marks" '
+  if [ "${3:-}" = observe ]; then
+    [ ! -L "$reopened" ] || return 1
+    observed="$reopened"
+  fi
+  [ -f "$reopened" ] && [ ! -L "$reopened" ] || reopened=/dev/null
+  {
+    ns_item_rows "$2" open | cut -f1 | sed 's/^/+/'
+    ns_gate_ticked_labels "$2" | sed 's/^/-/'
+  } | awk -v marks="$marks" -v reopened="$reopened" -v observed="$observed" '
     BEGIN {
+      while ((getline row < reopened) > 0) {
+        if (split(row, f, "\t") == 2 && f[1] ~ /^[0-9]+$/) ignored[f[2]] = f[1] + 0
+      }
+      close(reopened)
       while ((getline row < marks) > 0) {
         rows++
         n = split(row, f, "\t")
@@ -451,8 +498,23 @@ ns_gate_uncharged_labels() {
       }
       close(marks)
     }
-    charged[$0] > 0 { charged[$0]--; next }
-    { print }
+    /^\+/ { open[substr($0, 2)] = 1; next }
+    { label = substr($0, 2); labels[++nlabels] = label; closed[label]++ }
+    END {
+      if (observed != "") {
+        for (label in open) {
+          count = charged[label] - closed[label]
+          if (count <= ignored[label]) continue
+          ignored[label] = count
+          print count "\t" label >> observed
+        }
+      }
+      for (i = 1; i <= nlabels; i++) {
+        label = labels[i]
+        if (charged[label] > ignored[label]) charged[label]--
+        else print label
+      }
+    }
   '
 }
 

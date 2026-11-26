@@ -528,17 +528,23 @@ ns_receipt_path() {
 }
 
 # ns_active_item <project-dir> — the item being worked: the open item whose receipt the model
-# wrote last, or the first open item while no open item has one. A receipt starts when substantive
-# work on its item starts, and the runtime's own writes keep a receipt's time, so only the model's
-# writing moves this. Two receipts written in the same instant go to the earlier item.
+# wrote last since Start, or the active span or first open item when none was written. The runtime
+# keeps a receipt's time when it refreshes it. Ties go to the earlier item.
 ns_active_item() {
-  local punch dir label id f cand best="" best_f="" first=""
+  local punch dir label id f cand ref active="" current="" best="" best_f="" first=""
   ns_layout_set punch "$1/.nightshift" punch-list
   [ -f "$punch" ] || return 1
   dir="$(ns_receipts_dir "$1")"
+  ref="$(ns_usage_start_ref "$1/.nightshift")"
+  if [ -f "$ref" ] && [ ! -L "$ref" ]; then
+    active="$(ns_usage_active "$1/.nightshift")"
+  else
+    ref=""
+  fi
   while IFS=$'\t' read -r label id; do
     [ -n "$label" ] || continue
     [ -n "$first" ] || first="$label"
+    [ "$label" != "$active" ] || current="$label"
     f=""
     # Inline rather than ns_receipt_find_id: the pulse runs this on every tool call.
     if [ -n "$id" ]; then
@@ -563,6 +569,7 @@ ns_active_item() {
       f="$dir/$(ns_receipt_basename "$label").md"
     fi
     { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+    [ -z "$ref" ] || [ "$f" -nt "$ref" ] || continue
     if [ -z "$best_f" ] || [ "$f" -nt "$best_f" ]; then
       best="$label"
       best_f="$f"
@@ -570,7 +577,7 @@ ns_active_item() {
   done <<EOF
 $(ns_item_rows "$punch" open)
 EOF
-  printf '%s' "${best:-$first}"
+  printf '%s' "${best:-${current:-$first}}"
 }
 
 # ns_receipt_track_label <receipt> <label> — note in the receipt which label it belongs to, and

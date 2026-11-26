@@ -228,12 +228,18 @@ ns_control_log() { # <ns> <line>
   ns_shift_log "$1" "$2"
 }
 
+ns_control_load_usage_gate() {
+  local dir="${BASH_SOURCE[0]%/*}"
+  # shellcheck source=plugins/nightshift/hooks/shared/gate-core.sh
+  . "$dir/../hooks/shared/gate-core.sh"
+}
+
 # Stop-work order: write STOP and stand the watchman down. Keep .shift-armed so
 # hardhat stays until clock-out writes ENDED. Drop the leftover session claim so
 # the same conversation is not read as a second agent. Reset is the manual escape.
 # Prints a short status. Return 0 · 1 usage/resolve · 2 unverified watchman (STOP still written)
 ns_control_stop() { # <host-path> [reason]
-  local host="$1" reason="${2:-stopped by owner}" rc=0 watch="absent" open=0 punch
+  local host="$1" reason="${2:-stopped by owner}" rc=0 watch="absent" open=0 punch at ticked
   ns_control_resolve "$host" || return 1
   host="$NS_CONTROL_HOST"
   if [ ! -d "$NS_CONTROL_NS" ]; then
@@ -244,9 +250,24 @@ ns_control_stop() { # <host-path> [reason]
     printf 'stop-shift: .nightshift path is not a usable directory\n' >&2
     return 1
   fi
-  ns_control_write_stop "$NS_CONTROL_NS" "$reason"
+  at="$(date +%s)"
+  ns_control_write_stop "$NS_CONTROL_NS" "$reason" || return 1
+  ns_usage_pause "$NS_CONTROL_NS" "owner stop-work" "$at" || true
+  ns_layout_set punch "$NS_CONTROL_NS" punch-list
+  if [ -s "$(_ns_usage_marks "$NS_CONTROL_NS")" ]; then
+    if ns_lock "$NS_CONTROL_NS"; then
+      if [ -n "$(ns_usage_active "$NS_CONTROL_NS")" ] &&
+        ! { ns_control_load_usage_gate && ticked="$(ns_ticked_boxes "$punch")" &&
+          ns_gate_usage_sync "$NS_CONTROL_NS" "$NS_CONTROL_WORKSPACE" "$punch" "$ticked" &&
+          ns_gate_usage_flush "$NS_CONTROL_NS" "$NS_CONTROL_WORKSPACE" "$at"; }; then
+        ns_control_log "$NS_CONTROL_NS" 'stopped by owner with item accounting still pending'
+      fi
+      ns_unlock "$NS_CONTROL_NS"
+    else
+      ns_control_log "$NS_CONTROL_NS" 'stopped by owner with the item accounting lock busy'
+    fi
+  fi
   ns_control_drop "$(ns_layout_path "$NS_CONTROL_NS" session)"
-  ns_usage_pause "$NS_CONTROL_NS" "owner stop-work" || true
   if ns_control_stop_watchman "$NS_CONTROL_NS"; then
     watch="${NS_CONTROL_WATCHMAN:-absent}"
   else
@@ -255,7 +276,6 @@ ns_control_stop() { # <host-path> [reason]
   fi
   ns_record_reason "$NS_CONTROL_NS" owner-stop 2>/dev/null || true
   ns_control_log "$NS_CONTROL_NS" "stopped by owner"
-  ns_layout_set punch "$NS_CONTROL_NS" punch-list
   if [ -f "$punch" ]; then
     open="$(ns_open_boxes "$punch")"
   fi

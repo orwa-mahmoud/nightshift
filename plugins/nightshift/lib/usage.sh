@@ -374,7 +374,32 @@ ns_usage_hosts() {
   cut -f2,3 "$file" 2>/dev/null | sort -u | tr '\t' ' ' | awk 'NF { printf "%s%s", sep, $0; sep = "; " }'
 }
 
-# ns_usage_mark <nightshift-dir> <label> [tick|switch|pause] — the running total and the clock at
+# The measured source for the bound conversation. An older conversation's counters cannot supply
+# a model or a measured zero for a session that has no reading of its own.
+ns_usage_bound_source() {
+  local ns="$1" host="$2" id file
+  file="$(_ns_usage_state "$ns")"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  if [ "$host" = cursor ]; then
+    id="$(ns_session_line "$ns" 1)"
+    if ns_cursor_worker_ran "$ns"; then id="$(ns_cursor_worker_id "$ns")"; fi
+    [ -n "$id" ] || return 0
+    id="cursor:$id"
+  else
+    id="$(ns_session_line "$ns" 2)"
+    [ -n "$id" ] || return 0
+  fi
+  NS_USAGE_BOUND_ID="$id" awk -F '\t' -v host="$host" '
+    BEGIN { id = ENVIRON["NS_USAGE_BOUND_ID"] }
+    $2 == host && ($1 == id || index($1, id "#") == 1 ||
+      (host == "cursor" && index($1, id ":") == 1)) && $7 != "" {
+      source = host "/" ($3 == "" ? "-" : $3)
+    }
+    END { printf "%s", source }
+  ' "$file"
+}
+
+# ns_usage_mark <nightshift-dir> <label> [kind] [epoch] — the running total and the clock at
 # one moment, closing the span that ran since the mark before it and charging it to <label>.
 #
 # Written when the shift arms, at every tick, when the item being worked changes, and when a shift
@@ -385,13 +410,14 @@ ns_usage_hosts() {
 # The fifth column is the running total per host and model (ns_usage_host_totals), so the span a
 # mark closes can name who spent it.
 ns_usage_mark() {
-  local ns="$1" label="$2" kind="${3:-tick}" dir file total hosts
+  local ns="$1" label="$2" kind="${3:-tick}" at="${4:-}" dir file total hosts
   dir="$(ns_usage_dir "$ns")"
   mkdir -p "$dir" 2>/dev/null || return 1
   file="$(_ns_usage_marks "$ns")"
   total="$(ns_usage_total "$ns")" || total=""
   hosts="$(ns_usage_host_totals "$ns")" || hosts=""
-  printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$label" "$total" "$kind" "$hosts" >>"$file" 2>/dev/null ||
+  [ -n "$at" ] || at="$(date +%s)"
+  printf '%s\t%s\t%s\t%s\t%s\n' "$at" "$label" "$total" "$kind" "$hosts" >>"$file" 2>/dev/null ||
     return 1
 }
 
@@ -459,6 +485,9 @@ ns_usage_active() {
   IFS= read -r line <"$file" || [ -n "$line" ] || return 0
   printf '%s' "$line"
 }
+
+# Receipt writes newer than this file can move the active item after Start.
+ns_usage_start_ref() { printf '%s/item-start' "$(ns_usage_dir "$1")"; }
 
 # ns_usage_set_active <nightshift-dir> [label] — charge the running span to <label> from here on;
 # no label clears it.
@@ -709,14 +738,15 @@ ns_usage_turns_for() {
   done
 }
 
-# ns_usage_span_fields <earlier-host-totals> <later-host-totals> [host] — what moved between two
-# marks, summed over every host and model except <host>.
+# ns_usage_span_fields <earlier-host-totals> <later-host-totals> [skip-host] [sources] — what moved
+# between two marks. An optional list of host/model keys limits which readings supply figures.
 ns_usage_span_fields() {
-  local earlier="$1" later="$2" skip="${3:-}" entry key now was out=""
+  local earlier="$1" later="$2" skip="${3:-}" sources="${4:-}" entry key now was out=""
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
     key="${entry%%:*}"
     [ -z "$skip" ] || [ "${key%%/*}" != "$skip" ] || continue
+    case "+$sources+" in ++ | *"+$key+"*) ;; *) continue ;; esac
     now="${entry#*:}"
     was="$(printf '%s\n' "$earlier" | tr ';' '\n' | awk -v k="$key" 'index($0, k ":") == 1 { print substr($0, length(k) + 2); exit }')"
     out="$(ns_usage_add "$out" "$(ns_usage_sub "$now" "$was")")"

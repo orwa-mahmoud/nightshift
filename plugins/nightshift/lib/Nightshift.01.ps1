@@ -2646,16 +2646,32 @@ function Stop-NSShift {
         throw "stop-shift: no .nightshift/ at $($ctx.Workspace)"
     }
     if ([string]::IsNullOrEmpty($Reason)) { $Reason = 'stopped by owner' }
+    $at = Get-NSUnixTime
     $ts = Get-NSLocalNow -Seconds
     Remove-NSPath (Get-NSLayoutPath $ns 'stop')
     [IO.File]::WriteAllText((Get-NSLayoutPath $ns 'stop'), "$Reason $script:NSDot $ts`n")
+    $null = Write-NSUsagePause $ns 'owner stop-work' $at
+    $punch = Get-NSLayoutPath $ns 'punch-list'
+    if (Test-Path -LiteralPath (Get-NSUsageMarksPath $ns) -PathType Leaf) {
+        $mutex = Enter-NSMutex $ns '.lock.d'
+        if ($null -ne $mutex) {
+            try {
+                $counts = Get-NSBoxCounts $punch
+                if ((Get-NSUsageActive $ns) -and $counts.Readable -and
+                    (Invoke-NSGateUsageSync $ns $ctx.Workspace $punch $counts.Ticked)) {
+                    Invoke-NSGateUsageFlush $ns $ctx.Workspace $at
+                }
+            }
+            catch { Write-NSControlLog $ns "stopped by owner with item accounting still pending: $($_.Exception.ToString())" }
+            finally { Exit-NSMutex $mutex }
+        }
+        else { Write-NSControlLog $ns 'stopped by owner with the item accounting lock busy' }
+    }
     Remove-NSPath (Get-NSLayoutPath $ns 'session')
-    $null = Write-NSUsagePause $ns 'owner stop-work'
     $watch = Stop-NSWatchman $ns
     $null = Write-NSReason $ns 'owner-stop'
     Write-NSControlLog $ns 'stopped by owner'
     $open = 0
-    $punch = Get-NSLayoutPath $ns 'punch-list'
     if (Test-Path -LiteralPath $punch -PathType Leaf) {
         $open = (Get-NSBoxCounts $punch).Open
     }

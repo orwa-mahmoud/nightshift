@@ -614,7 +614,11 @@ if [ "$DRY_RUN" -eq 0 ]; then
   LAST_PAUSE="$(ns_usage_last_pause "$NS")"
   if [ "$CONTINUED" -eq 1 ] && [ -d "$(ns_usage_dir "$NS")" ] && [ -n "$LAST_ACTIVITY" ] &&
     [ "$LAST_ACTIVITY" -gt "${LAST_PAUSE:-0}" ]; then
-    ns_usage_pause "$NS" "the shift broke off here and Start resumed it" "$LAST_ACTIVITY" || :
+    ns_usage_pause "$NS" "the shift broke off here and Start resumed it" "$LAST_ACTIVITY" && LAST_PAUSE="$LAST_ACTIVITY"
+  fi
+  if [ "$CONTINUED" -eq 1 ] && [ "${OPEN_NOW:-0}" -gt 0 ] &&
+    ! { ns_control_load_usage_gate && ns_gate_usage_start "$NS" "$WORKSPACE" "$PUNCH" "$LAST_PAUSE"; }; then
+    warn 'usage the accounting baseline for this Start could not be recorded'
   fi
   ns_control_drop "$STOP"
   ns_control_drop_runtime_markers "$NS"
