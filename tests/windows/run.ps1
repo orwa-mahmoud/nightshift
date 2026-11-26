@@ -307,7 +307,7 @@ function Set-TestPunch {
     )
     $box = if ($Open) { '- [ ] Windows boundary' } else { '- [x] Windows boundary' }
     [IO.File]::WriteAllText(
-        (Join-Path $Workspace '.nightshift/punch-list.md'),
+        (Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'punch-list'),
         "# Contract`r`n`r`n## Items`r`n$box`r`n",
         (New-Object Text.UTF8Encoding($false))
     )
@@ -418,7 +418,9 @@ try {
     $workspace = Join-Path $root 'primary workspace'
     $workTarget = Initialize-TestWorkspace $workspace
     Assert-Equal 'current' (Get-NSStateKind $workspace) 'setup writes the current state version'
-    Assert-True (Test-Path -LiteralPath (Join-Path $workspace '.nightshift/inbox/parking-lot.md')) 'setup scaffolds the current layout'
+    Assert-True (Test-Path -LiteralPath (Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'parking-lot')) 'setup scaffolds the current layout'
+    # Setup's first run, where every file of one run lives; the hardhat cases below name its folder.
+    $runRel = '.nightshift\runs\' + (Get-NSLayoutRun (Join-Path $workspace '.nightshift'))
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $workspace '.nightshift/staging/work-orders.md'))) `
         'setup leaves the work orders until Hunt stages one'
     Assert-True (Test-Path -LiteralPath (Join-Path $workspace '.nightshift/rules.json')) 'setup copies rules'
@@ -463,7 +465,7 @@ try {
     Assert-True (([IO.File]::ReadAllText($setup)).Contains('-DisableNameChecking')) `
         'setup import stays quiet so its JSON summary is the only stdout'
 
-    $punchText = [IO.File]::ReadAllText((Join-Path $workspace '.nightshift/punch-list.md'))
+    $punchText = [IO.File]::ReadAllText((Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'punch-list'))
     Assert-True (-not $punchText.Contains('$NIGHTSHIFT_WORKSPACE')) `
         'setup substitutes the workspace token out of the owner punch list'
     Assert-True (-not $punchText.Contains('$NS')) `
@@ -494,7 +496,7 @@ try {
     Assert-True (Test-Path -LiteralPath (Join-Path $workspace '.nightshift/support') -PathType Container) `
         'export-support writes under .nightshift/support'
     $expanded = Expand-NSInjectedPaths $workspace 'Read .nightshift/punch-list.md'
-    $expectedPunch = 'Read ' + ($workspace.TrimEnd('\', '/') + '/.nightshift/punch-list.md')
+    $expectedPunch = 'Read ' + ($workspace.TrimEnd('\', '/') + '/' + (Get-NSLayoutName (Join-Path $workspace '.nightshift') 'punch-list'))
     Assert-Equal $expectedPunch $expanded 'injection qualifies a bare .nightshift path'
     Assert-True $importIssues.EndsWith('import-issues.ps1') 'import-issues helper is bundled'
     $scaffold = Join-Path $plugin 'runtime/windows/scaffold.ps1'
@@ -696,9 +698,9 @@ try {
     $loser = Invoke-Hardhat $workspace '22222222-2222-2222-2222-222222222222' 'Bash' @{ command = "`$null = 'nightshift-binding-probe'" }
     Assert-True ($loser.Stdout -match 'another session already owns') 'a second Start is denied'
 
-    $leaseEdit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'Remove-Item -Force .nightshift\run\.shift-*' }
+    $leaseEdit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = "Remove-Item -Force $runRel\run\.shift-*" }
     Assert-True ($leaseEdit.Stdout -match 'process lease is runtime-owned') 'indirect lease deletion is denied'
-    $mutexEdit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'Remove-Item -Force .nightshift\run\.mutex-*' }
+    $mutexEdit = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = "Remove-Item -Force $runRel\run\.mutex-*" }
     Assert-True ($mutexEdit.Stdout -match 'process lease is runtime-owned') 'indirect mutex-identity deletion is denied'
     $broadStateEdit = Invoke-Hardhat $workspace $sessionId 'Bash' `
         @{ command = 'Remove-Item -Recurse -Force .nightshift\*' }
@@ -707,14 +709,14 @@ try {
 
     $rulesRead = Invoke-Hardhat $workspace $sessionId 'Read' @{ path = (Join-Path $workspace '.nightshift/rules.json') }
     Assert-True ($rulesRead.Stdout -match 'rules file is the owner') 'rules reads are denied during a shift'
-    $armedDelete = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'Remove-Item -Force .nightshift\run\.shift-armed' }
+    $armedDelete = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = "Remove-Item -Force $runRel\run\.shift-armed" }
     Assert-True ($armedDelete.Stdout -match 'control files') 'bound worker cannot delete .shift-armed'
     $cdArmed = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'cd .nightshift && unlink .shift-armed' }
     Assert-True ($cdArmed.Stdout -match 'control files') "cd into .nightshift cannot unlink the armed marker ($(Format-HookResult $cdArmed))"
     $cdStop = Invoke-Hardhat $workspace $sessionId 'Bash' @{ command = 'cd .nightshift && touch STOP' }
     Assert-True ($cdStop.Stdout -match 'control files') "cd into .nightshift cannot forge STOP ($(Format-HookResult $cdStop))"
     $punchTick = Invoke-Hardhat $workspace $sessionId 'Write' @{
-        path = (Join-Path $workspace '.nightshift/punch-list.md')
+        path = (Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'punch-list')
         content = "## Items`n- [x] **1.**`n"
     }
     Assert-True ([string]::IsNullOrEmpty($punchTick.Stdout)) 'punch-list ticks stay allowed'
@@ -804,7 +806,7 @@ try {
     $helperStop = Invoke-Gate $workspace '33333333-3333-3333-3333-333333333333'
     Assert-True ($helperStop.Stdout -match '"continue":true') 'another conversation stops freely'
 
-    [IO.File]::WriteAllText((Join-Path $workspace '.nightshift/STOP'), "owner`r`n")
+    [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'stop'), "owner`r`n")
     $released = Invoke-Gate $workspace $sessionId
     Assert-True ($released.Stdout -match '"continue":true') 'STOP releases the shift'
     Assert-True (-not (Test-Path -LiteralPath (Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'lease'))) 'clock-out releases the lease'
@@ -854,7 +856,7 @@ try {
         Assert-True (Test-Path -LiteralPath (Get-NSLayoutPath (Join-Path $dispatchWorkspace '.nightshift') 'session-end')) `
             'Claude SessionEnd dispatcher records the clean ending'
 
-        [IO.File]::WriteAllText((Join-Path $dispatchWorkspace '.nightshift/STOP'), '')
+        [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $dispatchWorkspace '.nightshift') 'stop'), '')
         $dispatchRelease = Invoke-TestScript $claudeGateDispatch @() $dispatchGatePayload $dispatchEnvironment
         Assert-Equal 0 $dispatchRelease.ExitCode "Claude STOP dispatcher exits cleanly: $($dispatchRelease.Stderr)"
         Assert-True (Test-Path -LiteralPath (Get-NSLayoutPath (Join-Path $dispatchWorkspace '.nightshift') 'ended')) `
@@ -921,7 +923,7 @@ try {
                     transcript_path = ''
                     cwd = $codexCommandWorkspace
                     tool_name = 'Bash'
-                    tool_input = @{ command = 'Remove-Item -Force .nightshift/punch-list.md' }
+                    tool_input = @{ command = 'Remove-Item -Force ' + (Get-NSLayoutName (Join-Path $codexCommandWorkspace '.nightshift') 'punch-list') }
                 } | ConvertTo-Json -Compress -Depth 10
                 $codexCommandDeny = & $invokeCodexCommand $codexHardhatCommandFile `
                     -InputText $codexCommandDenyPayload -Environment $codexCommandEnvironment
@@ -938,7 +940,7 @@ try {
                     -InputText $codexCommandGatePayload -Environment $codexCommandEnvironment
                 Assert-True ($codexCommandGate.Stdout -match '"decision":"block"') `
                     'Codex gate commandWindows continues an open shift'
-                [IO.File]::WriteAllText((Join-Path $codexCommandWorkspace '.nightshift/STOP'), '')
+                [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $codexCommandWorkspace '.nightshift') 'stop'), '')
                 $codexCommandRelease = & $invokeCodexCommand $codexGateCommandFile `
                     -InputText $codexCommandGatePayload -Environment $codexCommandEnvironment
                 Assert-True ($codexCommandRelease.Stdout -match '"continue":true') `
@@ -954,7 +956,7 @@ try {
     }
 
     Write-Host 'Checking Task Scheduler generation'
-    Remove-Item -LiteralPath (Join-Path $workspace '.nightshift/STOP') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'stop') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Get-NSLayoutPath (Join-Path $workspace '.nightshift') 'ended') -Force -ErrorAction SilentlyContinue
     Set-TestPunch $workspace $true
     $scheduled = Invoke-TestScript $schedule @('-Project', $workspace, '-At', '04:05', '-AsJson')
@@ -1174,9 +1176,9 @@ exit 1
         $freshGuardStub = Join-Path $root 'fresh guard stub.ps1'
         @'
 param([string]$Prompt)
-Remove-Item -LiteralPath (Join-Path $env:CODEX_PROJECT_DIR '.nightshift/run/.shift-armed') -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath '__ARMED__' -Force -ErrorAction SilentlyContinue
 exit 1
-'@ | Set-Content -LiteralPath $freshGuardStub -Encoding UTF8
+'@.Replace('__ARMED__', $freshGuardArmed.Replace("'", "''")) | Set-Content -LiteralPath $freshGuardStub -Encoding UTF8
         $freshGuardWatch = Invoke-TestScript $watchman `
             @('-Project', $freshGuardWorkspace, '-HostName', 'codex', '-IntervalMinutes', '1', '-Agent', $freshGuardStub, '-MaxWakes', '1') `
             '' @{ NIGHTSHIFT_WATCH_SLEEP = '0'; NIGHTSHIFT_WATCH_RETRY = '0' }
@@ -1221,9 +1223,10 @@ exit 1
 @echo off
 > "%NIGHTSHIFT_TEST_CODEX_SHIM_RECEIPT%" echo %*
 if not defined CODEX_PROJECT_DIR exit /b 0
-powershell.exe -NoProfile -NonInteractive -Command "Set-Content -LiteralPath ($env:CODEX_PROJECT_DIR + '\.nightshift\run\.shift-pulse') -Value (([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()).ToString() + ' revived')"
+powershell.exe -NoProfile -NonInteractive -Command "Set-Content -LiteralPath ($env:CODEX_PROJECT_DIR + '\__PULSE__') -Value (([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()).ToString() + ' revived')"
 exit /b 0
-'@ | Set-Content -LiteralPath $codexShim -Encoding ASCII
+'@.Replace('__PULSE__', (Get-NSLayoutName (Join-Path $codexRecoveryWorkspace '.nightshift') 'pulse').Replace('/', '\')) |
+            Set-Content -LiteralPath $codexShim -Encoding ASCII
         $shimWatch = Invoke-TestScript $watchman @(
             '-Project', $codexRecoveryWorkspace,
             '-HostName', 'codex',
@@ -1283,7 +1286,7 @@ exit /b 0
         $launchedPid = [regex]::Match($launched.Stdout, 'pid ([1-9][0-9]*)').Groups[1].Value
         Assert-True ($duplicateLaunch.ExitCode -eq 0 -and $duplicateLaunch.Stdout -match "watchman already watching \(pid $launchedPid\)") `
             "a second launch names the live watchman instead of starting another: $($duplicateLaunch.Stdout) $($duplicateLaunch.Stderr)"
-        [IO.File]::WriteAllText((Join-Path $launcherWorkspace '.nightshift/STOP'), '')
+        [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $launcherWorkspace '.nightshift') 'stop'), '')
         $launcherReason = Get-NSLayoutPath (Join-Path $launcherWorkspace '.nightshift') 'watch-reason'
         $launcherMarker = Get-NSLayoutPath (Join-Path $launcherWorkspace '.nightshift') 'watchman'
         $launcherAttempts = 0
