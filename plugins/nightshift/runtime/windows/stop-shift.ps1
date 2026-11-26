@@ -1,10 +1,11 @@
 param(
     [string]$Project = '',
-    [string]$Reason = 'stopped by owner'
+    [string]$Reason = 'stopped by owner',
+    [string]$Run = ''
 )
 
 # stop-shift.ps1  -  issue a stop-work order. Hardhat stays until clock-out writes ENDED.
-#   stop-shift.ps1 -Project DIR [-Reason TEXT]
+#   stop-shift.ps1 -Project DIR [-Reason TEXT] [-Run NAME]
 # -Project is required. Does not use the current working directory.
 
 Set-StrictMode -Version 2.0
@@ -22,7 +23,7 @@ $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 
 try {
-    $lines = @(Stop-NSShift -Project $Project -Reason $Reason)
+    $lines = @(Stop-NSShift -Project $Project -Reason $Reason -Run $Run)
 }
 catch {
     [Console]::Error.WriteLine($_.Exception.Message)

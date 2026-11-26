@@ -3620,6 +3620,24 @@ ns_status_transitions() {
   ' "$1" 2>/dev/null
 }
 
+# ns_status_run_summary <ns> <run> — one run at a glance: its state (ended, stopped, armed or not
+# armed), its open item and its deadline.
+ns_status_run_summary() {
+  local NIGHTSHIFT_RUN="$2" state ended stop armed punch title deadline
+  ns_layout_set ended "$1" ended
+  ns_layout_set stop "$1" stop
+  ns_layout_set armed "$1" armed
+  ns_layout_set punch "$1" punch-list
+  if [ -f "$ended" ] && [ ! -L "$ended" ]; then state=ended
+  elif [ -f "$stop" ] && [ ! -L "$stop" ]; then state=stopped
+  elif [ -f "$armed" ]; then state=armed
+  else state="not armed"
+  fi
+  title="$(ns_status_open_title "$punch")"
+  deadline="$(ns_status_deadline_remaining "$1")"
+  printf '%s, open item %s, deadline %s' "$state" "${title:-none}" "${deadline:-none (finite list)}"
+}
+
 # ns_status_deadline_remaining <ns> — `<n>h<m>m remaining`, `passed`, or nothing when there is no
 # deadline. The clock is read once, here, rather than in the skill.
 ns_status_deadline_remaining() {

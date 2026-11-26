@@ -238,7 +238,7 @@ ns_control_load_usage_gate() {
 # hardhat stays until clock-out writes ENDED. Drop the leftover session claim so
 # the same conversation is not read as a second agent. Reset is the manual escape.
 # Prints a short status. Return 0 · 1 usage/resolve · 2 unverified watchman (STOP still written)
-ns_control_stop() { # <host-path> [reason]
+ns_control_stop() { # <host-path> [reason] [run]
   local host="$1" reason="${2:-stopped by owner}" rc=0 watch="absent" open=0 punch at ticked
   ns_control_resolve "$host" || return 1
   host="$NS_CONTROL_HOST"
@@ -250,6 +250,11 @@ ns_control_stop() { # <host-path> [reason]
     printf 'stop-shift: .nightshift path is not a usable directory\n' >&2
     return 1
   fi
+  # One run is stopped: never a guess between several.
+  ns_run_choose "$NS_CONTROL_NS" "${3:-}" || {
+    printf 'stop-shift: %s\n' "$NS_RUN_ERR" >&2
+    return 1
+  }
   at="$(date +%s)"
   ns_control_write_stop "$NS_CONTROL_NS" "$reason" || return 1
   ns_usage_pause "$NS_CONTROL_NS" "owner stop-work" "$at" || true
@@ -280,6 +285,7 @@ ns_control_stop() { # <host-path> [reason]
     open="$(ns_open_boxes "$punch")"
   fi
   printf 'stopped %s\n' "$NS_CONTROL_NS"
+  if ns_layout_per_run "$NS_CONTROL_NS" punch-list; then printf 'run %s\n' "$NIGHTSHIFT_RUN"; fi
   printf 'workspace %s\n' "$NS_CONTROL_WORKSPACE"
   [ "$host" = "$NS_CONTROL_WORKSPACE" ] || printf 'host %s\n' "$host"
   printf 'watchman %s\n' "$watch"

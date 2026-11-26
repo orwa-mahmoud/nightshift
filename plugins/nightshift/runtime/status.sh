@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # status.sh — read-only shift status for the native Status skill.
 #
-#   status.sh --project DIR
+#   status.sh --project DIR [--run NAME]
 #
+# In a workspace that keeps runs, every run gets one line (state, open item, deadline), then the facts
+# of the run named with --run, by NIGHTSHIFT_RUN, or the only one. With several runs and none named,
+# the run lines are the report.
 # Prints a compact glanceable summary: punch-list progress, evidence counts, resolved policy,
 # preflight gaps, and liveness vs checkpoint vs stall as separate lines. Never writes.
 #
@@ -15,11 +18,17 @@ _here="${BASH_SOURCE[0]%/*}"
 . "$_here/../lib/lib.sh"
 
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
+RUN_NAME=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)
       [ $# -ge 2 ] || { printf 'status: --project needs a value\n' >&2; exit 1; }
       PROJECT="$2"
+      shift 2
+      ;;
+    --run)
+      [ $# -ge 2 ] || { printf 'status: --run needs a value\n' >&2; exit 1; }
+      RUN_NAME="$2"
       shift 2
       ;;
     -h | --help)
@@ -40,6 +49,17 @@ if [ -e "$HOST/.nightshift-link" ] || [ -L "$HOST/.nightshift-link" ]; then
   WORKSPACE="$(ns_workspace_root "$HOST" 2>/dev/null)" || WORKSPACE="$HOST"
 fi
 NS="$WORKSPACE/.nightshift"
+# The run this report is about, before any file of one run is resolved.
+RUNS=""
+RUN_CHOSEN=1
+if [ -d "$NS" ] && ns_layout_per_run "$NS" punch-list; then
+  RUNS="$(ns_layout_runs "$NS")"
+  ns_run_choose "$NS" "$RUN_NAME"
+  case "$?" in
+    1) printf 'status: %s\n' "$NS_RUN_ERR" >&2; exit 1 ;;
+    2) RUN_CHOSEN=0 ;;
+  esac
+fi
 declare PUNCH ARMED_FILE PARKING DRAFTING_TABLE WORK_ORDERS SNAGS MAP STOP_FILE SESSION_FILE WATCH_REASON LOG
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set ARMED_FILE "$NS" armed
@@ -61,6 +81,30 @@ fact() { printf '%s %s\n' "$1" "${2:-none}"; }
 if [ ! -d "$NS" ]; then
   emit "Nightshift Status"
   emit "Nightshift: missing at $WORKSPACE"
+  exit 0
+fi
+
+# run_lines — one fact per run, when the workspace has more than one.
+run_lines() {
+  local r
+  [ "$(printf '%s\n' "$RUNS" | grep -c .)" -gt 1 ] || return 0
+  while IFS= read -r r; do
+    [ -n "$r" ] && fact "run $r" "$(ns_status_run_summary "$NS" "$r")"
+  done <<EOF
+$RUNS
+EOF
+}
+
+# Several runs and none named: the runs are the report.
+if [ "$RUN_CHOSEN" -eq 0 ]; then
+  emit "Nightshift Status"
+  emit "Workspace:   $WORKSPACE"
+  emit "Runs:        $(printf '%s\n' "$RUNS" | grep -c .)"
+  emit ""
+  emit "facts"
+  fact "schema" "$(ns_state_version "$WORKSPACE" 2>/dev/null)"
+  run_lines
+  fact "run" "none named (name one with --run for its facts)"
   exit 0
 fi
 
@@ -102,6 +146,8 @@ emit "stall attempts: $(ns_status_stall_attempts "$NS")"
 emit ""
 emit "facts"
 fact "schema" "$(ns_state_version "$WORKSPACE" 2>/dev/null)"
+run_lines
+[ "$(printf '%s\n' "$RUNS" | grep -c .)" -le 1 ] || fact "run" "$NIGHTSHIFT_RUN"
 
 # Unarmed with work still open is the one state that reads wrong at a glance: a punch list nobody
 # is holding is a to-do file, and only Start makes it a shift.

@@ -154,6 +154,40 @@ function Get-NSLayoutRun {
     return ''
 }
 
+# Select-NSRunChoice <state-dir> [name] - the run a command acts on, set as NIGHTSHIFT_RUN: <name> when
+# given, else the run NIGHTSHIFT_RUN already names, else the only run. Code 1 when the name is not a
+# run of this workspace, 2 when there are several runs, or none, and no name; Error then says which
+# and lists the runs. In a workspace that keeps one shift there is nothing to choose: code 0.
+# Mirrors ns_run_choose.
+function Select-NSRunChoice {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [AllowEmptyString()][string]$Name = ''
+    )
+    $result = [pscustomobject]@{ Code = 0; Error = '' }
+    if (-not (Test-NSLayoutPerRun $NightshiftDir 'punch-list')) { return $result }
+    if ($Name.Length -eq 0) { $Name = [string]$env:NIGHTSHIFT_RUN }
+    $runs = Get-NSLayoutRuns $NightshiftDir
+    $listed = if ($runs.Count -gt 0) { $runs -join ' ' } else { 'none' }
+    if ($Name.Length -gt 0) {
+        $dir = [IO.Path]::Combine($NightshiftDir, 'runs', $Name)
+        if ((Test-NSRunName $Name) -and [IO.Directory]::Exists($dir) -and -not (Test-NSReparsePoint $dir)) {
+            $env:NIGHTSHIFT_RUN = $Name
+            return $result
+        }
+        $result.Code = 1
+        $result.Error = "no run named $Name; runs: $listed"
+        return $result
+    }
+    if ($runs.Count -eq 1) {
+        $env:NIGHTSHIFT_RUN = $runs[0]
+        return $result
+    }
+    $result.Code = 2
+    $result.Error = if ($runs.Count -eq 0) { 'no runs yet; start a plan with ns start-run' } else { "several runs and none named; name one with --run: $listed" }
+    return $result
+}
+
 # Test-NSLayoutLive <state-dir> - a shift is armed and has not ended: in the run the caller names or
 # the only run, or, in a workspace of several runs with none named, in any of them. Mirrors
 # ns_layout_live.
@@ -2828,7 +2862,8 @@ function Write-NSControlLog {
 function Stop-NSShift {
     param(
         [Parameter(Mandatory = $true)][string]$Project,
-        [string]$Reason = 'stopped by owner'
+        [string]$Reason = 'stopped by owner',
+        [AllowEmptyString()][string]$Run = ''
     )
     $ctx = Resolve-NSControlWorkspace $Project
     $ns = $ctx.NightshiftDir
@@ -2836,6 +2871,9 @@ function Stop-NSShift {
     if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
         throw "stop-shift: no .nightshift/ at $($ctx.Workspace)"
     }
+    # One run is stopped: never a guess between several.
+    $choice = Select-NSRunChoice $ns $Run
+    if ($choice.Code -ne 0) { throw ('stop-shift: ' + $choice.Error) }
     if ([string]::IsNullOrEmpty($Reason)) { $Reason = 'stopped by owner' }
     $at = Get-NSUnixTime
     $ts = Get-NSLocalNow -Seconds
@@ -2867,6 +2905,7 @@ function Stop-NSShift {
         $open = (Get-NSBoxCounts $punch).Open
     }
     Write-Output "stopped $ns"
+    if (Test-NSLayoutPerRun $ns 'punch-list') { Write-Output "run $env:NIGHTSHIFT_RUN" }
     Write-Output "workspace $($ctx.Workspace)"
     if ($ctx.HostRoot -ne $ctx.Workspace) { Write-Output "host $($ctx.HostRoot)" }
     Write-Output "watchman $watch"

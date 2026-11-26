@@ -491,3 +491,27 @@ stop_cmd() { # <project>
   printf '%s' "$output" | grep -qF -- '--project is required'
   [ -f "$p/.nightshift/.shift-armed" ]
 }
+
+# run_files <project> <run> — every file of one run with its checksum, sorted.
+run_files() { (cd "$1/.nightshift/runs/$2" && find . -type f -exec cksum {} + | sort); }
+
+@test "with two runs, stopping one leaves the other armed and its files untouched" {
+  p="$(two_runs stop-two-runs)"
+  b_before="$(run_files "$p" b)"
+  # With several runs and none named, nothing is stopped and the runs are listed.
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID "$STOP" --project "$p"
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'several runs and none named; name one with --run: a b'
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID "$STOP" --project "$p" --run c
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'no run named c; runs: a b'
+  [ ! -e "$p/.nightshift/runs/a/STOP" ]
+  [ ! -e "$p/.nightshift/runs/b/STOP" ]
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID "$STOP" --project "$p" --run a
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'run a'
+  [ -f "$p/.nightshift/runs/a/STOP" ]
+  [ ! -e "$p/.nightshift/runs/b/STOP" ]
+  [ -f "$p/.nightshift/runs/b/run/.shift-armed" ]
+  [ "$(run_files "$p" b)" = "$b_before" ]
+}

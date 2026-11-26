@@ -46,7 +46,7 @@ Windows, `ns.ps1` takes the same verbs.
 
 | Command | What it does |
 | --- | --- |
-| `ns stop-shift` | Pauses the shift now, even if the agent is stuck. Open items and the deadline are kept. |
+| `ns stop-shift [--run <name>]` | Pauses the shift now, even if the agent is stuck. Open items and the deadline are kept. With several runs, stops the run you name and leaves the others working. |
 | `ns reset-shift` | Drops the runtime markers, the deadline and a leftover STOP. Keeps the punch list, the history, and what open items have already spent. |
 | `ns purge-workspace --confirm-path <path to .nightshift>` | Resets, then deletes this project's `.nightshift/`. Does not uninstall the plugin. |
 | `ns plan-new --name <name>` | Starts a plan file from the shipped contract with no checks. Keeps a plan that already has the name. |
@@ -57,7 +57,7 @@ Windows, `ns.ps1` takes the same verbs.
 | `ns check-items` | Names drafted items with a missing `Verify:` or `Commit:`, an `Evidence:` that names nothing, or a `Budget:` that does not parse. Refuses nothing. |
 | `ns link-workspace --host-root <path> --workspace <path>` | Points a task folder at the workspace that already holds `.nightshift/`. |
 | `ns export-support` | Writes a local support bundle, with known sensitive fields left out. Never uploaded. |
-| `ns archive-receipts` | Files a finished shift's receipts into its archive folder. |
+| `ns archive-receipts [--run <name>]` | Files a finished shift's receipts into its archive folder. With several runs, files the run you name. |
 | `ns check-report --report <file> --manifest <file>` | Checks a cited research report against its source manifest. |
 
 `touch .nightshift/STOP` also stops the shift, at the agent's next stop. Write it where

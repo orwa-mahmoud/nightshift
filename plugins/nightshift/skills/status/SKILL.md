@@ -33,6 +33,11 @@ work mode and target, artifact receipts, the completion record, and recent trans
 cannot make safely on its own — process liveness, the lease lines, and every Warning about a path
 that is not a usable file.
 
+When the workspace holds several runs, `ns status` prints one `run <name>` line per run (its state,
+open item and deadline) before the facts. With no run named it stops there and says so; when the
+owner asks about one run ("how is export-csv doing?"), run `ns status --run <name>` for that run's
+facts. An unknown name is refused with the list of runs; relay it.
+
 ## 2. Render, never re-derive
 
 Every number and every name above is already computed. Do not count boxes, subtract a deadline from

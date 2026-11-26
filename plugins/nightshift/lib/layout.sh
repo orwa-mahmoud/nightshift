@@ -98,6 +98,41 @@ ns_layout_runs() {
   done
 }
 
+# ns_run_choose <state-dir> [name] — the run a command acts on, exported as NIGHTSHIFT_RUN: <name>
+# when given, else the run NIGHTSHIFT_RUN already names, else the only run. Status 1 when the name
+# is not a run of this workspace, 2 when there are several runs, or none, and no name; NS_RUN_ERR
+# then says which and lists the runs. In a workspace that keeps one shift there is nothing to
+# choose: status 0. Sets NS_RUN_ERR for the caller.
+# shellcheck disable=SC2034
+ns_run_choose() {
+  local ns="$1" name="${2:-}" runs r
+  NS_RUN_ERR=""
+  ns_layout_per_run "$ns" punch-list || return 0
+  [ -n "$name" ] || name="${NIGHTSHIFT_RUN-}"
+  runs="$(ns_layout_runs "$ns" | tr '\n' ' ')"
+  runs="${runs% }"
+  if [ -n "$name" ]; then
+    if ns_run_name_ok "$name" && [ -d "$ns/runs/$name" ] && [ ! -L "$ns/runs/$name" ]; then
+      NIGHTSHIFT_RUN="$name"
+      export NIGHTSHIFT_RUN
+      return 0
+    fi
+    NS_RUN_ERR="no run named $name; runs: ${runs:-none}"
+    return 1
+  fi
+  if ns_layout_run_set r "$ns"; then
+    NIGHTSHIFT_RUN="$r"
+    export NIGHTSHIFT_RUN
+    return 0
+  fi
+  if [ -z "$runs" ]; then
+    NS_RUN_ERR="no runs yet; start a plan with ns start-run"
+  else
+    NS_RUN_ERR="several runs and none named; name one with --run: $runs"
+  fi
+  return 2
+}
+
 # ns_layout_live <state-dir> — status 0 when a shift is armed and has not ended: in the run the
 # caller names or the only run, or, in a workspace of several runs with none named, in any of them.
 # The cheap check hooks make before they read anything else.
