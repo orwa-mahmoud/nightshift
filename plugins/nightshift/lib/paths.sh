@@ -133,19 +133,14 @@ ns_hook_host_dir() {
 # closes. Revival workers stay in.
 ns_hook_idle_exit() {
   [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ] || return 0
-  local host project ns armed ended plan
+  local host project ns plan
   host="$(ns_hook_host_dir)"
   project="$(ns_workspace_root "$host" 2>/dev/null)" || return 0
   ns="$project/.nightshift"
   # An open plan room holds whether or not a shift is armed.
   ns_layout_set plan "$ns" plan-room
   [ ! -f "$plan" ] || return 0
-  ns_layout_set armed "$ns" armed
-  [ -f "$armed" ] || exit 0
-  ns_layout_set ended "$ns" ended
-  if [ -f "$ended" ] && [ ! -L "$ended" ]; then
-    exit 0
-  fi
+  ns_layout_live "$ns" || exit 0
 }
 
 # ns_record_workspace_link <host-root> <workspace>
@@ -242,17 +237,25 @@ ns_under_nightshift() {
 # agent to the right file in another. Expansion happens at injection time; the owner's rules file
 # keeps the relative form so it stays editable without a skill variable.
 ns_expand_injected_paths() {
-  local ws="$1" text="$2" version
+  local ws="$1" text="$2" version run=""
   [ -n "$ws" ] || { printf '%s' "$text"; return 0; }
   text="${text//\$NIGHTSHIFT_WORKSPACE/$ws}"
   text="${text//\$NS/$ws/.nightshift}"
   ns_layout_version_set version "$ws/.nightshift"
-  printf '%s' "$text" | NS_LAYOUT_ROWS="$NS_LAYOUT_ROWS" awk -v ws="$ws" -v version="$version" '
+  # A file of one run is named inside the run the caller works on; with no run to name, those
+  # names are left as written.
+  ns_layout_run_set run "$ws/.nightshift" || run=""
+  printf '%s' "$text" | NS_LAYOUT_ROWS="$NS_LAYOUT_ROWS" awk -v ws="$ws" -v version="$version" -v run="$run" '
     BEGIN {
       ORS = ""
       n = split(ENVIRON["NS_LAYOUT_ROWS"], rows, "\n")
       for (k = 1; k <= n; k++) {
-        if (split(rows[k], f, "\t") < 4 || f[4] == "field" || f[4] == "retired" || f[4] == "stray" || index(f[3], "*")) continue
+        if (split(rows[k], f, "\t") < 4 || f[4] == "field" || f[4] == "retired" || f[4] == "stray") continue
+        if (substr(f[3], 1, 7) == "runs/*/") {
+          if (run == "") continue
+          f[3] = "runs/" run "/" substr(f[3], 8)
+        }
+        if (index(f[3], "*")) continue
         key[k] = f[1]
         path[k] = f[3]
         if (f[2] + 0 <= version && (!(f[1] in best) || f[2] + 0 >= bestv[f[1]])) {

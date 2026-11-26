@@ -428,3 +428,27 @@ LOG
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF 'worker alive but idle for 2 min — pulse stale, transcript unchanged, cpu +0.00s, no busy child'
 }
+
+@test "status from a conversation of one of two runs reports that conversation's run" {
+  p="$(two_runs status-two-runs)"
+  NS_CMD="$ROOT/plugins/nightshift/runtime/ns"
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-b "$NS_CMD" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. b first.' ]
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-a "$NS_CMD" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. a first.' ]
+  # A run the caller names wins over the conversation's own.
+  out="$(env CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-a NIGHTSHIFT_RUN=b "$NS_CMD" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. b first.' ]
+}
+
+@test "native Windows status from a conversation of one of two runs reports that run" {
+  ps_ready
+  p="$(two_runs ps-status-two-runs)"
+  NS_PS="$ROOT/plugins/nightshift/runtime/windows/ns.ps1"
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-b \
+    pwsh -NoProfile -NonInteractive -File "$NS_PS" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. b first.' ]
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-a \
+    pwsh -NoProfile -NonInteractive -File "$NS_PS" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. a first.' ]
+}

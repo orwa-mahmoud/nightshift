@@ -220,6 +220,10 @@ if ($Verb -ceq 'help') {
     exit 0
 }
 
+# A verb run from a conversation on shift acts on that conversation's run, as its hooks do. A run
+# the caller names in NIGHTSHIFT_RUN stays named.
+Select-NSSessionRun -NightshiftDir (Join-Path $workspace '.nightshift') -SessionId (Get-NSConversationSessionId)
+
 $target = Get-NSDispatchTarget $Verb
 if ([string]::IsNullOrEmpty($target)) {
     [Console]::Error.WriteLine('ns: no verb ' + $Verb + ' on ' + $hostName + ' ' + [char]0x2014 + ' run ns help for this host''s verbs')

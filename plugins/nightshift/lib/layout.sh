@@ -10,7 +10,9 @@
 #
 # Layout 3 keeps each shift in its own folder, `runs/<run>/`. A per-run key resolves inside the run
 # the caller names in NIGHTSHIFT_RUN; with none named, inside the only run the workspace has. With
-# several runs and none named, a per-run key does not resolve: nothing guesses between two runs.
+# several runs and none named it resolves inside `runs/.unnamed/`, a folder no run is ever given (a
+# run name never starts with a dot): nothing guesses between two runs, a caller reads no punch
+# list, no armed marker and no session there, and so stands off every shift.
 NS_LAYOUT_VERSION=3
 
 _ns_layout_load() { # <table>
@@ -96,11 +98,66 @@ ns_layout_runs() {
   done
 }
 
+# ns_layout_live <state-dir> — status 0 when a shift is armed and has not ended: in the run the
+# caller names or the only run, or, in a workspace of several runs with none named, in any of them.
+# The cheap check hooks make before they read anything else.
+ns_layout_live() {
+  local ns="$1" a e r
+  if ns_layout_per_run "$ns" punch-list && ! ns_layout_run_set r "$ns"; then
+    while IFS= read -r r; do
+      [ -n "$r" ] || continue
+      NIGHTSHIFT_RUN="$r" ns_layout_live "$ns" && return 0
+    done <<RUNS
+$(ns_layout_runs "$ns")
+RUNS
+    return 1
+  fi
+  ns_layout_set a "$ns" armed
+  ns_layout_set e "$ns" ended
+  [ -f "$a" ] || return 1
+  if [ -f "$e" ] && [ ! -L "$e" ]; then return 1; fi
+  return 0
+}
+
+# ns_select_session_run <state-dir> <session-id> — which run a hook works on, exported as
+# NIGHTSHIFT_RUN when it can be told: a run already named stays named; otherwise the run whose
+# session record names this session, else the one armed run no session has bound yet (the binding
+# probe right after Start). With none of those, the resolver's own rule stands: the only run, or no
+# run at all, which leaves a hook on a workspace of several runs off every shift.
+ns_select_session_run() {
+  local ns="$1" sid="$2" r s a line found="" unbound="" n=0
+  [ -z "${NIGHTSHIFT_RUN-}" ] || return 0
+  ns_layout_per_run "$ns" punch-list || return 0
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    NIGHTSHIFT_RUN="$r" ns_layout_set s "$ns" session || continue
+    NIGHTSHIFT_RUN="$r" ns_layout_set a "$ns" armed || continue
+    if [ -n "$sid" ] && [ -f "$s" ] && [ ! -L "$s" ]; then
+      line=""
+      IFS= read -r line <"$s" || :
+      if [ "${line%$'\r'}" = "$sid" ]; then
+        found="$r"
+        break
+      fi
+    fi
+    if [ -f "$a" ] && [ ! -e "$s" ] && [ ! -L "$s" ]; then
+      unbound="$r"
+      n=$((n + 1))
+    fi
+  done <<RUNS
+$(ns_layout_runs "$ns")
+RUNS
+  [ -n "$found" ] || [ "$n" -ne 1 ] || found="$unbound"
+  [ -n "$found" ] || return 0
+  NIGHTSHIFT_RUN="$found"
+  export NIGHTSHIFT_RUN
+}
+
 # ns_layout_rel_set <var> <state-dir> <key> [instance] — the path of <key> relative to the state
 # directory, in that directory's layout. A per-run key (`runs/*/…`) takes its run from
-# ns_layout_run_set; <instance> fills the remaining `*` of a family such as usage-*. Status 1 for a
-# key this layout does not have, and for a per-run key with no run to resolve in. <var> must not
-# begin with _nsl or __nsl.
+# ns_layout_run_set, or `.unnamed` when no single run is named; <instance> fills the remaining `*`
+# of a family such as usage-*. Status 1 for a key this layout does not have. <var> must not begin
+# with _nsl or __nsl.
 ns_layout_rel_set() {
   local __nsl_v __nsl_name __nsl_rel __nsl_run
   ns_layout_version_set __nsl_v "$2"
@@ -109,7 +166,7 @@ ns_layout_rel_set() {
   [ -n "$__nsl_rel" ] || return 1
   case "$__nsl_rel" in
     'runs/*/'*)
-      ns_layout_run_set __nsl_run "$2" || return 1
+      ns_layout_run_set __nsl_run "$2" || __nsl_run=.unnamed
       __nsl_rel="runs/$__nsl_run/${__nsl_rel#runs/\*/}"
       ;;
   esac

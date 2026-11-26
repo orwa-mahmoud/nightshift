@@ -26,7 +26,7 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
 # the gate — only the punch list is — which is exactly why proposals land there first.
 @test "the drafting table and catalog entries do show the item shape" {
   [ "$(grep -cE "$OPEN_BOX" "$REF/templates/drafting-table.md" || true)" -gt 0 ]
-  grep -qF '$NS/receipts/' "$REF/templates/drafting-table.md"
+  grep -qF "the run's \`receipts/\` folder" "$REF/templates/drafting-table.md"
   grep -qF 'Commit line (repository) or receipt (artifact)' "$REF/templates/punch-list.md"
   for f in "$REF"/compose/shifts/*.md; do
     [ "$(grep -cE "$OPEN_BOX" "$f" || true)" -gt 0 ] || { echo "no item shape: $f"; return 1; }
@@ -81,14 +81,14 @@ OPEN_BOX='^[[:space:]]*-[[:space:]]*\[[[:space:]]\]'
   rm -f "$p/.nightshift"/*.md
   bash "$scaffold" --project "$p" >/dev/null
 
-  # A person pasting a command out of their own punch list has no $NS.
-  if grep -q '\$NS' "$p/.nightshift/punch-list.md"; then
+  # A person pasting a command out of their own punch list has no $NS or $RUN.
+  if grep -q '\$NS\|\$RUN' "$p/.nightshift/punch-list.md"; then
     echo "the owner's copy still carries an unresolved token"
     return 1
   fi
   grep -qF "$(cd -P "$p" && pwd)/.nightshift" "$p/.nightshift/punch-list.md"
   # And the shipped file is untouched.
-  grep -q '\$NS' "$REF/templates/punch-list.md"
+  grep -q '\$RUN' "$REF/templates/punch-list.md"
 }
 
 @test "the opportunity map carries a resumable single-building record" {

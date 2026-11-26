@@ -20,6 +20,8 @@ STATE_KIND="$(ns_state_kind "$PROJECT_DIR")"
 case "$STATE_KIND" in
   malformed | future) exit 0 ;;
 esac
+# The run this session works on, before any file of one run is resolved.
+ns_select_session_run "$PROJECT_DIR/.nightshift" "${CODEX_SESSION_ID:-}"
 ns_pulse_emit "$PROJECT_DIR/.nightshift" "${CODEX_SESSION_ID:-}"
 # The rollout the host handed this hook carries the session's running token total; one tail reads
 # it. Nothing else is opened, and no other session is looked at.

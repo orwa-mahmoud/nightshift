@@ -211,6 +211,10 @@ case "$VERB" in
     ;;
 esac
 
+# A verb run from a conversation on shift acts on that conversation's run, as its hooks do. A run
+# the caller names in NIGHTSHIFT_RUN stays named.
+ns_select_session_run "$WORKSPACE/.nightshift" "$(ns_conversation_session_id)"
+
 TARGET="$(ns_dispatch_target "$VERB" "$HOST")" || {
   printf 'ns: no verb %s on %s — run ns help for this host'"'"'s verbs\n' "$VERB" "$HOST" >&2
   exit 1

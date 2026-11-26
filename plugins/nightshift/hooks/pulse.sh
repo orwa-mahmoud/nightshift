@@ -488,6 +488,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   else
     SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   fi
+  # The run this session works on, before any file of one run is resolved.
+  ns_select_session_run "$NS" "${SID:-}"
   if command -v jq >/dev/null 2>&1; then
     TPATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
   else

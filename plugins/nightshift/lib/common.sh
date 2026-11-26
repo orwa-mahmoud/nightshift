@@ -125,6 +125,23 @@ ns_sanitize_line() {
   ns_tokenize_text "$text" "$2" "$3" "$4"
 }
 
+# ns_payload_session_id <json> — the hook payload's session_id, read with jq when it is installed
+# and with sed otherwise. Empty when the payload has none.
+ns_payload_session_id() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -r '.session_id // empty' 2>/dev/null || true
+  else
+    printf '%s' "$1" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+  fi
+}
+
+# ns_conversation_session_id — the id of the conversation a command runs in, from the host's own
+# environment: Claude Code gives its Bash tool CLAUDE_CODE_SESSION_ID, the same id its hooks receive
+# as session_id. Empty on a host that gives a command no such id.
+ns_conversation_session_id() {
+  printf '%s' "${CLAUDE_CODE_SESSION_ID:-}"
+}
+
 # ns_read_stdin_bounded <seconds> — the hook payload, and never a hung session.
 #
 # A hook whose stdin is a descriptor that never reaches EOF used to sit in `cat` until something

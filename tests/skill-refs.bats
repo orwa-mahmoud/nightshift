@@ -516,7 +516,7 @@ documented_pages() {
 @test "the state map is one file; the skills that stage, promote or file point at it" {
   map="$SKILLS/nightshift/references/shift/state-map.md"
   [ -f "$map" ]
-  for f in punch-list.md staging/drafting-table.md inbox/parking-lot.md staging/work-orders.md; do
+  for f in 'runs/<run>/punch-list.md' staging/drafting-table.md 'runs/<run>/inbox/parking-lot.md' staging/work-orders.md; do
     grep -qF "\`$f\` →" "$map" || { echo "state-map.md omits $f"; return 1; }
   done
   for name in archive doctor import-issues setup; do
@@ -529,15 +529,18 @@ documented_pages() {
 @test "the state map names who writes every file Setup scaffolds and the runtime keeps" {
   map="$SKILLS/nightshift/references/shift/state-map.md"
   grep -qF '## Every file, and who writes it' "$map"
-  # Each state file the scaffold writes has a row under the path the current layout gives it.
+  # Each state file the scaffold writes has a row under the path the current layout gives it, a
+  # file of one run under its run folder, written `runs/<run>/`.
   for key in punch-list parking-lot snag-log drafting-table work-orders opportunity-map product-research shift-log; do
     rel="$(bash -c '. "$1"; ns_layout_rel_at r "$NS_LAYOUT_VERSION" "$2"; printf %s "$r"' _ \
       "$SKILLS/../lib/layout.sh" "$key")"
+    rel="${rel/runs\/\*\//runs/<run>/}"
     grep -qF "| \`$rel\` |" "$map" || { echo "state-map.md has no row for $rel"; return 1; }
   done
-  for f in rules.json run/shift-policy.json state-version run/deadline 'receipts/<NN>-<slug>-<id>.md' \
-    receipts/README.md 'receipts/morning-<date>-<shiftId>.md' run/evidence/findings.jsonl archive/ \
-    run/.shift-armed run/.ended STOP run/.pending-filing; do
+  for f in rules.json 'runs/<run>/run/shift-policy.json' state-version 'runs/<run>/run/deadline' \
+    'runs/<run>/receipts/<NN>-<slug>-<id>.md' 'runs/<run>/receipts/README.md' \
+    'runs/<run>/receipts/morning-<date>-<shiftId>.md' 'runs/<run>/run/evidence/findings.jsonl' archive/ \
+    'runs/<run>/run/.shift-armed' 'runs/<run>/run/.ended' 'runs/<run>/STOP' 'runs/<run>/run/.pending-filing'; do
     grep -qF "\`$f\`" "$map" || { echo "state-map.md does not name $f"; return 1; }
   done
 }

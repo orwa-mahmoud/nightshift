@@ -38,6 +38,8 @@ HOST_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 LINK_ERROR=""
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || LINK_ERROR=1
 NS="$PROJECT_DIR/.nightshift"
+# The run this session works on, before any file of one run is resolved.
+ns_select_session_run "$NS" "$(ns_payload_session_id "$INPUT")"
 declare PUNCH ENDED ARMED
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set ENDED "$NS" ended

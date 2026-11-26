@@ -35,6 +35,8 @@ case "$STATE_KIND" in
 esac
 NS="$PROJECT_DIR/.nightshift"
 declare PUNCH ARMED ENDED SESSION LEASE SESSION_END
+# The run this session works on, before any file of one run is resolved.
+ns_select_session_run "$NS" "$(ns_payload_session_id "$INPUT")"
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set ARMED "$NS" armed
 ns_layout_set ENDED "$NS" ended

@@ -96,7 +96,7 @@ function New-ArmedWorkspace {
     $null = & git -C $repo commit --quiet --allow-empty -m init
     $made = Invoke-Hook $setup '' $Path @('-Project', $Path, '-WorkTarget', $repo)
     if ($made.ExitCode -ne 0) { throw "setup failed: $($made.Stdout)" }
-    [IO.File]::WriteAllText((Join-Path $Path '.nightshift/punch-list.md'),
+    [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $Path '.nightshift') 'punch-list'),
         "# Contract`n`n## Items`n- [ ] **1. first.**`n", (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText((Get-NSLayoutPath (Join-Path $Path '.nightshift') 'armed'), '')
     return (Join-Path $Path '.nightshift')
@@ -138,7 +138,8 @@ try {
     Expect-True ($helperBash.ExitCode -eq 0 -and [string]::IsNullOrWhiteSpace($helperBash.Stdout)) `
         "another conversation is neither claimed nor fenced after a stop-work order: $($helperBash.Stdout) $($helperBash.Stderr)"
     Expect-True ($null -eq (Read-NSSession $ns)) 'another conversation does not take the dropped record'
-    $ownerBash = Invoke-Tool $workspace 'shift-session' 'Bash' "Remove-Item -Force .nightshift\run\.shift-armed"
+    $armedRel = (Get-NSLayoutRelativePath $ns 'armed').Replace('/', '\')
+    $ownerBash = Invoke-Tool $workspace 'shift-session' 'Bash' "Remove-Item -Force .nightshift\$armedRel"
     Expect-True ($ownerBash.Stdout -match 'control files') "the leased conversation stays under the site rules: $($ownerBash.Stdout)"
     $session = Read-NSSession $ns
     Expect-True ($null -ne $session -and $session.SessionId -eq 'shift-session') 'the leased conversation records itself again'

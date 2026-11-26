@@ -31,7 +31,11 @@ decide the value in force, in this order:
 1. **The built-in default.** What the plugin does when no file says anything.
 2. **`.nightshift/rules.json`.** Your permanent answer. A key you wrote is your answer even when
    its value is an empty string or a zero — that reads as `rules`/`permanent`, not as silence.
-3. **The shift snapshot**, `.nightshift/run/shift-policy.json`. The resolved policy for the night that
+   One run may change some settings for itself in its own `.nightshift/runs/<run>/rules.json`:
+   write only the keys that differ, and each replaces the shared value for that run alone, a whole
+   block key by key and an array whole. Every other setting comes from the shared file. A run file
+   that cannot be read stops that run's guards rather than being skipped.
+3. **The shift snapshot**, `.nightshift/runs/<run>/run/shift-policy.json`. The resolved policy for the night that
    is running, written before the gate arms and guarded once it is. It carries the deadline, the
    verification level, the tooling policy, the completion mode, and any elevation the owner
    granted for that shift alone. It is a record, not a second settings file.

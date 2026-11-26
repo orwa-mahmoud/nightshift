@@ -357,6 +357,17 @@ function Test-NSWatchmanRevivalProved {
 
 function Test-NSHardhatActive {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    # A conversation that belongs to none of several runs is still on a site where shifts run: it
+    # stays under the shared rules and the control-file guard while any run is active.
+    if ((Test-NSLayoutPerRun $NightshiftDir 'punch-list') -and (Get-NSLayoutRun $NightshiftDir).Length -eq 0) {
+        foreach ($run in (Get-NSLayoutRuns $NightshiftDir)) {
+            $saved = $env:NIGHTSHIFT_RUN
+            $env:NIGHTSHIFT_RUN = $run
+            try { if (Test-NSHardhatActive $NightshiftDir) { return $true } }
+            finally { $env:NIGHTSHIFT_RUN = $saved }
+        }
+        return $false
+    }
     $ended = Get-NSLayoutPath $NightshiftDir 'ended'
     if ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)) {
         return $false
@@ -1890,11 +1901,21 @@ function Expand-NSInjectedPaths {
     # never read as the folder it sits in.
     $version = Get-NSLayoutVersion (Join-Path $Workspace '.nightshift')
     $current = $script:NSLayoutPaths[$version]
+    # A file of one run is named inside the run the caller works on; with no run to name, those
+    # names are left as written.
+    $run = ''
+    if (Test-NSLayoutPerRun (Join-Path $Workspace '.nightshift') 'punch-list') { $run = Get-NSLayoutRun (Join-Path $Workspace '.nightshift') }
     $map = New-Object 'System.Collections.Generic.List[object]'
     foreach ($row in $script:NSLayoutRows) {
         if ($row.Kind -ceq 'field' -or $row.Kind -ceq 'retired' -or $row.Kind -ceq 'stray' -or $row.Path.Contains('*')) { continue }
-        if (-not $current.ContainsKey($row.Key) -or $row.Path -ceq $current[$row.Key]) { continue }
-        $map.Add([pscustomobject]@{ From = $row.Path; To = [string]$current[$row.Key] })
+        if (-not $current.ContainsKey($row.Key)) { continue }
+        $to = [string]$current[$row.Key]
+        if ($to.StartsWith('runs/*/')) {
+            if ($run.Length -eq 0) { continue }
+            $to = 'runs/' + $run + '/' + $to.Substring(7)
+        }
+        if ($to.Contains('*') -or $row.Path -ceq $to) { continue }
+        $map.Add([pscustomobject]@{ From = $row.Path; To = $to })
     }
     $map = @($map | Sort-Object -Property @{ Expression = { $_.From.Length }; Descending = $true })
     $builder = New-Object Text.StringBuilder

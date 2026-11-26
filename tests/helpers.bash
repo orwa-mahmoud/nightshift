@@ -122,6 +122,31 @@ bind_session() {
     nightshift "$_TEST_ROOT/../plugins/nightshift/lib/lib.sh" "$1" "${2:-test-shift-session}" "${3:-claude}"
 }
 
+# two_runs [name] — a version-3 workspace with two armed runs, `a` and `b`, each with one open item
+# and its own bound conversation (`sid-a`, `sid-b`), as two Starts leave it. Echoes the workspace.
+two_runs() {
+  local p r
+  p="$(new_project "${1:-two-runs}")"
+  rm -f "$p/.nightshift/.shift-armed"
+  printf '3\n' >"$p/.nightshift/state-version"
+  for r in a b; do
+    mkdir -p "$p/.nightshift/runs/$r/run"
+    printf '# Punch List — %s\n\n## Items\n- [ ] **1. %s first.**\n' "$r" "$r" >"$p/.nightshift/runs/$r/punch-list.md"
+    : >"$p/.nightshift/runs/$r/run/.shift-armed"
+    NIGHTSHIFT_RUN="$r" bash -c '. "$1"; ns_session_claim "$2" "$3" "" "" "" claude' \
+      _ "$_TEST_ROOT/../plugins/nightshift/lib/lib.sh" "$p/.nightshift" "sid-$r"
+  done
+  printf '%s' "$p"
+}
+
+# gate_sid <project> <session-id> [ENV=VAL ...] — a Stop from one named conversation.
+gate_sid() {
+  local p="$1" sid="$2"
+  shift 2
+  hook_payload "$(jq -nc --arg sid "$sid" '{hook_event_name:"Stop",session_id:$sid,transcript_path:""}')" \
+    env "$@" CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/clock-out-gate.sh"
+}
+
 # gate <project> [ENV=VAL ...] — a Stop from the shift's own conversation; the gate reads stdin now.
 gate() {
   local p="$1"

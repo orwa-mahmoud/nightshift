@@ -59,6 +59,8 @@ REC="$(ns_session_line "$NS" 1)"
 [ -n "$SID" ] && [ "$SID" = "$REC" ] || exit 0
 
 declare RESET
+# The run this session works on, before any file of one run is resolved.
+ns_select_session_run "$NS" "${SID:-}"
 ns_layout_set RESET "$NS" context-reset
 [ -L "$RESET" ] && rm -f "$RESET"
 : >"$RESET" 2>/dev/null || :

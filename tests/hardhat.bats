@@ -1636,3 +1636,53 @@ ROWS
   is_deny "$output"
   printf '%s' "$output" | grep -q "rules file is the owner"
 }
+
+@test "a run's own rules file changes one rule for that run alone" {
+  p="$(two_runs hardhat-run-rules)"
+  printf '{\n  "forbiddenCommands": "git .*push"\n}\n' >"$p/.nightshift/runs/a/rules.json"
+  run hardhat_sid_bash "$p" sid-a 'git push origin main'
+  is_deny "$output"
+  run hardhat_sid_bash "$p" sid-b 'git push origin main'
+  ! is_deny "$output" || false
+  # Every other rule still comes from the shared file: the question tool stays parked in run a.
+  run hook_payload "$(jq -nc '{tool_name:"AskUserQuestion",session_id:"sid-a",tool_input:{}}')" \
+    env CLAUDE_PROJECT_DIR="$p" bash "$HOOKS/hardhat.sh"
+  is_deny "$output"
+  # A run rules file that cannot be read fails closed for that run, naming it.
+  printf '{ broken\n' >"$p/.nightshift/runs/a/rules.json"
+  run hardhat_sid_bash "$p" sid-a 'git status'
+  is_deny "$output"
+}
+
+@test "one run's conversation cannot remove or forge another run's control files" {
+  p="$(two_runs hardhat-cross-run)"
+  run hardhat_sid_bash "$p" sid-b "rm $p/.nightshift/runs/a/run/.shift-armed"
+  is_deny "$output"
+  run hardhat_sid_bash "$p" sid-b "rm $p/.nightshift/runs/a/punch-list.md"
+  is_deny "$output"
+  run hardhat_sid_bash "$p" sid-b "rm -rf $p/.nightshift/runs/a"
+  is_deny "$output"
+  run hardhat_sid_bash "$p" sid-b "rm -rf $p/.nightshift/runs"
+  is_deny "$output"
+  [ -f "$p/.nightshift/runs/a/run/.shift-armed" ]
+  [ -f "$p/.nightshift/runs/b/run/.shift-armed" ]
+}
+
+@test "native Windows applies a run's own rule to that run alone and guards every run's control files" {
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  p="$(two_runs ps-hardhat-two-runs)"
+  printf '{\n  "forbiddenCommands": "git .*push"\n}\n' >"$p/.nightshift/runs/a/rules.json"
+  ps_bash() {
+    hook_payload "$(jq -nc --arg sid "$2" --arg c "$3" '{tool_name:"Bash",session_id:$sid,tool_input:{command:$c}}')" \
+      env CLAUDE_PROJECT_DIR="$1" pwsh -NoProfile -NonInteractive -File "$HOOKS/windows/hardhat.ps1" -HostName claude
+  }
+  run ps_bash "$p" sid-a 'git push origin main'
+  printf '%s' "$output" | grep -q '"permissionDecision" *: *"deny"'
+  run ps_bash "$p" sid-b 'git push origin main'
+  if printf '%s' "$output" | grep -q '"permissionDecision" *: *"deny"'; then return 1; fi
+  run ps_bash "$p" sid-b "rm $p/.nightshift/runs/a/run/.shift-armed"
+  printf '%s' "$output" | grep -q '"permissionDecision" *: *"deny"'
+  run ps_bash "$p" sid-b "rm -rf $p/.nightshift/runs/a"
+  printf '%s' "$output" | grep -q '"permissionDecision" *: *"deny"'
+  [ -f "$p/.nightshift/runs/a/run/.shift-armed" ]
+}

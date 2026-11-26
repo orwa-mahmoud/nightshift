@@ -13,18 +13,13 @@ if [ "${NIGHTSHIFT_REVIVAL:-}" != "1" ]; then
     && [ ! -e "$_ns_cold_host/.nightshift-link" ] && [ ! -L "$_ns_cold_host/.nightshift-link" ]; then
     # shellcheck source=plugins/nightshift/lib/layout.sh
     . "${BASH_SOURCE[0]%/*}/../../lib/layout.sh"
-    declare _ns_cold_armed _ns_cold_ended
-    ns_layout_set _ns_cold_armed "$_ns_cold_host/.nightshift" armed
-    ns_layout_set _ns_cold_ended "$_ns_cold_host/.nightshift" ended
-    if [ ! -f "$_ns_cold_armed" ] \
-      || { [ -f "$_ns_cold_ended" ] && [ ! -L "$_ns_cold_ended" ]; }; then
+    if ! ns_layout_live "$_ns_cold_host/.nightshift"; then
       case "${NS_COLD_STOP_HOST:-claude}" in
         codex) printf '%s\n' '{"continue":true}' ;;
       esac
-      unset _ns_cold_host _ns_cold_armed _ns_cold_ended
+      unset _ns_cold_host
       exit 0
     fi
-    unset _ns_cold_armed _ns_cold_ended
   fi
   unset _ns_cold_host
 fi

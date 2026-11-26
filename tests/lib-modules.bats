@@ -15,7 +15,7 @@ LIB_DIR="$BATS_TEST_DIRNAME/../plugins/nightshift/lib"
 }
 
 @test "lib.sh may be sourced twice" {
-  run bash -c '. "$1" && . "$1" && ns_have_cmd bash && [ "$NS_STATE_VERSION" = 2 ] && printf ok' _ "$LIB"
+  run bash -c '. "$1" && . "$1" && ns_have_cmd bash && [ "$NS_STATE_VERSION" = 3 ] && printf ok' _ "$LIB"
   [ "$status" -eq 0 ]
   [ "$output" = ok ]
 }

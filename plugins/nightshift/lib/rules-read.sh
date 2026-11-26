@@ -66,10 +66,59 @@ _ns_rules_ingest() {
   return 0
 }
 
-# ns_rules_load <file> — parse rules.json into NS_RULES_ROWS. Status 1 names
-# the reason in NS_RULES_ERR.
+# _ns_rules_run_file <file> — the run's own rules file to lay over <file>: when <file> is the
+# shared rules file of a workspace that keeps runs, and the run this caller works on has one.
+# Empty otherwise.
+_ns_rules_run_file() {
+  local ns="${1%/*}" run f
+  [ "$ns" != "$1" ] || return 0
+  case "$ns" in */.nightshift) ;; *) return 0 ;; esac
+  ns_layout_per_run "$ns" punch-list 2>/dev/null || return 0
+  ns_layout_run_set run "$ns" || return 0
+  ns_layout_rel_at f "$NS_LAYOUT_VERSION" rules || return 0
+  [ "$1" = "$ns/$f" ] || return 0
+  f="$ns/runs/$run/$f"
+  if [ -f "$f" ] && [ ! -L "$f" ]; then printf '%s' "$f"; fi
+}
+
+# _ns_rules_overlay <run-rows> <shared-rows> — one set of rows where the run's settings replace the
+# shared ones key by key: a value at the same path, or a whole array at the same name. The run's
+# rows come first, so a lookup finds them.
+_ns_rules_overlay() {
+  NS_OVERLAY_RUN="$1" NS_OVERLAY_SHARED="$2" awk '
+    BEGIN {
+      FS = "\t"
+      nr = split(ENVIRON["NS_OVERLAY_RUN"], run, "\n")
+      for (i = 1; i <= nr; i++) {
+        if (run[i] == "") continue
+        print run[i]
+        split(run[i], f, "\t")
+        if (f[4] == "a") arr[f[1] SUBSEP f[2]] = 1
+        else have[f[1] SUBSEP f[2] SUBSEP f[3]] = 1
+      }
+      ns = split(ENVIRON["NS_OVERLAY_SHARED"], shared, "\n")
+      for (i = 1; i <= ns; i++) {
+        if (shared[i] == "") continue
+        split(shared[i], f, "\t")
+        if ((f[1] SUBSEP f[2]) in arr) continue
+        if ((f[1] SUBSEP f[2] SUBSEP f[3]) in have) continue
+        print shared[i]
+      }
+    }'
+}
+
+# _ns_rules_stamp <file> — size and checksum, or empty without wc and cksum.
+_ns_rules_stamp() {
+  if command -v wc >/dev/null 2>&1 && command -v cksum >/dev/null 2>&1; then
+    printf '%s:%s' "$(wc -c <"$1" | tr -d ' ')" "$(cksum <"$1")"
+  fi
+}
+
+# ns_rules_load <file> — parse rules.json into NS_RULES_ROWS. In a workspace that keeps runs, the
+# shared file is read with the run's own rules file laid over it (see _ns_rules_overlay). Status 1
+# names the reason in NS_RULES_ERR.
 ns_rules_load() {
-  local f="$1" stamp
+  local f="$1" stamp runf="" shared
   NS_RULES_ERR=""
   if [ ! -f "$f" ]; then
     NS_RULES_ERR="missing"
@@ -78,9 +127,10 @@ ns_rules_load() {
     NS_RULES_ROWS=""
     return 1
   fi
-  stamp=""
-  if command -v wc >/dev/null 2>&1 && command -v cksum >/dev/null 2>&1; then
-    stamp="$(wc -c <"$f" | tr -d ' '):$(cksum <"$f")"
+  runf="$(_ns_rules_run_file "$f")"
+  stamp="$(_ns_rules_stamp "$f")"
+  if [ -n "$stamp" ] && [ -n "$runf" ]; then
+    stamp="$stamp|$runf:$(_ns_rules_stamp "$runf")"
   fi
   if [ -n "$stamp" ] && [ "$NS_RULES_FILE" = "$f" ] && [ "$NS_RULES_STAMP" = "$stamp" ] && [ -n "$NS_RULES_ROWS" ]; then
     return 0
@@ -94,6 +144,18 @@ ns_rules_load() {
     NS_RULES_ROWS=""
     return 1
   }
+  if [ -n "$runf" ]; then
+    shared="$NS_RULES_ROWS"
+    NS_RULES_ROWS=""
+    _ns_rules_ingest rules "$runf" || {
+      NS_RULES_ERR="${runf##*/.nightshift/}: $NS_RULES_ERR"
+      NS_RULES_FILE=""
+      NS_RULES_STAMP=""
+      NS_RULES_ROWS=""
+      return 1
+    }
+    NS_RULES_ROWS="$(_ns_rules_overlay "$NS_RULES_ROWS" "$shared")"
+  fi
   NS_RULES_FILE="$f"
   NS_RULES_STAMP="$stamp"
   return 0

@@ -233,6 +233,8 @@ if ($stateKind -in @('malformed', 'future')) {
 }
 
 $ns = Join-Path $workspace '.nightshift'
+# The run this session works on, before any file of one run is resolved.
+Select-NSSessionRun $ns $sessionId
 $punch = Get-NSLayoutPath $ns 'punch-list'
 $stop = Get-NSLayoutPath $ns 'stop'
 $deadline = Get-NSLayoutPath $ns 'deadline'
