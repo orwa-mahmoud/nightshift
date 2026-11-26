@@ -117,6 +117,9 @@ What decides the version is the subject line of your commits, so write them to t
 | `feat!: …`, or a `BREAKING CHANGE:` footer | major |
 | `docs: …` `chore: …` `ci: …` `test: …` `refactor: …` | no release, no changelog entry |
 
+Use `feat:` for new catalog entries, even when they are Markdown, `fix:` for corrections to
+catalog behavior, and `docs:` for documentation-only changes.
+
 Only `fix:` and `feat:` reach the changelog, so a subject is user-facing text: say what the change
 does for someone running a shift, not how it was implemented. Do not tag by hand, and do not edit
 `plugins/nightshift/.claude-plugin/plugin.json` or `CHANGELOG.md` — a pull request that does will conflict with

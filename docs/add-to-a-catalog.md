@@ -20,7 +20,7 @@ file. It needs no code, and no other file changes: every listing finds a new fil
    repository root, run
    `plugins/nightshift/runtime/ns catalog-index --catalog <catalog> --check-draft <your-file>`.
 3. **Open a pull request** with that one file. For a shift, reference
-   [#21](https://github.com/orwa-mahmoud/nightshift/issues/21).
+   [#21](https://github.com/orwa-mahmoud/nightshift/issues/21). Use a `feat:` PR title for a new catalog entry.
 
 ## Only for you
 
