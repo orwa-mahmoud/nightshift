@@ -112,7 +112,7 @@ write() {
   # list has no `$NS`. The shipped template is never changed.
   ok=0
   if [ "$kind" = template ]; then
-    sed -e "s|\$NIGHTSHIFT_WORKSPACE|$WORKSPACE|g" -e "s|\$NS|$NS|g" "$src" >"$dest" 2>/dev/null && ok=1
+    ns_owner_template "$src" "$WORKSPACE" >"$dest" 2>/dev/null && ok=1
   else
     printf '%s\n' "$src" >"$dest" 2>/dev/null && ok=1
   fi

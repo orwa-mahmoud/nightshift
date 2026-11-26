@@ -62,6 +62,27 @@ ns_sed_escape() {
   printf '%s' "$1" | sed 's/[][\\.*^$]/\\&/g'
 }
 
+# ns_owner_template <template> <workspace> — the template's text with `$NIGHTSHIFT_WORKSPACE` and
+# `$NS` replaced by that workspace's paths, character for character: a path holding `&`, `|` or a
+# backslash is written as it is.
+ns_owner_template() {
+  local ws="${2%/}"
+  NS_TEMPLATE_WS="$ws" NS_TEMPLATE_NS="$ws/.nightshift" awk '
+    function literal(s, from, to,    out, i) {
+      out = ""
+      while ((i = index(s, from)) > 0) {
+        out = out substr(s, 1, i - 1) to
+        s = substr(s, i + length(from))
+      }
+      return out s
+    }
+    {
+      line = literal($0, "$NIGHTSHIFT_WORKSPACE", ENVIRON["NS_TEMPLATE_WS"])
+      print literal(line, "$NS", ENVIRON["NS_TEMPLATE_NS"])
+    }
+  ' "$1"
+}
+
 # ns_tokenize_text <text> <home> <workspace> <work-target>
 # Longest prefix wins. Remaining absolute paths make the function return 1 (omit).
 ns_tokenize_text() {

@@ -100,6 +100,15 @@ bare() { # a workspace with no state files at all
   grep -q '\$NS' "$TEMPLATES/punch-list.md"
 }
 
+@test "a workspace path holding & or | is written into the copy exactly" {
+  p="$BATS_TEST_TMPDIR/R&D|app"
+  mkdir -p "$p"
+  bash "$SCAFFOLD" --project "$p" >/dev/null
+  ns="$(cd -P "$p" && pwd)/.nightshift"
+  grep -qF "touch \"$ns/STOP\"" "$p/.nightshift/punch-list.md"
+  ! grep -q '\$NS' "$p/.nightshift/punch-list.md" || false
+}
+
 @test "running twice is a safe repair" {
   p="$(bare scaffold-twice)"
   bash "$SCAFFOLD" --project "$p" >/dev/null
