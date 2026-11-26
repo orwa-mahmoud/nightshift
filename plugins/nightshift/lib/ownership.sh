@@ -644,6 +644,94 @@ ns_watchman_run_child() { # <ns> <host> <sid> <work_target> <project_env> <proje
   return "$rc"
 }
 
+# ns_detach <output> <cmd...> — start <cmd> in a session of its own, with its output appended to
+# <output>, and set NS_DETACHED_PID to its pid. A host that tears down the process group of the
+# session that started it (Codex does, when its app restarts or reloads) must not take the process
+# with it; nohup alone only survives a hangup. setsid where the system has it, perl's setsid on
+# macOS, which ships perl and no setsid; both exec, so the pid stays the command's own.
+ns_detach() {
+  local out="$1"
+  shift
+  if command -v setsid >/dev/null 2>&1; then
+    set -- setsid "$@"
+  elif command -v perl >/dev/null 2>&1; then
+    set -- perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec: $!\n"' "$@"
+  fi
+  nohup "$@" >>"$out" 2>&1 </dev/null &
+  NS_DETACHED_PID=$!
+}
+
+# ns_start_background_worker <ns> <host> <work_target> <project_env> <project> <output> <cmd...>
+# — start a headless worker on a run nobody works yet, the way a revival starts one: the lease is
+# taken for it first and its pid attached, so the worker's hooks bind it to the run and anything
+# that asks finds it alive. Detached, so it outlives the conversation that started it. Prints the
+# pid. Status 3 when the lease cannot be taken, 1 when the worker does not start.
+ns_start_background_worker() {
+  local ns="$1" host="$2" work="$3" env_name="$4" project="$5" out="$6"
+  local lease generation nonce pid start
+  shift 6
+  lease="$(ns_lease_takeover "$ns" "" "$host")" || return 3
+  generation="${lease%% *}"
+  nonce="${lease#* }"
+  mkdir -p "${out%/*}" 2>/dev/null || :
+  pid="$(
+    cd "$work" || exit 1
+    ns_detach "$out" env "${env_name}=${project}" \
+      NIGHTSHIFT_RUN="${NIGHTSHIFT_RUN-}" \
+      NIGHTSHIFT_REVIVAL=1 \
+      NIGHTSHIFT_LEASE_GENERATION="$generation" \
+      NIGHTSHIFT_LEASE_NONCE="$nonce" \
+      "$@"
+    printf '%s' "$NS_DETACHED_PID"
+  )" || return 1
+  case "$pid" in '' | *[!0-9]*) return 1 ;; esac
+  start="$(ns_process_start "$pid" 2>/dev/null || true)"
+  ns_lease_attach_process "$ns" "$host" "$nonce" "$generation" "$pid" "$start" || return 1
+  printf '%s' "$pid"
+}
+
+# ns_background_worker_command <workspace> <host> <scope> <prompt> — the headless command that
+# starts a fresh worker on <host> with <prompt>, set in the array NS_WORKER_CMD: the command each
+# host's watchman uses for a fresh revival, at the same launch scope. An owner's watchAgent replaces
+# it, as it does for the watchman. Cursor gets a CLI chat minted first, recorded where its watchman
+# resumes it. Status 1 names the reason in NS_WORKER_ERR. Sets both for the caller.
+# shellcheck disable=SC2034
+ns_background_worker_command() {
+  local ws="$1" host="$2" scope="$3" prompt="$4" agent minted
+  NS_WORKER_CMD=()
+  NS_WORKER_ERR=""
+  case "$scope" in
+    unavailable:*)
+      NS_WORKER_ERR="$(ns_recovery_refusal "$scope")"
+      return 1
+      ;;
+  esac
+  agent="$(rule "$ws" watchAgent "${NIGHTSHIFT_WATCH_AGENT:-}")"
+  if [ -n "$agent" ]; then
+    # The owner's command line is word-split, exactly as the watchman splits it.
+    # shellcheck disable=SC2206
+    NS_WORKER_CMD=($agent "$prompt")
+    return 0
+  fi
+  case "$host:$scope" in
+    claude:host-default) NS_WORKER_CMD=(claude -p "$prompt") ;;
+    codex:host-default) NS_WORKER_CMD=(codex exec "$prompt") ;;
+    codex:recorded:*) NS_WORKER_CMD=(codex exec -s "${scope#recorded:}" "$prompt") ;;
+    cursor:host-default)
+      minted="$(agent create-chat 2>/dev/null | tr -d '[:space:]')"
+      if [ -z "$minted" ] || ! ns_cursor_worker_write "$ws/.nightshift" "$minted"; then
+        NS_WORKER_ERR="agent create-chat did not give a CLI chat to start the worker in"
+        return 1
+      fi
+      NS_WORKER_CMD=(agent --resume="$minted" -p --workspace "$ws" "$prompt")
+      ;;
+    *)
+      NS_WORKER_ERR="$host has no headless launch at launch scope $scope"
+      return 1
+      ;;
+  esac
+}
+
 # Exit 0 from a revival child is not proof it worked — a denied claude -p still quits clean.
 # 0 = a box moved, the pulse is fresh, or the lease holder is still alive.
 ns_watchman_revival_proved() { # <ns> <sentinel> <interval_min> <open_before>

@@ -24,6 +24,15 @@ if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) {
 $projectPath = Get-NSStateDirOwner (Resolve-Path -LiteralPath $Project -ErrorAction Stop).ProviderPath
 $workspace = Resolve-NSWorkspaceRoot $projectPath
 $ns = Join-Path $workspace '.nightshift'
+# In a workspace that keeps runs, the watchman watches one run, named on its command line.
+$run = ''
+if (Test-NSLayoutPerRun $ns 'punch-list') {
+    $run = Get-NSLayoutRun $ns
+    if ($run.Length -eq 0) {
+        [Console]::Error.WriteLine('start-watchman: several runs and none named - set NIGHTSHIFT_RUN to one of: ' + ((Get-NSLayoutRuns $ns) -join ' '))
+        exit 1
+    }
+}
 $marker = Get-NSLayoutPath $ns 'watchman'
 $log = Get-NSLayoutPath $ns 'shift-log'
 $output = Get-NSLayoutPath $ns 'watchman-log'
@@ -35,7 +44,7 @@ if ((Test-NSRecordedProcess $held.Pid $held.Start) -eq 'Alive') {
     "watchman already watching (pid $($held.Pid))"
     exit 0
 }
-$live = Find-NSWatchmanForProject $workspace
+$live = Find-NSWatchmanForProject $workspace $run
 if ($live -gt 1) {
     "watchman already watching (pid $live)"
     exit 0
@@ -55,8 +64,9 @@ $outputFrom = @([IO.File]::ReadAllLines($output)).Count
 $quotedScript = $watchman.Replace("'", "''")
 $quotedProject = $projectPath.Replace("'", "''")
 $quotedOutput = $output.Replace("'", "''")
+$quotedRun = $run.Replace("'", "''")
 $command = "`$utf8 = New-Object Text.UTF8Encoding(`$false); " +
-"try { & '$quotedScript' -Project '$quotedProject' -HostName '$HostName' *>&1 | " +
+"try { & '$quotedScript' -Project '$quotedProject' -HostName '$HostName' -Run '$quotedRun' *>&1 | " +
 "ForEach-Object { [IO.File]::AppendAllText('$quotedOutput', [string]`$_ + [Environment]::NewLine, `$utf8) } } " +
 "catch { [IO.File]::AppendAllText('$quotedOutput', `$_.Exception.Message + [Environment]::NewLine, `$utf8); exit 1 }; " +
 "exit `$LASTEXITCODE"

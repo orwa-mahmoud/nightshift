@@ -62,6 +62,17 @@ NS="$WORKSPACE/.nightshift"
 WATCHMAN="$_here/$HOST_NAME/watchman.sh"
 [ -f "$WATCHMAN" ] || { printf 'start-watchman: no %s watchman in this plugin\n' "$HOST_NAME" >&2; exit 1; }
 
+# In a workspace that keeps runs, the watchman watches one run, named on its command line.
+RUN=""
+RUN_ARGS=()
+if ns_layout_per_run "$NS" punch-list; then
+  ns_layout_run_set RUN "$NS" || {
+    printf 'start-watchman: several runs and none named - set NIGHTSHIFT_RUN to one of: %s\n' "$(ns_layout_runs "$NS" | tr '\n' ' ')" >&2
+    exit 1
+  }
+  RUN_ARGS=(--run "$RUN")
+fi
+
 declare PIDFILE LOG OUTPUT
 ns_layout_set PIDFILE "$NS" watchman
 ns_layout_set LOG "$NS" shift-log
@@ -87,7 +98,7 @@ esac
 # A live watchman can outlive its pid file: Stop used to delete the file without
 # killing the process. The script and --project still name it, and a second one
 # must not start beside it.
-live="$(ns_watchman_live_for_project "$WORKSPACE" 2>/dev/null || true)"
+live="$(ns_watchman_live_for_project "$WORKSPACE" "$RUN" 2>/dev/null || true)"
 case "$live" in
   '' | *[!0-9]*) ;;
   *)
@@ -103,19 +114,10 @@ printf '%s · start-watchman: launching the %s watchman for %s\n' \
   "$(ns_local_now second)" "$HOST_NAME" "$WORKSPACE" >>"$OUTPUT"
 output_from="$(wc -l <"$OUTPUT" | tr -d '[:space:]')"
 
-# The watchman runs in a session of its own. A host that tears down the process group of the
-# session that started it (Codex does, when its app restarts or reloads) must not take the
-# watchman with it; nohup alone only survives a hangup. setsid where the system has it, perl's
-# setsid on macOS, which ships perl and no setsid; both exec, so the pid stays the watchman's.
-if command -v setsid >/dev/null 2>&1; then
-  set -- setsid "$WATCHMAN" --project "$WORKSPACE" "$@"
-elif command -v perl >/dev/null 2>&1; then
-  set -- perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or die "exec: $!\n"' "$WATCHMAN" --project "$WORKSPACE" "$@"
-else
-  set -- "$WATCHMAN" --project "$WORKSPACE" "$@"
-fi
-nohup "$@" >>"$OUTPUT" 2>&1 </dev/null &
-child=$!
+# The watchman runs in a session of its own, so a host that tears down the session that started it
+# does not take the watchman with it.
+ns_detach "$OUTPUT" "$WATCHMAN" --project "$WORKSPACE" ${RUN_ARGS[@]+"${RUN_ARGS[@]}"} "$@"
+child="$NS_DETACHED_PID"
 
 # Everything the watchman said since this launch, for a refusal to quote.
 did_not_arm() {

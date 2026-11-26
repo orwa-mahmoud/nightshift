@@ -5,13 +5,16 @@ param(
     [string]$HostName,
     [int]$IntervalMinutes = -1,
     [string]$Agent = '',
-    [int]$MaxWakes = 0
+    [int]$MaxWakes = 0,
+    [string]$Run = ''
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object Text.UTF8Encoding($false)
 
+# In a workspace that keeps runs, this watchman watches the run its command line names.
+if ($Run.Length -gt 0) { $env:NIGHTSHIFT_RUN = $Run }
 $pluginRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 Import-Module (Join-Path $pluginRoot 'lib/Nightshift.psm1') -Force -DisableNameChecking
 if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
@@ -471,59 +474,6 @@ function Get-NSSiteVerdict {
         return 'unavailable'
     }
     return 'dead'
-}
-
-function Quote-NSWindowsArgument {
-    param([AllowEmptyString()][string]$Value)
-    if ($Value -notmatch '[\s"]' -and -not [string]::IsNullOrEmpty($Value)) {
-        return $Value
-    }
-    $builder = New-Object Text.StringBuilder
-    $null = $builder.Append('"')
-    $slashes = 0
-    foreach ($character in $Value.ToCharArray()) {
-        if ($character -eq '\') {
-            $slashes++
-            continue
-        }
-        if ($character -eq '"') {
-            $null = $builder.Append(('\' * (($slashes * 2) + 1)))
-            $null = $builder.Append('"')
-            $slashes = 0
-            continue
-        }
-        if ($slashes -gt 0) {
-            $null = $builder.Append(('\' * $slashes))
-            $slashes = 0
-        }
-        $null = $builder.Append($character)
-    }
-    if ($slashes -gt 0) {
-        $null = $builder.Append(('\' * ($slashes * 2)))
-    }
-    $null = $builder.Append('"')
-    return $builder.ToString()
-}
-
-function Quote-NSPowerShellLiteral {
-    param([AllowEmptyString()][string]$Value)
-    return "'" + $Value.Replace("'", "''") + "'"
-}
-
-# The powershell.exe argument line that runs one agent command and passes its exit code back.
-function Get-NSAgentArgumentLine {
-    param(
-        [Parameter(Mandatory = $true)][string]$CommandName,
-        [Parameter(Mandatory = $true)][AllowEmptyCollection()][Collections.Generic.List[string]]$CommandArguments
-    )
-    $invocation = '& { & ' + (Quote-NSPowerShellLiteral $CommandName)
-    foreach ($argument in $CommandArguments) {
-        $invocation += ' ' + (Quote-NSPowerShellLiteral $argument)
-    }
-    $invocation += '; $nsOk = $?; $nsExit = $LASTEXITCODE; ' +
-        'if ($null -ne $nsExit) { exit $nsExit }; if (-not $nsOk) { exit 1 } }'
-    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $invocation)
-    return (($arguments | ForEach-Object { Quote-NSWindowsArgument $_ }) -join ' ')
 }
 
 # A Cursor worker that exited after ticking a box is relaunched, unless the shift ended, stopped,

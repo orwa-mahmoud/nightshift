@@ -428,3 +428,171 @@ function Invoke-NSIdleTake {
     }
     return 'standby'
 }
+
+# Quote-NSWindowsArgument, Quote-NSPowerShellLiteral and Get-NSAgentArgumentLine build the hidden
+# powershell.exe command line that starts a headless agent, for the watchman and for a run started in
+# the background alike.
+function Quote-NSWindowsArgument {
+    param([AllowEmptyString()][string]$Value)
+    if ($Value -notmatch '[\s"]' -and -not [string]::IsNullOrEmpty($Value)) {
+        return $Value
+    }
+    $builder = New-Object Text.StringBuilder
+    $null = $builder.Append('"')
+    $slashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq '\') {
+            $slashes++
+            continue
+        }
+        if ($character -eq '"') {
+            $null = $builder.Append(('\' * (($slashes * 2) + 1)))
+            $null = $builder.Append('"')
+            $slashes = 0
+            continue
+        }
+        if ($slashes -gt 0) {
+            $null = $builder.Append(('\' * $slashes))
+            $slashes = 0
+        }
+        $null = $builder.Append($character)
+    }
+    if ($slashes -gt 0) {
+        $null = $builder.Append(('\' * ($slashes * 2)))
+    }
+    $null = $builder.Append('"')
+    return $builder.ToString()
+}
+
+function Quote-NSPowerShellLiteral {
+    param([AllowEmptyString()][string]$Value)
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+# The powershell.exe argument line that runs one agent command and passes its exit code back.
+function Get-NSAgentArgumentLine {
+    param(
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][Collections.Generic.List[string]]$CommandArguments
+    )
+    $invocation = '& { & ' + (Quote-NSPowerShellLiteral $CommandName)
+    foreach ($argument in $CommandArguments) {
+        $invocation += ' ' + (Quote-NSPowerShellLiteral $argument)
+    }
+    $invocation += '; $nsOk = $?; $nsExit = $LASTEXITCODE; ' +
+        'if ($null -ne $nsExit) { exit $nsExit }; if (-not $nsOk) { exit 1 } }'
+    $arguments = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', $invocation)
+    return (($arguments | ForEach-Object { Quote-NSWindowsArgument $_ }) -join ' ')
+}
+
+# Get-NSBackgroundWorkerCommand <workspace> <host> <scope> <prompt> - the headless command that starts
+# a fresh worker on <host> with <prompt>: the command each host's watchman uses for a fresh revival,
+# at the same launch scope. An owner's watchAgent replaces it, as it does for the watchman. Cursor
+# gets a CLI chat minted first, recorded where its watchman resumes it. Returns Name and Arguments,
+# or Error naming why there is none. Mirrors ns_background_worker_command.
+function Get-NSBackgroundWorkerCommand {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][ValidateSet('claude', 'codex', 'cursor')][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$Scope,
+        [Parameter(Mandatory = $true)][string]$Prompt
+    )
+    $arguments = New-Object Collections.Generic.List[string]
+    $result = [pscustomobject]@{ Name = ''; Arguments = $arguments; Error = '' }
+    if ($Scope -clike 'unavailable:*') {
+        $result.Error = Get-NSRecoveryRefusal $Scope
+        return $result
+    }
+    $agent = Get-NSRule $Workspace 'watchAgent' ([string]$env:NIGHTSHIFT_WATCH_AGENT)
+    if (-not [string]::IsNullOrWhiteSpace($agent)) {
+        # The owner's command line is split on whitespace, exactly as the watchman splits it.
+        $tokens = @($agent.Trim() -split '\s+' | Where-Object { -not [string]::IsNullOrEmpty($_) })
+        $result.Name = $tokens[0].Trim("'`"")
+        foreach ($token in @($tokens | Select-Object -Skip 1)) { $arguments.Add($token.Trim("'`"")) }
+        $arguments.Add($Prompt)
+        return $result
+    }
+    switch -CaseSensitive ($HostName + ':' + $Scope) {
+        'claude:host-default' {
+            $result.Name = 'claude'
+            $arguments.Add('-p')
+        }
+        'codex:host-default' {
+            $result.Name = 'codex'
+            $arguments.Add('exec')
+        }
+        'cursor:host-default' {
+            $minted = ''
+            try { $minted = ([string](& agent create-chat 2>$null)).Trim() } catch { $minted = '' }
+            $record = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'worker'
+            if ($minted.Length -eq 0 -or $minted -match '[\s/\\]' -or -not (Write-NSAtomicLines -Path $record -Lines @($minted) -Private)) {
+                $result.Error = 'agent create-chat did not give a CLI chat to start the worker in'
+                return $result
+            }
+            $result.Name = 'agent'
+            $arguments.Add("--resume=$minted")
+            $arguments.Add('-p')
+            $arguments.Add('--workspace')
+            $arguments.Add($Workspace)
+        }
+        default {
+            if ($HostName -eq 'codex' -and $Scope -clike 'recorded:*') {
+                $result.Name = 'codex'
+                $arguments.Add('exec')
+                $arguments.Add('-s')
+                $arguments.Add($Scope.Substring('recorded:'.Length))
+            }
+            else {
+                $result.Error = "$HostName has no headless launch at launch scope $Scope"
+                return $result
+            }
+        }
+    }
+    $arguments.Add($Prompt)
+    return $result
+}
+
+# Start-NSBackgroundWorker - start a headless worker on a run nobody works yet, the way a revival
+# starts one: the lease is taken for it first and its process attached, so the worker's hooks bind it
+# to the run and anything that asks finds it alive. Hidden and not waited on, so it outlives the
+# conversation that started it. Returns the pid, or 0 when the lease cannot be taken or the process
+# does not start. Mirrors ns_start_background_worker.
+function Start-NSBackgroundWorker {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][ValidateSet('claude', 'codex', 'cursor')][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$WorkTarget,
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$CommandName,
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][Collections.Generic.List[string]]$CommandArguments
+    )
+    $lease = Takeover-NSLease $NightshiftDir '' $HostName
+    if ($null -eq $lease) { return 0 }
+    $projectVariable = @{ claude = 'CLAUDE_PROJECT_DIR'; codex = 'CODEX_PROJECT_DIR'; cursor = 'CURSOR_PROJECT_DIR' }[$HostName]
+    $saved = @{}
+    foreach ($name in @($projectVariable, 'NIGHTSHIFT_REVIVAL', 'NIGHTSHIFT_LEASE_GENERATION', 'NIGHTSHIFT_LEASE_NONCE')) {
+        $saved[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    try {
+        [Environment]::SetEnvironmentVariable($projectVariable, $Workspace)
+        $env:NIGHTSHIFT_REVIVAL = '1'
+        $env:NIGHTSHIFT_LEASE_GENERATION = [string]$lease.Generation
+        $env:NIGHTSHIFT_LEASE_NONCE = $lease.Nonce
+        $argumentLine = Get-NSAgentArgumentLine $CommandName $CommandArguments
+        try {
+            $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentLine `
+                -WorkingDirectory $WorkTarget -WindowStyle Hidden -PassThru -ErrorAction Stop
+        }
+        catch {
+            return 0
+        }
+        $start = Get-NSProcessStart $process.Id
+        if (-not (Attach-NSLeaseProcess $NightshiftDir $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start)) {
+            return 0
+        }
+        return [int]$process.Id
+    }
+    finally {
+        foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+    }
+}

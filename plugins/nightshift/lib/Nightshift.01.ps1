@@ -2667,15 +2667,32 @@ function Test-NSWatchmanScriptCommand {
 function Test-NSWatchmanCommandForProject {
     param(
         [AllowEmptyString()][string]$CommandLine,
-        [AllowEmptyString()][string]$Workspace
+        [AllowEmptyString()][string]$Workspace,
+        [AllowEmptyString()][string]$Run = ''
     )
     if ([string]::IsNullOrEmpty($CommandLine) -or [string]::IsNullOrEmpty($Workspace)) { return $false }
     if (-not (Test-NSWatchmanScriptCommand $CommandLine)) { return $false }
+    if (-not (Test-NSCommandHasArgument $CommandLine 'project' 'Project' $Workspace)) { return $false }
+    # Each run of a workspace has a watchman of its own, named on its command line.
+    return ($Run.Length -eq 0 -or (Test-NSCommandHasArgument $CommandLine 'run' 'Run' $Run))
+}
+
+# Test-NSCommandHasArgument <command> <flag> <PowerShell flag> <value> - the command line passes
+# <value> to --<flag> or -<PowerShell flag>, as one whole argument. Mirrors
+# ns_watchman_command_has_arg.
+function Test-NSCommandHasArgument {
+    param(
+        [AllowEmptyString()][string]$CommandLine,
+        [Parameter(Mandatory = $true)][string]$Flag,
+        [Parameter(Mandatory = $true)][string]$PowerShellFlag,
+        [AllowEmptyString()][string]$Value
+    )
+    if ([string]::IsNullOrEmpty($Value)) { return $false }
     foreach ($form in @(
-            '--project ', '--project=', '-Project ', '-Project=',
-            '--project "', "-Project '", '--project ''', '-Project "'
+            "--$Flag ", "--$Flag=", "-$PowerShellFlag ", "-$PowerShellFlag=",
+            "--$Flag `"", "-$PowerShellFlag '", "--$Flag '", "-$PowerShellFlag `""
         )) {
-        $needle = $form + $Workspace
+        $needle = $form + $Value
         $from = 0
         while ($from -lt $CommandLine.Length) {
             $at = $CommandLine.IndexOf($needle, $from, [StringComparison]::Ordinal)
@@ -2691,7 +2708,10 @@ function Test-NSWatchmanCommandForProject {
 }
 
 function Find-NSWatchmanForProject {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [AllowEmptyString()][string]$Run = ''
+    )
     $ws = $Workspace
     # Resolve-NSCanonicalPath fails for a workspace that still names itself; keep the path as given.
     try { $ws = Resolve-NSCanonicalPath $Workspace } catch { $ws = $Workspace }
@@ -2703,7 +2723,7 @@ function Find-NSWatchmanForProject {
         foreach ($row in $rows) {
             $id = [int]$row.ProcessId
             if ($id -le 1 -or $id -eq $PID) { continue }
-            if (Test-NSWatchmanCommandForProject ([string]$row.CommandLine) $ws) { return $id }
+            if (Test-NSWatchmanCommandForProject ([string]$row.CommandLine) $ws $Run) { return $id }
         }
         return 0
     }
@@ -2713,7 +2733,7 @@ function Find-NSWatchmanForProject {
         if ($text -notmatch '^([0-9]+)\s+(.*)$') { continue }
         $id = [int]$Matches[1]
         if ($id -le 1 -or $id -eq $PID) { continue }
-        if (Test-NSWatchmanCommandForProject $Matches[2] $ws) { return $id }
+        if (Test-NSWatchmanCommandForProject $Matches[2] $ws $Run) { return $id }
     }
     return 0
 }

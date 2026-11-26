@@ -139,6 +139,41 @@ two_runs() {
   printf '%s' "$p"
 }
 
+# runs_site [name] — a version-3 workspace with no run yet, its code repo beside it holding a commit
+# and the owner's uncommitted work, and two plans waiting in staging: "Export CSV" and "Dark mode".
+# The name may hold spaces. Echoes the workspace.
+runs_site() {
+  local w n k
+  w="$BATS_TEST_TMPDIR/${1:-runs site}"
+  mkdir -p "$w/.nightshift/run" "$w/.nightshift/runs" "$w/.nightshift/staging/plans"
+  cp "$RULES_TEMPLATE" "$w/.nightshift/rules.json"
+  printf '3\n' >"$w/.nightshift/state-version"
+  add_repo "$w" repo
+  printf 'app\n' >"$w/repo/app.txt"
+  git -C "$w/repo" add app.txt
+  git -C "$w/repo" commit -q -m app
+  printf 'owner work in progress\n' >>"$w/repo/app.txt"
+  printf 'notes\n' >"$w/repo/notes.txt"
+  printf '%s\n' "$(cd -P "$w/repo" && pwd)" >"$w/.nightshift/run/work-target"
+  printf 'repository\n' >"$w/.nightshift/run/work-mode"
+  for n in "Export CSV" "Dark mode"; do
+    k="$(printf '%s' "$n" | tr 'A-Z ' 'a-z-')"
+    printf '# Punch List — %s\n\n## Contract\n\n- Work in the run.\n\n## Gates\n\n## Items\n\n- [ ] **1. Do %s.**\n  - Verify: true\n  - Commit: `feat: x`\n' \
+      "$n" "$n" >"$w/.nightshift/staging/plans/$k.md"
+  done
+  printf '%s' "$(cd -P "$w" && pwd)"
+}
+
+# owner_state <repo> — HEAD, branch, index, tracked edits and untracked files of the owner's checkout.
+owner_state() {
+  git -C "$1" rev-parse HEAD
+  git -C "$1" symbolic-ref -q HEAD
+  git -C "$1" status --porcelain
+  git -C "$1" diff
+  git -C "$1" diff --cached
+  cat "$1/app.txt" "$1/notes.txt"
+}
+
 # gate_sid <project> <session-id> [ENV=VAL ...] — a Stop from one named conversation.
 gate_sid() {
   local p="$1" sid="$2"

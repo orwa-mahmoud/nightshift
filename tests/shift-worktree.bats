@@ -175,3 +175,116 @@ ok worktree none - the shift works in the work target itself' ] || { echo "$outp
   grep -qF 'pre-existing edits.' "$PLUGIN/skills/nightshift/SKILL.md"
   grep -qF 'start-preflight --phase worktree' "$PLUGIN/skills/start/SKILL.md"
 }
+
+# ---------------------------------------------------------------- named runs
+START_RUN="$PLUGIN/runtime/start-run.sh"
+
+start_run() { # <workspace> <plan> [extra args]
+  local w="$1" plan="$2"
+  shift 2
+  (cd "$w" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$w" \
+    bash "$START_RUN" --project "$w" --plan "$plan" --host claude "$@")
+}
+
+# fake_agent — a headless worker stand-in: records where it runs, its run and its lease, then stays
+# alive long enough to be found. Echoes its path.
+fake_agent() {
+  local bin="$BATS_TEST_TMPDIR/bin"
+  mkdir -p "$bin"
+  cat >"$bin/fake-agent" <<'STUB'
+#!/usr/bin/env bash
+printf '%s|%s|%s|%s\n' "$PWD" "$NIGHTSHIFT_RUN" "$NIGHTSHIFT_LEASE_GENERATION" "$NIGHTSHIFT_LEASE_NONCE" >>"$FAKE_AGENT_CALLS"
+sleep 30
+STUB
+  chmod +x "$bin/fake-agent"
+  printf '%s' "$bin/fake-agent"
+}
+
+# stop_run_processes <workspace> <run> — the run's watchman and worker, ended after the test.
+stop_run_processes() {
+  local f pid
+  for f in "$1/.nightshift/runs/$2/run/.watchman" "$1/.nightshift/runs/$2/run/.shift-lease"; do
+    [ -f "$f" ] || continue
+    if [ "${f##*/}" = .watchman ]; then pid="$(sed -n 1p "$f")"; else pid="$(sed -n 5p "$f")"; fi
+    case "$pid" in '' | *[!0-9]*) ;; *) pkill -P "$pid" 2>/dev/null || :; kill "$pid" 2>/dev/null || : ;; esac
+  done
+}
+
+@test "two plans started from a dirty owner checkout get two run folders and two worktrees" {
+  w="$(runs_site "two plans")"
+  before="$(owner_state "$w/repo")"
+  run start_run "$w" "Export CSV"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'ok run export-csv'
+  run start_run "$w" "Dark mode"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'ok run dark-mode'
+  [ -f "$w/.nightshift/runs/export-csv/punch-list.md" ]
+  [ -f "$w/.nightshift/runs/dark-mode/punch-list.md" ]
+  [ ! -e "$w/.nightshift/staging/plans/export-csv.md" ]
+  [ ! -e "$w/.nightshift/staging/plans/dark-mode.md" ]
+  # Each run works in its own worktree, on its own branch.
+  [ "$(git -C "$w/repo" worktree list | wc -l | tr -d ' ')" = 3 ]
+  git -C "$w/repo" show-ref --verify --quiet "refs/heads/shift/$(date +%Y-%m-%d)-export-csv"
+  git -C "$w/repo" show-ref --verify --quiet "refs/heads/shift/$(date +%Y-%m-%d)-dark-mode"
+  [ "$(NIGHTSHIFT_RUN=export-csv lib ns_work_target "$w")" != "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$w")" ]
+  # The owner's checkout, index and files are exactly as they were.
+  [ "$(owner_state "$w/repo")" = "$before" ]
+  # Each run's rules give it its worktree; the shared rules are unchanged.
+  [ "$(jq -r .shift.isolation "$w/.nightshift/runs/export-csv/rules.json")" = worktree ]
+  [ "$(jq -r .shift.isolation "$w/.nightshift/rules.json")" = none ]
+}
+
+@test "a failed worktree step leaves the plan staged and the owner's checkout unchanged" {
+  w="$(runs_site "failed worktree")"
+  git -C "$w/repo" branch "shift/$(date +%Y-%m-%d)-export-csv"
+  before="$(owner_state "$w/repo")"
+  run start_run "$w" "Export CSV"
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -q '^refuse worktree '
+  [ -f "$w/.nightshift/staging/plans/export-csv.md" ]
+  [ "$(git -C "$w/repo" worktree list | wc -l | tr -d ' ')" = 1 ]
+  [ "$(owner_state "$w/repo")" = "$before" ]
+  # Run again once the cause is gone: the same run is finished, not a second one made.
+  git -C "$w/repo" branch -D "shift/$(date +%Y-%m-%d)-export-csv" >/dev/null
+  run start_run "$w" "Export CSV"
+  [ "$status" -eq 0 ]
+  [ "$(ls "$w/.nightshift/runs")" = export-csv ]
+  [ ! -e "$w/.nightshift/staging/plans/export-csv.md" ]
+}
+
+# A background start leaves a worker and a watchman running; each call closes Bats's descriptor 3 so
+# those processes do not hold the test open.
+@test "a background start cut short after its run folder exists, then retried, leaves exactly one worker" {
+  w="$(runs_site "background run")"
+  agent="$(fake_agent)"
+  export FAKE_AGENT_CALLS="$BATS_TEST_TMPDIR/agent-calls"
+  # The worker cannot start: the run folder and its punch list exist, the plan stays staged, and
+  # nothing is armed.
+  run env NIGHTSHIFT_WATCH_AGENT="$BATS_TEST_TMPDIR/bin/missing-agent" bash -c '
+    cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$1" \
+      bash "$2" --project "$1" --plan "Dark mode" --host claude --background' _ "$w" "$START_RUN" 3>&-
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -q '^refuse worker .*missing-agent is not installed'
+  [ -f "$w/.nightshift/runs/dark-mode/punch-list.md" ]
+  [ -f "$w/.nightshift/staging/plans/dark-mode.md" ]
+  [ ! -e "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
+  # Retried with a worker that starts: one worker, in the run's worktree, holding the run's lease.
+  for _ in 1 2; do
+    run env NIGHTSHIFT_WATCH_AGENT="$agent" bash -c '
+      cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$1" \
+        bash "$2" --project "$1" --plan "Dark mode" --host claude --background' _ "$w" "$START_RUN" 3>&-
+    [ "$status" -eq 0 ]
+  done
+  printf '%s\n' "$output" | grep -q '^ok worker already running for dark-mode'
+  sleep 1
+  stop_run_processes "$w" dark-mode
+  [ "$(wc -l <"$FAKE_AGENT_CALLS" | tr -d ' ')" = 1 ]
+  IFS='|' read -r where run_name generation nonce <"$FAKE_AGENT_CALLS"
+  [ "$run_name" = dark-mode ]
+  [ "$where" = "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$w")" ]
+  [ "$generation" = "$(sed -n 3p "$w/.nightshift/runs/dark-mode/run/.shift-lease")" ]
+  [ "$nonce" = "$(sed -n 4p "$w/.nightshift/runs/dark-mode/run/.shift-lease")" ]
+  [ -f "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
+  [ ! -e "$w/.nightshift/staging/plans/dark-mode.md" ]
+}

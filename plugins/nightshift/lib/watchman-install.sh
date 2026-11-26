@@ -249,11 +249,17 @@ ns_watchman_command_is_script() {
 
 # The workspace is one whole argument. A longer path that only begins with it does not match.
 ns_watchman_command_has_project() {
-  local cmd="$1" ws="$2" needle prefix rest
+  ns_watchman_command_has_arg "$1" project Project "$2"
+}
+
+# ns_watchman_command_has_arg <command> <flag> <PowerShell flag> <value> — status 0 when the command
+# line passes <value> to --<flag> or -<PowerShell flag>, as one whole argument.
+ns_watchman_command_has_arg() {
+  local cmd="$1" flag="$2" psflag="$3" ws="$4" needle prefix rest
   [ -n "$ws" ] || return 1
   for needle in \
-    "--project $ws" "--project=$ws" "-Project $ws" "-Project=$ws" \
-    "--project \"$ws\"" "--project '$ws'" "-Project \"$ws\"" "-Project '$ws'"; do
+    "--$flag $ws" "--$flag=$ws" "-$psflag $ws" "-$psflag=$ws" \
+    "--$flag \"$ws\"" "--$flag '$ws'" "-$psflag \"$ws\"" "-$psflag '$ws'"; do
     prefix="$cmd"
     while :; do
       case "$prefix" in
@@ -271,11 +277,12 @@ ns_watchman_command_has_project() {
   return 1
 }
 
-# ns_watchman_live_for_project <workspace>
-# Prints the pid of a live watchman whose command names this workspace. Status 1 when
-# none is visible (no ps, or no such process).
+# ns_watchman_live_for_project <workspace> [run]
+# Prints the pid of a live watchman whose command names this workspace, and the run when one is
+# given: each run of a workspace has a watchman of its own. Status 1 when none is visible (no ps,
+# or no such process).
 ns_watchman_live_for_project() {
-  local ws="$1" line pid cmd
+  local ws="$1" run="${2:-}" line pid cmd
   [ -n "$ws" ] || return 1
   ns_have_cmd ps || return 1
   if [ -d "$ws" ]; then
@@ -292,6 +299,7 @@ ns_watchman_live_for_project() {
     [ "$pid" = "$$" ] && continue
     ns_watchman_command_is_script "$cmd" || continue
     ns_watchman_command_has_project "$cmd" "$ws" || continue
+    [ -z "$run" ] || ns_watchman_command_has_arg "$cmd" run Run "$run" || continue
     kill -0 "$pid" 2>/dev/null || continue
     printf '%s\n' "$pid"
     return 0
