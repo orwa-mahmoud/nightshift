@@ -71,8 +71,24 @@ EOF
 @test "the index lists every shipped stack in match order" {
   run bash "$INDEX" --catalog gates
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | awk -F '\t' '{ print $1 }' | paste -sd ' ' -)" \
-    = "go helm python ruby rust typescript plugin makefile nothing" ]
+  # Derive the expected keys from shipped files, not a fixed list of stacks.
+  expected="$BATS_TEST_TMPDIR/expected-gate-order"
+  : >"$expected"
+  for file in "$GATES"/*.md; do
+    [ -f "$file" ] || { echo "no shipped gate stacks"; return 1; }
+    key="${file##*/}"
+    key="${key%.md}"
+    match="$(awk '/^Match:[[:space:]]*/ { sub(/^Match:[[:space:]]*/, ""); sub(/[[:space:]]*$/, ""); print; exit }' "$file")"
+    case "$match" in
+      stack) rank=0 ;;
+      plugin) rank=1 ;;
+      fallback) rank=2 ;;
+      *) echo "invalid or missing Match in $file"; return 1 ;;
+    esac
+    printf '%s\t%s\n' "$rank" "$key" >>"$expected"
+  done
+  diff <(LC_ALL=C sort -k1,1n -k2,2 "$expected" | cut -f2) \
+    <(printf '%s\n' "$output" | cut -f1) || return 1
   if ! command -v pwsh >/dev/null 2>&1; then
     skip 'pwsh is not installed'
   fi
