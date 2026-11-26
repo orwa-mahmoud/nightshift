@@ -2851,13 +2851,16 @@ function Invoke-NSBudgetCheck {
 }
 
 # Get-NSPulseNotices <nightshift-dir> <workspace> - every notice this pulse has for the agent: the
-# receipt lines, then a budget the item being worked has just spent. Mirrors ns_pulse_notices.
+# owner's new messages, the receipt lines, then a budget the item being worked has just spent.
+# Mirrors ns_pulse_notices.
 function Get-NSPulseNotices {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
-    $receipts = [string](Get-NSPulseReceiptsNotice $NightshiftDir $Workspace)
-    $budget = [string](Invoke-NSBudgetCheck $NightshiftDir $Workspace)
-    if ($receipts.Length -gt 0 -and $budget.Length -gt 0) { return ($receipts + "`n" + $budget) }
-    return ($receipts + $budget)
+    $parts = @(
+        [string](Get-NSMessageNotice $NightshiftDir),
+        [string](Get-NSPulseReceiptsNotice $NightshiftDir $Workspace),
+        [string](Invoke-NSBudgetCheck $NightshiftDir $Workspace)
+    )
+    return ((@($parts | Where-Object { $_.Length -gt 0 })) -join "`n")
 }
 
 # Test-NSRestrictedCommand <scrubbed-command> <mode> - true for a command that only reads, or, in

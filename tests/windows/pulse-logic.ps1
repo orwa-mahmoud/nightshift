@@ -161,6 +161,52 @@ finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# A message to one run reaches that run's worker at its next tool call, whole, and only once.
+$messages = Join-Path ([IO.Path]::GetTempPath()) ("ns-pulse-messages-" + [guid]::NewGuid().ToString('N'))
+$savedRun = $env:NIGHTSHIFT_RUN
+$env:NIGHTSHIFT_RUN = $null
+try {
+    $mns = Join-Path $messages '.nightshift'
+    $null = New-Item -ItemType Directory -Path $mns -Force
+    [IO.File]::WriteAllText((Join-Path $mns 'state-version'), "3`n", $utf8)
+    foreach ($run in @('a', 'b')) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $mns "runs/$run/run") -Force
+        [IO.File]::WriteAllText((Join-Path $mns "runs/$run/punch-list.md"), "## Items`n- [ ] **1. $run first.**`n", $utf8)
+        [IO.File]::WriteAllText((Join-Path $mns "runs/$run/run/.shift-armed"), '', $utf8)
+        [IO.File]::WriteAllText((Join-Path $mns "runs/$run/run/.shift-session"), "sid-$run`n`n`n`nclaude`n", $utf8)
+    }
+    $hostExe = (Get-Process -Id $PID).Path
+    $pulseHook = Join-Path $repository 'plugins/nightshift/hooks/windows/pulse.ps1'
+    $send = Join-Path $repository 'plugins/nightshift/runtime/windows/send-message.ps1'
+    $text = "سؤال: هل `"الملف`" جاهز؟`nسطر ثانٍ مع 'اقتباس' و ``code`` `$HOME`n`n  indented line"
+    $sent = & $hostExe -NoProfile -NonInteractive -File $send -Project $messages -Run b -Text $text
+    Expect-True ($LASTEXITCODE -eq 0) "send-message: $sent"
+    function Get-PulseContext {
+        param([string]$SessionId)
+        $env:CLAUDE_PROJECT_DIR = $messages
+        try {
+            $payload = (@{ session_id = $SessionId; transcript_path = ''; cwd = $messages; tool_name = 'Bash' } | ConvertTo-Json -Compress)
+            $out = ($payload | & $hostExe -NoProfile -NonInteractive -File $pulseHook -HostName claude) -join "`n"
+            if ([string]::IsNullOrWhiteSpace($out)) { return '' }
+            return [string](($out | ConvertFrom-Json).hookSpecificOutput.additionalContext)
+        }
+        finally { Remove-Item Env:CLAUDE_PROJECT_DIR -ErrorAction SilentlyContinue }
+    }
+    Expect-True (-not (Get-PulseContext 'sid-a').Contains($text)) "the other run's worker never sees it"
+    $context = Get-PulseContext 'sid-b'
+    Expect-True ($context.Contains($text)) "the named run's worker sees the message whole: $context"
+    Expect-True (-not (Get-PulseContext 'sid-b').Contains($text)) 'the message is not shown again'
+    Add-NSMessage -NightshiftDir $mns -Author Worker -Text 'the answer'
+    Expect-True (-not (Get-PulseContext 'sid-b').Contains('the answer')) "the worker's reply is not shown back"
+    $file = [IO.File]::ReadAllText((Join-Path $mns 'runs/b/inbox/messages.md'), $utf8)
+    Expect-True ($file.Contains($text)) 'the file keeps the message exactly'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $mns 'runs/a/inbox/messages.md'))) 'the other run has no messages'
+}
+finally {
+    $env:NIGHTSHIFT_RUN = $savedRun
+    Remove-Item -LiteralPath $messages -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "pulse-logic failed ($($failures.Count)):"
     foreach ($f in $failures) { Write-Host "  $f" }

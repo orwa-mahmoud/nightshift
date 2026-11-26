@@ -49,6 +49,8 @@ parking-lot	3	runs/*/inbox/parking-lot.md	file
 snag-log	0	snag-log.md	file
 snag-log	2	inbox/snag-log.md	file
 snag-log	3	runs/*/inbox/snag-log.md	file
+messages	2	inbox/messages.md	file
+messages	3	runs/*/inbox/messages.md	file
 staging	2	staging	group
 drafting-table	0	drafting-table.md	file
 drafting-table	2	staging/drafting-table.md	file
@@ -168,6 +170,8 @@ plans	2	staging/plans	dir
 pulse	0	.shift-pulse	file
 pulse	2	run/.shift-pulse	file
 pulse	3	runs/*/run/.shift-pulse	file
+messages-seen	2	run/.messages-seen	file
+messages-seen	3	runs/*/run/.messages-seen	file
 session-end	0	.session-end	file
 session-end	2	run/.session-end	file
 session-end	3	runs/*/run/.session-end	file

@@ -58,6 +58,7 @@ Windows, `ns.ps1` takes the same verbs.
 | `ns link-workspace --host-root <path> --workspace <path>` | Points a task folder at the workspace that already holds `.nightshift/`. |
 | `ns export-support` | Writes a local support bundle, with known sensitive fields left out. Never uploaded. |
 | `ns archive-receipts [--run <name>]` | Files a finished shift's receipts into its archive folder. With several runs, files the run you name. |
+| `ns send-message --run <name> --text "<text>"` | Sends a running shift a question or an answer. Its worker sees it at its next tool call and replies in the run's `inbox/messages.md`. Without `--text`, reads the message from stdin. |
 | `ns check-report --report <file> --manifest <file>` | Checks a cited research report against its source manifest. |
 
 `touch .nightshift/STOP` also stops the shift, at the agent's next stop. Write it where

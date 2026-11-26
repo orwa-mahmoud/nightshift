@@ -60,6 +60,13 @@ action the inspector offers. Never soften a warning into silence.
 Do not print a project tool's raw output, credentials, raw evidence, a session id, or a transcript
 path. The inspectors do not emit them; do not go looking.
 
+**Sending a running shift a message.** When the owner asks a running shift something, or answers
+it, send it with `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" send-message --run <name>` and the text on
+stdin (or `--text "<text>"`); it prints the run's messages file. The run's worker sees the message
+at its next tool call and appends its reply there under `## Worker · <time>`. On the owner's next
+turn, read the reply from that file and relay it; a reply not there yet means the worker has not
+reached its next tool call.
+
 The project inventory is a separate optional report the owner asks for by name:
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" inventory`. Status never prints it unasked — a table of
 packages is not a glance.

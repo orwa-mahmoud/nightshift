@@ -17,6 +17,7 @@
 #   file-map.sh   the files an item and a shift changed, drawn at each tick
 #   architecture.sh the shift's architecture diagram, snapshotted at each tick
 #   evidence-check.sh whether a ticked item's named evidence is present
+#   messages.sh   messages between the owner and a running shift
 #
 # Callers keep sourcing lib.sh. Do not source the modules directly; layout.sh alone needs nothing
 # else, and a hook that answers before the library loads may load it on its own.
@@ -67,4 +68,6 @@ _ns_lib_dir="${BASH_SOURCE[0]%/*}"
 . "$_ns_lib_dir/architecture.sh"
 # shellcheck source=plugins/nightshift/lib/evidence-check.sh
 . "$_ns_lib_dir/evidence-check.sh"
+# shellcheck source=plugins/nightshift/lib/messages.sh
+. "$_ns_lib_dir/messages.sh"
 unset _ns_lib_dir

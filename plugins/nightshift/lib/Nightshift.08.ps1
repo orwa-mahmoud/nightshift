@@ -596,3 +596,82 @@ function Start-NSBackgroundWorker {
         foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
     }
 }
+
+# Messages between the owner and a running shift: one file per run, inbox/messages.md, that both sides
+# append to and nobody rewrites. The owner writes under `## Owner · <time>`, the worker replies under
+# `## Worker · <time>`, and the text between headings is kept exactly as written. Mirrors
+# lib/messages.sh.
+$script:NSMessageOwner = '## Owner ' + [char]0x00B7 + ' '
+$script:NSMessageWorker = '## Worker ' + [char]0x00B7 + ' '
+
+# Add-NSMessage <state-dir> <Owner|Worker> <text> - one message, appended with the local time.
+function Add-NSMessage {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][ValidateSet('Owner', 'Worker')][string]$Author,
+        [Parameter(Mandatory = $true)][string]$Text
+    )
+    $file = Get-NSLayoutPath $NightshiftDir 'messages'
+    if (Test-NSReparsePoint $file) { throw "messages: $file is a link; not writing through it" }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    $header = if ($Author -ceq 'Owner') { $script:NSMessageOwner } else { $script:NSMessageWorker }
+    $body = ''
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) { $body = "# Messages`n" }
+    # One write, so a pulse reading at the same moment sees the whole message or none of it.
+    $body += "`n" + $header + (Get-NSLocalNow -Seconds) + "`n`n" + $Text.Replace("`r`n", "`n") + "`n"
+    [IO.File]::AppendAllText($file, $body, $utf8)
+}
+
+# Get-NSUnseenMessages <state-dir> - the owner's messages added since the last call, each with its
+# heading, and marks them seen. The worker's own replies are never shown back to it. A file that got
+# shorter shows nothing until it grows again.
+function Get-NSUnseenMessages {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    # A layout older than messages has none to show.
+    if ((Get-NSLayoutRelativePathAt (Get-NSLayoutVersion $NightshiftDir) 'messages').Length -eq 0) { return '' }
+    $file = Get-NSLayoutPath $NightshiftDir 'messages'
+    $seen = Get-NSLayoutPath $NightshiftDir 'messages-seen'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Test-NSReparsePoint $file)) { return '' }
+    $bytes = [IO.File]::ReadAllBytes($file)
+    $offset = [long]0
+    if ((Test-Path -LiteralPath $seen -PathType Leaf) -and -not (Test-NSReparsePoint $seen)) {
+        $raw = ([string](Get-Content -LiteralPath $seen -TotalCount 1)).Trim()
+        if ($raw -match '^[0-9]+$') { $offset = [long]$raw }
+    }
+    if ($bytes.Length -le $offset) {
+        if ($bytes.Length -lt $offset) { Set-NSMessagesSeen $seen $bytes.Length }
+        return ''
+    }
+    $text = (New-Object Text.UTF8Encoding($false)).GetString($bytes, [int]$offset, $bytes.Length - [int]$offset)
+    $out = New-Object Collections.Generic.List[string]
+    $who = ''
+    foreach ($line in ($text -split "`n")) {
+        if ($line.StartsWith($script:NSMessageOwner, [StringComparison]::Ordinal)) {
+            if ($out.Count -gt 0) { $out.Add('') }
+            $who = 'owner'
+            $out.Add($line)
+            continue
+        }
+        if ($line.StartsWith($script:NSMessageWorker, [StringComparison]::Ordinal)) { $who = 'worker'; continue }
+        if ($who -ceq 'owner') { $out.Add($line) }
+    }
+    Set-NSMessagesSeen $seen $bytes.Length
+    return (($out -join "`n").TrimEnd("`n"))
+}
+
+# Set-NSMessagesSeen <seen-file> <bytes> - how far into the messages file the worker has been shown.
+function Set-NSMessagesSeen {
+    param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][long]$Bytes)
+    $null = Write-NSAtomicLines -Path $Path -Lines @([string]$Bytes)
+}
+
+# Get-NSMessageNotice <state-dir> - the pulse's notice for the owner's new messages, empty when none.
+function Get-NSMessageNotice {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $text = Get-NSUnseenMessages $NightshiftDir
+    if ($text.Length -eq 0) { return '' }
+    $file = Get-NSLayoutPath $NightshiftDir 'messages'
+    return ("The owner sent this shift a message in ${file}:`n`n$text`n`nAnswer each one once, by appending a `"" +
+        $script:NSMessageWorker + "<time>`" block with your answer to that file (skip a message you already answered there), then carry on with the item.")
+}
