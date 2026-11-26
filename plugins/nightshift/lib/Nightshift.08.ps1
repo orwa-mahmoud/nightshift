@@ -489,7 +489,7 @@ function Get-NSAgentArgumentLine {
 # a fresh worker on <host> with <prompt>: the command each host's watchman uses for a fresh revival,
 # at the same launch scope. An owner's watchAgent replaces it, as it does for the watchman. Cursor
 # gets a CLI chat minted first, recorded where its watchman resumes it. Returns Name and Arguments,
-# or Error naming why there is none. Mirrors ns_background_worker_command.
+# or Error naming why there is none. Mirrors ns_background_worker_program and ns_start_background_worker.
 function Get-NSBackgroundWorkerCommand {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,

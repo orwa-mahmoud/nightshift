@@ -661,15 +661,69 @@ ns_detach() {
   NS_DETACHED_PID=$!
 }
 
-# ns_start_background_worker <ns> <host> <work_target> <project_env> <project> <output> <cmd...>
-# — start a headless worker on a run nobody works yet, the way a revival starts one: the lease is
-# taken for it first and its pid attached, so the worker's hooks bind it to the run and anything
-# that asks finds it alive. Detached, so it outlives the conversation that started it. Prints the
-# pid. Status 3 when the lease cannot be taken, 1 when the worker does not start.
+# ns_background_worker_program <workspace> <host> <scope> — the program a background worker on <host>
+# runs at launch scope <scope>: the owner's watchAgent when set, as it is for the watchman, else the
+# host's own CLI. Status 1 when this host has no headless launch at that scope, with the reason in
+# NS_WORKER_ERR. Sets NS_WORKER_ERR for the caller.
+# shellcheck disable=SC2034
+ns_background_worker_program() {
+  local ws="$1" host="$2" scope="$3" agent
+  NS_WORKER_ERR=""
+  case "$scope" in
+    unavailable:*)
+      NS_WORKER_ERR="$(ns_recovery_refusal "$scope")"
+      return 1
+      ;;
+  esac
+  agent="$(rule "$ws" watchAgent "${NIGHTSHIFT_WATCH_AGENT:-}")"
+  if [ -n "$agent" ]; then
+    # The first word of the owner's command line, as the watchman splits it.
+    # shellcheck disable=SC2086
+    set -- $agent
+    printf '%s' "$1"
+    return 0
+  fi
+  case "$host:$scope" in
+    claude:host-default) printf 'claude' ;;
+    codex:host-default | codex:recorded:*) printf 'codex' ;;
+    cursor:host-default) printf 'agent' ;;
+    *)
+      NS_WORKER_ERR="$host has no headless launch at launch scope $scope"
+      return 1
+      ;;
+  esac
+}
+
+# ns_start_background_worker <ns> <host> <work_target> <project_env> <project> <output> <scope> <prompt>
+# — start a headless worker on a run nobody works yet, the way a revival starts one: the command each
+# host's watchman uses for a fresh revival at the same launch scope (or the owner's watchAgent), with
+# the lease taken for it first and its pid attached, so the worker's hooks bind it to the run and
+# anything that asks finds it alive. Cursor gets a CLI chat minted first, recorded where its watchman
+# resumes it. Detached, so it outlives the conversation that started it. Prints the pid. Status 4
+# when there is no command to run (ns_background_worker_program says why, or Cursor minted no chat),
+# 3 when the lease cannot be taken, 1 when the worker does not start.
 ns_start_background_worker() {
-  local ns="$1" host="$2" work="$3" env_name="$4" project="$5" out="$6"
-  local lease generation nonce pid start
-  shift 6
+  local ns="$1" host="$2" work="$3" env_name="$4" project="$5" out="$6" scope="$7" prompt="$8"
+  local agent minted lease generation nonce pid start
+  ns_background_worker_program "$project" "$host" "$scope" >/dev/null || return 4
+  agent="$(rule "$project" watchAgent "${NIGHTSHIFT_WATCH_AGENT:-}")"
+  if [ -n "$agent" ]; then
+    # The owner's command line is word-split, exactly as the watchman splits it.
+    # shellcheck disable=SC2086
+    set -- $agent "$prompt"
+  else
+    case "$host:$scope" in
+      claude:host-default) set -- claude -p "$prompt" ;;
+      codex:host-default) set -- codex exec "$prompt" ;;
+      codex:recorded:*) set -- codex exec -s "${scope#recorded:}" "$prompt" ;;
+      cursor:host-default)
+        minted="$(agent create-chat 2>/dev/null | tr -d '[:space:]')"
+        # No CLI chat to start the worker in.
+        if [ -z "$minted" ] || ! ns_cursor_worker_write "$ns" "$minted"; then return 4; fi
+        set -- agent --resume="$minted" -p --workspace "$project" "$prompt"
+        ;;
+    esac
+  fi
   lease="$(ns_lease_takeover "$ns" "" "$host")" || return 3
   generation="${lease%% *}"
   nonce="${lease#* }"
@@ -688,48 +742,6 @@ ns_start_background_worker() {
   start="$(ns_process_start "$pid" 2>/dev/null || true)"
   ns_lease_attach_process "$ns" "$host" "$nonce" "$generation" "$pid" "$start" || return 1
   printf '%s' "$pid"
-}
-
-# ns_background_worker_command <workspace> <host> <scope> <prompt> — the headless command that
-# starts a fresh worker on <host> with <prompt>, set in the array NS_WORKER_CMD: the command each
-# host's watchman uses for a fresh revival, at the same launch scope. An owner's watchAgent replaces
-# it, as it does for the watchman. Cursor gets a CLI chat minted first, recorded where its watchman
-# resumes it. Status 1 names the reason in NS_WORKER_ERR. Sets both for the caller.
-# shellcheck disable=SC2034
-ns_background_worker_command() {
-  local ws="$1" host="$2" scope="$3" prompt="$4" agent minted
-  NS_WORKER_CMD=()
-  NS_WORKER_ERR=""
-  case "$scope" in
-    unavailable:*)
-      NS_WORKER_ERR="$(ns_recovery_refusal "$scope")"
-      return 1
-      ;;
-  esac
-  agent="$(rule "$ws" watchAgent "${NIGHTSHIFT_WATCH_AGENT:-}")"
-  if [ -n "$agent" ]; then
-    # The owner's command line is word-split, exactly as the watchman splits it.
-    # shellcheck disable=SC2206
-    NS_WORKER_CMD=($agent "$prompt")
-    return 0
-  fi
-  case "$host:$scope" in
-    claude:host-default) NS_WORKER_CMD=(claude -p "$prompt") ;;
-    codex:host-default) NS_WORKER_CMD=(codex exec "$prompt") ;;
-    codex:recorded:*) NS_WORKER_CMD=(codex exec -s "${scope#recorded:}" "$prompt") ;;
-    cursor:host-default)
-      minted="$(agent create-chat 2>/dev/null | tr -d '[:space:]')"
-      if [ -z "$minted" ] || ! ns_cursor_worker_write "$ws/.nightshift" "$minted"; then
-        NS_WORKER_ERR="agent create-chat did not give a CLI chat to start the worker in"
-        return 1
-      fi
-      NS_WORKER_CMD=(agent --resume="$minted" -p --workspace "$ws" "$prompt")
-      ;;
-    *)
-      NS_WORKER_ERR="$host has no headless launch at launch scope $scope"
-      return 1
-      ;;
-  esac
 }
 
 # Exit 0 from a revival child is not proof it worked — a denied claude -p still quits clean.

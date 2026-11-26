@@ -188,18 +188,18 @@ esac
 PROMPT="$(ns_expand_injected_paths "$WORKSPACE" "$(rule "$WORKSPACE" freshRevivalPrompt "${NIGHTSHIFT_FRESH_PROMPT:-}")")"
 [ -n "$PROMPT" ] || refuse "rules freshRevivalPrompt is missing from $(ns_layout_name "$NS" rules)" "run Setup again, then run this again"
 SCOPE="$(ns_recovery_effective_scope "$WORKSPACE" "$HOST_NAME")"
-ns_background_worker_command "$WORKSPACE" "$HOST_NAME" "$SCOPE" "$PROMPT" ||
+PROGRAM="$(ns_background_worker_program "$WORKSPACE" "$HOST_NAME" "$SCOPE")" ||
   refuse "worker $NS_WORKER_ERR" "$(ns_recovery_repair "$WORKSPACE" "$SCOPE" 2>/dev/null || printf 'start the run in a conversation instead')"
-command -v "${NS_WORKER_CMD[0]}" >/dev/null 2>&1 ||
-  refuse "worker ${NS_WORKER_CMD[0]} is not installed or not on PATH" "install and sign in to the $HOST_NAME CLI, then run this again"
+command -v "$PROGRAM" >/dev/null 2>&1 ||
+  refuse "worker $PROGRAM is not installed or not on PATH" "install and sign in to the $HOST_NAME CLI, then run this again"
 WORK="$(ns_work_target "$WORKSPACE")" || refuse "worktree the run's work target cannot be resolved" "run ns doctor, then run this again"
 ARMED="$(ns_layout_path "$NS" armed)"
 : >"$ARMED" || refuse "armed could not write $ARMED" "check that .nightshift/ is writable, then run this again"
 OUT="$(ns_layout_path "$NS" shift-log)"
 OUT="${OUT%/*}/worker-output.log"
-if ! PID="$(ns_start_background_worker "$NS" "$HOST_NAME" "$WORK" "$PROJECT_ENV" "$WORKSPACE" "$OUT" "${NS_WORKER_CMD[@]}")"; then
+if ! PID="$(ns_start_background_worker "$NS" "$HOST_NAME" "$WORK" "$PROJECT_ENV" "$WORKSPACE" "$OUT" "$SCOPE" "$PROMPT")"; then
   rm -f "$ARMED"
-  refuse "worker the $HOST_NAME CLI could not be started headless" "check that ${NS_WORKER_CMD[0]} is installed and signed in, then run this again"
+  refuse "worker the $HOST_NAME CLI could not be started headless" "check that $PROGRAM is installed and signed in, then run this again"
 fi
 printf '%s · shift started in the background (run %s, pid %s)\n' "$(ns_local_now second)" "$RUN" "$PID" >>"$(ns_layout_path "$NS" shift-log)"
 ok "worker started for $RUN (pid $PID)"
