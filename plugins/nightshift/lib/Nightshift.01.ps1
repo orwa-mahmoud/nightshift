@@ -1238,12 +1238,72 @@ function Get-NSCodexTurnErrorAt {
     return [long]0
 }
 
-# Get-NSCodexLimitReset <rollout> - the epoch Codex last reported the usage window resets, or 0.
+# Get-NSCodexLimitReset <rollout> - when the last failed turn's usage limit clears, or 0
+# when its reset is unknown. Mirrors ns_codex_limit_reset.
 function Get-NSCodexLimitReset {
     param([AllowEmptyString()][string]$Rollout)
-    $reset = [long]0
-    foreach ($m in [regex]::Matches((Get-NSCodexTail $Rollout), '"resets_at":([0-9]+)')) { $reset = [long]$m.Groups[1].Value }
-    return $reset
+    $lines = (Get-NSCodexTail $Rollout) -split "`n"
+    $resets = New-NSOrdinalMap
+    $started = $false
+    $turn = ''
+    $result = [long]0
+    foreach ($line in $lines) {
+        if ($line -cnotmatch '^\s*\{.*"type"\s*:\s*"(task_started|task_complete|token_count)".*\}\s*$') { continue }
+        try { $event = $line | ConvertFrom-Json -ErrorAction Stop }
+        catch { return [long]0 }
+        if ((Get-NSJsonProperty $event 'type') -cne 'event_msg') { continue }
+        $payload = Get-NSJsonProperty $event 'payload'
+        $turnId = Get-NSJsonProperty $payload 'turn_id'
+        if ($turnId -isnot [string]) { $turnId = '' }
+        $sameTurn = $started -and ($turn -ceq '' -or $turnId -ceq '' -or $turnId -ceq $turn)
+        switch -CaseSensitive (Get-NSJsonProperty $payload 'type') {
+            'task_started' {
+                $resets.Clear()
+                $turn = $turnId
+                $started = $true
+                $result = [long]0
+            }
+            'token_count' {
+                if (-not $sameTurn) { continue }
+                $limits = Get-NSJsonProperty $payload 'rate_limits'
+                $limitId = Get-NSJsonProperty $limits 'limit_id'
+                if ($limitId -isnot [string] -or $limitId -ceq '') { $limitId = 'codex' }
+                foreach ($slot in @('primary', 'secondary')) {
+                    $window = Get-NSJsonProperty $limits $slot
+                    $used = Get-NSJsonProperty $window 'used_percent'
+                    if (((Test-NSJsonInteger $used) -or (Test-NSJsonFloat $used)) -and $used -ge 100) {
+                        $resets[($slot + ':' + $limitId)] = Get-NSJsonProperty $window 'resets_at'
+                    }
+                }
+            }
+            'task_complete' {
+                $result = [long]0
+                $started = $false
+                $errorInfo = Get-NSJsonProperty $payload 'error'
+                if ((Get-NSJsonProperty $errorInfo 'codex_error_info') -cne 'usage_limit_exceeded') { continue }
+                $explicit = Get-NSJsonProperty $errorInfo 'resets_at'
+                if (Test-NSCodexResetEpoch $explicit) {
+                    $result = [long]$explicit
+                    continue
+                }
+                $failedAt = Get-NSJsonProperty $payload 'completed_at'
+                if (-not $sameTurn -or -not (Test-NSCodexResetEpoch $failedAt)) { continue }
+                foreach ($reset in $resets.Values) {
+                    if (-not (Test-NSCodexResetEpoch $reset)) {
+                        $result = [long]0
+                        break
+                    }
+                    if ($reset -ge $failedAt) { $result = [Math]::Max($result, [long]$reset) }
+                }
+            }
+        }
+    }
+    return $result
+}
+
+function Test-NSCodexResetEpoch {
+    param($Value)
+    return (Test-NSJsonInteger $Value) -and $Value -gt 0 -and $Value -le [DateTimeOffset]::MaxValue.ToUnixTimeSeconds()
 }
 
 function Get-NSCodexIdentityKind {

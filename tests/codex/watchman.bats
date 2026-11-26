@@ -432,13 +432,9 @@ STUB
   [ -z "$(sed -n 4p "$P/.nightshift/.shift-lease")" ]
 }
 
-# A failed model request closes the turn with task_complete carrying an error and leaves the
-# session open and quiet: the live process is a wedge, not work. These lines are the shape of a
-# real 401 outage recorded by Codex.
-errored_turn() { # <codex_error_info> [resets_at]
+# A failed model request closes the turn and leaves the session open and quiet.
+errored_turn() { # <codex_error_info>
   printf '{"timestamp":"t","type":"event_msg","payload":{"type":"task_started"}}\n' >>"$ROLLOUT"
-  printf '{"timestamp":"t","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":96.0,"resets_at":%s}}}}\n' \
-    "${2:-1}" >>"$ROLLOUT"
   printf '{"timestamp":"t","type":"event_msg","payload":{"type":"task_complete","turn_id":"x","completed_at":1790378886,"error":{"message":"unexpected status 401 Unauthorized","codex_error_info":"%s"}}}\n' \
     "$1" >>"$ROLLOUT"
 }
@@ -455,14 +451,6 @@ errored_turn() { # <codex_error_info> [resets_at]
   grep -qxF "$(printf '1790378886\tthe session stopped on an API error (other)')" "$P/.nightshift/usage/pauses.tsv"
 }
 
-@test "a usage limit waits for its reset instead of reviving" {
-  errored_turn usage_limit_exceeded "$(($(date +%s) + 86400))"
-  run watch --max-wakes 1
-  [ "$status" -eq 0 ]
-  [ "$(calls)" -eq 0 ]
-  [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = usage-limit ]
-}
-
 @test "a clean last turn is not a wedge" {
   printf '{"type":"event_msg","payload":{"type":"task_complete","completed_at":1,"error":null}}\n' >>"$ROLLOUT"
   start="$(ps -o lstart= -p $$ | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -472,30 +460,86 @@ errored_turn() { # <codex_error_info> [resets_at]
   ! grep -qF 'API error' "$P/.nightshift/shift-log.md" || false
 }
 
-@test "both runtimes read an errored Codex turn the same way" {
-  command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"
-  errored_turn usage_limit_exceeded 1790869781
-  lib="$BATS_TEST_DIRNAME/../../plugins/nightshift/lib"
-  posix="$(bash -c '. "$1/lib.sh"; printf "%s %s %s" "$(ns_codex_turn_error "$2")" "$(ns_codex_turn_error_at "$2")" "$(ns_codex_limit_reset "$2")"' _ "$lib" "$ROLLOUT")"
-  windows="$(pwsh -NoProfile -NonInteractive -Command "Import-Module '$lib/Nightshift.psm1' -DisableNameChecking; '{0} {1} {2}' -f (Get-NSCodexTurnError '$ROLLOUT'), (Get-NSCodexTurnErrorAt '$ROLLOUT'), (Get-NSCodexLimitReset '$ROLLOUT')")"
-  [ "$posix" = "usage_limit_exceeded 1790378886 1790869781" ]
-  [ "$windows" = "$posix" ]
-  printf '{"type":"event_msg","payload":{"type":"task_started"}}\n' >>"$ROLLOUT"
-  [ -z "$(bash -c '. "$1/lib.sh"; ns_codex_turn_error "$2"' _ "$lib" "$ROLLOUT")" ]
+quota_fixture() {
+  cp "$BATS_TEST_DIRNAME/../fixtures/codex-limits/$1.jsonl" "$ROLLOUT"
 }
 
-@test "a usage limit that has reset is revived, unless watchAfterUsageLimit is false" {
-  errored_turn usage_limit_exceeded 1
-  run watch --max-wakes 1
-  [ "$(calls)" -ge 1 ]
-  rm -f "$P/.nightshift/agent-calls" "$P/.nightshift/.watch-reason" "$P/.nightshift/.ended"
-  printf '## Items\n- [ ] **1.**\n' >"$P/.nightshift/punch-list.md"
+@test "Codex quota reset comes from the failed turn's exhausted windows or explicit error" {
+  . "$BATS_TEST_DIRNAME/../../plugins/nightshift/lib/lib.sh"
+  for pair in primary:2000001921 weekly:2000540730 both:2000540730 explicit:2000000600 missing: stale: partial:; do
+    quota_fixture "${pair%%:*}"
+    [ "$(ns_codex_limit_reset "$ROLLOUT")" = "${pair#*:}" ] || { echo "reset mismatch for $pair"; return 1; }
+  done
+  quota_fixture primary
+  printf '{"type":"event_msg","payload":{"type":"task_started"}}\n' >>"$ROLLOUT"
+  [ -z "$(ns_codex_limit_reset "$ROLLOUT")" ]
+  [ -z "$(ns_codex_turn_error "$ROLLOUT")" ]
+}
+
+watch_quota() { # <poll timestamps...>
+  export QUOTA_CLOCK="$BATS_TEST_TMPDIR/clock"
+  printf '2000000000\n' >"$QUOTA_CLOCK"
+  printf '%s\n' "$@" >"$QUOTA_CLOCK.polls"
+  export QUOTA_SID='eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+  printf '%s\n%s\n\n\ncodex\n' "$QUOTA_SID" "$ROLLOUT" >"$P/.nightshift/.shift-session"
+  cat >"$BIN/date" <<'STUB'
+#!/bin/bash
+if [ "$*" = '+%s' ]; then cat "$QUOTA_CLOCK"; else exec /bin/date "$@"; fi
+STUB
+  cat >"$BIN/sleep" <<'STUB'
+#!/bin/bash
+if [ "$1" != "$NIGHTSHIFT_WATCH_SLEEP" ]; then exec /bin/sleep "$@"; fi
+poll=$(cat "$QUOTA_CLOCK.poll" 2>/dev/null || printf '0')
+poll=$((poll + 1))
+printf '%s\n' "$poll" >"$QUOTA_CLOCK.poll"
+sed -n "${poll}p" "$QUOTA_CLOCK.polls" >"$QUOTA_CLOCK"
+STUB
+  cat >"$BIN/codex" <<'STUB'
+#!/bin/bash
+printf '%s %s %s %s\n' "$(cat "$QUOTA_CLOCK")" "$1" "$2" "$3" >>.nightshift/codex-calls
+[ -z "${QUOTA_FAIL:-}" ] || exit 1
+[ "$1 $2 $3" = "exec resume $QUOTA_SID" ] || exit 1
+[ -n "$NIGHTSHIFT_LEASE_NONCE" ] && [ "$NIGHTSHIFT_LEASE_NONCE" = "$(sed -n 4p .nightshift/.shift-lease)" ] || exit 1
+printf '## Items\n- [x] **1.**\n' >.nightshift/punch-list.md
+STUB
+  chmod +x "$BIN/date" "$BIN/sleep" "$BIN/codex"
+  env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=123 NIGHTSHIFT_WATCH_RETRY='0 0' \
+    "$WATCHMAN" --project "$P" --interval 1 --max-wakes "$#"
+}
+
+@test "Codex waits for the primary reset then resumes the recorded chat on that poll" {
+  quota_fixture primary
+  run watch_quota 2000001920
+  [ "$status" -eq 0 ]
+  [ "$(reason)" = usage-limit ]
+  [ "$(sed -n 2p "$P/.nightshift/.watch-reason")" = 2000001921 ]
+  [ ! -e "$P/.nightshift/codex-calls" ]
+  rm "$BATS_TEST_TMPDIR/clock.poll"
+
+  run watch_quota 2000001920 2000001921
+  [ "$status" -eq 0 ]
+  [ "$(cat "$P/.nightshift/codex-calls")" = '2000001921 exec resume eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' ]
+  [ "$(reason)" = revived ]
+}
+
+@test "Codex reports an unknown reset and uses the bounded retry ladder" {
+  quota_fixture stale
+  export QUOTA_FAIL=1
+  run watch_quota 2000000001
+  [ "$status" -eq 0 ]
+  [ "$(wc -l <"$P/.nightshift/codex-calls" | tr -d ' ')" -eq 3 ]
+  [ "$(reason)" = exhausted-retry ]
+  grep -qF 'Codex usage limit reset time is unknown' "$P/.nightshift/shift-log.md"
+}
+
+@test "watchAfterUsageLimit false holds the Codex chat even after its reset" {
+  quota_fixture primary
   jq '.watchAfterUsageLimit = false' "$P/.nightshift/rules.json" >"$P/.nightshift/r.json"
   mv "$P/.nightshift/r.json" "$P/.nightshift/rules.json"
-  errored_turn usage_limit_exceeded 1
-  run watch --max-wakes 1
-  [ "$(calls)" -eq 0 ]
-  [ "$(sed -n 1p "$P/.nightshift/.watch-reason")" = usage-limit ]
+  run watch_quota 2000001920 2000001921
+  [ "$status" -eq 0 ]
+  [ ! -e "$P/.nightshift/codex-calls" ]
+  [ "$(reason)" = usage-limit ]
 }
 
 @test "a removed watchman pidfile stands the Codex watchman down" {
