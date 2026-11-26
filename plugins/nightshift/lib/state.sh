@@ -3623,18 +3623,18 @@ ns_status_transitions() {
 # ns_status_run_summary <ns> <run> — one run at a glance: its state (ended, stopped, armed or not
 # armed), its open item and its deadline.
 ns_status_run_summary() {
-  local NIGHTSHIFT_RUN="$2" state ended stop armed punch title deadline
-  ns_layout_set ended "$1" ended
-  ns_layout_set stop "$1" stop
-  ns_layout_set armed "$1" armed
-  ns_layout_set punch "$1" punch-list
+  local run="$2" state ended stop armed punch title deadline
+  NIGHTSHIFT_RUN="$run" ns_layout_set ended "$1" ended
+  NIGHTSHIFT_RUN="$run" ns_layout_set stop "$1" stop
+  NIGHTSHIFT_RUN="$run" ns_layout_set armed "$1" armed
+  NIGHTSHIFT_RUN="$run" ns_layout_set punch "$1" punch-list
   if [ -f "$ended" ] && [ ! -L "$ended" ]; then state=ended
   elif [ -f "$stop" ] && [ ! -L "$stop" ]; then state=stopped
   elif [ -f "$armed" ]; then state=armed
   else state="not armed"
   fi
   title="$(ns_status_open_title "$punch")"
-  deadline="$(ns_status_deadline_remaining "$1")"
+  deadline="$(NIGHTSHIFT_RUN="$run" ns_status_deadline_remaining "$1")"
   printf '%s, open item %s, deadline %s' "$state" "${title:-none}" "${deadline:-none (finite list)}"
 }
 
