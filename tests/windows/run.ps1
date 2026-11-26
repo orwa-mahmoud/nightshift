@@ -524,6 +524,7 @@ try {
         @{ Name = 'box-counts-logic.ps1'; Path = (Join-Path $PSScriptRoot 'box-counts-logic.ps1'); Label = 'box counts heading scope' }
         @{ Name = 'work-mode-logic.ps1'; Path = (Join-Path $PSScriptRoot 'work-mode-logic.ps1'); Label = 'work-mode discovery skips' }
         @{ Name = 'codex-identity-logic.ps1'; Path = (Join-Path $PSScriptRoot 'codex-identity-logic.ps1'); Label = 'Codex identity kinds' }
+        @{ Name = 'codex-limit-logic.ps1'; Path = (Join-Path $PSScriptRoot 'codex-limit-logic.ps1'); Label = 'Codex usage-limit recovery' }
         @{ Name = 'clock-out-logic.ps1'; Path = (Join-Path $PSScriptRoot 'clock-out-logic.ps1'); Label = 'direct cursor clock-out' }
         @{ Name = 'idle-logic.ps1'; Path = (Join-Path $PSScriptRoot 'idle-logic.ps1'); Label = 'alive-but-idle rule' }
         @{ Name = 'reason-label-logic.ps1'; Path = (Join-Path $PSScriptRoot 'reason-label-logic.ps1'); Label = 'watchman reason labels' }

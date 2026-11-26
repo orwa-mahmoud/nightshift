@@ -1,0 +1,7 @@
+{"type":"event_msg","payload":{"type":"task_started","turn_id":"earlier"}}
+{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":100.0,"resets_at":2000540730}}}}
+{"type":"event_msg","payload":{"type":"task_complete","turn_id":"earlier","completed_at":1999990000}}
+{"type":"event_msg","payload":{"type":"task_started","turn_id":"synthetic"}}
+{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":100.0,"resets_at":1999999999}}}}
+{"type":"event_msg","payload":{"type":"task_complete","turn_id":"synthetic","completed_at":2000000000,"error":{"codex_error_info":"usage_limit_exceeded"}}}
+{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":100.0,"resets_at":2000999999}}}}

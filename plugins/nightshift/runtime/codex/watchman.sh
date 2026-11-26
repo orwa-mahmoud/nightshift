@@ -42,7 +42,7 @@
 # Missing process evidence stands by. One signature overrides it: a turn that ended on an API
 # error. Codex closes that turn with `task_complete` carrying an `error` object and leaves the
 # session open and quiet, so a live process there is a wedge, not work. It is revived at once,
-# except a usage limit, which waits for the reset time Codex reported.
+# except a usage limit with a known reset, which waits until the quota clears.
 #
 # Stand-down order, checked at every wake — never override a declared ending:
 #   0. the armed marker is gone (.shift-armed)        -> down (a disarmed site has no shift)
@@ -274,7 +274,7 @@ rung_name() { if [ "$1" -eq 1 ] && [ -n "$(sid)" ]; then printf 'resuming the re
 log_line "watchman (codex) armed · every ${INTERVAL_MIN}m"
 BASE_SLEEP="${NIGHTSHIFT_WATCH_SLEEP:-$((INTERVAL_MIN * 60))}"
 wake=0
-WEDGE_SEEN=""
+WEDGE_SEEN=-1
 baseline_rollout
 : >"$TICK" 2>/dev/null || true
 
@@ -346,21 +346,26 @@ while :; do
   # A turn that ended on an API error is a wedge whatever the process evidence says, until the
   # rollout moves again. The gap is recorded once, from the moment the turn failed.
   WEDGED=0
-  turn_error="$(ns_codex_turn_error "$(rollout)")"
+  rollout_path="$(rollout)"
+  turn_error="$(ns_codex_turn_error "$rollout_path")"
   if [ -n "$turn_error" ] && ! rollout_grew; then
-    failed_at="$(ns_codex_turn_error_at "$(rollout)")"
+    failed_at="$(ns_codex_turn_error_at "$rollout_path")"
+    reset_at=""
+    if [ "$turn_error" = usage_limit_exceeded ]; then
+      reset_at="$(ns_codex_limit_reset "$rollout_path")"
+    fi
     if [ "$failed_at" != "$WEDGE_SEEN" ]; then
       WEDGE_SEEN="$failed_at"
       ns_usage_pause "$NS" "the session stopped on an API error ($turn_error)" "$failed_at" || true
       log_line "watchman: the last turn ended on an API error ($turn_error) — the session is wedged, not working"
+      if [ "$turn_error" = usage_limit_exceeded ] && [ -z "$reset_at" ]; then
+        log_line "watchman: Codex usage limit reset time is unknown"
+      fi
     fi
-    reset_at="$(ns_codex_limit_reset "$(rollout)")"
-    # A usage limit is revived once it resets, unless the owner turned that off
-    # (watchAfterUsageLimit false): then the limit is recorded and the shift waits for them.
     if [ "$turn_error" = usage_limit_exceeded ] &&
       { [ "$(rule "$PROJECT" watchAfterUsageLimit "${NIGHTSHIFT_WATCH_AFTER_USAGE_LIMIT:-}")" = false ] ||
         { [ -n "$reset_at" ] && [ "$(date +%s)" -lt "$reset_at" ]; }; }; then
-      note usage-limit "$reset_at"
+      note usage-limit "${reset_at:-reset time unknown}"
       : >"$TICK" 2>/dev/null || true
       if [ "$MAX_WAKES" -gt 0 ] && [ "$wake" -ge "$MAX_WAKES" ]; then exit 0; fi
       continue

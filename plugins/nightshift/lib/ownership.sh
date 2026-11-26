@@ -952,12 +952,21 @@ ns_codex_turn_error_at() {
     grep -oE '"completed_at":[0-9]+' | cut -d: -f2
 }
 
-# ns_codex_limit_reset <rollout> — the epoch Codex last reported the usage window resets, or
-# nothing when the rollout names none.
+# ns_codex_limit_reset <rollout> — when the last failed turn's usage limit clears, or nothing
+# when its reset is unknown. Mirrors Get-NSCodexLimitReset.
 ns_codex_limit_reset() {
-  local rollout="$1"
+  local rollout="$1" bin
   [ -n "$rollout" ] && [ -f "$rollout" ] && [ ! -L "$rollout" ] || return 0
-  tail -c 1048576 "$rollout" 2>/dev/null | grep -oE '"resets_at":[0-9]+' | tail -n 1 | cut -d: -f2
+  bin="$(ns_rules_awk_bin)" || return 0
+  tail -c 1048576 "$rollout" 2>/dev/null |
+    LC_ALL=C "$bin" -v mode=recordfields \
+      -v records='"type"[[:space:]]*:[[:space:]]*"(task_started|task_complete|token_count)"' \
+      -v key="type payload.type payload.turn_id payload.completed_at \
+payload.error.codex_error_info payload.error.resets_at payload.rate_limits.limit_id \
+payload.rate_limits.primary.used_percent payload.rate_limits.primary.resets_at \
+payload.rate_limits.secondary.used_percent payload.rate_limits.secondary.resets_at" \
+      -f "$_NS_RULES_AWK_FILE" |
+    LC_ALL=C "$bin" -F '\t' -f "${_NS_RULES_AWK_FILE%/*}/codex-limit.awk"
 }
 
 # Cursor CLI worker — the resumable id in ~/.cursor/chats. The origin IDE conversation

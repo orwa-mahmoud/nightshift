@@ -58,6 +58,7 @@ ns_pulse_usage() {
   [ -n "$ns" ] && [ -n "$src" ] || return 0
   ns_layout_set armed "$ns" armed
   [ -f "$armed" ] || return 0
+  [ ! -e "$(ns_layout_path "$ns" stop)" ] || return 0
   ns_pulse_owner_ok "$ns" "$sid" || return 0
   ns_receipts_enabled "${ns%/.nightshift}" || return 0
   [ "$(ns_receipts "${ns%/.nightshift}" usage)" != off ] || return 0
@@ -448,9 +449,9 @@ ns_pulse_marks() { # <ns> <project> <sid> [transcript]
   # mark it, and the second mark closes an empty span. They are written under the site lock; a pulse
   # that cannot take it leaves the marks to the holder, and the gate catches up on its next stop.
   ns_lock "$ns" || return 0
-  # A pause stays open until the next tool call. A shift told to stop keeps making calls until it
-  # stops, and those calls are not a resume.
-  if [ -f "$(ns_usage_dir "$ns")/pause-open" ] && [ ! -e "$(ns_layout_path "$ns" stop)" ]; then
+  if [ -e "$(ns_layout_path "$ns" stop)" ]; then ns_unlock "$ns"; return 0; fi
+  # A pause stays open until the next tool call after work resumes.
+  if [ -f "$(ns_usage_dir "$ns")/pause-open" ]; then
     ns_usage_resume "$ns" || :
   fi
   ns_gate_usage_sync "$ns" "$project" "$punch" "$ticked" "$src" || :

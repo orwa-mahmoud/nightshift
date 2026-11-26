@@ -582,9 +582,16 @@ if (-not $DryRun) {
         $retiredUsage = Invoke-NSPreflightUsageHandover 'aside' (Get-NSEndedField $workspace 'shiftId')
         if (-not [string]::IsNullOrEmpty($retiredUsage)) { $null = $cleared.Add('usage->' + (Split-Path -Leaf $retiredUsage)) }
     }
+    $lastPause = Get-NSUsageLastPause $ns
     if ($continued -and $null -ne $lastActivity -and (Test-Path -LiteralPath (Get-NSUsageDir $ns) -PathType Container) -and
-        [long]$lastActivity -gt (Get-NSUsageLastPause $ns)) {
-        $null = Write-NSUsagePause $ns 'the shift broke off here and Start resumed it' ([long]$lastActivity)
+        [long]$lastActivity -gt $lastPause) {
+        if (Write-NSUsagePause $ns 'the shift broke off here and Start resumed it' ([long]$lastActivity)) {
+            $lastPause = [long]$lastActivity
+        }
+    }
+    if ($continued -and $openNow -gt 0) {
+        try { Invoke-NSGateUsageStart $ns $workspace (Get-NSLayoutPath $ns 'punch-list') $lastPause }
+        catch { Write-Warn "usage the accounting baseline for this Start could not be recorded - $_" }
     }
     Remove-NSPath (Get-NSLayoutPath $ns 'stop')
     $deadlinePath = Get-NSLayoutPath $ns 'deadline'

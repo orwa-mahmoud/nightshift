@@ -17,8 +17,16 @@
 #   dropkey  the document without the value at dotted path -v key, sorted and indented
 #   stringlist one JSON array of strings, each decoded on its own line; null prints nothing
 #   unquote  one JSON string on stdin, decoded text on stdout
+#   recordfields JSONL objects matching -v records, with -v key paths projected as TSV fields
 
 {
+  if (mode == "recordfields") {
+    if ($0 ~ /^[[:space:]]*\{/ && $0 ~ /\}[[:space:]]*$/ && $0 ~ records) {
+      if (src != "") src = src ","
+      src = src $0
+    }
+    next
+  }
   src = src $0
   if (mode != "unquote") {
     src = src "\n"
@@ -26,6 +34,10 @@
 }
 
 END {
+  if (mode == "recordfields") {
+    emit_record_fields()
+    exit
+  }
   if (mode == "unquote") {
     if (unquote_one(src) == 0) {
       printf "%s", decoded
@@ -112,6 +124,21 @@ END {
   printf "%s", outbuf
 }
 
+function emit_record_fields(    paths, count, row, col, path) {
+  src = "[" src "]"
+  n = length(src)
+  i = 1
+  jparse(".")
+  count = split(key, paths, " ")
+  for (row = 0; row < V_LEN["."]; row++) {
+    for (col = 1; col <= count; col++) {
+      path = ".[" row "]." paths[col]
+      printf "%s%s", (col == 1 ? "" : "\t"), V_RAW[path]
+    }
+    printf "\n"
+  }
+}
+
 # ------------------------------------------------------------------ policy mode
 #
 # One shift policy snapshot as the same flat fact stream lib/policy.sh already reads from jq or
@@ -141,6 +168,12 @@ function jparse(path,    c, key, idx, first, keys, child) {
       }
       parse_string_raw()
       key = decoded
+      if (mode == "recordfields") {
+        # A literal dotted key cannot stand in for a nested property.
+        gsub(/%/, "%25", key)
+        gsub(/\./, "%2e", key)
+        gsub(/\[/, "%5b", key)
+      }
       if (keys != "") {
         keys = keys "\t"
       }
@@ -1077,44 +1110,35 @@ function emit(p1, p2, p3, typ, val) {
   outbuf = outbuf p1 "\t" p2 "\t" p3 "\t" typ "\t" val "\n"
 }
 
-function parse_number(    c, start, token) {
+function parse_number(    c, start) {
   start = i
   c = peek()
-  if (c == "-") {
-    fail("unknown type")
-  }
+  if (c !~ /^[0-9]$/) fail("unknown type")
   if (c == "0") {
     i++
-    if (i <= n) {
-      c = peek()
-      if (c >= "0" && c <= "9") {
-        fail("unknown type")
-      }
-      if (c == "." || c == "e" || c == "E") {
-        fail("unknown type")
-      }
-    }
-    return "0"
+    if (peek() ~ /^[0-9]$/) fail("unknown type")
+  } else {
+    scan_digits()
   }
-  if (c < "1" || c > "9") {
-    fail("unknown type")
-  }
-  i++
-  while (i <= n) {
-    c = peek()
-    if (c < "0" || c > "9") {
-      break
-    }
+  c = peek()
+  if (c == ".") {
+    if (mode != "recordfields") fail("unknown type")
     i++
-  }
-  if (i <= n) {
+    scan_digits()
     c = peek()
-    if (c == "." || c == "e" || c == "E") {
-      fail("unknown type")
-    }
   }
-  token = substr(src, start, i - start)
-  return token
+  if (c == "e" || c == "E") {
+    if (mode != "recordfields") fail("unknown type")
+    i++
+    if (peek() == "+" || peek() == "-") i++
+    scan_digits()
+  }
+  return substr(src, start, i - start)
+}
+
+function scan_digits() {
+  if (peek() !~ /^[0-9]$/) fail("unknown type")
+  while (peek() ~ /^[0-9]$/) i++
 }
 
 function parse_bool(    c) {

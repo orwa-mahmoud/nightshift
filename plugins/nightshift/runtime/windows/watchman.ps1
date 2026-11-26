@@ -148,7 +148,7 @@ function Test-NSErroredTail {
 
 # Test-NSUsageLimitRevivalOff - true when the owner set watchAfterUsageLimit to false.
 function Test-NSUsageLimitRevivalOff {
-    return ([string](Get-NSRule $workspace 'watchAfterUsageLimit' ([string]$env:NIGHTSHIFT_WATCH_AFTER_USAGE_LIMIT))) -ceq 'false'
+    return ([string](Get-NSRule $workspace 'watchAfterUsageLimit' ([string]$env:NIGHTSHIFT_WATCH_AFTER_USAGE_LIMIT))) -eq 'false'
 }
 
 # Test-NSUsageLimitedTail - the errored Claude tail names a usage limit, not a transient failure.
@@ -349,7 +349,8 @@ function Get-NSSiteVerdict {
     if (Test-NSTranscriptPulse) {
         return 'alive'
     }
-    if (Test-NSPulseFresh $ns $IntervalMinutes) {
+    $pulseFresh = Test-NSPulseFresh $ns $IntervalMinutes
+    if ($pulseFresh -and $HostName -ne 'codex') {
         return 'alive'
     }
 
@@ -378,21 +379,24 @@ function Get-NSSiteVerdict {
         $session = Read-NSSession $ns
         # A turn that ended on an API error is a wedge whatever the process evidence says, until the
         # rollout moves again. The gap is recorded once, from the moment the turn failed; a usage
-        # limit waits for the reset time Codex reported.
+        # limit takes precedence over a pulse left by the failed turn.
         $rollout = Get-NSTranscript
         $turnError = Get-NSCodexTurnError $rollout
+        if ($pulseFresh -and $turnError -cne 'usage_limit_exceeded') { return 'alive' }
         if (-not [string]::IsNullOrEmpty($turnError) -and -not (Test-NSTranscriptPulse)) {
             $failedAt = Get-NSCodexTurnErrorAt $rollout
+            $resetAt = if ($turnError -ceq 'usage_limit_exceeded') { Get-NSCodexLimitReset $rollout } else { 0 }
             if ($failedAt -ne $script:WedgeSeen) {
                 $script:WedgeSeen = $failedAt
                 $null = Write-NSUsagePause $ns "the session stopped on an API error ($turnError)" $failedAt
                 Write-NSLogLine "watchman: the last turn ended on an API error ($turnError) - the session is wedged, not working"
+                if ($turnError -ceq 'usage_limit_exceeded' -and $resetAt -eq 0) {
+                    Write-NSLogLine 'watchman: Codex usage limit reset time is unknown'
+                }
             }
-            $resetAt = Get-NSCodexLimitReset $rollout
-            # A usage limit is revived once it resets, unless the owner turned that off
-            # (watchAfterUsageLimit false): then the limit is recorded and the shift waits for them.
             if ($turnError -ceq 'usage_limit_exceeded' -and ((Test-NSUsageLimitRevivalOff) -or $resetAt -gt (Get-NSUnixTime))) {
-                Write-NSReason $ns 'usage-limit' ([string]$resetAt)
+                $detail = if ($resetAt -gt 0) { [string]$resetAt } else { 'reset time unknown' }
+                Write-NSReason $ns 'usage-limit' $detail
                 return 'usage-limit'
             }
             Write-NSReason $ns 'api-error' $turnError

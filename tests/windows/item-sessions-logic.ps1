@@ -21,12 +21,14 @@ function Expect-True {
 
 # New-Site <path> - an armed shift with items 3, 4 and 5 open and the shift started at zero.
 function New-Site {
-    param([Parameter(Mandatory = $true)][string]$Path)
+    param([Parameter(Mandatory = $true)][string]$Path, [switch]$Version2)
     $ns = Join-Path $Path '.nightshift'
     $null = New-Item -ItemType Directory -Path (Join-Path $ns 'receipts') -Force
     Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $ns 'rules.json') -Force
     [IO.File]::WriteAllText((Join-Path $ns 'punch-list.md'), $list3, $utf8)
-    [IO.File]::WriteAllText((Join-Path $ns '.shift-armed'), '', $utf8)
+    if ($Version2) { [IO.File]::WriteAllText((Join-Path $ns 'state-version'), "2`n", $utf8) }
+    New-NSLayoutParent $ns 'armed'
+    [IO.File]::WriteAllText((Get-NSLayoutPath $ns 'armed'), '', $utf8)
     $null = Write-NSUsageMarkArm $ns
     return $ns
 }
@@ -68,6 +70,104 @@ function Set-Tick {
     param([string]$Ns, [string]$Number)
     $punch = Join-Path $Ns 'punch-list.md'
     [IO.File]::WriteAllText($punch, ([IO.File]::ReadAllText($punch) -creplace ('(?m)^- \[ \] \*\*' + $Number + '\.'), ('- [x] **' + $Number + '.')), $utf8)
+}
+
+function Test-ReopenedItem {
+    param([string]$Workspace)
+    $start = Join-Path $repository 'plugins/nightshift/runtime/windows/start-preflight.ps1'
+    $stop = Join-Path $repository 'plugins/nightshift/runtime/windows/stop-shift.ps1'
+    function global:Get-TestItemClock { return $global:ItemSessionClock }
+    Set-Alias -Name Get-NSUnixTime -Value Get-TestItemClock -Scope Global
+    $global:ItemSessionClock = 2000000000L
+    try {
+        $ns = New-Site $Workspace -Version2
+        & git -C $Workspace init --quiet
+        $punch = Join-Path $ns 'punch-list.md'
+        $list = "## Items`n- [ ] **1. First.** <!-- id: aa11 -->`n- [ ] **2. Second.** <!-- id: bb22 -->`n"
+        [IO.File]::WriteAllText($punch, $list, $utf8)
+        $r1 = Join-Path $ns 'receipts/aa11-first.md'
+        $r2 = Join-Path $ns 'receipts/bb22-second.md'
+        $armed = Get-NSLayoutPath $ns 'armed'
+        $null = Write-NSSession $ns 'synthetic-cursor' '' '' '' cursor
+        Write-Receipt $ns 'aa11-first' $t0
+        Invoke-Step $ns $Workspace
+        $global:ItemSessionClock = 2000000120L
+        $null = Write-NSUsageRecord $ns cursor cursor-model stop-payload cursor-turn-1 0 'input=20,output=2'
+        Set-Tick $ns '1'
+        Invoke-Step $ns $Workspace
+        $original = (Get-NSReceiptSessionData $r1)[0]
+        Write-Receipt $ns 'bb22-second' $t0.AddMinutes(10)
+        $global:ItemSessionClock = 2000000180L
+        $null = Write-NSUsageRecord $ns cursor cursor-model stop-payload cursor-turn-2 0 'input=30,output=3'
+        Invoke-Step $ns $Workspace
+        $global:ItemSessionClock = 2000000300L
+        $null = & $stop -Project $Workspace
+
+        [IO.File]::WriteAllText($punch, $list, $utf8)
+        $global:ItemSessionClock = 2000086700L
+        $verdict = & $start -Project $Workspace -HostName codex
+        if ($LASTEXITCODE -ne 0) { throw "Start refused: $verdict" }
+        [IO.File]::WriteAllText($armed, '', $utf8)
+        $null = Write-NSSession $ns 'synthetic-codex' '/synthetic-rollout' '' '' codex
+        $null = Write-NSUsageRecord $ns codex codex-model rollout '/synthetic-rollout' 0 'input=500,output=20'
+        Invoke-Step $ns $Workspace
+        $resumed = Get-NSUsageActive $ns
+        $global:ItemSessionClock = 2000086790L
+        $null = Write-NSUsageRecord $ns codex codex-model rollout '/synthetic-rollout' 0 'input=540,output=24'
+        Write-Receipt $ns 'aa11-first' $t0.AddYears(14)
+        Invoke-Step $ns $Workspace
+        $global:ItemSessionClock = 2000086880L
+        $null = Write-NSUsageRecord $ns codex codex-model rollout '/synthetic-rollout' 0 'input=560,output=26'
+        Set-Tick $ns '1'
+        Invoke-Step $ns $Workspace
+        Invoke-Step $ns $Workspace
+        Update-NSReceiptSessionView $r1 '1. First.' (Get-NSReceiptSessionData $r1)
+        $global:ItemSessionClock = 2000086940L
+        $null = Write-NSUsageRecord $ns codex codex-model rollout '/synthetic-rollout' 0 'input=570,output=27'
+        $null = & $stop -Project $Workspace
+
+        $item1 = Get-NSReceiptSessionData $r1
+        $item2 = Get-NSReceiptSessionData $r2
+        Expect-True ($resumed -ceq '1. First.') "Start resumes the first open item (got $resumed)"
+        Expect-True ($item1[0] -ceq $original) 'the previous completion row is preserved'
+        Expect-True ($item1.Count -eq 2 -and $item1[-1] -cmatch ' 2000086700 2000086880 180 60 6 ticked .* host=codex/codex-model ') `
+            "the reopened item gets one Codex completion row (got $item1)"
+        Expect-True ($item2.Count -eq 2 -and $item2[0] -cmatch ' 2000000120 2000000300 180 .* paused .* host=cursor/cursor-model ' `
+            -and $item2[-1] -cmatch ' 2000086880 2000086940 60 10 1 paused .* host=codex/codex-model ') `
+            "both Stop commands finalize Item 2 with the correct time and model (got $item2)"
+
+        $global:ItemSessionClock = 2000090000L
+        $verdict = & $start -Project $Workspace -HostName codex
+        if ($LASTEXITCODE -ne 0) { throw "Start refused: $verdict" }
+        [IO.File]::WriteAllText($armed, '', $utf8)
+        $null = Write-NSSession $ns 'synthetic-codex' '/rollout-without-usage' '' '' codex
+        Invoke-Step $ns $Workspace
+        Update-NSReceiptSessionView $r1 '1. First.' (Get-NSReceiptSessionData $r1)
+        Expect-True (((Get-NSReceiptSessionData $r1) -join "`n") -ceq ($item1 -join "`n")) 'restart leaves both completion rows intact'
+        Expect-True (((Get-NSReceiptSessionData $r2) -join "`n") -ceq ($item2 -join "`n")) 'restart does not duplicate paused sessions'
+        $global:ItemSessionClock = 2000090030L
+        $null = & $stop -Project $Workspace
+        $last = (Get-NSReceiptSessionData $r2)[-1]
+        Expect-True ($last -cmatch ' 2000090000 2000090030 30 - - paused .* host=codex/- ') `
+            "Stop records the host and leaves unreported tokens and model unknown (got $last)"
+
+        [IO.File]::WriteAllText($punch, $list, $utf8)
+        $global:ItemSessionClock = 2000090100L
+        $verdict = & $start -Project $Workspace -HostName codex
+        if ($LASTEXITCODE -ne 0) { throw "Start refused: $verdict" }
+        [IO.File]::WriteAllText($armed, '', $utf8)
+        $null = Write-NSSession $ns 'synthetic-codex' '' '' '' codex
+        Invoke-Step $ns $Workspace
+        Expect-True ((Get-NSUsageActive $ns) -ceq '1. First.') 'Start picks the first open item again'
+        $global:ItemSessionClock = 2000090130L
+        Write-Receipt $ns 'bb22-second' $t0.AddYears(14).AddMinutes(10)
+        Invoke-Step $ns $Workspace
+        Expect-True ((Get-NSUsageActive $ns) -ceq '2. Second.') 'a later receipt write switches to Item 2'
+    }
+    finally {
+        Remove-Item Alias:\Get-NSUnixTime, Function:\Get-TestItemClock
+        Remove-Variable ItemSessionClock -Scope Global
+    }
 }
 
 $t0 = [DateTime]::SpecifyKind([DateTime]'2026-09-24T03:00:00', [DateTimeKind]::Utc)
@@ -168,6 +268,8 @@ try {
     Invoke-Step $ns $w
     Expect-True ((Get-Sessions $rc) -ceq '25 2 paused|7 1 ticked') "the next shift continues the receipt (got $(Get-Sessions $rc))"
     Expect-True ([IO.File]::ReadAllText($rc) -cmatch '(?m)^\| \*\*Total\*\* \| 2 sessions \| .* \| \*\*32\*\* \| \*\*3\*\* \|') 'totals run across shifts'
+
+    Test-ReopenedItem (Join-Path $root 'reopened')
 
     # The runtime's own writes keep the receipt's modification time.
     $w = Join-Path $root 'mtime'

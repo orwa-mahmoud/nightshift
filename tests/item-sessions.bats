@@ -24,7 +24,7 @@ site() {
   local p
   p="$(new_project "$1")"
   printf '%s' "$LIST3" >"$p/.nightshift/punch-list.md"
-  printf 'test-shift-session\n' >"$p/.nightshift/.shift-session"
+  lib ns_session_claim "$p/.nightshift" test-shift-session /t/a '' '' claude
   mkdir -p "$p/.nightshift/receipts"
   lib ns_usage_mark_arm "$p/.nightshift"
   printf '%s' "$p"
@@ -51,6 +51,17 @@ sessions() { awk '/^<!-- session-data$/ { on = 1; next } on && /^-->$/ { exit } 
 
 tick() { # <project> <number>
   sed -i.bak "s/^- \[ \] \*\*$2\./- [x] **$2./" "$1/.nightshift/punch-list.md"
+}
+
+use_item_clock() {
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  export ITEM_SESSION_CLOCK="$BATS_TEST_TMPDIR/clock"
+  cat >"$BATS_TEST_TMPDIR/bin/date" <<'SH'
+#!/bin/bash
+if [ "$*" = '+%s' ]; then cat "$ITEM_SESSION_CLOCK"; else exec /bin/date "$@"; fi
+SH
+  chmod +x "$BATS_TEST_TMPDIR/bin/date"
+  export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
 }
 
 @test "the active item is the open item whose receipt was written last" {
@@ -182,6 +193,108 @@ tick() { # <project> <number>
   step "$p"
   [ "$(sessions "$r3" | awk '{ print $5, $6, $7 }' | paste -sd'|' -)" = '25 2 paused|7 1 ticked' ]
   grep -qE '^\| \*\*Total\*\* \| 2 sessions \| .* \| \*\*32\*\* \| \*\*3\*\* \|' "$r3"
+}
+
+@test "Start reopens a completed item without charging the overnight gap or duplicating its tick" {
+  p="$(new_project reopened)"
+  ns="$p/.nightshift"
+  punch="$ns/punch-list.md"
+  r1="$ns/receipts/aa11-first.md"
+  r2="$ns/receipts/bb22-second.md"
+  printf '2\n' >"$ns/state-version"
+  rm "$ns/.shift-armed"
+  lib ns_layout_parent "$ns" armed
+  armed="$(lib ns_layout_path "$ns" armed)"
+  : >"$armed"
+  mkdir -p "$ns/receipts"
+  printf '## Items\n- [ ] **1. First.** <!-- id: aa11 -->\n- [ ] **2. Second.** <!-- id: bb22 -->\n' >"$punch"
+  use_item_clock
+  printf '2000000000\n' >"$ITEM_SESSION_CLOCK"
+  lib ns_session_claim "$ns" test-shift-session '' '' '' cursor
+  lib ns_usage_mark_arm "$ns"
+  wrote "$p" aa11-first 202609240300
+  step "$p"
+  printf '2000000120\n' >"$ITEM_SESSION_CLOCK"
+  lib ns_usage_record "$ns" cursor cursor-model stop-payload cursor-turn-1 0 'input=20,output=2'
+  tick "$p" 1
+  step "$p"
+  original="$(sessions "$r1")"
+  [ "$(printf '%s\n' "$original" | awk '{print $4, $7}')" = '120 ticked' ]
+  wrote "$p" bb22-second 202609240310
+  printf '2000000180\n' >"$ITEM_SESSION_CLOCK"
+  lib ns_usage_record "$ns" cursor cursor-model stop-payload cursor-turn-2 0 'input=30,output=3'
+  step "$p"
+  printf '2000000300\n' >"$ITEM_SESSION_CLOCK"
+  bash "$ROOT/plugins/nightshift/runtime/stop-shift.sh" --project "$p"
+
+  sed -i.bak 's/^- \[x\] \*\*1\./- [ ] **1./' "$punch"
+  printf '2000086700\n' >"$ITEM_SESSION_CLOCK"
+  bash "$ROOT/plugins/nightshift/runtime/start-preflight.sh" --project "$p" --host codex
+  : >"$armed"
+  lib ns_session_claim "$ns" test-shift-session /synthetic-rollout '' '' codex
+  lib ns_usage_record "$ns" codex codex-model rollout /synthetic-rollout 0 'input=500,output=20'
+  step "$p"
+  resumed="$(lib ns_usage_active "$ns")"
+  printf '2000086790\n' >"$ITEM_SESSION_CLOCK"
+  lib ns_usage_record "$ns" codex codex-model rollout /synthetic-rollout 0 'input=540,output=24'
+  wrote "$p" aa11-first 204009250300
+  step "$p"
+  printf '2000086880\n' >"$ITEM_SESSION_CLOCK"
+  lib ns_usage_record "$ns" codex codex-model rollout /synthetic-rollout 0 'input=560,output=26'
+  tick "$p" 1
+  step "$p"
+  step "$p"
+  lib ns_receipt_refresh "$r1"
+  printf '2000086940\n' >"$ITEM_SESSION_CLOCK"
+  lib ns_usage_record "$ns" codex codex-model rollout /synthetic-rollout 0 'input=570,output=27'
+  bash "$ROOT/plugins/nightshift/runtime/stop-shift.sh" --project "$p"
+
+  printf 'resumed %s\nItem 1\n%s\nItem 2\n%s\n' "$resumed" "$(sessions "$r1")" "$(sessions "$r2")"
+  [ "$resumed" = '1. First.' ]
+  [ "$(sessions "$r1" | head -n1)" = "$original" ]
+  [ "$(sessions "$r1" | awk '{ print $2, $3, $4, $5, $6, $7 }' | tail -n1)" = '2000086700 2000086880 180 60 6 ticked' ]
+  [ "$(sessions "$r1" | wc -l | tr -d ' ')" -eq 2 ]
+  [ "$(sessions "$r2" | awk '{ print $2, $3, $4, $7 }' | paste -sd'|' -)" = \
+    '2000000120 2000000300 180 paused|2000086880 2000086940 60 paused' ]
+  sessions "$r1" | tail -n1 | grep -q ' host=codex/codex-model '
+  sessions "$r2" | head -n1 | grep -q ' host=cursor/cursor-model '
+  sessions "$r2" | tail -n1 | grep -q ' host=codex/codex-model '
+
+  item1="$(sessions "$r1")"
+  item2="$(sessions "$r2")"
+  printf '2000090000\n' >"$ITEM_SESSION_CLOCK"
+  bash "$ROOT/plugins/nightshift/runtime/start-preflight.sh" --project "$p" --host codex
+  : >"$armed"
+  lib ns_session_claim "$ns" test-shift-session /rollout-without-usage '' '' codex
+  step "$p"
+  lib ns_receipt_refresh "$r1"
+  [ "$(sessions "$r1")" = "$item1" ]
+  [ "$(sessions "$r2")" = "$item2" ]
+  printf '2000090030\n' >"$ITEM_SESSION_CLOCK"
+  bash "$ROOT/plugins/nightshift/runtime/stop-shift.sh" --project "$p"
+  [ "$(sessions "$r2" | tail -n1 | awk '{print $4, $5, $6, $7}')" = '30 - - paused' ]
+  sessions "$r2" | tail -n1 | grep -q ' host=codex/- '
+}
+
+@test "a receipt written after Start can still switch the active item" {
+  use_item_clock
+  printf '2000000000\n' >"$ITEM_SESSION_CLOCK"
+  p="$(site intentional-switch)"
+  ns="$p/.nightshift"
+  wrote "$p" dd44-the-next-one 200001010000
+  bash "$ROOT/plugins/nightshift/runtime/stop-shift.sh" --project "$p"
+  printf '2000001000\n' >"$ITEM_SESSION_CLOCK"
+  bash "$ROOT/plugins/nightshift/runtime/start-preflight.sh" --project "$p" --host codex
+  : >"$ns/.shift-armed"
+  lib ns_session_claim "$ns" test-shift-session '' '' '' codex
+  step "$p"
+  [ "$(lib ns_usage_active "$ns")" = '3. Blocked on a reply.' ]
+
+  printf '2000001030\n' >"$ITEM_SESSION_CLOCK"
+  wrote "$p" dd44-the-next-one 204009250300
+  step "$p"
+  [ "$(lib ns_usage_active "$ns")" = '4. The next one.' ]
+  [ "$(sessions "$(lib ns_receipt_path "$p" '3. Blocked on a reply.')" | awk '{print $4, $7}')" = '30 switched-away' ]
 }
 
 @test "the runtime's own writes keep the receipt's modification time" {
