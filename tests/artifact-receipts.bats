@@ -374,8 +374,8 @@ stall_count() { sed -n '2p' "$1/.nightshift/.stall"; }
   grep -qF 'do not replace the live files Doctor counts' "$DOCTOR_SKILL"
   grep -qF 'Missing or empty receipts create no dated receipts folder' "$DOCTOR_SKILL"
   grep -qF 'artifact receipt' "$TEMPLATE"
-  grep -qF '$NS/receipts/' "$TEMPLATE"
-  grep -qF '$NS/receipts/' "$DRAFT_TEMPLATE"
+  grep -qF '$RUN/receipts/' "$TEMPLATE"
+  grep -qF "the run's \`receipts/\` folder" "$DRAFT_TEMPLATE"
   grep -qF 'reviewable commits or artifact receipts' "$CODEX_PLUGIN"
   grep -qF 'Git repository or a local folder' "$CODEX_PLUGIN"
 }

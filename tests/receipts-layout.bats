@@ -197,15 +197,17 @@ ps_ready() { command -v pwsh >/dev/null 2>&1 || skip "pwsh not installed"; }
   printf 'keep\n' >"$p/.nightshift/receipts/20260902T190000Z-attended-evidence-program.md"
   run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/migrate-state.sh" --project "$p" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qF 'move      shift-report.md -> receipts/previous-report.md'
+  # A legacy site's live shift moves into one run folder, named by the date.
+  run_dir="runs/$(date +%Y-%m-%d)"
+  printf '%s\n' "$output" | grep -qF "move      shift-report.md -> $run_dir/receipts/previous-report.md"
   printf '%s\n' "$output" | grep -qF 'rename    rules.json: report -> receipts'
   ! jq -e '.report' "$p/.nightshift/rules.json" >/dev/null || false
   jq -e '.receipts.enabled == true' "$p/.nightshift/rules.json"
   ! jq -e '.receipts | has("legacyItemReceipts")' "$p/.nightshift/rules.json" >/dev/null || false
-  [ -f "$p/.nightshift/receipts/previous-report.md" ]
-  grep -qxF 'the old page' "$p/.nightshift/receipts/previous-report.md"
+  [ -f "$p/.nightshift/$run_dir/receipts/previous-report.md" ]
+  grep -qxF 'the old page' "$p/.nightshift/$run_dir/receipts/previous-report.md"
   [ ! -e "$p/.nightshift/shift-report.md" ]
-  grep -qxF 'keep' "$p/.nightshift/receipts/20260902T190000Z-attended-evidence-program.md"
+  grep -qxF 'keep' "$p/.nightshift/$run_dir/receipts/20260902T190000Z-attended-evidence-program.md"
 }
 
 @test "the schema rejects legacyItemReceipts" {
