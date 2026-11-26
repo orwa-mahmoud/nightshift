@@ -79,7 +79,13 @@ if {
   printf '# Punch List — %s\n' "$NAME"
   # The shipped contract and gates: everything after the template's title line and before
   # `## Items`.
-  ns_owner_template "$TEMPLATE" "$WORKSPACE" | awk '
+  # On a layout with run folders the plan's run does not exist yet: `$RUN` stays for Start to fill
+  # when it places the plan in its run. Earlier layouts keep the shift at the top of the site.
+  if ns_layout_per_run "$NS" punch-list; then
+    ns_owner_template "$TEMPLATE" "$WORKSPACE"
+  else
+    ns_owner_template "$TEMPLATE" "$WORKSPACE" "$NS"
+  fi | awk '
     NR == 1 { next }
     /^## Items[[:space:]]*$/ { exit }
     { print }

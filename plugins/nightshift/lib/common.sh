@@ -71,12 +71,15 @@ ns_templates_dir() {
   printf '%s' "$_NS_TEMPLATES_DIR"
 }
 
-# ns_owner_template <template> <workspace> — the template's text with `$NIGHTSHIFT_WORKSPACE` and
-# `$NS` replaced by that workspace's paths, character for character: a path holding `&`, `|` or a
-# backslash is written as it is.
+# ns_owner_template <template> <workspace> [<run-dir>] — the template's text with
+# `$NIGHTSHIFT_WORKSPACE`, `$NS` and, when <run-dir> is given, `$RUN` (the folder of the run the
+# file belongs to) replaced by those paths, character for character: a path holding `&`, `|` or a
+# backslash is written as it is. Without <run-dir>, `$RUN` is left for whoever places the file in
+# a run.
 ns_owner_template() {
   local ws="${2%/}"
-  NS_TEMPLATE_WS="$ws" NS_TEMPLATE_NS="$ws/.nightshift" awk '
+  NS_TEMPLATE_WS="$ws" NS_TEMPLATE_NS="$ws/.nightshift" NS_TEMPLATE_RUN="${3-}" \
+    NS_TEMPLATE_HAS_RUN="${3+1}" awk '
     function literal(s, from, to,    out, i) {
       out = ""
       while ((i = index(s, from)) > 0) {
@@ -86,7 +89,9 @@ ns_owner_template() {
       return out s
     }
     {
-      line = literal($0, "$NIGHTSHIFT_WORKSPACE", ENVIRON["NS_TEMPLATE_WS"])
+      line = $0
+      if (ENVIRON["NS_TEMPLATE_HAS_RUN"] == "1") line = literal(line, "$RUN", ENVIRON["NS_TEMPLATE_RUN"])
+      line = literal(line, "$NIGHTSHIFT_WORKSPACE", ENVIRON["NS_TEMPLATE_WS"])
       print literal(line, "$NS", ENVIRON["NS_TEMPLATE_NS"])
     }
   ' "$1"

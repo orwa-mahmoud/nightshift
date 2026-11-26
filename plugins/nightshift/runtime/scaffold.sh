@@ -93,10 +93,35 @@ ns_state_dir_ensure "$WORKSPACE" 2>/dev/null || {
   exit 2
 }
 
+# first_run — a per-run file needs a run to live in. A workspace with none gets its first run here,
+# named the way every run is named (a shift with no name yet is named by date); one with several
+# and none named refuses rather than guess.
+first_run() {
+  local run runs
+  ns_layout_run_set run "$NS" && return 0
+  if [ -n "${NIGHTSHIFT_RUN-}" ]; then
+    printf 'scaffold: NIGHTSHIFT_RUN is not a run folder name: %s\n' "$NIGHTSHIFT_RUN" >&2
+    exit 2
+  fi
+  runs="$(ns_layout_runs "$NS")"
+  if [ -n "$runs" ]; then
+    printf 'scaffold: several runs and none named - set NIGHTSHIFT_RUN to one of: %s\n' "$(printf '%s' "$runs" | tr '\n' ' ')" >&2
+    exit 2
+  fi
+  ns_run_dir "$WORKSPACE" "$(date +%Y-%m-%d)" unknown "" >/dev/null || {
+    printf 'scaffold: cannot create a run folder under %s/runs\n' "$NS" >&2
+    exit 2
+  }
+}
+
 # write <key> <template|line> <source> — one file, copied from a template or holding one line,
 # unless the name is taken.
 write() {
-  local key="$1" kind="$2" src="$3" dest rel ok
+  local key="$1" kind="$2" src="$3" dest rel ok run home="$NS"
+  if ns_layout_per_run "$NS" "$key"; then
+    first_run
+    ns_layout_run_set run "$NS" && home="$NS/runs/$run"
+  fi
   ns_layout_set dest "$NS" "$key" || return 0
   ns_layout_rel_set rel "$NS" "$key"
   # A name that is already taken is the owner's, whatever it holds and whatever kind of file it is.
@@ -112,7 +137,7 @@ write() {
   # list has no `$NS`. The shipped template is never changed.
   ok=0
   if [ "$kind" = template ]; then
-    ns_owner_template "$src" "$WORKSPACE" >"$dest" 2>/dev/null && ok=1
+    ns_owner_template "$src" "$WORKSPACE" "$home" >"$dest" 2>/dev/null && ok=1
   else
     printf '%s\n' "$src" >"$dest" 2>/dev/null && ok=1
   fi

@@ -67,7 +67,7 @@ if [ "$rc" -ne 0 ]; then
 fi
 
 FROM="$(sed -n 's/^state\t//p' "$PLAN")"
-printf 'migrate-state: %s/.nightshift is state-version %s; version %s groups it by purpose\n' \
+printf 'migrate-state: %s/.nightshift is state-version %s; version %s is the current layout\n' \
   "$WORKSPACE" "$FROM" "$NS_STATE_VERSION"
 
 if grep -q '^refuse' "$PLAN"; then

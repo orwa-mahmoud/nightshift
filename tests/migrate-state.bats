@@ -57,6 +57,10 @@ v1_site() {
   printf '%s' "$ws"
 }
 
+# R — the run folder a workspace with one unnamed shift moves into: named by date, as a run with
+# no name is.
+R="runs/$(date +%Y-%m-%d)"
+
 # plan <workspace> — the plan records, as the command computes them.
 plan() {
   bash -c '. "$1"; . "${1%/*}/migrate.sh"; ns_migrate_plan "$2"' _ "$LIB" "$1"
@@ -83,31 +87,34 @@ links_resolve() {
   run bash "$MIGRATE" --project "$ws"
   [ "$status" -eq 0 ]
   for line in \
-    'move      parking-lot.md -> inbox/parking-lot.md' \
-    'move      snag-log.md -> inbox/snag-log.md' \
+    "move      punch-list.md -> $R/punch-list.md" \
+    "move      receipts -> $R/receipts" \
+    "move      parking-lot.md -> $R/inbox/parking-lot.md" \
+    "move      snag-log.md -> $R/inbox/snag-log.md" \
     'move      drafting-table.md -> staging/drafting-table.md' \
     'move      work-orders.md -> staging/work-orders.md' \
     'move      opportunity-map.md -> product/opportunity-map.md' \
     'move      product-research.md -> product/product-research.md' \
-    'move      shift-report.md -> receipts/previous-report.md' \
-    'move      shift-log.md -> run/shift-log.md' \
+    "move      shift-report.md -> $R/receipts/previous-report.md" \
+    "move      shift-log.md -> $R/run/shift-log.md" \
     'move      work-target -> run/work-target' \
-    'move      usage -> run/usage' \
-    'move      usage-abc123 -> run/usage-abc123' \
-    'move      evidence -> run/evidence' \
-    'move      .ended -> run/.ended' \
+    "move      usage -> $R/run/usage" \
+    "move      usage-abc123 -> $R/run/usage-abc123" \
+    "move      evidence -> $R/run/evidence" \
+    "move      .ended -> $R/run/.ended" \
     'rename    rules.json: report -> receipts' \
     'retire    rules.json: receipts.legacyItemReceipts (no version reads it)' \
-    'link      punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top' \
-    'link      staging/drafting-table.md: parking-lot.md -> ../inbox/parking-lot.md' \
+    "link      $R/punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top" \
+    "link      staging/drafting-table.md: parking-lot.md -> ../$R/inbox/parking-lot.md" \
     'link      staging/drafting-table.md: archive/2026-09-24/punch-list.md -> ../archive/2026-09-24/punch-list.md' \
-    'link      staging/drafting-table.md: shift-log.md -> ../run/shift-log.md' \
-    'link      receipts/a1b2-done.md: ../shift-report.md -> previous-report.md' \
-    'link      archive/2026-09-24/drafting-table.md: ../../parking-lot.md -> ../../inbox/parking-lot.md' \
+    "link      staging/drafting-table.md: shift-log.md -> ../$R/run/shift-log.md" \
+    "link      $R/receipts/a1b2-done.md: ../shift-report.md -> previous-report.md" \
+    "link      $R/receipts/a1b2-done.md: ../snag-log.md -> ../inbox/snag-log.md" \
+    "link      archive/2026-09-24/drafting-table.md: ../../parking-lot.md -> ../../$R/inbox/parking-lot.md" \
     'unknown   owner-notes.txt (no Nightshift file has this name; left in place)' \
     'stray     receipt-item.md' \
     'note      a schedule registered before this move still appends to scheduled.log' \
-    'marker    state-version 1 -> 2' \
+    'marker    state-version 1 -> 3' \
     'Preview only - nothing was changed. Run it again with --apply'; do
     printf '%s\n' "$output" | grep -qF -- "$line" || { echo "missing: $line"; echo "$output"; return 1; }
   done
@@ -145,12 +152,12 @@ links_resolve() {
       link) grep -qF "$c" "$ns/$a" || { echo "not repointed: $a $c"; return 1; } ;;
     esac
   done <"$BATS_TEST_TMPDIR/plan"
-  [ "$(cat "$ns/state-version")" = 2 ]
+  [ "$(cat "$ns/state-version")" = 3 ]
   jq -e '.receipts.enabled == true and (has("report") | not) and (.receipts | has("legacyItemReceipts") | not) and .watchMinutes == 10' "$ns/rules.json"
   # The archived file is repointed in place; no second copy is written beside it.
   [ ! -e "$ns/archive/2026-09-24/drafting-table.original.md" ]
   ! cmp -s "$ns/archive/2026-09-24/drafting-table.md" "$BATS_TEST_TMPDIR/archived" || false
-  grep -qF '../../inbox/parking-lot.md' "$ns/archive/2026-09-24/drafting-table.md"
+  grep -qF "../../$R/inbox/parking-lot.md" "$ns/archive/2026-09-24/drafting-table.md"
   # Fenced text and code spans are left exactly as written.
   grep -qF '[not a link](parking-lot.md)' "$ns/staging/drafting-table.md"
   grep -qF '`[code](snag-log.md)`' "$ns/staging/drafting-table.md"
@@ -183,12 +190,12 @@ links_resolve() {
   [ "$(cat "$ns/state-version")" = 1 ]
   run bash "$MIGRATE" --project "$ws"
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qF 'link      punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top'
-  printf '%s\n' "$output" | grep -qF 'link      staging/drafting-table.md: shift-log.md -> ../run/shift-log.md'
+  printf '%s\n' "$output" | grep -qF "link      $R/punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top"
+  printf '%s\n' "$output" | grep -qF "link      staging/drafting-table.md: shift-log.md -> ../$R/run/shift-log.md"
   if printf '%s\n' "$output" | grep -qF 'move      parking-lot.md'; then return 1; fi
   run bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(cat "$ns/state-version")" = 2 ]
+  [ "$(cat "$ns/state-version")" = 3 ]
   [ -f "$ns/staging/drafting-table.md" ]
   links_resolve "$ns"
 }
@@ -233,24 +240,24 @@ links_resolve() {
   before="$(fingerprint "$ws")"
   run bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 5 ]
-  printf '%s\n' "$output" | grep -qF 'conflict  parking-lot.md and inbox/parking-lot.md are both there and differ - keep one by hand'
+  printf '%s\n' "$output" | grep -qF "conflict  parking-lot.md and $R/inbox/parking-lot.md are both there and differ - keep one by hand"
   [ "$(fingerprint "$ws")" = "$before" ]
 
   cp "$ns/parking-lot.md" "$ns/inbox/parking-lot.md"
   cp "$ns/parking-lot.md" "$BATS_TEST_TMPDIR/left"
   run bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qF 'leave     parking-lot.md (the same content is already at inbox/parking-lot.md)'
+  printf '%s\n' "$output" | grep -qF "leave     parking-lot.md (the same content is already at $R/inbox/parking-lot.md)"
   # Nothing is deleted: the copy left behind stays as it was, and the one in place has its links
   # written for where it sits.
   cmp -s "$ns/parking-lot.md" "$BATS_TEST_TMPDIR/left"
-  grep -qF '](../archive/2026-09-24/parking-lot.md)' "$ns/inbox/parking-lot.md"
+  grep -qF '](../../../archive/2026-09-24/parking-lot.md)' "$ns/$R/inbox/parking-lot.md"
   links_resolve "$ns"
   # The two still hold the same content, so a rerun leaves them as they are.
   before="$(fingerprint "$ws")"
   run bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qF 'leave     parking-lot.md (the same content is already at inbox/parking-lot.md)'
+  printf '%s\n' "$output" | grep -qF "leave     parking-lot.md (the same content is already at $R/inbox/parking-lot.md)"
   [ "$(fingerprint "$ws")" = "$before" ]
 }
 
@@ -260,7 +267,7 @@ links_resolve() {
   printf '# A different previous report\n' >"$ns/receipts/previous-report.md"
   run bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 5 ]
-  printf '%s\n' "$output" | grep -qF 'conflict  shift-report.md and receipts/previous-report.md are both there and differ'
+  printf '%s\n' "$output" | grep -qF "conflict  shift-report.md and $R/receipts/previous-report.md are both there and differ"
   [ -f "$ns/shift-report.md" ]
 
   cp "$ns/shift-report.md" "$ns/receipts/previous-report.md"
@@ -275,12 +282,12 @@ links_resolve() {
   done
   run env PATH="$bin" bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qF 'leave     shift-report.md (the same content is already at receipts/previous-report.md)'
-  printf '%s\n' "$output" | grep -qF 'drop      run/shift-policy.json: report (the same value is already under receipts)'
+  printf '%s\n' "$output" | grep -qF "leave     shift-report.md (the same content is already at $R/receipts/previous-report.md)"
+  printf '%s\n' "$output" | grep -qF "drop      $R/run/shift-policy.json: report (the same value is already under receipts)"
   grep -q '"receipts"' "$ns/rules.json"
   if grep -q '"report"\|legacyItemReceipts' "$ns/rules.json"; then return 1; fi
-  if grep -q '"report"' "$ns/run/shift-policy.json"; then return 1; fi
-  [ "$(cat "$ns/state-version")" = 2 ]
+  if grep -q '"report"' "$ns/$R/run/shift-policy.json"; then return 1; fi
+  [ "$(cat "$ns/state-version")" = 3 ]
 }
 
 @test "settings present under both names with different values are refused by name" {
@@ -297,14 +304,14 @@ links_resolve() {
   rm -f "$ws/.nightshift/state-version"
   run bash "$MIGRATE" --project "$ws" --apply
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qF 'marker    state-version 0 -> 2'
-  [ "$(cat "$ws/.nightshift/state-version")" = 2 ]
+  printf '%s\n' "$output" | grep -qF 'marker    state-version 0 -> 3'
+  [ "$(cat "$ws/.nightshift/state-version")" = 3 ]
 
   fresh="$BATS_TEST_TMPDIR/fresh"
   mkdir -p "$fresh"
   run bash "$PLUGIN/runtime/scaffold.sh" --project "$fresh"
   [ "$status" -eq 0 ]
-  [ "$(cat "$fresh/.nightshift/state-version")" = 2 ]
+  [ "$(cat "$fresh/.nightshift/state-version")" = 3 ]
   run bash "$MIGRATE" --project "$fresh"
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF 'nothing to do'
@@ -349,17 +356,17 @@ links_resolve() {
   before="$(fingerprint "$ws")"
   run bash "$DOCTOR" --project "$ws"
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qF 'state version 1 (every state file sits at the top of .nightshift/)'
-  printf '%s\n' "$output" | grep -qF '[confirm] move the state files into layout 2: shift-report.md -> receipts/previous-report.md, parking-lot.md -> inbox/parking-lot.md, snag-log.md -> inbox/snag-log.md'
-  printf '%s\n' "$output" | grep -qF '.ended -> run/.ended'
+  printf '%s\n' "$output" | grep -qF 'state version 1 (keeps every state file at the top of .nightshift/)'
+  printf '%s\n' "$output" | grep -qF "[confirm] move the state files into layout 3: punch-list.md -> $R/punch-list.md, receipts -> $R/receipts, shift-report.md -> $R/receipts/previous-report.md, parking-lot.md -> $R/inbox/parking-lot.md, snag-log.md -> $R/inbox/snag-log.md"
+  printf '%s\n' "$output" | grep -qF ".ended -> $R/run/.ended"
   printf '%s\n' "$output" | grep -qF 'nothing is deleted or overwritten. Preview it with'
   printf '%s\n' "$output" | grep -qF 'migrate-state.sh, then run it again with --apply'
   [ "$(fingerprint "$ws")" = "$before" ]
 
   : >"$ws/.nightshift/.shift-armed"
   run bash "$DOCTOR" --project "$ws"
-  printf '%s\n' "$output" | grep -qF 'the move into layout 2 waits: the shift is armed (.shift-armed)'
-  printf '%s\n' "$output" | grep -qF '[blocked] move the state files into layout 2:'
+  printf '%s\n' "$output" | grep -qF 'the move into layout 3 waits: the shift is armed (.shift-armed)'
+  printf '%s\n' "$output" | grep -qF '[blocked] move the state files into layout 3:'
 }
 
 @test "Start warns once on a version-1 workspace and arms as usual" {
@@ -372,7 +379,7 @@ links_resolve() {
   run bash "$PREFLIGHT" --project "$ws" --host claude
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(printf '%s\n' "$output" | grep -c '^warn state-version')" -eq 1 ]
-  printf '%s\n' "$output" | grep -qF 'warn state-version 1 keeps every state file at the top of .nightshift/ - Doctor offers the move to version 2'
+  printf '%s\n' "$output" | grep -qF 'warn state-version 1 keeps every state file at the top of .nightshift/ - Doctor offers the move to version 3'
   [ "$(cat "$ws/.nightshift/state-version")" = 1 ]
   [ -f "$ws/.nightshift/parking-lot.md" ]
 }
@@ -454,4 +461,102 @@ links_resolve() {
   run pwsh -NoProfile -NonInteractive -File "$PS_MIGRATE" -Project "$b" -Apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   diff -r "$a/.nightshift" "$b/.nightshift"
+}
+
+# v2_site [name] — a version-2 workspace with a live shift: an open item, a parked decision, and a
+# receipt that links to the decision. Echoes the workspace.
+v2_site() {
+  local ws ns
+  ws="$(new_project "${1:-v2live}")"
+  ns="$ws/.nightshift"
+  rm -f "$ns/.shift-armed"
+  printf '2\n' >"$ns/state-version"
+  mkdir -p "$ns/inbox" "$ns/receipts" "$ns/run" "$ns/staging"
+  printf '# Punch List — Export CSV\n\n## Items\n\n- [ ] **1. Stream it.** <!-- id: ab12 -->\n' >"$ns/punch-list.md"
+  printf '# Parking Lot\n\n- Which format · default CSV · the simplest\n' >"$ns/inbox/parking-lot.md"
+  printf '# Snag Log\n' >"$ns/inbox/snag-log.md"
+  printf '# 1. Stream it.\n\nSee [the decision](../inbox/parking-lot.md).\n' >"$ns/receipts/01-stream-it-ab12.md"
+  printf '# Shift Log\n- started\n' >"$ns/run/shift-log.md"
+  printf '# Drafting Table\n' >"$ns/staging/drafting-table.md"
+  printf '%s' "$ws"
+}
+
+@test "a version-2 site's live shift moves into one run folder with every file intact" {
+  ws="$(v2_site)"
+  ns="$ws/.nightshift"
+  before="$(fingerprint "$ws")"
+  run bash "$MIGRATE" --project "$ws"
+  [ "$status" -eq 0 ]
+  for line in \
+    'move      punch-list.md -> runs/export-csv/punch-list.md' \
+    'move      receipts -> runs/export-csv/receipts' \
+    'move      inbox -> runs/export-csv/inbox' \
+    'move      run/shift-log.md -> runs/export-csv/run/shift-log.md' \
+    'marker    state-version 2 -> 3'; do
+    printf '%s\n' "$output" | grep -qF -- "$line" || { echo "missing: $line"; echo "$output"; return 1; }
+  done
+  # The preview moves nothing.
+  [ "$(fingerprint "$ws")" = "$before" ]
+
+  for f in punch-list.md inbox/parking-lot.md inbox/snag-log.md receipts/01-stream-it-ab12.md run/shift-log.md; do
+    cksum <"$ns/$f" >"$BATS_TEST_TMPDIR/sum.${f//\//_}"
+  done
+  run bash "$MIGRATE" --project "$ws" --apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(cat "$ns/state-version")" = 3 ]
+  for f in punch-list.md inbox/parking-lot.md inbox/snag-log.md receipts/01-stream-it-ab12.md run/shift-log.md; do
+    [ ! -e "$ns/$f" ] || { echo "still at $f"; return 1; }
+    [ "$(cksum <"$ns/runs/export-csv/$f")" = "$(cat "$BATS_TEST_TMPDIR/sum.${f//\//_}")" ] || { echo "changed: $f"; return 1; }
+  done
+  [ -f "$ns/staging/drafting-table.md" ]
+  links_resolve "$ns"
+  # The shift's files resolve inside its run folder, and the open item is still open there.
+  run bash -c '. "$1"; ns_layout_path "$2" punch-list' _ "$LIB" "$ns"
+  [ "$output" = "$ns/runs/export-csv/punch-list.md" ]
+  grep -qF -- '- [ ] **1. Stream it.**' "$ns/runs/export-csv/punch-list.md"
+}
+
+@test "each runs.layout value names a run folder the way archive.layout names an archive folder" {
+  for layout in date shift name date-name; do
+    p="$(new_project "names-$layout")"
+    rm -f "$p/.nightshift/.shift-armed"
+    jq --arg l "$layout" '.archive.layout = $l | .runs.layout = $l' "$p/.nightshift/rules.json" >"$p/rules.new"
+    mv "$p/rules.new" "$p/.nightshift/rules.json"
+    run bash -c '. "$1"; ns_run_dir "$2" 2026-11-26 abc "Export CSV"' _ "$LIB" "$p"
+    [ "$status" -eq 0 ]
+    run_name="${output##*/}"
+    run bash -c '. "$1"; ns_archive_dir "$2" 2026-11-26 abc "Export CSV"' _ "$LIB" "$p"
+    [ "$status" -eq 0 ]
+    [ "$run_name" = "${output##*/}" ] || { echo "$layout: run $run_name, archive ${output##*/}"; return 1; }
+    [ -d "$p/.nightshift/runs/$run_name" ]
+  done
+  # A second run that would take a taken name gets the next one, as a second shift's archive does.
+  p="$(new_project names-again)"
+  jq '.runs.layout = "date"' "$p/.nightshift/rules.json" >"$p/rules.new" && mv "$p/rules.new" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_run_dir "$2" 2026-11-26 one ""; echo; ns_run_dir "$2" 2026-11-26 two ""' _ "$LIB" "$p"
+  [ "$(printf '%s\n' "$output" | sed 's|.*/||' | tr '\n' ' ')" = '2026-11-26 2026-11-26-shift-2 ' ]
+  # With no runs block the plan's name names the run, and an unnamed run falls back to the date.
+  jq 'del(.runs)' "$p/.nightshift/rules.json" >"$p/rules.new" && mv "$p/rules.new" "$p/.nightshift/rules.json"
+  run bash -c '. "$1"; ns_runs_layout "$2"' _ "$LIB" "$p"
+  [ "$output" = name ]
+}
+
+@test "native Windows moves a version-2 site and names run folders the same way" {
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  a="$(v2_site v2-bash)"
+  b="$(v2_site v2-pwsh)"
+  run bash "$MIGRATE" --project "$a" --apply
+  [ "$status" -eq 0 ]
+  run pwsh -NoProfile -NonInteractive -File "$PS_MIGRATE" -Project "$b" -Apply
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  diff -r -x .git "$a/.nightshift" "$b/.nightshift"
+  for layout in date shift name date-name; do
+    p="$(new_project "ps-names-$layout")"
+    jq --arg l "$layout" '.runs.layout = $l' "$p/.nightshift/rules.json" >"$p/rules.new"
+    mv "$p/rules.new" "$p/.nightshift/rules.json"
+    bash_name="$(bash -c '. "$1"; ns_run_dir "$2" 2026-11-26 abc "Export CSV"' _ "$LIB" "$p")"
+    rm -rf "$p/.nightshift/runs"
+    ps_name="$(pwsh -NoProfile -NonInteractive -Command "Import-Module '$MODULE' -Force -DisableNameChecking; Get-NSRunDir '$p' '2026-11-26' 'abc' 'Export CSV'")"
+    [ "${bash_name##*/}" = "${ps_name##*/}" ] || { echo "$layout: $bash_name vs $ps_name"; return 1; }
+  done
 }

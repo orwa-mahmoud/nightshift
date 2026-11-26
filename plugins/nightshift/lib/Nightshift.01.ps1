@@ -1,7 +1,7 @@
 
 # The state-version this plugin writes, which names the layout its files sit in. Version 1 and
 # legacy workspaces stay operable in the paths they have; only migrate-state moves them.
-$script:NSStateVersion = 2
+$script:NSStateVersion = 3
 $script:NSUtf8NoBom = New-Object System.Text.UTF8Encoding($false)
 # The separator the records and receipts share with the POSIX runtime, spelled by its code so this
 # file stays ASCII: Windows PowerShell 5.1 reads a script saved without a BOM as ANSI.
@@ -37,9 +37,11 @@ function Test-NSWindows {
 }
 
 # State layout. Every path under .nightshift/ comes from state-layout.tsv beside this module, read
-# once at import: a key resolves to the path its workspace's layout gives it. Layout 2 is the one
-# this plugin writes; a version-1 or legacy workspace keeps the paths it has, so an upgraded plugin
-# goes on guarding it, a shift armed before the upgrade included. Mirrors lib/layout.sh.
+# once at import: a key resolves to the path its workspace's layout gives it. Layout 3 is the one
+# this plugin writes; a workspace on an earlier layout keeps the paths it has, so an upgraded plugin
+# goes on guarding it, a shift armed before the upgrade included. Layout 3 keeps each shift in its
+# own folder, runs/<run>/: a per-run key resolves inside the run NIGHTSHIFT_RUN names, else inside
+# the only run, and not at all when there are several and none is named. Mirrors lib/layout.sh.
 $script:NSLayoutVersion = $script:NSStateVersion
 $script:NSLayoutRows = New-Object 'System.Collections.Generic.List[object]'
 $script:NSLayoutPaths = @{}
@@ -111,9 +113,50 @@ function Get-NSLayoutVersion {
     return $version
 }
 
+# Test-NSRunName <name> - whether a run folder may have this name: one path segment, not hidden.
+# Mirrors ns_run_name_ok.
+function Test-NSRunName {
+    param([AllowEmptyString()][string]$Name)
+    if ([string]::IsNullOrEmpty($Name) -or $Name.StartsWith('.')) { return $false }
+    return ($Name.IndexOfAny([char[]]@('/', '\', "`n")) -lt 0)
+}
+
+# Get-NSLayoutRuns <state-dir> - every run folder name under runs/, ordinal order. Mirrors
+# ns_layout_runs.
+function Get-NSLayoutRuns {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $out = New-Object Collections.Generic.List[string]
+    $root = [IO.Path]::Combine($NightshiftDir, 'runs')
+    if (-not [IO.Directory]::Exists($root)) { return , $out.ToArray() }
+    foreach ($dir in [IO.Directory]::GetDirectories($root)) {
+        if (([IO.File]::GetAttributes($dir) -band [IO.FileAttributes]::ReparsePoint)) { continue }
+        $name = [IO.Path]::GetFileName($dir)
+        if (Test-NSRunName $name) { $out.Add($name) }
+    }
+    $sorted = $out.ToArray()
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    return , $sorted
+}
+
+# Get-NSLayoutRun <state-dir> - the run a per-run key resolves in: NIGHTSHIFT_RUN when it names one,
+# else the only run folder. Empty when the name is not a run folder name, when there is no run, and
+# when there are several and none is named. Mirrors ns_layout_run_set.
+function Get-NSLayoutRun {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $named = [string]$env:NIGHTSHIFT_RUN
+    if ($named.Length -gt 0) {
+        if (Test-NSRunName $named) { return $named }
+        return ''
+    }
+    $runs = Get-NSLayoutRuns $NightshiftDir
+    if ($runs.Count -eq 1) { return $runs[0] }
+    return ''
+}
+
 # Get-NSLayoutRelativePath <state-dir> <key> [instance] - the path of <key> relative to the state
-# directory, with / separators, in that directory's layout; <instance> fills the * of a family such
-# as usage-*. Empty for a key this layout does not have.
+# directory, with / separators, in that directory's layout. A per-run key (runs/*/...) takes its run
+# from Get-NSLayoutRun; <instance> fills the remaining * of a family such as usage-*. Empty for a
+# key this layout does not have, and for a per-run key with no run to resolve in.
 function Get-NSLayoutRelativePath {
     param(
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
@@ -123,6 +166,11 @@ function Get-NSLayoutRelativePath {
     $paths = $script:NSLayoutPaths[(Get-NSLayoutVersion $NightshiftDir)]
     if (-not $paths.ContainsKey($Key)) { return '' }
     $rel = [string]$paths[$Key]
+    if ($rel.StartsWith('runs/*/')) {
+        $run = Get-NSLayoutRun $NightshiftDir
+        if ($run.Length -eq 0) { return '' }
+        $rel = 'runs/' + $run + '/' + $rel.Substring(7)
+    }
     $star = $rel.IndexOf('*')
     if ($star -ge 0) { $rel = $rel.Substring(0, $star) + $Instance + $rel.Substring($star + 1) }
     return $rel
@@ -137,8 +185,25 @@ function Get-NSLayoutPath {
         [AllowEmptyString()][string]$Instance = ''
     )
     $rel = Get-NSLayoutRelativePath $NightshiftDir $Key $Instance
-    if ($rel.Length -eq 0) { throw "state layout $(Get-NSLayoutVersion $NightshiftDir) has no $Key" }
+    if ($rel.Length -eq 0) {
+        if (Test-NSLayoutKey $NightshiftDir $Key) {
+            throw ("$Key belongs to one run, and no single run is named: runs are " + ((Get-NSLayoutRuns $NightshiftDir) -join ', '))
+        }
+        throw "state layout $(Get-NSLayoutVersion $NightshiftDir) has no $Key"
+    }
     return (Join-NSPath $NightshiftDir ($rel.Replace('/', [IO.Path]::DirectorySeparatorChar)))
+}
+
+# Test-NSLayoutPerRun <state-dir> <key> - whether <key> belongs to one run in that directory's
+# layout (its path starts runs/*/). Mirrors ns_layout_per_run.
+function Test-NSLayoutPerRun {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+    $paths = $script:NSLayoutPaths[(Get-NSLayoutVersion $NightshiftDir)]
+    if (-not $paths.ContainsKey($Key)) { return $false }
+    return ([string]$paths[$Key]).StartsWith('runs/*/')
 }
 
 # Test-NSLayoutKey <state-dir> <key> - whether this directory's layout has <key>.
@@ -985,6 +1050,14 @@ function Invoke-NSEvidenceArchive {
 }
 
 
+
+# Get-NSStateLayoutNote <version> - how a workspace on an earlier layout keeps its files, for the
+# messages that offer the move. Mirrors ns_state_layout_note.
+function Get-NSStateLayoutNote {
+    param([AllowEmptyString()][string]$Version)
+    if ($Version -ceq '0' -or $Version -ceq '1') { return 'keeps every state file at the top of .nightshift/' }
+    return "keeps the shift's own files beside the shared ones, not in a run folder"
+}
 
 function Get-NSStateKind {
     param([Parameter(Mandatory = $true)][string]$Workspace)

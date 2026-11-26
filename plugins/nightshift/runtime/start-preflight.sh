@@ -349,7 +349,7 @@ case "$STATE_KIND" in
   legacy)
     STATE_VER="$(ns_state_version "$WORKSPACE" || true)"
     ok "state-version $STATE_VER ($STATE_KIND)"
-    warn "state-version $STATE_VER keeps every state file at the top of .nightshift/ - Doctor offers the move to version $NS_STATE_VERSION, previewed by ns migrate-state and made only with --apply" ;;
+    warn "state-version $STATE_VER $(ns_state_layout_note "$STATE_VER") - Doctor offers the move to version $NS_STATE_VERSION, previewed by ns migrate-state and made only with --apply" ;;
   *)
     refuse "state-version $(ns_state_refuse_message "$STATE_KIND")"
     repair "Setup or Doctor repairs the marker with migrate-state; Start never writes it" ;;

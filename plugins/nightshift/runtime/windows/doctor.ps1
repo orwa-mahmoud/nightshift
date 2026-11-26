@@ -348,7 +348,7 @@ switch ($stateKind) {
             Add-NSFact 'state version 0 (legacy - no state-version marker; every state file sits at the top of .nightshift/)'
         }
         else {
-            Add-NSFact "state version $stateVer (every state file sits at the top of .nightshift/)"
+            Add-NSFact "state version $stateVer ($(Get-NSStateLayoutNote $stateVer))"
         }
         # The move into the current layout, described from the plan migrate-state would carry out.
         $migrator = Join-Path $here 'migrate-state.ps1'

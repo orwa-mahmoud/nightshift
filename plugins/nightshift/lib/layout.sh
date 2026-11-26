@@ -5,9 +5,13 @@
 
 # State layout. Every path under .nightshift/ comes from state-layout.tsv beside this file, read
 # once when this file loads: a key resolves to the path its workspace's layout gives it. Layout
-# 2 is the one this plugin writes; a version-1 or legacy workspace keeps the paths it has, so an
+# 3 is the one this plugin writes; a workspace on an earlier layout keeps the paths it has, so an
 # upgraded plugin goes on guarding it, a shift armed before the upgrade included.
-NS_LAYOUT_VERSION=2
+#
+# Layout 3 keeps each shift in its own folder, `runs/<run>/`. A per-run key resolves inside the run
+# the caller names in NIGHTSHIFT_RUN; with none named, inside the only run the workspace has. With
+# several runs and none named, a per-run key does not resolve: nothing guesses between two runs.
+NS_LAYOUT_VERSION=3
 
 _ns_layout_load() { # <table>
   local key since path kind v
@@ -45,15 +49,70 @@ ns_layout_version_set() {
   printf -v "$1" '%s' "$_nsv"
 }
 
+# ns_run_name_ok <name> — status 0 for a name a run folder may have: one path segment, not hidden.
+ns_run_name_ok() {
+  case "$1" in '' | .* | */* | *\\* | *$'\n'*) return 1 ;; esac
+  return 0
+}
+
+# ns_layout_run_set <var> <state-dir> — the run a per-run key resolves in: NIGHTSHIFT_RUN when it
+# names one, else the only run folder under runs/. Status 1 when the name is not a run folder name,
+# when there is no run, and when there are several and none is named. <var> must not begin with
+# _nsr.
+ns_layout_run_set() {
+  local _nsr_d _nsr_found="" _nsr_n=0
+  if [ -n "${NIGHTSHIFT_RUN-}" ]; then
+    ns_run_name_ok "$NIGHTSHIFT_RUN" || return 1
+    printf -v "$1" '%s' "$NIGHTSHIFT_RUN"
+    return 0
+  fi
+  for _nsr_d in "$2"/runs/*/; do
+    [ -d "$_nsr_d" ] && [ ! -L "${_nsr_d%/}" ] || continue
+    _nsr_d="${_nsr_d%/}"
+    _nsr_found="${_nsr_d##*/}"
+    _nsr_n=$((_nsr_n + 1))
+  done
+  [ "$_nsr_n" -eq 1 ] || return 1
+  printf -v "$1" '%s' "$_nsr_found"
+}
+
+# ns_layout_per_run <state-dir> <key> — status 0 when <key> belongs to one run in that directory's
+# layout (its path starts `runs/*/`).
+ns_layout_per_run() {
+  local _nslp_v _nslp_name
+  ns_layout_version_set _nslp_v "$1"
+  _nslp_name="_NS_L${_nslp_v}_${2//-/_}"
+  case "${!_nslp_name-}" in 'runs/*/'*) return 0 ;; esac
+  return 1
+}
+
+# ns_layout_runs <state-dir> — every run folder name under runs/, one per line, sorted.
+ns_layout_runs() {
+  local d
+  for d in "$1"/runs/*/; do
+    [ -d "$d" ] && [ ! -L "${d%/}" ] || continue
+    d="${d%/}"
+    ns_run_name_ok "${d##*/}" && printf '%s\n' "${d##*/}"
+  done
+}
+
 # ns_layout_rel_set <var> <state-dir> <key> [instance] — the path of <key> relative to the state
-# directory, in that directory's layout; <instance> fills the `*` of a family such as usage-*.
-# Status 1 for a key this layout does not have. <var> must not begin with _nsl or __nsl.
+# directory, in that directory's layout. A per-run key (`runs/*/…`) takes its run from
+# ns_layout_run_set; <instance> fills the remaining `*` of a family such as usage-*. Status 1 for a
+# key this layout does not have, and for a per-run key with no run to resolve in. <var> must not
+# begin with _nsl or __nsl.
 ns_layout_rel_set() {
-  local __nsl_v __nsl_name __nsl_rel
+  local __nsl_v __nsl_name __nsl_rel __nsl_run
   ns_layout_version_set __nsl_v "$2"
   __nsl_name="_NS_L${__nsl_v}_${3//-/_}"
   __nsl_rel="${!__nsl_name-}"
   [ -n "$__nsl_rel" ] || return 1
+  case "$__nsl_rel" in
+    'runs/*/'*)
+      ns_layout_run_set __nsl_run "$2" || return 1
+      __nsl_rel="runs/$__nsl_run/${__nsl_rel#runs/\*/}"
+      ;;
+  esac
   case "$__nsl_rel" in *'*'*) __nsl_rel="${__nsl_rel/\*/$4}" ;; esac
   printf -v "$1" '%s' "$__nsl_rel"
 }

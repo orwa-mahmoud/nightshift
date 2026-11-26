@@ -1942,22 +1942,63 @@ ns_archive_dest() {
 # holds records without it belongs to nobody we can name and is never claimed. A candidate that is
 # a link or not a directory is returned as it is, for the caller to refuse.
 ns_archive_dir() {
-  local root layout base dir n=1 owner id slug=""
+  local root
   root="$(ns_archive_root "$1")" || return 2
-  layout="$(ns_archive "$1" layout)"
-  id="${3:-unknown}"
+  ns_named_dir "$root" "$(ns_archive "$1" layout)" "$2" "${3:-unknown}" "${4-}"
+}
+
+# ns_runs_layout <project-dir> — how a run folder is named: runs.layout in the rules file, one of
+# the archive.layout values, `name` when unset.
+ns_runs_layout() {
+  local f v=""
+  ns_layout_set f "$1/.nightshift" rules && [ -f "$f" ] && v="$(ns_rules_get_in "$f" runs layout)"
+  case "$v" in date | shift | name | date-name) printf '%s' "$v" ;; *) printf 'name' ;; esac
+}
+
+# ns_run_dir <project-dir> <date> <shift-id> [<shift-name>] — the folder one run lives in under
+# runs/, named and claimed exactly as an archive folder is, by runs.layout.
+ns_run_dir() {
+  local root dir
+  root="$1/.nightshift/runs"
+  [ ! -L "$root" ] || return 2
+  mkdir -p "$root" 2>/dev/null || return 2
+  dir="$(ns_named_dir "$root" "$(ns_runs_layout "$1")" "$2" "${3:-unknown}" "${4-}")" || return 2
+  # The shift layout names the folder without claiming it; a run needs it to exist.
+  if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then
+    mkdir -p "$dir" 2>/dev/null || return 2
+    printf '%s\n' "${3:-unknown}" >"$dir/.shift-id" 2>/dev/null || return 2
+  fi
+  printf '%s' "$dir"
+}
+
+# ns_named_base <layout> <date> <shift-id> [<shift-name>] — the first folder name a layout gives a
+# shift, before any `-shift-N` a taken name adds: shift-<id>, the name's slug, <date>-<slug>, or the
+# date for a shift with no name (and for the shift layout without an id).
+ns_named_base() {
+  local layout="$1" date="$2" id="${3:-unknown}" name="${4-}" slug=""
+  if [ "$layout" = shift ] && [ "$id" != unknown ]; then
+    printf 'shift-%s' "$id"
+    return 0
+  fi
+  [ -z "$name" ] || slug="$(ns_receipt_slug "$name")"
+  if [ -n "$slug" ]; then
+    case "$layout" in
+      name) printf '%s' "$slug"; return 0 ;;
+      date-name) printf '%s-%s' "$date" "$slug"; return 0 ;;
+    esac
+  fi
+  printf '%s' "$date"
+}
+
+# ns_named_dir <root> <layout> <date> <shift-id> [<shift-name>] — the folder under <root> one shift
+# gets, by layout (date, shift, name or date-name), claimed for that shift as described above.
+ns_named_dir() {
+  local root="$1" layout="$2" date="$3" id="${4:-unknown}" name="${5-}" base dir n=1 owner
   if [ "$layout" = shift ] && [ "$id" != unknown ]; then
     printf '%s/shift-%s' "$root" "$id"
     return 0
   fi
-  [ -z "${4-}" ] || slug="$(ns_receipt_slug "$4")"
-  base="$root/$2"
-  if [ -n "$slug" ]; then
-    case "$layout" in
-      name) base="$root/$slug" ;;
-      date-name) base="$root/$2-$slug" ;;
-    esac
-  fi
+  base="$root/$(ns_named_base "$layout" "$date" "$id" "$name")"
   dir="$base"
   while :; do
     if [ -L "$dir" ] || { [ -e "$dir" ] && [ ! -d "$dir" ]; }; then
@@ -2955,6 +2996,16 @@ NS_STATE_VERSION="$NS_LAYOUT_VERSION"
 # ns_state_kind <workspace>
 # Prints: absent | legacy | current | malformed | future. Legacy is any version below this one.
 # Return: 0 operable (legacy or current) · 1 malformed · 2 future · 3 absent
+# ns_state_layout_note <version> — how a workspace on an earlier layout keeps its files, for the
+# messages that offer the move: versions 0 and 1 keep every state file at the top of .nightshift/,
+# version 2 keeps the shift's own files beside the shared ones instead of in a run folder.
+ns_state_layout_note() {
+  case "$1" in
+    0 | 1) printf 'keeps every state file at the top of .nightshift/' ;;
+    *) printf "keeps the shift's own files beside the shared ones, not in a run folder" ;;
+  esac
+}
+
 ns_state_kind() {
   local ws="$1" ns marker raw lines
   ns="$ws/.nightshift"

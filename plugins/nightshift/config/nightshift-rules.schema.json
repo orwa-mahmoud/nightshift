@@ -416,6 +416,23 @@
         }
       }
     },
+    "runs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Where each shift's live state is kept while it runs: one folder per run under .nightshift/runs/.",
+      "properties": {
+        "layout": {
+          "type": "string",
+          "enum": [
+            "date",
+            "shift",
+            "name",
+            "date-name"
+          ],
+          "description": "How a run's folder is named, with the same choices as archive.layout: name by the name on the plan's title line (the default), date by the day (then -shift-2 for a later run that day), shift by its id, and date-name by both. A run with no name is named by date."
+        }
+      }
+    },
     "receipts": {
       "type": "object",
       "additionalProperties": false,

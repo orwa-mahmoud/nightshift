@@ -342,7 +342,7 @@ if ($stateKind -eq 'current') {
 elseif ($stateKind -eq 'legacy') {
     $stateVersion = Get-NSStateVersion $workspace
     Write-Ok ('state-version ' + $stateVersion + " ($stateKind)")
-    Write-Warn ('state-version ' + $stateVersion + ' keeps every state file at the top of .nightshift/ - Doctor offers the move to version ' + (Get-NSCurrentStateVersion) + ', previewed by ns migrate-state and made only with --apply')
+    Write-Warn ('state-version ' + $stateVersion + ' ' + (Get-NSStateLayoutNote $stateVersion) + ' - Doctor offers the move to version ' + (Get-NSCurrentStateVersion) + ', previewed by ns migrate-state and made only with --apply')
 }
 else {
     Write-Refuse ('state-version ' + (Get-NSStateRefuseMessage $stateKind))

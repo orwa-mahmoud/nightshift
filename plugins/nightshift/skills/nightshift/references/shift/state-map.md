@@ -18,22 +18,26 @@ file keeps its own lifecycle; never reclassify one as another.
 
 ## Layout
 
-`state-version` `2` groups `.nightshift/` by purpose, so the top holds only what the owner opens:
-`punch-list.md`, `rules.json`, `state-version`, `STOP` while a stop-work order stands, the receipts
-repository's `.gitignore` and `.git/`, and `support/` after an export. Each folder names what it
-is for:
+`state-version` `3` keeps each shift in its own folder, `runs/<run>/`, and what every shift shares
+at the top of `.nightshift/`: `rules.json`, `state-version`, the receipts repository's `.gitignore`
+and `.git/`, and `support/` after an export. A run folder is named by `runs.layout`, the same
+choices as `archive.layout`; Setup creates the first one. Each folder names what it is for:
 
-- `receipts/` — what the shift delivered.
-- `inbox/` — what waits for the owner's verdict: the parking lot and the snag log.
-- `staging/` — work waiting for a later shift: the drafting table, the work orders and the plan
-  record.
+- `runs/<run>/` — one shift: its `punch-list.md`, `STOP` while a stop-work order stands,
+  `receipts/` (what it delivered), `inbox/` (what waits for the owner's verdict: the parking lot and
+  the snag log) and `run/` (the runtime's files for that shift: markers, the lease and session, the
+  policy snapshot, usage accounting, the ledger and the shift log).
+- `staging/` — work waiting for a later shift: the drafting table, the work orders, the plans and
+  the plan record.
 - `product/` — the product-evolution notebook: the opportunity map and the research notes.
 - `archive/` — filed shifts.
-- `run/` — everything the runtime owns: markers, locks, the lease and session, the policy
-  snapshot, the work target, usage accounting, the ledger and the shift log.
+- `run/` — what the runtime keeps for the whole workspace: the work target and mode, the plan room,
+  the lock, the tooling cache and the scheduled-run log.
 
-A workspace at state-version `1`, or with no marker, keeps every file at the top of `.nightshift/`,
-and the runtime reads and guards it there. `ns migrate-state` previews the move into the current
+A file of one run resolves inside the run its session or command names (`NIGHTSHIFT_RUN`), or inside
+the only run when there is one. A workspace at state-version `2` keeps the shift's files beside the
+shared ones, and one at `1`, or with no marker, keeps every file at the top of `.nightshift/`; the
+runtime reads and guards each where it is. `ns migrate-state` previews the move into the current
 layout and makes it with `--apply` (`-Apply` on native Windows); Doctor and Setup describe it.
 `lib/state-layout.tsv` is the one table both runtimes read, with every path each file has had, and
 `ns path <key>` prints where a file sits in this workspace.
@@ -75,7 +79,7 @@ read it as empty.
 | `catalogs/<catalog>/` | The owner | No | When the owner adds or edits an entry of a catalog (`shifts`, `evidence`, `gates`, `edge-cases`) for this project | Purge removes it with `.nightshift/`. Reset and Archive leave it. The user folder outside the project is never purged | `docs/knobs.md#catalogs`; `catalogs.<catalog>.paths` names further folders. `evidence/kinds/`, `gates/stacks/` and `edge-cases/packs/`, which an earlier version used, are still read |
 | `run/shift-policy.json` | The runtime: composition (`shift-policy.sh`), or the snapshot Start takes | No | Before arming; frozen while armed | The clock-out gate files it into the shift's folder at `run/shift-policy.json`, or Archive when no gate did; Reset drops it | `schemas/v1/shift-policy.json` |
 | `shift-defaults.json` | Older workspaces only | — | Never written now | `shift-policy migrate` moves its choices into the `shift` block of `rules.json` and keeps `run/shift-defaults.json.bak` | `schemas/v1/shift-defaults.json` |
-| `state-version` | The scaffold, into a `.nightshift/` it creates; `migrate-state`, last | No | On a state migration | Never | Current version `2` |
+| `state-version` | The scaffold, into a `.nightshift/` it creates; `migrate-state`, last | No | On a state migration | Never | Current version `3` |
 | `run/work-target`, `run/work-mode` | Setup | Setup writes them again | When the owner re-points the workspace | Never | — |
 | `run/hook-copies` | Each host's guard, once a minute per plugin copy, while a shift or the plan room is open | No | Appended; cut back to its last day | Never filed | `epoch`, `host`, `session`, `plugin root`, `version`, tab-separated; Start's bind phase refuses and Doctor warns when one session shows two copies |
 | `run/shift-worktree` | Start's worktree phase, for a shift with `shift.isolation` set to `worktree` | Start writes it again for the next such shift | When Start adds the shift's worktree | Archive removes it with the worktree once the branch is merged; never filed | `path=`, `branch=`, `base=`, `checkout=`, `shift=` lines |

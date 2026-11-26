@@ -23,6 +23,13 @@ fresh() { # a workspace Setup has never touched: no .nightshift/ yet
   printf '%s' "$p"
 }
 
+# run_of <workspace> — the one run folder a scaffolded workspace has, relative to .nightshift/.
+run_of() {
+  local d
+  for d in "$1"/.nightshift/runs/*/; do printf 'runs/%s' "$(basename "$d")"; return 0; done
+  return 1
+}
+
 bare() { # a workspace with no state files at all
   local p
   p="$(new_project "$1")"
@@ -42,12 +49,15 @@ bare() { # a workspace with no state files at all
   p="$(fresh scaffold-bare)"
   run bash "$SCAFFOLD" --project "$p"
   [ "$status" -eq 0 ]
-  [ "$(cat "$p/.nightshift/state-version")" = 2 ]
-  for name in punch-list.md inbox/parking-lot.md inbox/snag-log.md staging/drafting-table.md run/shift-log.md; do
+  [ "$(cat "$p/.nightshift/state-version")" = 3 ]
+  # Every shift's own files live in its run folder; a new workspace's first run is named by date.
+  r="$(run_of "$p")"
+  [ "$r" = "runs/$(date +%Y-%m-%d)" ]
+  for name in "$r/punch-list.md" "$r/inbox/parking-lot.md" "$r/inbox/snag-log.md" staging/drafting-table.md "$r/run/shift-log.md"; do
     [ -f "$p/.nightshift/$name" ] || { echo "not written: $name"; return 1; }
     printf '%s\n' "$output" | grep -qxF "wrote $name" || { echo "not reported: $name"; return 1; }
   done
-  [ -d "$p/.nightshift/run" ]
+  [ -d "$p/.nightshift/$r/run" ]
   for name in staging/work-orders.md product/opportunity-map.md product/product-research.md receipt-item.md; do
     [ ! -e "$p/.nightshift/$name" ] || { echo "written unasked: $name"; return 1; }
   done
@@ -93,11 +103,12 @@ bare() { # a workspace with no state files at all
   bash "$SCAFFOLD" --project "$p" >/dev/null
   ns="$(cd -P "$p" && pwd)/.nightshift"
 
-  # The template says `$NS/STOP` because it has to speak generically; the owner's copy says where.
-  grep -qF "$ns" "$p/.nightshift/punch-list.md"
-  ! grep -q '\$NS' "$p/.nightshift/punch-list.md" || false
+  # The template says `$RUN/STOP` because it has to speak generically; the owner's copy says where.
+  # This workspace predates run folders, so its shift's STOP sits at the top of .nightshift/.
+  grep -qF "touch \"$ns/STOP\"" "$p/.nightshift/punch-list.md"
+  ! grep -q '\$NS\|\$RUN' "$p/.nightshift/punch-list.md" || false
   # And the shipped template is exactly as it shipped.
-  grep -q '\$NS' "$TEMPLATES/punch-list.md"
+  grep -q '\$RUN' "$TEMPLATES/punch-list.md"
 }
 
 @test "a workspace path holding & or | is written into the copy exactly" {
@@ -105,8 +116,9 @@ bare() { # a workspace with no state files at all
   mkdir -p "$p"
   bash "$SCAFFOLD" --project "$p" >/dev/null
   ns="$(cd -P "$p" && pwd)/.nightshift"
-  grep -qF "touch \"$ns/STOP\"" "$p/.nightshift/punch-list.md"
-  ! grep -q '\$NS' "$p/.nightshift/punch-list.md" || false
+  r="$(run_of "$p")"
+  grep -qF "touch \"$ns/$r/STOP\"" "$p/.nightshift/$r/punch-list.md"
+  ! grep -q '\$NS\|\$RUN' "$p/.nightshift/$r/punch-list.md" || false
 }
 
 @test "running twice is a safe repair" {
@@ -150,8 +162,9 @@ bare() { # a workspace with no state files at all
   # resolvers' and is recorded as such; what belongs to the scaffold is the substituted content,
   # so the workspace prefix is normalised out before comparing.
   real="$(cd -P "$p" && pwd)"
-  for name in punch-list.md inbox/parking-lot.md inbox/snag-log.md staging/drafting-table.md \
-    staging/work-orders.md product/opportunity-map.md product/product-research.md run/shift-log.md; do
+  r="runs/$(date +%Y-%m-%d)"
+  for name in "$r/punch-list.md" "$r/inbox/parking-lot.md" "$r/inbox/snag-log.md" staging/drafting-table.md \
+    staging/work-orders.md product/opportunity-map.md product/product-research.md "$r/run/shift-log.md"; do
     sed "s|$real|WS|g" "$p/from-posix/$name" >"$p/a.md"
     sed "s|$real|WS|g;s|$p|WS|g" "$p/.nightshift/$name" >"$p/b.md"
     diff -u "$p/a.md" "$p/b.md"

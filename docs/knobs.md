@@ -461,6 +461,12 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 | `layout` | `date` | `date` files the first shift of a day under `YYYY-MM-DD` and each later one under `YYYY-MM-DD-shift-2`, `-shift-3` and so on; `shift` gives each shift a `shift-<id>` directory; `name` uses the name on the punch list's title line (`# Punch List — Archive follow-ups` files under `archive-follow-ups`); `date-name` uses both (`YYYY-MM-DD-archive-follow-ups`). A shift with no name files by date. Every way, one folder holds one shift, laid out like the live site, and filing a shift again returns to its own folder |
 | `templatePath` | `""` | A Markdown template for the summary Archive prints: wording and layout only, on the same terms as the handoff template |
 
+`runs` decides how the folder a shift lives in while it runs is named, under `.nightshift/runs/`.
+
+| Key | Default | Values |
+|---|---|---|
+| `layout` | `name` | The same choices as `archive.layout`: `name` uses the name on the plan's title line (`# Punch List — Export CSV` runs in `runs/export-csv/`), `date` the day, `shift` the shift id, and `date-name` both. A shift with no name runs under the date, and a second one that day under `-shift-2` |
+
 Changing `root` never moves or hides what is already filed: an older history under the previous
 root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live
 ones in place, so a shift still in progress keeps the receipts its own progress checks read.

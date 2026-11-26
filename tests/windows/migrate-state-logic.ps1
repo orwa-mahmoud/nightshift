@@ -132,6 +132,9 @@ function Get-UnresolvedLinks {
     return , $bad.ToArray()
 }
 
+# The run folder a workspace with one unnamed shift moves into: named by date, as a run with no name is.
+$R = 'runs/' + (Get-Date -Format 'yyyy-MM-dd')
+
 # A version-1 workspace with one of everything the move has to handle, as the POSIX suite builds it.
 function New-V1Site {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -178,21 +181,24 @@ try {
     $preview = Invoke-Migrate $site
     Expect-True ($preview.ExitCode -eq 0) "the preview exits 0 (got $($preview.ExitCode) $($preview.Stderr))"
     foreach ($line in @(
-            'move      parking-lot.md -> inbox/parking-lot.md',
+            ('move      punch-list.md -> ' + $R + '/punch-list.md'),
+            ('move      receipts -> ' + $R + '/receipts'),
+            ('move      parking-lot.md -> ' + $R + '/inbox/parking-lot.md'),
             'move      drafting-table.md -> staging/drafting-table.md',
             'move      opportunity-map.md -> product/opportunity-map.md',
-            'move      shift-report.md -> receipts/previous-report.md',
-            'move      shift-log.md -> run/shift-log.md',
-            'move      usage-abc123 -> run/usage-abc123',
-            'move      .ended -> run/.ended',
+            ('move      shift-report.md -> ' + $R + '/receipts/previous-report.md'),
+            ('move      shift-log.md -> ' + $R + '/run/shift-log.md'),
+            ('move      usage-abc123 -> ' + $R + '/run/usage-abc123'),
+            ('move      .ended -> ' + $R + '/run/.ended'),
             'rename    rules.json: report -> receipts',
             'retire    rules.json: receipts.legacyItemReceipts (no version reads it)',
-            'link      punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top',
-            'link      staging/drafting-table.md: shift-log.md -> ../run/shift-log.md',
-            'link      receipts/a1b2-done.md: ../shift-report.md -> previous-report.md',
+            ('link      ' + $R + '/punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top'),
+            ('link      staging/drafting-table.md: shift-log.md -> ../' + $R + '/run/shift-log.md'),
+            ('link      ' + $R + '/receipts/a1b2-done.md: ../shift-report.md -> previous-report.md'),
+            ('link      ' + $R + '/receipts/a1b2-done.md: ../snag-log.md -> ../inbox/snag-log.md'),
             'unknown   owner-notes.txt (no Nightshift file has this name; left in place)',
             'stray     receipt-item.md',
-            'marker    state-version 1 -> 2',
+            'marker    state-version 1 -> 3',
             'Preview only - nothing was changed. Run it again with -Apply')) {
         Expect-True ($preview.Stdout.Contains($line)) "the preview lists: $line"
     }
@@ -215,7 +221,7 @@ try {
             Expect-True ((Read-Text (Join-Path $ns $f[1])).Contains($f[3])) "repointed $($f[1]) to $($f[3])"
         }
     }
-    Expect-True ((Read-Text (Join-Path $ns 'state-version')) -ceq "2`n") 'the marker is written last, as 2'
+    Expect-True ((Read-Text (Join-Path $ns 'state-version')) -ceq "3`n") 'the marker is written last, as 3'
     $rules = Read-Text (Join-Path $ns 'rules.json')
     Expect-True ($rules.Contains('"receipts"') -and -not $rules.Contains('"report"') -and -not $rules.Contains('legacyItemReceipts')) `
         'the settings block has its current name and no retired setting'
@@ -242,12 +248,12 @@ try {
     Move-Item -LiteralPath (Join-Path $ns 'parking-lot.md') -Destination (Join-Path $ns 'inbox/parking-lot.md')
     Move-Item -LiteralPath (Join-Path $ns 'shift-log.md') -Destination (Join-Path $ns 'run/shift-log.md')
     $resumed = Invoke-Migrate $cut
-    Expect-True ($resumed.Stdout.Contains('link      punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top')) `
+    Expect-True ($resumed.Stdout.Contains('link      ' + $R + '/punch-list.md: parking-lot.md#top -> inbox/parking-lot.md#top')) `
         'the rerun repoints a link to a file the first run moved'
     Expect-True (-not $resumed.Stdout.Contains('move      parking-lot.md')) 'the rerun does not move it twice'
     $finished = Invoke-Migrate $cut -Apply
     Expect-True ($finished.ExitCode -eq 0) "the rerun finishes (got $($finished.ExitCode) $($finished.Stderr))"
-    Expect-True ((Read-Text (Join-Path $ns 'state-version')) -ceq "2`n") 'the finished rerun writes the marker'
+    Expect-True ((Read-Text (Join-Path $ns 'state-version')) -ceq "3`n") 'the finished rerun writes the marker'
     $unresolved = Get-UnresolvedLinks $ns
     Expect-True ($unresolved.Count -eq 0) "every link resolves after the rerun ($($unresolved -join '; '))"
 
@@ -279,14 +285,14 @@ try {
     $before = Get-Fingerprint $both
     $conflict = Invoke-Migrate $both -Apply
     Expect-True ($conflict.ExitCode -eq 5) "a conflict exits 5 (got $($conflict.ExitCode))"
-    Expect-True ($conflict.Stdout.Contains('conflict  parking-lot.md and inbox/parking-lot.md are both there and differ - keep one by hand')) `
+    Expect-True ($conflict.Stdout.Contains('conflict  parking-lot.md and ' + $R + '/inbox/parking-lot.md are both there and differ - keep one by hand')) `
         'the conflict names both paths'
     Expect-True ((Get-Fingerprint $both) -ceq $before) 'a conflict changes nothing'
     Copy-Item -LiteralPath (Join-Path $ns 'parking-lot.md') -Destination (Join-Path $ns 'inbox/parking-lot.md') -Force
     $left = Read-Text (Join-Path $ns 'parking-lot.md')
     $same = Invoke-Migrate $both -Apply
     Expect-True ($same.ExitCode -eq 0) "the same content applies (got $($same.ExitCode) $($same.Stdout))"
-    Expect-True ($same.Stdout.Contains('leave     parking-lot.md (the same content is already at inbox/parking-lot.md)')) 'the same content is left'
+    Expect-True ($same.Stdout.Contains('leave     parking-lot.md (the same content is already at ' + $R + '/inbox/parking-lot.md)')) 'the same content is left'
     Expect-True ((Read-Text (Join-Path $ns 'parking-lot.md')) -ceq $left) 'the copy left behind is untouched'
     $settled = Get-Fingerprint $both
     $sameAgain = Invoke-Migrate $both -Apply
@@ -299,15 +305,15 @@ try {
     Write-Text (Join-Path $ns 'receipts/previous-report.md') "# A different previous report`n"
     $clash = Invoke-Migrate $report -Apply
     Expect-True ($clash.ExitCode -eq 5) "a different previous report exits 5 (got $($clash.ExitCode))"
-    Expect-True ($clash.Stdout.Contains('conflict  shift-report.md and receipts/previous-report.md are both there and differ')) `
+    Expect-True ($clash.Stdout.Contains('conflict  shift-report.md and ' + $R + '/receipts/previous-report.md are both there and differ')) `
         'the previous report conflict is named'
     Copy-Item -LiteralPath (Join-Path $ns 'shift-report.md') -Destination (Join-Path $ns 'receipts/previous-report.md') -Force
     Write-Text (Join-Path $ns 'shift-policy.json') "{`n  `"report`": {`n    `"enabled`": false`n  },`n  `"receipts`": {`n    `"enabled`": false`n  }`n}`n"
     $reportApplied = Invoke-Migrate $report -Apply
     Expect-True ($reportApplied.ExitCode -eq 0) "the report rows apply (got $($reportApplied.ExitCode) $($reportApplied.Stdout))"
-    Expect-True ($reportApplied.Stdout.Contains('drop      run/shift-policy.json: report (the same value is already under receipts)')) `
+    Expect-True ($reportApplied.Stdout.Contains('drop      ' + $R + '/run/shift-policy.json: report (the same value is already under receipts)')) `
         'an old block with the same value is dropped'
-    Expect-True (-not (Read-Text (Join-Path $ns 'run/shift-policy.json')).Contains('"report"')) 'the policy keeps only its current block'
+    Expect-True (-not (Read-Text (Join-Path $ns ($R + '/run/shift-policy.json'))).Contains('"report"')) 'the policy keeps only its current block'
     $values = Join-Path $root 'values'
     $ns = New-V1Site $values
     Write-Text (Join-Path $ns 'rules.json') "{`n  `"report`": {`n    `"enabled`": true`n  },`n  `"receipts`": {`n    `"enabled`": false`n  }`n}`n"
@@ -320,13 +326,13 @@ try {
     $ns = New-V1Site $legacy
     Remove-Item -LiteralPath (Join-Path $ns 'state-version') -Force
     $zero = Invoke-Migrate $legacy -Apply
-    Expect-True ($zero.ExitCode -eq 0 -and $zero.Stdout.Contains('marker    state-version 0 -> 2')) 'a legacy site moves and gets its marker'
+    Expect-True ($zero.ExitCode -eq 0 -and $zero.Stdout.Contains('marker    state-version 0 -> 3')) 'a legacy site moves and gets its marker'
     $fresh = Join-Path $root 'fresh'
     $null = New-Item -ItemType Directory -Path $fresh -Force
     $scaffolded = Invoke-Script $scaffold @('-Project', $fresh)
     Expect-True ($scaffolded.ExitCode -eq 0) "the scaffold writes a new site (got $($scaffolded.ExitCode) $($scaffolded.Stderr))"
-    Expect-True ((Read-Text (Join-Path $fresh '.nightshift/state-version')) -ceq "2`n") 'a new site is born at version 2'
-    Expect-True (Test-Path -LiteralPath (Join-Path $fresh '.nightshift/inbox/parking-lot.md')) 'a new site keeps the parking lot in inbox/'
+    Expect-True ((Read-Text (Join-Path $fresh '.nightshift/state-version')) -ceq "3`n") 'a new site is born at version 3'
+    Expect-True (Test-Path -LiteralPath (Join-Path $fresh ('.nightshift/' + $R + '/inbox/parking-lot.md'))) 'a new site keeps its first run''s parking lot in its run folder'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $fresh '.nightshift/staging/work-orders.md'))) 'the work orders wait until Hunt needs them'
     Expect-True ((Invoke-Migrate $fresh).Stdout.Contains('nothing to do')) 'a new site has nothing to move'
 
@@ -358,15 +364,15 @@ try {
     $ns = New-V1Site $described
     $before = Get-Fingerprint $described
     $report = Invoke-Script $doctor @('-Project', $described)
-    Expect-True ($report.Stdout.Contains('state version 1 (every state file sits at the top of .nightshift/)')) 'Doctor names the old layout'
-    Expect-True ($report.Stdout.Contains('[confirm] move the state files into layout 2: shift-report.md -> receipts/previous-report.md, parking-lot.md -> inbox/parking-lot.md')) `
+    Expect-True ($report.Stdout.Contains('state version 1 (keeps every state file at the top of .nightshift/)')) 'Doctor names the old layout'
+    Expect-True ($report.Stdout.Contains('[confirm] move the state files into layout 3: punch-list.md -> ' + $R + '/punch-list.md, receipts -> ' + $R + '/receipts, shift-report.md -> ' + $R + '/receipts/previous-report.md, parking-lot.md -> ' + $R + '/inbox/parking-lot.md')) `
         "Doctor names each file's old and new path ($($report.Stdout))"
     Expect-True ($report.Stdout.Contains('nothing is deleted or overwritten. Preview it with')) 'Doctor says nothing is deleted'
     Expect-True ((Get-Fingerprint $described) -ceq $before) 'Doctor changes nothing'
     Write-Text (Join-Path $ns '.shift-armed') ''
     $waiting = Invoke-Script $doctor @('-Project', $described)
-    Expect-True ($waiting.Stdout.Contains('the move into layout 2 waits: the shift is armed (.shift-armed)')) 'Doctor says the move waits while armed'
-    Expect-True ($waiting.Stdout.Contains('[blocked] move the state files into layout 2:')) 'the move is blocked while armed'
+    Expect-True ($waiting.Stdout.Contains('the move into layout 3 waits: the shift is armed (.shift-armed)')) 'Doctor says the move waits while armed'
+    Expect-True ($waiting.Stdout.Contains('[blocked] move the state files into layout 3:')) 'the move is blocked while armed'
 
     # --- Start warns once on version 1 and arms as usual
     $start = Join-Path $root 'start'
@@ -383,7 +389,7 @@ try {
     Expect-True ($verdicts.ExitCode -eq 0) "Start arms a version-1 site (got $($verdicts.ExitCode) $($verdicts.Stdout))"
     $warnings = @($verdicts.Stdout.Split("`n") | Where-Object { $_ -like 'warn state-version*' })
     Expect-True ($warnings.Count -eq 1) "Start warns once ($($warnings.Count))"
-    Expect-True ($verdicts.Stdout.Contains('warn state-version 1 keeps every state file at the top of .nightshift/ - Doctor offers the move to version 2')) `
+    Expect-True ($verdicts.Stdout.Contains('warn state-version 1 keeps every state file at the top of .nightshift/ - Doctor offers the move to version 3')) `
         'the warning points at the move'
     Expect-True (Test-Path -LiteralPath (Join-Path $ns 'parking-lot.md')) 'Start moves nothing'
 

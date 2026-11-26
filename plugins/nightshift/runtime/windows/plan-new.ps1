@@ -81,7 +81,11 @@ try {
     # `## Items`.
     $body = New-Object Text.StringBuilder
     $null = $body.Append('# Punch List ' + [char]0x2014 + ' ' + $Name + "`n")
-    $lines = (Get-NSOwnerTemplateText -Source $template -Workspace $workspace) -split "`n"
+    # On a layout with run folders the plan's run does not exist yet: `$RUN` stays for Start to fill
+    # when it places the plan in its run. Earlier layouts keep the shift at the top of the site.
+    if (Test-NSLayoutPerRun $ns 'punch-list') { $rendered = Get-NSOwnerTemplateText -Source $template -Workspace $workspace }
+    else { $rendered = Get-NSOwnerTemplateText -Source $template -Workspace $workspace -RunDir $ns }
+    $lines = $rendered -split "`n"
     for ($i = 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i].TrimEnd([char]"`r")
         if ($line -cmatch '^## Items[ \t]*$') { break }
