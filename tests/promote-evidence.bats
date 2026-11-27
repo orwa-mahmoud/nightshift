@@ -90,8 +90,8 @@ The run log (private evidence: $BASE/logs/run.txt) and a secret (private evidenc
 @test "a selection applied twice leaves one copy and the same receipt, and a link is never followed" {
   r="$(site selected select)"
   run promote "$r"
-  ! printf '%s\n' "$output" | grep -q '^promote '
-  ! printf '%s\n' "$output" | grep -q 'secret\|elsewhere'
+  ! printf '%s\n' "$output" | grep -q '^promote ' || false
+  ! printf '%s\n' "$output" | grep -q 'secret\|elsewhere' || false
   promote "$r" "$FOLDER" --select "receipts/$BASE/before.png" --select "receipts/$BASE/logs/run.txt" --apply >/dev/null
   first="$(receipt "$r")"
   promote "$r" "$FOLDER" --select "receipts/$BASE/before.png" --select "receipts/$BASE/logs/run.txt" --apply >/dev/null
@@ -117,7 +117,7 @@ The run log (private evidence: $BASE/logs/run.txt) and a secret (private evidenc
   [ "$link" = "../evidence/$BASE/before.png" ]
   [ "$(cat "$t/$link")" = before ]
   [ ! -e "$t/$BASE" ]
-  ! grep -qF "$BATS_TEST_TMPDIR" "$t/$BASE.md"
+  ! grep -qF "$BATS_TEST_TMPDIR" "$t/$BASE.md" || false
 }
 
 @test "native Windows lists, copies and relinks the same way" {

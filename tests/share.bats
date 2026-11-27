@@ -196,10 +196,10 @@ alice question: csv separator" ]
   run start_run "$b" "Export CSV"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   rb="$(printf '%s\n' "$output" | sed -n 's/^ok run //p')"
-  [[ "$ra" == export-csv-?????? ]] && [[ "$rb" == export-csv-?????? ]] && [ "$ra" != "$rb" ]
+  [[ "$ra" == export-csv-?????? ]] && [[ "$rb" == export-csv-?????? ]] && [ "$ra" != "$rb" ] || false
   # The run's copy names its paths from the workspace root, never from a runner's own folders.
   grep -qF -- '- Work in the run; receipts go in `./.nightshift/receipts/`.' "$a/.nightshift/runs/$ra/punch-list.md"
-  ! grep -qF "$a" "$a/.nightshift/runs/$ra/punch-list.md"
+  ! grep -qF "$a" "$a/.nightshift/runs/$ra/punch-list.md" || false
   [ -f "$a/.nightshift/staging/plans/export-csv.md" ] && [ -f "$b/.nightshift/staging/plans/export-csv.md" ]
   receipt "$a" "$ra" "alice ran it"
   receipt "$b" "$rb" "bob ran it"

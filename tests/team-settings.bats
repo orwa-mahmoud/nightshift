@@ -50,7 +50,7 @@ team_site() {
   printf '%s\n' "$output" | grep -qx "ok settings settings/alice.json over the team's rules.json, for this run"
   run start_run "$w" "Dark mode"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  ! printf '%s\n' "$output" | grep -q '^ok settings '
+  ! printf '%s\n' "$output" | grep -q '^ok settings ' || false
   [ "$(setting "$w" export-csv shift hours)" = 3 ]
   [ "$(setting "$w" export-csv receipts progressMinutes)" = 5 ]
   [ "$(setting "$w" dark-mode shift hours)" = 2 ]

@@ -116,7 +116,7 @@ team() {
   set_rules "$a" '.branches.catchUp = "rebase"'
   bash "$RUNTIME/plan-new.sh" --project "$a" --name "Rebased" >/dev/null
   grep -qF 'Catching up with the base branch is a rebase onto it.' "$a/.nightshift/staging/plans/rebased.md"
-  ! grep -qF 'is a merge.' "$a/.nightshift/staging/plans/rebased.md"
+  ! grep -qF 'is a merge.' "$a/.nightshift/staging/plans/rebased.md" || false
   git -C "$a" checkout -q -- .nightshift/rules.json
   # A teammate moves the base, changing a shared rule the member's branch also changed.
   b="$BATS_TEST_TMPDIR/sync/bob"
@@ -130,12 +130,12 @@ team() {
     git -C "$a" commit -q -am "rules: date-name runs"
     git -C "$a" fetch -q origin
     if [ "$policy" = merge ]; then
-      ! git -C "$a" merge -q --no-edit origin/develop >/dev/null 2>&1
+      ! git -C "$a" merge -q --no-edit origin/develop >/dev/null 2>&1 || false
       git -C "$a" checkout -q --theirs .nightshift/rules.json
       git -C "$a" add .nightshift/rules.json
       git -C "$a" commit -q --no-edit
     else
-      ! git -C "$a" rebase -q origin/develop >/dev/null 2>&1
+      ! git -C "$a" rebase -q origin/develop >/dev/null 2>&1 || false
       git -C "$a" checkout -q --ours .nightshift/rules.json
       git -C "$a" add .nightshift/rules.json
       GIT_EDITOR=true git -C "$a" rebase --continue >/dev/null 2>&1
