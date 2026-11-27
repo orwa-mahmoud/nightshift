@@ -3487,6 +3487,99 @@ ns_punch_digest() {
 ns_punch_contract_digest() { ns_punch_contract "$1" | ns_punch_digest; }
 ns_punch_items_digest() { ns_punch_items_normalised "$1" | ns_punch_digest; }
 
+# ns_punch_list_view <punch-list> — the list as the clock-out gate records it, so a later reading
+# can name what moved: `contract<TAB><digest>`, then one line per item,
+# `item<TAB><key><TAB><label><TAB><text>`. The key is the item's id, or its label when it has none;
+# the text is the item and its sub-bullets as ns_punch_items_normalised has them, lines joined by a
+# unit separator and without the blank lines that trail it, so a tick, or the item after it going
+# away, changes nothing.
+ns_punch_list_view() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  printf 'contract\t%s\n' "$(ns_punch_contract_digest "$1")"
+  ns_punch_items_normalised "$1" | awk "$NS_AWK_ITEM"'
+    function flush() {
+      if (key == "") return
+      sub(/(\037[[:space:]]*)+$/, "", text)
+      printf "item\t%s\t%s\t%s\n", key, label, text
+    }
+    /^- \[[ xX-]\]/ {
+      flush()
+      label = ns_item_label($0)
+      key = ns_item_id($0)
+      if (key == "") key = label
+      gsub(/\t/, " ", label)
+      text = $0
+      sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "", text)
+      gsub(/\t/, " ", text)
+      next
+    }
+    key != "" { line = $0; gsub(/\t/, " ", line); text = text "\037" line }
+    END { flush() }
+  '
+}
+
+# ns_punch_list_changes <earlier-view-file> <later-view-file> — what moved between two views, one
+# change per line: `contract`, `added<TAB><label>`, `removed<TAB><label>` or
+# `reworded<TAB><label>`, items in the later list's order, then the removed ones. An item is the
+# same item by its key, or by its label when its id was added or dropped. Nothing when the two lists
+# say the same.
+ns_punch_list_changes() {
+  awk -F '\t' '
+    FNR == NR {
+      if ($1 == "contract") before_contract = $2
+      else if ($1 == "item") {
+        before[$2] = $4; before_label[$2] = $3; order[++n] = $2
+        if (!($3 in by_label)) by_label[$3] = $2
+      }
+      next
+    }
+    $1 == "contract" { if (before_contract != "" && $2 != before_contract) print "contract"; next }
+    $1 == "item" {
+      key = $2
+      if (!(key in before) && ($3 in by_label) && !(by_label[$3] in seen)) key = by_label[$3]
+      if (!(key in before)) { print "added\t" $3; next }
+      seen[key] = 1
+      if (before[key] != $4) print "reworded\t" $3
+    }
+    END { for (i = 1; i <= n; i++) if (!(order[i] in seen)) print "removed\t" before_label[order[i]] }
+  ' "$1" "$2"
+}
+
+# ns_punch_list_note <nightshift-dir> <punch-list> — the history of the list during a shift. The
+# list is compared with the view last recorded in `list-seen`; every change is named in one
+# shift-log line (`punch list changed: added "…"; reworded "…"; …`), and the list as it is now
+# becomes the recorded view. Nothing is refused: the owner reads how the list moved and judges it.
+# With no view recorded yet the list is recorded and nothing is logged. Status 0 when something
+# moved, 1 otherwise.
+ns_punch_list_note() {
+  local ns="$1" list="$2" seen now changes kind label summary=""
+  ns_layout_set seen "$ns" list-seen 2>/dev/null || return 1
+  [ ! -L "$seen" ] || return 1
+  if [ ! -f "$list" ] || [ -L "$list" ]; then
+    [ -f "$seen" ] || return 1
+    rm -f "$seen"
+    ns_shift_log "$ns" "punch list changed: the punch list is gone"
+    return 0
+  fi
+  now="$seen.$$"
+  mkdir -p "${seen%/*}" 2>/dev/null
+  ns_punch_list_view "$list" >"$now" 2>/dev/null || { rm -f "$now"; return 1; }
+  changes=""
+  [ ! -f "$seen" ] || changes="$(ns_punch_list_changes "$seen" "$now")"
+  mv -f "$now" "$seen" || { rm -f "$now"; return 1; }
+  [ -n "$changes" ] || return 1
+  while IFS="$(printf '\t')" read -r kind label; do
+    case "$kind" in
+      contract) summary="${summary:+$summary; }the contract above ## Items changed" ;;
+      added | removed | reworded) summary="${summary:+$summary; }$kind \"$label\"" ;;
+    esac
+  done <<EOF
+$changes
+EOF
+  ns_shift_log "$ns" "punch list changed: $summary"
+  return 0
+}
+
 # ---------------------------------------------------------------- preflight explanations
 #
 # The explanation belongs on the verdict line that occurred, not in a paragraph the model reads on

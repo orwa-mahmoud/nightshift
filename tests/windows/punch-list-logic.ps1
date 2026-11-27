@@ -15,6 +15,11 @@ function Expect-True {
     }
 }
 
+function Expect-Equal {
+    param($Expected, $Actual, [string]$Message)
+    Expect-True (([string]$Expected) -ceq ([string]$Actual)) "$Message (expected '$Expected', got '$Actual')"
+}
+
 $root = Join-Path ([IO.Path]::GetTempPath()) ("ns-punch-list-logic-" + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $root -Force
 try {
@@ -99,63 +104,37 @@ Trailing prose that belongs to no item.
     Expect-True ((Get-NSPunchContractDigest $punch) -ceq $contract) 'the gates are outside the contract digest'
     Expect-True ((Get-NSPunchItemsDigest $punch) -ceq $items) 'and outside the items digest'
 
-    # A snapshot that predates these fields compares nothing, which is not a mismatch.
+    # A list that moves during a shift is recorded in the shift log, never refused.
     $ns = Join-Path $root '.nightshift'
     $null = New-Item -ItemType Directory -Path $ns -Force
     $armedPunch = Join-Path $ns 'punch-list.md'
+    $shiftLog = Get-NSLayoutPath $ns 'shift-log'
     [IO.File]::WriteAllText($armedPunch, $text)
-    [IO.File]::WriteAllText((Join-Path $ns 'shift-policy.json'), (@'
-{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T02:30:00Z",
- "source":"composition","verificationLevel":"final","toolingPolicy":"existing-tools"}
-'@))
-    [IO.File]::WriteAllText($armedPunch, ($text -creplace 'Nobody edits this while a shift runs\.', 'Anyone may.'))
-    Expect-True ([string]::IsNullOrEmpty((Get-NSGateContractMismatch $root $armedPunch))) `
-        'a policy without the fields compares nothing'
-
-    # And with them recorded, a moved contract is named.
-    [IO.File]::WriteAllText($armedPunch, $text)
-    [IO.File]::WriteAllText((Join-Path $ns 'shift-policy.json'), (
-            '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T02:30:00Z",' +
-            '"source":"composition","verificationLevel":"final","toolingPolicy":"existing-tools",' +
-            '"contractDigest":"' + (Get-NSPunchContractDigest $armedPunch) + '",' +
-            '"itemsDigest":"' + (Get-NSPunchItemsDigest $armedPunch) + '"}'))
-    Expect-True ([string]::IsNullOrEmpty((Get-NSGateContractMismatch $root $armedPunch))) `
-        'an untouched list is no mismatch'
-
+    Expect-True (-not (Invoke-NSPunchListNote $ns $armedPunch)) 'the first reading records the list and logs nothing'
+    Expect-True (-not (Invoke-NSPunchListNote $ns $armedPunch)) 'an untouched list logs nothing'
     [IO.File]::WriteAllText($armedPunch, ($text -creplace '- \[ \] \*\*P02', '- [x] **P02'))
-    Expect-True ([string]::IsNullOrEmpty((Get-NSGateContractMismatch $root $armedPunch))) `
-        'ticking a box is no mismatch'
-
+    Expect-True (-not (Invoke-NSPunchListNote $ns $armedPunch)) 'ticking a box is no change'
     [IO.File]::WriteAllText($armedPunch, ($text -creplace 'Nobody edits this while a shift runs\.', 'Anyone may.'))
-    $moved = Get-NSGateContractMismatch $root $armedPunch
-    Expect-True ($moved -clike '*shift contract above the Items heading*') 'an edited contract is named'
-    Expect-True ($moved -clike '*your ticks stand*') 'and the ticks are said to stand'
-
-    [IO.File]::WriteAllText($armedPunch, ($text -creplace 'P03 - the one after', 'P03 - something else'))
-    $moved = Get-NSGateContractMismatch $root $armedPunch
-    Expect-True ($moved -clike '*reworded, removed or inserted*') 'a changed item is named'
-
-    # Zero open boxes is done only while the list is still the one that armed.
-    $allTicked = $text -creplace '- \[ \] \*\*P0', '- [x] **P0'
-    [IO.File]::WriteAllText($armedPunch, $allTicked)
-    Expect-True ([string]::IsNullOrEmpty((Get-NSGateDoneMismatch $root $armedPunch))) `
-        'a list finished by ticks alone is done'
-    [IO.File]::WriteAllText($armedPunch, (($text -creplace '- \[ \] \*\*P02', '- [x] **P02') -creplace '- \[ \] \*\*P03 - the one after\.\*\*', ''))
-    Expect-True ((Get-NSGateDoneMismatch $root $armedPunch) -clike '*reworded, removed or inserted*') `
-        'deleting the last open item is not done'
-    [IO.File]::WriteAllText($armedPunch, ($allTicked -creplace 'Nobody edits this while a shift runs\.', 'Anyone may.'))
-    Expect-True ((Get-NSGateDoneMismatch $root $armedPunch) -clike '*shift contract above the Items heading*') `
-        'an edited contract is not done even with every box ticked'
+    Expect-True (Invoke-NSPunchListNote $ns $armedPunch) 'an edited contract is a change'
+    $added = ($text -creplace '(?m)^## Notes', "- [ ] **P09 - a late addition.**`n`n## Notes") -creplace 'P03 - the one after', 'P03 - the one before'
+    [IO.File]::WriteAllText($armedPunch, ($added -creplace 'Nobody edits this while a shift runs\.', 'Anyone may.'))
+    Expect-True (Invoke-NSPunchListNote $ns $armedPunch) 'added and reworded items are a change'
     Remove-Item -LiteralPath $armedPunch -Force
-    Expect-True ((Get-NSGateDoneMismatch $root $armedPunch) -clike '*Deleting the list does not finish its items*') `
-        'a deleted punch list is not done when the shift recorded one'
-    [IO.File]::WriteAllText((Join-Path $ns 'shift-policy.json'), (@'
-{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T02:30:00Z",
- "source":"composition","verificationLevel":"final","toolingPolicy":"existing-tools"}
-'@))
-    Expect-True ([string]::IsNullOrEmpty((Get-NSGateDoneMismatch $root $armedPunch))) `
-        'a missing punch list with no recorded snapshot still ends the shift'
+    Expect-True (Invoke-NSPunchListNote $ns $armedPunch) 'a deleted punch list is a change'
+    $logged = @([IO.File]::ReadAllLines($shiftLog) | Where-Object { $_.Contains('punch list changed: ') } |
+            ForEach-Object { $_.Substring($_.IndexOf('punch list changed: ') + 'punch list changed: '.Length) })
+    Expect-Equal 3 $logged.Count 'one shift-log line per reading that found a change'
+    Expect-Equal 'the contract above ## Items changed' $logged[0] 'the contract change is named'
+    Expect-Equal 'reworded "P03"; added "P09"' $logged[1] 'each item is named by its label, in list order'
+    Expect-Equal 'the punch list is gone' $logged[2] 'a deleted list is named'
     [IO.File]::WriteAllText($armedPunch, $text)
+
+    # Both runtimes record the same view of the same list, byte for byte, so a shift that moves
+    # between hosts keeps one history.
+    if (Get-Command bash -ErrorAction SilentlyContinue) {
+        $posix = (& bash -c '. "$1"; ns_punch_list_view "$2"' _ (Join-Path $repository 'plugins/nightshift/lib/lib.sh') $armedPunch) -join "`n"
+        Expect-Equal $posix ((Get-NSPunchListView $armedPunch) -join "`n") 'the Windows list view matches the POSIX one'
+    }
 
     # A hyphen inside a word is part of the title. A spaced dash introduces a suffix.
     $hyphen = (@'

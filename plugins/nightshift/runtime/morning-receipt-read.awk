@@ -9,6 +9,8 @@
 #                  interruption: a revival or resume attempt, an API failure, a stall, a usage-limit
 #                  wait, or how the shift was stopped.
 #   handover       the shift log. The last handover line written since the last `shift started`.
+#   listchanges    the shift log. Each `punch list changed:` line written since the last
+#                  `shift started`: how the owner's list moved during the shift.
 #   parked         the parking lot. `E` fs <text> fs <default> fs <rollback> for each decision below
 #                  the rule that still waits for the owner. An entry is a `### ` heading and
 #                  everything under it, a top-level bullet with its wrapped and nested lines, or a
@@ -157,6 +159,8 @@ function log_end(    i, t, l, last) {
     l = tolower(t)
     if (op == "handover") {
       if (l ~ /handover/) last = t
+    } else if (op == "listchanges") {
+      if (l ~ /punch list changed:/) print t
     } else if (l ~ /resume attempt|reviv|resumed session|wedge|api down|(^|[^a-z])stall|stop-work|stopped by|pressed esc|quitting time|past the deadline|silent too long|usage limit/) {
       print t
     }
@@ -214,7 +218,7 @@ function review_end(    i, k) {
 
 # ---------------------------------------------------------------- dispatch
 
-op == "interruptions" || op == "handover" {
+op == "interruptions" || op == "handover" || op == "listchanges" {
   log_line[++log_n] = $0
   if (tolower($0) ~ /shift started/) log_start = log_n
   next
@@ -225,7 +229,7 @@ op == "review" && FILENAME == ARGV[1] { review_mark($0); next }
 op == "review" { review_line($0); next }
 
 END {
-  if (op == "interruptions" || op == "handover") log_end()
+  if (op == "interruptions" || op == "handover" || op == "listchanges") log_end()
   else if (op == "parked") p_flush()
   else if (op == "snags") s_flush()
   else if (op == "review") review_end()

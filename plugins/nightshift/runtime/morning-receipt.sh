@@ -241,8 +241,9 @@ _item_link() {
   ITEM_LINK="[$1](./$base.md)"
 }
 
-# _shift_log_lines interruptions|handover — shift-log lines written since the last `shift started`:
-# every interruption the runtime recorded, or the last handover line.
+# _shift_log_lines interruptions|handover|listchanges — shift-log lines written since the last
+# `shift started`: every interruption the runtime recorded, the last handover line, or every change
+# the clock-out gate recorded to the punch list.
 _shift_log_lines() {
   [ -f "$LOG" ] && [ ! -L "$LOG" ] || return 0
   sed 's/[[:cntrl:]]/ /g' "$LOG" | awk -v op="$1" -f "$READ_AWK"
@@ -890,6 +891,18 @@ _lines_worktree() {
   sec_field Merge "git -C \"$(ns_native_display_path "$checkout")\" merge --ff-only $branch"
 }
 
+# _lines_list_changes — how the punch list moved during the shift, one line per recorded change,
+# under the shift's facts.
+_lines_list_changes() {
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    sec_add "- List changed: ${line#*punch list changed: }"
+  done <<LINES
+$(_shift_log_lines listchanges)
+LINES
+}
+
 _lines_shift() {
   local i mode ticked open stopped level chosen tooling target gates files
   SEC=""
@@ -921,6 +934,7 @@ _lines_shift() {
       sec_add "- Items: $ticked ticked, $open open"
     fi
   fi
+  _lines_list_changes
   mode="$(ns_work_mode "$WORKSPACE" 2>/dev/null)" || mode=repository
   if [ "$VIEW" = artifact ] || [ "$mode" = artifact ]; then
     sec_add "- Receipts: $(ns_receipts_count "$WORKSPACE")"

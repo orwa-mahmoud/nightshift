@@ -23,18 +23,17 @@ if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 # nothing has moved. The decision is the shared one; only the shape around it is this host's.
 function Get-NSGateBlockReason {
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Full)
-    # A contract that moved is answered in full, before any question of shortening arises: the
-    # whole point of the short line is that the model already holds the contract, and here it
-    # may not.
-    $moved = ''
-    try { $moved = Get-NSGateContractMismatch $workspace $punch } catch { $moved = '' }
-    if (-not [string]::IsNullOrEmpty($moved)) { return $moved }
+    # A list the owner changed is recorded in the shift log and answered with the whole reminder:
+    # the list is part of the fingerprint.
+    try { $null = Invoke-NSPunchListNote $ns $punch } catch { Write-NSLogLine "punch list history could not be recorded: $_" }
+    $list = ''
+    try { $list = Get-NSGateListFingerprint $punch } catch { $list = '' }
     $item = ''
     try { $item = Get-NSGateOpenItem $punch } catch { $item = '' }
     $stopped = if (Test-Path -LiteralPath $stop) { 'yes' } else { 'no' }
     $deadline = if (Test-NSDeadlinePassed) { 'passed' } else { 'pending' }
     $fp = Get-NSGateReminderFingerprint $counts.Open $counts.Ticked $item $stopped $deadline `
-        (Get-NSGateStallState $stall $stallWarn)
+        (Get-NSGateStallState $stall $stallWarn) $list
     return (Get-NSGateReminderText -Workspace $workspace -Full $Full -Open $counts.Open `
             -Ticked $counts.Ticked -Item $item -Fingerprint $fp)
 }
@@ -340,11 +339,8 @@ try {
 
     if ($counts.Readable) {
         if (-not (Test-Path -LiteralPath $punch -PathType Leaf) -or $counts.Open -eq 0) {
-            $doneMoved = Get-NSGateDoneMismatch $workspace $punch
-            if (-not [string]::IsNullOrEmpty($doneMoved)) {
-                Write-NSLogLine 'punch list changed since arming - the done clock-out is blocked until it is restored'
-                Write-Block $doneMoved
-            }
+            # A list that moved on the way to done is recorded, never refused.
+            try { $null = Invoke-NSPunchListNote $ns $punch } catch { Write-NSLogLine "punch list history could not be recorded: $_" }
             $evidenceHold = Get-NSEvidenceHold $workspace $punch
             if (-not [string]::IsNullOrEmpty($evidenceHold)) {
                 Write-NSLogLine 'evidence missing - the done clock-out stays blocked until the named files are present'

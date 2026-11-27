@@ -543,16 +543,22 @@ ns_gate_ticked_labels() {
 #
 # The gate already knows everything needed to tell "something moved" from "nothing did": the open
 # and ticked counts, which item is open, whether a stop-work order exists, the deadline state, the
-# stall counter. It writes that down after each block and compares on the next.
+# stall counter and the list itself. It writes that down after each block and compares on the
+# next, so a list the owner changed is always answered with the whole reminder.
 #
 # Unknown always means the full text. A missing, empty or malformed comparison file, a context
 # reset, the first block of a shift, and too many short lines in a row all send the whole thing.
 # No branch here may produce an empty reason or no block at all.
 
-# ns_gate_reminder_fingerprint <open> <ticked> <item> <stopped> <deadline> <stall>
+# ns_gate_reminder_fingerprint <open> <ticked> <item> <stopped> <deadline> <stall> <list>
 ns_gate_reminder_fingerprint() {
-  printf 'open=%s ticked=%s item=%s stopped=%s deadline=%s stall=%s' \
-    "${1:-?}" "${2:-?}" "${3:-?}" "${4:-?}" "${5:-?}" "${6:-?}"
+  printf 'open=%s ticked=%s item=%s stopped=%s deadline=%s stall=%s list=%s' \
+    "${1:-?}" "${2:-?}" "${3:-?}" "${4:-?}" "${5:-?}" "${6:-?}" "${7:-?}"
+}
+
+# ns_gate_list_fingerprint <punch-list> — one digest of the contract and every item, ticks aside.
+ns_gate_list_fingerprint() {
+  ns_punch_list_view "$1" 2>/dev/null | ns_punch_digest
 }
 
 # ns_gate_stall_state <stall-file> <warn-every> — `warned` once the stall guard has begun saying
@@ -682,70 +688,6 @@ ns_gate_open_item() {
   ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
     /^- \[ \]/ { print ns_item_label($0); exit }
   '
-}
-
-# The contract, held to what it was when the shift armed.
-#
-# A file's own editor cannot police it, and restoring a punch list from git is the editor deciding
-# what the contract said. The gate records digests at arming, so it checks rather than asking the
-# model to notice.
-#
-# Two digests, because two things can move for different reasons. `contractDigest` covers
-# everything above `## Items`: the shift contract, which nobody may edit while a shift runs.
-# itemsDigest covers the items with the checkbox state flattened, so ticking a box is invisible
-# to it and rewording, deleting or inserting an item is not. The `## Gates` block is deliberately
-# outside both — the owner may change it mid-shift by design, and gatesDigest tracks it on its
-# own terms.
-#
-# A mismatch blocks with the repair named. It never restores anything itself, never refuses to end
-# a shift on a tick alone, and never treats a snapshot that predates these fields as a mismatch.
-#
-# ns_gate_contract_mismatch <project-dir> <punch-list> — the sentence to block with, or nothing.
-ns_gate_contract_mismatch() {
-  local project="$1" list="$2" recorded now which=""
-  [ -f "$list" ] && [ ! -L "$list" ] || return 1
-
-  recorded="$(ns_policy_shift_field "$project" contractDigest)" || recorded=""
-  if [ -n "$recorded" ]; then
-    now="$(ns_punch_contract_digest "$list")" || now=""
-    [ -n "$now" ] && [ "$now" != "$recorded" ] && which="contract"
-  fi
-  if [ -z "$which" ]; then
-    recorded="$(ns_policy_shift_field "$project" itemsDigest)" || recorded=""
-    if [ -n "$recorded" ]; then
-      now="$(ns_punch_items_digest "$list")" || now=""
-      [ -n "$now" ] && [ "$now" != "$recorded" ] && which="items"
-    fi
-  fi
-  [ -n "$which" ] || return 1
-
-  if [ "$which" = contract ]; then
-    printf 'DO NOT STOP — the shift contract above the Items heading in %s has changed since this shift armed. It is the agreement the night is working to, and it is not editable while a shift runs. Restore the punch list from the work-target history or the receipts, or end the shift and let the owner edit the contract with nothing armed. Nothing else about the shift has changed: your ticks stand.' "$list"
-  else
-    printf 'DO NOT STOP — an item in %s has been reworded, removed or inserted since this shift armed. Ticking a box is invisible to this check, so something other than a tick changed. Restore the punch list from the work-target history or the receipts, or end the shift and let the owner edit the list with nothing armed. Nothing else about the shift has changed: your ticks stand.' "$list"
-  fi
-}
-
-# Zero open boxes is done only when the list is still the one that armed. Deleting the unfinished
-# items, or editing the contract once every box is ticked, reaches zero open boxes too, so the done
-# path asks the same question the working path asks. A list that has disappeared entirely, from a
-# shift that recorded one at arming, is that case at its limit. A snapshot that predates these
-# fields records nothing, and a shift without one ends as it always has.
-#
-# ns_gate_done_mismatch <project-dir> <punch-list> — the sentence to block a done clock-out with, or
-# nothing.
-ns_gate_done_mismatch() {
-  local project="$1" list="$2" recorded
-  if [ -f "$list" ]; then
-    ns_gate_contract_mismatch "$project" "$list"
-    return
-  fi
-  recorded="$(ns_policy_shift_field "$project" itemsDigest)" || recorded=""
-  if [ -z "$recorded" ]; then
-    recorded="$(ns_policy_shift_field "$project" contractDigest)" || recorded=""
-  fi
-  [ -n "$recorded" ] || return 1
-  printf 'DO NOT STOP — %s is gone, but this shift armed with a punch list. Deleting the list does not finish its items. Restore it from the work-target history or the receipts, or issue a stop-work order to end the shift with its work unfinished.' "$list"
 }
 
 # The one terminal sequence. Every host gate and the Cursor watchman end a shift here:

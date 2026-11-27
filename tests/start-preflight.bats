@@ -1055,7 +1055,7 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   [[ "$output" != *'since this shift armed'* ]] || false
 }
 
-@test "after a plain Start, deleting the unfinished item no longer clocks out as done" {
+@test "after a plain Start, the gate names each change to the list it started with" {
   p="$(setup_site preflight-snapshot-gate '## Items
 - [ ] **1. first.**
 - [ ] **2. second.**
@@ -1065,6 +1065,6 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   : >"$p/.nightshift/.shift-armed"
   printf '## Items\n- [x] **1. first.**\n' >"$p/.nightshift/punch-list.md"
   run gate "$p"
-  is_block "$output"
-  [ ! -e "$p/.nightshift/.ended" ]
+  [ -e "$p/.nightshift/.ended" ]
+  grep -rqF 'punch list changed: removed "2. second."' "$p/.nightshift" --include=shift-log.md
 }

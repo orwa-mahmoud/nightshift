@@ -405,7 +405,7 @@ session_gone_or_idle() {
 
 # Runs the shared ending under the site lock. 0 when .ended is real and the armed marker is gone.
 clock_out_direct() { # <ticked|stop|deadline> <gone|idle>
-  local why="$1" how="$2" summary reason open_now ticked total moved own_rc detail hold
+  local why="$1" how="$2" summary reason open_now ticked total own_rc detail hold
   # shellcheck disable=SC2034 # read by ownership.sh
   LEASE_NONCE="${NIGHTSHIFT_LEASE_NONCE:-}"
   # shellcheck disable=SC2034 # read by ownership.sh
@@ -428,11 +428,7 @@ clock_out_direct() { # <ticked|stop|deadline> <gone|idle>
   ticked="$(ns_ticked_boxes "$PUNCH" 2>/dev/null)" || ticked=0
   total=$((open_now + ticked))
   if [ "$why" = ticked ]; then
-    moved="$(ns_gate_done_mismatch "$PROJECT" "$PUNCH" 2>/dev/null)" || moved=""
-    if [ -n "$moved" ]; then
-      log_line "watchman: clock-out refused: $moved"
-      return 1
-    fi
+    ns_punch_list_note "$NS" "$PUNCH" || :
     hold="$(ns_evidence_hold "$PROJECT" "$PUNCH" 2>/dev/null || true)"
     if [ -n "$hold" ]; then
       log_line "watchman: clock-out refused: $hold"

@@ -207,7 +207,7 @@ fi
 if [ "$PHASE" = snapshot ]; then
   if [ -e "$POLICY" ] || [ -L "$POLICY" ]; then
     ok "snapshot composed - this shift keeps the policy it was composed with"
-    [ "$DRY_RUN" -eq 1 ] || ns_filemap_start "$WORKSPACE" || :
+    [ "$DRY_RUN" -eq 1 ] || { ns_filemap_start "$WORKSPACE" || :; ns_punch_list_note "$NS" "$PUNCH" || :; }
     exit 0
   fi
   OPEN="$(ns_open_boxes "$PUNCH" 2>/dev/null)" || OPEN=0
@@ -223,6 +223,7 @@ if [ "$PHASE" = snapshot ]; then
   if SNAPSHOT_ID="$(ns_start_snapshot "$WORKSPACE" "$_here/shift-policy.sh")"; then
     ok "snapshot start-defaults recorded for shift $SNAPSHOT_ID"
     ns_filemap_start "$WORKSPACE" || :
+    ns_punch_list_note "$NS" "$PUNCH" || :
   else
     warn "snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt"
   fi

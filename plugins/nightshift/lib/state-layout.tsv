@@ -199,6 +199,9 @@ mint-failed	3	runs/*/run/.mint-failed	file
 idle-watch	0	.idle-watch	file
 idle-watch	2	run/.idle-watch	file
 idle-watch	3	runs/*/run/.idle-watch	file
+list-seen	0	.list-seen	file
+list-seen	2	run/.list-seen	file
+list-seen	3	runs/*/run/.list-seen	file
 lock	0	.lock.d	dir
 lock	2	run/.lock.d	dir
 lease-lock	0	.lease-lock.d	dir

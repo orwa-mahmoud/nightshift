@@ -1863,13 +1863,13 @@ function Get-NSEndedField {
 # way on the same facts, and produce the same fingerprint text byte for byte.
 # ---------------------------------------------------------------------------
 
-# Get-NSGateReminderFingerprint <open> <ticked> <item> <stopped> <deadline> <stall>
+# Get-NSGateReminderFingerprint <open> <ticked> <item> <stopped> <deadline> <stall> <list>
 function Get-NSGateReminderFingerprint {
-    param($Open, $Ticked, $Item, $Stopped, $Deadline, $Stall)
+    param($Open, $Ticked, $Item, $Stopped, $Deadline, $Stall, $List)
     function Fallback($v) { if ($null -eq $v -or "$v" -eq '') { return '?' } return "$v" }
     return ('open=' + (Fallback $Open) + ' ticked=' + (Fallback $Ticked) + ' item=' + (Fallback $Item) +
         ' stopped=' + (Fallback $Stopped) + ' deadline=' + (Fallback $Deadline) +
-        ' stall=' + (Fallback $Stall))
+        ' stall=' + (Fallback $Stall) + ' list=' + (Fallback $List))
 }
 
 # Format-NSGateReminder <short> <item> <open> <ticked> - the owner's own wording with the facts put
