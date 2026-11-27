@@ -699,7 +699,8 @@ ns_background_worker_program() {
 # host's watchman uses for a fresh revival at the same launch scope (or the owner's watchAgent), with
 # the lease taken for it first and its pid attached, so the worker's hooks bind it to the run and
 # anything that asks finds it alive. Cursor gets a CLI chat minted first, recorded where its watchman
-# resumes it. Detached, so it outlives the conversation that started it. Prints the pid. Status 4
+# resumes it. A run working in its own worktree gets the link there that leads the worker's hooks
+# back to the workspace. Detached, so it outlives the conversation that started it. Prints the pid. Status 4
 # when there is no command to run (ns_background_worker_program says why, or Cursor minted no chat),
 # 3 when the lease cannot be taken, 1 when the worker does not start.
 ns_start_background_worker() {
@@ -724,6 +725,9 @@ ns_start_background_worker() {
         ;;
     esac
   fi
+  # The host names the worker's working folder as its project, so a run working in its own
+  # worktree needs the link there that leads its hooks back to the workspace, as a revival has.
+  ns_ensure_work_target_link "$project" || return 1
   lease="$(ns_lease_takeover "$ns" "" "$host")" || return 3
   generation="${lease%% *}"
   nonce="${lease#* }"

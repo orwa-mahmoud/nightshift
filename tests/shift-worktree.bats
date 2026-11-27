@@ -283,6 +283,10 @@ stop_run_processes() {
   IFS='|' read -r where run_name generation nonce <"$FAKE_AGENT_CALLS"
   [ "$run_name" = dark-mode ]
   [ "$where" = "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$w")" ]
+  # The host names the worker's worktree as its project; the worktree leads its hooks back to the
+  # workspace, and git does not see the link as a change.
+  [ "$(lib ns_workspace_root "$where")" = "$w" ]
+  [ -z "$(git -C "$where" status --porcelain)" ]
   [ "$generation" = "$(sed -n 3p "$w/.nightshift/runs/dark-mode/run/.shift-lease")" ]
   [ "$nonce" = "$(sed -n 4p "$w/.nightshift/runs/dark-mode/run/.shift-lease")" ]
   [ -f "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]

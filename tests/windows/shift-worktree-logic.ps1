@@ -226,6 +226,20 @@ try {
     Expect-True (Test-Path -LiteralPath (Join-Path $background '.nightshift/staging/plans/dark-mode.md')) 'the background plan stays staged'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $background '.nightshift/runs/dark-mode/run/.shift-armed'))) 'nothing is armed'
 
+    # A background worker starts in its run's worktree, which the host names as its project: the
+    # worktree gets the link that leads its hooks back to the workspace before anything launches.
+    # Where powershell.exe does not exist the launch itself fails, after the link is written.
+    if ($null -eq (Get-Command powershell.exe -ErrorAction SilentlyContinue)) {
+        $linked = New-RunsSite (Join-Path $root 'linked run')
+        $env:NIGHTSHIFT_WATCH_AGENT = 'pwsh -NoProfile -Command exit'
+        try { $launch = Invoke-StartRun $linked 'Dark mode' -Background } finally { $env:NIGHTSHIFT_WATCH_AGENT = $null }
+        $env:NIGHTSHIFT_RUN = 'dark-mode'
+        try { $linkedTree = Resolve-NSWorkTarget $linked } finally { $env:NIGHTSHIFT_RUN = $null }
+        Expect-True ($launch.Text.Contains('could not be started headless')) "launch without powershell.exe: $($launch.Text)"
+        Expect-True ((Resolve-NSWorkspaceRoot $linkedTree) -eq (Resolve-NSCanonicalPath $linked)) "the worktree leads back to the workspace: $linkedTree"
+        Expect-True ([string]::IsNullOrEmpty((@(& git -C $linkedTree status --porcelain) -join ''))) 'git does not see the link as a change'
+    }
+
     # Each host's headless launch, at the watchman's launch scope.
     $claude = Get-NSBackgroundWorkerCommand -Workspace $runs -HostName claude -Scope 'host-default' -Prompt 'go'
     Expect-True ($claude.Name -ceq 'claude' -and ($claude.Arguments -join ' ') -ceq '-p go') "claude launch: $($claude.Arguments -join ' ')"
