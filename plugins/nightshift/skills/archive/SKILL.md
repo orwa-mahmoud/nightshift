@@ -209,7 +209,14 @@ On a site that shares its records through Git (`sharing.records` in the rules fi
 run exactly as above and never touches the shared plans in `staging/plans/` or the decision threads
 in `staging/decisions/`: they are the team's record, and teammates may have edited them since the
 run took its copy. Each filed shift's folder ends in a tag of its own, so teammates' clones never
-file into the same folder. Git ignores the history index below, so each clone keeps its own; rebuild
+file into the same folder.
+
+Raw evidence stays private until it is chosen. After filing a shift whose receipts carry evidence
+folders, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" promote-evidence --folder <the shift's folder>`:
+it lists every eligible file and the ones `sharing.evidence` proposes. Show the owner that list and
+let them change it, then run it again with `--apply` and their choice (`--select <file>` for each,
+`--all` or `--none`). Their choice is for this filing only; never edit `sharing.evidence` to record
+it. Git ignores the history index below, so each clone keeps its own; rebuild
 it from the archive folders when it is missing.
 
 ## Index

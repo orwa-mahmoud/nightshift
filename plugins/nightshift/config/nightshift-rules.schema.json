@@ -452,6 +452,15 @@
             ]
           },
           "description": "plans: the plan files waiting in staging/plans. decisions: the planning decision threads in staging/decisions, one file each. rules: rules.json. receipts: each run's punch list, receipts, parking lot and snag log. summaries: the filed shifts under the archive root. Empty, the default, keeps the site private to its runner."
+        },
+        "evidence": {
+          "type": "string",
+          "enum": [
+            "none",
+            "select",
+            "all"
+          ],
+          "description": "Which raw evidence of a filed shift (screenshots, recordings) ns promote-evidence proposes for the team's history: none, the files the owner selects at filing, or all of them. The owner can change the choice at each filing; the originals stay private either way."
         }
       }
     },

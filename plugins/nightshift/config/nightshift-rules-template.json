@@ -77,7 +77,8 @@
     "layout": "name"
   },
   "sharing": {
-    "records": []
+    "records": [],
+    "evidence": "none"
   },
   "team": {
     "roles": {},
