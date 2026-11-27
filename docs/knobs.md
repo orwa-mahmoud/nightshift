@@ -482,17 +482,11 @@ folder, so teammates' runs of the same plan never meet. Where it shares the plan
 `staging/plans/` after a run starts from it, and the run's punch list names its paths from the
 workspace root (`./.nightshift/...`).
 
-`branches` holds the team's branch workflow.
-
-| Key | Default | Values |
-|---|---|---|
-| `base` | `""` | The branch new work branches start from, such as `develop`. Empty: the checkout's current commit |
-
 A run works on the branch `start-run --branch <name>` names: the checkout's current one, where it
-works in the checkout itself, an existing work branch, or a new one made from `base`. Without
-`--branch` it gets a `shift/<date>-<plan>` branch of its own. Runs on one branch go one after another:
-a second run continues the first run's worktree once that run has ended. Runs at the same time keep
-worktrees of their own. How a branch catches up with its base before a pull request is a line in the
+works in the checkout itself, an existing work branch, or a new one made from the remote's default
+branch (`origin/HEAD`, or the checkout's commit when the clone has none). Without `--branch` it gets a
+`shift/<date>-<plan>` branch of its own. Git refuses a branch another worktree already holds, so two
+runs on one branch go one after another. How a branch catches up with its base before a pull request is a line in the
 plan's contract: a merge as shipped, a rebase if you write so.
 
 A member keeps their own overrides in `.nightshift/settings/<name>.json`, a rules file holding only

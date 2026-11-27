@@ -433,17 +433,6 @@
         }
       }
     },
-    "branches": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "The team's branch workflow: the base new work branches start from. Which branch a run works on is named with start-run --branch, and how a branch catches up with its base is a line in the plan's contract.",
-      "properties": {
-        "base": {
-          "type": "string",
-          "description": "The branch new work branches start from, such as develop. Empty: the checkout's current commit."
-        }
-      }
-    },
     "receipts": {
       "type": "object",
       "additionalProperties": false,

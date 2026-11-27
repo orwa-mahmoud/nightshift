@@ -76,9 +76,6 @@
   "runs": {
     "layout": "name"
   },
-  "branches": {
-    "base": ""
-  },
   "receipts": {
     "enabled": true,
     "progressMode": "time",

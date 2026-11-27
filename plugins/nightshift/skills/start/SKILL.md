@@ -106,9 +106,9 @@ and wait for their yes: the plan's gate commands, the effective `shift.prepare` 
 (`ns shift-policy resolve --table`), and whether `baselineGates` runs the gates before arming.
 
 The branch is the runner's to name. When the owner has not said, ask which branch the run works on:
-the current one, an existing work branch, or a new one from `branches.base`, and pass it with
-`--branch <name>`. Without `--branch` the run gets a branch of its own. A second run on a branch
-waits until the first has ended, then continues its worktree.
+the current one, an existing work branch, or a new one, and pass it with `--branch <name>`. A new
+branch starts from the remote's default branch. Without `--branch` the run gets a branch of its own.
+Git refuses a branch another worktree already holds; relay its message.
 
 When the owner names their own settings for the run ("with my settings", "use bob's settings"),
 add `--settings <name>`: the run reads `settings/<name>.json` over the team's rules for that run

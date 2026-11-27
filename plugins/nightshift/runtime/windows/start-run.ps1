@@ -7,8 +7,8 @@
                   [-Branch NAME]
 
   -Branch names the branch the run works on: the checkout's current one, an existing work branch, or
-  a new one made from branches.base. Without it the run gets a branch of its own. Runs on one branch
-  go one after another; concurrent runs keep worktrees of their own.
+  a new one made from the remote's default branch. Without it the run gets a branch of its own. Git
+  refuses a branch another worktree holds.
 
   A started run is written to the plan's record with the runner's Git user name.
 
@@ -148,21 +148,11 @@ Write-Verdict 'ok' "run $run"
 # The branch this run works on, kept with the run's own runtime files; the worktree step reads it.
 if ($wantBranch.Length -gt 0) {
     $runBranchFile = Get-NSLayoutPath $ns 'run-branch'
-    $hadBranch = ''
-    if ([IO.File]::Exists($runBranchFile)) {
-        $lines = @([IO.File]::ReadAllLines($runBranchFile))
-        if ($lines.Count -gt 0) { $hadBranch = $lines[0].TrimEnd("`r") }
+    try {
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $runBranchFile) -Force
+        [IO.File]::WriteAllText($runBranchFile, $wantBranch + "`n", $utf8)
     }
-    if ($hadBranch.Length -gt 0 -and $hadBranch -cne $wantBranch) {
-        Stop-Refused "branch run $run already works on $hadBranch" 'start it again without -Branch, or file that run with Archive first'
-    }
-    if ($hadBranch.Length -eq 0) {
-        try {
-            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $runBranchFile) -Force
-            [IO.File]::WriteAllText($runBranchFile, $wantBranch + "`n", $utf8)
-        }
-        catch { Stop-Refused "branch could not write $runBranchFile" 'check that .nightshift/ is writable, then run this again' }
-    }
+    catch { Stop-Refused "branch could not write $runBranchFile" 'check that .nightshift/ is writable, then run this again' }
     Write-Verdict 'ok' "branch $wantBranch"
 }
 

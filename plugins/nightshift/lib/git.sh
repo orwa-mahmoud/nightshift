@@ -67,39 +67,6 @@ ns_shift_worktree_field() {
   printf '%s' "$line"
 }
 
-# ns_branch_worktree <checkout> <branch> — the path of the worktree of <checkout>'s repository that
-# has <branch> checked out, or nothing.
-ns_branch_worktree() {
-  git -C "$1" worktree list --porcelain 2>/dev/null | awk -v ref="refs/heads/$2" '
-    /^worktree / { path = substr($0, 10) }
-    $0 == "branch " ref { print path; exit }'
-}
-
-# ns_worktree_live_run <nightshift-dir> <path> — the run, other than the one in scope, whose worktree
-# record names <path> and that has not ended: the run still working there. Nothing when none is.
-ns_worktree_live_run() {
-  local ns="$1" want r rec ended path self=""
-  want="$(cd -P "$2" 2>/dev/null && pwd)" || return 0
-  ns_layout_run_set self "$ns" 2>/dev/null || self=""
-  while IFS= read -r r; do
-    [ -n "$r" ] && [ "$r" != "$self" ] || continue
-    rec="$(NIGHTSHIFT_RUN="$r" ns_layout_path "$ns" shift-worktree)" || continue
-    ended="$(NIGHTSHIFT_RUN="$r" ns_layout_path "$ns" ended)" || continue
-    [ -f "$rec" ] && [ ! -e "$ended" ] || continue
-    path="$(sed -n 's/^path=//p' "$rec" | head -n1 | tr -d '\r')"
-    [ "$(cd -P "$path" 2>/dev/null && pwd)" = "$want" ] && { printf '%s' "$r"; return 0; }
-  done <<EOF_RUNS
-$(ns_layout_runs "$ns")
-EOF_RUNS
-}
-
-# ns_branch_rule <workspace> <key> — branches.<key> from the team's rules, or nothing.
-ns_branch_rule() {
-  local f
-  ns_layout_set f "$1/.nightshift" rules && [ -f "$f" ] || return 0
-  ns_rules_get_in "$f" branches "$2"
-}
-
 # ns_shift_worktree_current <workspace> — status 0 printing the worktree path when the record
 # belongs to the shift on record now (its policy, or its ending once clocked out) and the
 # directory is still a checkout. A record left by an earlier shift is never followed.

@@ -5,8 +5,8 @@
 #                [--branch NAME]
 #
 # --branch names the branch the run works on: the checkout's current one, an existing work branch,
-# or a new one made from branches.base. Without it the run gets a branch of its own. Runs on one
-# branch go one after another; concurrent runs keep worktrees of their own.
+# or a new one made from the remote's default branch. Without it the run gets a branch of its own.
+# Git refuses a branch another worktree holds.
 #
 # A started run is written to the plan's record with the runner's Git user name.
 #
@@ -176,14 +176,8 @@ ok "run $RUN"
 # The branch this run works on, kept with the run's own runtime files; the worktree step reads it.
 if [ -n "$WANT_BRANCH" ]; then
   RUN_BRANCH_FILE="$(ns_layout_path "$NS" run-branch)"
-  HAD_BRANCH=""
-  if [ -f "$RUN_BRANCH_FILE" ]; then IFS= read -r HAD_BRANCH <"$RUN_BRANCH_FILE" || HAD_BRANCH=""; fi
-  [ -z "$HAD_BRANCH" ] || [ "$HAD_BRANCH" = "$WANT_BRANCH" ] ||
-    refuse "branch run $RUN already works on $HAD_BRANCH" "start it again without --branch, or file that run with Archive first"
-  if [ -z "$HAD_BRANCH" ]; then
-    if ! mkdir -p "${RUN_BRANCH_FILE%/*}" || ! printf '%s\n' "$WANT_BRANCH" >"$RUN_BRANCH_FILE"; then
-      refuse "branch could not write $RUN_BRANCH_FILE" "check that .nightshift/ is writable, then run this again"
-    fi
+  if ! mkdir -p "${RUN_BRANCH_FILE%/*}" || ! printf '%s\n' "$WANT_BRANCH" >"$RUN_BRANCH_FILE"; then
+    refuse "branch could not write $RUN_BRANCH_FILE" "check that .nightshift/ is writable, then run this again"
   fi
   ok "branch $WANT_BRANCH"
 fi
