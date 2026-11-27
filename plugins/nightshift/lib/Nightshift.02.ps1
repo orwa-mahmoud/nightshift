@@ -545,6 +545,28 @@ function Get-NSMigrationKeys {
     return , $keys.ToArray()
 }
 
+# Get-NSMigrationConcrete <path> - a table path as this migration sees it: a file of one run names the
+# run the move goes into. Empty when there is no such run, so a check skips the row. Mirrors
+# _ns_migrate_concrete.
+function Get-NSMigrationConcrete {
+    param([AllowEmptyString()][string]$Path = '')
+    if (-not $Path.StartsWith('runs/*/')) { return $Path }
+    if ([string]::IsNullOrEmpty($script:NSMigrateRun)) { return '' }
+    return ('runs/' + $script:NSMigrateRun + '/' + $Path.Substring(7))
+}
+
+# Get-NSMigrationConcreteRows <key> - every path <key> has had, as this migration sees each one (see
+# Get-NSMigrationConcrete), leaving out the rows of a run there is not.
+function Get-NSMigrationConcreteRows {
+    param([Parameter(Mandatory = $true)][string]$Key)
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($row in (Get-NSMigrationRows $Key)) {
+        $p = Get-NSMigrationConcrete $row
+        if ($p.Length -gt 0) { $out.Add($p) }
+    }
+    return , $out.ToArray()
+}
+
 # Get-NSMigrationRows <key> - every path <key> has had, oldest first.
 function Get-NSMigrationRows {
     param([Parameter(Mandatory = $true)][string]$Key)
@@ -1221,13 +1243,13 @@ function Get-NSMigrationPlan {
 
     # Nothing moves under a running shift, a live watchman or a held lock: each of them may be
     # writing to a path this is about to take away.
-    foreach ($p in (Get-NSMigrationRows 'armed')) {
+    foreach ($p in (Get-NSMigrationConcreteRows 'armed')) {
         if (Test-Path -LiteralPath (Get-NSMigrationNative $ns $p) -PathType Leaf) {
             $records.Add("refuse`tthe shift is armed ($p) - clock out, or run Reset, first")
             break
         }
     }
-    foreach ($p in (Get-NSMigrationRows 'watchman')) {
+    foreach ($p in (Get-NSMigrationConcreteRows 'watchman')) {
         $native = Get-NSMigrationNative $ns $p
         if (-not (Test-NSMigrationFile $native)) { continue }
         $recordedOwner = Read-NSWatchmanPidFile $native
@@ -1240,7 +1262,7 @@ function Get-NSMigrationPlan {
         }
     }
     foreach ($key in @('lock', 'lease-lock')) {
-        foreach ($p in (Get-NSMigrationRows $key)) {
+        foreach ($p in (Get-NSMigrationConcreteRows $key)) {
             if (Test-NSPathEntry (Get-NSMigrationNative $ns $p)) {
                 $records.Add("refuse`ta lock is held ($p) - let the operation finish, or run Reset if nothing is running")
             }

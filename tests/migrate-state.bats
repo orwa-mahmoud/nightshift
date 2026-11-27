@@ -232,6 +232,26 @@ links_resolve() {
   [ -f "$ws/.nightshift/parking-lot.md" ]
 }
 
+@test "a lock held in the run folder a cut-short move is finishing is refused on both hosts" {
+  ws="$(v1_site run-lock)"
+  # A move cut short left the run folder, and something in it still holds the run's lease lock.
+  mkdir -p "$ws/.nightshift/$R/run/.lease-lock.d"
+  run bash "$MIGRATE" --project "$ws" --apply
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF "refuse    a lock is held ($R/run/.lease-lock.d)"
+  [ "$(cat "$ws/.nightshift/state-version")" = 1 ]
+  if command -v pwsh >/dev/null 2>&1; then
+    run pwsh -NoProfile -NonInteractive -File "$PS_MIGRATE" -Project "$ws" -Apply
+    [ "$status" -eq 1 ]
+    printf '%s\n' "$output" | grep -qF "refuse    a lock is held ($R/run/.lease-lock.d)"
+  fi
+  # Without it, nothing of a run holds the move back.
+  rmdir "$ws/.nightshift/$R/run/.lease-lock.d"
+  run bash "$MIGRATE" --project "$ws"
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -q '^refuse'; then return 1; fi
+}
+
 @test "a file at both paths with different content is refused by name, the same bytes are left" {
   ws="$(v1_site)"
   ns="$ws/.nightshift"

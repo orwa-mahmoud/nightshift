@@ -92,6 +92,15 @@ _ns_migrate_entry() {
   [ -e "$1/$2" ] || [ -L "$1/$2" ]
 }
 
+# _ns_migrate_concrete <path> — a table path as this migration sees it: a file of one run names the
+# run the move goes into. Prints nothing when there is no such run, so a check skips the row.
+_ns_migrate_concrete() {
+  case "$1" in
+    'runs/*/'*) [ -z "${_NS_MIGRATE_RUN:-}" ] || printf 'runs/%s/%s' "$_NS_MIGRATE_RUN" "${1#runs/\*/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 # _ns_migrate_carry — `old<TAB>new` for every earlier path of every key, from the table: where a
 # link written against any layout lands once each file is in its current place.
 _ns_migrate_carry() {
@@ -277,6 +286,7 @@ ns_migrate_plan() {
   # writing to a path this is about to take away.
   armed=0
   while IFS= read -r p; do
+    p="$(_ns_migrate_concrete "$p")"
     [ -n "$p" ] || continue
     if [ -f "$ns/$p" ] && [ "$armed" -eq 0 ]; then
       printf 'refuse\tthe shift is armed (%s) - clock out, or run Reset, first\n' "$p"
@@ -286,6 +296,7 @@ ns_migrate_plan() {
 $(_ns_migrate_rows armed)
 EOF
   while IFS= read -r p; do
+    p="$(_ns_migrate_concrete "$p")"
     [ -n "$p" ] || continue
     if [ ! -f "$ns/$p" ] || [ -L "$ns/$p" ]; then continue; fi
     fields="$(ns_watchman_pidfile_read "$ns/$p" 2>/dev/null || true)"
@@ -301,6 +312,7 @@ $(_ns_migrate_rows watchman)
 EOF
   for key in lock lease-lock; do
     while IFS= read -r p; do
+      p="$(_ns_migrate_concrete "$p")"
       [ -n "$p" ] || continue
       if _ns_migrate_entry "$ns" "$p"; then
         printf 'refuse\ta lock is held (%s) - let the operation finish, or run Reset if nothing is running\n' "$p"
