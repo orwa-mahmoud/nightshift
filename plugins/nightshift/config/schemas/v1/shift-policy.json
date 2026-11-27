@@ -175,7 +175,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Paths the approved commands may create or change. The provisioning transaction compares the actual diff with this list and rolls back an escape."
+                "description": "Paths the owner expects the approved commands to create or change, kept with the approval as a record."
               },
               "expiry": {
                 "type": [
