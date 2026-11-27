@@ -181,7 +181,11 @@ try {
     # Multiline Arabic text with quotes, a backtick and a dollar sign, decoded from UTF-8 so the script
     # itself stays ASCII for Windows PowerShell 5.1.
     $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('2LPYpNin2YQ6INmH2YQgItin2YTZhdmE2YEiINis2KfZh9iy2J8K2LPYt9ixINir2KfZhtmNINmF2LkgJ9in2YLYqtio2KfYsycg2YggYGNvZGVgICRIT01FCgogIGluZGVudGVkIGxpbmU='))
-    $sent = & $hostExe -NoProfile -NonInteractive -File $send -Project $messages -Run b -Text $text
+    # On stdin, as UTF-8: Windows PowerShell 5.1 does not escape quotes inside a native argument.
+    $previousPipeEncoding = $OutputEncoding
+    $OutputEncoding = New-Object Text.UTF8Encoding($false)
+    try { $sent = $text | & $hostExe -NoProfile -NonInteractive -File $send -Project $messages -Run b }
+    finally { $OutputEncoding = $previousPipeEncoding }
     Expect-True ($LASTEXITCODE -eq 0) "send-message: $sent"
     function Get-PulseContext {
         param([string]$SessionId)
