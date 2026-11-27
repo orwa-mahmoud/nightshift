@@ -53,6 +53,7 @@ NS="$PROJECT_DIR/.nightshift"
 declare PUNCH STOP DEADLINE STALL ARMED LOG
 # The run this session works on, before any file of one run is resolved.
 ns_select_session_run "$NS" "${CODEX_SESSION_ID:-}"
+ns_rules_hold "$NS"
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set STOP "$NS" stop
 ns_layout_set DEADLINE "$NS" deadline

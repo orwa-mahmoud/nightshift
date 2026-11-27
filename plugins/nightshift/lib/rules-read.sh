@@ -171,6 +171,9 @@ ns_rules_load() {
     NS_RULES_ROWS=""
     return 1
   fi
+  if [ "${NS_RULES_HELD-}" = "$f|${NIGHTSHIFT_RUN-}" ] && [ "$NS_RULES_FILE" = "$f" ] && [ -n "$NS_RULES_ROWS" ]; then
+    return 0
+  fi
   runf="$(_ns_rules_run_file "$f")"
   if ! _ns_rules_member_file memf "$f"; then
     NS_RULES_FILE=""
@@ -225,6 +228,19 @@ ns_rules_load() {
   NS_RULES_FILE="$f"
   NS_RULES_STAMP="$stamp"
   return 0
+}
+
+# ns_rules_hold <nightshift-dir> — load the site's rules for the run in scope and hold them for the
+# rest of this process: a later load of the same file for the same run reads the held rows, in every
+# subshell too, instead of checking and parsing the files again. For a hook call, which is short and
+# never rewrites the rules; a long-running process does not hold them. Nothing is held when the rules
+# cannot be read, so each load reports that itself.
+ns_rules_hold() {
+  local f
+  ns_layout_set f "$1" rules 2>/dev/null || return 0
+  [ -f "$f" ] || return 0
+  ns_rules_load "$f" 2>/dev/null || return 0
+  NS_RULES_HELD="$f|${NIGHTSHIFT_RUN-}"
 }
 
 # ns_rules_check <workspace> — status 0 the file is the accepted shape.
