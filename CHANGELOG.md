@@ -8,7 +8,7 @@ version users receive. Dates are release dates; the tags carry the exact trees.
 
 ### Features
 
-* send a message to a running named shift ([4493b16](https://github.com/orwa-mahmoud/nightshift/commit/4493b16e1482058160947b77a57f3ed712632331))
+* send a question or an answer to a named shift running in the background or in another conversation ([4493b16](https://github.com/orwa-mahmoud/nightshift/commit/4493b16e1482058160947b77a57f3ed712632331))
 * start a named plan as its own run ([dcb1527](https://github.com/orwa-mahmoud/nightshift/commit/dcb15275f38106e3acb0cc7dd8137d474906d594))
 * status, stop and archive a named run ([f8926ac](https://github.com/orwa-mahmoud/nightshift/commit/f8926ac3d26f95d3e4bf97a54db6f7611cc6df79))
 
