@@ -730,3 +730,14 @@ EOF
   [[ "$output" == *'evidence: could not be checked - '* ]] || { printf '%s\n' "$output"; return 1; }
   [[ "$output" != *'evidence: missing shot.png'* ]] || false
 }
+
+@test "an unknown argument or view is a usage error that writes nothing" {
+  p="$(new_project mr-usage)"
+  run bash "$RECEIPT" --project "$p" --colour
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'morning-receipt: unknown argument: --colour'
+  run bash "$RECEIPT" --project "$p" --view boss
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'morning-receipt: view must be owner, reviewer, release, or artifact'
+  [ -z "$(find "$p/.nightshift" -name 'morning-*.md')" ]
+}
