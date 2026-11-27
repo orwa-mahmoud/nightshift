@@ -2850,6 +2850,19 @@ function Invoke-NSBudgetCheck {
     return (Get-NSBudgetNotice $level $label $limit $words)
 }
 
+# Get-NSPulseStopNotice <nightshift-dir> - the notice for a stop-work order standing on a shift that
+# has not ended: start nothing new and clock out in order. The caller shows it to the session that owns
+# the shift and to a worker holding its lease. Mirrors ns_pulse_stop_notice.
+function Get-NSPulseStopNotice {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $stop = Get-NSLayoutPath $NightshiftDir 'stop'
+    $ended = Get-NSLayoutPath $NightshiftDir 'ended'
+    if (-not (Test-Path -LiteralPath $stop -PathType Leaf) -or (Test-NSReparsePoint $stop)) { return '' }
+    if ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)) { return '' }
+    return ("A stop-work order is in place for this shift. Start nothing new: commit the work in hand as a wip: commit " +
+        "(in artifact mode, mark the item's receipt in progress), add one handover line to the shift log, and end your turn.")
+}
+
 # Get-NSPulseNotices <nightshift-dir> <workspace> - every notice this pulse has for the agent: the
 # owner's new messages, the receipt lines, then a budget the item being worked has just spent.
 # Mirrors ns_pulse_notices.
