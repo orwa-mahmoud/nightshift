@@ -28,7 +28,7 @@ WRAPPER="$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/hardhat.sh"
 }
 
 @test "Windows toolDeny repairs name Setup like POSIX" {
-  grep -qF '/nightshift:setup on Claude Code; ask Nightshift to set up on Codex' "$WRAPPER"
+  grep -qF 'deny "$(ns_hardhat_tool_rules_message "$PROJECT_DIR")"' "$WRAPPER"
   grep -qF '/nightshift:setup on Claude Code; ask Nightshift to set up on Codex' "$CORE"
   grep -qF "Fix \$(Get-NSLayoutName \$script:ns 'rules') or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)." "$HELPER"
   grep -qF 'run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex) to review the current template.' "$HELPER"
