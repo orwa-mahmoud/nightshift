@@ -21,6 +21,8 @@ set -u
 
 _here="${BASH_SOURCE[0]%/*}"
 [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# The jq and python programs sit beside lib.sh, one file each, resolved from this script's own path.
+PROGRAMS="$_here/../lib"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
@@ -92,165 +94,20 @@ ns_layout_set INV "$NS" capabilities
 # One fact program reads both documents this helper needs: the transaction, and the recipe the
 # transaction names. Every payload travels as a JSON text, so no value can carry a tab or a
 # newline and the stream stays line-safe. The two halves emit the same bytes.
-FACTS_JQ='
-def p: tojson;
-if type != "object" then "k\tother"
-else
-  "k\tobject",
-  ("s\t" + (.stage | p)),
-  ("c\t" + (.capabilityId | p)),
-  ("w\t" + (.workTarget | p)),
-  ("f\t" + (.failed | p)),
-  ("r\t" + (.recipePath | p)),
-  ("g\t" + (.touched | type)),
-  (if (.touched | type) == "array" then (.touched[] | "u\t" + p) else empty end),
-  ("a\t" + (.allowedFiles | type)),
-  (if (.allowedFiles | type) == "array" then (.allowedFiles[] | "p\t" + p) else empty end),
-  ("b\t" + (.baseline | type)),
-  (if (.baseline | type) == "object"
-   then (.baseline | to_entries | sort_by(.key)[]
-         | "e\t" + (.key | p) + "\t" + (.value | type) + "\t"
-           + (if (.value | type) == "object" then (.value.existed | p) else "null" end) + "\t"
-           + (if (.value | type) == "object" then (.value.digest | p) else "null" end) + "\t"
-           + (if (.value | type) == "object" then (.value.blob | p) else "null" end) + "\t"
-           + (if (.value | type) == "object"
-              then (if (.value.content | type) == "string" and (.value.content | length) > 0
-                    then "1" else "0" end)
-              else "0" end))
-   else empty end)
-end'
-
-FACTS_PY='import json, sys
 
 
-def jtype(v):
-    if v is None:
-        return "null"
-    if v is True or v is False:
-        return "boolean"
-    if isinstance(v, str):
-        return "string"
-    if isinstance(v, dict):
-        return "object"
-    if isinstance(v, list):
-        return "array"
-    return "number"
 
 
-def p(v):
-    return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
 
-
-try:
-    d = json.load(open(sys.argv[1]))
-except Exception:
-    raise SystemExit(1)
-out = []
-if not isinstance(d, dict):
-    out.append("k\tother")
-else:
-    out.append("k\tobject")
-    for tag, key in (("s", "stage"), ("c", "capabilityId"), ("w", "workTarget"),
-                     ("f", "failed"), ("r", "recipePath")):
-        out.append("%s\t%s" % (tag, p(d.get(key))))
-    for tag, key, mark in (("g", "touched", "u"), ("a", "allowedFiles", "p")):
-        seq = d.get(key)
-        out.append("%s\t%s" % (tag, jtype(seq)))
-        if isinstance(seq, list):
-            out.extend("%s\t%s" % (mark, p(x)) for x in seq)
-    b = d.get("baseline")
-    out.append("b\t%s" % jtype(b))
-    if isinstance(b, dict):
-        for rel in sorted(b):
-            v = b[rel]
-            if isinstance(v, dict):
-                has = "1" if isinstance(v.get("content"), str) and v.get("content") else "0"
-                row = (p(rel), "object", p(v.get("existed")), p(v.get("digest")),
-                       p(v.get("blob")), has)
-            else:
-                row = (p(rel), jtype(v), "null", "null", "null", "0")
-            out.append("e\t%s" % "\t".join(row))
-sys.stdout.write("".join(line + "\n" for line in out))
-'
-
-CONTENT_PY='import base64, json, sys
-d = json.load(open(sys.argv[1]))
-b = d.get("baseline")
-if not isinstance(b, dict):
-    b = {}
-v = b.get(sys.argv[2])
-if not isinstance(v, dict):
-    v = {}
-c = v.get("content")
-if not isinstance(c, str):
-    c = ""
-sys.stdout.buffer.write(base64.b64decode(c.encode("ascii")))
-'
-
-STAGE_PY='import json, sys
-d = json.load(open(sys.argv[1]))
-d["stage"] = "commit-tooling"
-d["updatedAt"] = sys.argv[2]
-sys.stdout.write(json.dumps(d, indent=2, sort_keys=True))
-'
-
-# shellcheck disable=SC2016 # jq program; $recipe/$cap/$now must not expand in bash
-INVENTORY_JQ='
-($recipe[0]) as $r
-| (if ($r.smoke | type) == "object"
-   then (if (($r.smoke.command // "") | tostring) != "" then $r.smoke.command
-         elif (($r.smoke.cmd // "") | tostring) != "" then $r.smoke.cmd
-         else "" end)
-   elif ($r.smoke | type) == "string" then $r.smoke
-   else "" end) as $command
-| {capability: $cap, command: $command, source: "recipe", verifiedAt: $now,
-   configFiles: (if ($r.allowedFiles | type) == "array" then $r.allowedFiles else [] end),
-   recipeVersion: $r.recipeVersion, setupCommit: $setup} as $item
-| (if ($base | type) == "object" then $base else {items: []} end)
-| .items = (((if (.items | type) == "array" then .items else [] end)
-             | map(select((type == "object") and (.capability != $cap)))) + [$item])
-| .schemaVersion = 1
-| .updatedAt = $now
-| .tickProof = false'
-
-INVENTORY_PY='import json, sys
-recipe_path, now, cap, setup, base_text = sys.argv[1:6]
-r = json.load(open(recipe_path))
-if not isinstance(r, dict):
-    raise SystemExit(1)
-smoke = r.get("smoke")
-command = ""
-if isinstance(smoke, dict):
-    command = smoke.get("command") or smoke.get("cmd") or ""
-elif isinstance(smoke, str):
-    command = smoke
-allowed = r.get("allowedFiles")
-if not isinstance(allowed, list):
-    allowed = []
-item = {"capability": cap, "command": command, "source": "recipe", "verifiedAt": now,
-        "configFiles": list(allowed), "recipeVersion": r.get("recipeVersion"),
-        "setupCommit": setup}
-doc = json.loads(base_text)
-if not isinstance(doc, dict):
-    doc = {"items": []}
-items = doc.get("items")
-if not isinstance(items, list):
-    items = []
-doc["items"] = [i for i in items if isinstance(i, dict) and i.get("capability") != cap] + [item]
-doc["schemaVersion"] = 1
-doc["updatedAt"] = now
-doc["tickProof"] = False
-sys.stdout.write(json.dumps(doc, indent=2, sort_keys=True))
-'
 
 # _facts <file> — the fact stream on stdout. Status 1 when the file is not JSON.
 _facts() {
   local tool
   tool="$(ns_policy_json_tool)" || return 2
   if [ "$tool" = jq ]; then
-    jq -r "$FACTS_JQ" "$1" 2>/dev/null || return 1
+    jq -r -f "$PROGRAMS/provision-recover-facts.jq" "$1" 2>/dev/null || return 1
   else
-    python3 -c "$FACTS_PY" "$1" 2>/dev/null || return 1
+    python3 "$PROGRAMS/provision-recover-facts.py" "$1" 2>/dev/null || return 1
   fi
 }
 
@@ -404,7 +261,7 @@ _content_bytes() {
   local tool
   tool="$(ns_policy_json_tool)" || return 1
   if [ "$tool" = python3 ]; then
-    python3 -c "$CONTENT_PY" "$TX" "$1" || return 1
+    python3 "$PROGRAMS/provision-recover-content.py" "$TX" "$1" || return 1
   else
     jq -j --arg rel "$1" '.baseline[$rel].content // ""' "$TX" 2>/dev/null | b64_decode
   fi
@@ -748,9 +605,9 @@ _write_inventory() { # <setupCommit>
   tool="$(ns_policy_json_tool)" || return 1
   if [ "$tool" = jq ]; then
     out="$(jq -aS --indent 2 -n --arg cap "$CAP" --arg now "$now" --arg setup "$setup" \
-      --argjson base "$base" --slurpfile recipe "$RECIPE" "$INVENTORY_JQ")" || return 1
+      --argjson base "$base" --slurpfile recipe "$RECIPE" -f "$PROGRAMS/provision-recover-inventory.jq")" || return 1
   else
-    out="$(python3 -c "$INVENTORY_PY" "$RECIPE" "$now" "$CAP" "$setup" "$base")" || return 1
+    out="$(python3 "$PROGRAMS/provision-recover-inventory.py" "$RECIPE" "$now" "$CAP" "$setup" "$base")" || return 1
   fi
   printf '%s\n' "$out" >"$INV.tmp" || return 1
   mv "$INV.tmp" "$INV" || {
@@ -767,7 +624,7 @@ _advance_stage() {
     out="$(jq -aS --indent 2 --arg now "$now" \
       '.stage = "commit-tooling" | .updatedAt = $now' "$TX")" || return 1
   else
-    out="$(python3 -c "$STAGE_PY" "$TX" "$now")" || return 1
+    out="$(python3 "$PROGRAMS/provision-recover-stage.py" "$TX" "$now")" || return 1
   fi
   printf '%s\n' "$out" >"$TX.tmp" || return 1
   mv "$TX.tmp" "$TX" || {
