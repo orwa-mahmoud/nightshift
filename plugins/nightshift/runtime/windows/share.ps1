@@ -56,7 +56,6 @@ if ($unknown.Count -gt 0) {
 }
 $records = Get-NSSharedRecords $workspace
 $ignore = Join-Path $ns '.gitignore'
-$ignoreName = Get-NSLayoutName $ns 'gitignore'
 $begin = Get-NSShareMarker
 $end = Get-NSShareMarker -End
 
@@ -75,59 +74,81 @@ else {
     Write-Verdict 'ok' 'records none: the site stays private to its runner'
 }
 
-# The file's lines, the block's lines, and the lines outside the block.
-$fileLines = @()
-if (Test-Path -LiteralPath $ignore -PathType Leaf) {
-    $fileLines = @(([IO.File]::ReadAllText($ignore) -replace "`r", '').Split("`n"))
-    if ($fileLines.Count -gt 0 -and $fileLines[$fileLines.Count - 1] -ceq '') {
-        $fileLines = @($fileLines[0..($fileLines.Count - 2)])
+# Split-NSShareFile <path> - the block as it stands in the file, and every line outside it.
+function Split-NSShareFile {
+    param([string]$Path)
+    $fileLines = @()
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        $fileLines = @(([IO.File]::ReadAllText($Path) -replace "`r", '').Split("`n"))
+        if ($fileLines.Count -gt 0 -and $fileLines[$fileLines.Count - 1] -ceq '') {
+            $fileLines = @($fileLines[0..($fileLines.Count - 2)])
+        }
     }
+    $current = New-Object Collections.Generic.List[string]
+    $outside = New-Object Collections.Generic.List[string]
+    $on = $false
+    foreach ($line in $fileLines) {
+        if ($line -ceq $begin) { $on = $true }
+        if ($on) { $current.Add($line) } else { $outside.Add($line) }
+        if ($line -ceq $end) { $on = $false }
+    }
+    return [pscustomobject]@{ Block = $current.ToArray(); Outside = $outside.ToArray() }
 }
-$currentBlock = New-Object Collections.Generic.List[string]
-$outside = New-Object Collections.Generic.List[string]
-$on = $false
-foreach ($line in $fileLines) {
-    if ($line -ceq $begin) { $on = $true }
-    if ($on) { $currentBlock.Add($line) } else { $outside.Add($line) }
-    if ($line -ceq $end) { $on = $false }
+
+# Show-NSSharePreview <path> <block> <label> - what -Apply would do to the file.
+function Show-NSSharePreview {
+    param([string]$Path, [string[]]$Block, [string]$Label)
+    $name = '.nightshift/' + (Split-Path -Leaf $Path)
+    $parts = Split-NSShareFile $Path
+    if (($parts.Block -join "`n") -ceq ($Block -join "`n")) { Write-Verdict 'ok' "$Label $name already matches"; return $false }
+    if ($Block.Count -gt 0) {
+        Write-Verdict 'ok' "$Label would write this block to ${name}:"
+        foreach ($line in $Block) { [Console]::Out.Write('  ' + $line + "`n") }
+    }
+    else { Write-Verdict 'ok' "$Label would take the sharing block out of $name" }
+    return $true
 }
+
+# Write-NSShareBlock <path> <block> <label> - the block first, every other line of the file after it;
+# the file goes when nothing is left.
+function Write-NSShareBlock {
+    param([string]$Path, [string[]]$Block, [string]$Label)
+    $name = '.nightshift/' + (Split-Path -Leaf $Path)
+    $newLines = @($Block) + @((Split-NSShareFile $Path).Outside)
+    try {
+        if ($newLines.Count -eq 0) {
+            if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force }
+        }
+        else {
+            [IO.File]::WriteAllText($Path, (($newLines -join "`n") + "`n"), $utf8)
+        }
+    }
+    catch {
+        Stop-Refused "$Label could not write $Path" 'check that .nightshift/ is writable, then run this again'
+    }
+    if ($Block.Count -gt 0) { Write-Verdict 'ok' "$Label wrote the sharing block to $name" }
+    else { Write-Verdict 'ok' "$Label took the sharing block out of $name" }
+}
+
+$attributes = Join-Path $ns '.gitattributes'
 $block = @()
-if ($records.Count -gt 0) { $block = Get-NSShareIgnoreBlock $workspace }
+$attributesBlock = @()
+if ($records.Count -gt 0) {
+    $block = Get-NSShareIgnoreBlock $workspace
+    $attributesBlock = Get-NSShareAttributesBlock $workspace
+}
 
 if (-not $Apply) {
-    if (($currentBlock.ToArray() -join "`n") -ceq ($block -join "`n")) {
-        Write-Verdict 'ok' "gitignore $ignoreName already matches"
-    }
-    elseif ($block.Count -gt 0) {
-        Write-Verdict 'ok' "gitignore would write this block to ${ignoreName}:"
-        foreach ($line in $block) { [Console]::Out.Write('  ' + $line + "`n") }
-        [Console]::Out.Write("next run ns share --apply to write it`n")
-    }
-    else {
-        Write-Verdict 'ok' "gitignore would take the sharing block out of $ignoreName"
-        [Console]::Out.Write("next run ns share --apply to take it out`n")
-    }
+    $changes = Show-NSSharePreview $ignore $block 'gitignore'
+    $changes = (Show-NSSharePreview $attributes $attributesBlock 'gitattributes') -or $changes
+    if ($changes) { [Console]::Out.Write("next run ns share --apply to write it`n") }
     exit 0
 }
 
-# ---------------------------------------------------------------- write the block
-$newLines = @($block) + @($outside.ToArray())
-try {
-    if ($newLines.Count -eq 0) {
-        if (Test-Path -LiteralPath $ignore) { Remove-Item -LiteralPath $ignore -Force }
-    }
-    else {
-        [IO.File]::WriteAllText($ignore, (($newLines -join "`n") + "`n"), $utf8)
-    }
-}
-catch {
-    Stop-Refused "gitignore could not write $ignore" 'check that .nightshift/ is writable, then run this again'
-}
-if ($block.Count -eq 0) {
-    Write-Verdict 'ok' "gitignore took the sharing block out of $ignoreName"
-    exit 0
-}
-Write-Verdict 'ok' "gitignore wrote the sharing block to $ignoreName"
+# ---------------------------------------------------------------- write the blocks
+Write-NSShareBlock $ignore $block 'gitignore'
+Write-NSShareBlock $attributes $attributesBlock 'gitattributes'
+if ($block.Count -eq 0) { exit 0 }
 
 # ---------------------------------------------------------------- the repository above
 $top = [string](& git -C $ns rev-parse --show-toplevel 2>$null)

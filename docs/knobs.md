@@ -472,7 +472,9 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 | `layout` | `name` | The same choices as `archive.layout`: `name` uses the name on the plan's title line (`# Punch List — Export CSV` runs in `runs/export-csv/`), `date` the day, `shift` the shift id, and `date-name` both. A shift with no name runs under the date, and a second one that day under `-shift-2` |
 
 `sharing` decides which project records your team sees through Git. `ns share --apply` writes the
-matching block of `.nightshift/.gitignore`; everything else under `.nightshift/` stays ignored.
+matching block of `.nightshift/.gitignore`; everything else under `.nightshift/` stays ignored. With
+`plans` shared it also marks each plan's record in `.nightshift/.gitattributes` to merge line by
+line, since a record is only ever appended to.
 
 | Key | Default | Values |
 |---|---|---|
@@ -486,7 +488,7 @@ run's own rules file nor a member's settings file changes it.
 | `roles` | `{}` | Each member's role, by the name they put on the records: `{"Alice": "lead", "Bob": "developer"}` |
 | `approvers` | `[]` | The roles whose approval a plan revision needs before it runs. Empty: the plan's owner approves it |
 | `selfApprove` | `[]` | The roles that may submit their own plan already approved |
-| `reviewChanges` | `[]` | Which changes to an approved plan return it to proposed until that revision is approved: `contract`, `gates`, `items` |
+| `reviewChanges` | `["contract", "gates", "items"]` | Which changes to an approved plan return it to proposed until that revision is approved: `contract`, `gates`, `items` |
 | `memberSettings` | `[]` | The settings a member's settings file may change, by dotted name (`shift.hours`, `receipts.progressMinutes`); a block name allows the whole block. `team` and `sharing` are never a member's |
 
 A member keeps their own overrides in `.nightshift/settings/<name>.json`, a rules file holding only

@@ -73,7 +73,7 @@ through them, one at a time, in this order:
   lines: what shipped, what did not, what needs a decision.
 - `review parked` — each open decision in the parking lot (`ns path parking-lot`). Show the default
   the shift chose and why, and ask whether it stands. Record the answer by appending
-  ` · answered: <the owner's decision>` to that entry.
+  ` · answered by <name>: <the owner's decision>` to that entry, with the name of whoever answered.
 - `review snag` — each snag with no disposition in the snag log (`ns path snag-log`). Ask what to do:
   the owner's decision becomes its disposition (` · rejected-because: <why>` or
   ` · accepted-tradeoff: <why>`), and a snag to fix becomes an item drafted for the next shift (section
@@ -247,6 +247,25 @@ Then name the way to build it: leave the plan room by typing `/nightshift:start`
 Claude Code, Codex, and Cursor. With an empty
 punch list, Start offers the waiting plans by name. With open items already in the punch list,
 Start works those, and the plan waits its turn.
+
+## Who proposed it, and who approved it
+
+Each plan keeps a record beside it, written only through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" plan-record --plan "<name>" --action proposed|approved|reviewed [--by <name>]`.
+The name is the one the person signs records with; with no `--by` it is the work target's Git user
+name. The helper stamps the plan's current revision, so an approval names exactly the content it
+reviewed, whatever edit records it later. `ns plan-record --plan "<name>"` prints the plan's state and
+every line, a line written without a name as `unknown`.
+
+- When the owner says the plan is complete, record `proposed` under their name. A solo owner
+  approves their own plan directly: record `approved` too.
+- In a team (`team.approvers` in the rules file), the proposer records `proposed`, and someone
+  whose role is an approver records `approved` after reviewing it. A role in `team.selfApprove` may
+  approve its own proposal. The helper refuses anyone else and writes nothing.
+- A change to a part `team.reviewChanges` names returns the plan to proposed until an approver
+  approves the new revision; the earlier approval stays in the record and in Git.
+- When someone needs proof of a name on a record, check the commit that wrote that line and whether
+  its signature verifies, and report what you find: an unsigned line may not be who it says.
 
 ## 7. Leaving is the owner's
 

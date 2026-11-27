@@ -14,9 +14,24 @@ lib() { bash -c '. "$1"; shift; "$@"' _ "$LIB" "$@"; }
 
 share() { bash "$RUNTIME/share.sh" --project "$1" "${@:2}"; }
 
-start_run() { # <workspace> <plan>
-  (cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$1" \
-    bash "$RUNTIME/start-run.sh" --project "$1" --plan "$2" --host claude)
+start_run_as_is() { # <workspace> <plan> [extra args]
+  local w="$1" plan="$2"
+  shift 2
+  (cd "$w" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$w" \
+    bash "$RUNTIME/start-run.sh" --project "$w" --plan "$plan" --host claude "$@")
+}
+
+# start_run <workspace> <plan> — a runner on a shared site reads what the run would execute and
+# consents to exactly that, then starts it.
+start_run() {
+  local out consent
+  if out="$(start_run_as_is "$1" "$2")"; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  consent="$(printf '%s\n' "$out" | sed -n 's/^repair read those inputs, then run this again with --consent //p')"
+  [ -n "$consent" ] || { printf '%s\n' "$out"; return 1; }
+  start_run_as_is "$1" "$2" --consent "$consent"
 }
 
 commit_all() { # <repo> <message>
@@ -98,7 +113,8 @@ thread() {
 .nightshift/runs/export-csv-abc123/receipts/01-export-the-table-ab12.md
 .nightshift/runs/export-csv-abc123/rules.json" ] || { echo "$seen"; return 1; }
   # Already committed: the shared rules, plan, state version and the block itself, nothing private.
-  [ "$(git -C "$a" ls-files .nightshift | sort)" = ".nightshift/.gitignore
+  [ "$(git -C "$a" ls-files .nightshift | sort)" = ".nightshift/.gitattributes
+.nightshift/.gitignore
 .nightshift/rules.json
 .nightshift/staging/plans/export-csv.md
 .nightshift/state-version" ]
@@ -121,7 +137,8 @@ thread() {
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx "ok repository took the line planning/.nightshift/ out of $(cd -P "$r" && pwd)/.gitignore so Git can see the shared records"
   seen="$(git -C "$r" add -A --dry-run | sed "s/^add '//; s/'\$//" | grep nightshift | sort)"
-  [ "$seen" = "planning/.nightshift/.gitignore
+  [ "$seen" = "planning/.nightshift/.gitattributes
+planning/.nightshift/.gitignore
 planning/.nightshift/rules.json
 planning/.nightshift/staging/plans/p.md
 planning/.nightshift/state-version" ] || { echo "$seen"; return 1; }
@@ -184,6 +201,9 @@ alice question: csv separator" ]
   [ "$(cat "$b/.nightshift/runs/$ra/receipts/01-export-the-table-ab12.md")" = "alice ran it" ]
   [ "$(cat "$b/.nightshift/runs/$rb/receipts/01-export-the-table-ab12.md")" = "bob ran it" ]
   [ -z "$(git -C "$b" diff --name-only --diff-filter=U)" ]
+  # Both starts are in the plan's record: it is appended to, so the two sides merge line by line.
+  [ "$(grep -c "^- started · .* · run $ra\$\|^- started · .* · run $ra · " "$b/.nightshift/staging/records/export-csv.md")" = 1 ]
+  [ "$(grep -c "^- started · .* · run $rb\$\|^- started · .* · run $rb · " "$b/.nightshift/staging/records/export-csv.md")" = 1 ]
   # Bob starting the plan again finishes his own run and never takes Alice's over.
   run start_run "$b" "Export CSV"
   [ "$status" -eq 0 ]

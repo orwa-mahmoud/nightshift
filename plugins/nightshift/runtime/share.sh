@@ -75,51 +75,70 @@ else
   ok "records none: the site stays private to its runner"
 fi
 
-# The block as it stands now, or nothing.
+# current_block <file> — the block as it stands in <file> now, or nothing.
 current_block() {
-  [ -f "$IGNORE" ] || return 0
-  awk -v b="$NS_SHARE_BEGIN" -v e="$NS_SHARE_END" '$0 == b { on = 1 } on { print } $0 == e { on = 0 }' "$IGNORE"
+  [ -f "$1" ] || return 0
+  awk -v b="$NS_SHARE_BEGIN" -v e="$NS_SHARE_END" '$0 == b { on = 1 } on { print } $0 == e { on = 0 }' "$1"
 }
-# The file with the block taken out.
+# without_block <file> — <file> with the block taken out.
 without_block() {
-  [ -f "$IGNORE" ] || return 0
-  awk -v b="$NS_SHARE_BEGIN" -v e="$NS_SHARE_END" '$0 == b { on = 1; next } $0 == e { on = 0; next } !on' "$IGNORE"
+  [ -f "$1" ] || return 0
+  awk -v b="$NS_SHARE_BEGIN" -v e="$NS_SHARE_END" '$0 == b { on = 1; next } $0 == e { on = 0; next } !on' "$1"
 }
 
+# preview <file> <block> <label> — what --apply would do to <file>.
+preview() {
+  if [ "$(current_block "$1")" = "$2" ]; then
+    ok "$3 .nightshift/${1##*/} already matches"
+  elif [ -n "$2" ]; then
+    ok "$3 would write this block to .nightshift/${1##*/}:"
+    printf '%s\n' "$2" | sed 's/^/  /'
+  else
+    ok "$3 would take the sharing block out of .nightshift/${1##*/}"
+  fi
+}
+
+# write_block <file> <block> <label> — the block first, every other line of <file> after it; the
+# file goes when nothing is left.
+write_block() {
+  local tmp="$1.tmp.$$"
+  if ! {
+    [ -z "$2" ] || printf '%s\n' "$2"
+    without_block "$1"
+  } >"$tmp" || ! mv -f "$tmp" "$1"; then
+    rm -f "$tmp"
+    refuse "$3 could not write $1" "check that .nightshift/ is writable, then run this again"
+  fi
+  [ -s "$1" ] || rm -f "$1"
+  if [ -n "$2" ]; then
+    ok "$3 wrote the sharing block to .nightshift/${1##*/}"
+  else
+    ok "$3 took the sharing block out of .nightshift/${1##*/}"
+  fi
+}
+
+ATTRIBUTES="$NS/.gitattributes"
 BLOCK=""
-[ -z "$RECORDS" ] || BLOCK="$(ns_share_ignore_block "$WORKSPACE")" ||
-  refuse "layout the shared records have no paths in this plugin's layout" "run ns doctor"
+ATTR_BLOCK=""
+if [ -n "$RECORDS" ]; then
+  if ! BLOCK="$(ns_share_ignore_block "$WORKSPACE")" || ! ATTR_BLOCK="$(ns_share_attributes_block "$WORKSPACE")"; then
+    refuse "layout the shared records have no paths in this plugin's layout" "run ns doctor"
+  fi
+fi
 
 if [ "$APPLY" -eq 0 ]; then
-  if [ "$(current_block)" = "$BLOCK" ]; then
-    ok "gitignore $(ns_layout_name "$NS" gitignore) already matches"
-  elif [ -n "$BLOCK" ]; then
-    ok "gitignore would write this block to $(ns_layout_name "$NS" gitignore):"
-    printf '%s\n' "$BLOCK" | sed 's/^/  /'
+  preview "$IGNORE" "$BLOCK" gitignore
+  preview "$ATTRIBUTES" "$ATTR_BLOCK" gitattributes
+  if [ "$(current_block "$IGNORE")" != "$BLOCK" ] || [ "$(current_block "$ATTRIBUTES")" != "$ATTR_BLOCK" ]; then
     printf 'next run ns share --apply to write it\n'
-  else
-    ok "gitignore would take the sharing block out of $(ns_layout_name "$NS" gitignore)"
-    printf 'next run ns share --apply to take it out\n'
   fi
   exit 0
 fi
 
-# ---------------------------------------------------------------- write the block
-TMP="$IGNORE.tmp.$$"
-if ! {
-  [ -z "$BLOCK" ] || printf '%s\n' "$BLOCK"
-  without_block
-} >"$TMP" || ! mv -f "$TMP" "$IGNORE"; then
-  rm -f "$TMP"
-  refuse "gitignore could not write $IGNORE" "check that .nightshift/ is writable, then run this again"
-fi
-[ -s "$IGNORE" ] || rm -f "$IGNORE"
-if [ -n "$BLOCK" ]; then
-  ok "gitignore wrote the sharing block to $(ns_layout_name "$NS" gitignore)"
-else
-  ok "gitignore took the sharing block out of $(ns_layout_name "$NS" gitignore)"
-  exit 0
-fi
+# ---------------------------------------------------------------- write the blocks
+write_block "$IGNORE" "$BLOCK" gitignore
+write_block "$ATTRIBUTES" "$ATTR_BLOCK" gitattributes
+[ -n "$BLOCK" ] || exit 0
 
 # ---------------------------------------------------------------- the repository above
 TOP="$(git -C "$NS" rev-parse --show-toplevel 2>/dev/null)" || {

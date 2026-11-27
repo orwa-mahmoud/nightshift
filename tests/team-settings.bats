@@ -36,6 +36,10 @@ team_site() {
   mkdir -p "$w/.nightshift/settings"
   printf '{\n  "shift": {\n    "hours": 3\n  },\n  "receipts": {\n    "progressMinutes": 5\n  }\n}\n' >"$w/.nightshift/settings/alice.json"
   printf '{\n  "shift": {\n    "hours": 6\n  }\n}\n' >"$w/.nightshift/settings/bob.json"
+  # The lead has approved both plans, as this team requires before a run.
+  for plan in "Export CSV" "Dark mode"; do
+    bash "$RUNTIME/plan-record.sh" --project "$w" --plan "$plan" --action approved --by Alice >/dev/null
+  done
   printf '%s' "$w"
 }
 

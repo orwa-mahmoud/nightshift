@@ -2,6 +2,14 @@
 # start-run.sh — start a named plan as a run of its own.
 #
 #   start-run.sh --project DIR --plan NAME --host claude|codex|cursor [--background] [--settings NAME]
+#                [--consent DIGEST]
+#
+# A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
+# gates or items, as team.reviewChanges names them, have not changed since an approver approved it.
+# On a site that shares its plans, the runner consents to exactly what the run would execute before
+# anything of it runs: without --consent, or with one for other inputs, this prints those inputs and
+# the consent that covers them, and places nothing. A started run is written to the plan's record
+# with the runner's Git user name.
 #
 # --settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values
 # are laid over the team's rules.json, beneath the run's own rules file, and reach every helper the
@@ -39,6 +47,7 @@ PLAN=""
 BACKGROUND=0
 HOST_NAME=""
 SETTINGS=""
+CONSENT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)
@@ -63,6 +72,11 @@ while [ $# -gt 0 ]; do
     --settings)
       [ $# -ge 2 ] || { printf 'start-run: --settings needs a value\n' >&2; exit 2; }
       SETTINGS="$2"
+      shift 2
+      ;;
+    --consent)
+      [ $# -ge 2 ] || { printf 'start-run: --consent needs a value\n' >&2; exit 2; }
+      CONSENT="$2"
       shift 2
       ;;
     -h | --help)
@@ -123,6 +137,39 @@ KEY="$(ns_receipt_slug "$PLAN")"
 PLAN_FILE="$(ns_layout_path "$NS" plans)/$KEY.md"
 STAGED=0
 if [ -f "$PLAN_FILE" ] && [ ! -L "$PLAN_FILE" ]; then STAGED=1; fi
+
+# ---------------------------------------------------------------- approval and consent
+# Both are settled before anything is placed or run, so a refusal leaves no side effect.
+INPUTS_DIGEST=""
+if [ "$STAGED" -eq 1 ] && ns_plan_record_file "$NS" "$KEY" >/dev/null; then
+  STATE="$(ns_plan_state "$WORKSPACE" "$KEY")" || refuse "plan the revision of $PLAN cannot be read" "run ns doctor, then run this again"
+  if printf '%s\n' "$STATE" | grep -qx 'approval required' && ! printf '%s\n' "$STATE" | grep -qx 'state approved'; then
+    REV="$(printf '%s\n' "$STATE" | sed -n 's/^revision //p')"
+    CHANGED="$(printf '%s\n' "$STATE" | sed -n 's/^changed //p')"
+    LAST="$(printf '%s\n' "$STATE" | sed -n 's/^approved-by //p')"
+    if [ -n "$CHANGED" ]; then
+      refuse "approval $PLAN changed its $CHANGED since ${LAST% *} approved revision ${LAST##* }, so revision $REV is proposed" \
+        "an approver reviews the change and records it with ns plan-record --plan \"$PLAN\" --action approved"
+    fi
+    refuse "approval $PLAN revision $REV is proposed: no approver has approved it" \
+      "an approver reviews it and records it with ns plan-record --plan \"$PLAN\" --action approved"
+  fi
+  if ns_site_shares "$WORKSPACE" plans; then
+    INPUTS="$(ns_run_inputs "$WORKSPACE" "$PLAN_FILE" "$SETTINGS")"
+    INPUTS_DIGEST="$(ns_run_consent "$INPUTS")"
+    if [ "$CONSENT" != "$INPUTS_DIGEST" ]; then
+      if [ -n "$CONSENT" ]; then
+        printf 'refuse consent what this run would execute changed since consent %s was given\n' "$CONSENT"
+      else
+        printf 'refuse consent read what this run would execute before it starts\n'
+      fi
+      printf '%s\n' "$INPUTS" | sed 's/^/input /'
+      printf 'repair read those inputs, then run this again with --consent %s\n' "$INPUTS_DIGEST"
+      exit 1
+    fi
+    ok "consent $INPUTS_DIGEST covers what this run executes"
+  fi
+fi
 
 # ---------------------------------------------------------------- the run
 # The run a plan already went into in this clone is reused: its punch list carries the plan's title.
@@ -229,7 +276,21 @@ unstage() {
   ok "plan $PLAN left staging"
 }
 
+# started — the plan's record names who started this run, from which revision, with which consent.
+record_start() {
+  local who target
+  [ "$STAGED" -eq 1 ] && ns_plan_record_file "$NS" "$KEY" >/dev/null || return 0
+  target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target="$WORKSPACE"
+  who="$(git -C "$target" config user.name 2>/dev/null | tr -d '\r\n')" || who=""
+  if ns_plan_record_add "$WORKSPACE" "$KEY" started "${who:-unknown}" "run $RUN" ${INPUTS_DIGEST:+"inputs $INPUTS_DIGEST"}; then
+    ok "record started by ${who:-unknown}"
+  else
+    warn "record the start could not be written to $(ns_layout_name "$NS" plan-records)/$KEY.md"
+  fi
+}
+
 if [ "$BACKGROUND" -eq 0 ]; then
+  record_start
   unstage
   ok "next run Start in this conversation with NIGHTSHIFT_RUN=$RUN"
   exit 0
@@ -259,6 +320,7 @@ if ! PID="$(ns_start_background_worker "$NS" "$HOST_NAME" "$WORK" "$PROJECT_ENV"
 fi
 printf '%s · shift started in the background (run %s, pid %s)\n' "$(ns_local_now second)" "$RUN" "$PID" >>"$(ns_layout_path "$NS" shift-log)"
 ok "worker started for $RUN (pid $PID)"
+record_start
 unstage
 if WM="$(bash "$_here/start-watchman.sh" --project "$WORKSPACE" --host "$HOST_NAME" 2>&1)"; then
   ok "$(printf '%s' "$WM" | tail -n 1)"

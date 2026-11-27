@@ -168,6 +168,7 @@ plan-record	0	plan-record.md	file
 plan-record	2	staging/plan-record.md	file
 plans	2	staging/plans	dir
 decisions	3	staging/decisions	dir
+plan-records	3	staging/records	dir
 settings	3	settings	dir
 member-settings	3	runs/*/run/member-settings	file
 pulse	0	.shift-pulse	file

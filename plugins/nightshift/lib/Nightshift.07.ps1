@@ -4124,3 +4124,227 @@ function Get-NSPlanList {
     }
     return , $out.ToArray()
 }
+
+# ---------------------------------------------------------------- who did what to a plan
+#
+# Each plan keeps a record beside it, staging/records/<key>.md: one line per action, appended and
+# never rewritten. Mirrors the plan record functions in lib/plan-room.sh.
+
+$script:NSPlanActions = @('proposed', 'approved', 'started', 'reviewed')
+
+# Get-NSPlanRevision <plan-file> - <contract>.<gates>.<items>, the first twelve hex digits of each
+# part's digest. Mirrors ns_plan_revision.
+function Get-NSPlanRevision {
+    param([Parameter(Mandatory = $true)][string]$PlanFile)
+    $c = Get-NSPunchContractDigest $PlanFile
+    $g = Get-NSPunchDigest (Get-NSPunchGates $PlanFile)
+    $i = Get-NSPunchItemsDigest $PlanFile
+    return ($c.Substring(0, 12) + '.' + $g.Substring(0, 12) + '.' + $i.Substring(0, 12))
+}
+
+# Get-NSPlanRecordFile <nightshift-dir> <key> - where a plan's record lives, '' in a layout that
+# keeps none. Mirrors ns_plan_record_file.
+function Get-NSPlanRecordFile {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Key)
+    if (-not (Test-NSLayoutKey $NightshiftDir 'plan-records')) { return '' }
+    return (Join-Path (Get-NSLayoutPath $NightshiftDir 'plan-records') ($Key + '.md'))
+}
+
+# Get-NSTeamBlock <workspace> - the team block of the team's rules.json, or $null.
+function Get-NSTeamBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $file = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'rules'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $null }
+    try { $data = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
+    catch { return $null }
+    $block = $data.PSObject.Properties['team']
+    if ($null -eq $block -or -not ($block.Value -is [pscustomobject])) { return $null }
+    return $block.Value
+}
+
+# Get-NSTeamList <workspace> <key> - each string of team.<key>. Mirrors ns_team_list.
+function Get-NSTeamList {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
+    $team = Get-NSTeamBlock $Workspace
+    if ($null -eq $team) { return , @() }
+    $field = $team.PSObject.Properties[$Key]
+    if ($null -eq $field -or $null -eq $field.Value) { return , @() }
+    return , @($field.Value | ForEach-Object { [string]$_ })
+}
+
+# Get-NSTeamRole <workspace> <name> - the role team.roles gives <name>, or ''. Mirrors ns_team_role.
+function Get-NSTeamRole {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Name)
+    $team = Get-NSTeamBlock $Workspace
+    if ($null -eq $team) { return '' }
+    $roles = $team.PSObject.Properties['roles']
+    if ($null -eq $roles -or -not ($roles.Value -is [pscustomobject])) { return '' }
+    $role = $roles.Value.PSObject.Properties[$Name]
+    if ($null -eq $role) { return '' }
+    return [string]$role.Value
+}
+
+# Get-NSPlanRecordLines <record-file> - each action line as an object: Action, Name, Role, Revision,
+# Line. A line written before records carried names reads as unknown. Mirrors ns_plan_record_lines.
+function Get-NSPlanRecordLines {
+    param([AllowEmptyString()][string]$RecordFile)
+    $out = New-Object Collections.Generic.List[object]
+    if ($RecordFile.Length -eq 0 -or -not [IO.File]::Exists($RecordFile) -or (Test-NSReparsePoint $RecordFile)) { return , $out.ToArray() }
+    $separator = ' ' + [char]0x00B7 + ' '
+    foreach ($raw in [IO.File]::ReadAllLines($RecordFile)) {
+        $line = $raw.TrimEnd("`r")
+        if (-not $line.StartsWith('- ', [StringComparison]::Ordinal)) { continue }
+        $fields = $line.Substring(2).Split(@($separator), [StringSplitOptions]::None)
+        if ($script:NSPlanActions -cnotcontains $fields[0]) { continue }
+        $name = 'unknown'; $role = '-'; $revision = ''
+        if ($fields.Count -ge 4 -and -not $fields[1].StartsWith('revision ', [StringComparison]::Ordinal) -and
+            -not $fields[2].StartsWith('revision ', [StringComparison]::Ordinal)) {
+            $name = $fields[1]; $role = $fields[2]
+        }
+        for ($i = 1; $i -lt $fields.Count; $i++) {
+            if ($fields[$i].StartsWith('revision ', [StringComparison]::Ordinal)) { $revision = $fields[$i].Substring(9) }
+        }
+        $out.Add([pscustomobject]@{ Action = $fields[0]; Name = $name; Role = $role; Revision = $revision; Line = $line })
+    }
+    return , $out.ToArray()
+}
+
+# Test-NSPlanMayApprove <workspace> <name> <proposer> - true when the team lets <name> approve a plan
+# <proposer> proposed. Mirrors ns_plan_may_approve.
+function Test-NSPlanMayApprove {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Name, [AllowEmptyString()][string]$Proposer)
+    $approvers = Get-NSTeamList $Workspace 'approvers'
+    if ($approvers.Count -eq 0) { return $true }
+    if ($Name -ceq 'unknown') { return $false }
+    $role = Get-NSTeamRole $Workspace $Name
+    if ($role.Length -eq 0) { return $false }
+    if ($approvers -ccontains $role) { return $true }
+    return ($Name -ceq $Proposer -and ((Get-NSTeamList $Workspace 'selfApprove') -ccontains $role))
+}
+
+# Get-NSPlanChangedParts <approved> <revision> <parts> - the named parts that differ between the two
+# revisions. Mirrors _ns_plan_changed_parts.
+function Get-NSPlanChangedParts {
+    param([AllowEmptyString()][string]$Approved, [AllowEmptyString()][string]$Revision, [string[]]$Parts)
+    $a = $Approved.Split('.')
+    $b = $Revision.Split('.')
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($part in $Parts) {
+        $i = [array]::IndexOf(@('contract', 'gates', 'items'), $part)
+        if ($i -lt 0) { continue }
+        $x = $(if ($a.Count -gt $i) { $a[$i] } else { '' })
+        $y = $(if ($b.Count -gt $i) { $b[$i] } else { '' })
+        if ($x -cne $y) { $out.Add($part) }
+    }
+    return ($out.ToArray() -join ' ')
+}
+
+# Get-NSPlanState <workspace> <key> - the plan's approval as "<field> <value>" lines, $null when the
+# plan file is not there. Mirrors ns_plan_state.
+function Get-NSPlanState {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
+    $ns = Join-Path $Workspace '.nightshift'
+    if (-not (Test-NSLayoutKey $ns 'plans')) { return $null }
+    $plan = Join-Path (Get-NSLayoutPath $ns 'plans') ($Key + '.md')
+    if (-not [IO.File]::Exists($plan) -or (Test-NSReparsePoint $plan)) { return $null }
+    $revision = Get-NSPlanRevision $plan
+    $parts = Get-NSTeamList $Workspace 'reviewChanges'
+    $approvers = Get-NSTeamList $Workspace 'approvers'
+    $proposer = ''; $held = ''; $heldRevision = ''; $last = ''; $lastRevision = ''
+    foreach ($entry in (Get-NSPlanRecordLines (Get-NSPlanRecordFile $ns $Key))) {
+        if ($entry.Action -ceq 'proposed') { $proposer = $entry.Name; continue }
+        if ($entry.Action -cne 'approved') { continue }
+        if (-not (Test-NSPlanMayApprove $Workspace $entry.Name $proposer)) { continue }
+        $last = $entry.Name; $lastRevision = $entry.Revision
+        if ((Get-NSPlanChangedParts $entry.Revision $revision $parts).Length -eq 0) { $held = $entry.Name; $heldRevision = $entry.Revision }
+    }
+    $out = New-Object Collections.Generic.List[string]
+    $out.Add('revision ' + $revision)
+    $out.Add($(if ($approvers.Count -gt 0) { 'approval required' } else { 'approval not-required' }))
+    if ($held.Length -gt 0) {
+        $out.Add('state approved')
+        $out.Add('approved-by ' + $held + ' ' + $heldRevision)
+    }
+    else {
+        $out.Add('state proposed')
+        if ($last.Length -gt 0) {
+            $out.Add('approved-by ' + $last + ' ' + $lastRevision)
+            $out.Add('changed ' + (Get-NSPlanChangedParts $lastRevision $revision $parts))
+        }
+    }
+    return , $out.ToArray()
+}
+
+# Add-NSPlanRecord <workspace> <key> <action> <name> [extras] - append one attributed line to the
+# plan's record, creating it under its heading. Mirrors ns_plan_record_add.
+function Add-NSPlanRecord {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Key,
+        [Parameter(Mandatory = $true)][string]$Action,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [string[]]$Extra = @()
+    )
+    $ns = Join-Path $Workspace '.nightshift'
+    $plan = Join-Path (Get-NSLayoutPath $ns 'plans') ($Key + '.md')
+    $record = Get-NSPlanRecordFile $ns $Key
+    $role = Get-NSTeamRole $Workspace $Name
+    if ($role.Length -eq 0) { $role = '-' }
+    $dot = ' ' + [char]0x00B7 + ' '
+    $line = '- ' + $Action + $dot + $Name + $dot + $role + $dot + (Get-NSLocalNow) + $dot + 'revision ' + (Get-NSPlanRevision $plan)
+    foreach ($field in $Extra) { $line += $dot + $field }
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $record) -Force
+    $utf8 = New-Object Text.UTF8Encoding($false)
+    if (-not [IO.File]::Exists($record)) {
+        [IO.File]::WriteAllText($record, ('# Record ' + [char]0x2014 + ' ' + (Get-NSShiftName $plan) + "`n`n"), $utf8)
+    }
+    [IO.File]::AppendAllText($record, $line + "`n", $utf8)
+}
+
+# Get-NSMemberEffective <workspace> <member> <path> - the value one setting would have for a run that
+# selects <member>'s settings, before that run exists. Mirrors ns_member_effective.
+function Get-NSMemberEffective {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Member, [Parameter(Mandatory = $true)][string]$Path)
+    $ns = Join-Path $Workspace '.nightshift'
+    try { $rules = Get-Content -Raw -LiteralPath (Get-NSLayoutPath $ns 'rules') | ConvertFrom-Json -ErrorAction Stop }
+    catch { return '' }
+    if ($Member.Length -gt 0) {
+        $file = Join-Path (Join-Path $ns (Get-NSLayoutRelativePathAt 3 'settings')) ($Member + '.json')
+        try { $member = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
+        catch { return '' }
+        $rules = Merge-NSRulesObject $rules (Select-NSAllowedRules $member (Get-NSMemberAllowed $rules))
+    }
+    $value = $rules
+    foreach ($part in $Path.Split('.')) {
+        if ($null -eq $value -or -not ($value -is [pscustomobject])) { return '' }
+        $property = $value.PSObject.Properties[$part]
+        if ($null -eq $property) { return '' }
+        $value = $property.Value
+    }
+    if ($null -eq $value) { return '' }
+    if ($value -is [bool]) { return $(if ($value) { 'true' } else { 'false' }) }
+    return [string]$value
+}
+
+# Get-NSRunInputs <workspace> <plan-file> <member> - what a run of that plan would execute, one
+# "<field> <value>" line each. Mirrors ns_run_inputs.
+function Get-NSRunInputs {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$PlanFile, [AllowEmptyString()][string]$Member)
+    $out = New-Object Collections.Generic.List[string]
+    $out.Add('plan ' + (Get-NSPlanRevision $PlanFile))
+    $out.Add('settings ' + $(if ($Member.Length -gt 0) { $Member } else { 'none' }))
+    $v = Get-NSMemberEffective $Workspace $Member 'shift.prepare'
+    $out.Add('prepare ' + $(if ($v.Length -gt 0) { $v } else { 'none' }))
+    $v = Get-NSMemberEffective $Workspace $Member 'shift.verificationProfile'
+    $out.Add('verification ' + $(if ($v.Length -gt 0) { $v } else { 'fast' }))
+    $v = Get-NSMemberEffective $Workspace $Member 'baselineGates'
+    $out.Add('baseline-gates ' + $(if ($v.Length -gt 0) { $v } else { 'false' }))
+    foreach ($gate in (Get-NSPunchGateCommands $PlanFile)) { $out.Add('gate ' + $gate) }
+    return , $out.ToArray()
+}
+
+# Get-NSRunConsent <inputs> - the consent a runner gives for those inputs. Mirrors ns_run_consent.
+function Get-NSRunConsent {
+    param([string[]]$Inputs)
+    return (Get-NSPunchDigest $Inputs).Substring(0, 16)
+}

@@ -72,6 +72,10 @@ function New-TeamSite {
     }
     Write-Text (Join-Path $ns 'settings/alice.json') "{`n  `"shift`": {`n    `"hours`": 3`n  },`n  `"receipts`": {`n    `"progressMinutes`": 5`n  }`n}`n"
     Write-Text (Join-Path $ns 'settings/bob.json') "{`n  `"shift`": {`n    `"hours`": 6`n  }`n}`n"
+    # The lead has approved both plans, as this team requires before a run.
+    foreach ($plan in @('Export CSV', 'Dark mode')) {
+        $null = Invoke-Helper 'plan-record.ps1' @('-Project', $Path, '-Plan', $plan, '-Action', 'approved', '-By', 'Alice')
+    }
     return (Resolve-NSCanonicalPath $Path)
 }
 

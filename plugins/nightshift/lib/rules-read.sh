@@ -194,6 +194,28 @@ ns_member_settings_problems() (
     }'
 )
 
+# ns_member_effective <workspace> <member> <p1> [p2] — the value one setting would have for a run
+# that selects <member>'s settings (none when empty), before that run exists: the member's allowed
+# settings over the team's. Nothing when the setting is unset or a file cannot be read.
+ns_member_effective() (
+  local team="" dir="" shared row typ val
+  ns_layout_set team "$1/.nightshift" rules || exit 0
+  _ns_rules_ingest rules "$team" || exit 0
+  if [ -n "$2" ]; then
+    shared="$NS_RULES_ROWS"
+    ns_layout_set dir "$1/.nightshift" settings || exit 0
+    _ns_rules_ingest rules "$dir/$2.json" || exit 0
+    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_allowed "$NS_RULES_ROWS" "$(_ns_rules_member_allowed "$shared")")" "$shared")"
+  fi
+  row="$(_ns_rules_row "$3" "${4-}" "")" || exit 0
+  typ="${row%%"$_NS_RULES_TAB"*}"
+  val="${row#*"$_NS_RULES_TAB"}"
+  case "$typ" in
+    s | n | b) ns_json_text "$val" ;;
+    a) _ns_rules_array "$3" "${4-}" ;;
+  esac
+)
+
 # _ns_rules_overlay <run-rows> <shared-rows> — one set of rows where the run's settings replace the
 # shared ones key by key: a value at the same path, or a whole array at the same name. The run's
 # rows come first, so a lookup finds them.

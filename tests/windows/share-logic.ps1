@@ -131,6 +131,18 @@ function Write-Receipt {
     Write-Text (Join-Path $dir '01-export-the-table-ab12.md') ($Text + "`n")
 }
 
+# Invoke-StartRun <workspace> <plan> - a runner on a shared site reads what the run would execute and
+# consents to exactly that, then starts it.
+function Invoke-StartRun {
+    param([string]$Site, [string]$Plan)
+    $first = Invoke-Helper 'start-run.ps1' @('-Project', $Site, '-Plan', $Plan, '-HostName', 'claude')
+    if ($first.ExitCode -eq 0) { return $first }
+    $repair = @($first.Lines | Where-Object { $_ -clike 'repair read those inputs, then run this again with --consent *' })
+    if ($repair.Count -eq 0) { return $first }
+    $consent = $repair[0] -replace '^.* --consent ', ''
+    return (Invoke-Helper 'start-run.ps1' @('-Project', $Site, '-Plan', $Plan, '-HostName', 'claude', '-Consent', $consent))
+}
+
 function Get-RunName { param($Result) return (@($Result.Lines | Where-Object { $_ -cmatch '^ok run ' }) | Select-Object -First 1) -replace '^ok run ', '' }
 
 $dot = [string][char]0x00B7
@@ -154,7 +166,7 @@ try {
     $expected = @("$runDir/inbox/parking-lot.md", "$runDir/punch-list.md", "$runDir/receipts/01-export-the-table-ab12.md", "$runDir/rules.json")
     Expect-True (($seen -join '|') -ceq ($expected -join '|')) "see: git sees only the shared run records: $($seen -join ', ')"
     $tracked = @(Invoke-Quiet $a @('ls-files', '.nightshift') | Sort-Object)
-    Expect-True (($tracked -join '|') -ceq '.nightshift/.gitignore|.nightshift/rules.json|.nightshift/staging/plans/export-csv.md|.nightshift/state-version') "see: committed records: $($tracked -join ', ')"
+    Expect-True (($tracked -join '|') -ceq '.nightshift/.gitattributes|.nightshift/.gitignore|.nightshift/rules.json|.nightshift/staging/plans/export-csv.md|.nightshift/state-version') "see: committed records: $($tracked -join ', ')"
     $again = Invoke-Helper 'share.ps1' @('-Project', $a)
     Expect-True ($again.ExitCode -eq 0 -and ($again.Lines -ccontains 'ok gitignore .nightshift/.gitignore already matches')) "see: a second look changes nothing: $($again.Text)"
 
@@ -173,7 +185,7 @@ try {
     $chosen = Invoke-Helper 'share.ps1' @('-Project', (Join-Path $r 'planning'), '-Apply')
     Expect-True ($chosen.ExitCode -eq 0 -and $chosen.Text.Contains('ok repository took the line planning/.nightshift/ out of')) "chosen: $($chosen.Text)"
     $seen = @(Invoke-Quiet $r @('add', '-A', '--dry-run') | ForEach-Object { $_ -replace "^add '", '' -replace "'$", '' } | Where-Object { $_ -like '*nightshift*' } | Sort-Object)
-    Expect-True (($seen -join '|') -ceq 'planning/.nightshift/.gitignore|planning/.nightshift/rules.json|planning/.nightshift/staging/plans/p.md|planning/.nightshift/state-version') "chosen: $($seen -join ', ')"
+    Expect-True (($seen -join '|') -ceq 'planning/.nightshift/.gitattributes|planning/.nightshift/.gitignore|planning/.nightshift/rules.json|planning/.nightshift/staging/plans/p.md|planning/.nightshift/state-version') "chosen: $($seen -join ', ')"
 
     # A planning question is read in the other clone before approval; answer and change are traced.
     $a = New-Team 'trace'
@@ -193,7 +205,7 @@ try {
     $null = Invoke-Quiet $a @('pull', '-q')
     [IO.File]::AppendAllText((Join-Path $a '.nightshift/staging/decisions/export-csv-separator.md'), ('  - Decided: comma ' + [char]0x2014 + " the importer reads RFC 4180 only`n"), $utf8)
     Save-All $a 'decision: comma'
-    $started = Invoke-Helper 'start-run.ps1' @('-Project', $a, '-Plan', 'Export CSV', '-HostName', 'claude')
+    $started = Invoke-StartRun $a 'Export CSV'
     Expect-True ($started.ExitCode -eq 0) "trace: start-run: $($started.Text)"
     $traceRun = Get-RunName $started
     Write-Receipt $a $traceRun 'Comma separated.'
@@ -208,10 +220,10 @@ try {
     # The same plan run in two clones keeps both runs' receipts; the plan stays the team's record.
     $a = New-Team 'twin'
     $b = New-Member 'twin' 'bob'
-    $first = Invoke-Helper 'start-run.ps1' @('-Project', $a, '-Plan', 'Export CSV', '-HostName', 'claude')
+    $first = Invoke-StartRun $a 'Export CSV'
     Expect-True ($first.ExitCode -eq 0 -and ($first.Lines -ccontains "ok plan Export CSV stays in .nightshift/staging/plans as the team's record; the run works from its own copy")) "twin: alice: $($first.Text)"
     $ra = Get-RunName $first
-    $second = Invoke-Helper 'start-run.ps1' @('-Project', $b, '-Plan', 'Export CSV', '-HostName', 'claude')
+    $second = Invoke-StartRun $b 'Export CSV'
     Expect-True ($second.ExitCode -eq 0) "twin: bob: $($second.Text)"
     $rb = Get-RunName $second
     Expect-True ($ra -cmatch '^export-csv-[0-9a-f]{6}$' -and $rb -cmatch '^export-csv-[0-9a-f]{6}$' -and $ra -cne $rb) "twin: tagged run names $ra and $rb"
@@ -226,7 +238,7 @@ try {
     $null = Invoke-Quiet $b @('pull', '-q', '--no-rebase', '--no-edit')
     Expect-True ([IO.File]::ReadAllText((Join-Path $b ".nightshift/runs/$ra/receipts/01-export-the-table-ab12.md")) -ceq "alice ran it`n") 'twin: alice receipt merged'
     Expect-True ([IO.File]::ReadAllText((Join-Path $b ".nightshift/runs/$rb/receipts/01-export-the-table-ab12.md")) -ceq "bob ran it`n") 'twin: bob receipt kept'
-    $again = Invoke-Helper 'start-run.ps1' @('-Project', $b, '-Plan', 'Export CSV', '-HostName', 'claude')
+    $again = Invoke-StartRun $b 'Export CSV'
     Expect-True ($again.ExitCode -eq 0 -and ($again.Lines -ccontains "ok run $rb")) "twin: bob's restart keeps his run: $($again.Text)"
 
     # Decision threads from separate branches merge cleanly and both reopen.
@@ -263,7 +275,7 @@ try {
     # Filing tags the folder and leaves later edits to the shared plan and decisions alone.
     $a = New-Team 'filing'
     Write-Thread $a 'export-csv-separator.md' 'CSV separator' 'comma or semicolon?'
-    $started = Invoke-Helper 'start-run.ps1' @('-Project', $a, '-Plan', 'Export CSV', '-HostName', 'claude')
+    $started = Invoke-StartRun $a 'Export CSV'
     $filingRun = Get-RunName $started
     $planFile = Join-Path $a '.nightshift/staging/plans/export-csv.md'
     $threadFile = Join-Path $a '.nightshift/staging/decisions/export-csv-separator.md'

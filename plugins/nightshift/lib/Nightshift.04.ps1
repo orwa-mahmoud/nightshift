@@ -166,6 +166,15 @@ function Get-NSSharedRecords {
     return , @($script:NSShareRecords | Where-Object { $values -ccontains $_ })
 }
 
+# Get-NSShareAttributesBlock <workspace> - the lines ns share keeps in .nightshift/.gitattributes: a
+# plan's record is appended to and never rewritten, so teammates' lines merge side by side. Empty when
+# the site does not share its plans. Mirrors ns_share_attributes_block.
+function Get-NSShareAttributesBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if (-not (Test-NSSiteShares $Workspace 'plans')) { return , @() }
+    return , @($script:NSShareBegin, ((Get-NSLayoutRelativePathAt 3 'plan-records') + '/*.md merge=union'), $script:NSShareEnd)
+}
+
 # Get-NSShareRecordNames - every record a team can share, in the shipped order.
 function Get-NSShareRecordNames { return , @($script:NSShareRecords) }
 
@@ -224,7 +233,7 @@ function Get-NSShareIgnoreBlock {
     if ([string]::IsNullOrEmpty($archive)) { $archive = Get-NSLayoutRelativePath $ns 'archive' }
     $shared = Get-NSSharedRecords $Workspace
     $lines = New-Object Collections.Generic.List[string]
-    foreach ($line in @($script:NSShareBegin, '/*', '!/.gitignore', '!/state-version')) { $lines.Add($line) }
+    foreach ($line in @($script:NSShareBegin, '/*', '!/.gitignore', '!/.gitattributes', '!/state-version')) { $lines.Add($line) }
     if ($shared -ccontains 'rules') {
         $lines.Add('!/' + $rules)
         $lines.Add('!/' + (Get-NSLayoutRelativePathAt 3 'settings') + '/')
@@ -233,7 +242,10 @@ function Get-NSShareIgnoreBlock {
         $staging = $plans.Substring(0, $plans.LastIndexOf('/'))
         $lines.Add('!/' + $staging + '/')
         $lines.Add('/' + $staging + '/*')
-        if ($shared -ccontains 'plans') { $lines.Add('!/' + $plans + '/') }
+        if ($shared -ccontains 'plans') {
+            $lines.Add('!/' + $plans + '/')
+            $lines.Add('!/' + (Get-NSLayoutRelativePathAt 3 'plan-records') + '/')
+        }
         if ($shared -ccontains 'decisions') { $lines.Add('!/' + $decisions + '/') }
     }
     if ($shared -ccontains 'receipts') {

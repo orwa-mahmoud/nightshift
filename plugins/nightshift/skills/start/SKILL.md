@@ -101,6 +101,15 @@ leaves the plan where it is as the team's record and prints that the run works f
 teammates keep reading and editing the plan while the run works. A teammate's run of the same plan,
 pulled through Git, is never taken over: each runner's run has its own folder.
 
+A team whose rules name approvers runs only an approved revision: `start-run` refuses a proposed
+plan with the part that changed and who approved the revision before; relay it and stop. On a site
+that shares its plans, the runner consents to exactly what the run would execute before anything of
+it runs: `start-run` without `--consent` prints one `input` line each (the plan's revision, the
+member settings, the prepare command, the verification profile, the baseline gates and each gate
+command) and the consent that covers them. Show the runner those lines, and only on their yes run it
+again with `--consent <digest>`. Never pass a consent the runner did not give for these inputs; when
+the inputs change, the old consent is refused and they review the new ones.
+
 When the owner names their own settings for the run ("with my settings", "use bob's settings"),
 add `--settings <name>`: the run reads `settings/<name>.json` over the team's rules for that run
 alone. A file that changes anything the team keeps is refused with the settings it named; relay

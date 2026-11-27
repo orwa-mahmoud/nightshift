@@ -83,7 +83,11 @@
     "roles": {},
     "approvers": [],
     "selfApprove": [],
-    "reviewChanges": [],
+    "reviewChanges": [
+      "contract",
+      "gates",
+      "items"
+    ],
     "memberSettings": []
   },
   "receipts": {

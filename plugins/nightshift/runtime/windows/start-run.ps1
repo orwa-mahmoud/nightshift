@@ -4,6 +4,14 @@
 
 .DESCRIPTION
     start-run.ps1 -Project DIR -Plan NAME -HostName claude|codex|cursor [-Background] [-Settings NAME]
+                  [-Consent DIGEST]
+
+  A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
+  gates or items, as team.reviewChanges names them, have not changed since an approver approved it. On
+  a site that shares its plans, the runner consents to exactly what the run would execute before
+  anything of it runs: without -Consent, or with one for other inputs, this prints those inputs and
+  the consent that covers them, and places nothing. A started run is written to the plan's record
+  with the runner's Git user name.
 
   -Settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values are
   laid over the team's rules.json, beneath the run's own rules file, and reach every helper the run
@@ -34,7 +42,8 @@ param(
     [string]$Plan = '',
     [string]$HostName = '',
     [switch]$Background,
-    [string]$Settings = ''
+    [string]$Settings = '',
+    [string]$Consent = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -108,6 +117,40 @@ $key = Get-NSReceiptSlug $Plan
 if ($key.Length -eq 0) { Stop-Refused "plan $Plan has no letters or digits to name it by" }
 $planFile = Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md')
 $staged = (Test-Path -LiteralPath $planFile -PathType Leaf) -and -not (Test-NSReparsePoint $planFile)
+
+# ---------------------------------------------------------------- approval and consent
+# Both are settled before anything is placed or run, so a refusal leaves no side effect.
+$inputsDigest = ''
+if ($staged -and (Get-NSPlanRecordFile $ns $key).Length -gt 0) {
+    $state = Get-NSPlanState $workspace $key
+    if ($null -eq $state) { Stop-Refused "plan the revision of $Plan cannot be read" 'run ns doctor, then run this again' }
+    if (($state -ccontains 'approval required') -and -not ($state -ccontains 'state approved')) {
+        $field = { param($Name) $hit = @($state | Where-Object { $_.StartsWith($Name + ' ', [StringComparison]::Ordinal) }); if ($hit.Count -gt 0) { $hit[0].Substring($Name.Length + 1) } else { '' } }
+        $revision = & $field 'revision'
+        $changed = & $field 'changed'
+        $lastApproval = & $field 'approved-by'
+        if ($changed.Length -gt 0) {
+            $by = $lastApproval.Substring(0, $lastApproval.LastIndexOf(' '))
+            $was = $lastApproval.Substring($lastApproval.LastIndexOf(' ') + 1)
+            Stop-Refused "approval $Plan changed its $changed since $by approved revision $was, so revision $revision is proposed" `
+                "an approver reviews the change and records it with ns plan-record --plan `"$Plan`" --action approved"
+        }
+        Stop-Refused "approval $Plan revision $revision is proposed: no approver has approved it" `
+            "an approver reviews it and records it with ns plan-record --plan `"$Plan`" --action approved"
+    }
+    if (Test-NSSiteShares $workspace 'plans') {
+        $inputs = Get-NSRunInputs $workspace $planFile $Settings
+        $inputsDigest = Get-NSRunConsent $inputs
+        if ($Consent -cne $inputsDigest) {
+            if ($Consent.Length -gt 0) { Write-Verdict 'refuse' "consent what this run would execute changed since consent $Consent was given" }
+            else { Write-Verdict 'refuse' 'consent read what this run would execute before it starts' }
+            foreach ($line in $inputs) { Write-Verdict 'input' $line }
+            Write-Verdict 'repair' "read those inputs, then run this again with --consent $inputsDigest"
+            exit 1
+        }
+        Write-Verdict 'ok' "consent $inputsDigest covers what this run executes"
+    }
+}
 
 # The run a plan already went into in this clone is reused: its punch list carries the plan's title.
 # Otherwise the folder is claimed now, before anything is written, so a second start of the same plan
@@ -218,7 +261,24 @@ function Remove-NSStagedPlan {
     Write-Verdict 'ok' "plan $Plan left staging"
 }
 
+# The plan's record names who started this run, from which revision, with which consent.
+function Add-NSRunStartRecord {
+    if (-not $staged -or (Get-NSPlanRecordFile $ns $key).Length -eq 0) { return }
+    $target = $workspace
+    try { $target = Resolve-NSWorkTarget $workspace } catch { $target = $workspace }
+    $who = ([string](& git -C $target config user.name 2>$null)).Replace("`r", '').Replace("`n", '')
+    if ($who.Length -eq 0) { $who = 'unknown' }
+    $extra = @("run $run")
+    if ($inputsDigest.Length -gt 0) { $extra += "inputs $inputsDigest" }
+    try {
+        Add-NSPlanRecord -Workspace $workspace -Key $key -Action 'started' -Name $who -Extra $extra
+        Write-Verdict 'ok' "record started by $who"
+    }
+    catch { Write-Verdict 'warn' ('record the start could not be written to ' + (Get-NSLayoutName $ns 'plan-records') + "/$key.md") }
+}
+
 if (-not $Background) {
+    Add-NSRunStartRecord
     Remove-NSStagedPlan
     Write-Verdict 'ok' "next run Start in this conversation with NIGHTSHIFT_RUN=$run"
     exit 0
@@ -246,6 +306,7 @@ if ($workerPid -le 0) {
 }
 [IO.File]::AppendAllText((Get-NSLayoutPath $ns 'shift-log'), ('{0} - shift started in the background (run {1}, pid {2})' -f (Get-NSLocalNow -Seconds), $run, $workerPid) + [Environment]::NewLine, $utf8)
 Write-Verdict 'ok' "worker started for $run (pid $workerPid)"
+Add-NSRunStartRecord
 Remove-NSStagedPlan
 $shell = (Get-Process -Id $PID).Path
 $watch = @(& $shell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'start-watchman.ps1') -Project $workspace -HostName $HostName 2>&1)

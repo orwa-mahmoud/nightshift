@@ -2004,9 +2004,10 @@ ns_run_is_local() {
 # folders beside receipts, private messages, the runtime's own folders, STOP, locks and leases all
 # stay ignored.
 ns_share_ignore_block() {
-  local ws="$1" ns="$1/.nightshift" plans decisions rules settings punch receipts inbox messages archive rest parent
+  local ws="$1" ns="$1/.nightshift" plans decisions records rules settings punch receipts inbox messages archive rest parent
   ns_layout_rel_at plans 3 plans || return 1
   ns_layout_rel_at decisions 3 decisions || return 1
+  ns_layout_rel_at records 3 plan-records || return 1
   ns_layout_rel_at rules 3 rules || return 1
   ns_layout_rel_at settings 3 settings || return 1
   ns_layout_rel_at punch 3 punch-list || return 1
@@ -2015,13 +2016,13 @@ ns_share_ignore_block() {
   ns_layout_rel_at messages 3 messages || return 1
   archive="$(ns_archive "$ws" root)"
   [ -n "$archive" ] || ns_layout_rel_set archive "$ns" archive
-  printf '%s\n' "$NS_SHARE_BEGIN" '/*' '!/.gitignore' '!/state-version'
+  printf '%s\n' "$NS_SHARE_BEGIN" '/*' '!/.gitignore' '!/.gitattributes' '!/state-version'
   if ns_site_shares "$ws" rules; then
     printf '!/%s\n!/%s/\n' "$rules" "$settings"
   fi
   if ns_site_shares "$ws" plans || ns_site_shares "$ws" decisions; then
     printf '!/%s/\n/%s/*\n' "${plans%/*}" "${plans%/*}"
-    ! ns_site_shares "$ws" plans || printf '!/%s/\n' "$plans"
+    ! ns_site_shares "$ws" plans || printf '!/%s/\n!/%s/\n' "$plans" "$records"
     ! ns_site_shares "$ws" decisions || printf '!/%s/\n' "$decisions"
   fi
   if ns_site_shares "$ws" receipts; then
@@ -2042,6 +2043,16 @@ ns_share_ignore_block() {
       "$archive" "$archive" "$archive" "$archive" "${receipts#runs/\*/}" "$archive" "${messages#runs/\*/}"
   fi
   printf '%s\n' "$NS_SHARE_END"
+}
+
+# ns_share_attributes_block <project-dir> — the lines `ns share` keeps in .nightshift/.gitattributes:
+# a plan's record is appended to and never rewritten, so teammates' lines merge side by side. Nothing
+# when the site does not share its plans.
+ns_share_attributes_block() {
+  local records
+  ns_site_shares "$1" plans || return 0
+  ns_layout_rel_at records 3 plan-records || return 1
+  printf '%s\n%s/*.md merge=union\n%s\n' "$NS_SHARE_BEGIN" "$records" "$NS_SHARE_END"
 }
 
 NS_SHARE_BEGIN='# >>> nightshift share: written by ns share from sharing.records in rules.json'

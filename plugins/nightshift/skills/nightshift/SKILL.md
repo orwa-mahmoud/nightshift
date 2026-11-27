@@ -316,7 +316,7 @@ fresh disposition. Append dispositions after acting. Each entry is one `- ` bull
 an entry once it carries one of `fixed`, `ignored`, `answered`, `rejected-because` or
 `accepted-tradeoff`: write `fixed in <commit>`, or the disposition followed by its reason. An entry
 with no disposition is open and waits for the owner, and text that is not a bullet is never filed.
-A parking-lot entry is a bullet too; the owner answers it by appending ` · answered: <decision>`,
+A parking-lot entry is a bullet too; the owner answers it by appending ` · answered by <name>: <decision>`,
 and an answered entry is filed, never deleted.
 A `Filed:` pointer (label: id; target: relative path) is navigation, not an entry: follow that pointer and search the
 linked file by topic or identifier; do not open every archive. Historical decisions are evidence,

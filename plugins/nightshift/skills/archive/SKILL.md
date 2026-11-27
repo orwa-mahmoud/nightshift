@@ -135,7 +135,7 @@ page, which is the only copy. Do not hand-edit it.
  yet. Text written as a paragraph instead of a bullet is never filed; Doctor names it by file and
  line.
 - **Parking lot — the answered entries filed, only the unanswered stay.** Same helper, same pointer rule on
- `$NS/inbox/parking-lot.md`. The owner answers an entry by appending ` · answered: <decision>`; an
+ `$NS/inbox/parking-lot.md`. The owner answers an entry by appending ` · answered by <name>: <decision>`; an
  answered entry is filed, never deleted. Parking-lot questions unanswered stay. Read live entries
  first; when checking whether a finding or decision was already handled, follow the pointer and
  search the linked file by topic or identifier. Historical decisions are evidence, not fresh
