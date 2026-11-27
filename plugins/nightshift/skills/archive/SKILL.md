@@ -203,6 +203,15 @@ Never call `ns retain-history` from start, hooks, status, Doctor, or recovery. N
 the live punch list, drafting table, parking lot, rules, current shift files, or owner-authored
 files.
 
+## Shared records
+
+On a site that shares its records through Git (`sharing.records` in the rules file), Archive files a
+run exactly as above and never touches the shared plans in `staging/plans/` or the decision threads
+in `staging/decisions/`: they are the team's record, and teammates may have edited them since the
+run took its copy. Each filed shift's folder ends in a tag of its own, so teammates' clones never
+file into the same folder. Git ignores the history index below, so each clone keeps its own; rebuild
+it from the archive folders when it is missing.
+
 ## Index
 
 After filing, add the shift to the private history index: `history-index.md` at the top of the

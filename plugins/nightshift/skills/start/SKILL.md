@@ -96,6 +96,11 @@ worktree, and prints `ok run <run>`; relay its `warn` and `refuse` lines as the 
 continue this Start for that run, prefixing every `ns` command with `NIGHTSHIFT_RUN=<run>` (native
 Windows: set `$env:NIGHTSHIFT_RUN` first) and working in the worktree its `ok worktree` line names.
 
+On a site that shares its plans through Git (`sharing.records` in the rules file), `start-run`
+leaves the plan where it is as the team's record and prints that the run works from its own copy;
+teammates keep reading and editing the plan while the run works. A teammate's run of the same plan,
+pulled through Git, is never taken over: each runner's run has its own folder.
+
 When the owner asks for the plan to run **in the background** ("start it in the background", "run it
 on its own"), add `--background` and stop after relaying its lines: it arms the run, starts a
 headless worker on it and the run's watchman, so this conversation stays free. Running `start-run`

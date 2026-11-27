@@ -3181,6 +3181,28 @@ function Get-NSPlanRecordOpen {
     return , (Get-NSOpenEntries (Get-NSLayoutPath $NightshiftDir 'plan-record') $script:NSPlanRecordClosed)
 }
 
+# Get-NSDecisionThreadsOpen <nightshift-dir> - "<file> . <first line>" for each open entry of the
+# decision threads, each thread a file of its own in the plan record's shape; empty on a site that
+# keeps none. Teammates add threads side by side, so this list is read off the files, never kept.
+# Mirrors ns_decision_threads_open.
+function Get-NSDecisionThreadsOpen {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $out = New-Object Collections.Generic.List[string]
+    if (-not (Test-NSLayoutKey $NightshiftDir 'decisions')) { return , $out.ToArray() }
+    $dir = Get-NSLayoutPath $NightshiftDir 'decisions'
+    if (-not (Test-Path -LiteralPath $dir -PathType Container) -or (Test-NSReparsePoint $dir)) { return , $out.ToArray() }
+    [string[]]$names = @(Get-ChildItem -LiteralPath $dir -Filter '*.md' -File | ForEach-Object { $_.Name })
+    [Array]::Sort($names, [StringComparer]::Ordinal)
+    foreach ($name in $names) {
+        $path = Join-Path $dir $name
+        if (Test-NSReparsePoint $path) { continue }
+        foreach ($line in (Get-NSOpenEntries $path $script:NSPlanRecordClosed)) {
+            $out.Add($name + ' ' + [char]0x00B7 + ' ' + $line)
+        }
+    }
+    return , $out.ToArray()
+}
+
 # Get-NSPlanReview <nightshift-dir> - what the plan room walks the owner through, one
 # `review <kind> <text>` line each: the latest morning page and the receipts index, every parked
 # decision and snag still open, and every item still open or stopped while no shift is running.

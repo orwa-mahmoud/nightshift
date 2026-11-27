@@ -167,6 +167,7 @@ plan-room	2	run/plan-room	file
 plan-record	0	plan-record.md	file
 plan-record	2	staging/plan-record.md	file
 plans	2	staging/plans	dir
+decisions	3	staging/decisions	dir
 pulse	0	.shift-pulse	file
 pulse	2	run/.shift-pulse	file
 pulse	3	runs/*/run/.shift-pulse	file

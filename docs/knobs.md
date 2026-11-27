@@ -471,6 +471,13 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 |---|---|---|
 | `layout` | `name` | The same choices as `archive.layout`: `name` uses the name on the plan's title line (`# Punch List — Export CSV` runs in `runs/export-csv/`), `date` the day, `shift` the shift id, and `date-name` both. A shift with no name runs under the date, and a second one that day under `-shift-2` |
 
+`sharing` decides which project records your team sees through Git. `ns share --apply` writes the
+matching block of `.nightshift/.gitignore`; everything else under `.nightshift/` stays ignored.
+
+| Key | Default | Values |
+|---|---|---|
+| `records` | `[]` | Any of `plans` (the plan files in `staging/plans/`), `decisions` (the planning decision threads in `staging/decisions/`, one file each), `rules` (`rules.json`), `receipts` (each run's punch list, receipts, parking lot and snag log) and `summaries` (the filed shifts under the archive root). Empty keeps the site private to its runner. Raw evidence folders beside receipts, private messages, STOP, leases, watchman files and each run's `run/` folder are never shared. When `receipts` is shared, each run's folder ends in a tag of its own (`runs/export-csv-3f9a1c/`), and when `summaries` is, so does each filed shift's folder, so teammates' runs of the same plan never meet in Git. When `plans` is shared, a plan stays in `staging/plans/` after a run starts from it. A shared run's punch list names its paths from the workspace root (`./.nightshift/...`), so it carries no runner's own folders |
+
 Changing `root` never moves or hides what is already filed: an older history under the previous
 root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live
 ones in place, so a shift still in progress keeps the receipts its own progress checks read.

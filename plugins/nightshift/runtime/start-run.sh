@@ -10,7 +10,9 @@
 # and the Start preflight, snapshot and worktree phases run for it. Only when every step has
 # succeeded does the plan leave staging, so a failed step leaves the plan staged and the owner's
 # checkout and index as they were, and running this again finishes the run instead of making a
-# second one.
+# second one. On a site that shares its plans through Git the plan stays staged as the team's record
+# and the run works from its own copy; a teammate's run of the same plan, pulled through Git, is
+# never taken over.
 #
 # Without --background, Start continues in the conversation that asked, with NIGHTSHIFT_RUN set to
 # the run printed here. With --background, this arms the run, takes its lease for a headless worker
@@ -101,13 +103,17 @@ STAGED=0
 if [ -f "$PLAN_FILE" ] && [ ! -L "$PLAN_FILE" ]; then STAGED=1; fi
 
 # ---------------------------------------------------------------- the run
-# The run a plan already went into is reused: its punch list carries the plan's title. Otherwise the
-# folder is claimed now, before anything is written, so a second start of the same plan finds it.
+# The run a plan already went into in this clone is reused: its punch list carries the plan's title.
+# Otherwise the folder is claimed now, before anything is written, so a second start of the same plan
+# finds it.
+SHARED_RECEIPTS=0
+! ns_site_shares "$WORKSPACE" receipts || SHARED_RECEIPTS=1
 RUN=""
 while IFS= read -r r; do
   [ -n "$r" ] || continue
   f="$NS/runs/$r/punch-list.md"
   [ -f "$f" ] && [ ! -L "$f" ] || continue
+  [ "$SHARED_RECEIPTS" -eq 0 ] || ns_run_is_local "$NS" "$r" || continue
   if [ "$(ns_receipt_slug "$(ns_shift_name "$f")")" = "$KEY" ]; then
     RUN="$r"
     break
@@ -141,7 +147,11 @@ if [ -e "$PUNCH" ] || [ -L "$PUNCH" ]; then
   ok "punch-list $(ns_layout_name "$NS" punch-list) holds the plan"
 else
   TMP="$PUNCH.tmp.$$"
-  if ! ns_owner_template "$PLAN_FILE" "$WORKSPACE" "$NS/runs/$RUN" >"$TMP" 2>/dev/null || ! mv -f "$TMP" "$PUNCH"; then
+  # A run the team shares names its paths from the workspace root, so its punch list reads the same
+  # in every clone and carries no runner's own folders into Git.
+  TEMPLATE_WS="$WORKSPACE"
+  [ "$SHARED_RECEIPTS" -eq 0 ] || TEMPLATE_WS=.
+  if ! ns_owner_template "$PLAN_FILE" "$TEMPLATE_WS" "$TEMPLATE_WS/.nightshift/runs/$RUN" >"$TMP" 2>/dev/null || ! mv -f "$TMP" "$PUNCH"; then
     rm -f "$TMP"
     refuse "punch-list could not write $(ns_layout_name "$NS" punch-list)" "check that .nightshift/ is writable, then run this again"
   fi
@@ -166,9 +176,14 @@ phase preflight || refuse "preflight the run was not started" "fix what the pref
 phase snapshot || refuse "snapshot the run's shift policy could not be recorded" "run ns doctor, then run this again"
 phase worktree || refuse "worktree the run has no worktree" "fix what the worktree step named, then run this again"
 
-# unstage — the plan leaves staging, once the run holds everything it needs.
+# unstage — the plan leaves staging, once the run holds everything it needs. A plan the team shares
+# stays where teammates read and edit it.
 unstage() {
   [ "$STAGED" -eq 1 ] || return 0
+  if ns_site_shares "$WORKSPACE" plans; then
+    ok "plan $PLAN stays in $(ns_layout_name "$NS" plans) as the team's record; the run works from its own copy"
+    return 0
+  fi
   rm -f "$PLAN_FILE" || refuse "plan could not take $PLAN_FILE out of staging" "remove it by hand; the run already holds it"
   ok "plan $PLAN left staging"
 }

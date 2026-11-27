@@ -224,6 +224,19 @@ ns_plan_record_open() {
   ns_open_entries "$f" "$NS_PLAN_RECORD_CLOSED"
 }
 
+# ns_decision_threads_open <nightshift-dir> — `<file> · <first line>` for each open entry of the
+# decision threads, each thread a file of its own in the plan record's shape; nothing on a site that
+# keeps none. Teammates add threads side by side, so this list is read off the files, never kept.
+ns_decision_threads_open() {
+  local dir f
+  ns_layout_set dir "$1" decisions || return 0
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
+  for f in "$dir"/*.md; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    ns_open_entries "$f" "$NS_PLAN_RECORD_CLOSED" | sed "s|^|${f##*/} · |"
+  done
+}
+
 # ns_plan_room_exit_word <prompt> — `plan-exit` or `start` when the owner's prompt is an exit
 # command: its first word is /nightshift:plan-exit or /nightshift:start, or the same name after `$`,
 # the way Codex mentions a skill. Anything else, the same words mid-sentence included, is not.

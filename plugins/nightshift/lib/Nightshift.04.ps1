@@ -129,7 +129,132 @@ function Get-NSArchiveDir {
     $root = Get-NSArchiveRoot $Workspace
     if ($null -eq $root) { return $null }
     $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
-    return (Get-NSNamedDir -Root $root -Layout $layout -Date $Date -ShiftId $ShiftId -Name $Name)
+    # Filed shifts from teammates' clones meet in one Git history: on a site that shares its
+    # summaries, each folder carries the start of its shift's id, or a fresh tag for a shift with none.
+    $tag = ''
+    if (Test-NSSiteShares $Workspace 'summaries') {
+        if ([string]::IsNullOrEmpty($ShiftId) -or $ShiftId -ceq 'unknown') { $tag = New-NSShareTag }
+        else { $tag = $ShiftId.Substring(0, [Math]::Min(6, $ShiftId.Length)) }
+    }
+    return (Get-NSNamedDir -Root $root -Layout $layout -Date $Date -ShiftId $ShiftId -Name $Name -Tag $tag)
+}
+
+# The records a team can share through Git, in the order sharing.records lists them.
+$script:NSShareRecords = @('plans', 'decisions', 'rules', 'receipts', 'summaries')
+$script:NSShareBegin = '# >>> nightshift share: written by ns share from sharing.records in rules.json'
+$script:NSShareEnd = '# <<< nightshift share'
+
+# Get-NSShareValues <workspace> - every value of sharing.records, as written. Empty on a solo site.
+function Get-NSShareValues {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $file = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'rules'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return , @() }
+    try { $data = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
+    catch { return , @() }
+    $block = $data.PSObject.Properties['sharing']
+    if ($null -eq $block -or $null -eq $block.Value) { return , @() }
+    $field = $block.Value.PSObject.Properties['records']
+    if ($null -eq $field -or $null -eq $field.Value) { return , @() }
+    return , @($field.Value | ForEach-Object { [string]$_ })
+}
+
+# Get-NSSharedRecords <workspace> - each record sharing.records names, in the shipped order; empty
+# on a solo site. Mirrors ns_shared_records.
+function Get-NSSharedRecords {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $values = Get-NSShareValues $Workspace
+    return , @($script:NSShareRecords | Where-Object { $values -ccontains $_ })
+}
+
+# Get-NSShareRecordNames - every record a team can share, in the shipped order.
+function Get-NSShareRecordNames { return , @($script:NSShareRecords) }
+
+# Get-NSShareMarker [-End] - the line that opens, or with -End closes, the block ns share keeps in
+# .nightshift/.gitignore.
+function Get-NSShareMarker {
+    param([switch]$End)
+    if ($End) { return $script:NSShareEnd }
+    return $script:NSShareBegin
+}
+
+# Get-NSShareUnknown <workspace> - each value of sharing.records that names no record. Mirrors
+# ns_share_unknown.
+function Get-NSShareUnknown {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $values = Get-NSShareValues $Workspace
+    return , @($values | Where-Object { $_ -ne '' -and $script:NSShareRecords -cnotcontains $_ })
+}
+
+# Test-NSSiteShares <workspace> <record> - true when the site shares <record> through Git. Mirrors
+# ns_site_shares.
+function Test-NSSiteShares {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Record)
+    return ((Get-NSSharedRecords $Workspace) -ccontains $Record)
+}
+
+# New-NSShareTag - six random lowercase hex digits naming one run or filed shift on a shared site.
+# Mirrors ns_share_tag.
+function New-NSShareTag {
+    return [guid]::NewGuid().ToString('N').Substring(0, 6)
+}
+
+# Test-NSRunIsLocal <nightshift-dir> <run> - true when the run was worked in this clone: its private
+# run folder, which Git never carries, is present. Mirrors ns_run_is_local.
+function Test-NSRunIsLocal {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Run)
+    $rel = (Get-NSLayoutRelativePathAt 3 'shift-log') -replace '^runs/\*/', ''
+    $folder = $rel.Substring(0, $rel.LastIndexOf('/'))
+    return (Test-Path -LiteralPath ([IO.Path]::Combine($NightshiftDir, 'runs', $Run, $folder)) -PathType Container)
+}
+
+# Get-NSShareIgnoreBlock <workspace> - the lines ns share keeps in .nightshift/.gitignore: ignore
+# everything, then let Git see each shared record and nothing private inside it. Mirrors
+# ns_share_ignore_block.
+function Get-NSShareIgnoreBlock {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $ns = Join-Path $Workspace '.nightshift'
+    $plans = Get-NSLayoutRelativePathAt 3 'plans'
+    $decisions = Get-NSLayoutRelativePathAt 3 'decisions'
+    $rules = Get-NSLayoutRelativePathAt 3 'rules'
+    $punch = Get-NSLayoutRelativePathAt 3 'punch-list'
+    $receipts = Get-NSLayoutRelativePathAt 3 'receipts'
+    $inbox = Get-NSLayoutRelativePathAt 3 'inbox'
+    $messages = Get-NSLayoutRelativePathAt 3 'messages'
+    $archive = [string](Get-NSPolicyGroupSetting $Workspace 'archive.root')['value']
+    if ([string]::IsNullOrEmpty($archive)) { $archive = Get-NSLayoutRelativePath $ns 'archive' }
+    $shared = Get-NSSharedRecords $Workspace
+    $lines = New-Object Collections.Generic.List[string]
+    foreach ($line in @($script:NSShareBegin, '/*', '!/.gitignore', '!/state-version')) { $lines.Add($line) }
+    if ($shared -ccontains 'rules') { $lines.Add('!/' + $rules) }
+    if (($shared -ccontains 'plans') -or ($shared -ccontains 'decisions')) {
+        $staging = $plans.Substring(0, $plans.LastIndexOf('/'))
+        $lines.Add('!/' + $staging + '/')
+        $lines.Add('/' + $staging + '/*')
+        if ($shared -ccontains 'plans') { $lines.Add('!/' + $plans + '/') }
+        if ($shared -ccontains 'decisions') { $lines.Add('!/' + $decisions + '/') }
+    }
+    if ($shared -ccontains 'receipts') {
+        foreach ($line in @('!/runs/', '/runs/*/*', '!/runs/*/.shift-id', ('!/' + $punch), ('!/runs/*/' + $rules),
+                ('!/' + $receipts + '/'), ('/' + $receipts + '/*/'), ('!/' + $inbox + '/'), ('/' + $messages))) {
+            $lines.Add($line)
+        }
+    }
+    if ($shared -ccontains 'summaries') {
+        # An archive root a few folders down needs each folder above it let back in first.
+        $parts = $archive.Split('/')
+        for ($i = 1; $i -lt $parts.Count; $i++) {
+            $parent = ($parts[0..($i - 1)] -join '/')
+            $lines.Add('!/' + $parent + '/')
+            $lines.Add('/' + $parent + '/*')
+        }
+        foreach ($line in @(('!/' + $archive + '/'), ('/' + $archive + '/history-index.md'), ('/' + $archive + '/*/run/'),
+                ('/' + $archive + '/*/' + ($receipts -replace '^runs/\*/', '') + '/*/'),
+                ('/' + $archive + '/*/' + ($messages -replace '^runs/\*/', '')))) {
+            $lines.Add($line)
+        }
+    }
+    $lines.Add($script:NSShareEnd)
+    return , $lines.ToArray()
 }
 
 # Get-NSRunsLayout <workspace> - how a run folder is named: runs.layout in the rules file, one of the
@@ -169,7 +294,10 @@ function Get-NSRunDir {
     try { $null = New-Item -ItemType Directory -Path $root -Force -ErrorAction Stop }
     catch { return $null }
     if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
-    $dir = Get-NSNamedDir -Root $root -Layout (Get-NSRunsLayout $Workspace) -Date $Date -ShiftId $ShiftId -Name $Name
+    # Teammates' runs of the same plan meet in one Git history, so on a site that shares its receipts
+    # each run's folder carries a tag of its own.
+    $tag = $(if (Test-NSSiteShares $Workspace 'receipts') { New-NSShareTag } else { '' })
+    $dir = Get-NSNamedDir -Root $root -Layout (Get-NSRunsLayout $Workspace) -Date $Date -ShiftId $ShiftId -Name $Name -Tag $tag
     if ($null -eq $dir) { return $null }
     # The shift layout names the folder without claiming it; a run needs it to exist.
     if (-not (Test-Path -LiteralPath $dir) -and -not (Test-NSReparsePoint $dir)) {
@@ -205,8 +333,9 @@ function Get-NSNamedBase {
     return $Date
 }
 
-# Get-NSNamedDir <root> <layout> <date> <shift-id> [<name>] - the folder under <root> one shift gets,
-# by layout (date, shift, name or date-name), claimed for that shift as described above. Mirrors
+# Get-NSNamedDir <root> <layout> <date> <shift-id> [<name>] [<tag>] - the folder under <root> one
+# shift gets, by layout (date, shift, name or date-name), claimed for that shift as described above.
+# A tag ends the name, as in <slug>-<tag>, so folders claimed in different clones never meet. Mirrors
 # ns_named_dir.
 function Get-NSNamedDir {
     param(
@@ -214,7 +343,8 @@ function Get-NSNamedDir {
         [AllowEmptyString()][string]$Layout = '',
         [Parameter(Mandatory = $true)][string]$Date,
         [AllowEmptyString()][string]$ShiftId = '',
-        [AllowEmptyString()][string]$Name = ''
+        [AllowEmptyString()][string]$Name = '',
+        [AllowEmptyString()][string]$Tag = ''
     )
     $root = $Root
     $layout = $Layout
@@ -223,6 +353,7 @@ function Get-NSNamedDir {
         return (Join-Path $root ('shift-' + $ShiftId))
     }
     $base = Join-Path $root (Get-NSNamedBase -Layout $layout -Date $Date -ShiftId $ShiftId -Name $Name)
+    if ($Tag -cne '') { $base = $base + '-' + $Tag }
     $dir = $base
     $n = 1
     while ($true) {

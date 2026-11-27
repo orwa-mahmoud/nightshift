@@ -76,6 +76,9 @@
   "runs": {
     "layout": "name"
   },
+  "sharing": {
+    "records": []
+  },
   "receipts": {
     "enabled": true,
     "progressMode": "time",

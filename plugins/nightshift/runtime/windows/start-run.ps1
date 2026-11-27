@@ -11,7 +11,9 @@
   own (a run rules file holding shift.isolation, unless the run already has one), and the Start
   preflight, snapshot and worktree phases run for it. Only when every step has succeeded does the plan
   leave staging, so a failed step leaves the plan staged and the owner's checkout and index as they
-  were, and running this again finishes the run instead of making a second one.
+  were, and running this again finishes the run instead of making a second one. On a site that shares
+  its plans through Git the plan stays staged as the team's record and the run works from its own
+  copy; a teammate's run of the same plan, pulled through Git, is never taken over.
 
   Without -Background, Start continues in the conversation that asked, with NIGHTSHIFT_RUN set to the
   run printed here. With -Background, this arms the run, takes its lease for a hidden headless worker
@@ -90,12 +92,15 @@ if ($key.Length -eq 0) { Stop-Refused "plan $Plan has no letters or digits to na
 $planFile = Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md')
 $staged = (Test-Path -LiteralPath $planFile -PathType Leaf) -and -not (Test-NSReparsePoint $planFile)
 
-# The run a plan already went into is reused: its punch list carries the plan's title. Otherwise the
-# folder is claimed now, before anything is written, so a second start of the same plan finds it.
+# The run a plan already went into in this clone is reused: its punch list carries the plan's title.
+# Otherwise the folder is claimed now, before anything is written, so a second start of the same plan
+# finds it.
+$sharedReceipts = Test-NSSiteShares $workspace 'receipts'
 $run = ''
 foreach ($candidate in (Get-NSLayoutRuns $ns)) {
     $list = [IO.Path]::Combine($ns, 'runs', $candidate, 'punch-list.md')
     if (-not [IO.File]::Exists($list) -or (Test-NSReparsePoint $list)) { continue }
+    if ($sharedReceipts -and -not (Test-NSRunIsLocal $ns $candidate)) { continue }
     if ((Get-NSReceiptSlug (Get-NSShiftName $list)) -ceq $key) { $run = $candidate; break }
 }
 if ($run.Length -eq 0) {
@@ -128,7 +133,10 @@ if (Test-Path -LiteralPath $punch) {
 else {
     $tmp = $punch + '.tmp.' + $PID
     try {
-        $text = Get-NSOwnerTemplateText -Source $planFile -Workspace $workspace -RunDir ([IO.Path]::Combine($ns, 'runs', $run))
+        # A run the team shares names its paths from the workspace root, so its punch list reads the
+        # same in every clone and carries no runner's own folders into Git.
+        $text = $(if ($sharedReceipts) { Get-NSOwnerTemplateText -Source $planFile -Workspace '.' -RunDir ('./.nightshift/runs/' + $run) -Relative }
+            else { Get-NSOwnerTemplateText -Source $planFile -Workspace $workspace -RunDir ([IO.Path]::Combine($ns, 'runs', $run)) })
         $null = New-Item -ItemType Directory -Path (Split-Path -Parent $punch) -Force
         [IO.File]::WriteAllText($tmp, $text, $utf8)
         Move-Item -LiteralPath $tmp -Destination $punch -Force
@@ -155,9 +163,14 @@ if (-not (Invoke-NSRunPhase 'preflight')) { Stop-Refused 'preflight the run was 
 if (-not (Invoke-NSRunPhase 'snapshot')) { Stop-Refused "snapshot the run's shift policy could not be recorded" 'run ns doctor, then run this again' }
 if (-not (Invoke-NSRunPhase 'worktree')) { Stop-Refused 'worktree the run has no worktree' 'fix what the worktree step named, then run this again' }
 
-# The plan leaves staging once the run holds everything it needs.
+# The plan leaves staging once the run holds everything it needs. A plan the team shares stays where
+# teammates read and edit it.
 function Remove-NSStagedPlan {
     if (-not $staged) { return }
+    if (Test-NSSiteShares $workspace 'plans') {
+        Write-Verdict 'ok' ("plan $Plan stays in " + (Get-NSLayoutName $ns 'plans') + " as the team's record; the run works from its own copy")
+        return
+    }
     try { Remove-Item -LiteralPath $planFile -Force }
     catch { Stop-Refused "plan could not take $planFile out of staging" 'remove it by hand; the run already holds it' }
     Write-Verdict 'ok' "plan $Plan left staging"

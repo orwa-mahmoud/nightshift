@@ -1352,7 +1352,7 @@ function parse_top_value(key,    c) {
     }
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
         key == "receipts" || key == "planRoom" || key == "catalogs" || key == "gates" || key == "edgeCases" ||
-        key == "runs") {
+        key == "runs" || key == "sharing") {
       emit(key, "", "", "o", "")
       parse_settings_object(key, "")
       return

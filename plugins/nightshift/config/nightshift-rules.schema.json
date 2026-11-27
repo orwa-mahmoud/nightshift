@@ -433,6 +433,28 @@
         }
       }
     },
+    "sharing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Which project records the team shares through Git. ns share writes .nightshift/.gitignore to match; everything not listed, and every runner's private files, stays ignored.",
+      "properties": {
+        "records": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "plans",
+              "decisions",
+              "rules",
+              "receipts",
+              "summaries"
+            ]
+          },
+          "description": "plans: the plan files waiting in staging/plans. decisions: the planning decision threads in staging/decisions, one file each. rules: rules.json. receipts: each run's punch list, receipts, parking lot and snag log. summaries: the filed shifts under the archive root. Empty, the default, keeps the site private to its runner."
+        }
+      }
+    },
     "receipts": {
       "type": "object",
       "additionalProperties": false,

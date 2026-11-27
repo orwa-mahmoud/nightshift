@@ -48,7 +48,7 @@ fi
 # record — the plan record, created on first entry, every plan it holds open, and what waits for the
 # owner's review: entering resumes from both.
 record() {
-  local open plans
+  local open plans threads
   bash "$_here/scaffold.sh" --project "$WORKSPACE" plan-record >/dev/null 2>&1 \
     || printf 'plan-enter: could not create %s\n' "$(ns_layout_name "$NS" plan-record)" >&2
   printf 'plan record %s\n' "$(ns_layout_name "$NS" plan-record)"
@@ -58,6 +58,11 @@ record() {
   else
     printf 'open plan: none\n'
   fi
+  if ns_site_shares "$WORKSPACE" decisions; then
+    printf 'decision threads go in %s, one file each\n' "$(ns_layout_name "$NS" decisions)"
+  fi
+  threads="$(ns_decision_threads_open "$NS")"
+  [ -z "$threads" ] || printf '%s\n' "$threads" | sed 's/^/open thread: /'
   # The plan files waiting their turn, so the owner can continue one or start a new one.
   if ns_plans_dir "$NS" >/dev/null; then
     plans="$(ns_plan_list "$NS")"

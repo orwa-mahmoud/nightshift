@@ -11,8 +11,16 @@ Setup writes a `.nightshift/` folder in your workspace with the files every shif
 and **`rules.json`**, your one settings file. A file you already have is kept exactly as it is, so a
 second run is a safe repair.
 
-Run state stays out of your project's history. When `.nightshift/` sits inside a Git repository,
-Setup adds it to `.gitignore`.
+For a new project Setup recommends `.nightshift/` inside the repository, beside the code, and you
+can choose another folder instead. A parent folder outside every repository keeps the site private
+to your machine. An existing `.nightshift/` is used where it is.
+
+Your team can share its project records through Git: the plans, the planning decisions, the shared
+rules, each run's receipts and the filed shifts. You choose which on the defaults screen, and Setup
+writes `.nightshift/.gitignore` so Git sees those records and nothing private. Raw screenshots,
+private messages, STOP and each run's own runtime folder stay ignored. You decide when to stage,
+commit and push. Without sharing, run state stays out of your project's history: when
+`.nightshift/` sits inside a Git repository, Setup adds it to `.gitignore`.
 
 ## The questions
 
@@ -46,7 +54,8 @@ reply, such as "worktree yes, 6 hours, deny sudo".
 
 | Setting | Default | What it decides |
 | --- | --- | --- |
-| Receipts repo | no | A local-only Git repository inside `.nightshift/`, so every punch-list change has history. It is never pushed and never touches your project's history. |
+| Shared records | none | Which project records teammates see through Git: `plans`, `decisions`, `rules`, `receipts`, `summaries`. With `.nightshift/` inside the repository, Setup offers all five. |
+| Receipts repo | no | A local-only Git repository inside `.nightshift/`, so every punch-list change has history. It is never pushed and never touches your project's history. Not offered with shared records. |
 | Shift worktree | no | Each shift works in its own worktree and branch, so your checkout and uncommitted edits stay untouched. Setup proposes the install command to run in it, such as `npm ci`. |
 | Site inspection | hourly | How often the heavier checks run, such as coverage or dead-code scans. Shown only when you kept checks. |
 | Verification profile | `fast` | When the checks run: `fast` never, `balanced` once before clock-out, `strict` before every tick and at the end, `custom` on your own cadence. |

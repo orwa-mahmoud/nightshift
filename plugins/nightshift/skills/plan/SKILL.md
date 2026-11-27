@@ -166,6 +166,16 @@ one entry per plan, below the record's rule, in the shape its header shows:
   name the evidence and the earlier reason together.
 - When the owner sets a plan aside, append ` · dropped: <why>` to the entry's first line.
 
+**On a site that shares its decisions**, `plan-enter` prints `decision threads go in <folder>`.
+There each independent question gets a thread file of its own in that folder, named by the plan's
+key and the topic (the CSV export's separator question is export-csv-separator.md), holding one
+entry in the shape above under the plan record's header, instead of an entry in the plan record. Related questions and their answers stay in one thread; an
+unrelated question opens a new file, so teammates working on separate branches never edit the same
+file for different questions. Save a question to its thread the moment it is raised and an answer
+the moment it arrives, so a teammate who pulls sees it before the plan is approved. `plan-enter`
+lists every open thread from the files themselves (`open thread:`), so no index needs an edit. The
+plan's `Record:` line names its threads.
+
 ## 6. Draft as you go — each write on the owner's yes
 
 Planning is continuous. Draft an item as soon as the discussion settles it, and keep going to the

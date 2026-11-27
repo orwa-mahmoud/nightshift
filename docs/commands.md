@@ -58,6 +58,7 @@ Windows, `ns.ps1` takes the same verbs.
 | `ns link-workspace --host-root <path> --workspace <path>` | Points a task folder at the workspace that already holds `.nightshift/`. |
 | `ns export-support` | Writes a local support bundle, with known sensitive fields left out. Never uploaded. |
 | `ns archive-receipts [--run <name>]` | Files a finished shift's receipts into its archive folder. With several runs, files the run you name. |
+| `ns share [--apply]` | Shows the `.nightshift/.gitignore` block that lets Git see the records `sharing.records` names and nothing private; with `--apply`, writes it, takes out a `.nightshift/` line Setup wrote to the repository's `.gitignore`, and names any tracked file that is now private. Never stages or commits. |
 | `ns send-message --run <name> --text "<text>"` | Sends a running shift a question or an answer. Its worker sees it at its next tool call and replies in the run's messages file, which the command prints. Without `--text`, reads the message from stdin. |
 | `ns check-report --report <file> --manifest <file>` | Checks a cited research report against its source manifest. |
 
