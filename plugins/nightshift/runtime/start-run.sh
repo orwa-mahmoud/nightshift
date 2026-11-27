@@ -376,6 +376,20 @@ if ! PID="$(ns_start_background_worker "$NS" "$HOST_NAME" "$WORK" "$PROJECT_ENV"
   rm -f "$ARMED"
   refuse "worker the $HOST_NAME CLI could not be started headless" "check that $PROGRAM is installed and signed in, then run this again"
 fi
+# A worker that exits at once (a CLI stopped by a prompt it cannot answer headless, a missing sign-in)
+# never worked the run: say so with its own last words instead of reporting it started.
+SETTLE="${NIGHTSHIFT_WORKER_SETTLE_SECONDS:-$(ns_worker_settle_seconds)}"
+WAITED=0
+while [ "$WAITED" -lt "$SETTLE" ] && kill -0 "$PID" 2>/dev/null; do
+  sleep 1
+  WAITED=$((WAITED + 1))
+done
+if ! kill -0 "$PID" 2>/dev/null; then
+  rm -f "$ARMED"
+  LAST="$(grep -v '^[[:space:]]*$' "$OUT" 2>/dev/null | tail -n 4 | tr -s ' \n' ' ' | sed 's/ $//')"
+  refuse "worker the $HOST_NAME CLI exited at once: ${LAST:-it printed nothing}" \
+    "run $PROGRAM once in $WORK and settle what it asks, then run this again"
+fi
 printf '%s · shift started in the background (run %s, pid %s)\n' "$(ns_local_now second)" "$RUN" "$PID" >>"$(ns_layout_path "$NS" shift-log)"
 ok "worker started for $RUN (pid $PID)"
 record_start

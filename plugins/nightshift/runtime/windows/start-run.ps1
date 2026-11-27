@@ -365,6 +365,16 @@ if ($workerPid -le 0) {
     Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
     Stop-Refused "worker the $HostName CLI could not be started headless" ('check that ' + $worker.Name + ' is installed and signed in, then run this again')
 }
+# A worker that exits at once (a CLI stopped by a prompt it cannot answer headless, a missing sign-in)
+# never worked the run: say so instead of reporting it started. Mirrors start-run.sh.
+$settle = $(if ([string]$env:NIGHTSHIFT_WORKER_SETTLE_SECONDS -match '^[0-9]+$') { [int]$env:NIGHTSHIFT_WORKER_SETTLE_SECONDS } else { Get-NSWorkerSettleSeconds })
+for ($waited = 0; $waited -lt $settle -and $null -ne (Get-Process -Id $workerPid -ErrorAction SilentlyContinue); $waited++) {
+    Start-Sleep -Seconds 1
+}
+if ($null -eq (Get-Process -Id $workerPid -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
+    Stop-Refused "worker the $HostName CLI exited at once" ('run ' + $worker.Name + " once in $workTarget and settle what it asks, then run this again")
+}
 [IO.File]::AppendAllText((Get-NSLayoutPath $ns 'shift-log'), ('{0} - shift started in the background (run {1}, pid {2})' -f (Get-NSLocalNow -Seconds), $run, $workerPid) + [Environment]::NewLine, $utf8)
 Write-Verdict 'ok' "worker started for $run (pid $workerPid)"
 Add-NSRunStartRecord

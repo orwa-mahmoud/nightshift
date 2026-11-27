@@ -292,3 +292,21 @@ stop_run_processes() {
   [ -f "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
   [ ! -e "$w/.nightshift/staging/plans/dark-mode.md" ]
 }
+
+@test "a background worker that exits at once is reported with its own last words, and nothing stays armed" {
+  w="$(runs_site "worker exits")"
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  printf '#!/usr/bin/env bash\nprintf "Workspace Trust Required\\nPass --trust if you trust this directory\\n"\nexit 1\n' \
+    >"$BATS_TEST_TMPDIR/bin/untrusted-agent"
+  chmod +x "$BATS_TEST_TMPDIR/bin/untrusted-agent"
+  run env NIGHTSHIFT_WATCH_AGENT="$BATS_TEST_TMPDIR/bin/untrusted-agent" NIGHTSHIFT_WORKER_SETTLE_SECONDS=2 bash -c '
+    cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$1" \
+      bash "$2" --project "$1" --plan "Dark mode" --host claude --background' _ "$w" "$START_RUN" 3>&-
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qx 'refuse worker the claude CLI exited at once: Workspace Trust Required Pass --trust if you trust this directory' ||
+    { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -q '^repair run .*untrusted-agent once in .* and settle what it asks, then run this again$'
+  ! printf '%s\n' "$output" | grep -q '^ok worker started' || false
+  [ ! -e "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
+  [ ! -e "$w/.nightshift/runs/dark-mode/run/.watchman" ]
+}

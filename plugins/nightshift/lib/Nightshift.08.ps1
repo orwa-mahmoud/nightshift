@@ -678,3 +678,7 @@ function Get-NSMessageNotice {
     return ("The owner sent this shift a message in ${file}:`n`n$text`n`nAnswer each one once, by appending a `"" +
         $script:NSMessageWorker + "<time>`" block with your answer to that file (skip a message you already answered there), then carry on with the item.")
 }
+
+# Get-NSWorkerSettleSeconds - how long start-run watches a new background worker before calling it
+# started. Mirrors ns_worker_settle_seconds.
+function Get-NSWorkerSettleSeconds { return 5 }

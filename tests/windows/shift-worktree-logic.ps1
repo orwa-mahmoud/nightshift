@@ -240,6 +240,18 @@ try {
         Expect-True ([string]::IsNullOrEmpty((@(& git -C $linkedTree status --porcelain) -join ''))) 'git does not see the link as a change'
     }
 
+    # A worker that exits at once never worked the run: it is reported, and nothing stays armed.
+    # The launch needs powershell.exe, so this runs on Windows.
+    if ($null -ne (Get-Command powershell.exe -ErrorAction SilentlyContinue)) {
+        $quick = New-RunsSite (Join-Path $root 'quick exit')
+        $env:NIGHTSHIFT_WATCH_AGENT = 'cmd /c exit 1'
+        $env:NIGHTSHIFT_WORKER_SETTLE_SECONDS = '3'
+        try { $exited = Invoke-StartRun $quick 'Dark mode' -Background }
+        finally { $env:NIGHTSHIFT_WATCH_AGENT = $null; $env:NIGHTSHIFT_WORKER_SETTLE_SECONDS = $null }
+        Expect-True ($exited.ExitCode -eq 1 -and $exited.Text.Contains('refuse worker the claude CLI exited at once') -and -not $exited.Text.Contains('ok worker started')) "quick exit: $($exited.Text)"
+        Expect-True (-not (Test-Path -LiteralPath (Join-Path $quick '.nightshift/runs/dark-mode/run/.shift-armed'))) 'quick exit: nothing is armed'
+    }
+
     # Each host's headless launch, at the watchman's launch scope.
     $claude = Get-NSBackgroundWorkerCommand -Workspace $runs -HostName claude -Scope 'host-default' -Prompt 'go'
     Expect-True ($claude.Name -ceq 'claude' -and ($claude.Arguments -join ' ') -ceq '-p go') "claude launch: $($claude.Arguments -join ' ')"
