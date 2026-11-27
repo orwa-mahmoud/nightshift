@@ -992,9 +992,12 @@ ns_session_line() { # <ns-dir> <line>
 
 # Which host owns this shift. Absent means a record written before hosts were distinguished,
 # and every such record is Claude's — nothing else could have written one.
+# The host that owns the shift: the one its session record names, or, before any conversation has
+# recorded itself (a background worker that has not reached its first tool call), the lease's host.
 ns_session_host() {
   local h
   h="$(ns_session_line "$1" 5 | tr -d '[:space:]')"
+  [ -n "$h" ] || ! ns_lease_load "$1" || h="$NS_LEASE_HOST"
   printf '%s' "${h:-claude}"
 }
 

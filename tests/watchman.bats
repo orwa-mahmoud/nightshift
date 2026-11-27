@@ -1102,6 +1102,13 @@ reason() { sed -n 1p "$P/.nightshift/.watch-reason" | tr -d '[:space:]'; }
   [ "$(reason)" = "wrong-host" ]
 }
 
+@test "a run leased to another host before any session records itself is that host's" {
+  rm -f "$P/.nightshift/.shift-session"
+  printf '\ncodex\n1\ncodex.1.test\n\n\n' >"$P/.nightshift/.shift-lease"
+  run watch --agent "bash $BIN/tick.sh" --max-wakes 1
+  [ "$(reason)" = "wrong-host" ]
+}
+
 @test "a symlink shift-session does not record a foreign host" {
   printf 'sid\n/tmp/t.jsonl\n99999\nstart\ncodex\n' >"$P/.nightshift/session-plant"
   ln -s session-plant "$P/.nightshift/.shift-session"

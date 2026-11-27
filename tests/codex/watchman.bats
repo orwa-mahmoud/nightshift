@@ -233,6 +233,13 @@ reason() { sed -n 1p "$P/.nightshift/.watch-reason" | tr -d '[:space:]'; }
   [ "$(reason)" = "wrong-host" ]
 }
 
+@test "a run leased to Codex before its worker records a session is the Codex watchman's" {
+  rm -f "$P/.nightshift/.shift-session"
+  printf '\ncodex\n1\ncodex.1.test\n\n\n' >"$P/.nightshift/.shift-lease"
+  run watch --max-wakes 1
+  [ "$(reason)" != "wrong-host" ]
+}
+
 @test "a symlink shift-session is not a Codex-owned record" {
   printf 'dead-sid\n%s\n99999\nnever\ncodex\n' "$ROLLOUT" >"$P/.nightshift/session-plant"
   rm -f "$P/.nightshift/.shift-session"

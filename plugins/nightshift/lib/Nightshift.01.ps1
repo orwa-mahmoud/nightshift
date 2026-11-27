@@ -1976,6 +1976,18 @@ function Read-NSSession {
     }
 }
 
+# The host that owns the shift: the one its session record names, or, before any conversation has
+# recorded itself (a background worker that has not reached its first tool call), the lease's host.
+# Mirrors ns_session_host.
+function Get-NSShiftHost {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $session = Read-NSSession $NightshiftDir
+    if ($null -ne $session) { return [string]$session.HostName }
+    $lease = Read-NSLease $NightshiftDir
+    if ($null -ne $lease) { return [string]$lease.HostName }
+    return 'claude'
+}
+
 function Test-NSClaudeForeignCursorSurface {
     param(
         [Parameter(Mandatory = $true)][string]$NightshiftDir,

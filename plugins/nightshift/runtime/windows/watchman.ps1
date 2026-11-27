@@ -901,8 +901,7 @@ try {
             exit 0
         }
 
-        $session = Read-NSSession $ns
-        $sessionHost = if ($null -eq $session) { 'claude' } else { $session.HostName }
+        $sessionHost = Get-NSShiftHost $ns
         if ($sessionHost -ne $HostName) {
             Write-NSReason $ns 'wrong-host' $sessionHost
             Write-NSLogLine "watchman: shift belongs to $sessionHost - standing down"
