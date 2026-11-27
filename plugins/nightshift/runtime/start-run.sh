@@ -2,7 +2,13 @@
 # start-run.sh — start a named plan as a run of its own.
 #
 #   start-run.sh --project DIR --plan NAME --host claude|codex|cursor [--background] [--settings NAME]
-#                [--consent DIGEST]
+#                [--consent DIGEST] [--branch NAME]
+#
+# The branch a run works on follows the team's branches.start: a branch of its own per run (the
+# default), the member's current branch, or one the member chooses with --branch: the current one,
+# an existing work branch, or a new one made from branches.base. With `choose` and no --branch this
+# lists the choices and places nothing, so a headless run always starts with the choice made. Runs
+# on one branch go one after another; concurrent runs keep worktrees of their own.
 #
 # A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
 # gates or items, as team.reviewChanges names them, have not changed since an approver approved it.
@@ -48,6 +54,7 @@ BACKGROUND=0
 HOST_NAME=""
 SETTINGS=""
 CONSENT=""
+BRANCH_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)
@@ -77,6 +84,11 @@ while [ $# -gt 0 ]; do
     --consent)
       [ $# -ge 2 ] || { printf 'start-run: --consent needs a value\n' >&2; exit 2; }
       CONSENT="$2"
+      shift 2
+      ;;
+    --branch)
+      [ $# -ge 2 ] || { printf 'start-run: --branch needs a value\n' >&2; exit 2; }
+      BRANCH_ARG="$2"
       shift 2
       ;;
     -h | --help)
@@ -130,6 +142,37 @@ if [ -n "$SETTINGS" ]; then
     printf 'repair take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again\n'
     exit 1
   fi
+fi
+
+# ---------------------------------------------------------------- the run's branch
+# Settled before anything is placed, so a choice still to make leaves nothing behind.
+WANT_BRANCH="$BRANCH_ARG"
+if [ -n "$WANT_BRANCH" ]; then
+  git check-ref-format --branch "$WANT_BRANCH" >/dev/null 2>&1 ||
+    refuse "branch $WANT_BRANCH is not a branch name" "pass a branch name Git accepts"
+elif [ "$(ns_work_mode "$WORKSPACE" 2>/dev/null)" != artifact ]; then
+  BRANCH_RULE="$(ns_branch_rule "$WORKSPACE" start)"
+  case "$BRANCH_RULE" in
+    '' | per-run) ;;
+    current | choose)
+      OWNER_CHECKOUT="$(ns_owner_work_target "$WORKSPACE")" || refuse "branch the work target cannot be resolved" "run ns doctor, then run this again"
+      CURRENT_BRANCH="$(git -C "$OWNER_CHECKOUT" symbolic-ref --quiet --short HEAD 2>/dev/null)" || CURRENT_BRANCH=""
+      if [ "$BRANCH_RULE" = current ]; then
+        [ -n "$CURRENT_BRANCH" ] ||
+          refuse "branch the checkout is on no branch, and this team's runs work on the current one" "check out the work branch, then run this again"
+        WANT_BRANCH="$CURRENT_BRANCH"
+      else
+        printf 'refuse branch this team chooses the branch each run works on\n'
+        printf 'branch current %s\n' "${CURRENT_BRANCH:-none}"
+        git -C "$OWNER_CHECKOUT" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null |
+          grep -vxF -- "${CURRENT_BRANCH:-}" | sed 's/^/branch existing /'
+        printf 'branch base %s\n' "$(ns_branch_rule "$WORKSPACE" base | sed 's/^$/the checkout'"'"'s commit/')"
+        printf 'repair run this again with --branch <name>: the current branch, an existing one, or a new name made from the base\n'
+        exit 1
+      fi
+      ;;
+    *) refuse "branch branches.start is $BRANCH_RULE" "use per-run, current or choose" ;;
+  esac
 fi
 
 KEY="$(ns_receipt_slug "$PLAN")"
@@ -200,6 +243,21 @@ if [ -z "$RUN" ]; then
 fi
 export NIGHTSHIFT_RUN="$RUN"
 ok "run $RUN"
+
+# The branch this run works on, kept with the run's own runtime files; the worktree step reads it.
+if [ -n "$WANT_BRANCH" ]; then
+  RUN_BRANCH_FILE="$(ns_layout_path "$NS" run-branch)"
+  HAD_BRANCH=""
+  if [ -f "$RUN_BRANCH_FILE" ]; then IFS= read -r HAD_BRANCH <"$RUN_BRANCH_FILE" || HAD_BRANCH=""; fi
+  [ -z "$HAD_BRANCH" ] || [ "$HAD_BRANCH" = "$WANT_BRANCH" ] ||
+    refuse "branch run $RUN already works on $HAD_BRANCH" "start it again without --branch, or file that run with Archive first"
+  if [ -z "$HAD_BRANCH" ]; then
+    if ! mkdir -p "${RUN_BRANCH_FILE%/*}" || ! printf '%s\n' "$WANT_BRANCH" >"$RUN_BRANCH_FILE"; then
+      refuse "branch could not write $RUN_BRANCH_FILE" "check that .nightshift/ is writable, then run this again"
+    fi
+  fi
+  ok "branch $WANT_BRANCH"
+fi
 
 # The member settings this run uses, kept with the run's own runtime files: the choice is the
 # runner's, and every helper of the run reads it from there.

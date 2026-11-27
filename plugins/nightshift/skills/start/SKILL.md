@@ -110,6 +110,12 @@ command) and the consent that covers them. Show the runner those lines, and only
 again with `--consent <digest>`. Never pass a consent the runner did not give for these inputs; when
 the inputs change, the old consent is refused and they review the new ones.
 
+The branch a run works on follows the team's `branches.start`. With `choose`, `start-run` without
+`--branch` lists `branch current`, `branch existing` and `branch base` lines and places nothing: show
+the owner the choices and run it again with `--branch <name>`, the current branch, an existing work
+branch, or a new name made from the base. A plan run unattended needs its branch named up front. A
+second run on a branch waits until the first has ended, then continues its worktree.
+
 When the owner names their own settings for the run ("with my settings", "use bob's settings"),
 add `--settings <name>`: the run reads `settings/<name>.json` over the team's rules for that run
 alone. A file that changes anything the team keeps is refused with the settings it named; relay

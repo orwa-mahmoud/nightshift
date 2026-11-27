@@ -4,7 +4,13 @@
 
 .DESCRIPTION
     start-run.ps1 -Project DIR -Plan NAME -HostName claude|codex|cursor [-Background] [-Settings NAME]
-                  [-Consent DIGEST]
+                  [-Consent DIGEST] [-Branch NAME]
+
+  The branch a run works on follows the team's branches.start: a branch of its own per run (the
+  default), the member's current branch, or one the member chooses with -Branch: the current one, an
+  existing work branch, or a new one made from branches.base. With choose and no -Branch this lists
+  the choices and places nothing, so a headless run always starts with the choice made. Runs on one
+  branch go one after another; concurrent runs keep worktrees of their own.
 
   A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
   gates or items, as team.reviewChanges names them, have not changed since an approver approved it. On
@@ -43,7 +49,8 @@ param(
     [string]$HostName = '',
     [switch]$Background,
     [string]$Settings = '',
-    [string]$Consent = ''
+    [string]$Consent = '',
+    [string]$Branch = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -113,6 +120,39 @@ if ($Settings.Length -gt 0) {
     }
 }
 
+# ---------------------------------------------------------------- the run's branch
+# Settled before anything is placed, so a choice still to make leaves nothing behind.
+$wantBranch = $Branch
+if ($wantBranch.Length -gt 0) {
+    $valid = Invoke-NSGitCommand $workspace @('check-ref-format', '--branch', $wantBranch)
+    if ($valid.ExitCode -ne 0) { Stop-Refused "branch $wantBranch is not a branch name" 'pass a branch name Git accepts' }
+}
+elseif ((Get-NSWorkMode $workspace) -cne 'artifact') {
+    $branchRule = Get-NSBranchRule $workspace 'start'
+    if (@('', 'per-run') -cnotcontains $branchRule) {
+        if (@('current', 'choose') -cnotcontains $branchRule) { Stop-Refused "branch branches.start is $branchRule" 'use per-run, current or choose' }
+        $ownerCheckout = Resolve-NSOwnerWorkTarget $workspace
+        $currentBranch = [string](Invoke-NSGit $ownerCheckout @('symbolic-ref', '--quiet', '--short', 'HEAD'))
+        if ($branchRule -ceq 'current') {
+            if ($currentBranch.Length -eq 0) {
+                Stop-Refused "branch the checkout is on no branch, and this team's runs work on the current one" 'check out the work branch, then run this again'
+            }
+            $wantBranch = $currentBranch
+        }
+        else {
+            Write-Verdict 'refuse' 'branch this team chooses the branch each run works on'
+            Write-Verdict 'branch' ('current ' + $(if ($currentBranch.Length -gt 0) { $currentBranch } else { 'none' }))
+            foreach ($existing in @((Invoke-NSGitCommand $ownerCheckout @('for-each-ref', '--format=%(refname:short)', 'refs/heads')).Lines)) {
+                if ($existing -cne $currentBranch) { Write-Verdict 'branch' ('existing ' + $existing) }
+            }
+            $teamBase = Get-NSBranchRule $workspace 'base'
+            Write-Verdict 'branch' ('base ' + $(if ($teamBase.Length -gt 0) { $teamBase } else { "the checkout's commit" }))
+            Write-Verdict 'repair' 'run this again with --branch <name>: the current branch, an existing one, or a new name made from the base'
+            exit 1
+        }
+    }
+}
+
 $key = Get-NSReceiptSlug $Plan
 if ($key.Length -eq 0) { Stop-Refused "plan $Plan has no letters or digits to name it by" }
 $planFile = Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md')
@@ -173,6 +213,27 @@ if ($run.Length -eq 0) {
 }
 $env:NIGHTSHIFT_RUN = $run
 Write-Verdict 'ok' "run $run"
+
+# The branch this run works on, kept with the run's own runtime files; the worktree step reads it.
+if ($wantBranch.Length -gt 0) {
+    $runBranchFile = Get-NSLayoutPath $ns 'run-branch'
+    $hadBranch = ''
+    if ([IO.File]::Exists($runBranchFile)) {
+        $lines = @([IO.File]::ReadAllLines($runBranchFile))
+        if ($lines.Count -gt 0) { $hadBranch = $lines[0].TrimEnd("`r") }
+    }
+    if ($hadBranch.Length -gt 0 -and $hadBranch -cne $wantBranch) {
+        Stop-Refused "branch run $run already works on $hadBranch" 'start it again without -Branch, or file that run with Archive first'
+    }
+    if ($hadBranch.Length -eq 0) {
+        try {
+            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $runBranchFile) -Force
+            [IO.File]::WriteAllText($runBranchFile, $wantBranch + "`n", $utf8)
+        }
+        catch { Stop-Refused "branch could not write $runBranchFile" 'check that .nightshift/ is writable, then run this again' }
+    }
+    Write-Verdict 'ok' "branch $wantBranch"
+}
 
 # The member settings this run uses, kept with the run's own runtime files: the choice is the
 # runner's, and every helper of the run reads it from there.

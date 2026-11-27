@@ -364,8 +364,9 @@ You may stop only when every box is `- [x]`, or the owner issues a stop-work ord
 (`$NS/STOP`). If a shift must end mid-work, clock out orderly: a
 `wip:` commit in repository mode, or the item's receipt under `$NS/receipts/` marked in progress in
 artifact mode, plus one handover line in `$NS/run/shift-log.md`, then
-stop. History is append-only on shift — no `reset --hard`,
-`rebase`, `amend`, or force operations; the night's receipts must survive to morning.
+stop. History is append-only on shift — no `reset --hard`, `amend`, or force operations, and no
+`rebase` except to catch up with the base branch when the contract says so; the night's receipts
+must survive to morning.
 
 If `archive.automatic=true` in the resolved policy, the shift is filed before the session ends,
 and the order is the gate's, not yours to arrange:

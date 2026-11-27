@@ -481,6 +481,17 @@ line, since a record is only ever appended to.
 | `evidence` | `none` | Which raw evidence of a filed shift `ns promote-evidence` proposes for the team's history: `none`, `select` (you pick at filing) or `all`. You can change the choice at each filing; the originals stay private, and a receipt links to a promoted copy by relative path and names the rest as private evidence |
 | `records` | `[]` | Any of `plans` (the plan files in `staging/plans/`), `decisions` (the planning decision threads in `staging/decisions/`, one file each), `rules` (`rules.json`), `receipts` (each run's punch list, receipts, parking lot and snag log) and `summaries` (the filed shifts under the archive root). Empty keeps the site private to its runner. Raw evidence folders beside receipts, private messages, STOP, leases, watchman files and each run's `run/` folder are never shared. When `receipts` is shared, each run's folder ends in a tag of its own (`runs/export-csv-3f9a1c/`), and when `summaries` is, so does each filed shift's folder, so teammates' runs of the same plan never meet in Git. When `plans` is shared, a plan stays in `staging/plans/` after a run starts from it. A shared run's punch list names its paths from the workspace root (`./.nightshift/...`), so it carries no runner's own folders |
 
+`branches` holds the team's branch workflow.
+
+| Key | Default | Values |
+|---|---|---|
+| `base` | `""` | The branch new work branches start from, such as `develop`. Empty: the checkout's current commit |
+| `start` | `per-run` | `per-run` gives each run a `shift/<date>-<plan>` branch of its own; `current` runs on the member's current branch, in the checkout itself; `choose` asks for a branch with `start-run --branch <name>`: the current one, an existing work branch, or a new one made from `base`. A headless run needs the branch named |
+| `catchUp` | `merge` | How a work branch catches up with `base` before a pull request: `merge` or `rebase`. A new plan's contract says it, and the agent follows that line with your Git permissions |
+
+Runs on one branch go one after another: a second run on a branch continues the first run's
+worktree once that run has ended. Runs at the same time keep worktrees of their own.
+
 `team` holds the team's workflow rules. It is read only from the team's `rules.json`: neither a
 run's own rules file nor a member's settings file changes it.
 

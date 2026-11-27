@@ -2775,3 +2775,57 @@ function Write-NSArchiveReceiptsIndex {
             -Morning (Get-NSReceiptsMorningNames $Directory) -ShiftMap:(Test-NSShiftMapPage $Directory)), $utf8)
 }
 
+# ---------------------------------------------------------------- the team's branches
+
+# Get-NSBranchRule <workspace> <key> - branches.<key> from the team's rules, or ''. Mirrors
+# ns_branch_rule.
+function Get-NSBranchRule {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
+    $file = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'rules'
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return '' }
+    try { $data = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
+    catch { return '' }
+    $block = $data.PSObject.Properties['branches']
+    if ($null -eq $block -or -not ($block.Value -is [pscustomobject])) { return '' }
+    $field = $block.Value.PSObject.Properties[$Key]
+    if ($null -eq $field -or $null -eq $field.Value) { return '' }
+    return [string]$field.Value
+}
+
+# Get-NSBranchWorktree <checkout> <branch> - the path of the worktree that has <branch> checked out,
+# or ''. Mirrors ns_branch_worktree.
+function Get-NSBranchWorktree {
+    param([Parameter(Mandatory = $true)][string]$Checkout, [Parameter(Mandatory = $true)][string]$Branch)
+    $path = ''
+    foreach ($line in @((Invoke-NSGitCommand $Checkout @('worktree', 'list', '--porcelain')).Text -split "`n")) {
+        $line = $line.TrimEnd("`r")
+        if ($line.StartsWith('worktree ', [StringComparison]::Ordinal)) { $path = $line.Substring(9); continue }
+        if ($line -ceq ('branch refs/heads/' + $Branch)) { return $path }
+    }
+    return ''
+}
+
+# Get-NSWorktreeLiveRun <nightshift-dir> <path> - the run, other than the one in scope, whose worktree
+# record names <path> and that has not ended, or ''. Mirrors ns_worktree_live_run.
+function Get-NSWorktreeLiveRun {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Path)
+    # Git names a checkout's top folder one way, whatever spelling of the path reached it.
+    $want = [string](Invoke-NSGit $Path @('rev-parse', '--show-toplevel'))
+    if ($want.Length -eq 0) { return '' }
+    $self = Get-NSLayoutRun $NightshiftDir
+    $saved = $env:NIGHTSHIFT_RUN
+    try {
+        foreach ($run in (Get-NSLayoutRuns $NightshiftDir)) {
+            if ($run -ceq $self) { continue }
+            $env:NIGHTSHIFT_RUN = $run
+            $record = Get-NSLayoutPath $NightshiftDir 'shift-worktree'
+            if (-not [IO.File]::Exists($record) -or (Test-Path -LiteralPath (Get-NSLayoutPath $NightshiftDir 'ended'))) { continue }
+            $line = @([IO.File]::ReadAllLines($record) | Where-Object { $_.StartsWith('path=', [StringComparison]::Ordinal) })
+            if ($line.Count -eq 0) { continue }
+            $path = $line[0].Substring(5).TrimEnd("`r")
+            if ((Test-Path -LiteralPath $path -PathType Container) -and ([string](Invoke-NSGit $path @('rev-parse', '--show-toplevel'))) -ceq $want) { return $run }
+        }
+    }
+    finally { $env:NIGHTSHIFT_RUN = $saved }
+    return ''
+}

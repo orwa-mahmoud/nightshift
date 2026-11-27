@@ -464,6 +464,34 @@
         }
       }
     },
+    "branches": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The team's branch workflow: which branch a run works on, the base new work branches start from, and how a branch catches up with that base before a pull request.",
+      "properties": {
+        "base": {
+          "type": "string",
+          "description": "The branch new work branches start from, such as develop. Empty: the checkout's current commit."
+        },
+        "start": {
+          "type": "string",
+          "enum": [
+            "per-run",
+            "current",
+            "choose"
+          ],
+          "description": "per-run gives each run a branch of its own (the default); current runs on the member's current branch; choose asks the member for one with start-run --branch, and a headless run needs it named."
+        },
+        "catchUp": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "rebase"
+          ],
+          "description": "How a work branch catches up with the base before a pull request. A new plan's contract says it, and the agent follows that line under the member's own Git permissions."
+        }
+      }
+    },
     "team": {
       "type": "object",
       "additionalProperties": false,

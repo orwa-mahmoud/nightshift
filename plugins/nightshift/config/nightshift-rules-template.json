@@ -80,6 +80,11 @@
     "records": [],
     "evidence": "none"
   },
+  "branches": {
+    "base": "",
+    "start": "per-run",
+    "catchUp": "merge"
+  },
   "team": {
     "roles": {},
     "approvers": [],

@@ -186,7 +186,9 @@ with an idea is not. Nothing reaches the plan that the owner has not agreed to.
 
 Keep the plan's notes in a `## Plan` section just above `## Items`, written with its first item and
 kept current as the plan grows. Keep the contract and gates above it as the planning
-conversation settled them, and never touch another plan's file:
+conversation settled them, and never touch another plan's file. The contract's history line says how
+the branch catches up with its base before a pull request, a merge or a rebase as the team's
+`branches.catchUp` sets it; `plan-new` writes it, and only the owner changes it:
 
 ```text
 ## Plan

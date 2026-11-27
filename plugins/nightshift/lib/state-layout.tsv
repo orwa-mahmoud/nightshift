@@ -171,6 +171,7 @@ decisions	3	staging/decisions	dir
 plan-records	3	staging/records	dir
 settings	3	settings	dir
 member-settings	3	runs/*/run/member-settings	file
+run-branch	3	runs/*/run/branch	file
 pulse	0	.shift-pulse	file
 pulse	2	run/.shift-pulse	file
 pulse	3	runs/*/run/.shift-pulse	file

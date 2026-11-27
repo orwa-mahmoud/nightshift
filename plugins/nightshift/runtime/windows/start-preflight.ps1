@@ -243,36 +243,114 @@ if ($Phase -eq 'worktree') {
         Write-Ok ("worktree $kept branch " + (Get-NSShiftWorktreeField $workspace 'branch') + " - this shift's worktree, kept")
         exit 0
     }
+    $record = Get-NSLayoutPath $ns 'shift-worktree'
+    # Save-Worktree <path> <branch> <base> - the run's work target from now on.
+    function Save-Worktree {
+        param([string]$Path, [string]$Branch, [string]$Base)
+        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $record) -Force
+        $null = Write-NSAtomicLines -Path $record -Lines @("path=$Path", "branch=$Branch", "base=$Base", "checkout=$checkout", "shift=$shiftId")
+    }
     $root = [string](Get-NSPolicyGroupSetting $workspace 'shift.worktreeRoot')['value']
     if ($root.Length -eq 0) { $root = '.nightshift/worktrees' }
     if (-not [IO.Path]::IsPathRooted($root)) { $root = Join-Path $workspace $root }
     $worktree = Join-Path $root $shiftId
-    $name = (Get-NSShiftName (Get-NSLayoutPath $ns 'punch-list')).ToLowerInvariant() -creplace '[^a-z0-9]+', '-'
-    $name = $name.Trim('-')
-    if ($name.Length -gt 40) { $name = $name.Substring(0, 40) }
-    if ($name.Length -eq 0) { $name = $shiftId.Substring(0, [Math]::Min(8, $shiftId.Length)) }
-    $branch = 'shift/' + (Get-Date -Format 'yyyy-MM-dd') + '-' + $name
-    $branchExists = (Invoke-NSGitCommand $checkout @('show-ref', '--verify', '--quiet', "refs/heads/$branch")).ExitCode -eq 0
-    if ($branchExists -or (Test-Path -LiteralPath $worktree)) {
-        Write-Refuse "worktree $branch or $worktree already exists"
-        Write-Repair 'merge or remove that branch and folder, or name the shift differently, then run Start again'
-        exit 1
+    # A run that names its branch works on it: in the checkout itself when the checkout is on it, in
+    # the worktree that already holds it once no other run works there, or in a new worktree of it,
+    # made from the team's base branch when the branch does not exist yet. Mirrors start-preflight.sh.
+    $chosen = ''
+    if (Test-NSLayoutKey $ns 'run-branch') {
+        $branchRecord = Get-NSLayoutPath $ns 'run-branch'
+        if ([IO.File]::Exists($branchRecord)) {
+            $lines = @([IO.File]::ReadAllLines($branchRecord))
+            if ($lines.Count -gt 0) { $chosen = $lines[0].TrimEnd("`r") }
+        }
+    }
+    $newBranch = $true
+    if ($chosen.Length -gt 0) {
+        $branch = $chosen
+        if ((Invoke-NSGit $checkout @('symbolic-ref', '--quiet', '--short', 'HEAD')) -ceq $branch) {
+            Write-Ok "worktree none - the run works on $branch in the checkout itself"
+            exit 0
+        }
+        $held = Get-NSBranchWorktree $checkout $branch
+        if ($held.Length -gt 0) {
+            $busy = Get-NSWorktreeLiveRun $ns $held
+            if ($busy.Length -gt 0) {
+                Write-Refuse "worktree $branch is in use by run $busy"
+                Write-Repair "runs on one branch go one after another: let $busy finish, then run Start again"
+                exit 1
+            }
+            if ($DryRun) {
+                Write-Ok "worktree dry-run - would continue $held on $branch"
+                exit 0
+            }
+            try { Save-Worktree $held $branch ([string](Invoke-NSGit $held @('rev-parse', 'HEAD'))) }
+            catch {
+                Write-Refuse "worktree could not record $held"
+                Write-Repair 'check that .nightshift/ is writable, then run Start again'
+                exit 1
+            }
+            Write-Ok "worktree $held branch $branch - the run continues the branch's worktree"
+            exit 0
+        }
+        if ((Invoke-NSGitCommand $checkout @('show-ref', '--verify', '--quiet', "refs/heads/$branch")).ExitCode -eq 0) {
+            $newBranch = $false
+            $base = Invoke-NSGit $checkout @('rev-parse', "refs/heads/$branch")
+        }
+        else {
+            $teamBase = Get-NSBranchRule $workspace 'base'
+            if ($teamBase.Length -eq 0) { $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD') }
+            else {
+                $base = ''
+                foreach ($ref in @("refs/heads/$teamBase", "refs/remotes/origin/$teamBase")) {
+                    $found = Invoke-NSGitCommand $checkout @('rev-parse', '--verify', '--quiet', ($ref + '^{commit}'))
+                    if ($found.ExitCode -eq 0) { $base = ([string]$found.Text).Trim(); break }
+                }
+                if ($base.Length -eq 0) {
+                    Write-Refuse "worktree the team's base branch $teamBase is not in this clone"
+                    Write-Repair "fetch $teamBase from the team's remote, then run Start again"
+                    exit 1
+                }
+            }
+        }
+        if (Test-Path -LiteralPath $worktree) {
+            Write-Refuse "worktree $worktree already exists"
+            Write-Repair 'remove that folder, then run Start again'
+            exit 1
+        }
+    }
+    else {
+        $name = (Get-NSShiftName (Get-NSLayoutPath $ns 'punch-list')).ToLowerInvariant() -creplace '[^a-z0-9]+', '-'
+        $name = $name.Trim('-')
+        if ($name.Length -gt 40) { $name = $name.Substring(0, 40) }
+        if ($name.Length -eq 0) { $name = $shiftId.Substring(0, [Math]::Min(8, $shiftId.Length)) }
+        $branch = 'shift/' + (Get-Date -Format 'yyyy-MM-dd') + '-' + $name
+        $branchExists = (Invoke-NSGitCommand $checkout @('show-ref', '--verify', '--quiet', "refs/heads/$branch")).ExitCode -eq 0
+        if ($branchExists -or (Test-Path -LiteralPath $worktree)) {
+            Write-Refuse "worktree $branch or $worktree already exists"
+            Write-Repair 'merge or remove that branch and folder, or name the shift differently, then run Start again'
+            exit 1
+        }
+        $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD')
     }
     if ($DryRun) {
         Write-Ok "worktree dry-run - would add $worktree on $branch"
         exit 0
     }
-    $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD')
     $null = New-Item -ItemType Directory -Path $root -Force
-    if ((Invoke-NSGitCommand $checkout @('worktree', 'add', '-q', '-b', $branch, $worktree, [string]$base)).ExitCode -ne 0) {
-        Write-Refuse "worktree git could not add $worktree on $branch from $checkout"
+    $addArgs = $(if ($newBranch) { @('worktree', 'add', '-q', '-b', $branch, $worktree, [string]$base) } else { @('worktree', 'add', '-q', $worktree, $branch) })
+    $added = Invoke-NSGitCommand $checkout $addArgs
+    if ($added.ExitCode -ne 0) {
+        $tail = @(([string]$added.Text) -split "`n" | Where-Object { $_.Trim().Length -gt 0 }) | Select-Object -Last 1
+        Write-Refuse "worktree git could not add $worktree on $branch from ${checkout}: $tail"
         Write-Repair "check that $checkout has a commit and that git worktree add works there, then run Start again"
         exit 1
     }
-    # Undo-Worktree - take back the worktree and branch this phase made; they hold no work yet.
+    # Undo-Worktree - take back the worktree this phase made, and the branch when it made that too;
+    # neither holds work yet.
     function Undo-Worktree {
         $null = Invoke-NSGitCommand $checkout @('worktree', 'remove', '--force', $worktree)
-        $null = Invoke-NSGitCommand $checkout @('branch', '-D', $branch)
+        if ($newBranch) { $null = Invoke-NSGitCommand $checkout @('branch', '-D', $branch) }
     }
     foreach ($entry in @((Get-NSPolicyGroupSetting $workspace 'shift.copyIn')['value'])) {
         $entry = [string]$entry
@@ -318,11 +396,7 @@ if ($Phase -eq 'worktree') {
             exit 1
         }
     }
-    $record = Get-NSLayoutPath $ns 'shift-worktree'
-    try {
-        $null = New-Item -ItemType Directory -Path (Split-Path -Parent $record) -Force
-        $null = Write-NSAtomicLines -Path $record -Lines @("path=$worktree", "branch=$branch", "base=$base", "checkout=$checkout", "shift=$shiftId")
-    }
+    try { Save-Worktree $worktree $branch ([string]$base) }
     catch {
         Undo-Worktree
         Write-Refuse "worktree could not record $worktree"
