@@ -18,6 +18,49 @@ doctor() {
   bash "$DOCTOR" --project "$1"
 }
 
+# Cases that read different lines of the same site's report share one Doctor run, made here.
+setup_file() {
+  local BATS_TEST_TMPDIR="$BATS_FILE_TMPDIR" p
+  # A healthy armed site with one open item and one evidence finding.
+  p="$(new_project healthy)"
+  punch_open "$p"
+  mkdir -p "$p/.nightshift/evidence"
+  printf '{"schemaVersion":1,"id":"f1","domain":"test","severity":"low","confidence":"medium","impact":"local","status":"open","ladder":"declared","locator":"x","source":"fixture","sourceClass":"test","host":"local"}\n' \
+    >"$p/.nightshift/evidence/findings.jsonl"
+  shared_doctor healthy "$p"
+  # An armed site where every runtime marker path is a planted symlink.
+  p="$(new_project planted)"
+  punch_open "$p"
+  echo $(($(date +%s) - 60)) >"$p/.nightshift/deadline-plant"
+  ln -s deadline-plant "$p/.nightshift/deadline"
+  : >"$p/.nightshift/ended-plant"
+  ln -s ended-plant "$p/.nightshift/.ended"
+  printf 'fp\n99\n' >"$p/.nightshift/stall-plant"
+  ln -s stall-plant "$p/.nightshift/.stall"
+  : >"$p/.nightshift/session-end-plant"
+  ln -s session-end-plant "$p/.nightshift/.session-end"
+  : >"$p/.nightshift/pulse-plant"
+  ln -s pulse-plant "$p/.nightshift/.shift-pulse"
+  printf 'planted-sid\n/tmp/planted.jsonl\n99999\nstart\nplanted-host\n' >"$p/.nightshift/session-plant"
+  ln -s session-plant "$p/.nightshift/.shift-session"
+  printf '%s\n' "$$" >"$p/.nightshift/watchman-plant"
+  ln -s watchman-plant "$p/.nightshift/.watchman"
+  shared_doctor planted "$p"
+}
+
+# shared_doctor <name> <project> — run Doctor once and keep its output and status for the cases.
+shared_doctor() {
+  local rc=0
+  bash "$DOCTOR" --project "$2" >"$BATS_FILE_TMPDIR/$1.out" 2>&1 || rc=$?
+  printf '%s\n' "$rc" >"$BATS_FILE_TMPDIR/$1.status"
+}
+
+# shared <name> — load a shared run into $output and $status, as `run doctor` would set them.
+shared() {
+  output="$(cat "$BATS_FILE_TMPDIR/$1.out")"
+  status="$(cat "$BATS_FILE_TMPDIR/$1.status")"
+}
+
 @test "Doctor is executable and both hosts discover the skill" {
   [ -x "$DOCTOR" ]
   [ -f "$SKILL" ]
@@ -52,9 +95,7 @@ doctor() {
 }
 
 @test "a healthy armed site reports facts and never repairs" {
-  p="$(new_project)"
-  punch_open "$p"
-  run doctor "$p"
+  shared healthy
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -q 'Nightshift Doctor'
   printf '%s' "$output" | grep -q 'shift is armed'
@@ -253,12 +294,12 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "an armed shift with open work whose watchman is gone or stale is a warning, unless it was switched off" {
-  p="$(new_project)"
-  punch_open "$p"
-  run doctor "$p"
+  shared healthy
   printf '%s' "$output" | grep -qF 'shift is armed with open boxes and no watchman'
   printf '%s' "$output" | grep -qF 'watchman.log'
   # A dead watchman leaves its pid file behind; that is the same gap, not a fact to read past.
+  p="$(new_project)"
+  punch_open "$p"
   printf '99999\n' >"$p/.nightshift/.watchman"
   run doctor "$p"
   printf '%s' "$output" | grep -q 'watchman pid 99999 is stale'
@@ -287,9 +328,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor reports a missing deadline as none" {
-  p="$(new_project)"
-  punch_open "$p"
-  run doctor "$p"
+  shared healthy
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'deadline=none'
 }
@@ -330,11 +369,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor warns when the deadline path is a symlink" {
-  p="$(new_project)"
-  punch_open "$p"
-  echo $(($(date +%s) - 60)) >"$p/.nightshift/deadline-plant"
-  ln -s deadline-plant "$p/.nightshift/deadline"
-  run doctor "$p"
+  shared planted
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'deadline path is not a usable file'
   if printf '%s' "$output" | grep -q 'deadline=none'; then
@@ -348,11 +383,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor warns when the ended path is a symlink" {
-  p="$(new_project)"
-  punch_open "$p"
-  : >"$p/.nightshift/ended-plant"
-  ln -s ended-plant "$p/.nightshift/.ended"
-  run doctor "$p"
+  shared planted
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'ended path is not a usable file'
   if printf '%s' "$output" | grep -qF 'gate has clocked the shift out'; then
@@ -363,11 +394,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor warns when the stall path is a symlink" {
-  p="$(new_project)"
-  punch_open "$p"
-  printf 'fp\n99\n' >"$p/.nightshift/stall-plant"
-  ln -s stall-plant "$p/.nightshift/.stall"
-  run doctor "$p"
+  shared planted
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'stall path is not a usable file'
   if printf '%s' "$output" | grep -qF 'stall count'; then
@@ -378,11 +405,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor warns when the session-end path is a symlink" {
-  p="$(new_project)"
-  punch_open "$p"
-  : >"$p/.nightshift/session-end-plant"
-  ln -s session-end-plant "$p/.nightshift/.session-end"
-  run doctor "$p"
+  shared planted
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'session-end path is not a usable file'
   if printf '%s' "$output" | grep -qF 'clean session-end marker is present'; then
@@ -393,11 +416,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor warns when the shift-pulse path is a symlink" {
-  p="$(new_project)"
-  punch_open "$p"
-  : >"$p/.nightshift/pulse-plant"
-  ln -s pulse-plant "$p/.nightshift/.shift-pulse"
-  run doctor "$p"
+  shared planted
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'shift-pulse path is not a usable file'
   if printf '%s' "$output" | grep -qF 'shift-pulse marker is present'; then
@@ -408,11 +427,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor warns when the shift-session path is a symlink" {
-  p="$(new_project)"
-  punch_open "$p"
-  printf 'planted-sid\n/tmp/planted.jsonl\n99999\nstart\nplanted-host\n' >"$p/.nightshift/session-plant"
-  ln -s session-plant "$p/.nightshift/.shift-session"
-  run doctor "$p"
+  shared planted
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'shift-session path is not a usable file'
   if printf '%s' "$output" | grep -qF 'recorded host planted-host'; then
@@ -429,11 +444,7 @@ with open(p,"w") as f: json.dump(d,f)
 }
 
 @test "Doctor warns when the watchman pidfile path is a symlink" {
-  p="$(new_project)"
-  punch_open "$p"
-  printf '%s\n' "$$" >"$p/.nightshift/watchman-plant"
-  ln -s watchman-plant "$p/.nightshift/.watchman"
-  run doctor "$p"
+  shared planted
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'watchman pidfile path is not a usable file'
   if printf '%s' "$output" | grep -qF 'no live watchman pid file'; then
@@ -645,11 +656,7 @@ EOF
 }
 
 @test "Doctor reports evidence counts and lifecycle facts" {
-  p="$(new_project doc-evidence)"
-  mkdir -p "$p/.nightshift/evidence"
-  printf '{"schemaVersion":1,"id":"f1","domain":"test","severity":"low","confidence":"medium","impact":"local","status":"open","ladder":"declared","locator":"x","source":"fixture","sourceClass":"test","host":"local"}\n' \
-    >"$p/.nightshift/evidence/findings.jsonl"
-  run doctor "$p"
+  shared healthy
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -qF 'evidence findings=1'
   printf '%s' "$output" | grep -qF 'last checkpoint none'
@@ -657,9 +664,7 @@ EOF
 }
 
 @test "Doctor prints the resolved policy block between Facts and Warnings" {
-  p="$(new_project)"
-  punch_open "$p"
-  run doctor "$p"
+  shared healthy
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -q 'resolved policy'
   printf '%s' "$output" | grep -qF 'verificationLevel=none (built-in, -)'
