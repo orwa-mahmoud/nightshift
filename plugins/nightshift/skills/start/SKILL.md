@@ -101,10 +101,8 @@ prints that the run works from its own copy; teammates keep reading and editing 
 run works. A teammate's run of the same plan, pulled through Git, is never taken over: each runner's
 run has its own folder.
 
-A team whose rules name approvers runs only an approved revision: `start-run` refuses a proposed
-plan with what changed and who approved the revision before; relay it and stop. When the plan came
-from teammates, show the runner what the run will execute before starting it, and wait for their
-yes: the plan's gate commands, the effective `shift.prepare` and verification profile
+When the plan came from teammates, show the runner what the run will execute before starting it,
+and wait for their yes: the plan's gate commands, the effective `shift.prepare` and verification profile
 (`ns shift-policy resolve --table`), and whether `baselineGates` runs the gates before arming.
 
 The branch is the runner's to name. When the owner has not said, ask which branch the run works on:
@@ -114,8 +112,8 @@ waits until the first has ended, then continues its worktree.
 
 When the owner names their own settings for the run ("with my settings", "use bob's settings"),
 add `--settings <name>`: the run reads `settings/<name>.json` over the team's rules for that run
-alone. A file that changes anything the team keeps is refused with the settings it named; relay
-those lines and stop.
+alone. A file that is missing or cannot be read is refused with the reason; relay those lines and
+stop.
 
 When the owner asks for the plan to run **in the background** ("start it in the background", "run it
 on its own"), add `--background` and stop after relaying its lines: it arms the run, starts a

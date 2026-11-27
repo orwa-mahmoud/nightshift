@@ -728,7 +728,7 @@ if ($null -ne $rules -and (Test-NSLayoutKey $ns 'member-settings')) {
         if ($memberProblems.Count -gt 0) {
             Write-Refuse "settings $memberName cannot be used for this run"
             foreach ($problem in $memberProblems) { Write-Verdict "explain $problem" }
-            Write-Repair "keep team settings in the team's rules.json and fix settings/$memberName.json"
+            Write-Repair "fix settings/$memberName.json"
         }
         else { Write-Ok "settings settings/$memberName.json over the team's rules.json" }
     }

@@ -41,10 +41,10 @@ function Invoke-Helper {
 function Invoke-Record { param([string]$Site, [string[]]$Arguments) return (Invoke-Helper 'plan-record.ps1' (@('-Project', $Site, '-Plan', 'Export CSV') + $Arguments)) }
 function Invoke-Start { param([string]$Site, [string[]]$Arguments) return (Invoke-Helper 'start-run.ps1' (@('-Project', $Site, '-Plan', 'Export CSV', '-HostName', 'claude') + $Arguments)) }
 
-# New-Site <path> <records> <team> - a site inside its repository with one plan, shared through Git
-# when <records> names any; the hashtable sets team keys. The runner's Git name is Carol.
+# New-Site <path> <records> - a site inside its repository with one plan, shared through Git when
+# <records> names any. The runner's Git name is Carol.
 function New-Site {
-    param([string]$Path, [string[]]$Records, [hashtable]$Team, [hashtable]$Top = @{})
+    param([string]$Path, [string[]]$Records, [hashtable]$Top = @{})
     $ns = Join-Path $Path '.nightshift'
     foreach ($d in @('run', 'runs', 'staging/plans')) { $null = New-Item -ItemType Directory -Path (Join-Path $ns $d) -Force }
     $null = & git -C $Path init -q
@@ -53,7 +53,6 @@ function New-Site {
     $null = & git -C $Path commit -q --allow-empty -m init
     Write-Text (Join-Path $ns 'state-version') "3`n"
     $rules = Get-Content -Raw -LiteralPath $rulesTemplate | ConvertFrom-Json
-    foreach ($k in $Team.Keys) { $rules.team.$k = $Team[$k] }
     foreach ($k in $Top.Keys) { $rules | Add-Member -NotePropertyName $k -NotePropertyValue $Top[$k] -Force }
     Write-Text (Join-Path $ns 'rules.json') ($rules | ConvertTo-Json -Depth 20)
     if ($Records.Count -gt 0) {
@@ -69,32 +68,33 @@ $root = Join-Path ([IO.Path]::GetTempPath()) ('ns-approvals-' + [guid]::NewGuid(
 $null = New-Item -ItemType Directory -Path $root -Force
 try {
     # Solo: the owner proposes and approves under their own name; an older line reads as unknown.
-    $w = New-Site (Join-Path $root 'solo') @() @{}
+    $w = New-Site (Join-Path $root 'solo') @()
     $proposed = Invoke-Record $w @('-Action', 'proposed')
     $revision = Get-NSPlanRevision (Join-Path $w '.nightshift/staging/plans/export-csv.md')
     Expect-True ($proposed.ExitCode -eq 0 -and $proposed.Text -ceq "ok record proposed by Carol at revision $revision") "solo: $($proposed.Text)"
     $null = Invoke-Record $w @('-Action', 'approved')
     [IO.File]::AppendAllText((Join-Path $w '.nightshift/staging/records/export-csv.md'), "- approved $dot 2026-11-01 09:00 (UTC+04:00) $dot revision aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc`n", $utf8)
     $status = Invoke-Record $w @()
-    $expected = @("revision $revision", 'approval not-required', 'state approved', "approved-by Carol $revision",
+    $expected = @("revision $revision",
         "record proposed by Carol at $revision", "record approved by Carol at $revision", 'record approved by unknown at aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc')
     Expect-True (($status.Lines -join '|') -ceq ($expected -join '|')) "solo: status: $($status.Text)"
     $started = Invoke-Start $w @()
     Expect-True ($started.ExitCode -eq 0 -and ($started.Lines -ccontains 'ok record started by Carol')) "solo: start: $($started.Text)"
 
-    # Developer and lead: only the lead's approval runs; a gate change returns the plan to proposed.
-    $w = New-Site (Join-Path $root 'leads') @('plans', 'rules') @{ roles = [pscustomobject]@{ Alice = 'lead'; Bob = 'developer' }; approvers = @('lead') }
+    # Team: an approval is a record line anyone may write; a changed plan is a new revision and starts.
+    $w = New-Site (Join-Path $root 'team') @('plans', 'rules')
     $null = Invoke-Record $w @('-Action', 'proposed', '-By', 'Bob')
     $revision = Get-NSPlanRevision (Join-Path $w '.nightshift/staging/plans/export-csv.md')
-    $refused = Invoke-Start $w @()
-    Expect-True ($refused.ExitCode -eq 1 -and ($refused.Lines -ccontains "refuse approval Export CSV revision $revision is proposed: no approver has approved it")) "leads: unapproved: $($refused.Text)"
-    $bob = Invoke-Record $w @('-Action', 'approved', '-By', 'Bob')
-    Expect-True ($bob.ExitCode -eq 1 -and ($bob.Lines -ccontains "refuse approve Bob (developer) may not approve this plan; the team's approvers are lead")) "leads: bob: $($bob.Text)"
-    $null = Invoke-Record $w @('-Action', 'approved', '-By', 'Alice')
+    $alice = Invoke-Record $w @('-Action', 'approved', '-By', 'Alice')
+    Expect-True ($alice.ExitCode -eq 0 -and $alice.Text -ceq "ok record approved by Alice at revision $revision") "team: approve: $($alice.Text)"
     $plan = Join-Path $w '.nightshift/staging/plans/export-csv.md'
     Write-Text $plan ([IO.File]::ReadAllText($plan).Replace('- `true`', '- `make test`'))
-    $stale = Invoke-Start $w @()
-    Expect-True ($stale.ExitCode -eq 1 -and $stale.Text.Contains("refuse approval Export CSV changed its gates since Alice approved revision $revision, so revision ")) "leads: stale: $($stale.Text)"
+    $newRevision = Get-NSPlanRevision $plan
+    $status = Invoke-Record $w @()
+    $expected = @("revision $newRevision", "record proposed by Bob at $revision", "record approved by Alice at $revision")
+    Expect-True (($status.Lines -join '|') -ceq ($expected -join '|')) "team: status: $($status.Text)"
+    $started = Invoke-Start $w @()
+    Expect-True ($started.ExitCode -eq 0 -and ($started.Lines -ccontains 'ok record started by Carol')) "team: start: $($started.Text)"
 }
 finally {
     Set-Location ([IO.Path]::GetTempPath())

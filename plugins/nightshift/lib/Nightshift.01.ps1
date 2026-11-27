@@ -1216,20 +1216,6 @@ function Merge-NSRulesObject {
     return $Shared
 }
 
-# The groups only the team's rules.json sets: a run's or a member's file never changes them. Mirrors
-# NS_RULES_TEAM_GROUPS.
-$script:NSRulesTeamGroups = @('team')
-
-# Remove-NSRulesTeamGroups <object> - the object without the team's own groups. Mirrors
-# _ns_rules_drop_team.
-function Remove-NSRulesTeamGroups {
-    param($Object)
-    foreach ($name in $script:NSRulesTeamGroups) {
-        if ($null -ne $Object.PSObject.Properties[$name]) { $Object.PSObject.Properties.Remove($name) }
-    }
-    return $Object
-}
-
 # Get-NSMemberSettingsPath <nightshift-dir> - the member settings file the run this caller works on
 # selected, '' when it selected none. Throws when the selection names a file that is not there.
 # Mirrors _ns_rules_member_file.
@@ -1268,10 +1254,7 @@ function Get-NSMemberSettingsProblems {
     }
     try { $member = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
     catch { $out.Add("settings/$Name.json: " + $_.Exception.Message); return , $out.ToArray() }
-    if (-not ($member -is [pscustomobject])) { $out.Add("settings/$Name.json: not a JSON object"); return , $out.ToArray() }
-    foreach ($group in $script:NSRulesTeamGroups) {
-        if ($null -ne $member.PSObject.Properties[$group]) { $out.Add("settings/$Name.json sets $group, which only the team's rules.json sets") }
-    }
+    if (-not ($member -is [pscustomobject])) { $out.Add("settings/$Name.json: not a JSON object") }
     return , $out.ToArray()
 }
 
@@ -1311,14 +1294,14 @@ function Get-NSRulesObject {
         }
         $parsed = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         # Narrowest first: the run's own file, then the member settings the run selected, then the
-        # team's. Neither the run's file nor a member's changes the team block.
+        # team's.
         if ($memberPath.Length -gt 0) {
             $memberParsed = Get-Content -LiteralPath $memberPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            $parsed = Merge-NSRulesObject $parsed (Remove-NSRulesTeamGroups $memberParsed)
+            $parsed = Merge-NSRulesObject $parsed $memberParsed
         }
         if ($runPath.Length -gt 0) {
             $runParsed = Get-Content -LiteralPath $runPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            $parsed = Merge-NSRulesObject $parsed (Remove-NSRulesTeamGroups $runParsed)
+            $parsed = Merge-NSRulesObject $parsed $runParsed
         }
         $script:NSRulesCacheStamp = $stamp
         $script:NSRulesCache = $parsed

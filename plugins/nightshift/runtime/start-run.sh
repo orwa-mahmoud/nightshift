@@ -8,13 +8,11 @@
 # or a new one made from branches.base. Without it the run gets a branch of its own. Runs on one
 # branch go one after another; concurrent runs keep worktrees of their own.
 #
-# A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
-# gates and items have not changed since an approver approved it. A started run is written to the
-# plan's record with the runner's Git user name.
+# A started run is written to the plan's record with the runner's Git user name.
 #
 # --settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values
 # are laid over the team's rules.json, beneath the run's own rules file, and reach every helper the
-# run starts. The team block is read from the team's rules.json alone.
+# run starts.
 #
 # In a workspace that keeps runs, a plan waiting in staging/plans/ becomes a run. Its folder under
 # runs/ is claimed first, named by runs.layout from the plan's title; the plan's punch list is
@@ -127,7 +125,7 @@ if [ -n "$SETTINGS" ]; then
   if [ -n "$PROBLEMS" ]; then
     printf 'refuse settings %s cannot be selected for this run\n' "$SETTINGS"
     printf '%s\n' "$PROBLEMS" | sed 's/^/explain /'
-    printf 'repair keep team settings in the team'"'"'s rules.json and fix the file, then run this again\n'
+    printf 'repair fix the file, then run this again\n'
     exit 1
   fi
 fi
@@ -144,23 +142,6 @@ KEY="$(ns_receipt_slug "$PLAN")"
 PLAN_FILE="$(ns_layout_path "$NS" plans)/$KEY.md"
 STAGED=0
 if [ -f "$PLAN_FILE" ] && [ ! -L "$PLAN_FILE" ]; then STAGED=1; fi
-
-# ---------------------------------------------------------------- approval
-# Settled before anything is placed or run, so a refusal leaves no side effect.
-if [ "$STAGED" -eq 1 ] && ns_plan_record_file "$NS" "$KEY" >/dev/null; then
-  STATE="$(ns_plan_state "$WORKSPACE" "$KEY")" || refuse "plan the revision of $PLAN cannot be read" "run ns doctor, then run this again"
-  if printf '%s\n' "$STATE" | grep -qx 'approval required' && ! printf '%s\n' "$STATE" | grep -qx 'state approved'; then
-    REV="$(printf '%s\n' "$STATE" | sed -n 's/^revision //p')"
-    CHANGED="$(printf '%s\n' "$STATE" | sed -n 's/^changed //p')"
-    LAST="$(printf '%s\n' "$STATE" | sed -n 's/^approved-by //p')"
-    if [ -n "$CHANGED" ]; then
-      refuse "approval $PLAN changed its $CHANGED since ${LAST% *} approved revision ${LAST##* }, so revision $REV is proposed" \
-        "an approver reviews the change and records it with ns plan-record --plan \"$PLAN\" --action approved"
-    fi
-    refuse "approval $PLAN revision $REV is proposed: no approver has approved it" \
-      "an approver reviews it and records it with ns plan-record --plan \"$PLAN\" --action approved"
-  fi
-fi
 
 # ---------------------------------------------------------------- the run
 # The run a plan already went into in this clone is reused: its punch list carries the plan's title.

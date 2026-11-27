@@ -1,17 +1,15 @@
 <#
 .SYNOPSIS
-  Who did what to a plan, and whether the revision that would run is approved. Mirrors
-  runtime/plan-record.sh.
+  Who did what to a plan, at which revision. Mirrors runtime/plan-record.sh.
 
 .DESCRIPTION
     plan-record.ps1 -Project DIR -Plan NAME
     plan-record.ps1 -Project DIR -Plan NAME -Action proposed|approved|reviewed [-By NAME] [-Run RUN] [-Note TEXT]
 
-  With no action, prints the plan's revision, whether the team needs an approval, its state, and
-  every line of its record with the name on it (unknown for a line written without one). With an
-  action, appends one attributed line to staging/records/<key>.md at the plan's current revision. The
-  name is -By, or the Git user name of the work target. An approval is refused when the team's rules
-  do not let that name's role approve this plan; nothing is written then.
+  With no action, prints the plan's revision and every line of its record with the name on it
+  (unknown for a line written without one). With an action, appends one attributed line to
+  staging/records/<key>.md at the plan's current revision. The name is -By, or the Git user name of
+  the work target. A record gates nothing: approving a plan is reviewing it in Git.
 
   Prints one verdict per line: ok, or refuse followed by its repair.
   Exit: 0 printed or recorded - 1 refused - 2 usage
@@ -57,13 +55,14 @@ $recordFile = Get-NSPlanRecordFile $ns $key
 if ($recordFile.Length -eq 0) {
     Stop-Refused 'layout this workspace keeps no plan records' 'preview the move to run folders with ns migrate-state, make it with -Apply'
 }
-$state = Get-NSPlanState $workspace $key
-if ($null -eq $state) {
+$planFile = $(if (Test-NSLayoutKey $ns 'plans') { Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md') } else { '' })
+if ($planFile.Length -eq 0 -or -not [IO.File]::Exists($planFile) -or (Test-NSReparsePoint $planFile)) {
     Stop-Refused ("plan no plan named $Plan in " + (Get-NSLayoutName $ns 'plans')) 'list the waiting plans with ns plan-enter'
 }
+$revision = Get-NSPlanRevision $planFile
 
 if ($Action.Length -eq 0) {
-    foreach ($line in $state) { [Console]::Out.Write($line + "`n") }
+    [Console]::Out.Write('revision ' + $revision + "`n")
     foreach ($entry in (Get-NSPlanRecordLines $recordFile)) {
         $at = $(if ($entry.Revision.Length -gt 0) { $entry.Revision } else { 'unknown' })
         [Console]::Out.Write("record $($entry.Action) by $($entry.Name) at $at`n")
@@ -80,19 +79,10 @@ $By = $By.Replace("`r", '').Replace("`n", '')
 if ([string]::IsNullOrWhiteSpace($By)) { Stop-Refused 'name no -By and no Git user name to record' 'pass -By with the name to put on the record' }
 if ($By.Contains(' ' + [char]0x00B7 + ' ')) { Stop-Refused "name $By holds the record's separator" "pass a name without ' $([char]0x00B7) '" }
 
-if ($Action -ceq 'approved') {
-    if (-not (Test-NSPlanMayApprove $workspace $By)) {
-        $role = Get-NSTeamRole $workspace $By
-        if ($role.Length -eq 0) { $role = 'no role' }
-        Stop-Refused ("approve $By ($role) may not approve this plan; the team's approvers are " + ((Get-NSTeamList $workspace 'approvers') -join ',')) 'ask one of them to approve it'
-    }
-}
-
 $extra = New-Object Collections.Generic.List[string]
 if ($Run.Length -gt 0) { $extra.Add('run ' + $Run) }
 if ($Note.Length -gt 0) { $extra.Add('note ' + $Note.Replace("`r", '').Replace("`n", '')) }
 try { Add-NSPlanRecord -Workspace $workspace -Key $key -Action $Action -Name $By -Extra $extra.ToArray() }
 catch { Stop-Refused ('record could not write ' + (Get-NSLayoutName $ns 'plan-records') + "/$key.md") 'check that .nightshift/ is writable, then run this again' }
-$revision = (@($state | Where-Object { $_.StartsWith('revision ', [StringComparison]::Ordinal) })[0]).Substring(9)
 Write-Verdict 'ok' "record $Action by $By at revision $revision"
 exit 0

@@ -79,10 +79,6 @@
   "branches": {
     "base": ""
   },
-  "team": {
-    "roles": {},
-    "approvers": []
-  },
   "receipts": {
     "enabled": true,
     "progressMode": "time",

@@ -81,9 +81,6 @@ _ns_rules_run_file() {
   if [ -f "$f" ] && [ ! -L "$f" ]; then printf '%s' "$f"; fi
 }
 
-# The groups only the team's rules.json sets: a run's or a member's file never changes them.
-NS_RULES_TEAM_GROUPS='team'
-
 # _ns_rules_member_file <var> <file> — sets <var> to the member settings file the run this caller
 # works on selected, to lay over <file> beneath the run's own: settings/<name>.json, named in the
 # run's member-settings record. Empty when the run selected none. Status 1, with NS_RULES_ERR set,
@@ -108,25 +105,8 @@ _ns_rules_member_file() {
   printf -v "$1" '%s' "$dir/$name.json"
 }
 
-# _ns_rules_drop_team <rows> — the rows without the team's own groups.
-_ns_rules_drop_team() {
-  NS_DROP_ROWS="$1" NS_DROP_TEAM="$NS_RULES_TEAM_GROUPS" awk '
-    BEGIN {
-      FS = "\t"
-      nt = split(ENVIRON["NS_DROP_TEAM"], team, " ")
-      for (i = 1; i <= nt; i++) owned[team[i]] = 1
-      nr = split(ENVIRON["NS_DROP_ROWS"], rows, "\n")
-      for (r = 1; r <= nr; r++) {
-        if (rows[r] == "") continue
-        split(rows[r], f, "\t")
-        if (!(f[1] in owned)) print rows[r]
-      }
-    }'
-}
-
 # ns_member_settings_problems <workspace> <name> — why settings/<name>.json cannot be selected for a
-# run, one line each: a name that is not one, a missing or malformed file, or a team block, which
-# only the team's rules.json sets. Nothing when it can be.
+# run, one line each: a name that is not one, or a missing or malformed file. Nothing when it can be.
 ns_member_settings_problems() (
   local ws="$1" name="$2" ns dir="" file
   case "$name" in
@@ -142,9 +122,7 @@ ns_member_settings_problems() (
     printf 'settings/%s.json is not there\n' "$name"
     exit 0
   fi
-  _ns_rules_ingest rules "$file" || { printf 'settings/%s.json: %s\n' "$name" "$NS_RULES_ERR"; exit 0; }
-  printf '%s\n' "$NS_RULES_ROWS" | awk -F '\t' -v owned=" $NS_RULES_TEAM_GROUPS " -v n="$name" '
-    index(owned, " " $1 " ") && !said[$1]++ { printf "settings/%s.json sets %s, which only the team'"'"'s rules.json sets\n", n, $1 }'
+  _ns_rules_ingest rules "$file" || printf 'settings/%s.json: %s\n' "$name" "$NS_RULES_ERR"
 )
 
 # _ns_rules_overlay <run-rows> <shared-rows> — one set of rows where the run's settings replace the
@@ -220,7 +198,6 @@ ns_rules_load() {
     return 1
   }
   # Narrowest first: the run's own file, then the member settings the run selected, then the team's.
-  # Neither the run's file nor a member's changes the team block.
   if [ -n "$memf" ]; then
     shared="$NS_RULES_ROWS"
     NS_RULES_ROWS=""
@@ -231,7 +208,7 @@ ns_rules_load() {
       NS_RULES_ROWS=""
       return 1
     }
-    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_drop_team "$NS_RULES_ROWS")" "$shared")"
+    NS_RULES_ROWS="$(_ns_rules_overlay "$NS_RULES_ROWS" "$shared")"
   fi
   if [ -n "$runf" ]; then
     shared="$NS_RULES_ROWS"
@@ -243,7 +220,7 @@ ns_rules_load() {
       NS_RULES_ROWS=""
       return 1
     }
-    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_drop_team "$NS_RULES_ROWS")" "$shared")"
+    NS_RULES_ROWS="$(_ns_rules_overlay "$NS_RULES_ROWS" "$shared")"
   fi
   NS_RULES_FILE="$f"
   NS_RULES_STAMP="$stamp"

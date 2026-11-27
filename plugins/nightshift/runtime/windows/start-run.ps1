@@ -10,13 +10,11 @@
   a new one made from branches.base. Without it the run gets a branch of its own. Runs on one branch
   go one after another; concurrent runs keep worktrees of their own.
 
-  A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
-  gates and items have not changed since an approver approved it. A started run is written to the
-  plan's record with the runner's Git user name.
+  A started run is written to the plan's record with the runner's Git user name.
 
   -Settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values are
   laid over the team's rules.json, beneath the run's own rules file, and reach every helper the run
-  starts. The team block is read from the team's rules.json alone.
+  starts.
 
   In a workspace that keeps runs, a plan waiting in staging/plans/ becomes a run. Its folder under
   runs/ is claimed first, named by runs.layout from the plan's title; the plan's punch list is written
@@ -108,7 +106,7 @@ if ($Settings.Length -gt 0) {
     if ($problems.Count -gt 0) {
         Write-Verdict 'refuse' "settings $Settings cannot be selected for this run"
         foreach ($problem in $problems) { Write-Verdict 'explain' $problem }
-        Write-Verdict 'repair' "keep team settings in the team's rules.json and fix the file, then run this again"
+        Write-Verdict 'repair' 'fix the file, then run this again'
         exit 1
     }
 }
@@ -124,27 +122,6 @@ $key = Get-NSReceiptSlug $Plan
 if ($key.Length -eq 0) { Stop-Refused "plan $Plan has no letters or digits to name it by" }
 $planFile = Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md')
 $staged = (Test-Path -LiteralPath $planFile -PathType Leaf) -and -not (Test-NSReparsePoint $planFile)
-
-# ---------------------------------------------------------------- approval
-# Settled before anything is placed or run, so a refusal leaves no side effect.
-if ($staged -and (Get-NSPlanRecordFile $ns $key).Length -gt 0) {
-    $state = Get-NSPlanState $workspace $key
-    if ($null -eq $state) { Stop-Refused "plan the revision of $Plan cannot be read" 'run ns doctor, then run this again' }
-    if (($state -ccontains 'approval required') -and -not ($state -ccontains 'state approved')) {
-        $field = { param($Name) $hit = @($state | Where-Object { $_.StartsWith($Name + ' ', [StringComparison]::Ordinal) }); if ($hit.Count -gt 0) { $hit[0].Substring($Name.Length + 1) } else { '' } }
-        $revision = & $field 'revision'
-        $changed = & $field 'changed'
-        $lastApproval = & $field 'approved-by'
-        if ($changed.Length -gt 0) {
-            $by = $lastApproval.Substring(0, $lastApproval.LastIndexOf(' '))
-            $was = $lastApproval.Substring($lastApproval.LastIndexOf(' ') + 1)
-            Stop-Refused "approval $Plan changed its $changed since $by approved revision $was, so revision $revision is proposed" `
-                "an approver reviews the change and records it with ns plan-record --plan `"$Plan`" --action approved"
-        }
-        Stop-Refused "approval $Plan revision $revision is proposed: no approver has approved it" `
-            "an approver reviews it and records it with ns plan-record --plan `"$Plan`" --action approved"
-    }
-}
 
 # The run a plan already went into in this clone is reused: its punch list carries the plan's title.
 # Otherwise the folder is claimed now, before anything is written, so a second start of the same plan

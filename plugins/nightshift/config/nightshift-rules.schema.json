@@ -444,28 +444,6 @@
         }
       }
     },
-    "team": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "The team's roles and who approves a plan. Read only from this file: neither a run's own rules file nor a member's settings file changes them.",
-      "properties": {
-        "roles": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Each member's role, by the name they put on the records, as {\"Alice\": \"lead\", \"Bob\": \"developer\"}."
-        },
-        "approvers": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "string"
-          },
-          "description": "The roles whose approval a plan revision needs before it runs; a change to the plan's contract, gates or items needs approval again. Empty: the plan's owner approves it."
-        }
-      }
-    },
     "receipts": {
       "type": "object",
       "additionalProperties": false,
