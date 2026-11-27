@@ -2,25 +2,19 @@
 # start-run.sh — start a named plan as a run of its own.
 #
 #   start-run.sh --project DIR --plan NAME --host claude|codex|cursor [--background] [--settings NAME]
-#                [--consent DIGEST] [--branch NAME]
+#                [--branch NAME]
 #
-# The branch a run works on follows the team's branches.start: a branch of its own per run (the
-# default), the member's current branch, or one the member chooses with --branch: the current one,
-# an existing work branch, or a new one made from branches.base. With `choose` and no --branch this
-# lists the choices and places nothing, so a headless run always starts with the choice made. Runs
-# on one branch go one after another; concurrent runs keep worktrees of their own.
+# --branch names the branch the run works on: the checkout's current one, an existing work branch,
+# or a new one made from branches.base. Without it the run gets a branch of its own. Runs on one
+# branch go one after another; concurrent runs keep worktrees of their own.
 #
 # A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
-# gates or items, as team.reviewChanges names them, have not changed since an approver approved it.
-# On a site that shares its plans, the runner consents to exactly what the run would execute before
-# anything of it runs: without --consent, or with one for other inputs, this prints those inputs and
-# the consent that covers them, and places nothing. A started run is written to the plan's record
-# with the runner's Git user name.
+# gates and items have not changed since an approver approved it. A started run is written to the
+# plan's record with the runner's Git user name.
 #
 # --settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values
 # are laid over the team's rules.json, beneath the run's own rules file, and reach every helper the
-# run starts. A file that changes anything the team does not let a member change is refused before
-# anything is placed.
+# run starts. The team block is read from the team's rules.json alone.
 #
 # In a workspace that keeps runs, a plan waiting in staging/plans/ becomes a run. Its folder under
 # runs/ is claimed first, named by runs.layout from the plan's title; the plan's punch list is
@@ -53,7 +47,6 @@ PLAN=""
 BACKGROUND=0
 HOST_NAME=""
 SETTINGS=""
-CONSENT=""
 BRANCH_ARG=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -79,11 +72,6 @@ while [ $# -gt 0 ]; do
     --settings)
       [ $# -ge 2 ] || { printf 'start-run: --settings needs a value\n' >&2; exit 2; }
       SETTINGS="$2"
-      shift 2
-      ;;
-    --consent)
-      [ $# -ge 2 ] || { printf 'start-run: --consent needs a value\n' >&2; exit 2; }
-      CONSENT="$2"
       shift 2
       ;;
     --branch)
@@ -139,40 +127,16 @@ if [ -n "$SETTINGS" ]; then
   if [ -n "$PROBLEMS" ]; then
     printf 'refuse settings %s cannot be selected for this run\n' "$SETTINGS"
     printf '%s\n' "$PROBLEMS" | sed 's/^/explain /'
-    printf 'repair take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again\n'
+    printf 'repair keep team settings in the team'"'"'s rules.json and fix the file, then run this again\n'
     exit 1
   fi
 fi
 
 # ---------------------------------------------------------------- the run's branch
-# Settled before anything is placed, so a choice still to make leaves nothing behind.
 WANT_BRANCH="$BRANCH_ARG"
 if [ -n "$WANT_BRANCH" ]; then
   git check-ref-format --branch "$WANT_BRANCH" >/dev/null 2>&1 ||
     refuse "branch $WANT_BRANCH is not a branch name" "pass a branch name Git accepts"
-elif [ "$(ns_work_mode "$WORKSPACE" 2>/dev/null)" != artifact ]; then
-  BRANCH_RULE="$(ns_branch_rule "$WORKSPACE" start)"
-  case "$BRANCH_RULE" in
-    '' | per-run) ;;
-    current | choose)
-      OWNER_CHECKOUT="$(ns_owner_work_target "$WORKSPACE")" || refuse "branch the work target cannot be resolved" "run ns doctor, then run this again"
-      CURRENT_BRANCH="$(git -C "$OWNER_CHECKOUT" symbolic-ref --quiet --short HEAD 2>/dev/null)" || CURRENT_BRANCH=""
-      if [ "$BRANCH_RULE" = current ]; then
-        [ -n "$CURRENT_BRANCH" ] ||
-          refuse "branch the checkout is on no branch, and this team's runs work on the current one" "check out the work branch, then run this again"
-        WANT_BRANCH="$CURRENT_BRANCH"
-      else
-        printf 'refuse branch this team chooses the branch each run works on\n'
-        printf 'branch current %s\n' "${CURRENT_BRANCH:-none}"
-        git -C "$OWNER_CHECKOUT" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null |
-          grep -vxF -- "${CURRENT_BRANCH:-}" | sed 's/^/branch existing /'
-        printf 'branch base %s\n' "$(ns_branch_rule "$WORKSPACE" base | sed 's/^$/the checkout'"'"'s commit/')"
-        printf 'repair run this again with --branch <name>: the current branch, an existing one, or a new name made from the base\n'
-        exit 1
-      fi
-      ;;
-    *) refuse "branch branches.start is $BRANCH_RULE" "use per-run, current or choose" ;;
-  esac
 fi
 
 KEY="$(ns_receipt_slug "$PLAN")"
@@ -181,9 +145,8 @@ PLAN_FILE="$(ns_layout_path "$NS" plans)/$KEY.md"
 STAGED=0
 if [ -f "$PLAN_FILE" ] && [ ! -L "$PLAN_FILE" ]; then STAGED=1; fi
 
-# ---------------------------------------------------------------- approval and consent
-# Both are settled before anything is placed or run, so a refusal leaves no side effect.
-INPUTS_DIGEST=""
+# ---------------------------------------------------------------- approval
+# Settled before anything is placed or run, so a refusal leaves no side effect.
 if [ "$STAGED" -eq 1 ] && ns_plan_record_file "$NS" "$KEY" >/dev/null; then
   STATE="$(ns_plan_state "$WORKSPACE" "$KEY")" || refuse "plan the revision of $PLAN cannot be read" "run ns doctor, then run this again"
   if printf '%s\n' "$STATE" | grep -qx 'approval required' && ! printf '%s\n' "$STATE" | grep -qx 'state approved'; then
@@ -196,21 +159,6 @@ if [ "$STAGED" -eq 1 ] && ns_plan_record_file "$NS" "$KEY" >/dev/null; then
     fi
     refuse "approval $PLAN revision $REV is proposed: no approver has approved it" \
       "an approver reviews it and records it with ns plan-record --plan \"$PLAN\" --action approved"
-  fi
-  if ns_site_shares "$WORKSPACE" plans; then
-    INPUTS="$(ns_run_inputs "$WORKSPACE" "$PLAN_FILE" "$SETTINGS")"
-    INPUTS_DIGEST="$(ns_run_consent "$INPUTS")"
-    if [ "$CONSENT" != "$INPUTS_DIGEST" ]; then
-      if [ -n "$CONSENT" ]; then
-        printf 'refuse consent what this run would execute changed since consent %s was given\n' "$CONSENT"
-      else
-        printf 'refuse consent read what this run would execute before it starts\n'
-      fi
-      printf '%s\n' "$INPUTS" | sed 's/^/input /'
-      printf 'repair read those inputs, then run this again with --consent %s\n' "$INPUTS_DIGEST"
-      exit 1
-    fi
-    ok "consent $INPUTS_DIGEST covers what this run executes"
   fi
 fi
 
@@ -334,13 +282,13 @@ unstage() {
   ok "plan $PLAN left staging"
 }
 
-# started — the plan's record names who started this run, from which revision, with which consent.
+# started — the plan's record names who started this run, and from which revision.
 record_start() {
   local who target
   [ "$STAGED" -eq 1 ] && ns_plan_record_file "$NS" "$KEY" >/dev/null || return 0
   target="$(ns_work_target "$WORKSPACE" 2>/dev/null)" || target="$WORKSPACE"
   who="$(git -C "$target" config user.name 2>/dev/null | tr -d '\r\n')" || who=""
-  if ns_plan_record_add "$WORKSPACE" "$KEY" started "${who:-unknown}" "run $RUN" ${INPUTS_DIGEST:+"inputs $INPUTS_DIGEST"}; then
+  if ns_plan_record_add "$WORKSPACE" "$KEY" started "${who:-unknown}" "run $RUN"; then
     ok "record started by ${who:-unknown}"
   else
     warn "record the start could not be written to $(ns_layout_name "$NS" plan-records)/$KEY.md"

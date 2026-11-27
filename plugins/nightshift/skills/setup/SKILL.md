@@ -124,13 +124,14 @@ owner choose another folder instead: a parent folder outside every repository ke
 private to the runner's own machine. An existing site is reused where it is; never move one.
 
 Whether the team shares its project records through Git is a line on the defaults screen
-(section 3). With sharing, write the owner's choice to `sharing.records` in `$NS/rules.json`, then
-show `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" share` and run it again with `--apply`. It writes the
-block of `$NS/.gitignore` that lets Git see only those records and keeps everything private ignored:
-raw UI evidence, private messages, STOP, leases, watchman files and the runtime's own folders. It
-also takes out a `.nightshift/` line Setup wrote earlier, and names any file Git already tracks that
-is now private. The owner chooses the repository and when to stage, commit and push; Setup does
-neither.
+(section 3). With sharing, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" scaffold shared`: it writes
+the shipped `$NS/.gitignore` and `$NS/.gitattributes` and keeps either file the site already has.
+They let Git see
+the plans, decisions, rules, run receipts and filed shifts, and keep private what belongs to each
+runner: raw evidence, private messages, STOP, leases, watchman files and the runtime's own folders.
+They are the owner's files from then on; Nightshift reads what Git sees, so editing them is how the
+team shares more or less. Take out a `.nightshift/` line Setup wrote to the repository's
+`.gitignore`. The owner chooses when to stage, commit and push; Setup does neither.
 
 Without sharing (the shipped default), keep run state out of git. If `$NIGHTSHIFT_WORKSPACE` is
 itself a git repo, append a line `.nightshift/` to `$NIGHTSHIFT_WORKSPACE/.gitignore` (create the
@@ -182,8 +183,8 @@ that turn; do not ask a second round.
 
 | Line | Shipped value | Meaning |
 | --- | --- | --- |
-| Shared records | none; with the site inside the repository, offer `plans`, `decisions`, `rules`, `receipts`, `summaries` | which project records teammates see through Git (`sharing.records`); `ns share --apply` writes the matching `.nightshift/.gitignore` |
-| Receipts repo | no | a local-only git repo inside `$NS/`, so every punch-list change has history; never pushed, never touches the project's history. Not offered with shared records: the project's Git cannot see into a repository inside `.nightshift/` |
+| Share through Git | no; with the site inside the repository, offer yes | the team sees the plans, decisions, rules, run receipts and filed shifts through Git, under the shipped `.nightshift/.gitignore` the owner can edit |
+| Receipts repo | no | a local-only git repo inside `$NS/`, so every punch-list change has history; never pushed, never touches the project's history. Not offered when sharing through Git: the project's Git cannot see into a repository inside `.nightshift/` |
 | Shift worktree | no | each shift works in its own git worktree and branch, so the owner's checkout and uncommitted edits stay untouched; show the proposed `shift.prepare` command beside it |
 | Site inspection | hourly | the heavier batch (coverage, dead code, Sonar) every N items or H hours; only when gates were accepted or edited |
 | Verification profile | `fast` | `fast`, `balanced`, `strict`, or `custom`: when the `## Gates` commands run |

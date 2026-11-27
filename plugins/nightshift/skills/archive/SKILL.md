@@ -205,19 +205,20 @@ files.
 
 ## Shared records
 
-On a site that shares its records through Git (`sharing.records` in the rules file), Archive files a
-run exactly as above and never touches the shared plans in `staging/plans/` or the decision threads
-in `staging/decisions/`: they are the team's record, and teammates may have edited them since the
-run took its copy. Each filed shift's folder ends in a tag of its own, so teammates' clones never
-file into the same folder.
+When `.nightshift/` sits in the project's repository and its `.gitignore` lets the records in, the
+site is shared. Archive files a run exactly as above and never touches the plans in
+`staging/plans/`, their records or the decision threads in `staging/decisions/`: they are the
+team's record, and teammates may have edited them since the run took its copy. Each filed shift's
+folder ends in a tag of its own, so teammates' clones never file into the same folder.
 
-Raw evidence stays private until it is chosen. After filing a shift whose receipts carry evidence
-folders, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" promote-evidence --folder <the shift's folder>`:
-it lists every eligible file and the ones `sharing.evidence` proposes. Show the owner that list and
-let them change it, then run it again with `--apply` and their choice (`--select <file>` for each,
-`--all` or `--none`). Their choice is for this filing only; never edit `sharing.evidence` to record
-it. Git ignores the history index below, so each clone keeps its own; rebuild
-it from the archive folders when it is missing.
+Raw evidence stays private until the owner chooses to share it. After filing a shift whose receipts
+carry evidence folders, list those files and ask the owner which, if any, the team should see. Copy
+each chosen file into an `evidence/` folder beside the filed receipts folder, keeping its
+`<receipt>/<file>` path, and point the filed receipt's link at that copy by relative path. Turn every
+other link into an evidence folder into plain text that names the file as private evidence, so no
+shared page carries a broken link or a path from the runner's machine. Keep the originals where
+they are. The shipped `.gitignore` leaves the history index below out of Git, so each clone keeps its
+own; rebuild it from the archive folders when it is missing.
 
 ## Index
 

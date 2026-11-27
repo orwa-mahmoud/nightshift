@@ -6,7 +6,8 @@
 # With no file named it writes what every shift uses: the punch list, the parking lot, the snag
 # log, the drafting table, and the shift log's header. The rest waits until something needs it:
 # `work-orders` when Hunt stages an order, `product` (the opportunity map and the research notes)
-# when a product-evolution item is cut, `plan-record` when the plan room opens. Each file lands
+# when a product-evolution item is cut, `plan-record` when the plan room opens, and `shared` (the
+# site's .gitignore and .gitattributes) when a team shares its records through Git. Each file lands
 # where the workspace's layout keeps it, and a `.nightshift/` this run creates gets the current
 # state-version first.
 #
@@ -57,8 +58,12 @@ while [ $# -gt 0 ]; do
       NAMES="$NAMES opportunity-map product-research"
       shift
       ;;
+    shared)
+      NAMES="$NAMES gitignore gitattributes"
+      shift
+      ;;
     -*) printf 'scaffold: unknown argument: %s\n' "$1" >&2; exit 1 ;;
-    *) printf 'scaffold: %s is not a file scaffold writes on request (work-orders, product, plan-record)\n' "$1" >&2; exit 1 ;;
+    *) printf 'scaffold: %s is not a file scaffold writes on request (work-orders, product, plan-record, shared)\n' "$1" >&2; exit 1 ;;
   esac
 done
 [ -n "$NAMES" ] || NAMES="punch-list parking-lot snag-log drafting-table"
@@ -69,9 +74,16 @@ TEMPLATES="$(ns_templates_dir)"
   exit 2
 }
 
+# template_for <key> — the shipped template a key is copied from: <key>.md, or <key>.txt for a file
+# that is not Markdown.
+template_for() {
+  if [ -f "$TEMPLATES/$1.md" ]; then printf '%s' "$TEMPLATES/$1.md"; else printf '%s' "$TEMPLATES/$1.txt"; fi
+}
+
 if [ "$LIST" = yes ]; then
-  for key in punch-list parking-lot snag-log drafting-table work-orders opportunity-map product-research plan-record; do
-    [ -f "$TEMPLATES/$key.md" ] && printf '%s.md\n' "$key"
+  for key in punch-list parking-lot snag-log drafting-table work-orders opportunity-map product-research plan-record gitignore gitattributes; do
+    t="$(template_for "$key")"
+    [ -f "$t" ] && printf '%s\n' "${t##*/}"
   done
   exit 0
 fi
@@ -151,11 +163,12 @@ write() {
 }
 
 for key in $NAMES; do
-  [ -f "$TEMPLATES/$key.md" ] || {
+  t="$(template_for "$key")"
+  [ -f "$t" ] || {
     printf 'scaffold: no template for %s\n' "$key" >&2
     exit 2
   }
-  write "$key" template "$TEMPLATES/$key.md"
+  write "$key" template "$t"
 done
 case " $NAMES " in
   *" punch-list "*)

@@ -140,6 +140,14 @@ if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
     exit 0
 }
 
+# Files Git tracks under .nightshift/ that its ignore rules keep private: a lease, STOP, a runtime
+# folder or raw evidence committed before the rules said otherwise. Mirrors runtime/doctor.sh.
+if (-not (Test-Path -LiteralPath (Join-Path $ns '.git')) -and (Invoke-NSGitCommand $ns @('rev-parse', '--is-inside-work-tree')).ExitCode -eq 0) {
+    foreach ($tracked in @((Invoke-NSGitCommand $ns @('ls-files', '-ci', '--exclude-standard', '--', '.')).Lines)) {
+        if ($tracked.Length -gt 0) { Add-NSWarn "Git tracks .nightshift/$tracked, which .nightshift/.gitignore keeps private; untrack it with git rm --cached" }
+    }
+}
+
 $unusableRecv = $false
 $reportedMode = ''
 try {

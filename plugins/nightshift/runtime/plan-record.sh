@@ -84,8 +84,7 @@ BY="$(printf '%s' "$BY" | tr -d '\r\n')"
 case "$BY" in *" · "*) refuse "name $BY holds the record's separator" "pass a name without ' · '" ;; esac
 
 if [ "$ACTION" = approved ]; then
-  PROPOSER="$(ns_plan_record_lines "$(ns_plan_record_file "$NS" "$KEY")" | awk -F '\t' '$1 == "proposed" { p = $2 } END { print p }')"
-  if ! ns_plan_may_approve "$WORKSPACE" "$BY" "$PROPOSER"; then
+  if ! ns_plan_may_approve "$WORKSPACE" "$BY"; then
     ROLE="$(ns_team_role "$WORKSPACE" "$BY")"
     refuse "approve $BY (${ROLE:-no role}) may not approve this plan; the team's approvers are $(ns_team_list "$WORKSPACE" approvers | paste -sd ',' -)" \
       "ask one of them to approve it"

@@ -1,8 +1,7 @@
 #!/usr/bin/env bats
 # Attribution and approval: each plan keeps a record of who proposed it, who approved which revision,
 # who started a run and who reviewed it. A team whose rules name approvers runs only an approved
-# revision, and on a site that shares its plans the runner consents to exactly what a run executes
-# before anything of it runs.
+# revision, and any change to the plan needs approval again.
 
 load helpers
 
@@ -27,28 +26,25 @@ set_rules() { # <workspace> <jq filter>
 
 plan_file() { printf '%s/.nightshift/staging/plans/export-csv.md' "$1"; }
 
-# shared_site <name> — the repository holds the site and shares plans, decisions and rules; the
-# team needs a lead's approval for contract and gate changes. Alice is the lead, Bob a developer.
+# shared_site <name> — the repository holds the site and shares it through the shipped ignore files;
+# the team needs a lead's approval. Alice is the lead, Bob a developer.
 shared_site() {
   local w="$BATS_TEST_TMPDIR/$1"
   add_repo "$BATS_TEST_TMPDIR" "$1"
   git -C "$w" config user.name Carol
   mkdir -p "$w/.nightshift/run" "$w/.nightshift/runs" "$w/.nightshift/staging/plans"
   printf '3\n' >"$w/.nightshift/state-version"
-  jq '.sharing.records = ["plans", "decisions", "rules"] | .team.roles = {"Alice": "lead", "Bob": "developer"}
-      | .team.approvers = ["lead"] | .team.reviewChanges = ["contract", "gates"]' \
+  jq '.team.roles = {"Alice": "lead", "Bob": "developer"} | .team.approvers = ["lead"]' \
     "$RULES_TEMPLATE" >"$w/.nightshift/rules.json"
   printf '%s\n' "$(cd -P "$w" && pwd)" >"$w/.nightshift/run/work-target"
   printf 'repository\n' >"$w/.nightshift/run/work-mode"
   printf '# Punch List — Export CSV\n\n## Contract\n\n- Work in the run.\n\n## Gates\n\n- `true`\n\n## Items\n\n- [ ] **1. Export the table.**\n  - Verify: true\n  - Commit: `feat: export`\n' \
     >"$(plan_file "$w")"
-  bash "$RUNTIME/share.sh" --project "$w" --apply >/dev/null
+  share_through_git "$w"
   git -C "$w" add -A
   git -C "$w" commit -q -m "plan: export csv"
   printf '%s' "$(cd -P "$w" && pwd)"
 }
-
-consent_of() { printf '%s\n' "$1" | sed -n 's/^repair read those inputs, then run this again with --consent //p'; }
 
 @test "a solo owner proposes, approves and answers under their own name, and older lines read as unknown" {
   w="$(runs_site solo)"
@@ -86,7 +82,7 @@ record approved by unknown at aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc" ] || { ech
   tail -n 1 "$w/.nightshift/staging/records/export-csv.md" | grep -q '^- started · Sam · - · .* · run export-csv$'
 }
 
-@test "a developer proposes, only the lead's approval runs, and a gate change returns the plan to proposed" {
+@test "a developer proposes, only the lead's approval runs, and a change returns the plan to proposed" {
   w="$(shared_site leads)"
   run record "$w" --action proposed --by Bob
   [ "$status" -eq 0 ]
@@ -101,11 +97,11 @@ record approved by unknown at aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc" ] || { ech
   run record "$w" --action approved --by Alice
   [ "$status" -eq 0 ]
   git -C "$w" add -A && git -C "$w" commit -q -m "approve: export csv"
-  # An item change is not one this team reviews.
-  printf -- '- [ ] **2. Document the export.**\n  - Verify: true\n  - Commit: `docs: export`\n' >>"$(plan_file "$w")"
+  # Ticking a box changes nothing; a gate change returns the plan to proposed until the lead
+  # approves this revision.
+  sed -i.bak 's/^- \[ \] \*\*1\./- [x] **1./' "$(plan_file "$w")" && rm "$(plan_file "$w").bak"
   run record "$w"
   printf '%s\n' "$output" | grep -qx 'state approved'
-  # A gate change is: the plan is proposed again until the lead approves this revision.
   sed -i.bak 's/^- `true`$/- `make test`/' "$(plan_file "$w")" && rm "$(plan_file "$w").bak"
   run start_run "$w" "Export CSV"
   [ "$status" -eq 1 ]
@@ -121,55 +117,19 @@ record approved by unknown at aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc" ] || { ech
   printf '%s\n' "$output" | grep -qx 'state approved'
 }
 
-@test "a lead may submit an approved plan directly when the team allows it, and a developer may not" {
+@test "an approver approves their own plan, a developer may not, and an item change needs approval again" {
   w="$(shared_site self)"
-  set_rules "$w" '.team.approvers = ["reviewer"] | .team.selfApprove = ["lead"]'
   record "$w" --action proposed --by Alice >/dev/null
   run record "$w" --action approved --by Alice
   [ "$status" -eq 0 ]
   run record "$w"
   printf '%s\n' "$output" | grep -qx 'state approved'
-  record "$w" --action proposed --by Bob >/dev/null
   run record "$w" --action approved --by Bob
   [ "$status" -eq 1 ]
-  # Bob proposing the same revision again leaves Alice's approval of her own proposal standing.
+  printf -- '- [ ] **2. Document the export.**\n  - Verify: true\n  - Commit: `docs: export`\n' >>"$(plan_file "$w")"
   run record "$w"
-  printf '%s\n' "$output" | grep -qx 'state approved'
-  printf '%s\n' "$output" | grep -q '^approved-by Alice '
-}
-
-@test "a runner consents to exactly what a run executes, and nothing runs before" {
-  w="$(shared_site consent)"
-  set_rules "$w" '.team.approvers = [] | .baselineGates = true | .team.memberSettings = ["shift.prepare"]'
-  sed -i.bak "s|^- \`true\`\$|- \`touch $BATS_TEST_TMPDIR/gate-ran\`|" "$(plan_file "$w")" && rm "$(plan_file "$w").bak"
-  run start_run "$w" "Export CSV"
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qx 'refuse consent read what this run would execute before it starts'
-  printf '%s\n' "$output" | grep -qx "input gate touch $BATS_TEST_TMPDIR/gate-ran"
-  printf '%s\n' "$output" | grep -qx 'input baseline-gates true'
-  consent="$(consent_of "$output")"
-  [ -n "$consent" ]
-  [ ! -e "$BATS_TEST_TMPDIR/gate-ran" ]
-  [ -z "$(ls -A "$w/.nightshift/runs")" ]
-  # A member's settings that change the prepare command change the consent.
-  mkdir -p "$w/.nightshift/settings"
-  printf '{\n  "shift": {\n    "prepare": "npm ci"\n  }\n}\n' >"$w/.nightshift/settings/carol.json"
-  run start_run "$w" "Export CSV" --settings carol --consent "$consent"
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qx "refuse consent what this run would execute changed since consent $consent was given"
-  printf '%s\n' "$output" | grep -qx 'input prepare npm ci'
-  [ ! -e "$BATS_TEST_TMPDIR/gate-ran" ]
-  # With the consent for these inputs, the run starts and its gate runs once, as approved.
-  run start_run "$w" "Export CSV" --consent "$consent"
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qx "ok consent $consent covers what this run executes"
-  [ -e "$BATS_TEST_TMPDIR/gate-ran" ]
-  tail -n 1 "$w/.nightshift/staging/records/export-csv.md" | grep -q "^- started · Carol · - · .* · inputs $consent\$"
-  # A changed gate after the runner reviewed it needs fresh consent.
-  sed -i.bak 's|gate-ran`$|gate-ran-again`|' "$(plan_file "$w")" && rm "$(plan_file "$w").bak"
-  run start_run "$w" "Export CSV" --consent "$consent"
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qx "refuse consent what this run would execute changed since consent $consent was given"
+  printf '%s\n' "$output" | grep -qx 'state proposed'
+  printf '%s\n' "$output" | grep -qx 'changed items'
 }
 
 @test "native Windows keeps the same record and refuses the same starts" {
@@ -185,9 +145,5 @@ record approved by unknown at aaaaaaaaaaaa.bbbbbbbbbbbb.cccccccccccc" ] || { ech
   [ "$status" -eq 1 ]
   run ps_record -Action approved -By Alice
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  set_rules "$w" '.team.approvers = ["lead"]'
-  bash_start="$(start_run "$w" "Export CSV")" || :
-  ps_start="$(cd "$w" && env -u NIGHTSHIFT_RUN pwsh -NoProfile -File "$RUNTIME/windows/start-run.ps1" -Project "$w" -Plan "Export CSV" -HostName claude)" || :
-  [ "$bash_start" = "$ps_start" ] || { printf 'bash:\n%s\npwsh:\n%s\n' "$bash_start" "$ps_start"; return 1; }
-  printf '%s\n' "$bash_start" | grep -q '^refuse consent '
+  [ "$(record "$w")" = "$(ps_record)" ]
 }

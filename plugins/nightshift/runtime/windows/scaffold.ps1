@@ -11,8 +11,10 @@
   lot, the snag log, the drafting table, and the shift log's header. The rest waits
   until something needs it: `work-orders` when Hunt stages an order, `product`
   (the opportunity map and the research notes) when a product-evolution item is
-  cut, `plan-record` when the plan room opens. Each file lands where the workspace's layout keeps it, and a `.nightshift/`
-  this run creates gets the current state-version first.
+  cut, `plan-record` when the plan room opens, and `shared` (the site's .gitignore
+  and .gitattributes) when a team shares its records through Git. Each file lands
+  where the workspace's layout keeps it, and a `.nightshift/` this run creates gets
+  the current state-version first.
 
   Copying a file does not require its text, so the model reads none of the
   templates. Never clobbers. A name already in `.nightshift/` is the owner's,
@@ -62,10 +64,9 @@ if (-not (Test-Path -LiteralPath $templates -PathType Container)) {
 }
 
 if ($List) {
-    foreach ($key in @('punch-list', 'parking-lot', 'snag-log', 'drafting-table', 'work-orders', 'opportunity-map', 'product-research', 'plan-record')) {
-        if (Test-Path -LiteralPath (Join-Path $templates ($key + '.md')) -PathType Leaf) {
-            [Console]::Out.Write($key + ".md`n")
-        }
+    foreach ($key in @('punch-list', 'parking-lot', 'snag-log', 'drafting-table', 'work-orders', 'opportunity-map', 'product-research', 'plan-record', 'gitignore', 'gitattributes')) {
+        $source = Get-NSScaffoldTemplate -Templates $templates -Key $key
+        if ($source.Length -gt 0) { [Console]::Out.Write((Split-Path -Leaf $source) + "`n") }
     }
     exit 0
 }

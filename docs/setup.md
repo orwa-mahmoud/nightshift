@@ -16,11 +16,12 @@ can choose another folder instead. A parent folder outside every repository keep
 to your machine. An existing `.nightshift/` is used where it is.
 
 Your team can share its project records through Git: the plans, the planning decisions, the shared
-rules, each run's receipts and the filed shifts. You choose which on the defaults screen, and Setup
-writes `.nightshift/.gitignore` so Git sees those records and nothing private. Raw screenshots,
-private messages, STOP and each run's own runtime folder stay ignored. You decide when to stage,
-commit and push. Without sharing, run state stays out of your project's history: when
-`.nightshift/` sits inside a Git repository, Setup adds it to `.gitignore`.
+rules, each run's receipts and the filed shifts. Say yes on the defaults screen and Setup copies a
+commented `.nightshift/.gitignore` that lets those records in and keeps raw screenshots, private
+messages, STOP and each run's own runtime folder out. It is your file: edit it to share more or less,
+and Nightshift follows what Git sees. You decide when to stage, commit and push. Without sharing, run
+state stays out of your project's history: when `.nightshift/` sits inside a Git repository, Setup
+adds it to `.gitignore`.
 
 ## The questions
 
@@ -54,7 +55,7 @@ reply, such as "worktree yes, 6 hours, deny sudo".
 
 | Setting | Default | What it decides |
 | --- | --- | --- |
-| Shared records | none | Which project records teammates see through Git: `plans`, `decisions`, `rules`, `receipts`, `summaries`. With `.nightshift/` inside the repository, Setup offers all five. |
+| Share through Git | no | Whether teammates see the plans, decisions, rules, run receipts and filed shifts through Git. With `.nightshift/` inside the repository, Setup offers yes. |
 | Receipts repo | no | A local-only Git repository inside `.nightshift/`, so every punch-list change has history. It is never pushed and never touches your project's history. Not offered with shared records. |
 | Shift worktree | no | Each shift works in its own worktree and branch, so your checkout and uncommitted edits stay untouched. Setup proposes the install command to run in it, such as `npm ci`. |
 | Site inspection | hourly | How often the heavier checks run, such as coverage or dead-code scans. Shown only when you kept checks. |

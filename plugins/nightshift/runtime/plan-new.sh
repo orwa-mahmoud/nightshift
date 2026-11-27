@@ -85,12 +85,9 @@ if {
     ns_owner_template "$TEMPLATE" "$WORKSPACE"
   else
     ns_owner_template "$TEMPLATE" "$WORKSPACE" "$NS"
-  fi | awk -v rebase="$( [ "$(ns_branch_rule "$WORKSPACE" catchUp)" != rebase ] || printf 1)" \
-    -v merge_line="Catching up with the base branch is a merge." -v rebase_line="Catching up with the base branch is a rebase onto it." '
+  fi | awk '
     NR == 1 { next }
     /^## Items[[:space:]]*$/ { exit }
-    # The team catches up with its base by rebase: the contract says so in place of the merge.
-    rebase && (i = index($0, merge_line)) { $0 = substr($0, 1, i - 1) rebase_line substr($0, i + length(merge_line)) }
     { print }
   '
   printf '## Items\n\n'

@@ -1955,32 +1955,28 @@ ns_archive_dir() {
   ns_named_dir "$root" "$(ns_archive "$1" layout)" "$2" "${3:-unknown}" "${4-}" "$tag"
 }
 
-# The records a team can share through Git, in the order sharing.records lists them.
-NS_SHARE_RECORDS="plans decisions rules receipts summaries"
-
-# ns_shared_records <project-dir> — each record sharing.records names, one per line; nothing on a
-# solo site. ns_share_unknown names any value it does not know.
-ns_shared_records() {
-  local f v r
-  ns_layout_set f "$1/.nightshift" rules && [ -f "$f" ] || return 0
-  v="$(ns_rules_get_in "$f" sharing records)"
-  for r in $NS_SHARE_RECORDS; do
-    case "$v" in *"\"$r\""*) printf '%s\n' "$r" ;; esac
-  done
-}
-
-# ns_share_unknown <project-dir> — each value of sharing.records that names no record, one per line.
-ns_share_unknown() {
-  local f v
-  ns_layout_set f "$1/.nightshift" rules && [ -f "$f" ] || return 0
-  v="$(ns_rules_get_in "$f" sharing records)"
-  printf '%s' "$v" | tr -d '[]' | tr ',' '\n' | tr -d '"' | awk -v known=" $NS_SHARE_RECORDS " '
-    NF && index(known, " " $0 " ") == 0 { print }'
-}
-
-# ns_site_shares <project-dir> <record> — status 0 when the site shares <record> through Git.
+# ns_site_shares <project-dir> <record> — status 0 when Git shares that record of the site: the site
+# keeps a .gitignore of its own, as a shared site does, sits inside a Git repository, and Git's
+# rules let the record in. Those rules are the only record of what a team shares; the shipped
+# .nightshift/.gitignore is their default. A record is one of plans, decisions, rules, receipts or
+# summaries. A site that keeps its own receipts repository shares nothing with the project's.
 ns_site_shares() {
-  ns_shared_records "$1" | grep -qx "$2"
+  local ns="$1/.nightshift" probe archive
+  [ -d "$ns" ] && [ -f "$ns/.gitignore" ] && [ ! -e "$ns/.git" ] || return 1
+  git -C "$ns" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  case "$2" in
+    plans) ns_layout_rel_at probe 3 plans || return 1; probe="$probe/plan.md" ;;
+    decisions) ns_layout_rel_at probe 3 decisions || return 1; probe="$probe/thread.md" ;;
+    rules) ns_layout_rel_at probe 3 rules || return 1 ;;
+    receipts) ns_layout_rel_at probe 3 receipts || return 1; probe="${probe/\*/run}/receipt.md" ;;
+    summaries)
+      archive="$(ns_archive "$1" root)"
+      [ -n "$archive" ] || ns_layout_rel_set archive "$ns" archive || return 1
+      probe="$archive/shift/punch-list.md"
+      ;;
+    *) return 1 ;;
+  esac
+  ! (cd "$ns" && git check-ignore -q --no-index -- "$probe") 2>/dev/null
 }
 
 # ns_share_tag — six random lowercase hex digits naming one run or filed shift on a shared site.
@@ -1998,68 +1994,6 @@ ns_run_is_local() {
   rel="${rel#runs/\*/}"
   [ -d "$1/runs/$2/${rel%/*}" ]
 }
-
-# ns_share_ignore_block <project-dir> — the lines `ns share` keeps in .nightshift/.gitignore: ignore
-# everything, then let Git see each shared record and nothing private inside it. Raw evidence
-# folders beside receipts, private messages, the runtime's own folders, STOP, locks and leases all
-# stay ignored.
-ns_share_ignore_block() {
-  local ws="$1" ns="$1/.nightshift" plans decisions records rules settings punch receipts inbox messages archive rest parent
-  ns_layout_rel_at plans 3 plans || return 1
-  ns_layout_rel_at decisions 3 decisions || return 1
-  ns_layout_rel_at records 3 plan-records || return 1
-  ns_layout_rel_at rules 3 rules || return 1
-  ns_layout_rel_at settings 3 settings || return 1
-  ns_layout_rel_at punch 3 punch-list || return 1
-  ns_layout_rel_at receipts 3 receipts || return 1
-  ns_layout_rel_at inbox 3 inbox || return 1
-  ns_layout_rel_at messages 3 messages || return 1
-  archive="$(ns_archive "$ws" root)"
-  [ -n "$archive" ] || ns_layout_rel_set archive "$ns" archive
-  printf '%s\n' "$NS_SHARE_BEGIN" '/*' '!/.gitignore' '!/.gitattributes' '!/state-version'
-  if ns_site_shares "$ws" rules; then
-    printf '!/%s\n!/%s/\n' "$rules" "$settings"
-  fi
-  if ns_site_shares "$ws" plans || ns_site_shares "$ws" decisions; then
-    printf '!/%s/\n/%s/*\n' "${plans%/*}" "${plans%/*}"
-    ! ns_site_shares "$ws" plans || printf '!/%s/\n!/%s/\n' "$plans" "$records"
-    ! ns_site_shares "$ws" decisions || printf '!/%s/\n' "$decisions"
-  fi
-  if ns_site_shares "$ws" receipts; then
-    printf '!/runs/\n/runs/*/*\n!/runs/*/.shift-id\n'
-    printf '!/%s\n!/runs/*/%s\n!/%s/\n/%s/*/\n!/%s/\n/%s\n' \
-      "$punch" "$rules" "$receipts" "$receipts" "$inbox" "$messages"
-  fi
-  if ns_site_shares "$ws" summaries; then
-    # An archive root a few folders down needs each folder above it let back in first.
-    rest="$archive"
-    parent=""
-    while [ "${rest#*/}" != "$rest" ]; do
-      parent="${parent:+$parent/}${rest%%/*}"
-      rest="${rest#*/}"
-      printf '!/%s/\n/%s/*\n' "$parent" "$parent"
-    done
-    printf '!/%s/\n/%s/history-index.md\n/%s/*/run/\n/%s/*/%s/*/\n/%s/*/%s\n' \
-      "$archive" "$archive" "$archive" "$archive" "${receipts#runs/\*/}" "$archive" "${messages#runs/\*/}"
-    # A shift filed from a run folder keeps that run's layout under the folder: runs/<run>/...
-    printf '/%s/*/runs/*/run/\n/%s/*/%s/*/\n/%s/*/%s\n' \
-      "$archive" "$archive" "$receipts" "$archive" "$messages"
-  fi
-  printf '%s\n' "$NS_SHARE_END"
-}
-
-# ns_share_attributes_block <project-dir> — the lines `ns share` keeps in .nightshift/.gitattributes:
-# a plan's record is appended to and never rewritten, so teammates' lines merge side by side. Nothing
-# when the site does not share its plans.
-ns_share_attributes_block() {
-  local records
-  ns_site_shares "$1" plans || return 0
-  ns_layout_rel_at records 3 plan-records || return 1
-  printf '%s\n%s/*.md merge=union\n%s\n' "$NS_SHARE_BEGIN" "$records" "$NS_SHARE_END"
-}
-
-NS_SHARE_BEGIN='# >>> nightshift share: written by ns share from sharing.records in rules.json'
-NS_SHARE_END='# <<< nightshift share'
 
 # ns_runs_layout <project-dir> — how a run folder is named: runs.layout in the rules file, one of
 # the archive.layout values, `name` when unset.

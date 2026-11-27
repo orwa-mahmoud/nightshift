@@ -24,6 +24,7 @@ state-version	0	state-version	file
 stop	0	STOP	file
 stop	3	runs/*/STOP	file
 gitignore	0	.gitignore	file
+gitattributes	0	.gitattributes	file
 receipts-repo	0	.git	dir
 receipt-template	0	receipt-item.md	stray
 shift-defaults	0	shift-defaults.json	file

@@ -722,7 +722,7 @@ if [ "$RULES_RC" -eq 0 ] && ns_layout_set MEMBER_RECORD "$NS" member-settings 2>
   if [ -n "$MEMBER_PROBLEMS" ]; then
     refuse "settings $MEMBER_NAME cannot be used for this run"
     printf '%s\n' "$MEMBER_PROBLEMS" | sed 's/^/explain /'
-    repair "take those settings out of settings/$MEMBER_NAME.json, or ask the team to allow them in team.memberSettings"
+    repair "keep team settings in the team's rules.json and fix settings/$MEMBER_NAME.json"
   else
     ok "settings settings/$MEMBER_NAME.json over the team's rules.json"
   fi
