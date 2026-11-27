@@ -18,6 +18,8 @@
 #   stringlist one JSON array of strings, each decoded on its own line; null prints nothing
 #   unquote  one JSON string on stdin, decoded text on stdout
 #   recordfields JSONL objects matching -v records, with -v key paths projected as TSV fields
+#   facts    the reader's rows on stdin as the policy fact stream, for the keys named in
+#            ENVIRON NS_FACTS_TOP, NS_FACTS_ELEVATION and NS_FACTS_GROUPS (one per line)
 
 {
   if (mode == "recordfields") {
@@ -36,6 +38,10 @@
 END {
   if (mode == "recordfields") {
     emit_record_fields()
+    exit
+  }
+  if (mode == "facts") {
+    emit_facts()
     exit
   }
   if (mode == "unquote") {
@@ -1084,6 +1090,86 @@ function jenc(s,    j, c, o) {
     }
   }
   return o "\""
+}
+
+# fact_text <json> — a JSON string decoded, with control characters as spaces; empty when it does
+# not decode.
+function fact_text(v) {
+  if (index(v, "\\") > 0) {
+    if (unquote_one(v) != 0) return ""
+    v = decoded
+  } else {
+    v = substr(v, 2, length(v) - 2)
+  }
+  gsub(/[\001-\037\177]/, " ", v)
+  return v
+}
+
+# fact_array <p1> <p2> — the string array at that path as compact JSON, or null when any element is
+# not a string, because a half-read list is worse than an absent one.
+function fact_array(p1, p2,    j, out, key) {
+  out = ""
+  for (j = 0; (p1 SUBSEP p2 SUBSEP j) in rtyp; j++) {
+    key = p1 SUBSEP p2 SUBSEP j
+    if (rtyp[key] != "s") return "null"
+    out = out (j > 0 ? "," : "") rval[key]
+  }
+  return "[" out "]"
+}
+
+# emit_facts — the fact stream ns_rules_facts prints, from the rows in src. The first row for a path
+# wins, as in a lookup: the run's rows come before the shared ones.
+function emit_facts(    lines, count, j, f, key, names, nn, k, c, rest, present, typ, val, pol, pat) {
+  count = split(src, lines, "\n")
+  for (j = 1; j <= count; j++) {
+    if (lines[j] == "") continue
+    split(lines[j], f, "\t")
+    key = f[1] SUBSEP f[2] SUBSEP f[3]
+    if (key in rtyp) continue
+    rtyp[key] = f[4]
+    rval[key] = substr(lines[j], length(f[1] f[2] f[3] f[4]) + 5)
+  }
+  nn = split(ENVIRON["NS_FACTS_TOP"], names, "\n")
+  for (j = 1; j <= nn; j++) {
+    k = names[j]
+    if (k == "") continue
+    key = k SUBSEP "" SUBSEP ""
+    present = (key in rtyp) ? 1 : 0
+    val = "null"
+    if (present && rtyp[key] ~ /^[snb]$/) val = rval[key]
+    printf "r\t%s\t%s\t%s\n", k, present, val
+  }
+  nn = split(ENVIRON["NS_FACTS_ELEVATION"], names, "\n")
+  for (j = 1; j <= nn; j++) {
+    c = names[j]
+    if (c == "") continue
+    present = (("elevation" SUBSEP c SUBSEP "") in rtyp) ? 1 : 0
+    pol = ""
+    key = "elevation" SUBSEP c SUBSEP "policy"
+    if ((key in rtyp) && rtyp[key] == "s") pol = fact_text(rval[key])
+    printf "e\t%s\t%s\t%s\n", c, present, pol
+    key = "elevation" SUBSEP c SUBSEP "pattern"
+    if (!(key in rtyp) || rtyp[key] != "s") continue
+    pat = fact_text(rval[key])
+    if (pat != "") printf "p\t%s\t%s\n", c, pat
+  }
+  nn = split(ENVIRON["NS_FACTS_GROUPS"], names, "\n")
+  for (j = 1; j <= nn; j++) {
+    k = names[j]
+    if (k == "") continue
+    c = k
+    sub(/\..*/, "", c)
+    rest = substr(k, length(c) + 2)
+    key = c SUBSEP rest SUBSEP ""
+    present = (key in rtyp) ? 1 : 0
+    val = "null"
+    if (present) {
+      typ = rtyp[key]
+      if (typ ~ /^[snbz]$/) val = rval[key]
+      else if (typ == "a") val = fact_array(c, rest)
+    }
+    printf "g\t%s\t%s\t%s\n", k, present, val
+  }
 }
 
 function unquote_one(text,    save_src, save_n, save_i) {

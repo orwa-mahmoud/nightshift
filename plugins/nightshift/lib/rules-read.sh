@@ -581,24 +581,6 @@ ns_rules_map_msg() {
   return 1
 }
 
-# ns_rules_facts <file> — the policy fact stream _ns_policy_load_rules consumes.
-# Status 1 when the file is not the accepted shape.
-# _ns_rules_array_json <key> <subkey> — an array of strings rebuilt as compact JSON from the
-# indexed rows the reader records. Any element that is not a string fails the whole array closed,
-# because a half-read list is worse than an absent one.
-_ns_rules_array_json() {
-  local i=0 row typ val out=""
-  while row="$(_ns_rules_row "$1" "$2" "$i")"; do
-    typ="${row%%"$_NS_RULES_TAB"*}"
-    val="${row#*"$_NS_RULES_TAB"}"
-    [ "$typ" = s ] || return 1
-    [ "$i" -eq 0 ] || out="$out,"
-    out="$out$val"
-    i=$((i + 1))
-  done
-  printf '[%s]' "$out"
-}
-
 # The owner preference blocks the resolved view carries, in the byte order it prints them.
 # One list, so the fact stream and the setting names cannot drift apart.
 NS_RULES_GROUP_KEYS='archive.automatic
@@ -643,63 +625,22 @@ shift.toolingPolicy
 shift.verificationProfile
 shift.worktreeRoot'
 
+# The top-level settings the fact stream carries as `r` rows.
+NS_RULES_TOP_FACT_KEYS='forbiddenCommands
+neverCommitPatterns
+expectedEmail
+protectedDirs
+stallMax
+watchMinutes'
+
+# ns_rules_facts <file> — the policy fact stream _ns_policy_load_rules consumes, read from the loaded
+# rows in one awk pass. Status 1 when the file is not the accepted shape.
 ns_rules_facts() {
-  local k c row typ val present pol pat
+  local bin
   ns_rules_load "$1" || return 1
-  for k in forbiddenCommands neverCommitPatterns expectedEmail protectedDirs stallMax watchMinutes; do
-    row="$(_ns_rules_row "$k" "" "")" && present=1 || present=0
-    if [ "$present" -eq 1 ]; then
-      typ="${row%%"$_NS_RULES_TAB"*}"
-      val="${row#*"$_NS_RULES_TAB"}"
-      case "$typ" in
-        s | n | b) ;;
-        *) val=null ;;
-      esac
-    else
-      val=null
-    fi
-    printf 'r\t%s\t%s\t%s\n' "$k" "$present" "$val"
-  done
-  for c in sudo containers global-packages daemons external-services; do
-    if _ns_rules_row elevation "$c" "" >/dev/null; then
-      present=1
-    else
-      present=0
-    fi
-    pol=""
-    row="$(_ns_rules_row elevation "$c" policy)" && {
-      typ="${row%%"$_NS_RULES_TAB"*}"
-      val="${row#*"$_NS_RULES_TAB"}"
-      [ "$typ" = s ] && pol="$(ns_json_text "$val")"
-    }
-    pol="$(printf '%s' "$pol" | tr '\000-\037\177' ' ')"
-    printf 'e\t%s\t%s\t%s\n' "$c" "$present" "$pol"
-    row="$(_ns_rules_row elevation "$c" pattern)" || continue
-    typ="${row%%"$_NS_RULES_TAB"*}"
-    val="${row#*"$_NS_RULES_TAB"}"
-    [ "$typ" = s ] || continue
-    pat="$(ns_json_text "$val")"
-    [ -n "$pat" ] || continue
-    pat="$(printf '%s' "$pat" | tr '\000-\037\177' ' ')"
-    printf 'p\t%s\t%s\n' "$c" "$pat"
-  done
-  # The owner's preference blocks, one fact per key, named the way the resolved view names them.
-  # These are permanent settings rather than tonight's choices, so a `g` row carries the same
-  # three fields an `r` row does and the resolver treats them identically.
-  for k in $NS_RULES_GROUP_KEYS; do
-    c="${k%%.*}"
-    row="$(_ns_rules_row "$c" "${k#*.}" "")" && present=1 || present=0
-    if [ "$present" -eq 1 ]; then
-      typ="${row%%"$_NS_RULES_TAB"*}"
-      val="${row#*"$_NS_RULES_TAB"}"
-      case "$typ" in
-        s | n | b | z) ;;
-        a) val="$(_ns_rules_array_json "$c" "${k#*.}")" || val=null ;;
-        *) val=null ;;
-      esac
-    else
-      val=null
-    fi
-    printf 'g\t%s\t%s\t%s\n' "$k" "$present" "$val"
-  done
+  bin="$(ns_rules_awk_bin)" || return 1
+  # One awk pass over the loaded rows prints every fact.
+  printf '%s\n' "$NS_RULES_ROWS" |
+    NS_FACTS_TOP="$NS_RULES_TOP_FACT_KEYS" NS_FACTS_ELEVATION="$NS_POLICY_CATEGORIES" \
+      NS_FACTS_GROUPS="$NS_RULES_GROUP_KEYS" "$bin" -v mode=facts -f "$_NS_RULES_AWK_FILE"
 }

@@ -1,0 +1,53 @@
+r	forbiddenCommands	1	"git push"
+r	neverCommitPatterns	1	""
+r	expectedEmail	1	"dev@example.com"
+r	protectedDirs	1	""
+r	stallMax	1	0
+r	watchMinutes	1	10
+e	sudo	1	allow
+p	sudo	sudo\s+"x" tab
+e	containers	1	park
+e	global-packages	0	
+e	daemons	0	
+e	external-services	0	
+g	archive.automatic	1	false
+g	archive.layout	1	"date"
+g	archive.root	1	"archive"
+g	archive.templatePath	1	""
+g	catalogs.edge-cases.paths	0	null
+g	catalogs.edge-cases.template	0	null
+g	catalogs.evidence.paths	0	null
+g	catalogs.evidence.template	0	null
+g	catalogs.gates.paths	0	null
+g	catalogs.gates.template	0	null
+g	catalogs.shifts.paths	1	["p/1","p \"2\""]
+g	catalogs.shifts.template	1	"t"
+g	handoff.detail	1	"concise"
+g	handoff.enabled	1	true
+g	handoff.language	1	"auto"
+g	handoff.sections	1	["a","b\\c","d"]
+g	handoff.templatePath	1	""
+g	handoff.view	1	"owner"
+g	recovery.launchScope	1	"host-default"
+g	receipts.duration	1	"on"
+g	receipts.enabled	1	true
+g	receipts.evidence.architecture	1	"off"
+g	receipts.evidence.check	1	"off"
+g	receipts.evidence.default	1	""
+g	receipts.evidence.fileMap	1	"off"
+g	receipts.evidence.review	1	"off"
+g	receipts.evidence.unavailable	1	""
+g	receipts.progressMinutes	1	20
+g	receipts.progressMode	1	"time"
+g	receipts.progressTokens	1	100000
+g	receipts.templatePath	1	""
+g	receipts.usage	1	"when-available"
+g	shift.copyIn	1	[]
+g	shift.execution	1	"run-direct"
+g	shift.hours	1	null
+g	shift.isolation	1	"none"
+g	shift.itemBudget	1	""
+g	shift.prepare	1	""
+g	shift.toolingPolicy	1	"auto-add"
+g	shift.verificationProfile	1	"fast"
+g	shift.worktreeRoot	1	".nightshift/worktrees"
