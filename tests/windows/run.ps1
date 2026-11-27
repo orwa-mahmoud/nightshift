@@ -1353,15 +1353,19 @@ exit 1
         Set-TestPunch $clockOkWorkspace $false
         $clockOkReceipt = Join-Path $root 'clock-out ok receipt.txt'
         $clockOkStub = Join-Path $root 'clock-out ok stub.ps1'
+        # The stub clocks out as the gate would, at the paths the layout gives this workspace.
+        $clockOkNs = Join-Path $clockOkWorkspace '.nightshift'
         @'
 param([string]$Prompt)
 Add-Content -LiteralPath $env:NIGHTSHIFT_TEST_AGENT_RECEIPT -Value 'called'
-$ns = Join-Path $env:CODEX_PROJECT_DIR '.nightshift'
-[IO.File]::WriteAllText((Join-Path $ns 'run/.ended'), '')
-Remove-Item -LiteralPath (Join-Path $ns 'run/.shift-armed') -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath (Join-Path $ns 'run/.shift-lease') -Force -ErrorAction SilentlyContinue
+[IO.File]::WriteAllText('__ENDED__', '')
+Remove-Item -LiteralPath '__ARMED__' -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath '__LEASE__' -Force -ErrorAction SilentlyContinue
 exit 0
-'@ | Set-Content -LiteralPath $clockOkStub -Encoding UTF8
+'@.Replace('__ENDED__', (Get-NSLayoutPath $clockOkNs 'ended').Replace("'", "''")).
+        Replace('__ARMED__', (Get-NSLayoutPath $clockOkNs 'armed').Replace("'", "''")).
+        Replace('__LEASE__', (Get-NSLayoutPath $clockOkNs 'lease').Replace("'", "''")) |
+            Set-Content -LiteralPath $clockOkStub -Encoding UTF8
         $clockOkWatch = Invoke-TestScript $watchman `
             @('-Project', $clockOkWorkspace, '-HostName', 'codex', '-IntervalMinutes', '1', '-Agent', $clockOkStub) `
             '' @{ NIGHTSHIFT_WATCH_SLEEP = '0'; NIGHTSHIFT_TEST_AGENT_RECEIPT = $clockOkReceipt }

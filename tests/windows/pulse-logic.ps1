@@ -178,19 +178,27 @@ try {
     $hostExe = (Get-Process -Id $PID).Path
     $pulseHook = Join-Path $repository 'plugins/nightshift/hooks/windows/pulse.ps1'
     $send = Join-Path $repository 'plugins/nightshift/runtime/windows/send-message.ps1'
-    $text = "سؤال: هل `"الملف`" جاهز؟`nسطر ثانٍ مع 'اقتباس' و ``code`` `$HOME`n`n  indented line"
+    # Multiline Arabic text with quotes, a backtick and a dollar sign, decoded from UTF-8 so the script
+    # itself stays ASCII for Windows PowerShell 5.1.
+    $text = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('2LPYpNin2YQ6INmH2YQgItin2YTZhdmE2YEiINis2KfZh9iy2J8K2LPYt9ixINir2KfZhtmNINmF2LkgJ9in2YLYqtio2KfYsycg2YggYGNvZGVgICRIT01FCgogIGluZGVudGVkIGxpbmU='))
     $sent = & $hostExe -NoProfile -NonInteractive -File $send -Project $messages -Run b -Text $text
     Expect-True ($LASTEXITCODE -eq 0) "send-message: $sent"
     function Get-PulseContext {
         param([string]$SessionId)
         $env:CLAUDE_PROJECT_DIR = $messages
+        # The hook writes UTF-8, as the host reads it; this process decodes the same way.
+        $previousEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
         try {
             $payload = (@{ session_id = $SessionId; transcript_path = ''; cwd = $messages; tool_name = 'Bash' } | ConvertTo-Json -Compress)
             $out = ($payload | & $hostExe -NoProfile -NonInteractive -File $pulseHook -HostName claude) -join "`n"
             if ([string]::IsNullOrWhiteSpace($out)) { return '' }
             return [string](($out | ConvertFrom-Json).hookSpecificOutput.additionalContext)
         }
-        finally { Remove-Item Env:CLAUDE_PROJECT_DIR -ErrorAction SilentlyContinue }
+        finally {
+            [Console]::OutputEncoding = $previousEncoding
+            Remove-Item Env:CLAUDE_PROJECT_DIR -ErrorAction SilentlyContinue
+        }
     }
     Expect-True (-not (Get-PulseContext 'sid-a').Contains($text)) "the other run's worker never sees it"
     $context = Get-PulseContext 'sid-b'
