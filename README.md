@@ -2,7 +2,10 @@
 
 # <img src="plugins/nightshift/assets/nightshift-logo.png" alt="" width="56" align="absmiddle"> nightshift
 
-Nightshift is a plugin for **Claude Code, Codex, and Cursor**.
+<p align="center">
+<strong>Turn an idea into a plan your agent can run autonomously, and it leaves results you can review.</strong><br>
+Plugin for Claude Code, Codex, and Cursor
+</p>
 
 [![OpenAI Plugin Directory](https://img.shields.io/badge/OpenAI-Plugin_Directory-111111)](https://chatgpt.com/plugins/plugins_6a7c58f65d708191b3a705a8625baffe)
 [![HOL Guard](https://img.shields.io/endpoint?url=https%3A%2F%2Fhol.org%2Fapi%2Fregistry%2Fbadges%2Fplugin%3Fslug%3Dorwa-mahmoud%252Fnightshift%26metric%3Dtrust)](https://hol.org/registry/plugins/orwa-mahmoud%2Fnightshift)
