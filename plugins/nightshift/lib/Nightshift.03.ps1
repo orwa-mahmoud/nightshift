@@ -700,7 +700,17 @@ function Invoke-NSEvidenceAppend {
     )
     $paths = Get-NSEvidencePaths $Project
     $null = Invoke-NSEvidenceInit -Project $Project -Quiet
-    $record = ConvertFrom-NSJsonText $RecordJson
+    try {
+        $record = ConvertFrom-NSJsonText $RecordJson
+    }
+    catch {
+        Write-NSEvidenceError 'evidence: --record is not one JSON value'
+        return 1
+    }
+    if (-not ($record -is [Collections.IDictionary])) {
+        Write-NSEvidenceError 'evidence: record is not an object'
+        return 1
+    }
     if ($record -is [Collections.IDictionary]) {
         if (-not $record.Contains('schemaVersion')) { $record['schemaVersion'] = 1 }
         if (-not $record.Contains('firstSeen')) { $record['firstSeen'] = Get-NSEvidenceNow }
