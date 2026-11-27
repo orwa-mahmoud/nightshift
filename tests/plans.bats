@@ -131,3 +131,15 @@ plans_dir() { printf '%s/.nightshift/staging/plans' "$1"; }
   ps_list="$(pwsh -NoProfile -File "$RUNTIME/windows/plan-enter.ps1" -Project "$p" | grep '^plan file:')"
   [ "$bash_list" = "$ps_list" ]
 }
+
+@test "the plan room opens on a site that keeps runs with no run chosen, on both runtimes" {
+  w="$(runs_site plans-runs)"
+  run env -u NIGHTSHIFT_RUN bash "$RUNTIME/plan-enter.sh" --project "$w"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -q '^plan room open: '
+  bash "$RUNTIME/plan-exit.sh" --project "$w" >/dev/null 2>&1 || :
+  command -v pwsh >/dev/null || skip 'pwsh is not installed'
+  run env -u NIGHTSHIFT_RUN pwsh -NoProfile -File "$RUNTIME/windows/plan-enter.ps1" -Project "$w"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -q '^plan room open: '
+}

@@ -2866,7 +2866,9 @@ function Write-NSControlLog {
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
         [Parameter(Mandatory = $true)][string]$Line
     )
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return }
     $log = Get-NSLayoutPath $NightshiftDir 'shift-log'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $log) -Force
     $stamp = Get-NSLocalNow -Seconds
     Add-Content -LiteralPath $log -Value "$stamp $script:NSDot $Line" -Encoding utf8
 }
