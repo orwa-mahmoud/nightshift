@@ -3,6 +3,20 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.42.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.41.0...v0.42.0) (2026-11-27)
+
+
+### Features
+
+* send a message to a running named shift ([4493b16](https://github.com/orwa-mahmoud/nightshift/commit/4493b16e1482058160947b77a57f3ed712632331))
+* start a named plan as its own run ([dcb1527](https://github.com/orwa-mahmoud/nightshift/commit/dcb15275f38106e3acb0cc7dd8137d474906d594))
+* status, stop and archive a named run ([f8926ac](https://github.com/orwa-mahmoud/nightshift/commit/f8926ac3d26f95d3e4bf97a54db6f7611cc6df79))
+
+
+### Bug Fixes
+
+* write the Windows pulse notice as UTF-8 ([940fce8](https://github.com/orwa-mahmoud/nightshift/commit/940fce883eaa5954d4d3e4f90b791b41b146c079))
+
 ## [0.41.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.40.1...v0.41.0) (2026-11-26)
 
 
