@@ -648,6 +648,20 @@ case "$RULES_RC" in
     repair "fix that named reason in $RULES or re-run Setup; never half-apply a broken file" ;;
 esac
 
+# The member settings the run selected are checked again at every Start: the file may have changed
+# in Git since the run took it.
+if [ "$RULES_RC" -eq 0 ] && ns_layout_set MEMBER_RECORD "$NS" member-settings 2>/dev/null && [ -f "$MEMBER_RECORD" ]; then
+  IFS= read -r MEMBER_NAME <"$MEMBER_RECORD" || MEMBER_NAME=""
+  MEMBER_PROBLEMS="$(ns_member_settings_problems "$WORKSPACE" "$MEMBER_NAME")"
+  if [ -n "$MEMBER_PROBLEMS" ]; then
+    refuse "settings $MEMBER_NAME cannot be used for this run"
+    printf '%s\n' "$MEMBER_PROBLEMS" | sed 's/^/explain /'
+    repair "take those settings out of settings/$MEMBER_NAME.json, or ask the team to allow them in team.memberSettings"
+  else
+    ok "settings settings/$MEMBER_NAME.json over the team's rules.json"
+  fi
+fi
+
 if [ "$RULES_RC" -eq 0 ]; then
   WATCH_MINUTES="$(rule "$WORKSPACE" watchMinutes "${NIGHTSHIFT_WATCH:-}")"
   case "$WATCH_MINUTES" in '' | *[!0-9]*) WATCH_MINUTES=0 ;; esac

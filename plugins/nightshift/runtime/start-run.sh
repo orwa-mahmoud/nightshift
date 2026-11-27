@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # start-run.sh — start a named plan as a run of its own.
 #
-#   start-run.sh --project DIR --plan NAME --host claude|codex|cursor [--background]
+#   start-run.sh --project DIR --plan NAME --host claude|codex|cursor [--background] [--settings NAME]
+#
+# --settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values
+# are laid over the team's rules.json, beneath the run's own rules file, and reach every helper the
+# run starts. A file that changes anything the team does not let a member change is refused before
+# anything is placed.
 #
 # In a workspace that keeps runs, a plan waiting in staging/plans/ becomes a run. Its folder under
 # runs/ is claimed first, named by runs.layout from the plan's title; the plan's punch list is
@@ -33,6 +38,7 @@ PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-${CURSOR_PROJECT_DIR:-$PWD}}
 PLAN=""
 BACKGROUND=0
 HOST_NAME=""
+SETTINGS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)
@@ -53,6 +59,11 @@ while [ $# -gt 0 ]; do
     --background)
       BACKGROUND=1
       shift
+      ;;
+    --settings)
+      [ $# -ge 2 ] || { printf 'start-run: --settings needs a value\n' >&2; exit 2; }
+      SETTINGS="$2"
+      shift 2
       ;;
     -h | --help)
       awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
@@ -96,6 +107,17 @@ NS="$WORKSPACE/.nightshift"
 ns_layout_per_run "$NS" punch-list ||
   refuse "layout this workspace keeps one shift at a time" "preview the move to run folders with ns migrate-state, make it with --apply, then run this again"
 
+# A member's settings are checked before anything is placed, so a refused file leaves no run behind.
+if [ -n "$SETTINGS" ]; then
+  PROBLEMS="$(ns_member_settings_problems "$WORKSPACE" "$SETTINGS")"
+  if [ -n "$PROBLEMS" ]; then
+    printf 'refuse settings %s cannot be selected for this run\n' "$SETTINGS"
+    printf '%s\n' "$PROBLEMS" | sed 's/^/explain /'
+    printf 'repair take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again\n'
+    exit 1
+  fi
+fi
+
 KEY="$(ns_receipt_slug "$PLAN")"
 [ -n "$KEY" ] || refuse "plan $PLAN has no letters or digits to name it by"
 PLAN_FILE="$(ns_layout_path "$NS" plans)/$KEY.md"
@@ -131,6 +153,25 @@ if [ -z "$RUN" ]; then
 fi
 export NIGHTSHIFT_RUN="$RUN"
 ok "run $RUN"
+
+# The member settings this run uses, kept with the run's own runtime files: the choice is the
+# runner's, and every helper of the run reads it from there.
+SELECTED=""
+SELECTION="$(ns_layout_path "$NS" member-settings)"
+if [ -f "$SELECTION" ]; then IFS= read -r SELECTED <"$SELECTION" || SELECTED=""; fi
+if [ -n "$SETTINGS" ]; then
+  [ -z "$SELECTED" ] || [ "$SELECTED" = "$SETTINGS" ] ||
+    refuse "settings run $RUN already uses settings/$SELECTED.json" "start it again without --settings, or file that run with Archive first"
+  if [ -z "$SELECTED" ]; then
+    if ! mkdir -p "${SELECTION%/*}" || ! printf '%s\n' "$SETTINGS" >"$SELECTION"; then
+      refuse "settings could not write $SELECTION" "check that .nightshift/ is writable, then run this again"
+    fi
+  fi
+  SELECTED="$SETTINGS"
+fi
+if [ -n "$SELECTED" ]; then
+  ok "settings settings/$SELECTED.json over the team's rules.json, for this run"
+fi
 
 # A run already worked by a live process is not started twice, and nothing of it is redone.
 if [ "$BACKGROUND" -eq 1 ] && ns_lease_valid "$NS" && [ -n "${NS_LEASE_PID:-}" ] &&

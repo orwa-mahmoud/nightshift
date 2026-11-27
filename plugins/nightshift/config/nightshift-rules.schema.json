@@ -455,6 +455,58 @@
         }
       }
     },
+    "team": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The team's workflow rules. Read only from this file: neither a run's own rules file nor a member's settings file changes them.",
+      "properties": {
+        "roles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Each member's role, by the name they put on the records, as {\"Alice\": \"lead\", \"Bob\": \"developer\"}."
+        },
+        "approvers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "The roles whose approval a plan revision needs before it runs. Empty: the plan's owner approves it."
+        },
+        "selfApprove": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "The roles that may submit their own plan already approved."
+        },
+        "reviewChanges": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "contract",
+              "gates",
+              "items"
+            ]
+          },
+          "description": "Which changes to an approved plan return it to proposed until that revision is approved."
+        },
+        "memberSettings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?!team(\\.|$))(?!sharing(\\.|$))[A-Za-z][A-Za-z0-9-]*(\\.[A-Za-z][A-Za-z0-9-]*)*$"
+          },
+          "description": "The settings a member's selected settings file may change, by dotted name (shift.hours, receipts.progressMinutes); a block name allows the whole block. team and sharing are never a member's. Empty: a member changes nothing."
+        }
+      }
+    },
     "receipts": {
       "type": "object",
       "additionalProperties": false,

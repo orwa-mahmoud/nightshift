@@ -79,6 +79,13 @@
   "sharing": {
     "records": []
   },
+  "team": {
+    "roles": {},
+    "approvers": [],
+    "selfApprove": [],
+    "reviewChanges": [],
+    "memberSettings": []
+  },
   "receipts": {
     "enabled": true,
     "progressMode": "time",

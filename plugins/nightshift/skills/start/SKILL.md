@@ -101,6 +101,11 @@ leaves the plan where it is as the team's record and prints that the run works f
 teammates keep reading and editing the plan while the run works. A teammate's run of the same plan,
 pulled through Git, is never taken over: each runner's run has its own folder.
 
+When the owner names their own settings for the run ("with my settings", "use bob's settings"),
+add `--settings <name>`: the run reads `settings/<name>.json` over the team's rules for that run
+alone. A file that changes anything the team keeps is refused with the settings it named; relay
+those lines and stop.
+
 When the owner asks for the plan to run **in the background** ("start it in the background", "run it
 on its own"), add `--background` and stop after relaying its lines: it arms the run, starts a
 headless worker on it and the run's watchman, so this conversation stays free. Running `start-run`

@@ -478,6 +478,25 @@ matching block of `.nightshift/.gitignore`; everything else under `.nightshift/`
 |---|---|---|
 | `records` | `[]` | Any of `plans` (the plan files in `staging/plans/`), `decisions` (the planning decision threads in `staging/decisions/`, one file each), `rules` (`rules.json`), `receipts` (each run's punch list, receipts, parking lot and snag log) and `summaries` (the filed shifts under the archive root). Empty keeps the site private to its runner. Raw evidence folders beside receipts, private messages, STOP, leases, watchman files and each run's `run/` folder are never shared. When `receipts` is shared, each run's folder ends in a tag of its own (`runs/export-csv-3f9a1c/`), and when `summaries` is, so does each filed shift's folder, so teammates' runs of the same plan never meet in Git. When `plans` is shared, a plan stays in `staging/plans/` after a run starts from it. A shared run's punch list names its paths from the workspace root (`./.nightshift/...`), so it carries no runner's own folders |
 
+`team` holds the team's workflow rules. It is read only from the team's `rules.json`: neither a
+run's own rules file nor a member's settings file changes it.
+
+| Key | Default | Values |
+|---|---|---|
+| `roles` | `{}` | Each member's role, by the name they put on the records: `{"Alice": "lead", "Bob": "developer"}` |
+| `approvers` | `[]` | The roles whose approval a plan revision needs before it runs. Empty: the plan's owner approves it |
+| `selfApprove` | `[]` | The roles that may submit their own plan already approved |
+| `reviewChanges` | `[]` | Which changes to an approved plan return it to proposed until that revision is approved: `contract`, `gates`, `items` |
+| `memberSettings` | `[]` | The settings a member's settings file may change, by dotted name (`shift.hours`, `receipts.progressMinutes`); a block name allows the whole block. `team` and `sharing` are never a member's |
+
+A member keeps their own overrides in `.nightshift/settings/<name>.json`, a rules file holding only
+what they change, and selects it for one run with `ns start-run --plan <plan> --host <host>
+--settings <name>`. That run reads its own `runs/<run>/rules.json` first, then the member's file,
+then the team's `rules.json`, and every helper the run starts reads the same. Without a selection
+the team's values apply. A file that changes anything outside `team.memberSettings` is refused before
+the run is placed, and again at every Start if it changes later. Credentials and anything specific
+to one machine stay in the runner's own environment, never in a settings file.
+
 Changing `root` never moves or hides what is already filed: an older history under the previous
 root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live
 ones in place, so a shift still in progress keeps the receipts its own progress checks read.

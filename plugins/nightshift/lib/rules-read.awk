@@ -1352,7 +1352,7 @@ function parse_top_value(key,    c) {
     }
     if (key == "shift" || key == "handoff" || key == "archive" || key == "recovery" ||
         key == "receipts" || key == "planRoom" || key == "catalogs" || key == "gates" || key == "edgeCases" ||
-        key == "runs" || key == "sharing") {
+        key == "runs" || key == "sharing" || key == "team") {
       emit(key, "", "", "o", "")
       parse_settings_object(key, "")
       return
@@ -1593,7 +1593,7 @@ function parse_settings_object(p1, prefix,    c, key, first) {
       emit(p1, prefix key, "", "z", "null")
     } else if (c == "[") {
       parse_settings_array(p1, prefix key)
-    } else if (c == "{" && prefix == "" && ((p1 == "receipts" && key == "evidence") || p1 == "catalogs")) {
+    } else if (c == "{" && prefix == "" && ((p1 == "receipts" && key == "evidence") || p1 == "catalogs" || (p1 == "team" && key == "roles"))) {
       emit(p1, key, "", "o", "")
       parse_settings_object(p1, key ".")
     } else {

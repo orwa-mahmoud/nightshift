@@ -643,6 +643,23 @@ else {
     }
 }
 
+# The member settings the run selected are checked again at every Start: the file may have changed
+# in Git since the run took it.
+if ($null -ne $rules -and (Test-NSLayoutKey $ns 'member-settings')) {
+    $memberRecord = Get-NSLayoutPath $ns 'member-settings'
+    if ([IO.File]::Exists($memberRecord)) {
+        $memberLines = @([IO.File]::ReadAllLines($memberRecord))
+        $memberName = $(if ($memberLines.Count -gt 0) { $memberLines[0].TrimEnd("`r") } else { '' })
+        $memberProblems = Get-NSMemberSettingsProblems $workspace $memberName
+        if ($memberProblems.Count -gt 0) {
+            Write-Refuse "settings $memberName cannot be used for this run"
+            foreach ($problem in $memberProblems) { Write-Verdict "explain $problem" }
+            Write-Repair "take those settings out of settings/$memberName.json, or ask the team to allow them in team.memberSettings"
+        }
+        else { Write-Ok "settings settings/$memberName.json over the team's rules.json" }
+    }
+}
+
 if ($null -ne $rules) {
     $watchMinutes = Get-NSRule $workspace 'watchMinutes' ([string]$env:NIGHTSHIFT_WATCH)
     if ($watchMinutes -notmatch '^[0-9]+$') { $watchMinutes = '0' }

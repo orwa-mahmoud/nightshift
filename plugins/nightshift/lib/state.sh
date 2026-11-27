@@ -2004,10 +2004,11 @@ ns_run_is_local() {
 # folders beside receipts, private messages, the runtime's own folders, STOP, locks and leases all
 # stay ignored.
 ns_share_ignore_block() {
-  local ws="$1" ns="$1/.nightshift" plans decisions rules punch receipts inbox messages archive rest parent
+  local ws="$1" ns="$1/.nightshift" plans decisions rules settings punch receipts inbox messages archive rest parent
   ns_layout_rel_at plans 3 plans || return 1
   ns_layout_rel_at decisions 3 decisions || return 1
   ns_layout_rel_at rules 3 rules || return 1
+  ns_layout_rel_at settings 3 settings || return 1
   ns_layout_rel_at punch 3 punch-list || return 1
   ns_layout_rel_at receipts 3 receipts || return 1
   ns_layout_rel_at inbox 3 inbox || return 1
@@ -2016,7 +2017,7 @@ ns_share_ignore_block() {
   [ -n "$archive" ] || ns_layout_rel_set archive "$ns" archive
   printf '%s\n' "$NS_SHARE_BEGIN" '/*' '!/.gitignore' '!/state-version'
   if ns_site_shares "$ws" rules; then
-    printf '!/%s\n' "$rules"
+    printf '!/%s\n!/%s/\n' "$rules" "$settings"
   fi
   if ns_site_shares "$ws" plans || ns_site_shares "$ws" decisions; then
     printf '!/%s/\n/%s/*\n' "${plans%/*}" "${plans%/*}"

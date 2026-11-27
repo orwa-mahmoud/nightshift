@@ -3,7 +3,12 @@
   Start a named plan as a run of its own. Mirrors runtime/start-run.sh.
 
 .DESCRIPTION
-    start-run.ps1 -Project DIR -Plan NAME -HostName claude|codex|cursor [-Background]
+    start-run.ps1 -Project DIR -Plan NAME -HostName claude|codex|cursor [-Background] [-Settings NAME]
+
+  -Settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values are
+  laid over the team's rules.json, beneath the run's own rules file, and reach every helper the run
+  starts. A file that changes anything the team does not let a member change is refused before
+  anything is placed.
 
   In a workspace that keeps runs, a plan waiting in staging/plans/ becomes a run. Its folder under
   runs/ is claimed first, named by runs.layout from the plan's title; the plan's punch list is written
@@ -28,7 +33,8 @@ param(
     [string]$Project = [Environment]::CurrentDirectory,
     [string]$Plan = '',
     [string]$HostName = '',
-    [switch]$Background
+    [switch]$Background,
+    [string]$Settings = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -87,6 +93,17 @@ if (-not (Test-NSLayoutPerRun $ns 'punch-list')) {
     Stop-Refused 'layout this workspace keeps one shift at a time' 'preview the move to run folders with ns migrate-state, make it with -Apply, then run this again'
 }
 
+# A member's settings are checked before anything is placed, so a refused file leaves no run behind.
+if ($Settings.Length -gt 0) {
+    $problems = Get-NSMemberSettingsProblems $workspace $Settings
+    if ($problems.Count -gt 0) {
+        Write-Verdict 'refuse' "settings $Settings cannot be selected for this run"
+        foreach ($problem in $problems) { Write-Verdict 'explain' $problem }
+        Write-Verdict 'repair' 'take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again'
+        exit 1
+    }
+}
+
 $key = Get-NSReceiptSlug $Plan
 if ($key.Length -eq 0) { Stop-Refused "plan $Plan has no letters or digits to name it by" }
 $planFile = Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md')
@@ -113,6 +130,31 @@ if ($run.Length -eq 0) {
 }
 $env:NIGHTSHIFT_RUN = $run
 Write-Verdict 'ok' "run $run"
+
+# The member settings this run uses, kept with the run's own runtime files: the choice is the
+# runner's, and every helper of the run reads it from there.
+$selection = Get-NSLayoutPath $ns 'member-settings'
+$selected = ''
+if ([IO.File]::Exists($selection)) {
+    $lines = @([IO.File]::ReadAllLines($selection))
+    if ($lines.Count -gt 0) { $selected = $lines[0].TrimEnd("`r") }
+}
+if ($Settings.Length -gt 0) {
+    if ($selected.Length -gt 0 -and $selected -cne $Settings) {
+        Stop-Refused "settings run $run already uses settings/$selected.json" 'start it again without -Settings, or file that run with Archive first'
+    }
+    if ($selected.Length -eq 0) {
+        try {
+            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $selection) -Force
+            [IO.File]::WriteAllText($selection, $Settings + "`n", $utf8)
+        }
+        catch { Stop-Refused "settings could not write $selection" 'check that .nightshift/ is writable, then run this again' }
+    }
+    $selected = $Settings
+}
+if ($selected.Length -gt 0) {
+    Write-Verdict 'ok' "settings settings/$selected.json over the team's rules.json, for this run"
+}
 
 # A run already worked by a live process is not started twice, and nothing of it is redone.
 if ($Background) {

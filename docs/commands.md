@@ -51,7 +51,7 @@ Windows, `ns.ps1` takes the same verbs.
 | `ns purge-workspace --confirm-path <path to .nightshift>` | Resets, then deletes this project's `.nightshift/`. Does not uninstall the plugin. |
 | `ns plan-new --name <name>` | Starts a plan file from the shipped contract with no checks. Keeps a plan that already has the name. |
 | `ns plan-exit` | Leaves the plan room. |
-| `ns start-run --plan <name> --host <host> [--background]` | Starts a waiting plan as a run of its own, in its own folder and git worktree. With `--background`, a headless worker and the run's watchman work it while your conversation stays free. Running it again finishes a run that stopped part way and never starts a second worker. |
+| `ns start-run --plan <name> --host <host> [--background] [--settings <name>]` | Starts a waiting plan as a run of its own, in its own folder and git worktree. With `--background`, a headless worker and the run's watchman work it while your conversation stays free. With `--settings <name>`, the run reads your settings file of that name in `.nightshift/settings/` over the team's rules, for that run alone. Running it again finishes a run that stopped part way and never starts a second worker. |
 | `ns start-preflight` | Prints the checks Start runs before it arms. |
 | `ns shift-estimate --items 5` | Estimates time and tokens per item from your past receipts, with a suggested deadline and budget. Needs at least three readings. |
 | `ns check-items` | Names drafted items with a missing `Verify:` or `Commit:`, an `Evidence:` that names nothing, or a `Budget:` that does not parse. Refuses nothing. |

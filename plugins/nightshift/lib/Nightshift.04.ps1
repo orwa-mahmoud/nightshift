@@ -225,7 +225,10 @@ function Get-NSShareIgnoreBlock {
     $shared = Get-NSSharedRecords $Workspace
     $lines = New-Object Collections.Generic.List[string]
     foreach ($line in @($script:NSShareBegin, '/*', '!/.gitignore', '!/state-version')) { $lines.Add($line) }
-    if ($shared -ccontains 'rules') { $lines.Add('!/' + $rules) }
+    if ($shared -ccontains 'rules') {
+        $lines.Add('!/' + $rules)
+        $lines.Add('!/' + (Get-NSLayoutRelativePathAt 3 'settings') + '/')
+    }
     if (($shared -ccontains 'plans') -or ($shared -ccontains 'decisions')) {
         $staging = $plans.Substring(0, $plans.LastIndexOf('/'))
         $lines.Add('!/' + $staging + '/')
