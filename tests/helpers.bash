@@ -353,3 +353,9 @@ build_toolset_bin() {
   done
   printf '%s' "$d"
 }
+
+# share_through_git <workspace> — what Setup writes when the team shares through Git: the shipped
+# .nightshift/.gitignore and .gitattributes.
+share_through_git() {
+  bash "$_TEST_ROOT/../plugins/nightshift/runtime/scaffold.sh" --project "$1" shared >/dev/null
+}

@@ -40,6 +40,20 @@ function Update-NSReceiptRunIgnore {
 # keeps it, never over an existing name. The punch list brings the shift log's header and the
 # runtime's folder with it. A .nightshift/ this call creates gets the current state-version first.
 # Returns one `wrote` or `kept` line per file; throws naming what it could not write.
+# Get-NSScaffoldTemplate - the shipped template a key is copied from: <key>.md, or <key>.txt for a
+# file that is not Markdown; empty when there is none. Mirrors template_for in scaffold.sh.
+function Get-NSScaffoldTemplate {
+    param(
+        [Parameter(Mandatory = $true)][string]$Templates,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+    foreach ($ext in @('.md', '.txt')) {
+        $source = Join-Path $Templates ($Key + $ext)
+        if (Test-Path -LiteralPath $source -PathType Leaf) { return $source }
+    }
+    return ''
+}
+
 function Invoke-NSScaffold {
     param(
         [Parameter(Mandatory = $true)][string]$Workspace,
@@ -50,8 +64,8 @@ function Invoke-NSScaffold {
     $ns = Join-Path $Workspace '.nightshift'
     $lines = New-Object Collections.Generic.List[string]
     foreach ($key in $Keys) {
-        $source = Join-Path $templates ($key + '.md')
-        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "no template for $key" }
+        $source = Get-NSScaffoldTemplate -Templates $templates -Key $key
+        if ($source.Length -eq 0) { throw "no template for $key" }
         $line = Write-NSScaffoldFile -Workspace $Workspace -Key $key -Template $source
         if ($line.Length -gt 0) { $lines.Add($line) }
     }

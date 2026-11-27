@@ -1218,7 +1218,7 @@ function Merge-NSRulesObject {
 
 # The groups only the team's rules.json sets: a run's or a member's file never changes them. Mirrors
 # NS_RULES_TEAM_GROUPS.
-$script:NSRulesTeamGroups = @('team', 'sharing')
+$script:NSRulesTeamGroups = @('team')
 
 # Remove-NSRulesTeamGroups <object> - the object without the team's own groups. Mirrors
 # _ns_rules_drop_team.
@@ -1228,48 +1228,6 @@ function Remove-NSRulesTeamGroups {
         if ($null -ne $Object.PSObject.Properties[$name]) { $Object.PSObject.Properties.Remove($name) }
     }
     return $Object
-}
-
-# Get-NSMemberAllowed <team-object> - the settings the team lets a member change, from
-# team.memberSettings. Mirrors _ns_rules_member_allowed.
-function Get-NSMemberAllowed {
-    param($Team)
-    $block = $Team.PSObject.Properties['team']
-    if ($null -eq $block -or -not ($block.Value -is [pscustomobject])) { return , @() }
-    $field = $block.Value.PSObject.Properties['memberSettings']
-    if ($null -eq $field -or $null -eq $field.Value) { return , @() }
-    return , @($field.Value | ForEach-Object { [string]$_ })
-}
-
-# Test-NSMemberPathAllowed <path> <allowed> - true when the dotted path is an allowed setting or
-# inside one.
-function Test-NSMemberPathAllowed {
-    param([string]$Path, [string[]]$Allowed)
-    foreach ($a in $Allowed) {
-        if ($a.Length -gt 0 -and ($Path -ceq $a -or $Path.StartsWith($a + '.', [StringComparison]::Ordinal))) { return $true }
-    }
-    return $false
-}
-
-# Select-NSAllowedRules <object> <allowed> [prefix] - a member's settings holding only what the team
-# lets a member change; the team's own groups never pass. Mirrors _ns_rules_allowed.
-function Select-NSAllowedRules {
-    param($Object, [string[]]$Allowed, [string]$Prefix = '')
-    $out = New-Object psobject
-    foreach ($property in $Object.PSObject.Properties) {
-        if ($Prefix.Length -eq 0 -and $script:NSRulesTeamGroups -ccontains $property.Name) { continue }
-        $path = $(if ($Prefix.Length -gt 0) { $Prefix + '.' + $property.Name } else { $property.Name })
-        if (Test-NSMemberPathAllowed $path $Allowed) {
-            $out | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
-        }
-        elseif ($property.Value -is [pscustomobject]) {
-            $inner = @($Allowed | Where-Object { $_.StartsWith($path + '.', [StringComparison]::Ordinal) })
-            if ($inner.Count -gt 0) {
-                $out | Add-Member -NotePropertyName $property.Name -NotePropertyValue (Select-NSAllowedRules $property.Value $Allowed $path)
-            }
-        }
-    }
-    return $out
 }
 
 # Get-NSMemberSettingsPath <nightshift-dir> - the member settings file the run this caller works on
@@ -1293,7 +1251,8 @@ function Get-NSMemberSettingsPath {
 }
 
 # Get-NSMemberSettingsProblems <workspace> <name> - why settings/<name>.json cannot be selected for a
-# run, one line each; empty when it can be. Mirrors ns_member_settings_problems.
+# run, one line each: a name that is not one, a missing or malformed file, or a team block, which only
+# the team's rules.json sets. Empty when it can be. Mirrors ns_member_settings_problems.
 function Get-NSMemberSettingsProblems {
     param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Name)
     $out = New-Object Collections.Generic.List[string]
@@ -1307,28 +1266,12 @@ function Get-NSMemberSettingsProblems {
         $out.Add("settings/$Name.json is not there")
         return , $out.ToArray()
     }
-    try { $team = Get-Content -Raw -LiteralPath (Get-NSLayoutPath $ns 'rules') | ConvertFrom-Json -ErrorAction Stop }
-    catch { $out.Add('rules.json: ' + $_.Exception.Message); return , $out.ToArray() }
     try { $member = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
     catch { $out.Add("settings/$Name.json: " + $_.Exception.Message); return , $out.ToArray() }
     if (-not ($member -is [pscustomobject])) { $out.Add("settings/$Name.json: not a JSON object"); return , $out.ToArray() }
-    $allowed = Get-NSMemberAllowed $team
-    $said = @{}
-    $walk = {
-        param($Object, [string]$Prefix)
-        foreach ($property in $Object.PSObject.Properties) {
-            $path = $(if ($Prefix.Length -gt 0) { $Prefix + '.' + $property.Name } else { $property.Name })
-            $top = $path.Split('.')[0]
-            $owned = $script:NSRulesTeamGroups -ccontains $top
-            if (-not $owned -and (Test-NSMemberPathAllowed $path $allowed)) { continue }
-            if ($property.Value -is [pscustomobject]) { & $walk $property.Value $path; continue }
-            if ($said.ContainsKey($path)) { continue }
-            $said[$path] = $true
-            if ($owned) { $out.Add("settings/$Name.json changes $path, which only the team's rules.json sets") }
-            else { $out.Add("settings/$Name.json changes $path, which the team does not let a member change") }
-        }
+    foreach ($group in $script:NSRulesTeamGroups) {
+        if ($null -ne $member.PSObject.Properties[$group]) { $out.Add("settings/$Name.json sets $group, which only the team's rules.json sets") }
     }
-    & $walk $member ''
     return , $out.ToArray()
 }
 
@@ -1368,11 +1311,10 @@ function Get-NSRulesObject {
         }
         $parsed = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         # Narrowest first: the run's own file, then the member settings the run selected, then the
-        # team's. A member's file changes only what team.memberSettings allows; neither changes the
-        # team's groups.
+        # team's. Neither the run's file nor a member's changes the team block.
         if ($memberPath.Length -gt 0) {
             $memberParsed = Get-Content -LiteralPath $memberPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            $parsed = Merge-NSRulesObject $parsed (Select-NSAllowedRules $memberParsed (Get-NSMemberAllowed $parsed))
+            $parsed = Merge-NSRulesObject $parsed (Remove-NSRulesTeamGroups $memberParsed)
         }
         if ($runPath.Length -gt 0) {
             $runParsed = Get-Content -LiteralPath $runPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop

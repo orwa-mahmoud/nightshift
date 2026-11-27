@@ -170,6 +170,17 @@ if [ ! -d "$NS" ]; then
   exit 0
 fi
 
+# Files Git tracks under .nightshift/ that its ignore rules keep private: a lease, STOP, a runtime
+# folder or raw evidence committed before the rules said otherwise.
+if [ ! -e "$NS/.git" ] && git -C "$NS" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  while IFS= read -r tracked; do
+    [ -n "$tracked" ] || continue
+    warn "Git tracks .nightshift/$tracked, which .nightshift/.gitignore keeps private; untrack it with git rm --cached"
+  done <<EOF_TRACKED
+$(git -C "$NS" ls-files -ci --exclude-standard -- . 2>/dev/null)
+EOF_TRACKED
+fi
+
 TARGET=""
 UNUSABLE_RECV=0
 if MODE="$(ns_work_mode "$WORKSPACE" 2>/dev/null)"; then

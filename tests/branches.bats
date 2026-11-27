@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
-# The team's branch workflow: branches.base names where new work branches start, branches.start
-# whether a run gets a branch of its own, works on the member's current branch, or on one the member
-# chooses, and branches.catchUp how a branch catches up with the base before a pull request.
+# Work branches: start-run --branch names the branch a run works on (the current one, an existing
+# work branch, or a new one from branches.base); without it a run gets a branch of its own. How a
+# branch catches up with its base is a line in the plan's contract the owner edits.
 
 load helpers
 
@@ -11,31 +11,22 @@ RUNTIME="$PLUGIN/runtime"
 
 lib() { bash -c '. "$1"; shift; "$@"' _ "$LIB" "$@"; }
 
-start_run_as_is() { # <workspace> <plan> [extra args]
+start_run() { # <workspace> <plan> [extra args]
   local w="$1" plan="$2"
   shift 2
   (cd "$w" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$w" \
     bash "$RUNTIME/start-run.sh" --project "$w" --plan "$plan" --host claude "$@")
 }
 
-# start_run <workspace> <plan> [extra args] — with the runner's consent to what it would execute.
-start_run() {
-  local out consent
-  if out="$(start_run_as_is "$@")"; then printf '%s\n' "$out"; return 0; fi
-  consent="$(printf '%s\n' "$out" | sed -n 's/^repair read those inputs, then run this again with --consent //p')"
-  [ -n "$consent" ] || { printf '%s\n' "$out"; return 1; }
-  start_run_as_is "$@" --consent "$consent"
-}
-
 set_rules() { jq "$2" "$1/.nightshift/rules.json" >"$1/.nightshift/r.tmp" && mv "$1/.nightshift/r.tmp" "$1/.nightshift/rules.json"; }
 
 plan() { # <repo> <name>
   printf '# Punch List — %s\n\n## Contract\n\n- Work in the run.\n\n## Gates\n\n## Items\n\n- [ ] **1. Do %s.**\n  - Verify: true\n  - Commit: `feat: x`\n' \
-    "$2" "$2" >"$1/.nightshift/staging/plans/$(printf '%s' "$2" | tr 'A-Z ' 'a-z-').md"
+    "$2" "$2" >"$1/.nightshift/staging/plans/$(printf '%s' "$2" | tr 'A-Z ' 'a-z-')".md
 }
 
 # team <name> — a remote whose base branch is develop and a clone of it with the site inside the
-# repository, sharing plans and rules, its runs starting from develop.
+# repository, shared through the shipped ignore files, its new branches starting from develop.
 team() {
   local root="$BATS_TEST_TMPDIR/$1" a
   git init -q --bare "$root/remote.git"
@@ -47,10 +38,10 @@ team() {
   printf 'app\n' >"$a/app.txt"
   mkdir -p "$a/.nightshift/staging/plans" "$a/.nightshift/runs" "$a/.nightshift/run"
   printf '3\n' >"$a/.nightshift/state-version"
-  jq '.sharing.records = ["plans", "rules"] | .branches.base = "develop"' "$RULES_TEMPLATE" >"$a/.nightshift/rules.json"
+  jq '.branches.base = "develop"' "$RULES_TEMPLATE" >"$a/.nightshift/rules.json"
   printf '%s\n' "$(cd -P "$a" && pwd)" >"$a/.nightshift/run/work-target"
   printf 'repository\n' >"$a/.nightshift/run/work-mode"
-  bash "$RUNTIME/share.sh" --project "$a" --apply >/dev/null
+  share_through_git "$a"
   git -C "$a" add -A
   git -C "$a" commit -q -m "site"
   git -C "$a" push -q -u origin develop 2>/dev/null
@@ -59,71 +50,59 @@ team() {
 
 @test "two plans merged from one planning branch run one after another on one member branch" {
   a="$(team sequence)"
-  set_rules "$a" '.branches.start = "choose"'
   git -C "$a" checkout -q -b planning
   plan "$a" "Export CSV"
   plan "$a" "Dark mode"
   git -C "$a" add -A && git -C "$a" commit -q -m "plans: export csv and dark mode"
   git -C "$a" checkout -q develop
   git -C "$a" merge -q --no-ff --no-edit planning
-  # Without a branch, the choices are listed and nothing is placed.
-  run start_run "$a" "Export CSV"
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qx 'refuse branch this team chooses the branch each run works on'
-  printf '%s\n' "$output" | grep -qx 'branch current develop'
-  printf '%s\n' "$output" | grep -qx 'branch existing planning'
-  printf '%s\n' "$output" | grep -qx 'branch base develop'
-  [ -z "$(ls -A "$a/.nightshift/runs")" ]
   run start_run "$a" "Export CSV" --branch alice/export
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'ok branch alice/export'
-  wt="$(NIGHTSHIFT_RUN=export-csv lib ns_work_target "$a")"
+  first="$(printf '%s\n' "$output" | sed -n 's/^ok run //p')"
+  wt="$(NIGHTSHIFT_RUN="$first" lib ns_work_target "$a")"
   [ "$(git -C "$wt" symbolic-ref --short HEAD)" = alice/export ]
   [ "$(git -C "$wt" rev-parse HEAD)" = "$(git -C "$a" rev-parse develop)" ]
   # The second plan waits for the first on the same branch.
   run start_run "$a" "Dark mode" --branch alice/export
   [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qx 'refuse worktree alice/export is in use by run export-csv'
-  : >"$a/.nightshift/runs/export-csv/run/.ended"
+  printf '%s\n' "$output" | grep -qx "refuse worktree alice/export is in use by run $first"
+  : >"$a/.nightshift/runs/$first/run/.ended"
   run start_run "$a" "Dark mode" --branch alice/export
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx "ok worktree $wt branch alice/export - the run continues the branch's worktree"
-  [ "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$a")" = "$wt" ]
+  second="$(printf '%s\n' "$output" | sed -n 's/^ok run //p')"
+  [ "$(NIGHTSHIFT_RUN="$second" lib ns_work_target "$a")" = "$wt" ]
 }
 
-@test "a member plans and runs on the current branch, in the checkout itself" {
+@test "a member runs on the current branch in the checkout, and a run without --branch gets its own" {
   a="$(team current)"
-  set_rules "$a" '.branches.start = "current"'
   git -C "$a" checkout -q -b bob/feature
   plan "$a" "Export CSV"
-  run start_run "$a" "Export CSV"
+  run start_run "$a" "Export CSV" --branch bob/feature
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qx 'ok branch bob/feature'
   printf '%s\n' "$output" | grep -qx 'ok worktree none - the run works on bob/feature in the checkout itself'
-  [ "$(NIGHTSHIFT_RUN=export-csv lib ns_work_target "$a")" = "$a" ]
-  # The shipped rule still gives each run a branch of its own.
-  set_rules "$a" '.branches.start = "per-run"'
+  [ "$(NIGHTSHIFT_RUN="$(printf '%s\n' "$output" | sed -n 's/^ok run //p')" lib ns_work_target "$a")" = "$a" ]
   plan "$a" "Dark mode"
   run start_run "$a" "Dark mode"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  [ "$(git -C "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$a")" symbolic-ref --short HEAD)" = "shift/$(date +%Y-%m-%d)-dark-mode" ]
+  [ "$(git -C "$(NIGHTSHIFT_RUN="$(printf '%s\n' "$output" | sed -n 's/^ok run //p')" lib ns_work_target "$a")" symbolic-ref --short HEAD)" = "shift/$(date +%Y-%m-%d)-dark-mode" ]
+  run start_run "$a" "Dark mode" --branch 'not a branch'
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qx 'refuse branch not a branch is not a branch name'
 }
 
-@test "a new plan states the team's catch-up, and each policy brings in a moved base, conflict included" {
+@test "a new plan states a merge catch-up, and either policy brings in a moved base, conflict included" {
   a="$(team sync)"
   bash "$RUNTIME/plan-new.sh" --project "$a" --name "Merged" >/dev/null
   grep -qF 'Catching up with the base branch is a merge.' "$a/.nightshift/staging/plans/merged.md"
-  set_rules "$a" '.branches.catchUp = "rebase"'
-  bash "$RUNTIME/plan-new.sh" --project "$a" --name "Rebased" >/dev/null
-  grep -qF 'Catching up with the base branch is a rebase onto it.' "$a/.nightshift/staging/plans/rebased.md"
-  ! grep -qF 'is a merge.' "$a/.nightshift/staging/plans/rebased.md" || false
-  git -C "$a" checkout -q -- .nightshift/rules.json
   # A teammate moves the base, changing a shared rule the member's branch also changed.
   b="$BATS_TEST_TMPDIR/sync/bob"
   git clone -q -b develop "$BATS_TEST_TMPDIR/sync/remote.git" "$b" 2>/dev/null
   set_rules "$b" '.runs.layout = "date"'
   git -C "$b" -c user.name=Bob -c user.email=b@example.com commit -q -am "rules: date runs"
   git -C "$b" push -q 2>/dev/null
+  rm "$a/.nightshift/staging/plans/merged.md"
   for policy in merge rebase; do
     git -C "$a" checkout -q -b "alice/$policy" develop
     set_rules "$a" '.runs.layout = "date-name"'
@@ -147,20 +126,13 @@ team() {
   done
 }
 
-@test "native Windows lists the same choices and runs on the current branch the same way" {
+@test "native Windows runs on a named branch the same way" {
   command -v pwsh >/dev/null || skip 'pwsh is not installed'
   a="$(team windows)"
-  set_rules "$a" '.branches.start = "choose"'
-  plan "$a" "Export CSV"
-  bash_out="$(start_run_as_is "$a" "Export CSV")" || :
-  ps_out="$(cd "$a" && env -u NIGHTSHIFT_RUN pwsh -NoProfile -File "$RUNTIME/windows/start-run.ps1" -Project "$a" -Plan "Export CSV" -HostName claude)" || :
-  [ "$bash_out" = "$ps_out" ] || { printf 'bash:\n%s\npwsh:\n%s\n' "$bash_out" "$ps_out"; return 1; }
-  set_rules "$a" '.branches.start = "current" | .branches.catchUp = "rebase"'
   git -C "$a" checkout -q -b bob/feature
-  out="$(cd "$a" && env -u NIGHTSHIFT_RUN pwsh -NoProfile -File "$RUNTIME/windows/start-run.ps1" -Project "$a" -Plan "Export CSV" -HostName claude)" || :
-  consent="$(printf '%s\n' "$out" | sed -n 's/^repair read those inputs, then run this again with --consent //p')"
-  out="$(cd "$a" && env -u NIGHTSHIFT_RUN pwsh -NoProfile -File "$RUNTIME/windows/start-run.ps1" -Project "$a" -Plan "Export CSV" -HostName claude -Consent "$consent")"
-  printf '%s\n' "$out" | grep -qx 'ok worktree none - the run works on bob/feature in the checkout itself'
-  pwsh -NoProfile -File "$RUNTIME/windows/plan-new.ps1" -Project "$a" -Name "Rebased" >/dev/null
-  grep -qF 'Catching up with the base branch is a rebase onto it.' "$a/.nightshift/staging/plans/rebased.md"
+  plan "$a" "Export CSV"
+  out="$(cd "$a" && env -u NIGHTSHIFT_RUN pwsh -NoProfile -File "$RUNTIME/windows/start-run.ps1" -Project "$a" -Plan "Export CSV" -HostName claude -Branch bob/feature)"
+  printf '%s\n' "$out" | grep -qx 'ok worktree none - the run works on bob/feature in the checkout itself' || { echo "$out"; return 1; }
+  pwsh -NoProfile -File "$RUNTIME/windows/plan-new.ps1" -Project "$a" -Name "Merged" >/dev/null
+  grep -qF 'Catching up with the base branch is a merge.' "$a/.nightshift/staging/plans/merged.md"
 }

@@ -2036,11 +2036,15 @@ function Get-NSScaffoldKeys {
             $keys.Add('opportunity-map')
             $keys.Add('product-research')
         }
+        elseif ($name -ceq 'shared') {
+            $keys.Add('gitignore')
+            $keys.Add('gitattributes')
+        }
         elseif ($script:NSScaffoldOnRequest -ccontains $name) {
             $keys.Add($name)
         }
         else {
-            throw "$name is not a file scaffold writes on request (work-orders, product, plan-record)"
+            throw "$name is not a file scaffold writes on request (work-orders, product, plan-record, shared)"
         }
     }
     return , $keys.ToArray()

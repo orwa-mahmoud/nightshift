@@ -76,25 +76,12 @@
   "runs": {
     "layout": "name"
   },
-  "sharing": {
-    "records": [],
-    "evidence": "none"
-  },
   "branches": {
-    "base": "",
-    "start": "per-run",
-    "catchUp": "merge"
+    "base": ""
   },
   "team": {
     "roles": {},
-    "approvers": [],
-    "selfApprove": [],
-    "reviewChanges": [
-      "contract",
-      "gates",
-      "items"
-    ],
-    "memberSettings": []
+    "approvers": []
   },
   "receipts": {
     "enabled": true,

@@ -41,8 +41,8 @@ function Invoke-Helper {
 function Invoke-Record { param([string]$Site, [string[]]$Arguments) return (Invoke-Helper 'plan-record.ps1' (@('-Project', $Site, '-Plan', 'Export CSV') + $Arguments)) }
 function Invoke-Start { param([string]$Site, [string[]]$Arguments) return (Invoke-Helper 'start-run.ps1' (@('-Project', $Site, '-Plan', 'Export CSV', '-HostName', 'claude') + $Arguments)) }
 
-# New-Site <path> <records> <team> - a site inside its repository with one plan; the hashtable sets
-# team keys. The runner's Git name is Carol.
+# New-Site <path> <records> <team> - a site inside its repository with one plan, shared through Git
+# when <records> names any; the hashtable sets team keys. The runner's Git name is Carol.
 function New-Site {
     param([string]$Path, [string[]]$Records, [hashtable]$Team, [hashtable]$Top = @{})
     $ns = Join-Path $Path '.nightshift'
@@ -53,10 +53,12 @@ function New-Site {
     $null = & git -C $Path commit -q --allow-empty -m init
     Write-Text (Join-Path $ns 'state-version') "3`n"
     $rules = Get-Content -Raw -LiteralPath $rulesTemplate | ConvertFrom-Json
-    $rules.sharing.records = @($Records)
     foreach ($k in $Team.Keys) { $rules.team.$k = $Team[$k] }
     foreach ($k in $Top.Keys) { $rules | Add-Member -NotePropertyName $k -NotePropertyValue $Top[$k] -Force }
     Write-Text (Join-Path $ns 'rules.json') ($rules | ConvertTo-Json -Depth 20)
+    if ($Records.Count -gt 0) {
+        $null = Invoke-NSScaffold -Workspace $Path -Keys (Get-NSScaffoldKeys @('shared'))
+    }
     Write-Text (Join-Path $ns 'run/work-target') ((Resolve-NSCanonicalPath $Path) + "`n")
     Write-Text (Join-Path $ns 'run/work-mode') "repository`n"
     Write-Text (Join-Path $ns 'staging/plans/export-csv.md') ("# Punch List " + [char]0x2014 + " Export CSV`n`n## Contract`n`n- Work in the run.`n`n## Gates`n`n- ``true```n`n## Items`n`n- [ ] **1. Export the table.**`n  - Verify: true`n  - Commit: ``feat: export```n")
@@ -81,7 +83,7 @@ try {
     Expect-True ($started.ExitCode -eq 0 -and ($started.Lines -ccontains 'ok record started by Carol')) "solo: start: $($started.Text)"
 
     # Developer and lead: only the lead's approval runs; a gate change returns the plan to proposed.
-    $w = New-Site (Join-Path $root 'leads') @('plans', 'rules') @{ roles = [pscustomobject]@{ Alice = 'lead'; Bob = 'developer' }; approvers = @('lead'); reviewChanges = @('contract', 'gates') }
+    $w = New-Site (Join-Path $root 'leads') @('plans', 'rules') @{ roles = [pscustomobject]@{ Alice = 'lead'; Bob = 'developer' }; approvers = @('lead') }
     $null = Invoke-Record $w @('-Action', 'proposed', '-By', 'Bob')
     $revision = Get-NSPlanRevision (Join-Path $w '.nightshift/staging/plans/export-csv.md')
     $refused = Invoke-Start $w @()
@@ -93,19 +95,6 @@ try {
     Write-Text $plan ([IO.File]::ReadAllText($plan).Replace('- `true`', '- `make test`'))
     $stale = Invoke-Start $w @()
     Expect-True ($stale.ExitCode -eq 1 -and $stale.Text.Contains("refuse approval Export CSV changed its gates since Alice approved revision $revision, so revision ")) "leads: stale: $($stale.Text)"
-
-    # Consent: nothing of the run executes before the runner consents to exactly its inputs.
-    $marker = Join-Path $root 'gate-ran'
-    $w = New-Site (Join-Path $root 'consent') @('plans') @{} @{ baselineGates = $true }
-    $plan = Join-Path $w '.nightshift/staging/plans/export-csv.md'
-    Write-Text $plan ([IO.File]::ReadAllText($plan).Replace('- `true`', ('- `pwsh -NoProfile -Command New-Item -ItemType File -Force ' + $marker + '`')))
-    $asked = Invoke-Start $w @()
-    Expect-True ($asked.ExitCode -eq 1 -and ($asked.Lines -ccontains 'refuse consent read what this run would execute before it starts') -and ($asked.Lines -ccontains 'input baseline-gates true')) "consent: asked: $($asked.Text)"
-    Expect-True (-not (Test-Path -LiteralPath $marker)) 'consent: no gate ran before consent'
-    $consent = (@($asked.Lines | Where-Object { $_ -clike 'repair read those inputs*' })[0]) -replace '^.* --consent ', ''
-    $given = Invoke-Start $w @('-Consent', $consent)
-    Expect-True ($given.ExitCode -eq 0 -and ($given.Lines -ccontains "ok consent $consent covers what this run executes")) "consent: given: $($given.Text)"
-    Expect-True (Test-Path -LiteralPath $marker) 'consent: the gate ran once consent was given'
 }
 finally {
     Set-Location ([IO.Path]::GetTempPath())

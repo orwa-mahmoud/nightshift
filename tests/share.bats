@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 # Shared project records: a team keeps plans, decisions, rules, receipts and filed shifts in Git
-# through .nightshift/ inside the repository. ns share lets Git see exactly what sharing.records
-# names; each runner's private files stay ignored; teammates' runs never meet in one folder.
+# through .nightshift/ inside the repository. The shipped .nightshift/.gitignore decides what Git
+# sees, the owner may edit it, and Nightshift reads what Git sees; each runner's private files stay
+# ignored and teammates' runs never meet in one folder.
 
 load helpers
 
@@ -12,26 +13,11 @@ THREAD_HEAD="$PLUGIN/skills/nightshift/references/templates/plan-record.md"
 
 lib() { bash -c '. "$1"; shift; "$@"' _ "$LIB" "$@"; }
 
-share() { bash "$RUNTIME/share.sh" --project "$1" "${@:2}"; }
-
-start_run_as_is() { # <workspace> <plan> [extra args]
+start_run() { # <workspace> <plan> [extra args]
   local w="$1" plan="$2"
   shift 2
   (cd "$w" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$w" \
     bash "$RUNTIME/start-run.sh" --project "$w" --plan "$plan" --host claude "$@")
-}
-
-# start_run <workspace> <plan> — a runner on a shared site reads what the run would execute and
-# consents to exactly that, then starts it.
-start_run() {
-  local out consent
-  if out="$(start_run_as_is "$1" "$2")"; then
-    printf '%s\n' "$out"
-    return 0
-  fi
-  consent="$(printf '%s\n' "$out" | sed -n 's/^repair read those inputs, then run this again with --consent //p')"
-  [ -n "$consent" ] || { printf '%s\n' "$out"; return 1; }
-  start_run_as_is "$1" "$2" --consent "$consent"
 }
 
 commit_all() { # <repo> <message>
@@ -47,10 +33,10 @@ local_site() {
   printf 'repository\n' >"$1/.nightshift/run/work-mode"
 }
 
-# team <name> [records-json] — a bare remote and the first member's clone with the site inside the
-# repository, sharing every record (or the given ones), pushed. Prints the clone's path.
+# team <name> — a bare remote and the first member's clone with the site inside the repository,
+# sharing through the shipped ignore files, pushed. Prints the clone's path.
 team() {
-  local root="$BATS_TEST_TMPDIR/$1" a records="${2:-[\"plans\",\"decisions\",\"rules\",\"receipts\",\"summaries\"]}"
+  local root="$BATS_TEST_TMPDIR/$1" a
   git init -q --bare "$root/remote.git"
   a="$root/alice"
   git clone -q "$root/remote.git" "$a" 2>/dev/null
@@ -58,14 +44,13 @@ team() {
   git -C "$a" config user.email alice@example.com
   git -C "$a" config user.name alice
   printf 'app\n' >"$a/app.txt"
-  printf '.nightshift/\n' >"$a/.gitignore"
   mkdir -p "$a/.nightshift/staging/plans" "$a/.nightshift/staging/decisions"
   printf '3\n' >"$a/.nightshift/state-version"
-  jq --argjson r "$records" '.sharing.records = $r' "$RULES_TEMPLATE" >"$a/.nightshift/rules.json"
+  cp "$RULES_TEMPLATE" "$a/.nightshift/rules.json"
+  share_through_git "$a"
   printf '# Punch List — Export CSV\n\n## Contract\n\n- Work in the run; receipts go in `$NS/receipts/`.\n\n## Gates\n\n## Items\n\n- [ ] **1. Export the table.**\n  - Verify: true\n  - Commit: `feat: export`\n' \
     >"$a/.nightshift/staging/plans/export-csv.md"
   local_site "$a"
-  share "$a" --apply >/dev/null
   commit_all "$a" "plan: export csv"
   git -C "$a" push -q -u origin main 2>/dev/null
   printf '%s' "$(cd -P "$a" && pwd)"
@@ -94,9 +79,8 @@ thread() {
     >"$1/.nightshift/staging/decisions/$2"
 }
 
-@test "ns share lets Git see the shared records and none of a runner's private files" {
+@test "the shipped ignore file lets Git see the shared records and none of a runner's private files" {
   a="$(team see)"
-  [ ! -s "$a/.gitignore" ]
   mkdir -p "$a/.nightshift/runs/export-csv-abc123/receipts/01-export-the-table-ab12" \
     "$a/.nightshift/runs/export-csv-abc123/run" "$a/.nightshift/runs/export-csv-abc123/inbox" \
     "$a/.nightshift/worktrees/w1"
@@ -121,16 +105,30 @@ thread() {
 .nightshift/runs/export-csv-abc123/punch-list.md
 .nightshift/runs/export-csv-abc123/receipts/01-export-the-table-ab12.md
 .nightshift/runs/export-csv-abc123/rules.json" ] || { echo "$seen"; return 1; }
-  # Already committed: the shared rules, plan, state version and the block itself, nothing private.
   [ "$(git -C "$a" ls-files .nightshift | sort)" = ".nightshift/.gitattributes
 .nightshift/.gitignore
 .nightshift/rules.json
 .nightshift/staging/plans/export-csv.md
 .nightshift/state-version" ]
-  # A second run changes nothing; the preview says so.
-  run share "$a"
-  [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qx 'ok gitignore .nightshift/.gitignore already matches'
+}
+
+@test "an edit to the shipped ignore file changes what Nightshift treats as shared" {
+  a="$(team edited)"
+  for r in plans decisions rules receipts summaries; do lib ns_site_shares "$a" "$r"; done
+  # The team keeps run receipts out of Git: runs get no tag, and the plan still stays staged.
+  printf '/runs/\n' >>"$a/.nightshift/.gitignore"
+  ! lib ns_site_shares "$a" receipts || false
+  lib ns_site_shares "$a" plans
+  run start_run "$a" "Export CSV"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qx 'ok run export-csv'
+  [ -f "$a/.nightshift/staging/plans/export-csv.md" ]
+  # Ignoring the whole site keeps it private; so does a receipts repository inside it.
+  printf '.nightshift/\n' >"$a/.gitignore"
+  ! lib ns_site_shares "$a" plans || false
+  : >"$a/.gitignore"
+  git init -q "$a/.nightshift"
+  ! lib ns_site_shares "$a" plans || false
 }
 
 @test "an owner-selected folder inside the repository shares the same records" {
@@ -138,19 +136,17 @@ thread() {
   add_repo "$BATS_TEST_TMPDIR/chosen" repo
   mkdir -p "$r/planning/.nightshift/staging/plans"
   printf '3\n' >"$r/planning/.nightshift/state-version"
-  jq '.sharing.records = ["plans","rules"]' "$RULES_TEMPLATE" >"$r/planning/.nightshift/rules.json"
+  cp "$RULES_TEMPLATE" "$r/planning/.nightshift/rules.json"
+  share_through_git "$r/planning"
   printf '# Punch List — P\n\n## Items\n' >"$r/planning/.nightshift/staging/plans/p.md"
   printf 'x\n' >"$r/planning/.nightshift/STOP"
-  printf 'planning/.nightshift/\n' >"$r/.gitignore"
-  run share "$r/planning" --apply
-  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '%s\n' "$output" | grep -qx "ok repository took the line planning/.nightshift/ out of $(cd -P "$r" && pwd)/.gitignore so Git can see the shared records"
   seen="$(git -C "$r" add -A --dry-run | sed "s/^add '//; s/'\$//" | grep nightshift | sort)"
   [ "$seen" = "planning/.nightshift/.gitattributes
 planning/.nightshift/.gitignore
 planning/.nightshift/rules.json
 planning/.nightshift/staging/plans/p.md
 planning/.nightshift/state-version" ] || { echo "$seen"; return 1; }
+  lib ns_site_shares "$r/planning" plans
 }
 
 @test "a planning question committed in one clone is read in the other before approval, and its answer and change are traced in Git" {
@@ -165,7 +161,6 @@ planning/.nightshift/state-version" ] || { echo "$seen"; return 1; }
   printf '%s\n' "$output" | grep -qx 'decision threads go in .nightshift/staging/decisions, one file each'
   printf '%s\n' "$output" | grep -qx 'open thread: export-csv-separator.md · - \*\*CSV separator\*\* · open since 2026-11-27 10:00 (UTC+04:00)'
   bash "$RUNTIME/plan-exit.sh" --project "$b" >/dev/null 2>&1 || :
-  # Bob answers; Alice changes the decision later; a run's receipt follows.
   sed -i.bak 's/  - Open: comma or semicolon?/  - Decided: semicolon — the finance team opens it in a spreadsheet/' \
     "$b/.nightshift/staging/decisions/export-csv-separator.md" && rm "$b/.nightshift/staging/decisions/export-csv-separator.md.bak"
   commit_all "$b" "answer: semicolon"
@@ -186,7 +181,7 @@ alice question: csv separator" ]
   [ "$(git -C "$b" log --format='%an %s' -- ".nightshift/runs/$run_dir/receipts")" = "alice receipt: export the table" ]
 }
 
-@test "the same plan run in two clones keeps both runs' receipts, and the plan stays the team's record" {
+@test "the same plan run in two clones keeps both runs' receipts and records, and the plan stays the team's record" {
   a="$(team twin)"
   b="$(member twin bob)"
   run start_run "$a" "Export CSV"
@@ -211,8 +206,8 @@ alice question: csv separator" ]
   [ "$(cat "$b/.nightshift/runs/$rb/receipts/01-export-the-table-ab12.md")" = "bob ran it" ]
   [ -z "$(git -C "$b" diff --name-only --diff-filter=U)" ]
   # Both starts are in the plan's record: it is appended to, so the two sides merge line by line.
-  [ "$(grep -c "^- started · .* · run $ra\$\|^- started · .* · run $ra · " "$b/.nightshift/staging/records/export-csv.md")" = 1 ]
-  [ "$(grep -c "^- started · .* · run $rb\$\|^- started · .* · run $rb · " "$b/.nightshift/staging/records/export-csv.md")" = 1 ]
+  [ "$(grep -c "^- started · .* · run $ra\$" "$b/.nightshift/staging/records/export-csv.md")" = 1 ]
+  [ "$(grep -c "^- started · .* · run $rb\$" "$b/.nightshift/staging/records/export-csv.md")" = 1 ]
   # Bob starting the plan again finishes his own run and never takes Alice's over.
   run start_run "$b" "Export CSV"
   [ "$status" -eq 0 ]
@@ -246,7 +241,6 @@ open thread: export-csv-separator.md · - **CSV separator** · open since 2026-1
   commit_all "$b" "rules: date-name runs"
   run git -C "$b" pull -q --no-rebase --no-edit
   [ "$status" -ne 0 ]
-  # Unresolved, the file fails closed: the shipped default, not half a file.
   [ "$(lib ns_runs_layout "$b")" = name ]
   git -C "$b" checkout -q --ours .nightshift/rules.json
   git -C "$b" add .nightshift/rules.json
@@ -271,34 +265,39 @@ open thread: export-csv-separator.md · - **CSV separator** · open since 2026-1
   [ "${dir##*/}" = 2026-11-27-012345 ]
 }
 
-@test "a solo site keeps its run names, takes the plan out of staging and writes no sharing block" {
+@test "a solo site keeps its run names, takes the plan out of staging and shares nothing" {
   w="$(runs_site solo)"
-  run share "$w"
-  [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qx 'ok records none: the site stays private to its runner'
+  ! lib ns_site_shares "$w" plans || false
   run start_run "$w" "Export CSV"
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'ok run export-csv'
   printf '%s\n' "$output" | grep -qx 'ok plan Export CSV left staging'
   [ ! -e "$w/.nightshift/staging/plans/export-csv.md" ]
-  [ ! -e "$w/.nightshift/.gitignore" ]
   [ "$(lib ns_archive_dir "$w" 2026-11-27 0123456789abcdef)" = "$w/.nightshift/archive/2026-11-27" ]
 }
 
-@test "sharing refuses a value it does not know, a one-shift layout and a receipts repo" {
-  a="$(team refusals)"
-  jq '.sharing.records = ["plans","secrets"]' "$a/.nightshift/rules.json" >"$a/r" && mv "$a/r" "$a/.nightshift/rules.json"
-  run share "$a"
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qx 'refuse records sharing.records names secrets, which is no record'
-  jq '.sharing.records = ["plans"]' "$a/.nightshift/rules.json" >"$a/r" && mv "$a/r" "$a/.nightshift/rules.json"
-  git init -q "$a/.nightshift"
-  run share "$a" --apply
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -q '^refuse receipts-repo '
-  rm -rf "$a/.nightshift/.git"
-  printf '2\n' >"$a/.nightshift/state-version"
-  run share "$a" --apply
-  [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -q '^refuse layout '
+@test "Doctor names a file Git tracks that the ignore rules keep private, on both runtimes" {
+  a="$(team tracked)"
+  printf 'reason\n' >"$a/.nightshift/STOP"
+  git -C "$a" add -f .nightshift/STOP
+  git -C "$a" commit -q -m "stop"
+  run bash "$RUNTIME/doctor.sh" --project "$a"
+  printf '%s\n' "$output" | grep -qF 'Git tracks .nightshift/STOP, which .nightshift/.gitignore keeps private; untrack it with git rm --cached' ||
+    { echo "$output"; return 1; }
+  command -v pwsh >/dev/null || skip 'pwsh is not installed'
+  run pwsh -NoProfile -File "$RUNTIME/windows/doctor.ps1" -Project "$a"
+  printf '%s\n' "$output" | grep -qF 'Git tracks .nightshift/STOP, which .nightshift/.gitignore keeps private; untrack it with git rm --cached' ||
+    { echo "$output"; return 1; }
+}
+
+@test "native Windows reads sharing from Git the same way" {
+  command -v pwsh >/dev/null || skip 'pwsh is not installed'
+  a="$(team windows)"
+  printf '/runs/\n' >>"$a/.nightshift/.gitignore"
+  for r in plans decisions rules receipts summaries; do
+    bash_says="$(lib ns_site_shares "$a" "$r" && echo yes || echo no)"
+    ps_says="$(pwsh -NoProfile -Command "Import-Module '$PLUGIN/lib/Nightshift.psm1' -Force -DisableNameChecking; if (Test-NSSiteShares '$a' '$r') { 'yes' } else { 'no' }")"
+    [ "$bash_says" = "$ps_says" ] || { echo "$r: bash=$bash_says pwsh=$ps_says"; return 1; }
+  done
+  [ "$(lib ns_site_shares "$a" receipts && echo yes || echo no)" = no ]
 }

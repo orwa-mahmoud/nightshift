@@ -4,25 +4,19 @@
 
 .DESCRIPTION
     start-run.ps1 -Project DIR -Plan NAME -HostName claude|codex|cursor [-Background] [-Settings NAME]
-                  [-Consent DIGEST] [-Branch NAME]
+                  [-Branch NAME]
 
-  The branch a run works on follows the team's branches.start: a branch of its own per run (the
-  default), the member's current branch, or one the member chooses with -Branch: the current one, an
-  existing work branch, or a new one made from branches.base. With choose and no -Branch this lists
-  the choices and places nothing, so a headless run always starts with the choice made. Runs on one
-  branch go one after another; concurrent runs keep worktrees of their own.
+  -Branch names the branch the run works on: the checkout's current one, an existing work branch, or
+  a new one made from branches.base. Without it the run gets a branch of its own. Runs on one branch
+  go one after another; concurrent runs keep worktrees of their own.
 
   A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
-  gates or items, as team.reviewChanges names them, have not changed since an approver approved it. On
-  a site that shares its plans, the runner consents to exactly what the run would execute before
-  anything of it runs: without -Consent, or with one for other inputs, this prints those inputs and
-  the consent that covers them, and places nothing. A started run is written to the plan's record
-  with the runner's Git user name.
+  gates and items have not changed since an approver approved it. A started run is written to the
+  plan's record with the runner's Git user name.
 
   -Settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values are
   laid over the team's rules.json, beneath the run's own rules file, and reach every helper the run
-  starts. A file that changes anything the team does not let a member change is refused before
-  anything is placed.
+  starts. The team block is read from the team's rules.json alone.
 
   In a workspace that keeps runs, a plan waiting in staging/plans/ becomes a run. Its folder under
   runs/ is claimed first, named by runs.layout from the plan's title; the plan's punch list is written
@@ -49,7 +43,6 @@ param(
     [string]$HostName = '',
     [switch]$Background,
     [string]$Settings = '',
-    [string]$Consent = '',
     [string]$Branch = ''
 )
 
@@ -115,42 +108,16 @@ if ($Settings.Length -gt 0) {
     if ($problems.Count -gt 0) {
         Write-Verdict 'refuse' "settings $Settings cannot be selected for this run"
         foreach ($problem in $problems) { Write-Verdict 'explain' $problem }
-        Write-Verdict 'repair' 'take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again'
+        Write-Verdict 'repair' "keep team settings in the team's rules.json and fix the file, then run this again"
         exit 1
     }
 }
 
 # ---------------------------------------------------------------- the run's branch
-# Settled before anything is placed, so a choice still to make leaves nothing behind.
 $wantBranch = $Branch
 if ($wantBranch.Length -gt 0) {
     $valid = Invoke-NSGitCommand $workspace @('check-ref-format', '--branch', $wantBranch)
     if ($valid.ExitCode -ne 0) { Stop-Refused "branch $wantBranch is not a branch name" 'pass a branch name Git accepts' }
-}
-elseif ((Get-NSWorkMode $workspace) -cne 'artifact') {
-    $branchRule = Get-NSBranchRule $workspace 'start'
-    if (@('', 'per-run') -cnotcontains $branchRule) {
-        if (@('current', 'choose') -cnotcontains $branchRule) { Stop-Refused "branch branches.start is $branchRule" 'use per-run, current or choose' }
-        $ownerCheckout = Resolve-NSOwnerWorkTarget $workspace
-        $currentBranch = [string](Invoke-NSGit $ownerCheckout @('symbolic-ref', '--quiet', '--short', 'HEAD'))
-        if ($branchRule -ceq 'current') {
-            if ($currentBranch.Length -eq 0) {
-                Stop-Refused "branch the checkout is on no branch, and this team's runs work on the current one" 'check out the work branch, then run this again'
-            }
-            $wantBranch = $currentBranch
-        }
-        else {
-            Write-Verdict 'refuse' 'branch this team chooses the branch each run works on'
-            Write-Verdict 'branch' ('current ' + $(if ($currentBranch.Length -gt 0) { $currentBranch } else { 'none' }))
-            foreach ($existing in @((Invoke-NSGitCommand $ownerCheckout @('for-each-ref', '--format=%(refname:short)', 'refs/heads')).Lines)) {
-                if ($existing -cne $currentBranch) { Write-Verdict 'branch' ('existing ' + $existing) }
-            }
-            $teamBase = Get-NSBranchRule $workspace 'base'
-            Write-Verdict 'branch' ('base ' + $(if ($teamBase.Length -gt 0) { $teamBase } else { "the checkout's commit" }))
-            Write-Verdict 'repair' 'run this again with --branch <name>: the current branch, an existing one, or a new name made from the base'
-            exit 1
-        }
-    }
 }
 
 $key = Get-NSReceiptSlug $Plan
@@ -158,9 +125,8 @@ if ($key.Length -eq 0) { Stop-Refused "plan $Plan has no letters or digits to na
 $planFile = Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md')
 $staged = (Test-Path -LiteralPath $planFile -PathType Leaf) -and -not (Test-NSReparsePoint $planFile)
 
-# ---------------------------------------------------------------- approval and consent
-# Both are settled before anything is placed or run, so a refusal leaves no side effect.
-$inputsDigest = ''
+# ---------------------------------------------------------------- approval
+# Settled before anything is placed or run, so a refusal leaves no side effect.
 if ($staged -and (Get-NSPlanRecordFile $ns $key).Length -gt 0) {
     $state = Get-NSPlanState $workspace $key
     if ($null -eq $state) { Stop-Refused "plan the revision of $Plan cannot be read" 'run ns doctor, then run this again' }
@@ -177,18 +143,6 @@ if ($staged -and (Get-NSPlanRecordFile $ns $key).Length -gt 0) {
         }
         Stop-Refused "approval $Plan revision $revision is proposed: no approver has approved it" `
             "an approver reviews it and records it with ns plan-record --plan `"$Plan`" --action approved"
-    }
-    if (Test-NSSiteShares $workspace 'plans') {
-        $inputs = Get-NSRunInputs $workspace $planFile $Settings
-        $inputsDigest = Get-NSRunConsent $inputs
-        if ($Consent -cne $inputsDigest) {
-            if ($Consent.Length -gt 0) { Write-Verdict 'refuse' "consent what this run would execute changed since consent $Consent was given" }
-            else { Write-Verdict 'refuse' 'consent read what this run would execute before it starts' }
-            foreach ($line in $inputs) { Write-Verdict 'input' $line }
-            Write-Verdict 'repair' "read those inputs, then run this again with --consent $inputsDigest"
-            exit 1
-        }
-        Write-Verdict 'ok' "consent $inputsDigest covers what this run executes"
     }
 }
 
@@ -322,7 +276,7 @@ function Remove-NSStagedPlan {
     Write-Verdict 'ok' "plan $Plan left staging"
 }
 
-# The plan's record names who started this run, from which revision, with which consent.
+# The plan's record names who started this run, and from which revision.
 function Add-NSRunStartRecord {
     if (-not $staged -or (Get-NSPlanRecordFile $ns $key).Length -eq 0) { return }
     $target = $workspace
@@ -330,7 +284,6 @@ function Add-NSRunStartRecord {
     $who = ([string](& git -C $target config user.name 2>$null)).Replace("`r", '').Replace("`n", '')
     if ($who.Length -eq 0) { $who = 'unknown' }
     $extra = @("run $run")
-    if ($inputsDigest.Length -gt 0) { $extra += "inputs $inputsDigest" }
     try {
         Add-NSPlanRecord -Workspace $workspace -Key $key -Action 'started' -Name $who -Extra $extra
         Write-Verdict 'ok' "record started by $who"

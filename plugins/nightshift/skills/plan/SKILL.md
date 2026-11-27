@@ -187,8 +187,8 @@ with an idea is not. Nothing reaches the plan that the owner has not agreed to.
 Keep the plan's notes in a `## Plan` section just above `## Items`, written with its first item and
 kept current as the plan grows. Keep the contract and gates above it as the planning
 conversation settled them, and never touch another plan's file. The contract's history line says how
-the branch catches up with its base before a pull request, a merge or a rebase as the team's
-`branches.catchUp` sets it; `plan-new` writes it, and only the owner changes it:
+the branch catches up with its base before a pull request: a merge as shipped, or a rebase when the
+owner writes so. Change it only on the owner's word:
 
 ```text
 ## Plan
@@ -262,10 +262,10 @@ every line, a line written without a name as `unknown`.
 - When the owner says the plan is complete, record `proposed` under their name. A solo owner
   approves their own plan directly: record `approved` too.
 - In a team (`team.approvers` in the rules file), the proposer records `proposed`, and someone
-  whose role is an approver records `approved` after reviewing it. A role in `team.selfApprove` may
-  approve its own proposal. The helper refuses anyone else and writes nothing.
-- A change to a part `team.reviewChanges` names returns the plan to proposed until an approver
-  approves the new revision; the earlier approval stays in the record and in Git.
+  whose role is an approver records `approved` after reviewing it, their own plans included. The
+  helper refuses anyone else and writes nothing.
+- A change to the plan's contract, gates or items returns it to proposed until an approver approves
+  the new revision; the earlier approval stays in the record and in Git.
 - When someone needs proof of a name on a record, check the commit that wrote that line and whether
   its signature verifies, and report what you find: an unsigned line may not be who it says.
 

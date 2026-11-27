@@ -24,11 +24,17 @@ $script:NSCursorLaunchSaid = $false
 try { $script:NSWatchmanScript = (Resolve-Path -LiteralPath $PSCommandPath).ProviderPath } catch { $script:NSWatchmanScript = $PSCommandPath }
 $script:NSWatchmanSelfVersion = Get-NSPluginVersion $pluginRoot.ProviderPath
 
+# Write-NSLogLine - one shift-log line. A workspace folder removed before or during the write ends
+# the shift, so the line is dropped; any other failure to write is reported.
 function Write-NSLogLine {
     param([Parameter(Mandatory = $true)][string]$Message)
-    if (Test-Path -LiteralPath $ns -PathType Container) {
-        $line = '{0} - {1}{2}' -f (Get-NSLocalNow -Seconds), $Message, [Environment]::NewLine
+    if (-not (Test-Path -LiteralPath $ns -PathType Container)) { return }
+    $line = '{0} - {1}{2}' -f (Get-NSLocalNow -Seconds), $Message, [Environment]::NewLine
+    try {
         [IO.File]::AppendAllText($log, $line, $utf8)
+    }
+    catch [IO.DirectoryNotFoundException] {
+        if (Test-Path -LiteralPath $ns -PathType Container) { throw }
     }
 }
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # A team's whole workflow across clones of one repository: a developer proposes work and asks a
-# question, the lead answers and approves the revised plan, the runner selects their settings,
-# consents to what the run executes, runs it and files its receipts with one shared screenshot, and
-# a teammate records the review. A fresh clone traces every stage and who took it.
+# question, the lead answers and approves the revised plan, the runner selects their settings, runs
+# it and files its receipts sharing one screenshot, and a teammate records the review. A fresh clone
+# traces every stage and who took it.
 
 load helpers
 
@@ -38,7 +38,7 @@ member() {
 }
 
 # team <name> <team-jq> — the remote and the project the lead sets up: the site inside the
-# repository, every record shared, screenshots selected at filing, and the team block given.
+# repository, shared through the shipped ignore files, and the team block given.
 team() {
   local root="$BATS_TEST_TMPDIR/$1" a
   git init -q --bare "$root/remote.git"
@@ -50,13 +50,11 @@ team() {
   printf 'app\n' >"$a/app.txt"
   mkdir -p "$a/.nightshift/staging/plans" "$a/.nightshift/settings" "$a/.nightshift/run"
   printf '3\n' >"$a/.nightshift/state-version"
-  jq '.sharing.records = ["plans", "decisions", "rules", "receipts", "summaries"] | .sharing.evidence = "select"
-      | .team.roles = {"Alice": "lead", "Bob": "developer"} | .team.memberSettings = ["shift.hours"]'"$2" \
-    "$RULES_TEMPLATE" >"$a/.nightshift/rules.json"
+  jq '.team.roles = {"Alice": "lead", "Bob": "developer"}'"$2" "$RULES_TEMPLATE" >"$a/.nightshift/rules.json"
   printf '{\n  "shift": {\n    "hours": 3\n  }\n}\n' >"$a/.nightshift/settings/bob.json"
   printf '%s\n' "$(cd -P "$a" && pwd)" >"$a/.nightshift/run/work-target"
   printf 'repository\n' >"$a/.nightshift/run/work-mode"
-  bash "$RUNTIME/share.sh" --project "$a" --apply >/dev/null
+  share_through_git "$a"
   git -C "$a" add -A
   git -C "$a" commit -q -m "site: shared project records"
   git -C "$a" push -q -u origin main 2>/dev/null
@@ -67,16 +65,13 @@ plan_text() { # <name> <item>
   printf '# Punch List — %s\n\n## Contract\n\n- Work in the run.\n\n## Gates\n\n- `true`\n\n## Items\n\n- [ ] **1. %s.**\n  - Verify: true\n  - Commit: `feat: export`\n' "$1" "$2"
 }
 
-# run_and_file <clone> <plan> [start args] — the runner reviews what the run executes, consents,
-# works the item with two screenshots, and files the shift, sharing the first screenshot only.
+# run_and_file <clone> <plan> [start args] — the runner starts the run, works the item with two
+# screenshots, files the shift, and shares the first screenshot as the Archive skill says: a copy in
+# the filed run's evidence/ folder, the receipt's link pointed at it, the other link made a label.
 run_and_file() {
-  local w="$1" plan="$2" out consent run id folder ns
+  local w="$1" plan="$2" out run id folder ns filed
   shift 2
-  out="$(start_run_as_is "$w" "$plan" "$@")" && { printf 'started without consent:\n%s\n' "$out"; return 1; }
-  printf '%s\n' "$out" | grep -qx 'refuse consent read what this run would execute before it starts' || { printf '%s\n' "$out"; return 1; }
-  printf '%s\n' "$out" | grep -qx 'input gate true' || { printf '%s\n' "$out"; return 1; }
-  consent="$(printf '%s\n' "$out" | sed -n 's/^repair read those inputs, then run this again with --consent //p')"
-  out="$(start_run_as_is "$w" "$plan" "$@" --consent "$consent")" || { printf '%s\n' "$out"; return 1; }
+  out="$(start_run_as_is "$w" "$plan" "$@")" || { printf '%s\n' "$out"; return 1; }
   run="$(printf '%s\n' "$out" | sed -n 's/^ok run //p')"
   ns="$w/.nightshift"
   mkdir -p "$ns/runs/$run/receipts/$BASE"
@@ -88,12 +83,16 @@ run_and_file() {
   folder="$(NIGHTSHIFT_RUN="$run" lib ns_archive_dir "$w" "$(date +%Y-%m-%d)" "$id")"
   NIGHTSHIFT_RUN="$run" lib ns_ended_record "$ns" "$id" archive date "$plan" "${folder##*/}" claude
   out="$(NIGHTSHIFT_RUN="$run" bash "$RUNTIME/archive-receipts.sh" --project "$w" --run "$run" --retire "$BASE.md" 2>&1)" || { printf 'archive:\n%s\n' "$out"; return 1; }
-  out="$(bash "$RUNTIME/promote-evidence.sh" --project "$w" --folder "${folder##*/}" --select "runs/$run/receipts/$BASE/before.png" --apply)" || { printf 'promote:\n%s\n' "$out"; return 1; }
+  filed="$folder/runs/$run"
+  mkdir -p "$filed/evidence/$BASE"
+  cp "$filed/receipts/$BASE/before.png" "$filed/evidence/$BASE/before.png"
+  sed -i.bak "s|(./$BASE/before.png)|(../evidence/$BASE/before.png)|; s|!\[After\](./$BASE/after.png)|After (private evidence: $BASE/after.png)|" \
+    "$filed/receipts/$BASE.md" && rm "$filed/receipts/$BASE.md.bak"
   printf '%s %s\n' "$run" "${folder##*/}"
 }
 
 @test "a developer's proposal, the lead's answer and approval, a run with one shared screenshot and a review trace in a fresh clone" {
-  a="$(team flow '| .team.approvers = ["lead"] | .team.reviewChanges = ["contract", "gates", "items"]')"
+  a="$(team flow '| .team.approvers = ["lead"]')"
   b="$(member flow Bob)"
   # Bob proposes the work and asks a question.
   plan_text "Export CSV" "Export the table" >"$b/.nightshift/staging/plans/export-csv.md"
@@ -135,7 +134,7 @@ run_and_file() {
 approved Alice
 started Bob
 reviewed Alice" ] || { echo "$output"; return 1; }
-  grep -q "^- started · Bob · developer · .* · revision $approved · run $run_name · inputs [0-9a-f]\{16\}\$" "$c/.nightshift/staging/records/export-csv.md"
+  grep -q "^- started · Bob · developer · .* · revision $approved · run $run_name\$" "$c/.nightshift/staging/records/export-csv.md"
   [ "$(git -C "$c" log --format='%an %s' -- .nightshift/staging/decisions/export-csv-separator.md)" = "Alice approve: export csv
 Bob propose: export csv" ]
   receipts="$c/.nightshift/archive/$folder/runs/$run_name/receipts"
@@ -146,8 +145,8 @@ Bob propose: export csv" ]
   [ -z "$(git -C "$c" ls-files | grep -E '(^|/)(STOP|\.shift-lease|messages\.md)$|/run/')" ]
 }
 
-@test "a lead submits an approved plan directly, and a project with other rules runs without approval" {
-  a="$(team lead '| .team.approvers = ["reviewer"] | .team.selfApprove = ["lead"]')"
+@test "a lead approves their own plan directly, and a project with other rules runs without approval" {
+  a="$(team lead '| .team.approvers = ["lead"]')"
   plan_text "Dark mode" "Add a dark theme" >"$a/.nightshift/staging/plans/dark-mode.md"
   record "$a" "Dark mode" --action proposed >/dev/null
   record "$a" "Dark mode" --action approved >/dev/null
@@ -160,7 +159,7 @@ Bob propose: export csv" ]
   run start_run_as_is "$b" "Print view"
   printf '%s\n' "$output" | grep -q '^refuse approval Print view revision .* is proposed'
   filed="$(run_and_file "$b" "Dark mode")" || { echo "$filed"; return 1; }
-  # A project whose rules need no approval runs a plan as soon as its runner consents.
+  # A project whose rules need no approval runs a plan as soon as its runner starts it.
   o="$(team open '| .team.approvers = []')"
   plan_text "Search" "Add search" >"$o/.nightshift/staging/plans/search.md"
   filed="$(run_and_file "$o" "Search")" || { echo "$filed"; return 1; }

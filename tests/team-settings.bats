@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 # Team rules and member settings: the team's rules.json holds the shared defaults, the roles and the
 # approval policy; a member may keep a settings file in Git with just their overrides and select it
-# for one run. The reader lays the run's own file over the member's over the team's, and a member's
-# file changes only what the team allows.
+# for one run. The reader lays the run's own file over the member's over the team's; the team block
+# comes from the team's rules.json alone.
 
 load helpers
 
@@ -22,14 +22,12 @@ start_run() { # <workspace> <plan> [extra args]
 # setting <workspace> <run> <block> <key> — the effective value one run reads.
 setting() { NIGHTSHIFT_RUN="$2" lib ns_rules_get_in "$1/.nightshift/rules.json" "$3" "$4"; }
 
-# team_site <name> — a run-folder site whose team lets a member change shift.hours and
-# receipts.progressMinutes, needs a lead's approval, and has two members' settings files.
+# team_site <name> — a run-folder site whose team needs a lead's approval, with two members' settings
+# files.
 team_site() {
   local w
   w="$(runs_site "$1")"
   jq '.team.roles = {"Alice": "lead", "Bob": "developer"} | .team.approvers = ["lead"]
-      | .team.reviewChanges = ["contract", "gates"]
-      | .team.memberSettings = ["shift.hours", "receipts.progressMinutes"]
       | .shift.hours = 2 | .receipts.progressMinutes = 20' \
     "$w/.nightshift/rules.json" >"$w/.nightshift/team.tmp"
   mv "$w/.nightshift/team.tmp" "$w/.nightshift/rules.json"
@@ -66,15 +64,14 @@ team_site() {
   [ "$(setting "$w" export-csv receipts progressMinutes)" = 5 ]
 }
 
-@test "a member file that relaxes a required approval or changes a kept setting is refused before launch" {
+@test "a member file may change any setting, and one that sets the team block is refused before launch" {
   w="$(team_site refuse)"
   printf '{\n  "team": {\n    "approvers": []\n  },\n  "watchMinutes": 0\n}\n' >"$w/.nightshift/settings/eve.json"
   run start_run "$w" "Export CSV" --settings eve
   [ "$status" -eq 1 ]
   [ "$output" = "refuse settings eve cannot be selected for this run
-explain settings/eve.json changes team.approvers, which only the team's rules.json sets
-explain settings/eve.json changes watchMinutes, which the team does not let a member change
-repair take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again" ] || { echo "$output"; return 1; }
+explain settings/eve.json sets team, which only the team's rules.json sets
+repair keep team settings in the team's rules.json and fix the file, then run this again" ] || { echo "$output"; return 1; }
   # Nothing was placed: no run folder, the plan still staged.
   [ -z "$(ls -A "$w/.nightshift/runs")" ]
   [ -f "$w/.nightshift/staging/plans/export-csv.md" ]
@@ -84,16 +81,21 @@ repair take those settings out of the file, or ask the team to allow them in tea
   run start_run "$w" "Export CSV" --settings ../alice
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qx 'explain the name ../alice is not a settings name: lowercase letters, digits and hyphens'
+  # Any other setting is the member's to change.
+  printf '{\n  "watchMinutes": 0,\n  "receipts": {\n    "progressMinutes": 7\n  }\n}\n' >"$w/.nightshift/settings/mallory.json"
+  run start_run "$w" "Export CSV" --settings mallory
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [ "$(setting "$w" export-csv watchMinutes "")" = 0 ]
+  [ "$(setting "$w" export-csv receipts progressMinutes)" = 7 ]
 }
 
 @test "neither a run's file nor a member's changes the team's own rules, and an edited selection is refused at the next Start" {
   w="$(team_site owned)"
   run start_run "$w" "Export CSV" --settings alice
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
-  printf '{\n  "shift": {\n    "isolation": "worktree"\n  },\n  "team": {\n    "approvers": []\n  },\n  "sharing": {\n    "records": ["plans"]\n  }\n}\n' \
+  printf '{\n  "shift": {\n    "isolation": "worktree"\n  },\n  "team": {\n    "approvers": []\n  }\n}\n' \
     >"$w/.nightshift/runs/export-csv/rules.json"
   [ "$(setting "$w" export-csv team approvers)" = '["lead"]' ]
-  [ "$(setting "$w" export-csv sharing records)" = '[]' ]
   # The member's file gains a setting the team keeps after the run selected it.
   printf '{\n  "shift": {\n    "hours": 3\n  },\n  "team": {\n    "approvers": []\n  }\n}\n' >"$w/.nightshift/settings/alice.json"
   [ "$(setting "$w" export-csv team approvers)" = '["lead"]' ]
@@ -101,7 +103,7 @@ repair take those settings out of the file, or ask the team to allow them in tea
   run env NIGHTSHIFT_RUN=export-csv bash "$RUNTIME/start-preflight.sh" --project "$w" --host claude
   [ "$status" -ne 0 ] || { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -qx 'refuse settings alice cannot be used for this run'
-  printf '%s\n' "$output" | grep -qx "explain settings/alice.json changes team.approvers, which only the team's rules.json sets"
+  printf '%s\n' "$output" | grep -qx "explain settings/alice.json sets team, which only the team's rules.json sets"
 }
 
 @test "a run whose selected file is gone fails closed, and a second selection is refused" {

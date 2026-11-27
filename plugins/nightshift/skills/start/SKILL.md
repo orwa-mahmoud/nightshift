@@ -96,25 +96,21 @@ worktree, and prints `ok run <run>`; relay its `warn` and `refuse` lines as the 
 continue this Start for that run, prefixing every `ns` command with `NIGHTSHIFT_RUN=<run>` (native
 Windows: set `$env:NIGHTSHIFT_RUN` first) and working in the worktree its `ok worktree` line names.
 
-On a site that shares its plans through Git (`sharing.records` in the rules file), `start-run`
-leaves the plan where it is as the team's record and prints that the run works from its own copy;
-teammates keep reading and editing the plan while the run works. A teammate's run of the same plan,
-pulled through Git, is never taken over: each runner's run has its own folder.
+When Git shares the site's plans, `start-run` leaves the plan where it is as the team's record and
+prints that the run works from its own copy; teammates keep reading and editing the plan while the
+run works. A teammate's run of the same plan, pulled through Git, is never taken over: each runner's
+run has its own folder.
 
 A team whose rules name approvers runs only an approved revision: `start-run` refuses a proposed
-plan with the part that changed and who approved the revision before; relay it and stop. On a site
-that shares its plans, the runner consents to exactly what the run would execute before anything of
-it runs: `start-run` without `--consent` prints one `input` line each (the plan's revision, the
-member settings, the prepare command, the verification profile, the baseline gates and each gate
-command) and the consent that covers them. Show the runner those lines, and only on their yes run it
-again with `--consent <digest>`. Never pass a consent the runner did not give for these inputs; when
-the inputs change, the old consent is refused and they review the new ones.
+plan with what changed and who approved the revision before; relay it and stop. When the plan came
+from teammates, show the runner what the run will execute before starting it, and wait for their
+yes: the plan's gate commands, the effective `shift.prepare` and verification profile
+(`ns shift-policy resolve --table`), and whether `baselineGates` runs the gates before arming.
 
-The branch a run works on follows the team's `branches.start`. With `choose`, `start-run` without
-`--branch` lists `branch current`, `branch existing` and `branch base` lines and places nothing: show
-the owner the choices and run it again with `--branch <name>`, the current branch, an existing work
-branch, or a new name made from the base. A plan run unattended needs its branch named up front. A
-second run on a branch waits until the first has ended, then continues its worktree.
+The branch is the runner's to name. When the owner has not said, ask which branch the run works on:
+the current one, an existing work branch, or a new one from `branches.base`, and pass it with
+`--branch <name>`. Without `--branch` the run gets a branch of its own. A second run on a branch
+waits until the first has ended, then continues its worktree.
 
 When the owner names their own settings for the run ("with my settings", "use bob's settings"),
 add `--settings <name>`: the run reads `settings/<name>.json` over the team's rules for that run

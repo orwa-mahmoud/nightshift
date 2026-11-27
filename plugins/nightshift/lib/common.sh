@@ -32,8 +32,16 @@ ns_local_now() { ns_local_time "$(date +%s)" "${1:-}"; }
 # A local timestamp to the second, the form the shift log writes.
 ts() { ns_local_now second; }
 
-# One shift-log line, skipped when the workspace folder is already gone.
-log_line() { [ -d "$NS" ] && printf '%s · %s\n' "$(ts)" "$1" >>"$LOG"; }
+# One shift-log line. A workspace folder removed before or during the write ends the shift, so the
+# line is dropped; any other failure to write is reported.
+log_line() {
+  local line
+  [ -d "$NS" ] || return 0
+  line="$(ts) · $1"
+  { printf '%s\n' "$line" >>"$LOG"; } 2>/dev/null && return 0
+  [ -d "$NS" ] || return 0
+  printf '%s\n' "$line" >>"$LOG"
+}
 
 ns_mtime() {
   case "$(uname -s)" in

@@ -81,9 +81,7 @@ if ([string]::IsNullOrWhiteSpace($By)) { Stop-Refused 'name no -By and no Git us
 if ($By.Contains(' ' + [char]0x00B7 + ' ')) { Stop-Refused "name $By holds the record's separator" "pass a name without ' $([char]0x00B7) '" }
 
 if ($Action -ceq 'approved') {
-    $proposer = ''
-    foreach ($entry in (Get-NSPlanRecordLines $recordFile)) { if ($entry.Action -ceq 'proposed') { $proposer = $entry.Name } }
-    if (-not (Test-NSPlanMayApprove $workspace $By $proposer)) {
+    if (-not (Test-NSPlanMayApprove $workspace $By)) {
         $role = Get-NSTeamRole $workspace $By
         if ($role.Length -eq 0) { $role = 'no role' }
         Stop-Refused ("approve $By ($role) may not approve this plan; the team's approvers are " + ((Get-NSTeamList $workspace 'approvers') -join ',')) 'ask one of them to approve it'

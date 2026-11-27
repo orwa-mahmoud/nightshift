@@ -60,7 +60,6 @@ function New-TeamSite {
     $rules = Get-Content -Raw -LiteralPath $rulesTemplate | ConvertFrom-Json
     $rules.team.roles = [pscustomobject]@{ Alice = 'lead'; Bob = 'developer' }
     $rules.team.approvers = @('lead')
-    $rules.team.memberSettings = @('shift.hours', 'receipts.progressMinutes')
     $rules.shift.hours = 2
     $rules.receipts.progressMinutes = 20
     Write-Text (Join-Path $ns 'rules.json') ($rules | ConvertTo-Json -Depth 20)
@@ -103,7 +102,7 @@ try {
     Expect-True ((@($a.team.approvers) -join ',') -ceq 'lead' -and [int]$a.shift.hours -eq 3) 'owned: team.approvers stays the team''s'
     $preflight = Invoke-Helper 'start-preflight.ps1' @('-Project', $w, '-HostName', 'claude') 'export-csv'
     Expect-True ($preflight.ExitCode -ne 0 -and ($preflight.Lines -ccontains 'refuse settings alice cannot be used for this run') -and
-        ($preflight.Lines -ccontains "explain settings/alice.json changes team.approvers, which only the team's rules.json sets")) "owned: preflight: $($preflight.Text)"
+        ($preflight.Lines -ccontains "explain settings/alice.json sets team, which only the team's rules.json sets")) "owned: preflight: $($preflight.Text)"
 
     # A second selection is refused; a selection whose file is gone fails closed.
     $again = Invoke-Helper 'start-run.ps1' @('-Project', $w, '-Plan', 'Export CSV', '-HostName', 'claude', '-Settings', 'bob')
@@ -116,9 +115,8 @@ try {
     Write-Text (Join-Path $r '.nightshift/settings/eve.json') "{`n  `"team`": {`n    `"approvers`": []`n  },`n  `"watchMinutes`": 0`n}`n"
     $refused = Invoke-Helper 'start-run.ps1' @('-Project', $r, '-Plan', 'Export CSV', '-HostName', 'claude', '-Settings', 'eve')
     $expected = @('refuse settings eve cannot be selected for this run',
-        "explain settings/eve.json changes team.approvers, which only the team's rules.json sets",
-        'explain settings/eve.json changes watchMinutes, which the team does not let a member change',
-        'repair take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again')
+        "explain settings/eve.json sets team, which only the team's rules.json sets",
+        "repair keep team settings in the team's rules.json and fix the file, then run this again")
     Expect-True ($refused.ExitCode -eq 1 -and ($refused.Lines -join '|') -ceq ($expected -join '|')) "refuse: $($refused.Text)"
     Expect-True (@(Get-ChildItem -LiteralPath (Join-Path $r '.nightshift/runs') -Force).Count -eq 0) 'refuse: no run folder was placed'
 }
