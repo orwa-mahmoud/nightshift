@@ -77,9 +77,30 @@ _ns_migrate_keys() {
   printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '$4 != "field" && $4 != "retired" && $4 != "stray" && !seen[$1]++ { print $1 }'
 }
 
+# _ns_migrate_index — every key's paths, oldest first, read from the layout table in one pass and
+# kept in _NSMR_<key> variables (hyphens as underscores), so a lookup reads a variable instead of
+# scanning the table. Rebuilt only when the table changes.
+_ns_migrate_index() {
+  local key path var
+  [ "${_NS_MIGRATE_INDEX_OF-}" != "$NS_LAYOUT_ROWS" ] || return 0
+  for var in ${_NS_MIGRATE_INDEX_VARS-}; do unset "$var"; done
+  _NS_MIGRATE_INDEX_VARS=""
+  while IFS="$_NS_RULES_TAB" read -r key path; do
+    [ -n "$key" ] || continue
+    var="_NSMR_${key//-/_}"
+    case " $_NS_MIGRATE_INDEX_VARS " in *" $var "*) ;; *) _NS_MIGRATE_INDEX_VARS="$_NS_MIGRATE_INDEX_VARS $var" ;; esac
+    printf -v "$var" '%s%s\n' "${!var-}" "$path"
+  done <<ROWS
+$(printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '{ print $1 "\t" $3 }')
+ROWS
+  _NS_MIGRATE_INDEX_OF="$NS_LAYOUT_ROWS"
+}
+
 # _ns_migrate_rows <key> — every path <key> has had, oldest first.
 _ns_migrate_rows() {
-  printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' -v k="$1" '$1 == k { print $3 }'
+  local var="_NSMR_${1//-/_}"
+  _ns_migrate_index
+  printf '%s' "${!var-}"
 }
 
 # _ns_migrate_field_keys <kind> — the field or retired keys, table order.
@@ -274,6 +295,8 @@ ns_migrate_plan() {
   esac
   ver="$(ns_state_version "$ws")"
   printf 'state\t%s\n' "$ver"
+  # Built here, outside the $(...) lookups below, so each of them reads it instead of rebuilding it.
+  _ns_migrate_index
   _NS_MIGRATE_RUN=""
   if ns_layout_rel_at p "$NS_LAYOUT_VERSION" punch-list && case "$p" in 'runs/*/'*) true ;; *) false ;; esac; then
     if ! _NS_MIGRATE_RUN="$(_ns_migrate_run_name "$ws")"; then
