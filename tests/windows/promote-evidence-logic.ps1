@@ -86,7 +86,7 @@ try {
 
     # All: narrowing one filing to one file leaves the next filing at all.
     $s = New-Site (Join-Path $root 'all') 'all'
-    $applied = Invoke-Promote $s @('-Folder', $folder, '-Select', "$base/before.png", '-Apply')
+    $applied = Invoke-Promote $s @('-Folder', $folder, '-Select', "receipts/$base/before.png", '-Apply')
     Expect-True ($applied.ExitCode -eq 0 -and (Get-Shared $s) -ceq "$base/before.png") "all: one copy: $($applied.Text)"
     Expect-True ((Get-Receipt $s).Contains("![Before](../evidence/$base/before.png) and After (private evidence: $base/after.png).")) "all: links: $(Get-Receipt $s)"
     Add-Filed $s '2026-11-28-bbb222'
@@ -96,11 +96,11 @@ try {
     # Select: the same choice applied twice leaves one copy and the same receipt; a teammate's
     # checkout opens the promoted copy.
     $s = New-Site (Join-Path $root 'select') 'select'
-    $null = Invoke-Promote $s @('-Folder', $folder, '-Select', "$base/before.png", '-Apply')
+    $null = Invoke-Promote $s @('-Folder', $folder, '-Select', "receipts/$base/before.png", '-Apply')
     $first = Get-Receipt $s
-    $null = Invoke-Promote $s @('-Folder', $folder, '-Select', "$base/before.png", '-Apply')
+    $null = Invoke-Promote $s @('-Folder', $folder, '-Select', "receipts/$base/before.png", '-Apply')
     Expect-True ((Get-Receipt $s) -ceq $first -and (Get-Shared $s) -ceq "$base/before.png") 'select: applied twice changes nothing'
-    $refused = Invoke-Promote $s @('-Folder', $folder, '-Select', "$base/missing.png", '-Apply')
+    $refused = Invoke-Promote $s @('-Folder', $folder, '-Select', "receipts/$base/missing.png", '-Apply')
     Expect-True ($refused.ExitCode -eq 1) "select: a file that is not evidence is refused: $($refused.Text)"
     $null = & git -C $s add -A
     $null = & git -C $s commit -q -m file

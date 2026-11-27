@@ -264,7 +264,9 @@ function Get-NSShareIgnoreBlock {
         }
         foreach ($line in @(('!/' + $archive + '/'), ('/' + $archive + '/history-index.md'), ('/' + $archive + '/*/run/'),
                 ('/' + $archive + '/*/' + ($receipts -replace '^runs/\*/', '') + '/*/'),
-                ('/' + $archive + '/*/' + ($messages -replace '^runs/\*/', '')))) {
+                ('/' + $archive + '/*/' + ($messages -replace '^runs/\*/', '')),
+                # A shift filed from a run folder keeps that run's layout under the folder: runs/<run>/...
+                ('/' + $archive + '/*/runs/*/run/'), ('/' + $archive + '/*/' + $receipts + '/*/'), ('/' + $archive + '/*/' + $messages))) {
             $lines.Add($line)
         }
     }

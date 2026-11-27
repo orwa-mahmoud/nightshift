@@ -2041,6 +2041,9 @@ ns_share_ignore_block() {
     done
     printf '!/%s/\n/%s/history-index.md\n/%s/*/run/\n/%s/*/%s/*/\n/%s/*/%s\n' \
       "$archive" "$archive" "$archive" "$archive" "${receipts#runs/\*/}" "$archive" "${messages#runs/\*/}"
+    # A shift filed from a run folder keeps that run's layout under the folder: runs/<run>/...
+    printf '/%s/*/runs/*/run/\n/%s/*/%s/*/\n/%s/*/%s\n' \
+      "$archive" "$archive" "$receipts" "$archive" "$messages"
   fi
   printf '%s\n' "$NS_SHARE_END"
 }

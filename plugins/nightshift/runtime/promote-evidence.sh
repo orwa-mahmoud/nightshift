@@ -72,30 +72,43 @@ WORKSPACE="$(ns_workspace_root "$PROJECT" 2>/dev/null)" || refuse "workspace no 
 ROOT="$(ns_archive_root "$WORKSPACE")" || refuse "archive the archive root cannot be resolved" "run ns doctor"
 DIR="$ROOT/$FOLDER"
 [ -d "$DIR" ] && [ ! -L "$DIR" ] || refuse "folder no filed shift folder $FOLDER under ${ROOT##*/.nightshift/}" "name a folder Archive printed"
-RECEIPTS="$DIR/receipts"
-SHARED="$DIR/evidence"
-REAL="$(cd -P "$RECEIPTS" 2>/dev/null && pwd)" || REAL=""
+REAL_DIR="$(cd -P "$DIR" && pwd)" || refuse "folder $FOLDER cannot be read" "check the folder's permissions"
+
+# receipt_dirs — each folder of filed receipts, named from the filed shift's folder: receipts for a
+# shift filed from a site that keeps one shift, runs/<run>/receipts for one filed from a run folder.
+receipt_dirs() {
+  local d
+  for d in "$DIR/receipts" "$DIR"/runs/*/receipts; do
+    [ -d "$d" ] && [ ! -L "$d" ] || continue
+    [ "$(cd -P "$d" && pwd)" = "$REAL_DIR/${d#"$DIR"/}" ] || continue
+    printf '%s\n' "${d#"$DIR"/}"
+  done
+}
+DIRS="$(receipt_dirs)"
 
 PREF="$(ns_rules_get_in "$(ns_layout_path "$WORKSPACE/.nightshift" rules)" sharing evidence)"
 case "$PREF" in '') PREF=none ;; none | select | all) ;; *) refuse "preference sharing.evidence is $PREF" "use none, select or all" ;; esac
 [ -n "$CHOICE" ] || case "$PREF" in all) CHOICE=all ;; *) CHOICE=none ;; esac
 
-# eligible — each raw evidence file of the folder's receipts, as <receipt>/<path>: a regular file in
-# a folder named after a filed receipt. find lists a link as a link and never descends into one, so
-# nothing outside the folder is ever reached.
+# eligible — each raw evidence file of the filed receipts, named from the filed shift's folder as
+# <receipts folder>/<receipt>/<path>: a regular file in a folder named after a filed receipt. find
+# lists a link as a link and never descends into one, so nothing outside the folder is reached.
 eligible() {
-  local d base
-  [ -n "$REAL" ] || return 0
-  for d in "$RECEIPTS"/*/; do
-    d="${d%/}"
-    base="${d##*/}"
-    [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$RECEIPTS/$base.md" ] || continue
-    [ "$(cd -P "$d" && pwd)" = "$REAL/$base" ] || continue
-    (cd "$d" && find . -type f ! -path '*/.*' 2>/dev/null) | sed "s|^\./|$base/|"
-  done | LC_ALL=C sort
+  local rd d base
+  while IFS= read -r rd; do
+    [ -n "$rd" ] || continue
+    for d in "$DIR/$rd"/*/; do
+      d="${d%/}"
+      base="${d##*/}"
+      [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$DIR/$rd/$base.md" ] || continue
+      (cd "$d" && find . -type f ! -path '*/.*' 2>/dev/null) | sed "s|^\./|$rd/$base/|"
+    done
+  done <<EOF_DIRS
+$DIRS
+EOF_DIRS
 }
 
-ELIGIBLE="$(eligible)"
+ELIGIBLE="$(eligible | LC_ALL=C sort)"
 case "$CHOICE" in
   all) CHOSEN="$ELIGIBLE" ;;
   none) CHOSEN="" ;;
@@ -127,24 +140,40 @@ if [ "$APPLY" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------- copy the chosen files
+# Each chosen file's copy sits in evidence/ beside the receipts folder it came from.
 while IFS= read -r f; do
   [ -n "$f" ] || continue
-  mkdir -p "$SHARED/${f%/*}" || refuse "copy could not create $SHARED/${f%/*}" "check that .nightshift/ is writable"
-  if ! cmp -s "$RECEIPTS/$f" "$SHARED/$f" 2>/dev/null; then
-    cp "$RECEIPTS/$f" "$SHARED/$f" || refuse "copy could not copy $f" "check that .nightshift/ is writable"
+  case "$f" in receipts/*) rd=receipts ;; *) rd="${f%%/receipts/*}/receipts" ;; esac
+  to="$DIR/${rd%receipts}evidence/${f#"$rd"/}"
+  mkdir -p "${to%/*}" || refuse "copy could not create ${to%/*}" "check that .nightshift/ is writable"
+  if ! cmp -s "$DIR/$f" "$to" 2>/dev/null; then
+    cp "$DIR/$f" "$to" || refuse "copy could not copy $f" "check that .nightshift/ is writable"
   fi
 done <<EOF_CHOSEN
 $CHOSEN
 EOF_CHOSEN
 
 # ---------------------------------------------------------------- relink the filed receipts
+# chosen_in <receipts folder> — the files chosen from that folder, named from it, as links name them.
+chosen_in() {
+  local c
+  while IFS= read -r c; do
+    case "$c" in "$1"/*) printf '%s\n' "${c#"$1"/}" ;; esac
+  done <<EOF_IN
+$CHOSEN
+EOF_IN
+}
+
 # Each link to a raw file points at its shared copy when it was promoted and becomes a private label
 # when it was not.
-for receipt in "$RECEIPTS"/*.md; do
+for receipt in "$DIR"/receipts/*.md "$DIR"/runs/*/receipts/*.md; do
   [ -f "$receipt" ] && [ ! -L "$receipt" ] || continue
+  rd="${receipt%/*}"
+  rd="${rd#"$DIR"/}"
+  printf '%s\n' "$DIRS" | grep -qxF -- "$rd" || continue
   base="${receipt##*/}"
   base="${base%.md}"
-  if ! NS_CHOSEN="$CHOSEN" awk -v base="$base" '
+  if ! NS_CHOSEN="$(chosen_in "$rd")" awk -v base="$base" '
     # Every link into the evidence folder of this receipt: a promoted file links to its shared copy;
     # any other becomes a label, so the shared page carries no link that resolves only on one machine.
     BEGIN {

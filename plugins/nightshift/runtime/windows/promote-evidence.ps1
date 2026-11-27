@@ -58,8 +58,18 @@ $dir = Join-Path $root $Folder
 if (-not (Test-Path -LiteralPath $dir -PathType Container) -or (Test-NSReparsePoint $dir)) {
     Stop-Refused ("folder no filed shift folder $Folder under " + (Split-Path -Leaf $root)) 'name a folder Archive printed'
 }
-$receipts = Join-Path $dir 'receipts'
-$shared = Join-Path $dir 'evidence'
+# The folders of filed receipts, named from the filed shift's folder: receipts for a shift filed from a
+# site that keeps one shift, runs/<run>/receipts for one filed from a run folder.
+$receiptDirs = New-Object Collections.Generic.List[string]
+if ((Test-Path -LiteralPath (Join-Path $dir 'receipts') -PathType Container) -and -not (Test-NSReparsePoint (Join-Path $dir 'receipts'))) { $receiptDirs.Add('receipts') }
+$runsDir = Join-Path $dir 'runs'
+if ((Test-Path -LiteralPath $runsDir -PathType Container) -and -not (Test-NSReparsePoint $runsDir)) {
+    foreach ($runDir in @(Get-ChildItem -LiteralPath $runsDir -Directory -Force | Sort-Object Name)) {
+        $candidate = Join-Path $runDir.FullName 'receipts'
+        if ((Test-NSReparsePoint $runDir.FullName) -or -not (Test-Path -LiteralPath $candidate -PathType Container) -or (Test-NSReparsePoint $candidate)) { continue }
+        $receiptDirs.Add('runs/' + $runDir.Name + '/receipts')
+    }
+}
 
 $preference = ''
 $rules = Get-NSRulesObject $workspace
@@ -74,25 +84,26 @@ if ($preference.Length -eq 0) { $preference = 'none' }
 if (@('none', 'select', 'all') -cnotcontains $preference) { Stop-Refused "preference sharing.evidence is $preference" 'use none, select or all' }
 $choice = $(if ($Select.Count -gt 0) { 'select' } elseif ($All) { 'all' } elseif ($None) { 'none' } elseif ($preference -ceq 'all') { 'all' } else { 'none' })
 
-# Get-Eligible - each raw evidence file of the folder's receipts, as <receipt>/<path>: a regular file
-# in a folder named after a filed receipt, reached without passing through a link.
+# Get-Eligible - each raw evidence file of the filed receipts, named from the filed shift's folder as
+# <receipts folder>/<receipt>/<path>: a regular file in a folder named after a filed receipt, reached
+# without passing through a link.
 function Get-Eligible {
     $out = New-Object Collections.Generic.List[string]
-    if (-not (Test-Path -LiteralPath $receipts -PathType Container) -or (Test-NSReparsePoint $receipts)) { return , $out.ToArray() }
-    foreach ($sub in @(Get-ChildItem -LiteralPath $receipts -Directory -Force)) {
-        if (Test-NSReparsePoint $sub.FullName) { continue }
-        if ($sub.Name.StartsWith('.')) { continue }
-        if (-not [IO.File]::Exists((Join-Path $receipts ($sub.Name + '.md')))) { continue }
-        $stack = New-Object Collections.Generic.Stack[string]
-        $stack.Push($sub.FullName)
-        while ($stack.Count -gt 0) {
-            $current = $stack.Pop()
-            foreach ($entry in @(Get-ChildItem -LiteralPath $current -Force)) {
-                if ($entry.Name.StartsWith('.')) { continue }
-                if (Test-NSReparsePoint $entry.FullName) { continue }
-                if ($entry.PSIsContainer) { $stack.Push($entry.FullName); continue }
-                $rel = $entry.FullName.Substring($sub.FullName.Length).TrimStart('\', '/').Replace('\', '/')
-                $out.Add($sub.Name + '/' + $rel)
+    foreach ($rd in $receiptDirs) {
+        $receipts = Join-Path $dir $rd
+        foreach ($sub in @(Get-ChildItem -LiteralPath $receipts -Directory -Force)) {
+            if ((Test-NSReparsePoint $sub.FullName) -or $sub.Name.StartsWith('.')) { continue }
+            if (-not [IO.File]::Exists((Join-Path $receipts ($sub.Name + '.md')))) { continue }
+            $stack = New-Object Collections.Generic.Stack[string]
+            $stack.Push($sub.FullName)
+            while ($stack.Count -gt 0) {
+                $current = $stack.Pop()
+                foreach ($entry in @(Get-ChildItem -LiteralPath $current -Force)) {
+                    if ($entry.Name.StartsWith('.') -or (Test-NSReparsePoint $entry.FullName)) { continue }
+                    if ($entry.PSIsContainer) { $stack.Push($entry.FullName); continue }
+                    $rel = $entry.FullName.Substring($sub.FullName.Length).TrimStart('\', '/').Replace('\', '/')
+                    $out.Add($rd + '/' + $sub.Name + '/' + $rel)
+                }
             }
         }
     }
@@ -128,9 +139,11 @@ if (-not $Apply) {
 }
 
 # ---------------------------------------------------------------- copy the chosen files
+# Each chosen file's copy sits in evidence/ beside the receipts folder it came from.
 foreach ($f in $chosen) {
-    $from = Join-Path $receipts $f
-    $to = Join-Path $shared $f
+    $rd = $(if ($f.StartsWith('receipts/', [StringComparison]::Ordinal)) { 'receipts' } else { $f.Substring(0, $f.IndexOf('/receipts/') + 9) })
+    $from = Join-Path $dir $f
+    $to = Join-Path $dir ($rd.Substring(0, $rd.Length - 8) + 'evidence/' + $f.Substring($rd.Length + 1))
     try {
         $null = New-Item -ItemType Directory -Path (Split-Path -Parent $to) -Force
         $same = [IO.File]::Exists($to) -and ([Linq.Enumerable]::SequenceEqual([IO.File]::ReadAllBytes($from), [IO.File]::ReadAllBytes($to)))
@@ -161,7 +174,7 @@ function Update-NSEvidenceLinks {
         $text = $Line.Substring($open + 1, $i - $open - 1)
         $bang = ($open -gt 0 -and $Line[$open - 1] -eq '!')
         $null = $out.Append($Line.Substring(0, $open - $(if ($bang) { 1 } else { 0 })))
-        if ($chosen -ccontains $p) { $null = $out.Append($(if ($bang) { '!' } else { '' }) + '[' + $text + '](../evidence/' + $p + ')') }
+        if ($script:localChosen -ccontains $p) { $null = $out.Append($(if ($bang) { '!' } else { '' }) + '[' + $text + '](../evidence/' + $p + ')') }
         else { $null = $out.Append($text + ' (private evidence: ' + $p + ')') }
         $Line = $Line.Substring($close + 1)
     }
@@ -169,17 +182,21 @@ function Update-NSEvidenceLinks {
 }
 
 # ---------------------------------------------------------------- relink the filed receipts
-foreach ($receipt in @(Get-ChildItem -LiteralPath $receipts -Filter '*.md' -File -Force)) {
-    if (Test-NSReparsePoint $receipt.FullName) { continue }
-    $base = [IO.Path]::GetFileNameWithoutExtension($receipt.Name)
-    $text = [IO.File]::ReadAllText($receipt.FullName)
-    $trailing = $text.EndsWith("`n")
-    $lines = $text.Replace("`r`n", "`n").Split("`n")
-    if ($trailing) { $lines = $lines[0..($lines.Count - 2)] }
-    $result = New-Object Collections.Generic.List[string]
-    foreach ($line in $lines) { $result.Add((Update-NSEvidenceLinks $line $base)) }
-    try { [IO.File]::WriteAllText($receipt.FullName, (($result.ToArray() -join "`n") + $(if ($trailing) { "`n" } else { '' })), $utf8) }
-    catch { Stop-Refused ('relink could not rewrite ' + $receipt.Name) 'check that .nightshift/ is writable' }
+foreach ($rd in $receiptDirs) {
+    # The files chosen from this receipts folder, named from it, as the links name them.
+    $script:localChosen = @($chosen | Where-Object { $_.StartsWith($rd + '/', [StringComparison]::Ordinal) } | ForEach-Object { $_.Substring($rd.Length + 1) })
+    foreach ($receipt in @(Get-ChildItem -LiteralPath (Join-Path $dir $rd) -Filter '*.md' -File -Force)) {
+        if (Test-NSReparsePoint $receipt.FullName) { continue }
+        $base = [IO.Path]::GetFileNameWithoutExtension($receipt.Name)
+        $text = [IO.File]::ReadAllText($receipt.FullName)
+        $trailing = $text.EndsWith("`n")
+        $lines = $text.Replace("`r`n", "`n").Split("`n")
+        if ($trailing) { $lines = $lines[0..($lines.Count - 2)] }
+        $result = New-Object Collections.Generic.List[string]
+        foreach ($line in $lines) { $result.Add((Update-NSEvidenceLinks $line $base)) }
+        try { [IO.File]::WriteAllText($receipt.FullName, (($result.ToArray() -join "`n") + $(if ($trailing) { "`n" } else { '' })), $utf8) }
+        catch { Stop-Refused ('relink could not rewrite ' + $receipt.Name) 'check that .nightshift/ is writable' }
+    }
 }
 Write-Verdict 'ok' ("promoted " + $chosen.Count + " of " + $eligible.Count + " evidence files of $Folder; the rest stay private")
 exit 0

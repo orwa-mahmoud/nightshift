@@ -107,8 +107,17 @@ thread() {
     printf 'x\n' >"$a/.nightshift/$f"
   done
   printf '{}\n' >"$a/.nightshift/runs/export-csv-abc123/rules.json"
+  # A shift filed from a run folder keeps the run's layout under its folder; the same files stay private.
+  filed="$a/.nightshift/archive/2026-11-27-abc123/runs/export-csv-abc123"
+  mkdir -p "$filed/run" "$filed/receipts/01-export-the-table-ab12" "$filed/inbox"
+  for f in run/shift-policy.json receipts/01-export-the-table-ab12.md receipts/01-export-the-table-ab12/screen.png \
+    inbox/messages.md inbox/parking-lot.md; do
+    printf 'x\n' >"$filed/$f"
+  done
   seen="$(git -C "$a" add -A --dry-run | sed "s/^add '//; s/'\$//" | sort)"
-  [ "$seen" = ".nightshift/runs/export-csv-abc123/inbox/parking-lot.md
+  [ "$seen" = ".nightshift/archive/2026-11-27-abc123/runs/export-csv-abc123/inbox/parking-lot.md
+.nightshift/archive/2026-11-27-abc123/runs/export-csv-abc123/receipts/01-export-the-table-ab12.md
+.nightshift/runs/export-csv-abc123/inbox/parking-lot.md
 .nightshift/runs/export-csv-abc123/punch-list.md
 .nightshift/runs/export-csv-abc123/receipts/01-export-the-table-ab12.md
 .nightshift/runs/export-csv-abc123/rules.json" ] || { echo "$seen"; return 1; }

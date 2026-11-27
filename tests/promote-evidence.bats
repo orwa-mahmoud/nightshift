@@ -51,9 +51,9 @@ staged() { git -C "$1" add -A --dry-run | sed "s/^add '//; s/'\$//" | grep "arch
   run promote "$r"
   [ "$status" -eq 0 ]
   [ "$output" = "ok preference none
-eligible $BASE/after.png
-eligible $BASE/before.png
-eligible $BASE/logs/run.txt
+eligible receipts/$BASE/after.png
+eligible receipts/$BASE/before.png
+eligible receipts/$BASE/logs/run.txt
 next run this again with --apply, and --select, --all or --none to change the choice" ] || { echo "$output"; return 1; }
   run promote "$r" "$FOLDER" --apply
   [ "$status" -eq 0 ]
@@ -72,9 +72,9 @@ The run log (private evidence: $BASE/logs/run.txt) and a secret (private evidenc
 @test "with all as the preference, narrowing one filing leaves the next one at all" {
   r="$(site all-set all)"
   run promote "$r"
-  printf '%s\n' "$output" | grep -qx "promote $BASE/before.png"
+  printf '%s\n' "$output" | grep -qx "promote receipts/$BASE/before.png"
   [ "$(printf '%s\n' "$output" | grep -c '^promote ')" = 3 ]
-  run promote "$r" "$FOLDER" --select "$BASE/before.png" --apply
+  run promote "$r" "$FOLDER" --select "receipts/$BASE/before.png" --apply
   [ "$status" -eq 0 ] || { echo "$output"; return 1; }
   [ "$(cd "$r/.nightshift/archive/$FOLDER/evidence" && find . -type f | sort)" = "./$BASE/before.png" ]
   receipt "$r" | grep -qF "![Before](../evidence/$BASE/before.png) and After (private evidence: $BASE/after.png)."
@@ -92,23 +92,23 @@ The run log (private evidence: $BASE/logs/run.txt) and a secret (private evidenc
   run promote "$r"
   ! printf '%s\n' "$output" | grep -q '^promote '
   ! printf '%s\n' "$output" | grep -q 'secret\|elsewhere'
-  promote "$r" "$FOLDER" --select "$BASE/before.png" --select "$BASE/logs/run.txt" --apply >/dev/null
+  promote "$r" "$FOLDER" --select "receipts/$BASE/before.png" --select "receipts/$BASE/logs/run.txt" --apply >/dev/null
   first="$(receipt "$r")"
-  promote "$r" "$FOLDER" --select "$BASE/before.png" --select "$BASE/logs/run.txt" --apply >/dev/null
+  promote "$r" "$FOLDER" --select "receipts/$BASE/before.png" --select "receipts/$BASE/logs/run.txt" --apply >/dev/null
   [ "$(receipt "$r")" = "$first" ]
   [ "$(cd "$r/.nightshift/archive/$FOLDER/evidence" && find . -type f | sort)" = "./$BASE/before.png
 ./$BASE/logs/run.txt" ]
-  run promote "$r" "$FOLDER" --select "$BASE/secret.png" --apply
+  run promote "$r" "$FOLDER" --select "receipts/$BASE/secret.png" --apply
   [ "$status" -eq 1 ]
-  printf '%s\n' "$output" | grep -qx "refuse select $BASE/secret.png is not raw evidence of $FOLDER"
-  run promote "$r" "$FOLDER" --select "$BASE/elsewhere/secret.png" --apply
+  printf '%s\n' "$output" | grep -qx "refuse select receipts/$BASE/secret.png is not raw evidence of $FOLDER"
+  run promote "$r" "$FOLDER" --select "receipts/$BASE/elsewhere/secret.png" --apply
   [ "$status" -eq 1 ]
   [ -z "$(find "$r/.nightshift/archive/$FOLDER/evidence" -name secret.png)" ]
 }
 
 @test "a teammate's checkout opens the promoted evidence from the receipt and has none of the rest" {
   r="$(site checkout all)"
-  promote "$r" "$FOLDER" --select "$BASE/before.png" --apply >/dev/null
+  promote "$r" "$FOLDER" --select "receipts/$BASE/before.png" --apply >/dev/null
   git -C "$r" add -A
   git -C "$r" commit -q -m "file: export csv"
   git clone -q "$r" "$BATS_TEST_TMPDIR/teammate" 2>/dev/null
@@ -124,8 +124,8 @@ The run log (private evidence: $BASE/logs/run.txt) and a secret (private evidenc
   command -v pwsh >/dev/null || skip 'pwsh is not installed'
   a="$(site windows-bash select)"
   b="$(site windows-ps select)"
-  bash_out="$(promote "$a" "$FOLDER" --select "$BASE/before.png" --apply)"
-  ps_out="$(pwsh -NoProfile -File "$RUNTIME/windows/promote-evidence.ps1" -Project "$b" -Folder "$FOLDER" -Select "$BASE/before.png" -Apply)"
+  bash_out="$(promote "$a" "$FOLDER" --select "receipts/$BASE/before.png" --apply)"
+  ps_out="$(pwsh -NoProfile -File "$RUNTIME/windows/promote-evidence.ps1" -Project "$b" -Folder "$FOLDER" -Select "receipts/$BASE/before.png" -Apply)"
   [ "$bash_out" = "$ps_out" ] || { printf 'bash:\n%s\npwsh:\n%s\n' "$bash_out" "$ps_out"; return 1; }
   [ "$(receipt "$a")" = "$(receipt "$b")" ]
   [ "$(cd "$a/.nightshift/archive/$FOLDER/evidence" && find . -type f | sort)" = "$(cd "$b/.nightshift/archive/$FOLDER/evidence" && find . -type f | sort)" ]
