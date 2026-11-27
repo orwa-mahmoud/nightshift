@@ -598,8 +598,8 @@ function Start-NSBackgroundWorker {
 }
 
 # Messages between the owner and a running shift: one file per run, inbox/messages.md, that both sides
-# append to and nobody rewrites. The owner writes under `## Owner · <time>`, the worker replies under
-# `## Worker · <time>`, and the text between headings is kept exactly as written. Mirrors
+# append to and nobody rewrites. The owner writes under an `## Owner` heading with the time, the worker replies under
+# a `## Worker` heading with the time, and the text between headings is kept exactly as written. Mirrors
 # lib/messages.sh.
 $script:NSMessageOwner = '## Owner ' + [char]0x00B7 + ' '
 $script:NSMessageWorker = '## Worker ' + [char]0x00B7 + ' '

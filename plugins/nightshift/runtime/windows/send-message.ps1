@@ -5,8 +5,8 @@
 .DESCRIPTION
     send-message.ps1 -Project DIR [-Run NAME] [-Text TEXT]
 
-  Appends the message, with the local time, under `## Owner · <time>` in the run's inbox/messages.md.
-  The run's worker is shown it at its next tool call and appends its reply under `## Worker · <time>`
+  Appends the message under an `## Owner` heading with the local time in the run's inbox/messages.md.
+  The run's worker is shown it at its next tool call and appends its reply under a `## Worker` heading with the time
   in the same file, where the sender reads it. Without -Text the message is read from stdin, so
   multiline text reaches the file exactly as written. In a workspace that keeps runs, the run is the
   one named with -Run, by NIGHTSHIFT_RUN, or the only one.
