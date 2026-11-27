@@ -1996,12 +1996,15 @@ function Get-NSOwnerTemplateText {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
         [Parameter(Mandatory = $true)][string]$Workspace,
-        [AllowNull()][string]$RunDir = $null
+        [AllowNull()][string]$RunDir = $null,
+        [switch]$Relative
     )
     $text = [IO.File]::ReadAllText($Source)
     if ($PSBoundParameters.ContainsKey('RunDir') -and $null -ne $RunDir) { $text = $text.Replace('$RUN', $RunDir) }
     $text = $text.Replace('$NIGHTSHIFT_WORKSPACE', $Workspace)
-    $ns = Join-Path $Workspace.TrimEnd('\', '/') '.nightshift'
+    # -Relative joins with a forward slash, as the POSIX runtime does, so a shared file reads the same
+    # on every runner.
+    $ns = $(if ($Relative) { $Workspace.TrimEnd('\', '/') + '/.nightshift' } else { Join-Path $Workspace.TrimEnd('\', '/') '.nightshift' })
     return $text.Replace('$NS', $ns)
 }
 

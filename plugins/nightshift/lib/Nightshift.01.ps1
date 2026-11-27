@@ -1216,6 +1216,122 @@ function Merge-NSRulesObject {
     return $Shared
 }
 
+# The groups only the team's rules.json sets: a run's or a member's file never changes them. Mirrors
+# NS_RULES_TEAM_GROUPS.
+$script:NSRulesTeamGroups = @('team', 'sharing')
+
+# Remove-NSRulesTeamGroups <object> - the object without the team's own groups. Mirrors
+# _ns_rules_drop_team.
+function Remove-NSRulesTeamGroups {
+    param($Object)
+    foreach ($name in $script:NSRulesTeamGroups) {
+        if ($null -ne $Object.PSObject.Properties[$name]) { $Object.PSObject.Properties.Remove($name) }
+    }
+    return $Object
+}
+
+# Get-NSMemberAllowed <team-object> - the settings the team lets a member change, from
+# team.memberSettings. Mirrors _ns_rules_member_allowed.
+function Get-NSMemberAllowed {
+    param($Team)
+    $block = $Team.PSObject.Properties['team']
+    if ($null -eq $block -or -not ($block.Value -is [pscustomobject])) { return , @() }
+    $field = $block.Value.PSObject.Properties['memberSettings']
+    if ($null -eq $field -or $null -eq $field.Value) { return , @() }
+    return , @($field.Value | ForEach-Object { [string]$_ })
+}
+
+# Test-NSMemberPathAllowed <path> <allowed> - true when the dotted path is an allowed setting or
+# inside one.
+function Test-NSMemberPathAllowed {
+    param([string]$Path, [string[]]$Allowed)
+    foreach ($a in $Allowed) {
+        if ($a.Length -gt 0 -and ($Path -ceq $a -or $Path.StartsWith($a + '.', [StringComparison]::Ordinal))) { return $true }
+    }
+    return $false
+}
+
+# Select-NSAllowedRules <object> <allowed> [prefix] - a member's settings holding only what the team
+# lets a member change; the team's own groups never pass. Mirrors _ns_rules_allowed.
+function Select-NSAllowedRules {
+    param($Object, [string[]]$Allowed, [string]$Prefix = '')
+    $out = New-Object psobject
+    foreach ($property in $Object.PSObject.Properties) {
+        if ($Prefix.Length -eq 0 -and $script:NSRulesTeamGroups -ccontains $property.Name) { continue }
+        $path = $(if ($Prefix.Length -gt 0) { $Prefix + '.' + $property.Name } else { $property.Name })
+        if (Test-NSMemberPathAllowed $path $Allowed) {
+            $out | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value
+        }
+        elseif ($property.Value -is [pscustomobject]) {
+            $inner = @($Allowed | Where-Object { $_.StartsWith($path + '.', [StringComparison]::Ordinal) })
+            if ($inner.Count -gt 0) {
+                $out | Add-Member -NotePropertyName $property.Name -NotePropertyValue (Select-NSAllowedRules $property.Value $Allowed $path)
+            }
+        }
+    }
+    return $out
+}
+
+# Get-NSMemberSettingsPath <nightshift-dir> - the member settings file the run this caller works on
+# selected, '' when it selected none. Throws when the selection names a file that is not there.
+# Mirrors _ns_rules_member_file.
+function Get-NSMemberSettingsPath {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    if (-not (Test-NSLayoutPerRun $NightshiftDir 'punch-list')) { return '' }
+    $run = Get-NSLayoutRun $NightshiftDir
+    if ($run.Length -eq 0) { return '' }
+    $record = [IO.Path]::Combine($NightshiftDir, 'runs', $run, ((Get-NSLayoutRelativePathAt 3 'member-settings') -replace '^runs/\*/', ''))
+    if (-not [IO.File]::Exists($record) -or (Test-NSReparsePoint $record)) { return '' }
+    $lines = @([IO.File]::ReadAllLines($record))
+    $name = $(if ($lines.Count -gt 0) { $lines[0].TrimEnd("`r") } else { '' })
+    if ($name.Length -eq 0) { return '' }
+    $file = Join-Path (Join-Path $NightshiftDir (Get-NSLayoutRelativePathAt 3 'settings')) ($name + '.json')
+    if (-not [IO.File]::Exists($file) -or (Test-NSReparsePoint $file)) {
+        throw "settings/$name.json is selected for run $run but is not there"
+    }
+    return $file
+}
+
+# Get-NSMemberSettingsProblems <workspace> <name> - why settings/<name>.json cannot be selected for a
+# run, one line each; empty when it can be. Mirrors ns_member_settings_problems.
+function Get-NSMemberSettingsProblems {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Name)
+    $out = New-Object Collections.Generic.List[string]
+    if ($Name -cnotmatch '^[a-z0-9][a-z0-9-]*$') {
+        $out.Add("the name $Name is not a settings name: lowercase letters, digits and hyphens")
+        return , $out.ToArray()
+    }
+    $ns = Join-Path $Workspace '.nightshift'
+    $file = Join-Path (Join-Path $ns (Get-NSLayoutRelativePathAt 3 'settings')) ($Name + '.json')
+    if (-not [IO.File]::Exists($file) -or (Test-NSReparsePoint $file)) {
+        $out.Add("settings/$Name.json is not there")
+        return , $out.ToArray()
+    }
+    try { $team = Get-Content -Raw -LiteralPath (Get-NSLayoutPath $ns 'rules') | ConvertFrom-Json -ErrorAction Stop }
+    catch { $out.Add('rules.json: ' + $_.Exception.Message); return , $out.ToArray() }
+    try { $member = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
+    catch { $out.Add("settings/$Name.json: " + $_.Exception.Message); return , $out.ToArray() }
+    if (-not ($member -is [pscustomobject])) { $out.Add("settings/$Name.json: not a JSON object"); return , $out.ToArray() }
+    $allowed = Get-NSMemberAllowed $team
+    $said = @{}
+    $walk = {
+        param($Object, [string]$Prefix)
+        foreach ($property in $Object.PSObject.Properties) {
+            $path = $(if ($Prefix.Length -gt 0) { $Prefix + '.' + $property.Name } else { $property.Name })
+            $top = $path.Split('.')[0]
+            $owned = $script:NSRulesTeamGroups -ccontains $top
+            if (-not $owned -and (Test-NSMemberPathAllowed $path $allowed)) { continue }
+            if ($property.Value -is [pscustomobject]) { & $walk $property.Value $path; continue }
+            if ($said.ContainsKey($path)) { continue }
+            $said[$path] = $true
+            if ($owned) { $out.Add("settings/$Name.json changes $path, which only the team's rules.json sets") }
+            else { $out.Add("settings/$Name.json changes $path, which the team does not let a member change") }
+        }
+    }
+    & $walk $member ''
+    return , $out.ToArray()
+}
+
 function Get-NSRulesObject {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $nsDir = Join-Path $Workspace '.nightshift'
@@ -1236,8 +1352,13 @@ function Get-NSRulesObject {
         }
     }
     try {
+        $memberPath = Get-NSMemberSettingsPath $nsDir
         $item = Get-Item -LiteralPath $path -ErrorAction Stop
         $stamp = '{0}:{1}:{2}' -f $item.FullName, $item.Length, $item.LastWriteTimeUtc.Ticks
+        if ($memberPath.Length -gt 0) {
+            $memberItem = Get-Item -LiteralPath $memberPath -ErrorAction Stop
+            $stamp += '|{0}:{1}:{2}' -f $memberItem.FullName, $memberItem.Length, $memberItem.LastWriteTimeUtc.Ticks
+        }
         if ($runPath.Length -gt 0) {
             $runItem = Get-Item -LiteralPath $runPath -ErrorAction Stop
             $stamp += '|{0}:{1}:{2}' -f $runItem.FullName, $runItem.Length, $runItem.LastWriteTimeUtc.Ticks
@@ -1246,9 +1367,16 @@ function Get-NSRulesObject {
             return $script:NSRulesCache
         }
         $parsed = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        # Narrowest first: the run's own file, then the member settings the run selected, then the
+        # team's. A member's file changes only what team.memberSettings allows; neither changes the
+        # team's groups.
+        if ($memberPath.Length -gt 0) {
+            $memberParsed = Get-Content -LiteralPath $memberPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $parsed = Merge-NSRulesObject $parsed (Select-NSAllowedRules $memberParsed (Get-NSMemberAllowed $parsed))
+        }
         if ($runPath.Length -gt 0) {
             $runParsed = Get-Content -LiteralPath $runPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            $parsed = Merge-NSRulesObject $parsed $runParsed
+            $parsed = Merge-NSRulesObject $parsed (Remove-NSRulesTeamGroups $runParsed)
         }
         $script:NSRulesCacheStamp = $stamp
         $script:NSRulesCache = $parsed
@@ -1974,6 +2102,18 @@ function Read-NSSession {
         Start = $values[3]
         HostName = $values[4]
     }
+}
+
+# The host that owns the shift: the one its session record names, or, before any conversation has
+# recorded itself (a background worker that has not reached its first tool call), the lease's host.
+# Mirrors ns_session_host.
+function Get-NSShiftHost {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $session = Read-NSSession $NightshiftDir
+    if ($null -ne $session) { return [string]$session.HostName }
+    $lease = Read-NSLease $NightshiftDir
+    if ($null -ne $lease) { return [string]$lease.HostName }
+    return 'claude'
 }
 
 function Test-NSClaudeForeignCursorSurface {
@@ -2854,7 +2994,9 @@ function Write-NSControlLog {
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
         [Parameter(Mandatory = $true)][string]$Line
     )
+    if (-not (Test-Path -LiteralPath $NightshiftDir -PathType Container)) { return }
     $log = Get-NSLayoutPath $NightshiftDir 'shift-log'
+    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $log) -Force
     $stamp = Get-NSLocalNow -Seconds
     Add-Content -LiteralPath $log -Value "$stamp $script:NSDot $Line" -Encoding utf8
 }

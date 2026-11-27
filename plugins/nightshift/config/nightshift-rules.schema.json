@@ -433,6 +433,117 @@
         }
       }
     },
+    "sharing": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Which project records the team shares through Git. ns share writes .nightshift/.gitignore to match; everything not listed, and every runner's private files, stays ignored.",
+      "properties": {
+        "records": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "plans",
+              "decisions",
+              "rules",
+              "receipts",
+              "summaries"
+            ]
+          },
+          "description": "plans: the plan files waiting in staging/plans. decisions: the planning decision threads in staging/decisions, one file each. rules: rules.json. receipts: each run's punch list, receipts, parking lot and snag log. summaries: the filed shifts under the archive root. Empty, the default, keeps the site private to its runner."
+        },
+        "evidence": {
+          "type": "string",
+          "enum": [
+            "none",
+            "select",
+            "all"
+          ],
+          "description": "Which raw evidence of a filed shift (screenshots, recordings) ns promote-evidence proposes for the team's history: none, the files the owner selects at filing, or all of them. The owner can change the choice at each filing; the originals stay private either way."
+        }
+      }
+    },
+    "branches": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The team's branch workflow: which branch a run works on, the base new work branches start from, and how a branch catches up with that base before a pull request.",
+      "properties": {
+        "base": {
+          "type": "string",
+          "description": "The branch new work branches start from, such as develop. Empty: the checkout's current commit."
+        },
+        "start": {
+          "type": "string",
+          "enum": [
+            "per-run",
+            "current",
+            "choose"
+          ],
+          "description": "per-run gives each run a branch of its own (the default); current runs on the member's current branch; choose asks the member for one with start-run --branch, and a headless run needs it named."
+        },
+        "catchUp": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "rebase"
+          ],
+          "description": "How a work branch catches up with the base before a pull request. A new plan's contract says it, and the agent follows that line under the member's own Git permissions."
+        }
+      }
+    },
+    "team": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The team's workflow rules. Read only from this file: neither a run's own rules file nor a member's settings file changes them.",
+      "properties": {
+        "roles": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Each member's role, by the name they put on the records, as {\"Alice\": \"lead\", \"Bob\": \"developer\"}."
+        },
+        "approvers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "The roles whose approval a plan revision needs before it runs. Empty: the plan's owner approves it."
+        },
+        "selfApprove": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          },
+          "description": "The roles that may submit their own plan already approved."
+        },
+        "reviewChanges": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "contract",
+              "gates",
+              "items"
+            ]
+          },
+          "description": "Which changes to an approved plan return it to proposed until that revision is approved."
+        },
+        "memberSettings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(?!team(\\.|$))(?!sharing(\\.|$))[A-Za-z][A-Za-z0-9-]*(\\.[A-Za-z][A-Za-z0-9-]*)*$"
+          },
+          "description": "The settings a member's selected settings file may change, by dotted name (shift.hours, receipts.progressMinutes); a block name allows the whole block. team and sharing are never a member's. Empty: a member changes nothing."
+        }
+      }
+    },
     "receipts": {
       "type": "object",
       "additionalProperties": false,

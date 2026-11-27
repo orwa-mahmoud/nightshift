@@ -226,6 +226,32 @@ try {
     Expect-True (Test-Path -LiteralPath (Join-Path $background '.nightshift/staging/plans/dark-mode.md')) 'the background plan stays staged'
     Expect-True (-not (Test-Path -LiteralPath (Join-Path $background '.nightshift/runs/dark-mode/run/.shift-armed'))) 'nothing is armed'
 
+    # A background worker starts in its run's worktree, which the host names as its project: the
+    # worktree gets the link that leads its hooks back to the workspace before anything launches.
+    # Where powershell.exe does not exist the launch itself fails, after the link is written.
+    if ($null -eq (Get-Command powershell.exe -ErrorAction SilentlyContinue)) {
+        $linked = New-RunsSite (Join-Path $root 'linked run')
+        $env:NIGHTSHIFT_WATCH_AGENT = 'pwsh -NoProfile -Command exit'
+        try { $launch = Invoke-StartRun $linked 'Dark mode' -Background } finally { $env:NIGHTSHIFT_WATCH_AGENT = $null }
+        $env:NIGHTSHIFT_RUN = 'dark-mode'
+        try { $linkedTree = Resolve-NSWorkTarget $linked } finally { $env:NIGHTSHIFT_RUN = $null }
+        Expect-True ($launch.Text.Contains('could not be started headless')) "launch without powershell.exe: $($launch.Text)"
+        Expect-True ((Resolve-NSWorkspaceRoot $linkedTree) -eq (Resolve-NSCanonicalPath $linked)) "the worktree leads back to the workspace: $linkedTree"
+        Expect-True ([string]::IsNullOrEmpty((@(& git -C $linkedTree status --porcelain) -join ''))) 'git does not see the link as a change'
+    }
+
+    # A worker that exits at once never worked the run: it is reported, and nothing stays armed.
+    # The launch needs powershell.exe, so this runs on Windows.
+    if ($null -ne (Get-Command powershell.exe -ErrorAction SilentlyContinue)) {
+        $quick = New-RunsSite (Join-Path $root 'quick exit')
+        $env:NIGHTSHIFT_WATCH_AGENT = 'cmd /c exit 1'
+        $env:NIGHTSHIFT_WORKER_SETTLE_SECONDS = '3'
+        try { $exited = Invoke-StartRun $quick 'Dark mode' -Background }
+        finally { $env:NIGHTSHIFT_WATCH_AGENT = $null; $env:NIGHTSHIFT_WORKER_SETTLE_SECONDS = $null }
+        Expect-True ($exited.ExitCode -eq 1 -and $exited.Text.Contains('refuse worker the claude CLI exited at once') -and -not $exited.Text.Contains('ok worker started')) "quick exit: $($exited.Text)"
+        Expect-True (-not (Test-Path -LiteralPath (Join-Path $quick '.nightshift/runs/dark-mode/run/.shift-armed'))) 'quick exit: nothing is armed'
+    }
+
     # Each host's headless launch, at the watchman's launch scope.
     $claude = Get-NSBackgroundWorkerCommand -Workspace $runs -HostName claude -Scope 'host-default' -Prompt 'go'
     Expect-True ($claude.Name -ceq 'claude' -and ($claude.Arguments -join ' ') -ceq '-p go') "claude launch: $($claude.Arguments -join ' ')"

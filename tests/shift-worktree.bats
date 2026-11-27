@@ -283,8 +283,30 @@ stop_run_processes() {
   IFS='|' read -r where run_name generation nonce <"$FAKE_AGENT_CALLS"
   [ "$run_name" = dark-mode ]
   [ "$where" = "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$w")" ]
+  # The host names the worker's worktree as its project; the worktree leads its hooks back to the
+  # workspace, and git does not see the link as a change.
+  [ "$(lib ns_workspace_root "$where")" = "$w" ]
+  [ -z "$(git -C "$where" status --porcelain)" ]
   [ "$generation" = "$(sed -n 3p "$w/.nightshift/runs/dark-mode/run/.shift-lease")" ]
   [ "$nonce" = "$(sed -n 4p "$w/.nightshift/runs/dark-mode/run/.shift-lease")" ]
   [ -f "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
   [ ! -e "$w/.nightshift/staging/plans/dark-mode.md" ]
+}
+
+@test "a background worker that exits at once is reported with its own last words, and nothing stays armed" {
+  w="$(runs_site "worker exits")"
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  printf '#!/usr/bin/env bash\nprintf "Workspace Trust Required\\nPass --trust if you trust this directory\\n"\nexit 1\n' \
+    >"$BATS_TEST_TMPDIR/bin/untrusted-agent"
+  chmod +x "$BATS_TEST_TMPDIR/bin/untrusted-agent"
+  run env NIGHTSHIFT_WATCH_AGENT="$BATS_TEST_TMPDIR/bin/untrusted-agent" NIGHTSHIFT_WORKER_SETTLE_SECONDS=2 bash -c '
+    cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$1" \
+      bash "$2" --project "$1" --plan "Dark mode" --host claude --background' _ "$w" "$START_RUN" 3>&-
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qx 'refuse worker the claude CLI exited at once: Workspace Trust Required Pass --trust if you trust this directory' ||
+    { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -q '^repair run .*untrusted-agent once in .* and settle what it asks, then run this again$'
+  ! printf '%s\n' "$output" | grep -q '^ok worker started' || false
+  [ ! -e "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
+  [ ! -e "$w/.nightshift/runs/dark-mode/run/.watchman" ]
 }

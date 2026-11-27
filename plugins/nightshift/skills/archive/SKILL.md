@@ -135,7 +135,7 @@ page, which is the only copy. Do not hand-edit it.
  yet. Text written as a paragraph instead of a bullet is never filed; Doctor names it by file and
  line.
 - **Parking lot — the answered entries filed, only the unanswered stay.** Same helper, same pointer rule on
- `$NS/inbox/parking-lot.md`. The owner answers an entry by appending ` · answered: <decision>`; an
+ `$NS/inbox/parking-lot.md`. The owner answers an entry by appending ` · answered by <name>: <decision>`; an
  answered entry is filed, never deleted. Parking-lot questions unanswered stay. Read live entries
  first; when checking whether a finding or decision was already handled, follow the pointer and
  search the linked file by topic or identifier. Historical decisions are evidence, not fresh
@@ -202,6 +202,22 @@ list is a copy whose open items stayed live, so it never holds work back.
 Never call `ns retain-history` from start, hooks, status, Doctor, or recovery. Never call `ns archive-receipts` from start, hooks, status, Doctor, or recovery. Never delete
 the live punch list, drafting table, parking lot, rules, current shift files, or owner-authored
 files.
+
+## Shared records
+
+On a site that shares its records through Git (`sharing.records` in the rules file), Archive files a
+run exactly as above and never touches the shared plans in `staging/plans/` or the decision threads
+in `staging/decisions/`: they are the team's record, and teammates may have edited them since the
+run took its copy. Each filed shift's folder ends in a tag of its own, so teammates' clones never
+file into the same folder.
+
+Raw evidence stays private until it is chosen. After filing a shift whose receipts carry evidence
+folders, run `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" promote-evidence --folder <the shift's folder>`:
+it lists every eligible file and the ones `sharing.evidence` proposes. Show the owner that list and
+let them change it, then run it again with `--apply` and their choice (`--select <file>` for each,
+`--all` or `--none`). Their choice is for this filing only; never edit `sharing.evidence` to record
+it. Git ignores the history index below, so each clone keeps its own; rebuild
+it from the archive folders when it is missing.
 
 ## Index
 

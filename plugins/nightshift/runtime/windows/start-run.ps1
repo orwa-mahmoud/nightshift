@@ -3,7 +3,26 @@
   Start a named plan as a run of its own. Mirrors runtime/start-run.sh.
 
 .DESCRIPTION
-    start-run.ps1 -Project DIR -Plan NAME -HostName claude|codex|cursor [-Background]
+    start-run.ps1 -Project DIR -Plan NAME -HostName claude|codex|cursor [-Background] [-Settings NAME]
+                  [-Consent DIGEST] [-Branch NAME]
+
+  The branch a run works on follows the team's branches.start: a branch of its own per run (the
+  default), the member's current branch, or one the member chooses with -Branch: the current one, an
+  existing work branch, or a new one made from branches.base. With choose and no -Branch this lists
+  the choices and places nothing, so a headless run always starts with the choice made. Runs on one
+  branch go one after another; concurrent runs keep worktrees of their own.
+
+  A team whose rules name approvers runs only an approved revision of a plan: one whose contract,
+  gates or items, as team.reviewChanges names them, have not changed since an approver approved it. On
+  a site that shares its plans, the runner consents to exactly what the run would execute before
+  anything of it runs: without -Consent, or with one for other inputs, this prints those inputs and
+  the consent that covers them, and places nothing. A started run is written to the plan's record
+  with the runner's Git user name.
+
+  -Settings selects a member's settings file, settings/<NAME>.json, for this run alone: its values are
+  laid over the team's rules.json, beneath the run's own rules file, and reach every helper the run
+  starts. A file that changes anything the team does not let a member change is refused before
+  anything is placed.
 
   In a workspace that keeps runs, a plan waiting in staging/plans/ becomes a run. Its folder under
   runs/ is claimed first, named by runs.layout from the plan's title; the plan's punch list is written
@@ -11,7 +30,9 @@
   own (a run rules file holding shift.isolation, unless the run already has one), and the Start
   preflight, snapshot and worktree phases run for it. Only when every step has succeeded does the plan
   leave staging, so a failed step leaves the plan staged and the owner's checkout and index as they
-  were, and running this again finishes the run instead of making a second one.
+  were, and running this again finishes the run instead of making a second one. On a site that shares
+  its plans through Git the plan stays staged as the team's record and the run works from its own
+  copy; a teammate's run of the same plan, pulled through Git, is never taken over.
 
   Without -Background, Start continues in the conversation that asked, with NIGHTSHIFT_RUN set to the
   run printed here. With -Background, this arms the run, takes its lease for a hidden headless worker
@@ -26,7 +47,10 @@ param(
     [string]$Project = [Environment]::CurrentDirectory,
     [string]$Plan = '',
     [string]$HostName = '',
-    [switch]$Background
+    [switch]$Background,
+    [string]$Settings = '',
+    [string]$Consent = '',
+    [string]$Branch = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -85,17 +109,98 @@ if (-not (Test-NSLayoutPerRun $ns 'punch-list')) {
     Stop-Refused 'layout this workspace keeps one shift at a time' 'preview the move to run folders with ns migrate-state, make it with -Apply, then run this again'
 }
 
+# A member's settings are checked before anything is placed, so a refused file leaves no run behind.
+if ($Settings.Length -gt 0) {
+    $problems = Get-NSMemberSettingsProblems $workspace $Settings
+    if ($problems.Count -gt 0) {
+        Write-Verdict 'refuse' "settings $Settings cannot be selected for this run"
+        foreach ($problem in $problems) { Write-Verdict 'explain' $problem }
+        Write-Verdict 'repair' 'take those settings out of the file, or ask the team to allow them in team.memberSettings, then run this again'
+        exit 1
+    }
+}
+
+# ---------------------------------------------------------------- the run's branch
+# Settled before anything is placed, so a choice still to make leaves nothing behind.
+$wantBranch = $Branch
+if ($wantBranch.Length -gt 0) {
+    $valid = Invoke-NSGitCommand $workspace @('check-ref-format', '--branch', $wantBranch)
+    if ($valid.ExitCode -ne 0) { Stop-Refused "branch $wantBranch is not a branch name" 'pass a branch name Git accepts' }
+}
+elseif ((Get-NSWorkMode $workspace) -cne 'artifact') {
+    $branchRule = Get-NSBranchRule $workspace 'start'
+    if (@('', 'per-run') -cnotcontains $branchRule) {
+        if (@('current', 'choose') -cnotcontains $branchRule) { Stop-Refused "branch branches.start is $branchRule" 'use per-run, current or choose' }
+        $ownerCheckout = Resolve-NSOwnerWorkTarget $workspace
+        $currentBranch = [string](Invoke-NSGit $ownerCheckout @('symbolic-ref', '--quiet', '--short', 'HEAD'))
+        if ($branchRule -ceq 'current') {
+            if ($currentBranch.Length -eq 0) {
+                Stop-Refused "branch the checkout is on no branch, and this team's runs work on the current one" 'check out the work branch, then run this again'
+            }
+            $wantBranch = $currentBranch
+        }
+        else {
+            Write-Verdict 'refuse' 'branch this team chooses the branch each run works on'
+            Write-Verdict 'branch' ('current ' + $(if ($currentBranch.Length -gt 0) { $currentBranch } else { 'none' }))
+            foreach ($existing in @((Invoke-NSGitCommand $ownerCheckout @('for-each-ref', '--format=%(refname:short)', 'refs/heads')).Lines)) {
+                if ($existing -cne $currentBranch) { Write-Verdict 'branch' ('existing ' + $existing) }
+            }
+            $teamBase = Get-NSBranchRule $workspace 'base'
+            Write-Verdict 'branch' ('base ' + $(if ($teamBase.Length -gt 0) { $teamBase } else { "the checkout's commit" }))
+            Write-Verdict 'repair' 'run this again with --branch <name>: the current branch, an existing one, or a new name made from the base'
+            exit 1
+        }
+    }
+}
+
 $key = Get-NSReceiptSlug $Plan
 if ($key.Length -eq 0) { Stop-Refused "plan $Plan has no letters or digits to name it by" }
 $planFile = Join-Path (Get-NSLayoutPath $ns 'plans') ($key + '.md')
 $staged = (Test-Path -LiteralPath $planFile -PathType Leaf) -and -not (Test-NSReparsePoint $planFile)
 
-# The run a plan already went into is reused: its punch list carries the plan's title. Otherwise the
-# folder is claimed now, before anything is written, so a second start of the same plan finds it.
+# ---------------------------------------------------------------- approval and consent
+# Both are settled before anything is placed or run, so a refusal leaves no side effect.
+$inputsDigest = ''
+if ($staged -and (Get-NSPlanRecordFile $ns $key).Length -gt 0) {
+    $state = Get-NSPlanState $workspace $key
+    if ($null -eq $state) { Stop-Refused "plan the revision of $Plan cannot be read" 'run ns doctor, then run this again' }
+    if (($state -ccontains 'approval required') -and -not ($state -ccontains 'state approved')) {
+        $field = { param($Name) $hit = @($state | Where-Object { $_.StartsWith($Name + ' ', [StringComparison]::Ordinal) }); if ($hit.Count -gt 0) { $hit[0].Substring($Name.Length + 1) } else { '' } }
+        $revision = & $field 'revision'
+        $changed = & $field 'changed'
+        $lastApproval = & $field 'approved-by'
+        if ($changed.Length -gt 0) {
+            $by = $lastApproval.Substring(0, $lastApproval.LastIndexOf(' '))
+            $was = $lastApproval.Substring($lastApproval.LastIndexOf(' ') + 1)
+            Stop-Refused "approval $Plan changed its $changed since $by approved revision $was, so revision $revision is proposed" `
+                "an approver reviews the change and records it with ns plan-record --plan `"$Plan`" --action approved"
+        }
+        Stop-Refused "approval $Plan revision $revision is proposed: no approver has approved it" `
+            "an approver reviews it and records it with ns plan-record --plan `"$Plan`" --action approved"
+    }
+    if (Test-NSSiteShares $workspace 'plans') {
+        $inputs = Get-NSRunInputs $workspace $planFile $Settings
+        $inputsDigest = Get-NSRunConsent $inputs
+        if ($Consent -cne $inputsDigest) {
+            if ($Consent.Length -gt 0) { Write-Verdict 'refuse' "consent what this run would execute changed since consent $Consent was given" }
+            else { Write-Verdict 'refuse' 'consent read what this run would execute before it starts' }
+            foreach ($line in $inputs) { Write-Verdict 'input' $line }
+            Write-Verdict 'repair' "read those inputs, then run this again with --consent $inputsDigest"
+            exit 1
+        }
+        Write-Verdict 'ok' "consent $inputsDigest covers what this run executes"
+    }
+}
+
+# The run a plan already went into in this clone is reused: its punch list carries the plan's title.
+# Otherwise the folder is claimed now, before anything is written, so a second start of the same plan
+# finds it.
+$sharedReceipts = Test-NSSiteShares $workspace 'receipts'
 $run = ''
 foreach ($candidate in (Get-NSLayoutRuns $ns)) {
     $list = [IO.Path]::Combine($ns, 'runs', $candidate, 'punch-list.md')
     if (-not [IO.File]::Exists($list) -or (Test-NSReparsePoint $list)) { continue }
+    if ($sharedReceipts -and -not (Test-NSRunIsLocal $ns $candidate)) { continue }
     if ((Get-NSReceiptSlug (Get-NSShiftName $list)) -ceq $key) { $run = $candidate; break }
 }
 if ($run.Length -eq 0) {
@@ -108,6 +213,52 @@ if ($run.Length -eq 0) {
 }
 $env:NIGHTSHIFT_RUN = $run
 Write-Verdict 'ok' "run $run"
+
+# The branch this run works on, kept with the run's own runtime files; the worktree step reads it.
+if ($wantBranch.Length -gt 0) {
+    $runBranchFile = Get-NSLayoutPath $ns 'run-branch'
+    $hadBranch = ''
+    if ([IO.File]::Exists($runBranchFile)) {
+        $lines = @([IO.File]::ReadAllLines($runBranchFile))
+        if ($lines.Count -gt 0) { $hadBranch = $lines[0].TrimEnd("`r") }
+    }
+    if ($hadBranch.Length -gt 0 -and $hadBranch -cne $wantBranch) {
+        Stop-Refused "branch run $run already works on $hadBranch" 'start it again without -Branch, or file that run with Archive first'
+    }
+    if ($hadBranch.Length -eq 0) {
+        try {
+            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $runBranchFile) -Force
+            [IO.File]::WriteAllText($runBranchFile, $wantBranch + "`n", $utf8)
+        }
+        catch { Stop-Refused "branch could not write $runBranchFile" 'check that .nightshift/ is writable, then run this again' }
+    }
+    Write-Verdict 'ok' "branch $wantBranch"
+}
+
+# The member settings this run uses, kept with the run's own runtime files: the choice is the
+# runner's, and every helper of the run reads it from there.
+$selection = Get-NSLayoutPath $ns 'member-settings'
+$selected = ''
+if ([IO.File]::Exists($selection)) {
+    $lines = @([IO.File]::ReadAllLines($selection))
+    if ($lines.Count -gt 0) { $selected = $lines[0].TrimEnd("`r") }
+}
+if ($Settings.Length -gt 0) {
+    if ($selected.Length -gt 0 -and $selected -cne $Settings) {
+        Stop-Refused "settings run $run already uses settings/$selected.json" 'start it again without -Settings, or file that run with Archive first'
+    }
+    if ($selected.Length -eq 0) {
+        try {
+            $null = New-Item -ItemType Directory -Path (Split-Path -Parent $selection) -Force
+            [IO.File]::WriteAllText($selection, $Settings + "`n", $utf8)
+        }
+        catch { Stop-Refused "settings could not write $selection" 'check that .nightshift/ is writable, then run this again' }
+    }
+    $selected = $Settings
+}
+if ($selected.Length -gt 0) {
+    Write-Verdict 'ok' "settings settings/$selected.json over the team's rules.json, for this run"
+}
 
 # A run already worked by a live process is not started twice, and nothing of it is redone.
 if ($Background) {
@@ -128,7 +279,10 @@ if (Test-Path -LiteralPath $punch) {
 else {
     $tmp = $punch + '.tmp.' + $PID
     try {
-        $text = Get-NSOwnerTemplateText -Source $planFile -Workspace $workspace -RunDir ([IO.Path]::Combine($ns, 'runs', $run))
+        # A run the team shares names its paths from the workspace root, so its punch list reads the
+        # same in every clone and carries no runner's own folders into Git.
+        $text = $(if ($sharedReceipts) { Get-NSOwnerTemplateText -Source $planFile -Workspace '.' -RunDir ('./.nightshift/runs/' + $run) -Relative }
+            else { Get-NSOwnerTemplateText -Source $planFile -Workspace $workspace -RunDir ([IO.Path]::Combine($ns, 'runs', $run)) })
         $null = New-Item -ItemType Directory -Path (Split-Path -Parent $punch) -Force
         [IO.File]::WriteAllText($tmp, $text, $utf8)
         Move-Item -LiteralPath $tmp -Destination $punch -Force
@@ -155,15 +309,37 @@ if (-not (Invoke-NSRunPhase 'preflight')) { Stop-Refused 'preflight the run was 
 if (-not (Invoke-NSRunPhase 'snapshot')) { Stop-Refused "snapshot the run's shift policy could not be recorded" 'run ns doctor, then run this again' }
 if (-not (Invoke-NSRunPhase 'worktree')) { Stop-Refused 'worktree the run has no worktree' 'fix what the worktree step named, then run this again' }
 
-# The plan leaves staging once the run holds everything it needs.
+# The plan leaves staging once the run holds everything it needs. A plan the team shares stays where
+# teammates read and edit it.
 function Remove-NSStagedPlan {
     if (-not $staged) { return }
+    if (Test-NSSiteShares $workspace 'plans') {
+        Write-Verdict 'ok' ("plan $Plan stays in " + (Get-NSLayoutName $ns 'plans') + " as the team's record; the run works from its own copy")
+        return
+    }
     try { Remove-Item -LiteralPath $planFile -Force }
     catch { Stop-Refused "plan could not take $planFile out of staging" 'remove it by hand; the run already holds it' }
     Write-Verdict 'ok' "plan $Plan left staging"
 }
 
+# The plan's record names who started this run, from which revision, with which consent.
+function Add-NSRunStartRecord {
+    if (-not $staged -or (Get-NSPlanRecordFile $ns $key).Length -eq 0) { return }
+    $target = $workspace
+    try { $target = Resolve-NSWorkTarget $workspace } catch { $target = $workspace }
+    $who = ([string](& git -C $target config user.name 2>$null)).Replace("`r", '').Replace("`n", '')
+    if ($who.Length -eq 0) { $who = 'unknown' }
+    $extra = @("run $run")
+    if ($inputsDigest.Length -gt 0) { $extra += "inputs $inputsDigest" }
+    try {
+        Add-NSPlanRecord -Workspace $workspace -Key $key -Action 'started' -Name $who -Extra $extra
+        Write-Verdict 'ok' "record started by $who"
+    }
+    catch { Write-Verdict 'warn' ('record the start could not be written to ' + (Get-NSLayoutName $ns 'plan-records') + "/$key.md") }
+}
+
 if (-not $Background) {
+    Add-NSRunStartRecord
     Remove-NSStagedPlan
     Write-Verdict 'ok' "next run Start in this conversation with NIGHTSHIFT_RUN=$run"
     exit 0
@@ -189,8 +365,19 @@ if ($workerPid -le 0) {
     Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
     Stop-Refused "worker the $HostName CLI could not be started headless" ('check that ' + $worker.Name + ' is installed and signed in, then run this again')
 }
+# A worker that exits at once (a CLI stopped by a prompt it cannot answer headless, a missing sign-in)
+# never worked the run: say so instead of reporting it started. Mirrors start-run.sh.
+$settle = $(if ([string]$env:NIGHTSHIFT_WORKER_SETTLE_SECONDS -match '^[0-9]+$') { [int]$env:NIGHTSHIFT_WORKER_SETTLE_SECONDS } else { Get-NSWorkerSettleSeconds })
+for ($waited = 0; $waited -lt $settle -and $null -ne (Get-Process -Id $workerPid -ErrorAction SilentlyContinue); $waited++) {
+    Start-Sleep -Seconds 1
+}
+if ($null -eq (Get-Process -Id $workerPid -ErrorAction SilentlyContinue)) {
+    Remove-Item -LiteralPath $armed -Force -ErrorAction SilentlyContinue
+    Stop-Refused "worker the $HostName CLI exited at once" ('run ' + $worker.Name + " once in $workTarget and settle what it asks, then run this again")
+}
 [IO.File]::AppendAllText((Get-NSLayoutPath $ns 'shift-log'), ('{0} - shift started in the background (run {1}, pid {2})' -f (Get-NSLocalNow -Seconds), $run, $workerPid) + [Environment]::NewLine, $utf8)
 Write-Verdict 'ok' "worker started for $run (pid $workerPid)"
+Add-NSRunStartRecord
 Remove-NSStagedPlan
 $shell = (Get-Process -Id $PID).Path
 $watch = @(& $shell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'start-watchman.ps1') -Project $workspace -HostName $HostName 2>&1)

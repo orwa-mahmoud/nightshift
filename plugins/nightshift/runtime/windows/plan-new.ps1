@@ -85,6 +85,8 @@ try {
     # when it places the plan in its run. Earlier layouts keep the shift at the top of the site.
     if (Test-NSLayoutPerRun $ns 'punch-list') { $rendered = Get-NSOwnerTemplateText -Source $template -Workspace $workspace }
     else { $rendered = Get-NSOwnerTemplateText -Source $template -Workspace $workspace -RunDir $ns }
+    # The team catches up with its base by rebase: the contract says so in place of the merge.
+    if ((Get-NSBranchRule $workspace 'catchUp') -ceq 'rebase') { $rendered = $rendered.Replace('Catching up with the base branch is a merge.', 'Catching up with the base branch is a rebase onto it.') }
     $lines = $rendered -split "`n"
     for ($i = 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i].TrimEnd([char]"`r")

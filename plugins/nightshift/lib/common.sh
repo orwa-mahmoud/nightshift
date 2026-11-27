@@ -22,6 +22,10 @@ ns_local_time() {
   printf '%s (UTC%s:%s)' "$stamp" "${z%??}" "${z#???}"
 }
 
+# ns_worker_settle_seconds — how long start-run watches a new background worker before calling it
+# started: a CLI that stops at once on a prompt it cannot answer headless has exited by then.
+ns_worker_settle_seconds() { printf '5'; }
+
 # ns_local_now [second] — now, as ns_local_time writes it.
 ns_local_now() { ns_local_time "$(date +%s)" "${1:-}"; }
 

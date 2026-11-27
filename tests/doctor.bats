@@ -979,3 +979,23 @@ offers_promotion() { # <output>
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF 'worker alive but idle for 2 min — pulse stale, transcript unchanged, cpu +0.00s, no busy child'
 }
+
+@test "with several runs, doctor checks each run and never calls a run's punch list missing, on both hosts" {
+  p="$(two_runs doctor-two-runs)"
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$DOCTOR" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'Nightshift Doctor: 2 runs, one report each'
+  printf '%s\n' "$output" | grep -qx '== run a'
+  printf '%s\n' "$output" | grep -qx '== run b'
+  [ "$(printf '%s\n' "$output" | grep -c '^Armed: *1  Open: 1')" -eq 2 ]
+  if printf '%s\n' "$output" | grep -q 'punch-list.md is missing'; then return 1; fi
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$DOCTOR" --project "$p" --run c
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'no run named c; runs: a b'
+  command -v pwsh >/dev/null 2>&1 || return 0
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID pwsh -NoProfile -NonInteractive -File "$DOCTOR_PS1" -Project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'Nightshift Doctor: 2 runs, one report each'
+  printf '%s\n' "$output" | grep -qx '== run b'
+  if printf '%s\n' "$output" | grep -q 'punch-list.md is missing'; then return 1; fi
+}

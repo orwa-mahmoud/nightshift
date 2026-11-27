@@ -273,6 +273,17 @@ elevation_message() { # <project> <category>
   is_deny "$out"
 }
 
+@test "a rules file the reader cannot load is named with the reader's reason, not as a bad toolDeny" {
+  p="$(new_guarded_project)"
+  punch_open "$p"
+  jq '.futureBlock = {"setting": "value"}' "$p/.nightshift/rules.json" >"$p/.nightshift/rules.tmp"
+  mv "$p/.nightshift/rules.tmp" "$p/.nightshift/rules.json"
+  run hardhat_bash "$p" "git status"
+  is_deny "$output"
+  [ "$(deny_reason "$output")" = "BLOCKED: $(cd -P "$p" && pwd)/.nightshift/rules.json cannot be read (unexpected nesting), so the tool rules cannot run. Fix it or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex)." ] ||
+    { deny_reason "$output"; return 1; }
+}
+
 # A stop-work order is a request, not the ending: the agent keeps working until its next stop
 # attempt, so the site rules must stay armed across that window. The gate writes .ended when it
 # actually releases, and only that stands them down.

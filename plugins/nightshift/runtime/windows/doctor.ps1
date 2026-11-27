@@ -1,5 +1,6 @@
 param(
-    [string]$Project = [Environment]::CurrentDirectory
+    [string]$Project = [Environment]::CurrentDirectory,
+    [string]$Run = ''
 )
 
 Set-StrictMode -Version 2.0
@@ -68,6 +69,21 @@ else {
 }
 
 $ns = Join-Path $workspace '.nightshift'
+# The run these checks are about, before any file of one run is resolved. With several runs and none
+# named, every run gets its own report. Mirrors runtime/doctor.sh.
+if ((Test-Path -LiteralPath $ns -PathType Container) -and (Test-NSLayoutPerRun $ns 'punch-list')) {
+    $choice = Select-NSRunChoice $ns $Run
+    if ($choice.Code -eq 1) { [Console]::Error.WriteLine('doctor: ' + $choice.Error); exit 1 }
+    $doctorRuns = Get-NSLayoutRuns $ns
+    if ($choice.Code -eq 2 -and $doctorRuns.Count -gt 1) {
+        [Console]::Out.Write('Nightshift Doctor: ' + $doctorRuns.Count + " runs, one report each`n")
+        foreach ($name in $doctorRuns) {
+            [Console]::Out.Write("`n== run $name`n")
+            & (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $PSCommandPath -Project $Project -Run $name
+        }
+        exit 0
+    }
+}
 $stateKind = Get-NSStateKind $workspace
 $stateVer = Get-NSStateVersion $workspace
 

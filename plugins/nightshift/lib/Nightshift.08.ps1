@@ -566,6 +566,9 @@ function Start-NSBackgroundWorker {
         [Parameter(Mandatory = $true)][string]$CommandName,
         [Parameter(Mandatory = $true)][AllowEmptyCollection()][Collections.Generic.List[string]]$CommandArguments
     )
+    # The host names the worker's working folder as its project, so a run working in its own
+    # worktree needs the link there that leads its hooks back to the workspace, as a revival has.
+    if (-not (Confirm-NSWorkTargetLink $Workspace)) { return 0 }
     $lease = Takeover-NSLease $NightshiftDir '' $HostName
     if ($null -eq $lease) { return 0 }
     $projectVariable = @{ claude = 'CLAUDE_PROJECT_DIR'; codex = 'CODEX_PROJECT_DIR'; cursor = 'CURSOR_PROJECT_DIR' }[$HostName]
@@ -675,3 +678,7 @@ function Get-NSMessageNotice {
     return ("The owner sent this shift a message in ${file}:`n`n$text`n`nAnswer each one once, by appending a `"" +
         $script:NSMessageWorker + "<time>`" block with your answer to that file (skip a message you already answered there), then carry on with the item.")
 }
+
+# Get-NSWorkerSettleSeconds - how long start-run watches a new background worker before calling it
+# started. Mirrors ns_worker_settle_seconds.
+function Get-NSWorkerSettleSeconds { return 5 }

@@ -393,6 +393,36 @@ ns_pulse_notices() {
   printf '%s' "$out"
 }
 
+# ns_pulse_stop_notice <ns> <sid> <host> — the notice for a stop-work order standing on a shift that
+# has not ended: start nothing new and clock out in order. Shown to the session that owns the shift
+# and to a worker holding its lease (a background or revived worker), whose session record a stop
+# drops. A headless worker meets no stop attempt until its list is done, so this notice is how a
+# stop reaches it in time. Nothing for anyone else.
+ns_pulse_stop_notice() {
+  local ns="$1" sid="$2" host="$3" stop ended
+  ns_layout_set stop "$ns" stop || return 0
+  ns_layout_set ended "$ns" ended || return 0
+  [ -f "$stop" ] && [ ! -L "$stop" ] || return 0
+  if [ -f "$ended" ] && [ ! -L "$ended" ]; then return 0; fi
+  ns_pulse_owner_ok "$ns" "$sid" ||
+    ns_lease_nonce_matches "$ns" "$host" "${NIGHTSHIFT_LEASE_NONCE:-}" "${NIGHTSHIFT_LEASE_GENERATION:-}" ||
+    return 0
+  printf 'A stop-work order is in place for this shift. Start nothing new: commit the work in hand as a wip: commit (in artifact mode, mark the item'"'"'s receipt in progress), add one handover line to the shift log, and end your turn.'
+}
+
+# ns_pulse_notices_for <ns> <project> <sid> <host> — what this pulse tells this session: a standing
+# stop-work order first, then, for the session that owns the shift, every other notice.
+ns_pulse_notices_for() {
+  local stop rest=""
+  stop="$(ns_pulse_stop_notice "$1" "$3" "$4")"
+  if ns_pulse_owner_ok "$1" "$3"; then rest="$(ns_pulse_notices "$1" "$2")"; fi
+  if [ -n "$stop" ] && [ -n "$rest" ]; then
+    printf '%s\n%s' "$stop" "$rest"
+  else
+    printf '%s%s' "$stop" "$rest"
+  fi
+}
+
 # ns_pulse_active_item <project> — the item being worked; see ns_active_item.
 ns_pulse_active_item() { ns_active_item "$1"; }
 
@@ -506,8 +536,6 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   ns_pulse_emit "$NS" "$SID"
   ns_pulse_usage "$NS" claude "$SID" "$TPATH"
   ns_pulse_marks "$NS" "$PROJECT_DIR" "$SID" "$TPATH"
-  if ns_pulse_owner_ok "$NS" "$SID"; then
-    ns_pulse_context claude "$(ns_pulse_notices "$NS" "$PROJECT_DIR")"
-  fi
+  ns_pulse_context claude "$(ns_pulse_notices_for "$NS" "$PROJECT_DIR" "$SID" claude)"
   exit 0
 fi

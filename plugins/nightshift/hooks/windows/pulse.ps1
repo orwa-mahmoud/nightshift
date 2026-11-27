@@ -97,6 +97,10 @@ if ([string]::IsNullOrEmpty($sessionId)) {
 }
 
 $session = Read-NSSession $ns
+# A stop-work order reaches a worker holding the shift's lease even after the stop dropped the
+# session record, since a headless worker meets no stop attempt until its list is done.
+$stopNotice = Get-NSPulseStopNotice $ns
+$leaseHolder = Test-NSLeaseNonce $ns $HostName ([string]$env:NIGHTSHIFT_LEASE_NONCE) ([string]$env:NIGHTSHIFT_LEASE_GENERATION)
 $workerPath = Get-NSLayoutPath $ns 'worker'
 $worker = ''
 if ((Test-Path -LiteralPath $workerPath -PathType Leaf) -and -not (Test-NSReparsePoint $workerPath)) {
@@ -108,10 +112,12 @@ if ((Test-Path -LiteralPath $workerPath -PathType Leaf) -and -not (Test-NSRepars
     }
 }
 if (-not [string]::IsNullOrEmpty($worker) -and $sessionId -ne $worker -and (Test-NSCursorWorkerRan $ns)) {
+    if ($leaseHolder) { Write-NSPulseContext $HostName $stopNotice }
     exit 0
 }
 if (([string]::IsNullOrEmpty($worker) -or $sessionId -ne $worker) `
     -and ($null -eq $session -or [string]::IsNullOrEmpty($session.SessionId) -or $session.SessionId -ne $sessionId)) {
+    if ($leaseHolder) { Write-NSPulseContext $HostName $stopNotice }
     exit 0
 }
 
@@ -145,7 +151,7 @@ if ($HostName -eq 'cursor') {
     Add-NSCursorLaunchNote -NightshiftDir $ns -PayloadJson $raw
 }
 try {
-    Write-NSPulseContext $HostName (Get-NSPulseNotices $ns $workspace)
+    Write-NSPulseContext $HostName ((@($stopNotice, (Get-NSPulseNotices $ns $workspace)) | Where-Object { $_.Length -gt 0 }) -join "`n")
 }
 catch {
     [Console]::Error.WriteLine('nightshift: receipts notice skipped - ' + $_.Exception.Message)

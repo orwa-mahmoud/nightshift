@@ -112,7 +112,7 @@ disagree with another — they only differ in which sections they show.
 The page tells you what needs a decision; the plan room is where you make them. Open it with
 `/nightshift:plan`. Entering lists the latest morning page and the
 receipts index, every parked decision and snag still open, and every item still open or stopped. The
-agent walks you through them one at a time and writes each answer where it belongs: ` · answered:`
+agent walks you through them one at a time and writes each answer where it belongs: ` · answered by <name>:`
 on a parked decision, a disposition on a snag, and a drafted item for work to carry into the next
 shift. Nothing is written without your answer, and the punch list stays yours to edit. After
 Archive, the review reads what Archive left live.

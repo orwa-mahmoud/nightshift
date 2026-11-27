@@ -95,11 +95,11 @@ table is the owner's: write it only when the owner asks for it" "$ROOT/nightshif
     grep -qF 'Doctor names it' "$REF/templates/$t.md"
     tr '\n' ' ' <"$REF/templates/$t.md" | grep -qF 'An entry with no disposition is open and waits for the owner'
   done
-  tr '\n' ' ' <"$REF/templates/parking-lot.md" | grep -qF 'The owner answers by appending ` · answered: <decision>` to the entry, and Archive files it.'
+  tr '\n' ' ' <"$REF/templates/parking-lot.md" | grep -qF 'The owner answers by appending ` · answered by <name>: <decision>` to the entry, and Archive files it.'
   tr '\n' ' ' <"$REF/templates/parking-lot.md" | grep -qF 'Never delete an answered entry'
   if grep -qiE 'deletes? entries|once decided' "$REF/templates/parking-lot.md"; then return 1; fi
-  tr '\n' ' ' <"$ROOT/nightshift/SKILL.md" | grep -qF 'the owner answers it by appending ` · answered: <decision>`'
-  tr '\n' ' ' <"$ROOT/archive/SKILL.md" | tr -s ' ' | grep -qF 'The owner answers an entry by appending ` · answered: <decision>`; an answered entry is filed, never deleted.'
+  tr '\n' ' ' <"$ROOT/nightshift/SKILL.md" | grep -qF 'the owner answers it by appending ` · answered by <name>: <decision>`'
+  tr '\n' ' ' <"$ROOT/archive/SKILL.md" | tr -s ' ' | grep -qF 'The owner answers an entry by appending ` · answered by <name>: <decision>`; an answered entry is filed, never deleted.'
   tr '\n' ' ' <"$ROOT/doctor/SKILL.md" | grep -qF 'each parking-lot or snag-log paragraph Archive can never file, by file and line'
 }
 

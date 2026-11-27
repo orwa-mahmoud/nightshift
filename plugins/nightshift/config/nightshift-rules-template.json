@@ -76,6 +76,26 @@
   "runs": {
     "layout": "name"
   },
+  "sharing": {
+    "records": [],
+    "evidence": "none"
+  },
+  "branches": {
+    "base": "",
+    "start": "per-run",
+    "catchUp": "merge"
+  },
+  "team": {
+    "roles": {},
+    "approvers": [],
+    "selfApprove": [],
+    "reviewChanges": [
+      "contract",
+      "gates",
+      "items"
+    ],
+    "memberSettings": []
+  },
   "receipts": {
     "enabled": true,
     "progressMode": "time",

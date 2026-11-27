@@ -224,6 +224,19 @@ ns_plan_record_open() {
   ns_open_entries "$f" "$NS_PLAN_RECORD_CLOSED"
 }
 
+# ns_decision_threads_open <nightshift-dir> — `<file> · <first line>` for each open entry of the
+# decision threads, each thread a file of its own in the plan record's shape; nothing on a site that
+# keeps none. Teammates add threads side by side, so this list is read off the files, never kept.
+ns_decision_threads_open() {
+  local dir f
+  ns_layout_set dir "$1" decisions || return 0
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
+  for f in "$dir"/*.md; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    ns_open_entries "$f" "$NS_PLAN_RECORD_CLOSED" | sed "s|^|${f##*/} · |"
+  done
+}
+
 # ns_plan_room_exit_word <prompt> — `plan-exit` or `start` when the owner's prompt is an exit
 # command: its first word is /nightshift:plan-exit or /nightshift:start, or the same name after `$`,
 # the way Codex mentions a skill. Anything else, the same words mid-sentence included, is not.
@@ -347,4 +360,182 @@ ns_plan_list() {
 # ns_plan_count <nightshift-dir> — how many plans are waiting.
 ns_plan_count() {
   ns_plan_list "$1" | awk 'END { print NR }'
+}
+
+# ---------------------------------------------------------------- who did what to a plan
+#
+# Each plan keeps a record beside it, staging/records/<key>.md: one line per action, appended and
+# never rewritten, saying who proposed it, who approved which revision, who started a run from it
+# and who reviewed the outcome. The names on those lines are the attribution; when someone needs
+# proof of a name, the commit that wrote the line, and whether it is signed, is that proof.
+#
+#   - <action> · <name> · <role> · <local time> · revision <revision>[ · run <run>][ · inputs <digest>][ · note <text>]
+
+# The actions a plan record holds, in the order a plan meets them.
+NS_PLAN_ACTIONS='proposed approved started reviewed'
+
+# ns_plan_revision <plan-file> — the revision a plan is at, <contract>.<gates>.<items>: the first
+# twelve hex digits of each part's digest. Ticking a box changes no part.
+ns_plan_revision() {
+  local c g i
+  c="$(ns_punch_contract_digest "$1")" && g="$(ns_punch_gates "$1" | ns_punch_digest)" &&
+    i="$(ns_punch_items_digest "$1")" || return 1
+  [ -n "$c" ] && [ -n "$g" ] && [ -n "$i" ] || return 1
+  printf '%.12s.%.12s.%.12s' "$c" "$g" "$i"
+}
+
+# ns_plan_record_file <nightshift-dir> <key> — where a plan's record lives; status 1 in a layout
+# that keeps none.
+ns_plan_record_file() {
+  local dir
+  ns_layout_set dir "$1" plan-records || return 1
+  printf '%s/%s.md' "$dir" "$2"
+}
+
+# ns_team_list <workspace> <key> — each string of team.<key> in the team's rules, one per line.
+ns_team_list() {
+  local team_rules
+  ns_layout_set team_rules "$1/.nightshift" rules && [ -f "$team_rules" ] || return 0
+  ns_json_string_list "$(ns_rules_get_in "$team_rules" team "$2")"
+}
+
+# ns_team_role <workspace> <name> — the role team.roles gives <name>, or nothing.
+ns_team_role() {
+  local team_rules
+  ns_layout_set team_rules "$1/.nightshift" rules && [ -f "$team_rules" ] || return 0
+  ns_rules_get_in "$team_rules" team "roles.$2"
+}
+
+# ns_plan_record_lines <record-file> — each action line as <action>\t<name>\t<role>\t<revision>\t<line>,
+# in the order written. A line written before records carried names reads as `unknown`, and the
+# original line rides along untouched.
+ns_plan_record_lines() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 0
+  awk -v actions=" $NS_PLAN_ACTIONS " '
+    { sub(/\r$/, "") }
+    /^- / {
+      n = split(substr($0, 3), f, / · /)
+      action = f[1]
+      if (index(actions, " " action " ") == 0) next
+      name = "unknown"; role = "-"; rev = ""
+      if (n >= 4 && f[2] !~ /^revision / && f[3] !~ /^revision /) { name = f[2]; role = f[3] }
+      for (i = 2; i <= n; i++) if (f[i] ~ /^revision /) rev = substr(f[i], 10)
+      printf "%s\t%s\t%s\t%s\t%s\n", action, name, role, rev, $0
+    }' "$1"
+}
+
+# ns_plan_may_approve <workspace> <name> <proposer> — status 0 when the team lets <name> approve a
+# plan <proposer> proposed: an approver's role, or a role that may approve its own plan. With no
+# approvers set, the plan's owner approves it, so anyone may.
+ns_plan_may_approve() {
+  local role approvers
+  approvers="$(ns_team_list "$1" approvers)"
+  [ -n "$approvers" ] || return 0
+  [ "$2" != unknown ] || return 1
+  role="$(ns_team_role "$1" "$2")"
+  [ -n "$role" ] || return 1
+  printf '%s\n' "$approvers" | grep -qxF -- "$role" && return 0
+  [ "$2" = "$3" ] && ns_team_list "$1" selfApprove | grep -qxF -- "$role"
+}
+
+# ns_plan_state <workspace> <key> — the plan's approval, one `<field> <value>` line each:
+#   revision <revision>
+#   approval required | not-required
+#   state approved | proposed
+#   approved-by <name> <revision>    the approval that holds, or the last one that did
+#   changed <parts>                  what changed since that approval, when it no longer holds
+# An approval holds while none of the parts team.reviewChanges names has changed since it. Status 1
+# when the plan file is not there.
+ns_plan_state() {
+  local ws="$1" ns="$1/.nightshift" plan record rev parts approvers proposer="" line action name role arev
+  local held="" held_rev="" last="" last_rev="" changed=""
+  plan="$(ns_plans_dir "$ns")/$2.md" || return 1
+  [ -f "$plan" ] && [ ! -L "$plan" ] || return 1
+  rev="$(ns_plan_revision "$plan")" || return 1
+  record="$(ns_plan_record_file "$ns" "$2")" || record=""
+  parts="$(ns_team_list "$ws" reviewChanges)"
+  approvers="$(ns_team_list "$ws" approvers)"
+  while IFS="$(printf '\t')" read -r action name role arev line; do
+    [ -n "$action" ] || continue
+    case "$action" in
+      proposed) proposer="$name" ;;
+      approved)
+        ns_plan_may_approve "$ws" "$name" "$proposer" || continue
+        last="$name"
+        last_rev="$arev"
+        if [ -z "$(_ns_plan_changed_parts "$arev" "$rev" "$parts")" ]; then
+          held="$name"
+          held_rev="$arev"
+        fi
+        ;;
+    esac
+  done <<EOF_RECORD
+$(ns_plan_record_lines "$record")
+EOF_RECORD
+  printf 'revision %s\n' "$rev"
+  if [ -n "$approvers" ]; then printf 'approval required\n'; else printf 'approval not-required\n'; fi
+  if [ -n "$held" ]; then
+    printf 'state approved\napproved-by %s %s\n' "$held" "$held_rev"
+  else
+    printf 'state proposed\n'
+    if [ -n "$last" ]; then
+      changed="$(_ns_plan_changed_parts "$last_rev" "$rev" "$parts")"
+      printf 'approved-by %s %s\nchanged %s\n' "$last" "$last_rev" "$changed"
+    fi
+  fi
+}
+
+# _ns_plan_changed_parts <approved-revision> <revision> <parts> — the parts, of those named one per
+# line, that differ between the two revisions, space-separated.
+_ns_plan_changed_parts() {
+  local part i a b out=""
+  for part in $3; do
+    case "$part" in contract) i=1 ;; gates) i=2 ;; items) i=3 ;; *) continue ;; esac
+    a="$(printf '%s' "$1" | cut -d. -f"$i")"
+    b="$(printf '%s' "$2" | cut -d. -f"$i")"
+    [ "$a" = "$b" ] || out="${out:+$out }$part"
+  done
+  printf '%s' "$out"
+}
+
+# ns_run_inputs <workspace> <plan-file> <member> — what a run of that plan would execute, one
+# `<field> <value>` line each: the plan's revision (its contract, gates and items), the member
+# settings it reads, the prepare command, the verification profile, whether the gates run once
+# before arming, and each gate command. A runner consents to exactly these.
+ns_run_inputs() {
+  local ws="$1" plan="$2" member="$3" v
+  printf 'plan %s\n' "$(ns_plan_revision "$plan")"
+  printf 'settings %s\n' "${member:-none}"
+  v="$(ns_member_effective "$ws" "$member" shift prepare)"
+  printf 'prepare %s\n' "${v:-none}"
+  v="$(ns_member_effective "$ws" "$member" shift verificationProfile)"
+  printf 'verification %s\n' "${v:-fast}"
+  v="$(ns_member_effective "$ws" "$member" baselineGates)"
+  printf 'baseline-gates %s\n' "${v:-false}"
+  ns_punch_gate_commands "$plan" | sed 's/^/gate /'
+}
+
+# ns_run_consent <inputs> — the consent a runner gives for those inputs: their first sixteen
+# digest digits.
+ns_run_consent() {
+  printf '%s\n' "$1" | ns_punch_digest | cut -c1-16
+}
+
+# ns_plan_record_add <workspace> <key> <action> <name> [<extra>...] — append one attributed line
+# to the plan's record, creating it under its heading. Each extra is one ` · <field>` already
+# written, such as `run export-csv-3f9a1c`.
+ns_plan_record_add() {
+  local ws="$1" ns="$1/.nightshift" key="$2" action="$3" name="$4" plan record rev role extra line
+  shift 4
+  plan="$(ns_plans_dir "$ns")/$key.md" || return 1
+  rev="$(ns_plan_revision "$plan")" || return 1
+  record="$(ns_plan_record_file "$ns" "$key")" || return 1
+  role="$(ns_team_role "$ws" "$name")"
+  line="- $action · $name · ${role:--} · $(ns_local_now) · revision $rev"
+  for extra in "$@"; do line="$line · $extra"; done
+  mkdir -p "${record%/*}" || return 1
+  if [ ! -f "$record" ]; then
+    printf '# Record — %s\n\n' "$(ns_shift_name "$plan")" >"$record" || return 1
+  fi
+  printf '%s\n' "$line" >>"$record"
 }

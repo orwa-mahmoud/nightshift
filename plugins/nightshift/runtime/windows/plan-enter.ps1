@@ -48,6 +48,10 @@ function Write-PlanRecord {
     $open = Get-NSPlanRecordOpen $ns
     if ($open.Count -eq 0) { Write-Output 'open plan: none' }
     foreach ($line in $open) { Write-Output ('open plan: ' + $line) }
+    if (Test-NSSiteShares $workspace 'decisions') {
+        Write-Output ('decision threads go in ' + (Get-NSLayoutName $ns 'decisions') + ', one file each')
+    }
+    foreach ($line in (Get-NSDecisionThreadsOpen $ns)) { Write-Output ('open thread: ' + $line) }
     # The plan files waiting their turn, so the owner can continue one or start a new one.
     if (Test-NSLayoutKey $ns 'plans') {
         $plans = Get-NSPlanList $ns

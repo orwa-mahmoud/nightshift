@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # doctor.sh — read-only site diagnosis. Prints what Nightshift sees; never repairs.
 #
-#   doctor.sh [--project DIR]
+#   doctor.sh [--project DIR] [--run NAME]
 #
+# In a workspace that keeps runs, Doctor checks the run named with --run, by NIGHTSHIFT_RUN, or the
+# only one; with several runs and none named, it prints one report per run.
 # Exit: 0 report printed · 1 usage
 set -u
 
@@ -16,11 +18,17 @@ _here="$(cd -P "$_here" && pwd)" || exit 1
 . "$_here/../lib/catalog-sources.sh"
 
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
+RUN_NAME=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)
       [ $# -ge 2 ] || { printf 'doctor: --project needs a value\n' >&2; exit 1; }
       PROJECT="$2"
+      shift 2
+      ;;
+    --run)
+      [ $# -ge 2 ] || { printf 'doctor: --run needs a value\n' >&2; exit 1; }
+      RUN_NAME="$2"
       shift 2
       ;;
     -h | --help)
@@ -91,6 +99,31 @@ else
 fi
 
 NS="$WORKSPACE/.nightshift"
+# The run these checks are about, before any file of one run is resolved. With several runs and
+# none named, every run gets its own report.
+if [ -d "$NS" ] && ns_layout_per_run "$NS" punch-list; then
+  ns_run_choose "$NS" "$RUN_NAME"
+  case "$?" in
+    1)
+      printf 'doctor: %s\n' "$NS_RUN_ERR" >&2
+      exit 1
+      ;;
+    2)
+      DOCTOR_RUNS="$(ns_layout_runs "$NS")"
+      if [ "$(printf '%s\n' "$DOCTOR_RUNS" | grep -c .)" -gt 1 ]; then
+        printf 'Nightshift Doctor: %s runs, one report each\n' "$(printf '%s\n' "$DOCTOR_RUNS" | grep -c .)"
+        while IFS= read -r r; do
+          [ -n "$r" ] || continue
+          printf '\n== run %s\n' "$r"
+          bash "$0" --project "$PROJECT" --run "$r"
+        done <<EOF
+$DOCTOR_RUNS
+EOF
+        exit 0
+      fi
+      ;;
+  esac
+fi
 declare ARMED_FILE ENDED_FILE STOP_FILE SESSION_END_FILE PULSE_FILE STALL_FILE SESSION_FILE LEASE_FILE WATCHMAN_FILE CAPABILITIES_FILE PROVISION_TXN WORK_MODE_FILE WORK_ORDERS DRAFTING_TABLE STATE_VERSION_FILE SUPPORT_DIR
 ns_layout_set ARMED_FILE "$NS" armed
 ns_layout_set ENDED_FILE "$NS" ended

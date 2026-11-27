@@ -223,3 +223,38 @@ pulse_sid() {
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qF 'no run named c; runs: a b'
 }
+
+# ---------------------------------------------------------------- a stop reaching a working shift
+STOP_SH="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/stop-shift.sh"
+
+# pulse_worker <project> <run> <session-id> [ENV=VAL ...] — one pulse from a worker of a named run.
+pulse_worker() {
+  local p="$1" r="$2" sid="$3"
+  shift 3
+  hook_payload "$(jq -nc --arg sid "$sid" '{hook_event_name:"PostToolUse",session_id:$sid,transcript_path:"",tool_name:"Bash",tool_input:{command:"true"}}')" \
+    env -u CLAUDE_CODE_SESSION_ID "$@" NIGHTSHIFT_RUN="$r" CLAUDE_PROJECT_DIR="$p" bash "$PULSE" |
+    jq -r '.hookSpecificOutput.additionalContext // empty'
+}
+
+@test "a stop-work order reaches the stopped run's worker at its next tool call, on both hosts" {
+  p="$(cd -P "$(two_runs pulse-stop)" && pwd)"
+  # Run b's worker holds the run's lease, as a background or revived worker does.
+  claim="$(NIGHTSHIFT_RUN=b bash -c '. "$1"; ns_lease_takeover "$2/.nightshift" "" claude' _ "$LIB" "$p")"
+  lease=(NIGHTSHIFT_REVIVAL=1 NIGHTSHIFT_LEASE_GENERATION="${claim%% *}" NIGHTSHIFT_LEASE_NONCE="${claim#* }")
+  [[ "$(pulse_worker "$p" b worker-b "${lease[@]}")" != *"stop-work order"* ]] || false
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$STOP_SH" --project "$p" --run b
+  [ "$status" -eq 0 ]
+  # The stop dropped run b's session record; its lease holder is still told.
+  ctx="$(pulse_worker "$p" b worker-b "${lease[@]}")"
+  [[ "$ctx" == *"stop-work order is in place"* ]] || false
+  [[ "$ctx" == *"Start nothing new"* ]] || false
+  # Run a's worker and a conversation holding no lease are not.
+  [[ "$(pulse_worker "$p" a sid-a)" != *"stop-work order"* ]] || false
+  [[ "$(pulse_worker "$p" b some-helper)" != *"stop-work order"* ]] || false
+  command -v pwsh >/dev/null 2>&1 || return 0
+  ctx="$(hook_payload "$(jq -nc '{session_id:"worker-b",transcript_path:"",tool_name:"Bash"}')" \
+    env -u CLAUDE_CODE_SESSION_ID "${lease[@]}" NIGHTSHIFT_RUN=b CLAUDE_PROJECT_DIR="$p" \
+    pwsh -NoProfile -NonInteractive -File "$BATS_TEST_DIRNAME/../plugins/nightshift/hooks/windows/pulse.ps1" -HostName claude |
+    jq -r '.hookSpecificOutput.additionalContext // empty')"
+  [[ "$ctx" == *"stop-work order is in place"* ]] || false
+}

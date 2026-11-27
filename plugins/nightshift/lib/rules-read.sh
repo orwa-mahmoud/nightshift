@@ -81,6 +81,141 @@ _ns_rules_run_file() {
   if [ -f "$f" ] && [ ! -L "$f" ]; then printf '%s' "$f"; fi
 }
 
+# The groups only the team's rules.json sets: a run's or a member's file never changes them.
+NS_RULES_TEAM_GROUPS='team sharing'
+
+# _ns_rules_member_file <var> <file> — sets <var> to the member settings file the run this caller
+# works on selected, to lay over <file> beneath the run's own: settings/<name>.json, named in the
+# run's member-settings record. Empty when the run selected none. Status 1, with NS_RULES_ERR set,
+# when the selection names a file that is not there.
+_ns_rules_member_file() {
+  local ns="${2%/*}" run rec name dir
+  printf -v "$1" '%s' ""
+  [ "$ns" != "$2" ] || return 0
+  case "$ns" in */.nightshift) ;; *) return 0 ;; esac
+  ns_layout_per_run "$ns" punch-list 2>/dev/null || return 0
+  ns_layout_run_set run "$ns" || return 0
+  ns_layout_set rec "$ns" member-settings || return 0
+  [ -f "$rec" ] && [ ! -L "$rec" ] || return 0
+  IFS= read -r name <"$rec" || name=""
+  name="${name%$'\r'}"
+  [ -n "$name" ] || return 0
+  ns_layout_set dir "$ns" settings || return 0
+  if [ ! -f "$dir/$name.json" ] || [ -L "$dir/$name.json" ]; then
+    NS_RULES_ERR="settings/$name.json is selected for run $run but is not there"
+    return 1
+  fi
+  printf -v "$1" '%s' "$dir/$name.json"
+}
+
+# _ns_rules_allowed <rows> <allowed> — the rows a member's file may set: a path equal to an
+# allowed setting or inside one (shift allows shift.hours), and the block headers above them. The
+# team's own groups never pass. <allowed> holds one dotted setting name per line.
+_ns_rules_allowed() {
+  NS_ALLOW_ROWS="$1" NS_ALLOW_LIST="$2" NS_ALLOW_TEAM="$NS_RULES_TEAM_GROUPS" awk '
+    BEGIN {
+      FS = "\t"
+      na = split(ENVIRON["NS_ALLOW_LIST"], allow, "\n")
+      nt = split(ENVIRON["NS_ALLOW_TEAM"], team, " ")
+      for (i = 1; i <= nt; i++) owned[team[i]] = 1
+      nr = split(ENVIRON["NS_ALLOW_ROWS"], rows, "\n")
+      for (r = 1; r <= nr; r++) {
+        if (rows[r] == "") continue
+        split(rows[r], f, "\t")
+        if (f[1] in owned) continue
+        path = f[1] (f[2] == "" ? "" : "." f[2])
+        keep = 0
+        for (i = 1; i <= na && !keep; i++) {
+          a = allow[i]
+          if (a == "") continue
+          if (path == a || index(path, a ".") == 1) keep = 1
+          else if (f[4] == "o" && index(a, path ".") == 1) keep = 1
+        }
+        if (keep) print rows[r]
+      }
+    }'
+}
+
+# _ns_rules_drop_team <rows> — the rows without the team's own groups.
+_ns_rules_drop_team() {
+  NS_DROP_ROWS="$1" NS_DROP_TEAM="$NS_RULES_TEAM_GROUPS" awk '
+    BEGIN {
+      FS = "\t"
+      nt = split(ENVIRON["NS_DROP_TEAM"], team, " ")
+      for (i = 1; i <= nt; i++) owned[team[i]] = 1
+      nr = split(ENVIRON["NS_DROP_ROWS"], rows, "\n")
+      for (r = 1; r <= nr; r++) {
+        if (rows[r] == "") continue
+        split(rows[r], f, "\t")
+        if (!(f[1] in owned)) print rows[r]
+      }
+    }'
+}
+
+# _ns_rules_member_allowed <rows> — the settings the team lets a member change, one per line, from
+# team.memberSettings in the team's rows.
+_ns_rules_member_allowed() {
+  printf '%s\n' "$1" | awk -F '\t' '$1 == "team" && $2 == "memberSettings" && $3 != "" && $4 == "s" {
+    v = $5; gsub(/^"|"$/, "", v); print v }'
+}
+
+# ns_member_settings_problems <workspace> <name> — why settings/<name>.json cannot be selected for a
+# run, one line each: a name that is not one, a missing or malformed file, and every setting in it
+# that the team does not let a member change (the team's own groups never). Nothing when it can be.
+ns_member_settings_problems() (
+  local ws="$1" name="$2" ns dir="" team="" file allowed kept
+  case "$name" in
+    '' | -* | *[!a-z0-9-]*)
+      printf 'the name %s is not a settings name: lowercase letters, digits and hyphens\n' "$name"
+      exit 0
+      ;;
+  esac
+  ns="$ws/.nightshift"
+  ns_layout_set dir "$ns" settings || { printf 'this layout keeps no member settings\n'; exit 0; }
+  ns_layout_set team "$ns" rules || exit 0
+  file="$dir/$name.json"
+  if [ ! -f "$file" ] || [ -L "$file" ]; then
+    printf 'settings/%s.json is not there\n' "$name"
+    exit 0
+  fi
+  _ns_rules_ingest rules "$team" || { printf 'rules.json: %s\n' "$NS_RULES_ERR"; exit 0; }
+  allowed="$(_ns_rules_member_allowed "$NS_RULES_ROWS")"
+  _ns_rules_ingest rules "$file" || { printf 'settings/%s.json: %s\n' "$name" "$NS_RULES_ERR"; exit 0; }
+  kept="$(_ns_rules_allowed "$NS_RULES_ROWS" "$allowed")"
+  printf '%s\n' "$NS_RULES_ROWS" | NS_KEPT="$kept" awk -F '\t' -v owned=" $NS_RULES_TEAM_GROUPS " -v n="$name" '
+    BEGIN { nk = split(ENVIRON["NS_KEPT"], k, "\n"); for (i = 1; i <= nk; i++) have[k[i]] = 1 }
+    $0 == "" || ($0 in have) || $4 == "o" { next }
+    {
+      path = $1 ($2 == "" ? "" : "." $2)
+      if (path in said) next
+      said[path] = 1
+      if (index(owned, " " $1 " ")) printf "settings/%s.json changes %s, which only the team'"'"'s rules.json sets\n", n, path
+      else printf "settings/%s.json changes %s, which the team does not let a member change\n", n, path
+    }'
+)
+
+# ns_member_effective <workspace> <member> <p1> [p2] — the value one setting would have for a run
+# that selects <member>'s settings (none when empty), before that run exists: the member's allowed
+# settings over the team's. Nothing when the setting is unset or a file cannot be read.
+ns_member_effective() (
+  local team="" dir="" shared row typ val
+  ns_layout_set team "$1/.nightshift" rules || exit 0
+  _ns_rules_ingest rules "$team" || exit 0
+  if [ -n "$2" ]; then
+    shared="$NS_RULES_ROWS"
+    ns_layout_set dir "$1/.nightshift" settings || exit 0
+    _ns_rules_ingest rules "$dir/$2.json" || exit 0
+    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_allowed "$NS_RULES_ROWS" "$(_ns_rules_member_allowed "$shared")")" "$shared")"
+  fi
+  row="$(_ns_rules_row "$3" "${4-}" "")" || exit 0
+  typ="${row%%"$_NS_RULES_TAB"*}"
+  val="${row#*"$_NS_RULES_TAB"}"
+  case "$typ" in
+    s | n | b) ns_json_text "$val" ;;
+    a) _ns_rules_array "$3" "${4-}" ;;
+  esac
+)
+
 # _ns_rules_overlay <run-rows> <shared-rows> — one set of rows where the run's settings replace the
 # shared ones key by key: a value at the same path, or a whole array at the same name. The run's
 # rows come first, so a lookup finds them.
@@ -118,7 +253,7 @@ _ns_rules_stamp() {
 # shared file is read with the run's own rules file laid over it (see _ns_rules_overlay). Status 1
 # names the reason in NS_RULES_ERR.
 ns_rules_load() {
-  local f="$1" stamp runf="" shared
+  local f="$1" stamp runf="" memf="" shared
   NS_RULES_ERR=""
   if [ ! -f "$f" ]; then
     NS_RULES_ERR="missing"
@@ -128,7 +263,16 @@ ns_rules_load() {
     return 1
   fi
   runf="$(_ns_rules_run_file "$f")"
+  if ! _ns_rules_member_file memf "$f"; then
+    NS_RULES_FILE=""
+    NS_RULES_STAMP=""
+    NS_RULES_ROWS=""
+    return 1
+  fi
   stamp="$(_ns_rules_stamp "$f")"
+  if [ -n "$stamp" ] && [ -n "$memf" ]; then
+    stamp="$stamp|$memf:$(_ns_rules_stamp "$memf")"
+  fi
   if [ -n "$stamp" ] && [ -n "$runf" ]; then
     stamp="$stamp|$runf:$(_ns_rules_stamp "$runf")"
   fi
@@ -144,6 +288,20 @@ ns_rules_load() {
     NS_RULES_ROWS=""
     return 1
   }
+  # Narrowest first: the run's own file, then the member settings the run selected, then the team's.
+  # A member's file changes only what team.memberSettings allows; neither changes the team's groups.
+  if [ -n "$memf" ]; then
+    shared="$NS_RULES_ROWS"
+    NS_RULES_ROWS=""
+    _ns_rules_ingest rules "$memf" || {
+      NS_RULES_ERR="${memf##*/.nightshift/}: $NS_RULES_ERR"
+      NS_RULES_FILE=""
+      NS_RULES_STAMP=""
+      NS_RULES_ROWS=""
+      return 1
+    }
+    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_allowed "$NS_RULES_ROWS" "$(_ns_rules_member_allowed "$shared")")" "$shared")"
+  fi
   if [ -n "$runf" ]; then
     shared="$NS_RULES_ROWS"
     NS_RULES_ROWS=""
@@ -154,7 +312,7 @@ ns_rules_load() {
       NS_RULES_ROWS=""
       return 1
     }
-    NS_RULES_ROWS="$(_ns_rules_overlay "$NS_RULES_ROWS" "$shared")"
+    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_drop_team "$NS_RULES_ROWS")" "$shared")"
   fi
   NS_RULES_FILE="$f"
   NS_RULES_STAMP="$stamp"

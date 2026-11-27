@@ -143,6 +143,13 @@ try {
     Expect-True ($ownerBash.Stdout -match 'control files') "the leased conversation stays under the site rules: $($ownerBash.Stdout)"
     $session = Read-NSSession $ns
     Expect-True ($null -ne $session -and $session.SessionId -eq 'shift-session') 'the leased conversation records itself again'
+
+    # A background worker's run is leased to its host before any conversation records itself.
+    $leasedOnly = Join-Path $root 'leased only/.nightshift'
+    $null = New-Item -ItemType Directory -Path $leasedOnly -Force
+    Expect-True ((Get-NSShiftHost $leasedOnly) -eq 'claude') 'a shift with no record and no lease reads as claude'
+    [IO.File]::WriteAllText((Get-NSLayoutPath $leasedOnly 'lease'), "`ncodex`n1`ncodex.1.test`n`n`n")
+    Expect-True ((Get-NSShiftHost $leasedOnly) -eq 'codex') 'a shift leased to codex with no session record belongs to codex'
 }
 finally {
     Set-Location ([IO.Path]::GetTempPath())
