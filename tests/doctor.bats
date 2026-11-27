@@ -968,7 +968,8 @@ offers_promotion() { # <output>
 @test "Doctor names a worker that is alive but idle" {
   p="$(new_project doctor-idle)"
   printf '## Items\n- [ ] **1. work.**\n' >"$p/.nightshift/punch-list.md"
-  bash -c 'sleep 30' &
+  # The worker lives until the test ends it, however long Doctor takes.
+  bash -c 'sleep 600' &
   worker=$!
   now="$(date +%s)"
   printf 'since=%s\ncpu=0\nbytes=0\npids=%s\nfails=0\nepisode=0\nstuck=0\nnoticed=0\nevidence=pulse stale, transcript unchanged, cpu +0.00s, no busy child\n' \
