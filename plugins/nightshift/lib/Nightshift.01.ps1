@@ -763,9 +763,52 @@ function Get-NSShiftWorktreeField {
     return ''
 }
 
+# The shift id a continued shift's records carry from Start's preflight, which decides that the
+# shift goes on, to the snapshot and worktree phases, which give it its new id. Mirrors
+# NS_SHIFT_CONTINUED.
+$script:NSShiftContinued = 'continued'
+
+# Set-NSShiftWorktreeField <workspace> <key> <value> - write one value into the shift worktree
+# record, keeping the others. Mirrors ns_record_set on that record.
+function Set-NSShiftWorktreeField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key,
+          [AllowEmptyString()][string]$Value)
+    $path = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'shift-worktree'
+    if (Test-NSReparsePoint $path) { throw "the shift worktree record is a link: $path" }
+    $lines = New-Object Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        foreach ($line in [IO.File]::ReadAllLines($path)) {
+            if (-not $line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { $lines.Add($line.TrimEnd("`r")) }
+        }
+    }
+    $lines.Add($Key + '=' + $Value)
+    [IO.File]::WriteAllText($path, (($lines -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+}
+
+# Test-NSShiftWorktreeContinued <workspace> - whether the shift worktree record is one Start's
+# preflight carried for a continued shift and no phase has adopted yet.
+function Test-NSShiftWorktreeContinued {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return ((Get-NSShiftWorktreeField $Workspace 'shift') -ceq $script:NSShiftContinued)
+}
+
+# Invoke-NSShiftCarry <workspace> - a shift that goes on keeps the worktree and the file map it
+# started: both records are marked continued, and the phase that knows the new shift id adopts them.
+# Mirrors ns_shift_carry.
+function Invoke-NSShiftCarry {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if ((Get-NSShiftWorktreeField $Workspace 'path').Length -gt 0) {
+        Set-NSShiftWorktreeField $Workspace 'shift' $script:NSShiftContinued
+    }
+    if ((Get-NSFileMapField $Workspace 'base').Length -gt 0) {
+        Set-NSFileMapField $Workspace 'shift' $script:NSShiftContinued
+    }
+}
+
 # Get-NSShiftWorktreeCurrent <workspace> - the worktree path when the record belongs to the shift on
-# record now (its policy, or its ending once clocked out) and the folder is still a checkout; ''
-# otherwise. A record left by an earlier shift is never followed. Mirrors ns_shift_worktree_current.
+# record now (its policy, its ending once clocked out, or a shift Start is continuing) and the folder
+# is still a checkout; '' otherwise. A record left by an earlier shift is never followed. Mirrors
+# ns_shift_worktree_current.
 function Get-NSShiftWorktreeCurrent {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $path = Get-NSShiftWorktreeField $Workspace 'path'
@@ -775,7 +818,7 @@ function Get-NSShiftWorktreeCurrent {
     $state = Get-NSShiftPolicyState $Workspace
     if ([string]$state['state'] -ceq 'valid') { $current = [string](Get-NSRecordText $state['policy'] 'shiftId') }
     $ended = Get-NSEndedField $Workspace 'shiftId'
-    if ($shift -cne $current -and $shift -cne $ended) { return '' }
+    if ($shift -cne $current -and $shift -cne $ended -and $shift -cne $script:NSShiftContinued) { return '' }
     if (-not (Test-Path -LiteralPath $path -PathType Container) -or (Test-NSReparsePoint $path)) { return '' }
     if ($null -eq (Invoke-NSGit $path @('rev-parse', '--show-toplevel'))) { return '' }
     return $path

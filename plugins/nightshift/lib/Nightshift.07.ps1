@@ -3360,7 +3360,15 @@ function Start-NSFileMap {
     try { $mode = Get-NSWorkMode $Workspace } catch { return }
     if ($mode -cne 'repository') { return }
     $sid = Get-NSFileMapShiftId $Workspace
-    if ((Get-NSFileMapField $Workspace 'base').Length -gt 0 -and (Get-NSFileMapField $Workspace 'shift') -ceq $sid) { return }
+    if ((Get-NSFileMapField $Workspace 'base').Length -gt 0) {
+        $recorded = Get-NSFileMapField $Workspace 'shift'
+        if ($recorded -ceq $sid) { return }
+        # A continued shift keeps the commit it started on under its new id.
+        if ($recorded -ceq $script:NSShiftContinued) {
+            Set-NSFileMapField $Workspace 'shift' $sid
+            return
+        }
+    }
     $head = Get-NSFileMapHead $Workspace
     if ($head.Length -eq 0) { return }
     Set-NSFileMapField $Workspace 'shift' $sid

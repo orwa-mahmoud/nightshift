@@ -240,6 +240,14 @@ if ($Phase -eq 'worktree') {
     }
     $kept = Get-NSShiftWorktreeCurrent $workspace
     if ($kept.Length -gt 0) {
+        if (-not $DryRun -and (Test-NSShiftWorktreeContinued $workspace)) {
+            try { Set-NSShiftWorktreeField $workspace 'shift' $shiftId }
+            catch {
+                Write-Refuse "worktree the continued shift's worktree record could not take shift $shiftId"
+                Write-Repair 'check that the shift worktree record is writable, then run Start again'
+                exit 1
+            }
+        }
         Write-Ok ("worktree $kept branch " + (Get-NSShiftWorktreeField $workspace 'branch') + " - this shift's worktree, kept")
         exit 0
     }
@@ -297,7 +305,7 @@ if ($Phase -eq 'worktree') {
         $branchExists = (Invoke-NSGitCommand $checkout @('show-ref', '--verify', '--quiet', "refs/heads/$branch")).ExitCode -eq 0
         if ($branchExists -or (Test-Path -LiteralPath $worktree)) {
             Write-Refuse "worktree $branch or $worktree already exists"
-            Write-Repair 'merge or remove that branch and folder, or name the shift differently, then run Start again'
+            Write-Repair "that branch may hold another shift's work: name this shift differently on the punch list's title line, then run Start again"
             exit 1
         }
         $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD')
@@ -635,6 +643,12 @@ if (-not $DryRun) {
     if ($continued -and $openNow -gt 0) {
         try { Invoke-NSGateUsageStart $ns $workspace (Get-NSLayoutPath $ns 'punch-list') $lastPause }
         catch { Write-Warn "usage the accounting baseline for this Start could not be recorded - $_" }
+    }
+    # A continued shift keeps the worktree, branch and file map it started; its ending marker, which
+    # named them, is cleared below. Mirrors start-preflight.sh.
+    if ($continued) {
+        try { Invoke-NSShiftCarry $workspace }
+        catch { Write-Warn "worktree the continued shift could not keep its worktree record; the worktree step names what to do - $_" }
     }
     Remove-NSPath (Get-NSLayoutPath $ns 'stop')
     $deadlinePath = Get-NSLayoutPath $ns 'deadline'

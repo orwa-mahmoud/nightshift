@@ -67,16 +67,36 @@ ns_shift_worktree_field() {
   printf '%s' "$line"
 }
 
+# The shift id a continued shift's records carry from Start's preflight, which decides that the
+# shift goes on, to the snapshot and worktree phases, which give it its new id.
+NS_SHIFT_CONTINUED=continued
+
+# ns_shift_carry <workspace> — a shift that goes on keeps the worktree and the file map it started:
+# both records are marked continued, and the phase that knows the new shift id adopts them.
+ns_shift_carry() {
+  local ns="$1/.nightshift" f
+  if ns_layout_set f "$ns" shift-worktree 2>/dev/null && [ -f "$f" ] && [ ! -L "$f" ] &&
+    ns_shift_worktree_field "$1" path >/dev/null; then
+    ns_record_set "$f" shift "$NS_SHIFT_CONTINUED" || return 1
+  fi
+  if ns_layout_set f "$ns" file-map 2>/dev/null && [ -n "$(ns_record_get "$f" base)" ]; then
+    ns_record_set "$f" shift "$NS_SHIFT_CONTINUED" || return 1
+  fi
+  return 0
+}
+
 # ns_shift_worktree_current <workspace> — status 0 printing the worktree path when the record
-# belongs to the shift on record now (its policy, or its ending once clocked out) and the
-# directory is still a checkout. A record left by an earlier shift is never followed.
+# belongs to the shift on record now (its policy, its ending once clocked out, or a shift Start is
+# continuing) and the directory is still a checkout. A record left by an earlier shift is never
+# followed.
 ns_shift_worktree_current() {
   local ws="$1" path shift_id current ended
   path="$(ns_shift_worktree_field "$ws" path)" || return 1
   shift_id="$(ns_shift_worktree_field "$ws" shift)" || return 1
   current="$(ns_policy_shift_id "$ws" 2>/dev/null)" || current=""
   ended="$(ns_ended_field "$ws" shiftId 2>/dev/null)" || ended=""
-  [ "$shift_id" = "$current" ] || [ "$shift_id" = "$ended" ] || return 1
+  [ "$shift_id" = "$current" ] || [ "$shift_id" = "$ended" ] || [ "$shift_id" = "$NS_SHIFT_CONTINUED" ] ||
+    return 1
   [ -d "$path" ] && [ ! -L "$path" ] || return 1
   git -C "$path" rev-parse --show-toplevel >/dev/null 2>&1 || return 1
   printf '%s' "$path"

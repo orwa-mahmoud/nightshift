@@ -267,6 +267,41 @@ try {
     # Each run's watchman is told apart by its run.
     Expect-True (Test-NSWatchmanCommandForProject "bash /tmp/watchman.sh --project $runs --run a" $runs 'a') 'a run matches its own watchman'
     Expect-True (-not (Test-NSWatchmanCommandForProject "bash /tmp/watchman.sh --project $runs --run a" $runs 'b')) "another run's watchman does not match"
+
+    # A stopped shift started again keeps its worktree, branch, commits and file map.
+    $resumed = New-Site (Join-Path $root 'resumed') @{ isolation = 'worktree' }
+    $resumedNs = Join-Path $resumed '.nightshift'
+    $resumedRules = [IO.File]::ReadAllText((Join-Path $resumedNs 'rules.json')) | ConvertFrom-Json
+    $resumedRules.receipts.evidence.fileMap = 'on'
+    [IO.File]::WriteAllText((Join-Path $resumedNs 'rules.json'), ($resumedRules | ConvertTo-Json -Depth 8), $utf8)
+    # The snapshot freezes the receipts settings, so it is taken again with the file map on.
+    Remove-Item -LiteralPath (Get-NSLayoutPath $resumedNs 'shift-policy') -Force
+    $null = & $hostExe -NoProfile -NonInteractive -File $preflight -Project $resumed -Phase snapshot
+    $null = Invoke-Worktree $resumed
+    $resumedTree = Get-NSShiftWorktreeField $resumed 'path'
+    $resumedBranch = Get-NSShiftWorktreeField $resumed 'branch'
+    $resumedBase = Get-NSFileMapField $resumed 'base'
+    Expect-True ($resumedBase.Length -gt 0) 'the file map records where the shift started'
+    [IO.File]::WriteAllText((Join-Path $resumedTree 'resumed.txt'), "resumed`n", $utf8)
+    Invoke-Git $resumedTree @('add', 'resumed.txt')
+    Invoke-Git $resumedTree @('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'feat: resumed')
+    $resumedWork = (& git -C $resumedTree rev-parse HEAD)
+    # Clock-out after a stop-work order: the ending names the shift, the policy is archived, STOP stays.
+    $stoppedId = Get-NSShiftWorktreeField $resumed 'shift'
+    [IO.File]::WriteAllText((Get-NSLayoutPath $resumedNs 'ended'), "shiftId=$stoppedId`narchiveRoot=archive`narchiveLayout=date`n", $utf8)
+    $null = & $hostExe -NoProfile -NonInteractive -File (Join-Path $plugin 'runtime/windows/shift-policy.ps1') -Project $resumed -Command archive
+    [IO.File]::WriteAllText((Get-NSLayoutPath $resumedNs 'stop'), '', $utf8)
+    $start = @(& $hostExe -NoProfile -NonInteractive -File $preflight -Project $resumed -HostName claude)
+    Expect-True ($LASTEXITCODE -eq 0) "the preflight of the stopped shift passes: $($start -join ' | ')"
+    $null = & $hostExe -NoProfile -NonInteractive -File $preflight -Project $resumed -Phase snapshot
+    $run = Invoke-Worktree $resumed
+    Expect-True ($run.ExitCode -eq 0 -and $run.Text.Contains("ok worktree $resumedTree branch $resumedBranch - this shift's worktree, kept")) "the stopped shift keeps its worktree: $($run.Text)"
+    $resumedId = [string](Get-NSShiftPolicyState $resumed)['policy']['shiftId']
+    Expect-True ($resumedId -cne $stoppedId) 'the started shift has a new id'
+    Expect-True ((Get-NSShiftWorktreeField $resumed 'shift') -ceq $resumedId) 'the worktree record names the new shift'
+    Expect-True ((Get-NSFileMapField $resumed 'shift') -ceq $resumedId) 'the file map names the new shift'
+    Expect-True ((Get-NSFileMapField $resumed 'base') -ceq $resumedBase) 'the file map still starts where the shift did'
+    Expect-True ((& git -C $resumedTree rev-parse HEAD) -ceq $resumedWork) 'the commits made before the stop are still there'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

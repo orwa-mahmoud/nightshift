@@ -36,8 +36,15 @@ ns_filemap_start() {
   ns_filemap_enabled "$project" || return 0
   [ "$(ns_work_mode "$project" 2>/dev/null)" = repository ] || return 0
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
-  if [ -n "$(ns_filemap_field "$project" base)" ] && [ "$(ns_filemap_field "$project" shift)" = "$sid" ]; then
-    return 0
+  if [ -n "$(ns_filemap_field "$project" base)" ]; then
+    case "$(ns_filemap_field "$project" shift)" in
+      "$sid") return 0 ;;
+      # A continued shift keeps the commit it started on under its new id.
+      "$NS_SHIFT_CONTINUED")
+        ns_filemap_set "$project" shift "$sid"
+        return
+        ;;
+    esac
   fi
   target="$(ns_work_target "$project" 2>/dev/null)" || return 0
   head="$(git -C "$target" rev-parse --verify --quiet HEAD 2>/dev/null)" || return 0

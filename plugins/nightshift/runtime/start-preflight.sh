@@ -267,6 +267,12 @@ if [ "$PHASE" = worktree ]; then
     exit 1
   fi
   if KEPT="$(ns_shift_worktree_current "$WORKSPACE")"; then
+    if [ "$DRY_RUN" -eq 0 ] && [ "$(ns_shift_worktree_field "$WORKSPACE" shift)" = "$NS_SHIFT_CONTINUED" ] &&
+      ! ns_record_set "$(ns_layout_path "$NS" shift-worktree)" shift "$SHIFT_ID"; then
+      refuse "worktree the continued shift's worktree record could not take shift $SHIFT_ID"
+      repair "check that $(ns_layout_name "$NS" shift-worktree) is writable, then run Start again"
+      exit 1
+    fi
     ok "worktree $KEPT branch $(ns_shift_worktree_field "$WORKSPACE" branch) - this shift's worktree, kept"
     exit 0
   fi
@@ -313,7 +319,7 @@ if [ "$PHASE" = worktree ]; then
     BRANCH="shift/$(date +%Y-%m-%d)-${NAME:-${SHIFT_ID:0:8}}"
     if git -C "$CHECKOUT" show-ref --verify --quiet "refs/heads/$BRANCH" || [ -e "$WT" ]; then
       refuse "worktree $BRANCH or $WT already exists"
-      repair "merge or remove that branch and folder, or name the shift differently, then run Start again"
+      repair "that branch may hold another shift's work: name this shift differently on the punch list's title line, then run Start again"
       exit 1
     fi
     BASE="$(git -C "$CHECKOUT" rev-parse HEAD 2>/dev/null)" || BASE=""
@@ -657,6 +663,11 @@ if [ "$DRY_RUN" -eq 0 ]; then
   if [ "$CONTINUED" -eq 1 ] && [ "${OPEN_NOW:-0}" -gt 0 ] &&
     ! { ns_control_load_usage_gate && ns_gate_usage_start "$NS" "$WORKSPACE" "$PUNCH" "$LAST_PAUSE"; }; then
     warn 'usage the accounting baseline for this Start could not be recorded'
+  fi
+  # A continued shift keeps the worktree, branch and file map it started; its ending marker, which
+  # named them, is cleared below.
+  if [ "$CONTINUED" -eq 1 ] && ! ns_shift_carry "$WORKSPACE"; then
+    warn 'worktree the continued shift could not keep its worktree record; the worktree step names what to do'
   fi
   ns_control_drop "$STOP"
   ns_control_drop_runtime_markers "$NS"
