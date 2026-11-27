@@ -577,6 +577,12 @@ try {
     Expect-Equal 0 $surfaceRun.ExitCode "set accepts a write surface and an offset timestamp ($($surfaceRun.StderrText))"
     Expect-True (Test-Path -LiteralPath (Join-Path $allowanceNs 'shift-policy.json') -PathType Leaf) 'the accepted policy is written'
 
+    # A new shift id is drawn however many files the archive already holds.
+    $idNs = Join-Path $root 'id-archive/.nightshift'
+    $null = New-Item -ItemType Directory -Path (Join-Path $idNs 'archive/2026-09-01') -Force
+    foreach ($n in 1..3) { [IO.File]::WriteAllText((Join-Path $idNs "archive/2026-09-01/f$n.txt"), "file $n`n", $utf8) }
+    Expect-True ((New-NSShiftId $idNs) -cmatch '^[0-9a-f]{16}$') 'a shift id is drawn beside an archive of several files'
+
     $notJson = Join-Path $root 'not-json.json'
     [IO.File]::WriteAllText($notJson, '{ "schemaVersion": 1,', $utf8)
     $notJsonRun = Invoke-Helper @('-Project', $setProject, '-Command', 'set', '-FromJson', $notJson)

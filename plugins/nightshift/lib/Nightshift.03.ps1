@@ -1531,9 +1531,11 @@ function New-NSShiftId {
         $bytes = New-Object byte[] 8
         [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
         $id = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+        # -Quiet would answer once per file, and an array of False is still true: ask for the first
+        # match instead.
         if ((Test-Path -LiteralPath $archive -PathType Container) -and
-            (Get-ChildItem -LiteralPath $archive -Recurse -File -Force -ErrorAction SilentlyContinue |
-                Select-String -SimpleMatch -Pattern $id -Quiet)) { continue }
+            $null -ne (Get-ChildItem -LiteralPath $archive -Recurse -File -Force -ErrorAction SilentlyContinue |
+                Select-String -SimpleMatch -Pattern $id -List | Select-Object -First 1)) { continue }
         return $id
     }
     return ''
