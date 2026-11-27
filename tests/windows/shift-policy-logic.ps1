@@ -540,6 +540,43 @@ try {
     Expect-Equal 2 $badPlanRun.ExitCode 'set refuses an exact-plan allowance with no plan'
     Expect-True $badPlanRun.StderrText.Contains('allowances[0].plan:') 'the refusal names the allowance and the plan'
 
+    # Every refusal the allowance and plan checks make, one malformed field at a time.
+    $allowanceProject = Join-Path $root 'allowance-checks'
+    $allowanceNs = New-PolicyProject $allowanceProject
+    $policyHead = '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"x","source":"composition","verificationLevel":"final","toolingPolicy":"auto-add","allowances":['
+    $planDigest = '3b1c9a5e77d0426f8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071'
+    $exactPlan = '"category":"sudo","scope":"exact-plan","provenance":"one-shift"'
+    $goodPlan = '"commands":["sudo id"],"workTarget":"/w","digest":"' + $planDigest + '"'
+    $malformedAllowances = @(
+        @('allowances[0]: not a JSON object', '"sudo"'),
+        @('allowances[0].reason: unknown field', '{"category":"sudo","scope":"category","provenance":"one-shift","reason":"x"}'),
+        @('allowances[0].plan.extra: unknown field', ('{' + $exactPlan + ',"plan":{' + $goodPlan + ',"extra":1}}')),
+        @('allowances[0].plan.workTarget:', ('{' + $exactPlan + ',"plan":{"commands":["sudo id"],"workTarget":7,"digest":"' + $planDigest + '"}}')),
+        @('allowances[0].plan.workTarget:', ('{' + $exactPlan + ',"plan":{"commands":["sudo id"],"workTarget":"","digest":"' + $planDigest + '"}}')),
+        @('allowances[0].plan.expiry:', ('{' + $exactPlan + ',"plan":{' + $goodPlan + ',"expiry":"tomorrow"}}')),
+        @('allowances[0].plan.writeSurface: must be an array of paths', ('{' + $exactPlan + ',"plan":{' + $goodPlan + ',"writeSurface":{"a":1}}}')),
+        @('allowances[0].plan.writeSurface: must be an array of paths', ('{' + $exactPlan + ',"plan":{' + $goodPlan + ',"writeSurface":[1]}}')),
+        @('allowances[0].plan.commands:', ('{' + $exactPlan + ',"plan":{"commands":[""],"workTarget":"/w","digest":"' + $planDigest + '"}}')),
+        @('allowances[0].plan.commands:', ('{' + $exactPlan + ',"plan":{"commands":"sudo id","workTarget":"/w","digest":"' + $planDigest + '"}}'))
+    )
+    $caseNumber = 0
+    foreach ($case in $malformedAllowances) {
+        $caseNumber++
+        $casePath = Join-Path $root ('malformed-allowance-' + $caseNumber + '.json')
+        [IO.File]::WriteAllText($casePath, $policyHead + $case[1] + ']}', $utf8)
+        $caseRun = Invoke-Helper @('-Project', $allowanceProject, '-Command', 'set', '-FromJson', $casePath)
+        Expect-Equal 2 $caseRun.ExitCode "set refuses malformed allowance $caseNumber"
+        Expect-True $caseRun.StderrText.Contains($case[0]) "refusal $caseNumber names $($case[0]) (got $($caseRun.StderrText))"
+    }
+
+    # A plan's write surface and a timestamp with an offset are valid, as the schema has them.
+    $surfacePath = Join-Path $root 'write-surface.json'
+    [IO.File]::WriteAllText($surfacePath, ('{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-11-27T22:08:00+04:00","source":"composition","verificationLevel":"final","toolingPolicy":"auto-add","allowances":[{' +
+            $exactPlan + ',"plan":{' + $goodPlan + ',"writeSurface":["/etc/hosts"]}}]}'), $utf8)
+    $surfaceRun = Invoke-Helper @('-Project', $allowanceProject, '-Command', 'set', '-FromJson', $surfacePath)
+    Expect-Equal 0 $surfaceRun.ExitCode "set accepts a write surface and an offset timestamp ($($surfaceRun.StderrText))"
+    Expect-True (Test-Path -LiteralPath (Join-Path $allowanceNs 'shift-policy.json') -PathType Leaf) 'the accepted policy is written'
+
     $notJson = Join-Path $root 'not-json.json'
     [IO.File]::WriteAllText($notJson, '{ "schemaVersion": 1,', $utf8)
     $notJsonRun = Invoke-Helper @('-Project', $setProject, '-Command', 'set', '-FromJson', $notJson)

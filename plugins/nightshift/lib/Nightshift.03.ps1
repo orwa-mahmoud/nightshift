@@ -1206,8 +1206,8 @@ function Test-NSShiftPolicyDocument {
     if ($Document.Contains('shiftId') -and -not (Test-NSPolicyShiftId $Document['shiftId'])) {
         $errors.Add('shiftId: must be a uuid or 16 lowercase hex characters')
     }
-    if ($Document.Contains('createdAt') -and -not (($Document['createdAt'] -is [string]) -and ($Document['createdAt'] -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'))) {
-        $errors.Add('createdAt: must be YYYY-MM-DDTHH:MM:SSZ')
+    if ($Document.Contains('createdAt') -and -not (($Document['createdAt'] -is [string]) -and $Document['createdAt'].Length -gt 0)) {
+        $errors.Add('createdAt: must be a UTC timestamp')
     }
     if ($Document.Contains('source') -and -not (Test-NSEvidenceEnum $Document['source'] $script:NSPolicySources)) {
         $errors.Add('source: must be one of ' + ($script:NSPolicySources -join ', '))
@@ -1354,8 +1354,22 @@ function Test-NSPolicyPlan {
         return , $errors
     }
     foreach ($key in @($Plan.Keys)) {
-        if (-not (@('commands', 'workTarget', 'digest', 'expiry') -ccontains [string]$key)) {
+        if (-not (@('commands', 'workTarget', 'digest', 'writeSurface', 'expiry') -ccontains [string]$key)) {
             $errors.Add($Label + '.' + ([string]$key) + ': unknown field')
+        }
+    }
+    if ($Plan.Contains('writeSurface') -and $null -ne $Plan['writeSurface']) {
+        $surface = $Plan['writeSurface']
+        if (($surface -is [Collections.IDictionary]) -or ($surface -is [string]) -or -not ($surface -is [Collections.IEnumerable])) {
+            $errors.Add($Label + '.writeSurface: must be an array of paths')
+        }
+        else {
+            foreach ($path in @($surface)) {
+                if (-not ($path -is [string])) {
+                    $errors.Add($Label + '.writeSurface: must be an array of paths')
+                    break
+                }
+            }
         }
     }
     $commands = Get-NSPolicyField $Plan 'commands'

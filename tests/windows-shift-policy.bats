@@ -42,7 +42,7 @@ WIN="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/windows"
   grep -qF 'a plan whose expiry has passed does not bind' "$LOGIC"
   grep -qF 'a null expiry defers to the shift deadline and binds' "$LOGIC"
   grep -qF 'plan.expiry is outside the digest preimage' "$LOGIC"
-  windows_module_source | grep -qF "'commands', 'workTarget', 'digest', 'expiry'"
+  windows_module_source | grep -qF "'commands', 'workTarget', 'digest', 'writeSurface', 'expiry'"
   windows_module_source | grep -qF 'plan.expiry is checked before the digest, never inside it'
   grep -qF 'set is refused while the shift is armed' "$LOGIC"
   grep -qF 'archive files the policy at its live path in the shift folder' "$LOGIC"

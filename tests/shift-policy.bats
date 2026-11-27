@@ -151,6 +151,35 @@ write_policy() { # <project> [extra JSON]
   check 'allowances[0].plan' '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"x","source":"composition","verificationLevel":"final","toolingPolicy":"auto-add","allowances":[{"category":"sudo","scope":"exact-plan","provenance":"one-shift"}]}'
   check 'allowances[0].plan.digest' '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"x","source":"composition","verificationLevel":"final","toolingPolicy":"auto-add","allowances":[{"category":"sudo","scope":"exact-plan","provenance":"one-shift","plan":{"commands":["sudo id"],"workTarget":"/w","digest":"nope"}}]}'
   check 'allowances[0].plan.commands' '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"x","source":"composition","verificationLevel":"final","toolingPolicy":"auto-add","allowances":[{"category":"sudo","scope":"exact-plan","provenance":"one-shift","plan":{"commands":[],"workTarget":"/w","digest":"3b1c9a5e77d0426f8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"}}]}'
+  # Every refusal the allowance and plan checks make, one malformed field at a time.
+  head='{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"x","source":"composition","verificationLevel":"final","toolingPolicy":"auto-add","allowances":['
+  allow='"category":"sudo","scope":"exact-plan","provenance":"one-shift"'
+  digest=3b1c9a5e77d0426f8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071
+  plan="\"commands\":[\"sudo id\"],\"workTarget\":\"/w\",\"digest\":\"$digest\""
+  check 'allowances[0] must be an object' "$head\"sudo\"]}"
+  check 'allowances[0] has an unknown field: reason' "$head{\"category\":\"sudo\",\"scope\":\"category\",\"provenance\":\"one-shift\",\"reason\":\"x\"}]}"
+  check 'allowances[0].plan has an unknown field: extra' "$head{$allow,\"plan\":{$plan,\"extra\":1}}]}"
+  check 'allowances[0].plan.workTarget' "$head{$allow,\"plan\":{\"commands\":[\"sudo id\"],\"workTarget\":7,\"digest\":\"$digest\"}}]}"
+  check 'allowances[0].plan.workTarget' "$head{$allow,\"plan\":{\"commands\":[\"sudo id\"],\"workTarget\":\"\",\"digest\":\"$digest\"}}]}"
+  check 'allowances[0].plan.expiry' "$head{$allow,\"plan\":{$plan,\"expiry\":\"tomorrow\"}}]}"
+  check 'allowances[0].plan.writeSurface' "$head{$allow,\"plan\":{$plan,\"writeSurface\":{\"a\":1}}}]}"
+  check 'allowances[0].plan.writeSurface' "$head{$allow,\"plan\":{$plan,\"writeSurface\":[1]}}]}"
+  check 'allowances[0].plan.commands' "$head{$allow,\"plan\":{\"commands\":[\"\"],\"workTarget\":\"/w\",\"digest\":\"$digest\"}}]}"
+  check 'allowances[0].plan.commands' "$head{$allow,\"plan\":{\"commands\":\"sudo id\",\"workTarget\":\"/w\",\"digest\":\"$digest\"}}]}"
+}
+
+@test "a plan with a write surface and a timestamp with an offset are accepted on both runtimes" {
+  p="$(unarmed sp-surface)"
+  digest=3b1c9a5e77d0426f8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071
+  printf '%s\n' "{\"schemaVersion\":1,\"shiftId\":\"9f2c40ab77e51d63\",\"createdAt\":\"2026-11-27T22:08:00+04:00\",\"source\":\"composition\",\"verificationLevel\":\"final\",\"toolingPolicy\":\"auto-add\",\"allowances\":[{\"category\":\"sudo\",\"scope\":\"exact-plan\",\"provenance\":\"one-shift\",\"plan\":{\"commands\":[\"sudo id\"],\"workTarget\":\"/w\",\"digest\":\"$digest\",\"writeSurface\":[\"/etc/hosts\"]}}]}" \
+    >"$p/good.json"
+  run sp "$p" set --from-json "$p/good.json"
+  [ "$status" -eq 0 ] || { echo "bash refused: $output"; return 1; }
+  rm -f "$p/.nightshift/shift-policy.json"
+  command -v pwsh >/dev/null 2>&1 || return 0
+  run pwsh -NoProfile -NonInteractive -File "$ROOT/plugins/nightshift/runtime/windows/shift-policy.ps1" \
+    -Project "$p" -Command set -FromJson "$p/good.json"
+  [ "$status" -eq 0 ] || { echo "Windows refused: $output"; return 1; }
 }
 
 @test "the evidence settings are off by default, fixed per shift, shown by Status, and a bad value is named" {
