@@ -1036,6 +1036,20 @@ ns_hardhat_rules_msg() {
   ns_rules_map_msg "$TOOL_RULES" "$1"
 }
 
+# ns_hardhat_tool_rules_message <project> — why the tool rules cannot run: the reader's own reason
+# when the whole rules file cannot be read, so the owner is sent to what is wrong, or a toolDeny
+# that is not an object of strings.
+ns_hardhat_tool_rules_message() {
+  local reason
+  if ! reason="$(ns_rules_check "$1")"; then
+    printf 'BLOCKED: %s cannot be read (%s), so the tool rules cannot run. Fix it or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex).' \
+      "$(ns_hardhat_state_name rules)" "${reason:-unreadable}"
+    return 0
+  fi
+  printf 'BLOCKED: toolDeny is not a JSON object of string values, so the tool rules cannot run. Fix %s or run Setup again (/nightshift:setup on Claude Code; ask Nightshift to set up on Codex).' \
+    "$(ns_hardhat_state_name rules)"
+}
+
 ns_hardhat_tool_deny_broken() {
   [ -n "${TOOL_RULES:-}" ] || return 1
   case "$TOOL_RULES" in
