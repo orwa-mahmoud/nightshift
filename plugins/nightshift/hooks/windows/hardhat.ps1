@@ -470,8 +470,30 @@ function Test-NSControlPrefilter {
         return $true
     }
     $runRel = Get-NSControlDirRelative
-    return ($runRel.Length -gt 0 -and (Test-NSControlDeleteVerb $Target) -and
-        $Target -match ('(?i)(^|[/\s;&|()])' + [regex]::Escape($runRel) + '/?([\s;&|()]|$)'))
+    if ($runRel.Length -gt 0 -and (Test-NSControlDeleteVerb $Target) -and
+        $Target -match ('(?i)(^|[/\s;&|()])' + [regex]::Escape($runRel) + '/?([\s;&|()]|$)')) { return $true }
+    return ((Test-NSLayoutPerRun $script:ns 'punch-list') -and (Test-NSControlDeleteVerb $Target) -and
+        $Target -match '(^|[/\s;&|()])runs(/|[\s;&|()]|$)')
+}
+
+# Every run whose control files are guarded: each run folder of a workspace that keeps runs, and the
+# run this session works on. One empty name in an earlier layout. Mirrors ns_hardhat_control_runs.
+function Get-NSControlRuns {
+    if ([string]::IsNullOrEmpty($script:ns) -or -not (Test-NSLayoutPerRun $script:ns 'punch-list')) { return , @('') }
+    $runs = New-Object Collections.Generic.List[string]
+    foreach ($run in (Get-NSLayoutRuns $script:ns)) { $runs.Add($run) }
+    if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_RUN) -and -not $runs.Contains($env:NIGHTSHIFT_RUN)) { $runs.Add($env:NIGHTSHIFT_RUN) }
+    return , $runs.ToArray()
+}
+
+# The control file <key> of one guarded run, as a write target; $null when it cannot be resolved.
+function Resolve-NSControlPath {
+    param([AllowEmptyString()][string]$Run, [Parameter(Mandatory = $true)][string]$Key)
+    if ($Run.Length -eq 0) { return (Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns $Key)) }
+    $saved = $env:NIGHTSHIFT_RUN
+    $env:NIGHTSHIFT_RUN = $Run
+    try { return (Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns $Key)) }
+    finally { $env:NIGHTSHIFT_RUN = $saved }
 }
 
 # The layout key of a control file, from its name.
@@ -616,15 +638,17 @@ function Test-NSControlRewriteHit {
     if ([string]::IsNullOrEmpty($Canon) -or [string]::IsNullOrEmpty($script:ns)) {
         return $false
     }
-    $ledger = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'item-sessions')
-    if ($null -ne $ledger -and ($Canon -ceq $ledger -or $Canon.StartsWith($ledger + [IO.Path]::DirectorySeparatorChar))) { return $true }
-    foreach ($key in @(
-            'stop', 'armed', 'ended', 'session', 'worker',
-            'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline', 'budget'
-        )) {
-        $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns $key)
-        if ($null -ne $expected -and $Canon -ceq $expected) {
-            return $true
+    foreach ($run in (Get-NSControlRuns)) {
+        $ledger = Resolve-NSControlPath $run 'item-sessions'
+        if ($null -ne $ledger -and ($Canon -ceq $ledger -or $Canon.StartsWith($ledger + [IO.Path]::DirectorySeparatorChar))) { return $true }
+        foreach ($key in @(
+                'stop', 'armed', 'ended', 'session', 'worker',
+                'work-target', 'work-mode', 'shift-policy', 'shift-defaults', 'deadline', 'budget'
+            )) {
+            $expected = Resolve-NSControlPath $run $key
+            if ($null -ne $expected -and $Canon -ceq $expected) {
+                return $true
+            }
         }
     }
     return $false
@@ -635,18 +659,36 @@ function Test-NSControlListHit {
     if ([string]::IsNullOrEmpty($Canon) -or [string]::IsNullOrEmpty($script:ns)) {
         return $false
     }
-    $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'punch-list')
-    return ($null -ne $expected -and $Canon -ceq $expected)
+    foreach ($run in (Get-NSControlRuns)) {
+        $expected = Resolve-NSControlPath $run 'punch-list'
+        if ($null -ne $expected -and $Canon -ceq $expected) { return $true }
+    }
+    return $false
 }
 
 function Test-NSControlDirHit {
     param([AllowEmptyString()][string]$Canon)
+    if ([string]::IsNullOrEmpty($Canon) -or [string]::IsNullOrEmpty($script:ns)) { return $false }
     $runRel = Get-NSControlDirRelative
-    if ([string]::IsNullOrEmpty($Canon) -or $runRel.Length -eq 0) {
-        return $false
+    if ($runRel.Length -gt 0) {
+        $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'run')
+        if ($null -ne $expected -and $Canon -ceq $expected) { return $true }
     }
-    $expected = Resolve-NSWriteTarget (Get-NSLayoutPath $script:ns 'run')
-    return ($null -ne $expected -and $Canon -ceq $expected)
+    # In a workspace that keeps runs, the runs folder, a run's folder and a run's own runtime
+    # directory each hold control files. Mirrors ns_hardhat_control_dir_hit.
+    if (-not (Test-NSLayoutPerRun $script:ns 'punch-list')) { return $false }
+    $places = New-Object Collections.Generic.List[string]
+    $places.Add((Join-Path $script:ns 'runs'))
+    foreach ($run in (Get-NSControlRuns)) {
+        if ($run.Length -eq 0) { continue }
+        $places.Add((Join-Path (Join-Path $script:ns 'runs') $run))
+        $places.Add((Join-Path (Join-Path (Join-Path $script:ns 'runs') $run) 'run'))
+    }
+    foreach ($place in $places) {
+        $expected = Resolve-NSWriteTarget $place
+        if ($null -ne $expected -and $Canon -ceq $expected) { return $true }
+    }
+    return $false
 }
 
 function Test-NSControlCandidateHits {
@@ -1372,6 +1414,8 @@ catch {
         $script:ns = $ns
     }
 }
+# The run this session works on, before any file of one run is resolved.
+Select-NSSessionRun $ns $sessionId
 $punch = Get-NSLayoutPath $ns 'punch-list'
 $armed = Get-NSLayoutPath $ns 'armed'
 $ended = Get-NSLayoutPath $ns 'ended'

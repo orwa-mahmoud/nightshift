@@ -1317,3 +1317,59 @@ handoff() {
   is_release
   [ ! -e "$p/.nightshift/.pending-filing" ]
 }
+
+@test "with two armed runs the gate holds each conversation to its own run's items only" {
+  p="$(two_runs gate-two-runs)"
+  run gate_sid "$p" sid-a
+  is_block "$output"
+  # The reminder names this run's own punch list and stop-work order, never the other run's.
+  printf '%s' "$output" | grep -qF '/.nightshift/runs/a/punch-list.md'
+  printf '%s' "$output" | grep -qF '/.nightshift/runs/a/STOP'
+  if printf '%s' "$output" | grep -qF '/runs/b/'; then return 1; fi
+
+  # Run a finishes: its conversation is released and run a ends; run b stays armed and held.
+  printf '# Punch List — a\n\n## Items\n- [x] **1. a first.**\n' >"$p/.nightshift/runs/a/punch-list.md"
+  run gate_sid "$p" sid-a
+  is_release
+  [ -f "$p/.nightshift/runs/a/run/.ended" ]
+  [ ! -e "$p/.nightshift/runs/b/run/.ended" ]
+  [ -f "$p/.nightshift/runs/b/run/.shift-armed" ]
+  run gate_sid "$p" sid-b
+  is_block "$output"
+  printf '%s' "$output" | grep -qF '/.nightshift/runs/b/punch-list.md'
+
+  # A conversation that belongs to neither run is not held by either.
+  run gate_sid "$p" helper-session
+  is_release
+}
+
+@test "a stop-work order in one run stops that run and leaves the other armed" {
+  p="$(two_runs gate-two-stop)"
+  : >"$p/.nightshift/runs/a/STOP"
+  run gate_sid "$p" sid-a
+  is_release
+  [ -f "$p/.nightshift/runs/a/run/.ended" ]
+  [ ! -e "$p/.nightshift/runs/b/run/.ended" ]
+  run gate_sid "$p" sid-b
+  is_block "$output"
+}
+
+@test "native Windows holds each conversation of two runs to its own run" {
+  command -v pwsh >/dev/null 2>&1 || skip 'pwsh is not installed'
+  p="$(two_runs ps-gate-two-runs)"
+  ps_gate() {
+    hook_payload "$(jq -nc --arg sid "$2" '{hook_event_name:"Stop",session_id:$sid,transcript_path:""}')" \
+      env CLAUDE_PROJECT_DIR="$1" pwsh -NoProfile -NonInteractive -File "$HOOKS/windows/clock-out-gate.ps1" -HostName claude
+  }
+  run ps_gate "$p" sid-a
+  printf '%s' "$output" | grep -q '"decision" *: *"block"'
+  printf '%s' "$output" | grep -qF '/.nightshift/runs/a/punch-list.md'
+  if printf '%s' "$output" | grep -qF '/runs/b/'; then return 1; fi
+  printf '# Punch List — a\n\n## Items\n- [x] **1. a first.**\n' >"$p/.nightshift/runs/a/punch-list.md"
+  run ps_gate "$p" sid-a
+  if printf '%s' "$output" | grep -q '"decision" *: *"block"'; then return 1; fi
+  [ -f "$p/.nightshift/runs/a/run/.ended" ]
+  [ ! -e "$p/.nightshift/runs/b/run/.ended" ]
+  run ps_gate "$p" sid-b
+  printf '%s' "$output" | grep -q '"decision" *: *"block"'
+}

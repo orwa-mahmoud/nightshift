@@ -117,3 +117,35 @@ launch_from() {
   printf '%s\n' "$output" | grep -qF -- '--host must be claude, codex or cursor'
   [ ! -e "$P/.nightshift/watchman.log" ]
 }
+
+@test "each run of a workspace gets its own watchman, named by its run" {
+  w="$(cd -P "$(two_runs watch-runs)" && pwd)"
+  wm="$BATS_TEST_TMPDIR/watchman.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" --project "$w" --run a &
+  wpid=$!
+  cleanup_runs() {
+    local p
+    for p in "$wpid" "$(sed -n 1p "$w/.nightshift/runs/b/run/.watchman" 2>/dev/null)"; do
+      [ -n "$p" ] || continue
+      pkill -P "$p" 2>/dev/null || true
+      kill "$p" 2>/dev/null || true
+    done
+    wait "$wpid" 2>/dev/null || true
+  }
+  run env NIGHTSHIFT_RUN=a "$LAUNCHER" --project "$w" --host claude 3>&-
+  a_output="$output"
+  run env NIGHTSHIFT_RUN=b "$LAUNCHER" --project "$w" --host claude 3>&-
+  trap cleanup_runs RETURN
+  # Run a is already watched; run b's watchman starts beside it, with its run on its command line.
+  [ "$a_output" = "watchman already watching (pid $wpid)" ]
+  [ "$status" -eq 0 ]
+  pid="$(sed -n 1p "$w/.nightshift/runs/b/run/.watchman")"
+  [ "$output" = "watchman started (pid $pid)" ]
+  ps -o command= -p "$pid" | grep -qF -- '--run b'
+  # With several runs and none named, the launcher names them instead of guessing.
+  run env -u NIGHTSHIFT_RUN "$LAUNCHER" --project "$w" --host claude 3>&-
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'several runs and none named'
+}

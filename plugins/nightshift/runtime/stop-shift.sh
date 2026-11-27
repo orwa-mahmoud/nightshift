@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # stop-shift.sh — issue a stop-work order. Hardhat stays until clock-out writes ENDED.
 #
-#   stop-shift.sh --project DIR [--reason TEXT]
+#   stop-shift.sh --project DIR [--reason TEXT] [--run NAME]
 #
-# --project is required. Does not use the current working directory.
+# --project is required. Does not use the current working directory. In a workspace that keeps
+# runs, the stop-work order goes to the run named with --run, by NIGHTSHIFT_RUN, or the only one;
+# with several runs and none named, nothing is stopped and the runs are listed.
 #
 # Exit: 0 stopped · 1 usage/resolve · 2 watchman pid unverified (shift still disarmed)
 set -u
@@ -16,11 +18,17 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 
 PROJECT=""
 REASON="stopped by owner"
+RUN_NAME=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)
       [ $# -ge 2 ] || { printf 'stop-shift: --project needs a value\n' >&2; exit 1; }
       PROJECT="$2"
+      shift 2
+      ;;
+    --run)
+      [ $# -ge 2 ] || { printf 'stop-shift: --run needs a value\n' >&2; exit 1; }
+      RUN_NAME="$2"
       shift 2
       ;;
     --reason)
@@ -37,5 +45,5 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$PROJECT" ] || { printf 'stop-shift: --project is required\n' >&2; exit 1; }
 
-ns_control_stop "$PROJECT" "$REASON"
+ns_control_stop "$PROJECT" "$REASON" "$RUN_NAME"
 exit "$?"

@@ -129,17 +129,100 @@ function Get-NSArchiveDir {
     $root = Get-NSArchiveRoot $Workspace
     if ($null -eq $root) { return $null }
     $layout = [string](Get-NSPolicyGroupSetting $Workspace 'archive.layout')['value']
+    return (Get-NSNamedDir -Root $root -Layout $layout -Date $Date -ShiftId $ShiftId -Name $Name)
+}
+
+# Get-NSRunsLayout <workspace> - how a run folder is named: runs.layout in the rules file, one of the
+# archive.layout values, `name` when unset. Mirrors ns_runs_layout.
+function Get-NSRunsLayout {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $value = ''
+    $file = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'rules'
+    if (Test-Path -LiteralPath $file -PathType Leaf) {
+        try {
+            $data = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
+            $block = $data.PSObject.Properties['runs']
+            if ($null -ne $block -and $null -ne $block.Value) {
+                $field = $block.Value.PSObject.Properties['layout']
+                if ($null -ne $field) { $value = [string]$field.Value }
+            }
+        }
+        catch {
+            $value = ''
+        }
+    }
+    if (@('date', 'shift', 'name', 'date-name') -ccontains $value) { return $value }
+    return 'name'
+}
+
+# Get-NSRunDir <workspace> <date> <shift-id> [<name>] - the folder one run lives in under runs/,
+# named and claimed exactly as an archive folder is, by runs.layout. Mirrors ns_run_dir.
+function Get-NSRunDir {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId = '',
+        [AllowEmptyString()][string]$Name = ''
+    )
+    $root = Join-Path (Join-Path $Workspace '.nightshift') 'runs'
+    if (Test-NSReparsePoint $root) { return $null }
+    try { $null = New-Item -ItemType Directory -Path $root -Force -ErrorAction Stop }
+    catch { return $null }
+    if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
+    $dir = Get-NSNamedDir -Root $root -Layout (Get-NSRunsLayout $Workspace) -Date $Date -ShiftId $ShiftId -Name $Name
+    if ($null -eq $dir) { return $null }
+    # The shift layout names the folder without claiming it; a run needs it to exist.
+    if (-not (Test-Path -LiteralPath $dir) -and -not (Test-NSReparsePoint $dir)) {
+        try {
+            $null = New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop
+            [IO.File]::WriteAllText((Join-Path $dir '.shift-id'), $ShiftId + "`n", (New-Object Text.UTF8Encoding($false)))
+        }
+        catch {
+            return $null
+        }
+    }
+    return $dir
+}
+
+# Get-NSNamedBase <layout> <date> <shift-id> [<name>] - the first folder name a layout gives a
+# shift, before any -shift-N a taken name adds: shift-<id>, the name's slug, <date>-<slug>, or the
+# date for a shift with no name (and for the shift layout without an id). Mirrors ns_named_base.
+function Get-NSNamedBase {
+    param(
+        [AllowEmptyString()][string]$Layout = '',
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId = '',
+        [AllowEmptyString()][string]$Name = ''
+    )
+    if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
+    if ($Layout -ceq 'shift' -and $ShiftId -cne 'unknown') { return ('shift-' + $ShiftId) }
+    $slug = ''
+    if (-not [string]::IsNullOrEmpty($Name)) { $slug = Get-NSReceiptSlug $Name }
+    if ($slug -cne '') {
+        if ($Layout -ceq 'name') { return $slug }
+        if ($Layout -ceq 'date-name') { return ($Date + '-' + $slug) }
+    }
+    return $Date
+}
+
+# Get-NSNamedDir <root> <layout> <date> <shift-id> [<name>] - the folder under <root> one shift gets,
+# by layout (date, shift, name or date-name), claimed for that shift as described above. Mirrors
+# ns_named_dir.
+function Get-NSNamedDir {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [AllowEmptyString()][string]$Layout = '',
+        [Parameter(Mandatory = $true)][string]$Date,
+        [AllowEmptyString()][string]$ShiftId = '',
+        [AllowEmptyString()][string]$Name = ''
+    )
+    $root = $Root
+    $layout = $Layout
     if ([string]::IsNullOrEmpty($ShiftId)) { $ShiftId = 'unknown' }
     if ($layout -ceq 'shift' -and $ShiftId -cne 'unknown') {
         return (Join-Path $root ('shift-' + $ShiftId))
     }
-    $slug = ''
-    if (-not [string]::IsNullOrEmpty($Name)) { $slug = Get-NSReceiptSlug $Name }
-    $base = Join-Path $root $Date
-    if ($slug -cne '') {
-        if ($layout -ceq 'name') { $base = Join-Path $root $slug }
-        elseif ($layout -ceq 'date-name') { $base = Join-Path $root ($Date + '-' + $slug) }
-    }
+    $base = Join-Path $root (Get-NSNamedBase -Layout $layout -Date $Date -ShiftId $ShiftId -Name $Name)
     $dir = $base
     $n = 1
     while ($true) {

@@ -151,3 +151,13 @@ load helpers
   is_deny "$out"
   printf '%s' "$out" | grep -q "no MCP browsing"
 }
+
+@test "every library the hook dispatchers source with sh parses under a POSIX sh" {
+  command -v dash >/dev/null 2>&1 || skip 'dash is not installed'
+  libs="$(grep -ho '\. "\$_ns_root/lib/[a-z-]*\.sh"' "$BATS_TEST_DIRNAME"/../plugins/nightshift/hooks/dispatch/* | sort -u |
+    sed 's|.*/lib/\(.*\)"|\1|')"
+  [ -n "$libs" ]
+  for lib in $libs; do
+    dash -n "$BATS_TEST_DIRNAME/../plugins/nightshift/lib/$lib" || { echo "$lib does not parse under dash"; return 1; }
+  done
+}

@@ -6,18 +6,38 @@
 # is the manual escape. A punch list that exists but will not count keeps the site armed:
 # only a readable list with every box ticked takes the hardhat off.
 ns_hardhat_active() {
-  local _open _armed _stop
-  if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then
+  local run
+  # A conversation that belongs to none of several runs is still on a site where shifts run: it
+  # stays under the shared rules and the control-file guard while any run is active.
+  if [ -n "${NS:-}" ] && ns_layout_per_run "$NS" punch-list && ! ns_layout_run_set run "$NS"; then
+    while IFS= read -r run; do
+      [ -n "$run" ] || continue
+      NIGHTSHIFT_RUN="$run" _ns_hardhat_run_active && return 0
+    done <<RUNS
+$(ns_layout_runs "$NS")
+RUNS
+    return 1
+  fi
+  _ns_hardhat_run_active
+}
+
+# _ns_hardhat_run_active — the run the caller resolves is armed, not ended, and has open boxes or a
+# stop-work order still standing.
+_ns_hardhat_run_active() {
+  local _open _armed _stop _ended _punch
+  ns_layout_set _ended "$NS" ended
+  ns_layout_set _punch "$NS" punch-list
+  if [ -f "$_ended" ] && [ ! -L "$_ended" ]; then
     return 1
   fi
   ns_layout_set _armed "$NS" armed
   ns_layout_set _stop "$NS" stop
   [ -f "$_armed" ] || return 1
-  [ -f "$PUNCH" ] || return 1
+  [ -f "$_punch" ] || return 1
   if [ -f "$_stop" ] && [ ! -L "$_stop" ]; then
     return 0
   fi
-  _open="$(ns_open_boxes "$PUNCH")" || return 0
+  _open="$(ns_open_boxes "$_punch")" || return 0
   [ "$_open" -gt 0 ]
 }
 
@@ -238,7 +258,41 @@ ns_hardhat_control_prefilter() {
   printf '%s' "$1" | grep -qE \
     '(STOP|\.shift-armed|\.ended|\.shift-session|\.shift-worker|work-target|work-mode|shift-policy\.json|shift-defaults\.json|deadline|punch-list\.md|\.?budget\.tsv|\.?item-sessions)' \
     && return 0
-  ns_hardhat_control_dir_word_in "$1" && ns_hardhat_control_delete_verb "$1"
+  { ns_hardhat_control_dir_word_in "$1" || ns_hardhat_runs_word_in "$1"; } && ns_hardhat_control_delete_verb "$1"
+}
+
+# ns_hardhat_control_runs — every run whose control files are guarded, one per line: each run folder
+# of a workspace that keeps runs, and the run this session works on. One empty line in an earlier
+# layout, where there is only the one place.
+ns_hardhat_control_runs() {
+  if [ -n "${NS:-}" ] && ns_layout_per_run "$NS" punch-list; then
+    { ns_layout_runs "$NS"; [ -z "${NIGHTSHIFT_RUN-}" ] || printf '%s\n' "$NIGHTSHIFT_RUN"; } | LC_ALL=C sort -u
+  else
+    printf '\n'
+  fi
+}
+
+# True when the command names the runs folder, or a folder inside it, as a word of its own.
+ns_hardhat_runs_word_in() {
+  [ -n "${NS:-}" ] && ns_layout_per_run "$NS" punch-list || return 1
+  printf '%s' "$1" | grep -qE '(^|[/[:space:];&|()])runs(/|[[:space:];&|()]|$)'
+}
+
+# ns_hardhat_control_matches <canonical> <key> — status 0 when <canonical> is that control file of
+# any guarded run: one run never deletes or forges another run's STOP, marker or lease either.
+ns_hardhat_control_matches() {
+  local run exp
+  while IFS= read -r run; do
+    if [ -n "$run" ]; then
+      exp="$(NIGHTSHIFT_RUN="$run" ns_hardhat_control_expected "$2")" || continue
+    else
+      exp="$(ns_hardhat_control_expected "$2")" || continue
+    fi
+    [ "$1" = "$exp" ] && return 0
+  done <<RUNS
+$(ns_hardhat_control_runs)
+RUNS
+  return 1
 }
 
 # ns_hardhat_control_key <file name> — the layout key of a control file, printed.
@@ -281,12 +335,23 @@ ns_hardhat_control_dir_bare() {
   [ "${cand%/}" = "$rel" ]
 }
 
-# True when <canonical> is the runtime directory itself.
+# True when <canonical> is the runtime directory itself or, in a workspace that keeps runs, the runs
+# folder, a run's folder or a run's own runtime directory: each holds control files.
 ns_hardhat_control_dir_hit() {
-  local rel exp
-  ns_hardhat_control_dir_rel rel || return 1
-  exp="$(ns_hardhat_canon_write_target "$NS/$rel")" || return 1
-  [ "$1" = "$exp" ]
+  local rel exp run
+  if ns_hardhat_control_dir_rel rel; then
+    exp="$(ns_hardhat_canon_write_target "$NS/$rel")" && [ "$1" = "$exp" ] && return 0
+  fi
+  [ -n "${NS:-}" ] && ns_layout_per_run "$NS" punch-list || return 1
+  exp="$(ns_hardhat_canon_write_target "$NS/runs")" && [ "$1" = "$exp" ] && return 0
+  while IFS= read -r run; do
+    [ -n "$run" ] || continue
+    exp="$(ns_hardhat_canon_write_target "$NS/runs/$run")" && [ "$1" = "$exp" ] && return 0
+    exp="$(ns_hardhat_canon_write_target "$NS/runs/$run/run")" && [ "$1" = "$exp" ] && return 0
+  done <<RUNS
+$(ns_hardhat_control_runs)
+RUNS
+  return 1
 }
 
 ns_hardhat_control_delete_verb() {
@@ -658,15 +723,22 @@ ns_hardhat_control_expected() { # <key>
 }
 
 ns_hardhat_control_rewrite_hit() {
-  local key exp expected
-  expected="$(ns_layout_path "$NS" item-sessions)"
-  if expected="$(ns_hardhat_canon_write_target "$expected")"; then
-    case "$1" in "$expected" | "$expected"/*) return 0 ;; esac
-  fi
+  local key run expected
+  while IFS= read -r run; do
+    if [ -n "$run" ]; then
+      expected="$(NIGHTSHIFT_RUN="$run" ns_layout_path "$NS" item-sessions)"
+    else
+      expected="$(ns_layout_path "$NS" item-sessions)"
+    fi
+    if expected="$(ns_hardhat_canon_write_target "$expected")"; then
+      case "$1" in "$expected" | "$expected"/*) return 0 ;; esac
+    fi
+  done <<RUNS
+$(ns_hardhat_control_runs)
+RUNS
   while IFS= read -r key; do
     [ -n "$key" ] || continue
-    exp="$(ns_hardhat_control_expected "$key")" || continue
-    [ "$1" = "$exp" ] && return 0
+    ns_hardhat_control_matches "$1" "$key" && return 0
   done <<'EOF'
 stop
 armed
@@ -684,9 +756,7 @@ EOF
 }
 
 ns_hardhat_control_list_hit() {
-  local exp
-  exp="$(ns_hardhat_control_expected punch-list)" || return 1
-  [ "$1" = "$exp" ]
+  ns_hardhat_control_matches "$1" punch-list
 }
 
 ns_hardhat_control_candidates() {

@@ -31,7 +31,11 @@ decide the value in force, in this order:
 1. **The built-in default.** What the plugin does when no file says anything.
 2. **`.nightshift/rules.json`.** Your permanent answer. A key you wrote is your answer even when
    its value is an empty string or a zero — that reads as `rules`/`permanent`, not as silence.
-3. **The shift snapshot**, `.nightshift/run/shift-policy.json`. The resolved policy for the night that
+   One run may change some settings for itself in its own `.nightshift/runs/<run>/rules.json`:
+   write only the keys that differ, and each replaces the shared value for that run alone, a whole
+   block key by key and an array whole. Every other setting comes from the shared file. A run file
+   that cannot be read stops that run's guards rather than being skipped.
+3. **The shift snapshot**, `.nightshift/runs/<run>/run/shift-policy.json`. The resolved policy for the night that
    is running, written before the gate arms and guarded once it is. It carries the deadline, the
    verification level, the tooling policy, the completion mode, and any elevation the owner
    granted for that shift alone. It is a record, not a second settings file.
@@ -460,6 +464,12 @@ history, after previewing the exact paths and asking. See [Archive and continue]
 | `root` | `archive` | Directory the shift folders live in, relative to `.nightshift/`. The name is yours; where it sits is not — an absolute path, a path containing `..`, or a symlink is refused rather than followed, and Archive says so. Writing outside the state area is an unsupported request, not a setting |
 | `layout` | `date` | `date` files the first shift of a day under `YYYY-MM-DD` and each later one under `YYYY-MM-DD-shift-2`, `-shift-3` and so on; `shift` gives each shift a `shift-<id>` directory; `name` uses the name on the punch list's title line (`# Punch List — Archive follow-ups` files under `archive-follow-ups`); `date-name` uses both (`YYYY-MM-DD-archive-follow-ups`). A shift with no name files by date. Every way, one folder holds one shift, laid out like the live site, and filing a shift again returns to its own folder |
 | `templatePath` | `""` | A Markdown template for the summary Archive prints: wording and layout only, on the same terms as the handoff template |
+
+`runs` decides how the folder a shift lives in while it runs is named, under `.nightshift/runs/`.
+
+| Key | Default | Values |
+|---|---|---|
+| `layout` | `name` | The same choices as `archive.layout`: `name` uses the name on the plan's title line (`# Punch List — Export CSV` runs in `runs/export-csv/`), `date` the day, `shift` the shift id, and `date-name` both. A shift with no name runs under the date, and a second one that day under `-shift-2` |
 
 Changing `root` never moves or hides what is already filed: an older history under the previous
 root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live

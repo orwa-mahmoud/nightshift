@@ -340,7 +340,7 @@ case "$STATE_KIND" in
     elif [ "${STATE_VER:-0}" = 0 ]; then
       fact "state version 0 (legacy — no state-version marker; every state file sits at the top of .nightshift/)"
     else
-      fact "state version $STATE_VER (every state file sits at the top of .nightshift/)"
+      fact "state version $STATE_VER ($(ns_state_layout_note "$STATE_VER"))"
     fi
     # The move into the current layout, described from the plan migrate-state would carry out.
     MIGRATE_PLAN="$(mktemp "${TMPDIR:-/tmp}/ns-doctor-migrate.XXXXXX")" || MIGRATE_PLAN=""

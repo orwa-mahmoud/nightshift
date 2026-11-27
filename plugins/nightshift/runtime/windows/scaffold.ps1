@@ -55,7 +55,7 @@ catch {
     exit 1
 }
 
-$templates = Join-Path $pluginRoot 'skills/nightshift/references/templates'
+$templates = Get-NSTemplatesDir
 if (-not (Test-Path -LiteralPath $templates -PathType Container)) {
     [Console]::Error.WriteLine('scaffold: no templates at ' + $templates)
     exit 2

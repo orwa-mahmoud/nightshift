@@ -89,8 +89,10 @@ the helper can chat and ask freely, but it is not a safe channel for commands th
 
 `rules.json` contains the owner-controlled hooks configuration. `run/work-target` records the
 repository that receives code changes when state lives in a parent workspace. `state-version` names
-the layout: `2` is the grouped one, and a workspace at `1`, or with no marker, keeps every file at
-the top of `.nightshift/`, where the hooks go on reading and guarding it. `ns migrate-state` moves
+the layout: `3` keeps each shift's own files in its run folder under `runs/`, with what every
+shift shares at the top; a workspace at `2` keeps the shift's files beside the shared ones, and one
+at `1`, or with no marker, keeps every file at the top of `.nightshift/`, where the hooks go on
+reading and guarding it. `ns migrate-state` moves
 it, preview first; newer or malformed state fails closed rather than being read by older hooks.
 
 ## Three policy layers and one resolved view

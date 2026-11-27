@@ -474,8 +474,31 @@ function Get-NSStatusDeadlineRemaining {
 # It writes to the console rather than the pipeline. A function that both prints and returns cannot
 # be called as an expression: `exit (Write-NSStatusReport ...)` captured every line as the value of
 # that expression and the owner saw an empty response with exit 0.
+# Get-NSStatusRunSummary <state-dir> <run> - one run at a glance: its state (ended, stopped, armed or
+# not armed), its open item and its deadline. Mirrors ns_status_run_summary.
+function Get-NSStatusRunSummary {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Run)
+    $saved = $env:NIGHTSHIFT_RUN
+    $env:NIGHTSHIFT_RUN = $Run
+    try {
+        $state = 'not armed'
+        if (Test-NSPathEntry (Get-NSLayoutPath $NightshiftDir 'ended')) { $state = 'ended' }
+        elseif (Test-NSPathEntry (Get-NSLayoutPath $NightshiftDir 'stop')) { $state = 'stopped' }
+        elseif (Test-NSPathEntry (Get-NSLayoutPath $NightshiftDir 'armed')) { $state = 'armed' }
+        $title = Get-NSStatusOpenTitle (Get-NSLayoutPath $NightshiftDir 'punch-list')
+        if ([string]::IsNullOrEmpty($title)) { $title = 'none' }
+        $deadline = Get-NSStatusDeadlineRemaining $NightshiftDir
+        if ([string]::IsNullOrEmpty($deadline)) { $deadline = 'none (finite list)' }
+        return ($state + ', open item ' + $title + ', deadline ' + $deadline)
+    }
+    finally { $env:NIGHTSHIFT_RUN = $saved }
+}
+
 function Write-NSStatusReport {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [AllowEmptyString()][string]$Run = ''
+    )
 
     function Say { param([AllowEmptyString()][string]$Text) [Console]::Out.Write($Text + "`n") }
     # A fact whose value is empty is still a fact: `none` is an answer, a blank line is not.
@@ -489,6 +512,33 @@ function Write-NSStatusReport {
     if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
         Say 'Nightshift Status'
         Say ('Nightshift: missing at ' + $Workspace)
+        return 0
+    }
+    # The run this report is about, before any file of one run is resolved; one line per run when
+    # the workspace has more than one, and the runs are the report when none is named.
+    $runs = @()
+    $runChosen = $true
+    if (Test-NSLayoutPerRun $ns 'punch-list') {
+        $runs = Get-NSLayoutRuns $ns
+        $choice = Select-NSRunChoice $ns $Run
+        if ($choice.Code -eq 1) { [Console]::Error.WriteLine('status: ' + $choice.Error); return 1 }
+        if ($choice.Code -eq 2) { $runChosen = $false }
+    }
+    function Write-NSRunLines {
+        if ($runs.Count -le 1) { return }
+        foreach ($name in $runs) { Fact ('run ' + $name) (Get-NSStatusRunSummary $ns $name) }
+    }
+    if (-not $runChosen) {
+        Say 'Nightshift Status'
+        Say ('Workspace:   ' + $Workspace)
+        Say ('Runs:        ' + $runs.Count)
+        Say ''
+        Say 'facts'
+        $schema = ''
+        try { $schema = [string](Get-NSStateVersion $Workspace) } catch { $schema = '' }
+        Fact 'schema' $schema
+        Write-NSRunLines
+        Fact 'run' 'none named (name one with --run for its facts)'
         return 0
     }
     $punch = Get-NSLayoutPath $ns 'punch-list'
@@ -527,6 +577,8 @@ function Write-NSStatusReport {
     $schema = ''
     try { $schema = [string](Get-NSStateVersion $Workspace) } catch { $schema = '' }
     Fact 'schema' $schema
+    Write-NSRunLines
+    if ($runs.Count -gt 1) { Fact 'run' ([string]$env:NIGHTSHIFT_RUN) }
 
     # Unarmed with work still open is the one state that reads wrong at a glance: a punch list
     # nobody is holding is a to-do file, and only Start makes it a shift.
@@ -2799,13 +2851,16 @@ function Invoke-NSBudgetCheck {
 }
 
 # Get-NSPulseNotices <nightshift-dir> <workspace> - every notice this pulse has for the agent: the
-# receipt lines, then a budget the item being worked has just spent. Mirrors ns_pulse_notices.
+# owner's new messages, the receipt lines, then a budget the item being worked has just spent.
+# Mirrors ns_pulse_notices.
 function Get-NSPulseNotices {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir, [Parameter(Mandatory = $true)][string]$Workspace)
-    $receipts = [string](Get-NSPulseReceiptsNotice $NightshiftDir $Workspace)
-    $budget = [string](Invoke-NSBudgetCheck $NightshiftDir $Workspace)
-    if ($receipts.Length -gt 0 -and $budget.Length -gt 0) { return ($receipts + "`n" + $budget) }
-    return ($receipts + $budget)
+    $parts = @(
+        [string](Get-NSMessageNotice $NightshiftDir),
+        [string](Get-NSPulseReceiptsNotice $NightshiftDir $Workspace),
+        [string](Invoke-NSBudgetCheck $NightshiftDir $Workspace)
+    )
+    return ((@($parts | Where-Object { $_.Length -gt 0 })) -join "`n")
 }
 
 # Test-NSRestrictedCommand <scrubbed-command> <mode> - true for a command that only reads, or, in

@@ -45,7 +45,7 @@ function Invoke-NSScaffold {
         [Parameter(Mandatory = $true)][string]$Workspace,
         [Parameter(Mandatory = $true)][string[]]$Keys
     )
-    $templates = Join-Path (Split-Path -Parent $PSScriptRoot) 'skills/nightshift/references/templates'
+    $templates = Get-NSTemplatesDir
     Initialize-NSStateDir $Workspace
     $ns = Join-Path $Workspace '.nightshift'
     $lines = New-Object Collections.Generic.List[string]

@@ -73,6 +73,9 @@
     "layout": "date",
     "templatePath": ""
   },
+  "runs": {
+    "layout": "name"
+  },
   "receipts": {
     "enabled": true,
     "progressMode": "time",

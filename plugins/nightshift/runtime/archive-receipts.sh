@@ -36,6 +36,7 @@ _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 . "$_here/../lib/lib.sh"
 
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
+RUN_NAME=""
 DATE=""
 RETIRE=""
 while [ $# -gt 0 ]; do
@@ -43,6 +44,11 @@ while [ $# -gt 0 ]; do
     --project)
       [ $# -ge 2 ] || { printf 'archive-receipts: --project needs a value\n' >&2; exit 1; }
       PROJECT="$2"
+      shift 2
+      ;;
+    --run)
+      [ $# -ge 2 ] || { printf 'archive-receipts: --run needs a value\n' >&2; exit 1; }
+      RUN_NAME="$2"
       shift 2
       ;;
     --date)
@@ -93,6 +99,11 @@ case "$KIND" in
 esac
 
 NS="$WORKSPACE/.nightshift"
+# In a workspace that keeps runs, Archive files one run: the one named, or the only one.
+ns_run_choose "$NS" "$RUN_NAME" || {
+  printf 'archive-receipts: %s\n' "$NS_RUN_ERR" >&2
+  exit 2
+}
 declare ARMED_FILE ENDED_FILE USAGE_DIR USAGE_PREFIX POLICY_FILE RECEIPTS_REL USAGE_REL POLICY_REL JOURNAL_REL PUNCH_REL
 urel=""
 krel=""

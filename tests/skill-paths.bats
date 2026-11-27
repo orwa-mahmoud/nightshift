@@ -390,8 +390,8 @@ PY
 
 @test "punch-list template STOP commands use the bound Nightshift directory" {
   tpl="$SKILLS/nightshift/references/templates/punch-list.md"
-  grep -qF 'touch "$NS/STOP"' "$tpl"
-  grep -qF 'New-Item -ItemType File -Force "$NS\STOP"' "$tpl"
+  grep -qF 'touch "$RUN/STOP"' "$tpl"
+  grep -qF 'New-Item -ItemType File -Force "$RUN\STOP"' "$tpl"
   if grep -qF 'touch .nightshift/STOP' "$tpl"; then
     return 1
   fi

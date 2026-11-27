@@ -45,8 +45,14 @@ codex_ask() {
   printf '2\n' >"$p/.nightshift/state-version"
   run bash -c '. "$1"; ns_state_kind "$2"; echo; ns_state_version "$2"' _ "$LIB" "$p"
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | awk 'NR==1{exit $0=="current"?0:1}'
+  printf '%s\n' "$output" | awk 'NR==1{exit $0=="legacy"?0:1}'
   printf '%s\n' "$output" | awk 'NR==2{exit $0=="2"?0:1}'
+
+  printf '3\n' >"$p/.nightshift/state-version"
+  run bash -c '. "$1"; ns_state_kind "$2"; echo; ns_state_version "$2"' _ "$LIB" "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | awk 'NR==1{exit $0=="current"?0:1}'
+  printf '%s\n' "$output" | awk 'NR==2{exit $0=="3"?0:1}'
 
   printf '0\n' >"$p/.nightshift/state-version"
   run bash -c '. "$1"; ns_state_kind "$2"' _ "$LIB" "$p"
@@ -58,11 +64,11 @@ codex_ask() {
   [ "$status" -eq 1 ]
   [ "$output" = "malformed" ]
 
-  printf '3\n' >"$p/.nightshift/state-version"
+  printf '4\n' >"$p/.nightshift/state-version"
   run bash -c '. "$1"; ns_state_kind "$2"; echo; ns_state_version "$2"' _ "$LIB" "$p"
   [ "$status" -eq 2 ]
   printf '%s\n' "$output" | awk 'NR==1{exit $0=="future"?0:1}'
-  printf '%s\n' "$output" | awk 'NR==2{exit $0=="3"?0:1}'
+  printf '%s\n' "$output" | awk 'NR==2{exit $0=="4"?0:1}'
 }
 
 @test "symlink, extra lines, and leading zeros are malformed" {
@@ -89,7 +95,7 @@ codex_ask() {
   mkdir -p "$p"
   run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/scaffold.sh" --project "$p"
   [ "$status" -eq 0 ]
-  [ "$(cat "$p/.nightshift/state-version")" = "2" ]
+  [ "$(cat "$p/.nightshift/state-version")" = "3" ]
   before="$(fingerprint "$p")"
   run bash "$MIGRATE" --project "$p" --apply
   [ "$status" -eq 0 ]
@@ -146,10 +152,12 @@ codex_ask() {
   p="$(new_project)"
   punch_open "$p"
   # A newer marker reads as the newest layout this plugin knows, a malformed one as version 1: the
-  # shift is armed where each reads it, and each refuses rather than guess.
-  mkdir -p "$p/.nightshift/run"
-  : >"$p/.nightshift/run/.shift-armed"
-  printf '3\n' >"$p/.nightshift/state-version"
+  # shift is armed where each reads it, and each refuses rather than guess. The newest layout keeps
+  # a shift's files in its run folder.
+  mkdir -p "$p/.nightshift/runs/r1/run"
+  cp "$p/.nightshift/punch-list.md" "$p/.nightshift/runs/r1/punch-list.md"
+  : >"$p/.nightshift/runs/r1/run/.shift-armed"
+  printf '4\n' >"$p/.nightshift/state-version"
 
   run gate "$p"
   is_block "$output"
@@ -186,7 +194,7 @@ codex_ask() {
   run bash "$DOCTOR" --project "$p"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -q 'State:       0 (legacy)'
-  printf '%s' "$output" | grep -q '\[confirm\] move the state files into layout 2.*state-version 0 -> 2.*migrate-state.sh'
+  printf '%s' "$output" | grep -q '\[confirm\] move the state files into layout 3.*state-version 0 -> 3.*migrate-state.sh'
   after="$(fingerprint "$p")"
   [ "$before" = "$after" ]
   [ ! -e "$p/.nightshift/state-version" ]
@@ -194,8 +202,8 @@ codex_ask() {
   : >"$p/.nightshift/.shift-armed"
   run bash "$DOCTOR" --project "$p"
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | grep -q 'the move into layout 2 waits: the shift is armed'
-  printf '%s' "$output" | grep -q '\[blocked\] move the state files into layout 2'
+  printf '%s' "$output" | grep -q 'the move into layout 3 waits: the shift is armed'
+  printf '%s' "$output" | grep -q '\[blocked\] move the state files into layout 3'
   [ ! -e "$p/.nightshift/state-version" ]
 
   rm -f "$p/.nightshift/.shift-armed"
@@ -203,14 +211,22 @@ codex_ask() {
   run bash "$DOCTOR" --project "$p"
   [ "$status" -eq 0 ]
   printf '%s' "$output" | grep -q 'State:       1 (legacy)'
-  printf '%s' "$output" | grep -q 'state version 1 (every state file sits at the top of .nightshift/)'
-  printf '%s' "$output" | grep -q '\[confirm\] move the state files into layout 2.*state-version 1 -> 2'
+  printf '%s' "$output" | grep -q 'state version 1 (keeps every state file at the top of .nightshift/)'
+  printf '%s' "$output" | grep -q '\[confirm\] move the state files into layout 3.*state-version 1 -> 3'
 
   printf '2\n' >"$p/.nightshift/state-version"
   run bash "$DOCTOR" --project "$p"
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | grep -q 'State:       2 (current)'
-  printf '%s' "$output" | grep -q 'state version 2 (current)'
+  printf '%s' "$output" | grep -q 'State:       2 (legacy)'
+  printf '%s' "$output" | grep -q "state version 2 (keeps the shift's own files beside the shared ones, not in a run folder)"
+  printf '%s' "$output" | grep -q '\[confirm\] move the state files into layout 3.*state-version 2 -> 3'
+
+  run bash "$MIGRATE" --project "$p" --apply
+  [ "$status" -eq 0 ]
+  run bash "$DOCTOR" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | grep -q 'State:       3 (current)'
+  printf '%s' "$output" | grep -q 'state version 3 (current)'
   if printf '%s' "$output" | grep -q '\[confirm\].*migrate-state.sh'; then
     return 1
   fi
@@ -273,7 +289,7 @@ RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
   [ -f "$LOGIC" ]
   grep -qF 'migrate-state-logic.ps1' "$RUN"
   grep -qF 'refuse    the shift is armed (.shift-armed)' "$LOGIC"
-  grep -qF 'marker    state-version 1 -> 2' "$LOGIC"
+  grep -qF 'marker    state-version 1 -> 3' "$LOGIC"
   windows_module_source | grep -qF 'function Get-NSMigrationPlan'
 }
 
@@ -287,7 +303,7 @@ RUN="$BATS_TEST_DIRNAME/windows/run.ps1"
 
 @test "schedule generate and preflight fail closed on a future marker" {
   p="$(new_project)"
-  printf '3\n' >"$p/.nightshift/state-version"
+  printf '4\n' >"$p/.nightshift/state-version"
   run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/schedule.sh" --project "$p" --at 04:00
   [ "$status" -eq 1 ]
   printf '%s' "$output" | grep -q 'newer than this plugin supports'

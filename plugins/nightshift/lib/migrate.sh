@@ -25,6 +25,53 @@ unset _ns_migrate_dir
 
 _NS_MIG_TAB="$(printf '\t')"
 
+# The run folder a move into a per-run layout fills in, set by ns_migrate_plan; empty until then.
+_NS_MIGRATE_RUN=""
+
+# _ns_migrate_cur <var> <key> — <key>'s path in the current layout, relative, with the run folder
+# this migration moves into written where the layout has `runs/*/`. Status 1 for a key the current
+# layout does not have. <var> must not begin with _nsmc.
+_ns_migrate_cur() {
+  local _nsmc_rel
+  ns_layout_rel_at _nsmc_rel "$NS_LAYOUT_VERSION" "$2" || return 1
+  case "$_nsmc_rel" in
+    'runs/*/'*) _nsmc_rel="runs/${_NS_MIGRATE_RUN:-*}/${_nsmc_rel#runs/\*/}" ;;
+  esac
+  printf -v "$1" '%s' "$_nsmc_rel"
+}
+
+# _ns_migrate_run_name <workspace> — the run folder a workspace's live shift moves into: the only
+# run folder when there is one, so a move cut short is finished in the same place; otherwise the
+# name runs.layout gives the shift, from its punch-list title, its id and today's date. Status 1
+# when runs/ already holds several runs.
+_ns_migrate_run_name() {
+  local ws="$1" ns n=0 r one="" p title="" id
+  ns="$ws/.nightshift"
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    n=$((n + 1))
+    one="$r"
+  done <<RUNS
+$(ns_layout_runs "$ns")
+RUNS
+  [ "$n" -le 1 ] || return 1
+  if [ "$n" -eq 1 ]; then
+    printf '%s' "$one"
+    return 0
+  fi
+  while IFS= read -r p; do
+    case "$p" in '' | *'*'*) continue ;; esac
+    if [ -f "$ns/$p" ] && [ ! -L "$ns/$p" ]; then
+      title="$(ns_shift_name "$ns/$p")"
+      break
+    fi
+  done <<ROWS
+$(_ns_migrate_rows punch-list)
+ROWS
+  id="$(ns_ended_field "$ws" shiftId 2>/dev/null)"
+  ns_named_base "$(ns_runs_layout "$ws")" "$(date +%Y-%m-%d)" "${id:-unknown}" "$title"
+}
+
 # Every key that names a file or directory, table order.
 _ns_migrate_keys() {
   printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '$4 != "field" && $4 != "retired" && $4 != "stray" && !seen[$1]++ { print $1 }'
@@ -45,13 +92,22 @@ _ns_migrate_entry() {
   [ -e "$1/$2" ] || [ -L "$1/$2" ]
 }
 
+# _ns_migrate_concrete <path> — a table path as this migration sees it: a file of one run names the
+# run the move goes into. Prints nothing when there is no such run, so a check skips the row.
+_ns_migrate_concrete() {
+  case "$1" in
+    'runs/*/'*) [ -z "${_NS_MIGRATE_RUN:-}" ] || printf 'runs/%s/%s' "$_NS_MIGRATE_RUN" "${1#runs/\*/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 # _ns_migrate_carry — `old<TAB>new` for every earlier path of every key, from the table: where a
 # link written against any layout lands once each file is in its current place.
 _ns_migrate_carry() {
   local key cur p
   while IFS= read -r key; do
     [ -n "$key" ] || continue
-    ns_layout_rel_at cur "$NS_LAYOUT_VERSION" "$key" || continue
+    _ns_migrate_cur cur "$key" || continue
     case "$cur" in *'*'*) continue ;; esac
     while IFS= read -r p; do
       if [ -z "$p" ] || [ "$p" = "$cur" ]; then continue; fi
@@ -71,6 +127,41 @@ _ns_migrate_canon() {
   case "$2" in */*) dir="${2%/*}" ;; esac
   NS_MIG_EXISTS="" NS_MIG_MOVES="$3" NS_MIG_ROOT="$1" \
     awk -v dir="$dir" -v olddirs="" -v mode=canon -f "$NS_MIGRATE_LINKS_AWK" <"$1/$2"
+}
+
+# _ns_migrate_carried <moves> <from> <to> — status 0 when a folder move already planned takes <from>
+# to <to>: a file inside a folder that moves whole goes with it and needs no move of its own.
+_ns_migrate_carried() {
+  local line src dst
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    src="${line%%"$_NS_MIG_TAB"*}"
+    dst="${line#*"$_NS_MIG_TAB"}"
+    case "$2" in
+      "$src"/*) [ "$3" = "$dst${2#"$src"}" ] && return 0 ;;
+    esac
+  done <<MOVES
+$1
+MOVES
+  return 1
+}
+
+# _ns_migrate_landing <moves> <to> — the path whose planned move puts something at <to>: the source
+# of a move to <to> itself, or the file a planned folder move carries there. Empty when no planned
+# move reaches <to>.
+_ns_migrate_landing() {
+  local line src dst
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    src="${line%%"$_NS_MIG_TAB"*}"
+    dst="${line#*"$_NS_MIG_TAB"}"
+    case "$2" in
+      "$dst") printf '%s' "$src"; return 0 ;;
+      "$dst"/*) printf '%s%s' "$src" "${2#"$dst"}"; return 0 ;;
+    esac
+  done <<MOVES
+$1
+MOVES
 }
 
 # _ns_migrate_judge <ns> <from> <to> <carry> — how one earlier path meets its current path: move,
@@ -110,7 +201,7 @@ _ns_migrate_json() {
 # plugin wrote, before the schema moved; nothing otherwise. The current URL is the template's.
 _ns_migrate_schema() {
   local ns="$1" rel cur want old
-  ns_layout_rel_at rel "$NS_LAYOUT_VERSION" rules || return 0
+  _ns_migrate_cur rel rules || return 0
   if [ ! -f "$ns/$rel" ] || [ -L "$ns/$rel" ]; then return 0; fi
   cur="$(_ns_migrate_json canonat "$ns/$rel" "\$schema")"
   [ -n "$cur" ] || return 0
@@ -133,7 +224,7 @@ _ns_migrate_schema() {
 # when that exists, else the first earlier one that does. Empty when neither does.
 _ns_migrate_live_file() {
   local cur p
-  ns_layout_rel_at cur "$NS_LAYOUT_VERSION" "$2"
+  _ns_migrate_cur cur "$2"
   if _ns_migrate_entry "$1" "$cur"; then
     printf '%s' "$cur"
     return 0
@@ -166,7 +257,7 @@ EOF
 #   marker <from> <to>               the state-version written last
 # Status 0 printed · 2 no usable state directory.
 ns_migrate_plan() {
-  local ws="$1" ns kind ver key cur p prefix suffix parent lead name inst to verdict groups
+  local ws="$1" ns kind ver key cur p prefix suffix parent lead name inst to verdict groups land
   local moves="" work armed pid start fields file fkey fcur fold oldv newv doc line key2
   local archive_root f rel d known strays carry
   ns="$ws/.nightshift"
@@ -183,11 +274,19 @@ ns_migrate_plan() {
   esac
   ver="$(ns_state_version "$ws")"
   printf 'state\t%s\n' "$ver"
+  _NS_MIGRATE_RUN=""
+  if ns_layout_rel_at p "$NS_LAYOUT_VERSION" punch-list && case "$p" in 'runs/*/'*) true ;; *) false ;; esac; then
+    if ! _NS_MIGRATE_RUN="$(_ns_migrate_run_name "$ws")"; then
+      printf 'refuse\truns/ already holds several runs - this workspace is past the move\n'
+      return 2
+    fi
+  fi
 
   # Nothing moves under a running shift, a live watchman or a held lock: each of them may be
   # writing to a path this is about to take away.
   armed=0
   while IFS= read -r p; do
+    p="$(_ns_migrate_concrete "$p")"
     [ -n "$p" ] || continue
     if [ -f "$ns/$p" ] && [ "$armed" -eq 0 ]; then
       printf 'refuse\tthe shift is armed (%s) - clock out, or run Reset, first\n' "$p"
@@ -197,6 +296,7 @@ ns_migrate_plan() {
 $(_ns_migrate_rows armed)
 EOF
   while IFS= read -r p; do
+    p="$(_ns_migrate_concrete "$p")"
     [ -n "$p" ] || continue
     if [ ! -f "$ns/$p" ] || [ -L "$ns/$p" ]; then continue; fi
     fields="$(ns_watchman_pidfile_read "$ns/$p" 2>/dev/null || true)"
@@ -212,6 +312,7 @@ $(_ns_migrate_rows watchman)
 EOF
   for key in lock lease-lock; do
     while IFS= read -r p; do
+      p="$(_ns_migrate_concrete "$p")"
       [ -n "$p" ] || continue
       if _ns_migrate_entry "$ns" "$p"; then
         printf 'refuse\ta lock is held (%s) - let the operation finish, or run Reset if nothing is running\n' "$p"
@@ -225,7 +326,7 @@ EOF
   carry="$(_ns_migrate_carry)"
   while IFS= read -r key; do
     [ -n "$key" ] || continue
-    ns_layout_rel_at cur "$NS_LAYOUT_VERSION" "$key" || continue
+    _ns_migrate_cur cur "$key" || continue
     while IFS= read -r p; do
       if [ -z "$p" ] || [ "$p" = "$cur" ]; then continue; fi
       case "$p" in
@@ -245,7 +346,10 @@ EOF
             [ -n "$inst" ] || continue
             rel="${parent:+$parent/}$name"
             to="${cur%%\**}$inst${cur#*\*}"
-            verdict="$(_ns_migrate_judge "$ns" "$rel" "$to" "$carry")"
+            _ns_migrate_carried "$moves" "$rel" "$to" && continue
+            # A destination an earlier planned move fills is judged against what will land there.
+            land="$(_ns_migrate_landing "$moves" "$to")"
+            verdict="$(_ns_migrate_judge "$ns" "$rel" "${land:-$to}" "$carry")"
             case "$verdict" in
               move) printf 'move\t%s\t%s\n' "$rel" "$to"; moves="$moves$rel$_NS_MIG_TAB$to
 " ;;
@@ -258,7 +362,10 @@ NAMES
           ;;
         *)
           _ns_migrate_entry "$ns" "$p" || continue
-          verdict="$(_ns_migrate_judge "$ns" "$p" "$cur" "$carry")"
+          _ns_migrate_carried "$moves" "$p" "$cur" && continue
+          # A destination an earlier planned move fills is judged against what will land there.
+          land="$(_ns_migrate_landing "$moves" "$cur")"
+          verdict="$(_ns_migrate_judge "$ns" "$p" "${land:-$cur}" "$carry")"
           case "$verdict" in
             move) printf 'move\t%s\t%s\n' "$p" "$cur"; moves="$moves$p$_NS_MIG_TAB$cur
 " ;;
@@ -292,7 +399,7 @@ EOF
     newv="${fcur#*#}"
     rel="$(_ns_migrate_live_file "$ns" "$file")"
     if [ -z "$rel" ] || [ ! -f "$ns/$rel" ] || [ -L "$ns/$rel" ]; then continue; fi
-    ns_layout_rel_at to "$NS_LAYOUT_VERSION" "$file"
+    _ns_migrate_cur to "$file"
     doc="$work/$file.json"
     [ -f "$doc" ] || cp "$ns/$rel" "$doc" 2>/dev/null || continue
     if ! _ns_migrate_json canon "$doc" >/dev/null; then
@@ -328,7 +435,7 @@ EOF
         cp "$ns/$rel" "$doc" 2>/dev/null || continue
       fi
       [ -n "$(_ns_migrate_json canonat "$doc" "$p")" ] || continue
-      ns_layout_rel_at to "$NS_LAYOUT_VERSION" "$file"
+      _ns_migrate_cur to "$file"
       printf 'retire\t%s\t%s\n' "$to" "$p"
     done <<EOF
 $(_ns_migrate_rows "$key2")
@@ -343,8 +450,8 @@ EOF
 
   # The receipts repository leaves the runtime's directory out, as Setup writes it: anchored, so
   # the run records filed under each archive folder stay in.
-  ns_layout_rel_at f "$NS_LAYOUT_VERSION" gitignore
-  if ns_layout_rel_at d "$NS_LAYOUT_VERSION" run && [ -f "$ns/$f" ] && [ ! -L "$ns/$f" ] \
+  _ns_migrate_cur f gitignore
+  if _ns_migrate_cur d run && [ -f "$ns/$f" ] && [ ! -L "$ns/$f" ] \
     && ! grep -qxF "/$d/" "$ns/$f" 2>/dev/null; then
     printf 'ignore\t%s\t/%s/\n' "$f" "$d"
   fi
@@ -355,7 +462,7 @@ EOF
 
   # Anything this layout has no name for stays where it is, and is named so nothing is a surprise.
   archive_root="$(ns_archive "$ws" root)"
-  [ -n "$archive_root" ] || ns_layout_rel_at archive_root "$NS_LAYOUT_VERSION" archive
+  [ -n "$archive_root" ] || _ns_migrate_cur archive_root archive
   known="$(printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '$4 != "field" && $4 != "retired" && $4 != "stray" { print $3 }')"
   strays="$(printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '$4 == "stray" { print $3 }')"
   groups="$(printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '$4 == "group" { print $3 }')"
@@ -380,13 +487,13 @@ NAMES
 $(_ns_migrate_ls "$ns")
 NAMES
 
-  ns_layout_rel_at d "$NS_LAYOUT_VERSION" scheduled-log
+  _ns_migrate_cur d scheduled-log
   case "$moves" in
     *"$_NS_MIG_TAB$d
 "*)
       printf 'note\ta schedule registered before this move still appends to scheduled.log; print it again with Schedule\n' ;;
   esac
-  ns_layout_rel_at f "$NS_LAYOUT_VERSION" receipts-repo
+  _ns_migrate_cur f receipts-repo
   if [ -d "$ns/$f" ] && [ -n "$moves" ]; then
     printf 'note\tthe receipts repository shows each move once you commit; run/ is left out of it from now on\n'
   fi
@@ -430,7 +537,7 @@ EOF
 # rewrites each file in place.
 _ns_migrate_links() {
   local ws="$1" moves="$2" mode="$3" ns exists f rel now dir olddirs key cur p out base
-  local tmp carry
+  local tmp carry inside
   ns="$ws/.nightshift"
   # A link is carried by the table, not by this run's moves: every earlier path of a key reaches
   # its current one, so a run that finishes an interrupted one repoints what the first one moved.
@@ -473,13 +580,19 @@ _ns_migrate_links() {
     olddirs="$dir"
     case "$rel" in */*) p="${rel%/*}" ;; *) p="" ;; esac
     [ "$p" = "$dir" ] || olddirs="$olddirs$_NS_MIG_TAB$p"
-    # A file with a key may have been written in any directory an earlier layout gave it.
+    # A file with a key may have been written in any directory an earlier layout gave it, and so
+    # may a file inside a keyed folder (a receipt in receipts/): that folder's earlier paths hold it.
     while IFS= read -r key; do
       [ -n "$key" ] || continue
-      ns_layout_rel_at cur "$NS_LAYOUT_VERSION" "$key" || continue
-      [ "$cur" = "$now" ] || continue
+      _ns_migrate_cur cur "$key" || continue
+      case "$now" in
+        "$cur") inside="" ;;
+        "$cur"/*) inside="${now#"$cur"}" ;;
+        *) continue ;;
+      esac
       while IFS= read -r p; do
-        [ -n "$p" ] || continue
+        case "$p" in '' | *'*'*) continue ;; esac
+        p="$p$inside"
         case "$p" in */*) p="${p%/*}" ;; *) p="" ;; esac
         case "$_NS_MIG_TAB$olddirs$_NS_MIG_TAB" in *"$_NS_MIG_TAB$p$_NS_MIG_TAB"*) ;; *) olddirs="$olddirs$_NS_MIG_TAB$p" ;; esac
       done <<ROWS

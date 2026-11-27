@@ -44,7 +44,7 @@ call_lib() {
   run bash -c '. "$1"; ns_record_work_target "$2" "$3" artifact' _ "$LIB" "$w" "$w"
   [ "$status" -eq 0 ]
   # A workspace Setup is creating is born in the current layout.
-  [ "$(cat "$w/.nightshift/state-version")" = 2 ]
+  [ "$(cat "$w/.nightshift/state-version")" = 3 ]
   [ "$(cat "$w/.nightshift/run/work-mode")" = artifact ]
   expected="$(cd -P "$w" && pwd)"
   [ "$(cat "$w/.nightshift/run/work-target")" = "$expected" ]

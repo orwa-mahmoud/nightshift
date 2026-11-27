@@ -62,6 +62,41 @@ ns_sed_escape() {
   printf '%s' "$1" | sed 's/[][\\.*^$]/\\&/g'
 }
 
+# The folder of shipped state templates, fixed when this file is sourced: lib.sh clears its own
+# directory variable once every module has loaded.
+_NS_TEMPLATES_DIR="${BASH_SOURCE[0]%/*}/../skills/nightshift/references/templates"
+
+# ns_templates_dir — the folder of shipped state templates (punch-list.md, parking-lot.md, …).
+ns_templates_dir() {
+  printf '%s' "$_NS_TEMPLATES_DIR"
+}
+
+# ns_owner_template <template> <workspace> [<run-dir>] — the template's text with
+# `$NIGHTSHIFT_WORKSPACE`, `$NS` and, when <run-dir> is given, `$RUN` (the folder of the run the
+# file belongs to) replaced by those paths, character for character: a path holding `&`, `|` or a
+# backslash is written as it is. Without <run-dir>, `$RUN` is left for whoever places the file in
+# a run.
+ns_owner_template() {
+  local ws="${2%/}"
+  NS_TEMPLATE_WS="$ws" NS_TEMPLATE_NS="$ws/.nightshift" NS_TEMPLATE_RUN="${3-}" \
+    NS_TEMPLATE_HAS_RUN="${3+1}" awk '
+    function literal(s, from, to,    out, i) {
+      out = ""
+      while ((i = index(s, from)) > 0) {
+        out = out substr(s, 1, i - 1) to
+        s = substr(s, i + length(from))
+      }
+      return out s
+    }
+    {
+      line = $0
+      if (ENVIRON["NS_TEMPLATE_HAS_RUN"] == "1") line = literal(line, "$RUN", ENVIRON["NS_TEMPLATE_RUN"])
+      line = literal(line, "$NIGHTSHIFT_WORKSPACE", ENVIRON["NS_TEMPLATE_WS"])
+      print literal(line, "$NS", ENVIRON["NS_TEMPLATE_NS"])
+    }
+  ' "$1"
+}
+
 # ns_tokenize_text <text> <home> <workspace> <work-target>
 # Longest prefix wins. Remaining absolute paths make the function return 1 (omit).
 ns_tokenize_text() {
@@ -88,6 +123,23 @@ ns_sanitize_line() {
   local text="$1"
   ns_secret_line "$text" && return 1
   ns_tokenize_text "$text" "$2" "$3" "$4"
+}
+
+# ns_payload_session_id <json> — the hook payload's session_id, read with jq when it is installed
+# and with sed otherwise. Empty when the payload has none.
+ns_payload_session_id() {
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$1" | jq -r '.session_id // empty' 2>/dev/null || true
+  else
+    printf '%s' "$1" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+  fi
+}
+
+# ns_conversation_session_id — the id of the conversation a command runs in, from the host's own
+# environment: Claude Code gives its Bash tool CLAUDE_CODE_SESSION_ID, the same id its hooks receive
+# as session_id. Empty on a host that gives a command no such id.
+ns_conversation_session_id() {
+  printf '%s' "${CLAUDE_CODE_SESSION_ID:-}"
 }
 
 # ns_read_stdin_bounded <seconds> — the hook payload, and never a hung session.

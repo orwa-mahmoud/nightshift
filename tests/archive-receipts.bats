@@ -1653,3 +1653,43 @@ current_site() {
   [ "$(cat "$d/run/evidence/findings.jsonl")" = "$(printf '{"record":"one"}\n{"record":"two"}')" ]
   [ ! -s "$n/run/evidence/findings.jsonl" ]
 }
+
+# two_finished_runs <name> — two runs, each with one ticked item and its receipt.
+two_finished_runs() {
+  local p r
+  p="$(two_runs "$1")"
+  for r in a b; do
+    mkdir -p "$p/.nightshift/runs/$r/receipts"
+    printf '# Punch List — %s\n\n## Contract\n\n- c\n\n## Items\n- [x] **1. %s first.** <!-- id: %s001 -->\n- [ ] **2. %s second.** <!-- id: %s002 -->\n' \
+      "$r" "$r" "$r" "$r" "$r" >"$p/.nightshift/runs/$r/punch-list.md"
+    printf '# 1. %s first.\n\nDone.\n' "$r" >"$p/.nightshift/runs/$r/receipts/01-$r-first-${r}001.md"
+  done
+  printf '%s' "$p"
+}
+
+@test "archiving one of two runs files only that run's records, on both hosts" {
+  for shell in posix windows; do
+    if [ "$shell" = windows ]; then command -v pwsh >/dev/null 2>&1 || continue; fi
+    p="$(two_finished_runs "archive-one-$shell")"
+    # Run a has ended, so its closed records leave live storage; run b is still armed.
+    rm -f "$p/.nightshift/runs/a/run/.shift-armed"
+    : >"$p/.nightshift/runs/a/run/.ended"
+    b_before="$(cd "$p/.nightshift/runs/b" && find . -type f -exec cksum {} + | sort)"
+    if [ "$shell" = posix ]; then
+      run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$ARCHIVE_SH" --project "$p" --date 2026-11-27
+      [ "$status" -eq 2 ]
+      printf '%s\n' "$output" | grep -qF 'several runs and none named; name one with --run: a b'
+      run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$ARCHIVE_SH" --project "$p" --date 2026-11-27 --run a
+    else
+      run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID pwsh -NoProfile -NonInteractive -File "$ARCHIVE_PS1" -Project "$p" -Date 2026-11-27
+      [ "$status" -eq 2 ]
+      printf '%s\n' "$output" | grep -qF 'several runs and none named; name one with --run: a b'
+      run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID pwsh -NoProfile -NonInteractive -File "$ARCHIVE_PS1" -Project "$p" -Date 2026-11-27 -Run a
+    fi
+    [ "$status" -eq 0 ]
+    [ -f "$p/.nightshift/archive/2026-11-27/runs/a/receipts/01-a-first-a001.md" ]
+    [ ! -e "$p/.nightshift/runs/a/receipts/01-a-first-a001.md" ]
+    if find "$p/.nightshift/archive" -path '*/runs/b/*' | grep -q .; then return 1; fi
+    [ "$(cd "$p/.nightshift/runs/b" && find . -type f -exec cksum {} + | sort)" = "$b_before" ]
+  done
+}

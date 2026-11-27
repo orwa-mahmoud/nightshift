@@ -357,6 +357,17 @@ function Test-NSWatchmanRevivalProved {
 
 function Test-NSHardhatActive {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    # A conversation that belongs to none of several runs is still on a site where shifts run: it
+    # stays under the shared rules and the control-file guard while any run is active.
+    if ((Test-NSLayoutPerRun $NightshiftDir 'punch-list') -and (Get-NSLayoutRun $NightshiftDir).Length -eq 0) {
+        foreach ($run in (Get-NSLayoutRuns $NightshiftDir)) {
+            $saved = $env:NIGHTSHIFT_RUN
+            $env:NIGHTSHIFT_RUN = $run
+            try { if (Test-NSHardhatActive $NightshiftDir) { return $true } }
+            finally { $env:NIGHTSHIFT_RUN = $saved }
+        }
+        return $false
+    }
     $ended = Get-NSLayoutPath $NightshiftDir 'ended'
     if ((Test-Path -LiteralPath $ended -PathType Leaf) -and -not (Test-NSReparsePoint $ended)) {
         return $false
@@ -534,6 +545,28 @@ function Get-NSMigrationKeys {
     return , $keys.ToArray()
 }
 
+# Get-NSMigrationConcrete <path> - a table path as this migration sees it: a file of one run names the
+# run the move goes into. Empty when there is no such run, so a check skips the row. Mirrors
+# _ns_migrate_concrete.
+function Get-NSMigrationConcrete {
+    param([AllowEmptyString()][string]$Path = '')
+    if (-not $Path.StartsWith('runs/*/')) { return $Path }
+    if ([string]::IsNullOrEmpty($script:NSMigrateRun)) { return '' }
+    return ('runs/' + $script:NSMigrateRun + '/' + $Path.Substring(7))
+}
+
+# Get-NSMigrationConcreteRows <key> - every path <key> has had, as this migration sees each one (see
+# Get-NSMigrationConcrete), leaving out the rows of a run there is not.
+function Get-NSMigrationConcreteRows {
+    param([Parameter(Mandatory = $true)][string]$Key)
+    $out = New-Object Collections.Generic.List[string]
+    foreach ($row in (Get-NSMigrationRows $Key)) {
+        $p = Get-NSMigrationConcrete $row
+        if ($p.Length -gt 0) { $out.Add($p) }
+    }
+    return , $out.ToArray()
+}
+
 # Get-NSMigrationRows <key> - every path <key> has had, oldest first.
 function Get-NSMigrationRows {
     param([Parameter(Mandatory = $true)][string]$Key)
@@ -601,12 +634,79 @@ function Test-NSMigrationDirectory {
     return ((Test-Path -LiteralPath $Path -PathType Container) -and -not (Test-NSReparsePoint $Path))
 }
 
+# The run folder a move into a per-run layout fills in, set by Get-NSMigrationPlan; empty until then.
+$script:NSMigrateRun = ''
+
+# Get-NSMigrationCurrent <key> - <key>'s path in the current layout, relative, with the run folder
+# this migration moves into written where the layout has runs/*/. Empty for a key the current layout
+# does not have. Mirrors _ns_migrate_cur.
+function Get-NSMigrationCurrent {
+    param([Parameter(Mandatory = $true)][string]$Key)
+    $rel = Get-NSLayoutRelativePathAt $script:NSLayoutVersion $Key
+    if ($rel.StartsWith('runs/*/')) {
+        $run = if ($script:NSMigrateRun.Length -gt 0) { $script:NSMigrateRun } else { '*' }
+        $rel = 'runs/' + $run + '/' + $rel.Substring(7)
+    }
+    return $rel
+}
+
+# Get-NSMigrationRunName <workspace> - the run folder a workspace's live shift moves into: the only
+# run folder when there is one, so a move cut short is finished in the same place; otherwise the name
+# runs.layout gives the shift, from its punch-list title, its id and today's date. $null when runs/
+# already holds several runs. Mirrors _ns_migrate_run_name.
+function Get-NSMigrationRunName {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    $ns = Join-Path $Workspace '.nightshift'
+    $runs = Get-NSLayoutRuns $ns
+    if ($runs.Count -gt 1) { return $null }
+    if ($runs.Count -eq 1) { return $runs[0] }
+    $title = ''
+    foreach ($p in (Get-NSMigrationRows 'punch-list')) {
+        if ($p.Length -eq 0 -or $p.Contains('*')) { continue }
+        $native = Get-NSMigrationNative $ns $p
+        if (Test-NSMigrationFile $native) {
+            $title = Get-NSShiftName $native
+            break
+        }
+    }
+    $id = Get-NSEndedField $Workspace 'shiftId'
+    return (Get-NSNamedBase -Layout (Get-NSRunsLayout $Workspace) -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId $id -Name $title)
+}
+
+# Test-NSMigrationCarried <moves> <from> <to> - whether a folder move already planned takes <from> to
+# <to>: a file inside a folder that moves whole goes with it and needs no move of its own. Mirrors
+# _ns_migrate_carried.
+function Test-NSMigrationCarried {
+    param($Moves, [Parameter(Mandatory = $true)][string]$From, [Parameter(Mandatory = $true)][string]$To)
+    foreach ($line in $Moves) {
+        $pair = ([string]$line).Split("`t")
+        if ($pair.Count -ne 2) { continue }
+        if ($From.StartsWith($pair[0] + '/', [StringComparison]::Ordinal) -and
+            $To -ceq ($pair[1] + $From.Substring($pair[0].Length))) { return $true }
+    }
+    return $false
+}
+
+# Get-NSMigrationLanding <moves> <to> - the path whose planned move puts something at <to>: the
+# source of a move to <to> itself, or the file a planned folder move carries there. Empty when no
+# planned move reaches <to>. Mirrors _ns_migrate_landing.
+function Get-NSMigrationLanding {
+    param($Moves, [Parameter(Mandatory = $true)][string]$To)
+    foreach ($line in $Moves) {
+        $pair = ([string]$line).Split("`t")
+        if ($pair.Count -ne 2) { continue }
+        if ($To -ceq $pair[1]) { return $pair[0] }
+        if ($To.StartsWith($pair[1] + '/', [StringComparison]::Ordinal)) { return ($pair[0] + $To.Substring($pair[1].Length)) }
+    }
+    return ''
+}
+
 # Get-NSMigrationCarryMap - every earlier path of every key, mapped to its current one: where a
 # link written against any layout lands once each file is in its current place.
 function Get-NSMigrationCarryMap {
     $carry = New-NSMigrationMap
     foreach ($key in (Get-NSMigrationKeys)) {
-        $cur = Get-NSLayoutRelativePathAt $script:NSLayoutVersion $key
+        $cur = Get-NSMigrationCurrent $key
         if ($cur.Length -eq 0 -or $cur.Contains('*')) { continue }
         foreach ($p in (Get-NSMigrationRows $key)) {
             if ($p.Length -gt 0 -and $p -cne $cur) { $carry[$p] = $cur }
@@ -688,7 +788,7 @@ function Get-NSMigrationLiveFile {
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
         [Parameter(Mandatory = $true)][string]$Key
     )
-    $cur = Get-NSLayoutRelativePathAt $script:NSLayoutVersion $Key
+    $cur = Get-NSMigrationCurrent $Key
     if ($cur.Length -gt 0 -and (Test-NSPathEntry (Get-NSMigrationNative $NightshiftDir $cur))) { return $cur }
     foreach ($p in (Get-NSMigrationRows $Key)) {
         if ($p.Length -eq 0 -or $p -ceq $cur) { continue }
@@ -718,7 +818,7 @@ $script:NSMigrationRulesTemplate = Join-Path (Split-Path -Parent $PSScriptRoot) 
 # earlier plugin wrote, before the schema moved; empty otherwise. The current URL is the template's.
 function Get-NSMigrationSchemaRecord {
     param([Parameter(Mandatory = $true)][string]$Ns)
-    $rel = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'rules'
+    $rel = Get-NSMigrationCurrent 'rules'
     if ($rel.Length -eq 0) { return '' }
     $path = Get-NSMigrationNative $Ns $rel
     if (-not (Test-NSMigrationFile $path)) { return '' }
@@ -996,7 +1096,7 @@ function Get-NSMigrationArchiveName {
     catch {
         $name = ''
     }
-    if ([string]::IsNullOrEmpty($name)) { $name = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'archive' }
+    if ([string]::IsNullOrEmpty($name)) { $name = Get-NSMigrationCurrent 'archive' }
     return $name
 }
 
@@ -1047,11 +1147,17 @@ function Invoke-NSMigrationLinks {
         $olddirs.Add($dir)
         $was = Get-NSMigrationParent $rel
         if ($was -cne $dir) { $olddirs.Add($was) }
-        # A file with a key may have been written in any directory an earlier layout gave it.
+        # A file with a key may have been written in any directory an earlier layout gave it, and so
+        # may a file inside a keyed folder (a receipt in receipts/): that folder's earlier paths hold it.
         foreach ($key in $keys) {
-            if ((Get-NSLayoutRelativePathAt $script:NSLayoutVersion $key) -cne $now) { continue }
+            $cur = Get-NSMigrationCurrent $key
+            if ($cur.Length -eq 0) { continue }
+            if ($now -ceq $cur) { $inside = '' }
+            elseif ($now.StartsWith($cur + '/', [StringComparison]::Ordinal)) { $inside = $now.Substring($cur.Length) }
+            else { continue }
             foreach ($p in (Get-NSMigrationRows $key)) {
-                $pdir = Get-NSMigrationParent $p
+                if ($p.Length -eq 0 -or $p.Contains('*')) { continue }
+                $pdir = Get-NSMigrationParent ($p + $inside)
                 if (-not $olddirs.Contains($pdir)) { $olddirs.Add($pdir) }
             }
         }
@@ -1125,16 +1231,25 @@ function Get-NSMigrationPlan {
         return [pscustomobject]@{ Code = 2; Records = $records.ToArray() }
     }
     $records.Add("state`t" + (Get-NSStateVersion $Workspace))
+    $script:NSMigrateRun = ''
+    if ((Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'punch-list').StartsWith('runs/*/')) {
+        $runName = Get-NSMigrationRunName $Workspace
+        if ($null -eq $runName) {
+            $records.Add("refuse`truns/ already holds several runs - this workspace is past the move")
+            return [pscustomobject]@{ Code = 2; Records = $records.ToArray() }
+        }
+        $script:NSMigrateRun = $runName
+    }
 
     # Nothing moves under a running shift, a live watchman or a held lock: each of them may be
     # writing to a path this is about to take away.
-    foreach ($p in (Get-NSMigrationRows 'armed')) {
+    foreach ($p in (Get-NSMigrationConcreteRows 'armed')) {
         if (Test-Path -LiteralPath (Get-NSMigrationNative $ns $p) -PathType Leaf) {
             $records.Add("refuse`tthe shift is armed ($p) - clock out, or run Reset, first")
             break
         }
     }
-    foreach ($p in (Get-NSMigrationRows 'watchman')) {
+    foreach ($p in (Get-NSMigrationConcreteRows 'watchman')) {
         $native = Get-NSMigrationNative $ns $p
         if (-not (Test-NSMigrationFile $native)) { continue }
         $recordedOwner = Read-NSWatchmanPidFile $native
@@ -1147,7 +1262,7 @@ function Get-NSMigrationPlan {
         }
     }
     foreach ($key in @('lock', 'lease-lock')) {
-        foreach ($p in (Get-NSMigrationRows $key)) {
+        foreach ($p in (Get-NSMigrationConcreteRows $key)) {
             if (Test-NSPathEntry (Get-NSMigrationNative $ns $p)) {
                 $records.Add("refuse`ta lock is held ($p) - let the operation finish, or run Reset if nothing is running")
             }
@@ -1158,7 +1273,7 @@ function Get-NSMigrationPlan {
     $carry = Get-NSMigrationCarryMap
     $moves = New-Object Collections.Generic.List[string]
     foreach ($key in (Get-NSMigrationKeys)) {
-        $cur = Get-NSLayoutRelativePathAt $script:NSLayoutVersion $key
+        $cur = Get-NSMigrationCurrent $key
         if ($cur.Length -eq 0) { continue }
         foreach ($p in (Get-NSMigrationRows $key)) {
             if ($p.Length -eq 0 -or $p -ceq $cur) { continue }
@@ -1187,7 +1302,11 @@ function Get-NSMigrationPlan {
             foreach ($pair in $pairs) {
                 $from = $pair[0]
                 $to = $pair[1]
-                $verdict = Get-NSMigrationVerdict $ns $from $to $carry
+                if (Test-NSMigrationCarried $moves $from $to) { continue }
+                # A destination an earlier planned move fills is judged against what will land there.
+                $land = Get-NSMigrationLanding $moves $to
+                if ($land.Length -eq 0) { $land = $to }
+                $verdict = Get-NSMigrationVerdict $ns $from $land $carry
                 switch -CaseSensitive ($verdict) {
                     'move' {
                         $records.Add("move`t$from`t$to")
@@ -1210,7 +1329,7 @@ function Get-NSMigrationPlan {
         $newv = $fcur.Substring($fcur.IndexOf('#') + 1)
         $rel = Get-NSMigrationLiveFile $ns $file
         if ($rel.Length -eq 0 -or -not (Test-NSMigrationFile (Get-NSMigrationNative $ns $rel))) { continue }
-        $to = Get-NSLayoutRelativePathAt $script:NSLayoutVersion $file
+        $to = Get-NSMigrationCurrent $file
         if (-not $docs.ContainsKey($file)) { $docs[$file] = Read-NSMigrationJson (Get-NSMigrationNative $ns $rel) }
         $state = $docs[$file]
         if (-not $state.Readable) {
@@ -1247,7 +1366,7 @@ function Get-NSMigrationPlan {
             $state = $docs[$file]
             if (-not $state.Readable) { continue }
             if ((Get-NSMigrationJsonAt $state.Doc $path).Length -eq 0) { continue }
-            $records.Add("retire`t" + (Get-NSLayoutRelativePathAt $script:NSLayoutVersion $file) + "`t$path")
+            $records.Add("retire`t" + (Get-NSMigrationCurrent $file) + "`t$path")
         }
     }
 
@@ -1256,8 +1375,8 @@ function Get-NSMigrationPlan {
 
     # The receipts repository leaves the runtime's directory out, as Setup writes it: anchored, so
     # the run records filed under each archive folder stay in.
-    $run = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'run'
-    $ignoreRel = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'gitignore'
+    $run = Get-NSMigrationCurrent 'run'
+    $ignoreRel = Get-NSMigrationCurrent 'gitignore'
     $ignore = Get-NSMigrationNative $ns $ignoreRel
     if ($run.Length -gt 0 -and (Test-NSMigrationFile $ignore) -and
         -not ((Read-NSMigrationLines $ignore) -ccontains ('/' + $run + '/'))) {
@@ -1298,14 +1417,14 @@ function Get-NSMigrationPlan {
         }
     }
 
-    $scheduled = Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'scheduled-log'
+    $scheduled = Get-NSMigrationCurrent 'scheduled-log'
     foreach ($pair in $moves) {
         if ($pair.Split("`t")[1] -ceq $scheduled) {
             $records.Add("note`ta schedule registered before this move still appends to scheduled.log; print it again with Schedule")
             break
         }
     }
-    $repo = Get-NSMigrationNative $ns (Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'receipts-repo')
+    $repo = Get-NSMigrationNative $ns (Get-NSMigrationCurrent 'receipts-repo')
     if ((Test-Path -LiteralPath $repo -PathType Container) -and $moves.Count -gt 0) {
         $records.Add("note`tthe receipts repository shows each move once you commit; run/ is left out of it from now on")
     }
@@ -1481,7 +1600,7 @@ function Invoke-NSMigrationApply {
         foreach ($record in $Records) {
             $f = $record.Split("`t")
             if ($f[0] -cne 'marker') { continue }
-            $null = Write-NSAtomicLines -Path (Get-NSMigrationNative $ns (Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'state-version')) -Lines @($f[2])
+            $null = Write-NSAtomicLines -Path (Get-NSMigrationNative $ns (Get-NSMigrationCurrent 'state-version')) -Lines @($f[2])
         }
     }
     catch {
@@ -1804,11 +1923,21 @@ function Expand-NSInjectedPaths {
     # never read as the folder it sits in.
     $version = Get-NSLayoutVersion (Join-Path $Workspace '.nightshift')
     $current = $script:NSLayoutPaths[$version]
+    # A file of one run is named inside the run the caller works on; with no run to name, those
+    # names are left as written.
+    $run = ''
+    if (Test-NSLayoutPerRun (Join-Path $Workspace '.nightshift') 'punch-list') { $run = Get-NSLayoutRun (Join-Path $Workspace '.nightshift') }
     $map = New-Object 'System.Collections.Generic.List[object]'
     foreach ($row in $script:NSLayoutRows) {
         if ($row.Kind -ceq 'field' -or $row.Kind -ceq 'retired' -or $row.Kind -ceq 'stray' -or $row.Path.Contains('*')) { continue }
-        if (-not $current.ContainsKey($row.Key) -or $row.Path -ceq $current[$row.Key]) { continue }
-        $map.Add([pscustomobject]@{ From = $row.Path; To = [string]$current[$row.Key] })
+        if (-not $current.ContainsKey($row.Key)) { continue }
+        $to = [string]$current[$row.Key]
+        if ($to.StartsWith('runs/*/')) {
+            if ($run.Length -eq 0) { continue }
+            $to = 'runs/' + $run + '/' + $to.Substring(7)
+        }
+        if ($to.Contains('*') -or $row.Path -ceq $to) { continue }
+        $map.Add([pscustomobject]@{ From = $row.Path; To = $to })
     }
     $map = @($map | Sort-Object -Property @{ Expression = { $_.From.Length }; Descending = $true })
     $builder = New-Object Text.StringBuilder
@@ -1853,16 +1982,38 @@ function Expand-NSInjectedPaths {
     return $builder.ToString()
 }
 
+# Get-NSTemplatesDir - the folder of shipped state templates (punch-list.md, parking-lot.md, ...).
+# Mirrors ns_templates_dir.
+function Get-NSTemplatesDir {
+    return (Join-Path (Split-Path -Parent $PSScriptRoot) 'skills/nightshift/references/templates')
+}
+
+# Get-NSOwnerTemplateText <source> <workspace> [<run-dir>] - the template's text with
+# `$NIGHTSHIFT_WORKSPACE`, `$NS` and, when <run-dir> is given, `$RUN` (the folder of the run the file
+# belongs to) replaced by those paths, character for character. Without <run-dir>, `$RUN` is left
+# for whoever places the file in a run. Mirrors ns_owner_template.
+function Get-NSOwnerTemplateText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [AllowNull()][string]$RunDir = $null
+    )
+    $text = [IO.File]::ReadAllText($Source)
+    if ($PSBoundParameters.ContainsKey('RunDir') -and $null -ne $RunDir) { $text = $text.Replace('$RUN', $RunDir) }
+    $text = $text.Replace('$NIGHTSHIFT_WORKSPACE', $Workspace)
+    $ns = Join-Path $Workspace.TrimEnd('\', '/') '.nightshift'
+    return $text.Replace('$NS', $ns)
+}
+
 function Copy-NSOwnerTemplate {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
         [Parameter(Mandatory = $true)][string]$Destination,
-        [Parameter(Mandatory = $true)][string]$Workspace
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [AllowNull()][string]$RunDir = $null
     )
-    $text = [IO.File]::ReadAllText($Source)
-    $text = $text.Replace('$NIGHTSHIFT_WORKSPACE', $Workspace)
-    $ns = Join-Path $Workspace.TrimEnd('\', '/') '.nightshift'
-    $text = $text.Replace('$NS', $ns)
+    if ($null -eq $RunDir -or $RunDir.Length -eq 0) { $RunDir = Join-Path $Workspace.TrimEnd('\', '/') '.nightshift' }
+    $text = Get-NSOwnerTemplateText -Source $Source -Workspace $Workspace -RunDir $RunDir
     [IO.File]::WriteAllText($Destination, $text, $script:NSUtf8NoBom)
 }
 
@@ -1902,6 +2053,22 @@ function Write-NSScaffoldFile {
         [string]$Line = ''
     )
     $ns = Join-Path $Workspace '.nightshift'
+    $runDir = $ns
+    if (Test-NSLayoutPerRun $ns $Key) {
+        # A per-run file needs a run to live in. A workspace with none gets its first run here,
+        # named the way every run is named (a shift with no name yet is named by date); one with
+        # several and none named refuses rather than guess.
+        $run = Get-NSLayoutRun $ns
+        if ($run.Length -eq 0) {
+            if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_RUN)) { throw ('NIGHTSHIFT_RUN is not a run folder name: ' + $env:NIGHTSHIFT_RUN) }
+            $runs = Get-NSLayoutRuns $ns
+            if ($runs.Count -gt 0) { throw ('several runs and none named - set NIGHTSHIFT_RUN to one of: ' + ($runs -join ' ') + ' ') }
+            $made = Get-NSRunDir -Workspace $Workspace -Date (Get-Date -Format 'yyyy-MM-dd') -ShiftId 'unknown' -Name ''
+            if ($null -eq $made) { throw ('cannot create a run folder under ' + (Join-Path $ns 'runs')) }
+            $run = Get-NSLayoutRun $ns
+        }
+        $runDir = Join-Path (Join-Path $ns 'runs') $run
+    }
     $rel = Get-NSLayoutRelativePath $ns $Key
     if ($rel.Length -eq 0) { return '' }
     $dest = Get-NSLayoutPath $ns $Key
@@ -1911,7 +2078,7 @@ function Write-NSScaffoldFile {
     try {
         # The owner's copy carries resolved paths: a person pasting a command out of their own
         # punch list has no `$NS`. The shipped template is never changed.
-        if ($Template.Length -gt 0) { Copy-NSOwnerTemplate -Source $Template -Destination $dest -Workspace $Workspace }
+        if ($Template.Length -gt 0) { Copy-NSOwnerTemplate -Source $Template -Destination $dest -Workspace $Workspace -RunDir $runDir }
         else { [IO.File]::WriteAllText($dest, $Line + "`n", $script:NSUtf8NoBom) }
     }
     catch {

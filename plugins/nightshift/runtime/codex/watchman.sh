@@ -73,6 +73,7 @@ usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --project) need_value "$1" $#; PROJECT="$2"; shift 2 ;;
+    --run) need_value "$1" $#; NIGHTSHIFT_RUN="$2"; export NIGHTSHIFT_RUN; shift 2 ;;
     --interval) need_value "$1" $#; INTERVAL_MIN="$2"; shift 2 ;;
     --agent) need_value "$1" $#; AGENT="$2"; shift 2 ;;
     --max-wakes) need_value "$1" $#; MAX_WAKES="$2"; shift 2 ;;

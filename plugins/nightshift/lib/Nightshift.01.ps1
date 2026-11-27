@@ -1,7 +1,7 @@
 
 # The state-version this plugin writes, which names the layout its files sit in. Version 1 and
 # legacy workspaces stay operable in the paths they have; only migrate-state moves them.
-$script:NSStateVersion = 2
+$script:NSStateVersion = 3
 $script:NSUtf8NoBom = New-Object System.Text.UTF8Encoding($false)
 # The separator the records and receipts share with the POSIX runtime, spelled by its code so this
 # file stays ASCII: Windows PowerShell 5.1 reads a script saved without a BOM as ANSI.
@@ -37,9 +37,12 @@ function Test-NSWindows {
 }
 
 # State layout. Every path under .nightshift/ comes from state-layout.tsv beside this module, read
-# once at import: a key resolves to the path its workspace's layout gives it. Layout 2 is the one
-# this plugin writes; a version-1 or legacy workspace keeps the paths it has, so an upgraded plugin
-# goes on guarding it, a shift armed before the upgrade included. Mirrors lib/layout.sh.
+# once at import: a key resolves to the path its workspace's layout gives it. Layout 3 is the one
+# this plugin writes; a workspace on an earlier layout keeps the paths it has, so an upgraded plugin
+# goes on guarding it, a shift armed before the upgrade included. Layout 3 keeps each shift in its
+# own folder, runs/<run>/: a per-run key resolves inside the run NIGHTSHIFT_RUN names, else inside
+# the only run, and inside runs/.unnamed/ (a folder no run is ever given) when there are several and
+# none is named, so a caller there stands off every shift. Mirrors lib/layout.sh.
 $script:NSLayoutVersion = $script:NSStateVersion
 $script:NSLayoutRows = New-Object 'System.Collections.Generic.List[object]'
 $script:NSLayoutPaths = @{}
@@ -111,9 +114,151 @@ function Get-NSLayoutVersion {
     return $version
 }
 
+# Test-NSRunName <name> - whether a run folder may have this name: one path segment, not hidden.
+# Mirrors ns_run_name_ok.
+function Test-NSRunName {
+    param([AllowEmptyString()][string]$Name)
+    if ([string]::IsNullOrEmpty($Name) -or $Name.StartsWith('.')) { return $false }
+    return ($Name.IndexOfAny([char[]]@('/', '\', "`n")) -lt 0)
+}
+
+# Get-NSLayoutRuns <state-dir> - every run folder name under runs/, ordinal order. Mirrors
+# ns_layout_runs.
+function Get-NSLayoutRuns {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $out = New-Object Collections.Generic.List[string]
+    $root = [IO.Path]::Combine($NightshiftDir, 'runs')
+    if (-not [IO.Directory]::Exists($root)) { return , $out.ToArray() }
+    foreach ($dir in [IO.Directory]::GetDirectories($root)) {
+        if (([IO.File]::GetAttributes($dir) -band [IO.FileAttributes]::ReparsePoint)) { continue }
+        $name = [IO.Path]::GetFileName($dir)
+        if (Test-NSRunName $name) { $out.Add($name) }
+    }
+    $sorted = $out.ToArray()
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    return , $sorted
+}
+
+# Get-NSLayoutRun <state-dir> - the run a per-run key resolves in: NIGHTSHIFT_RUN when it names one,
+# else the only run folder. Empty when the name is not a run folder name, when there is no run, and
+# when there are several and none is named. Mirrors ns_layout_run_set.
+function Get-NSLayoutRun {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $named = [string]$env:NIGHTSHIFT_RUN
+    if ($named.Length -gt 0) {
+        if (Test-NSRunName $named) { return $named }
+        return ''
+    }
+    $runs = Get-NSLayoutRuns $NightshiftDir
+    if ($runs.Count -eq 1) { return $runs[0] }
+    return ''
+}
+
+# Select-NSRunChoice <state-dir> [name] - the run a command acts on, set as NIGHTSHIFT_RUN: <name> when
+# given, else the run NIGHTSHIFT_RUN already names, else the only run. Code 1 when the name is not a
+# run of this workspace, 2 when there are several runs, or none, and no name; Error then says which
+# and lists the runs. In a workspace that keeps one shift there is nothing to choose: code 0.
+# Mirrors ns_run_choose.
+function Select-NSRunChoice {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [AllowEmptyString()][string]$Name = ''
+    )
+    $result = [pscustomobject]@{ Code = 0; Error = '' }
+    if (-not (Test-NSLayoutPerRun $NightshiftDir 'punch-list')) { return $result }
+    if ($Name.Length -eq 0) { $Name = [string]$env:NIGHTSHIFT_RUN }
+    $runs = Get-NSLayoutRuns $NightshiftDir
+    $listed = if ($runs.Count -gt 0) { $runs -join ' ' } else { 'none' }
+    if ($Name.Length -gt 0) {
+        $dir = [IO.Path]::Combine($NightshiftDir, 'runs', $Name)
+        if ((Test-NSRunName $Name) -and [IO.Directory]::Exists($dir) -and -not (Test-NSReparsePoint $dir)) {
+            $env:NIGHTSHIFT_RUN = $Name
+            return $result
+        }
+        $result.Code = 1
+        $result.Error = "no run named $Name; runs: $listed"
+        return $result
+    }
+    if ($runs.Count -eq 1) {
+        $env:NIGHTSHIFT_RUN = $runs[0]
+        return $result
+    }
+    $result.Code = 2
+    $result.Error = if ($runs.Count -eq 0) { 'no runs yet; start a plan with ns start-run' } else { "several runs and none named; name one with --run: $listed" }
+    return $result
+}
+
+# Test-NSLayoutLive <state-dir> - a shift is armed and has not ended: in the run the caller names or
+# the only run, or, in a workspace of several runs with none named, in any of them. Mirrors
+# ns_layout_live.
+function Test-NSLayoutLive {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    if ((Test-NSLayoutPerRun $NightshiftDir 'punch-list') -and (Get-NSLayoutRun $NightshiftDir).Length -eq 0) {
+        foreach ($run in (Get-NSLayoutRuns $NightshiftDir)) {
+            $saved = $env:NIGHTSHIFT_RUN
+            $env:NIGHTSHIFT_RUN = $run
+            try { if (Test-NSLayoutLive $NightshiftDir) { return $true } }
+            finally { $env:NIGHTSHIFT_RUN = $saved }
+        }
+        return $false
+    }
+    $armed = Get-NSLayoutPath $NightshiftDir 'armed'
+    $ended = Get-NSLayoutPath $NightshiftDir 'ended'
+    if (-not [IO.File]::Exists($armed)) { return $false }
+    if ([IO.File]::Exists($ended) -and -not ([IO.File]::GetAttributes($ended) -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    return $true
+}
+
+# Select-NSSessionRun <state-dir> <session-id> - which run a hook works on, set as NIGHTSHIFT_RUN
+# when it can be told: a run already named stays named; otherwise the run whose session record names
+# this session, else the one armed run no session has bound yet (the binding probe right after
+# Start). With none of those, the resolver's own rule stands. Mirrors ns_select_session_run.
+function Select-NSSessionRun {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [AllowEmptyString()][string]$SessionId = ''
+    )
+    if (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_RUN)) { return }
+    if (-not (Test-NSLayoutPerRun $NightshiftDir 'punch-list')) { return }
+    $found = ''
+    $unbound = New-Object Collections.Generic.List[string]
+    foreach ($run in (Get-NSLayoutRuns $NightshiftDir)) {
+        $runDir = [IO.Path]::Combine($NightshiftDir, 'runs', $run)
+        $session = [IO.Path]::Combine($runDir, ((Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'session').Substring(7)))
+        $armed = [IO.Path]::Combine($runDir, ((Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'armed').Substring(7)))
+        if ($SessionId.Length -gt 0 -and [IO.File]::Exists($session) -and
+            -not ([IO.File]::GetAttributes($session) -band [IO.FileAttributes]::ReparsePoint)) {
+            $lines = [IO.File]::ReadAllLines($session)
+            if ($lines.Count -gt 0 -and $lines[0].TrimEnd("`r") -ceq $SessionId) { $found = $run; break }
+        }
+        if ([IO.File]::Exists($armed) -and -not [IO.File]::Exists($session)) { $unbound.Add($run) }
+    }
+    if ($found.Length -eq 0 -and $unbound.Count -eq 1) { $found = $unbound[0] }
+    if ($found.Length -gt 0) { $env:NIGHTSHIFT_RUN = $found }
+}
+
+# Get-NSConversationSessionId - the id of the conversation a command runs in, from the host's own
+# environment: Claude Code gives its shell tool CLAUDE_CODE_SESSION_ID, the same id its hooks receive
+# as session_id. Empty on a host that gives a command no such id. Mirrors ns_conversation_session_id.
+function Get-NSConversationSessionId {
+    return [string]$env:CLAUDE_CODE_SESSION_ID
+}
+
+# Get-NSPayloadSessionId <payload> - the hook payload's session_id, else its conversation_id (Cursor).
+function Get-NSPayloadSessionId {
+    param($Payload)
+    if ($null -eq $Payload) { return '' }
+    foreach ($name in @('session_id', 'conversation_id')) {
+        $property = $Payload.PSObject.Properties[$name]
+        if ($null -ne $property -and $null -ne $property.Value -and ([string]$property.Value).Length -gt 0) { return [string]$property.Value }
+    }
+    return ''
+}
+
 # Get-NSLayoutRelativePath <state-dir> <key> [instance] - the path of <key> relative to the state
-# directory, with / separators, in that directory's layout; <instance> fills the * of a family such
-# as usage-*. Empty for a key this layout does not have.
+# directory, with / separators, in that directory's layout. A per-run key (runs/*/...) takes its run
+# from Get-NSLayoutRun, or .unnamed when no single run is named; <instance> fills the remaining * of
+# a family such as usage-*. Empty for a key this layout does not have.
 function Get-NSLayoutRelativePath {
     param(
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
@@ -123,6 +268,11 @@ function Get-NSLayoutRelativePath {
     $paths = $script:NSLayoutPaths[(Get-NSLayoutVersion $NightshiftDir)]
     if (-not $paths.ContainsKey($Key)) { return '' }
     $rel = [string]$paths[$Key]
+    if ($rel.StartsWith('runs/*/')) {
+        $run = Get-NSLayoutRun $NightshiftDir
+        if ($run.Length -eq 0) { $run = '.unnamed' }
+        $rel = 'runs/' + $run + '/' + $rel.Substring(7)
+    }
     $star = $rel.IndexOf('*')
     if ($star -ge 0) { $rel = $rel.Substring(0, $star) + $Instance + $rel.Substring($star + 1) }
     return $rel
@@ -139,6 +289,18 @@ function Get-NSLayoutPath {
     $rel = Get-NSLayoutRelativePath $NightshiftDir $Key $Instance
     if ($rel.Length -eq 0) { throw "state layout $(Get-NSLayoutVersion $NightshiftDir) has no $Key" }
     return (Join-NSPath $NightshiftDir ($rel.Replace('/', [IO.Path]::DirectorySeparatorChar)))
+}
+
+# Test-NSLayoutPerRun <state-dir> <key> - whether <key> belongs to one run in that directory's
+# layout (its path starts runs/*/). Mirrors ns_layout_per_run.
+function Test-NSLayoutPerRun {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+    $paths = $script:NSLayoutPaths[(Get-NSLayoutVersion $NightshiftDir)]
+    if (-not $paths.ContainsKey($Key)) { return $false }
+    return ([string]$paths[$Key]).StartsWith('runs/*/')
 }
 
 # Test-NSLayoutKey <state-dir> <key> - whether this directory's layout has <key>.
@@ -247,6 +409,7 @@ function Test-NSHookIdle {
     if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'plan-room') -PathType Leaf) {
         return $false
     }
+    if (Test-NSLayoutPerRun $ns 'punch-list') { return (-not (Test-NSLayoutLive $ns)) }
     $armed = Get-NSLayoutPath $ns 'armed'
     $ended = Get-NSLayoutPath $ns 'ended'
     if (-not (Test-Path -LiteralPath $armed -PathType Leaf)) {
@@ -986,6 +1149,14 @@ function Invoke-NSEvidenceArchive {
 
 
 
+# Get-NSStateLayoutNote <version> - how a workspace on an earlier layout keeps its files, for the
+# messages that offer the move. Mirrors ns_state_layout_note.
+function Get-NSStateLayoutNote {
+    param([AllowEmptyString()][string]$Version)
+    if ($Version -ceq '0' -or $Version -ceq '1') { return 'keeps every state file at the top of .nightshift/' }
+    return "keeps the shift's own files beside the shared ones, not in a run folder"
+}
+
 function Get-NSStateKind {
     param([Parameter(Mandatory = $true)][string]$Workspace)
 
@@ -1030,21 +1201,55 @@ function Get-NSStateRefuseMessage {
     return 'Nightshift state-version is unsupported.'
 }
 
+# Merge-NSRulesObject <shared> <run> - the shared settings with the run's laid over them key by key:
+# a block merges, any other value (an array included) replaces. Mirrors _ns_rules_overlay.
+function Merge-NSRulesObject {
+    param($Shared, $Run)
+    foreach ($property in $Run.PSObject.Properties) {
+        $existing = $Shared.PSObject.Properties[$property.Name]
+        if ($null -ne $existing -and $existing.Value -is [pscustomobject] -and $property.Value -is [pscustomobject]) {
+            $null = Merge-NSRulesObject $existing.Value $property.Value
+        }
+        elseif ($null -ne $existing) { $existing.Value = $property.Value }
+        else { $Shared | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value }
+    }
+    return $Shared
+}
+
 function Get-NSRulesObject {
     param([Parameter(Mandatory = $true)][string]$Workspace)
-    $path = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'rules'
+    $nsDir = Join-Path $Workspace '.nightshift'
+    $path = Get-NSLayoutPath $nsDir 'rules'
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         $script:NSRulesCacheStamp = ''
         $script:NSRulesCache = $null
         return $null
     }
+    # In a workspace that keeps runs, the run this caller works on may change some settings in its
+    # own rules file; it is laid over the shared one.
+    $runPath = ''
+    if (Test-NSLayoutPerRun $nsDir 'punch-list') {
+        $run = Get-NSLayoutRun $nsDir
+        if ($run.Length -gt 0) {
+            $candidate = [IO.Path]::Combine($nsDir, 'runs', $run, (Get-NSLayoutRelativePathAt $script:NSLayoutVersion 'rules'))
+            if ([IO.File]::Exists($candidate) -and -not ([IO.File]::GetAttributes($candidate) -band [IO.FileAttributes]::ReparsePoint)) { $runPath = $candidate }
+        }
+    }
     try {
         $item = Get-Item -LiteralPath $path -ErrorAction Stop
         $stamp = '{0}:{1}:{2}' -f $item.FullName, $item.Length, $item.LastWriteTimeUtc.Ticks
+        if ($runPath.Length -gt 0) {
+            $runItem = Get-Item -LiteralPath $runPath -ErrorAction Stop
+            $stamp += '|{0}:{1}:{2}' -f $runItem.FullName, $runItem.Length, $runItem.LastWriteTimeUtc.Ticks
+        }
         if ($script:NSRulesCacheStamp -eq $stamp) {
             return $script:NSRulesCache
         }
         $parsed = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($runPath.Length -gt 0) {
+            $runParsed = Get-Content -LiteralPath $runPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            $parsed = Merge-NSRulesObject $parsed $runParsed
+        }
         $script:NSRulesCacheStamp = $stamp
         $script:NSRulesCache = $parsed
         return $parsed
@@ -2496,15 +2701,32 @@ function Test-NSWatchmanScriptCommand {
 function Test-NSWatchmanCommandForProject {
     param(
         [AllowEmptyString()][string]$CommandLine,
-        [AllowEmptyString()][string]$Workspace
+        [AllowEmptyString()][string]$Workspace,
+        [AllowEmptyString()][string]$Run = ''
     )
     if ([string]::IsNullOrEmpty($CommandLine) -or [string]::IsNullOrEmpty($Workspace)) { return $false }
     if (-not (Test-NSWatchmanScriptCommand $CommandLine)) { return $false }
+    if (-not (Test-NSCommandHasArgument $CommandLine 'project' 'Project' $Workspace)) { return $false }
+    # Each run of a workspace has a watchman of its own, named on its command line.
+    return ($Run.Length -eq 0 -or (Test-NSCommandHasArgument $CommandLine 'run' 'Run' $Run))
+}
+
+# Test-NSCommandHasArgument <command> <flag> <PowerShell flag> <value> - the command line passes
+# <value> to --<flag> or -<PowerShell flag>, as one whole argument. Mirrors
+# ns_watchman_command_has_arg.
+function Test-NSCommandHasArgument {
+    param(
+        [AllowEmptyString()][string]$CommandLine,
+        [Parameter(Mandatory = $true)][string]$Flag,
+        [Parameter(Mandatory = $true)][string]$PowerShellFlag,
+        [AllowEmptyString()][string]$Value
+    )
+    if ([string]::IsNullOrEmpty($Value)) { return $false }
     foreach ($form in @(
-            '--project ', '--project=', '-Project ', '-Project=',
-            '--project "', "-Project '", '--project ''', '-Project "'
+            "--$Flag ", "--$Flag=", "-$PowerShellFlag ", "-$PowerShellFlag=",
+            "--$Flag `"", "-$PowerShellFlag '", "--$Flag '", "-$PowerShellFlag `""
         )) {
-        $needle = $form + $Workspace
+        $needle = $form + $Value
         $from = 0
         while ($from -lt $CommandLine.Length) {
             $at = $CommandLine.IndexOf($needle, $from, [StringComparison]::Ordinal)
@@ -2520,7 +2742,10 @@ function Test-NSWatchmanCommandForProject {
 }
 
 function Find-NSWatchmanForProject {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
+    param(
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [AllowEmptyString()][string]$Run = ''
+    )
     $ws = $Workspace
     # Resolve-NSCanonicalPath fails for a workspace that still names itself; keep the path as given.
     try { $ws = Resolve-NSCanonicalPath $Workspace } catch { $ws = $Workspace }
@@ -2532,7 +2757,7 @@ function Find-NSWatchmanForProject {
         foreach ($row in $rows) {
             $id = [int]$row.ProcessId
             if ($id -le 1 -or $id -eq $PID) { continue }
-            if (Test-NSWatchmanCommandForProject ([string]$row.CommandLine) $ws) { return $id }
+            if (Test-NSWatchmanCommandForProject ([string]$row.CommandLine) $ws $Run) { return $id }
         }
         return 0
     }
@@ -2542,7 +2767,7 @@ function Find-NSWatchmanForProject {
         if ($text -notmatch '^([0-9]+)\s+(.*)$') { continue }
         $id = [int]$Matches[1]
         if ($id -le 1 -or $id -eq $PID) { continue }
-        if (Test-NSWatchmanCommandForProject $Matches[2] $ws) { return $id }
+        if (Test-NSWatchmanCommandForProject $Matches[2] $ws $Run) { return $id }
     }
     return 0
 }
@@ -2637,7 +2862,8 @@ function Write-NSControlLog {
 function Stop-NSShift {
     param(
         [Parameter(Mandatory = $true)][string]$Project,
-        [string]$Reason = 'stopped by owner'
+        [string]$Reason = 'stopped by owner',
+        [AllowEmptyString()][string]$Run = ''
     )
     $ctx = Resolve-NSControlWorkspace $Project
     $ns = $ctx.NightshiftDir
@@ -2645,6 +2871,9 @@ function Stop-NSShift {
     if (-not (Test-Path -LiteralPath $ns -PathType Container)) {
         throw "stop-shift: no .nightshift/ at $($ctx.Workspace)"
     }
+    # One run is stopped: never a guess between several.
+    $choice = Select-NSRunChoice $ns $Run
+    if ($choice.Code -ne 0) { throw ('stop-shift: ' + $choice.Error) }
     if ([string]::IsNullOrEmpty($Reason)) { $Reason = 'stopped by owner' }
     $at = Get-NSUnixTime
     $ts = Get-NSLocalNow -Seconds
@@ -2676,6 +2905,7 @@ function Stop-NSShift {
         $open = (Get-NSBoxCounts $punch).Open
     }
     Write-Output "stopped $ns"
+    if (Test-NSLayoutPerRun $ns 'punch-list') { Write-Output "run $env:NIGHTSHIFT_RUN" }
     Write-Output "workspace $($ctx.Workspace)"
     if ($ctx.HostRoot -ne $ctx.Workspace) { Write-Output "host $($ctx.HostRoot)" }
     Write-Output "watchman $watch"

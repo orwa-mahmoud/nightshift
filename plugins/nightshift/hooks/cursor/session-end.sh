@@ -31,6 +31,8 @@ esac
 NS="$PROJECT_DIR/.nightshift"
 ns_hook_copy_note "$NS" cursor "${CURSOR_SESSION_ID:-}" "$_here/../.."
 declare PUNCH ARMED ENDED SESSION SESSION_END
+# The run this session works on, before any file of one run is resolved.
+ns_select_session_run "$NS" "${CURSOR_SESSION_ID:-}"
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set ARMED "$NS" armed
 ns_layout_set ENDED "$NS" ended

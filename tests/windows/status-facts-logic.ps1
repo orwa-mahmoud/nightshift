@@ -154,6 +154,35 @@ finally {
     Remove-Item -LiteralPath $watched -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# With two runs, the report lists every run with its state, open item and deadline; named, the run's
+# own facts follow.
+$twoRuns = Join-Path ([IO.Path]::GetTempPath()) ("ns-status-runs-" + [guid]::NewGuid().ToString('N'))
+$savedRun = $env:NIGHTSHIFT_RUN
+$env:NIGHTSHIFT_RUN = $null
+try {
+    $runsNs = Join-Path $twoRuns '.nightshift'
+    $null = New-Item -ItemType Directory -Path $runsNs -Force
+    Copy-Item -LiteralPath $rulesTemplate -Destination (Join-Path $runsNs 'rules.json')
+    [IO.File]::WriteAllText((Join-Path $runsNs 'state-version'), "3`n")
+    foreach ($run in @('a', 'b')) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $runsNs "runs/$run/run") -Force
+        [IO.File]::WriteAllText((Join-Path $runsNs "runs/$run/punch-list.md"), "## Items`n- [ ] **1. $run first.**`n")
+        [IO.File]::WriteAllText((Join-Path $runsNs "runs/$run/run/.shift-armed"), '')
+    }
+    [IO.File]::WriteAllText((Join-Path $runsNs 'runs/a/STOP'), "stopped by owner`n")
+    $report = (& (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $statusHelper -Project $twoRuns 2>&1) -join "`n"
+    Expect-True ((Get-NSStatusField $report 'run a') -ceq 'stopped, open item 1. a first., deadline none (finite list)') "run a line: $report"
+    Expect-True ((Get-NSStatusField $report 'run b') -ceq 'armed, open item 1. b first., deadline none (finite list)') "run b line: $report"
+    Expect-True ($report -cmatch '(?m)^run none named \(name one with --run for its facts\)\r?$') "no run named: $report"
+    $report = (& (Get-Process -Id $PID).Path -NoProfile -NonInteractive -File $statusHelper -Project $twoRuns -Run b 2>&1) -join "`n"
+    Expect-True ($report -cmatch '(?m)^run b\r?$') "the named run: $report"
+    Expect-True ((Get-NSStatusField $report 'open item') -ceq '1. b first.') "the named run's open item: $report"
+}
+finally {
+    $env:NIGHTSHIFT_RUN = $savedRun
+    Remove-Item -LiteralPath $twoRuns -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host "status-facts-logic failed ($($failures.Count)):"
     foreach ($failure in $failures) { Write-Host " - $failure" }

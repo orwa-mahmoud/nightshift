@@ -22,15 +22,19 @@ site() {
 
 plans_dir() { printf '%s/.nightshift/staging/plans' "$1"; }
 
-@test "a new plan copies the punch list's contract and gates under its own title, with no items" {
+@test "a new plan starts from the shipped contract and empty gates under its own title, with no items" {
   p="$(site plans-new)"
   run bash "$RUNTIME/plan-new.sh" --project "$p" --name "Session export"
   [ "$status" -eq 0 ]
   [ "$output" = 'wrote .nightshift/staging/plans/session-export.md' ]
   f="$(plans_dir "$p")/session-export.md"
   [ "$(sed -n 1p "$f")" = '# Punch List — Session export' ]
-  grep -qxF 'Work each item to done.' "$f"
-  grep -qxF -- '- `make test`' "$f"
+  grep -qxF '## Never idle, never ask, never wait' "$f"
+  grep -qxF '_None configured._' "$f"
+  grep -qF "$(cd -P "$p" && pwd)/.nightshift/STOP" "$f"
+  ! grep -q '\$NS' "$f" || false
+  ! grep -qxF 'Work each item to done.' "$f" || false
+  ! grep -qxF -- '- `make test`' "$f" || false
   [ "$(tail -n 2 "$f" | head -n 1)" = '## Items' ]
   ! grep -q '^- \[' "$f" || false
 }
@@ -47,13 +51,15 @@ plans_dir() { printf '%s/.nightshift/staging/plans' "$1"; }
   [ "$(cksum <"$f")" = "$before" ]
 }
 
-@test "a punch list cut from a plan does not pass its plan notes to the next plan" {
+@test "a new plan inherits nothing from the last shift's punch list" {
   p="$(site plans-notes)"
-  printf '# Punch List — Old\n\n## Contract\n\nRules.\n\n## Plan\n\nWhy: the old reason.\n\n## Items\n\n- [x] **1. done.**\n' \
+  printf '# Punch List — Old\n\n## Contract\n\nWork on the branch shift/old-campaign.\nItem 9 pushes it and opens the pull request.\n\n## Gates\n\n- `make sonar`\n\n## Plan\n\nWhy: the old reason.\n\n## Items\n\n- [x] **1. done.**\n' \
     >"$p/.nightshift/punch-list.md"
   bash "$RUNTIME/plan-new.sh" --project "$p" --name "Next" >/dev/null
   f="$(plans_dir "$p")/next.md"
-  grep -qxF 'Rules.' "$f"
+  ! grep -qF 'shift/old-campaign' "$f" || false
+  ! grep -qF 'opens the pull request' "$f" || false
+  ! grep -qF 'make sonar' "$f" || false
   ! grep -qF 'the old reason' "$f" || false
   ! grep -qxF '## Plan' "$f" || false
 }
@@ -114,7 +120,11 @@ plans_dir() { printf '%s/.nightshift/staging/plans' "$1"; }
   run pwsh -NoProfile -File "$RUNTIME/windows/plan-new.ps1" -Project "$p" -Name "Retry budget"
   [ "$status" -eq 0 ]
   [ "$output" = 'wrote .nightshift/staging/plans/retry-budget.md' ]
-  diff <(sed 1d "$(plans_dir "$p")/session-export.md") <(sed 1d "$(plans_dir "$p")/retry-budget.md")
+  # The two resolvers spell a symlinked temp dir differently (the POSIX one canonicalises), so the
+  # workspace prefix is normalised out before comparing, as the scaffold parity case does.
+  real="$(cd -P "$p" && pwd)"
+  diff <(sed "1d;s|$real|WS|g" "$(plans_dir "$p")/session-export.md") \
+    <(sed "1d;s|$real|WS|g;s|$p|WS|g" "$(plans_dir "$p")/retry-budget.md")
   [ "$(sed -n 1p "$(plans_dir "$p")/retry-budget.md")" = '# Punch List — Retry budget' ]
   bash_list="$(bash "$RUNTIME/plan-enter.sh" --project "$p" | grep '^plan file:')"
   bash "$RUNTIME/plan-exit.sh" --project "$p" >/dev/null 2>&1 || :

@@ -428,3 +428,60 @@ LOG
   [ "$status" -eq 0 ]
   printf '%s\n' "$output" | grep -qF 'worker alive but idle for 2 min — pulse stale, transcript unchanged, cpu +0.00s, no busy child'
 }
+
+@test "status from a conversation of one of two runs reports that conversation's run" {
+  p="$(two_runs status-two-runs)"
+  NS_CMD="$ROOT/plugins/nightshift/runtime/ns"
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-b "$NS_CMD" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. b first.' ]
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-a "$NS_CMD" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. a first.' ]
+  # A run the caller names wins over the conversation's own.
+  out="$(env CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-a NIGHTSHIFT_RUN=b "$NS_CMD" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. b first.' ]
+}
+
+@test "native Windows status from a conversation of one of two runs reports that run" {
+  ps_ready
+  p="$(two_runs ps-status-two-runs)"
+  NS_PS="$ROOT/plugins/nightshift/runtime/windows/ns.ps1"
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-b \
+    pwsh -NoProfile -NonInteractive -File "$NS_PS" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. b first.' ]
+  out="$(env -u NIGHTSHIFT_RUN CLAUDE_PROJECT_DIR="$p" CLAUDE_CODE_SESSION_ID=sid-a \
+    pwsh -NoProfile -NonInteractive -File "$NS_PS" status 2>/dev/null)"
+  [ "$(fact_from "$out" 'open item')" = '1. a first.' ]
+}
+
+@test "status lists every run with its state, open item and deadline, on both hosts" {
+  p="$(two_runs status-every-run)"
+  : >"$p/.nightshift/runs/a/STOP"
+  printf '%s\n' "$(($(date +%s) + 7200))" >"$p/.nightshift/runs/b/run/deadline"
+  out="$(env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$STATUS" --project "$p")"
+  [ "$(fact_from "$out" 'run a')" = 'stopped, open item 1. a first., deadline none (finite list)' ]
+  fact_from "$out" 'run b' | grep -qE '^armed, open item 1\. b first\., deadline [0-9]+h[0-9]{2}m remaining$'
+  printf '%s\n' "$out" | grep -qx 'run none named (name one with --run for its facts)'
+  # Named, the run's own facts follow the run lines.
+  out="$(env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$STATUS" --project "$p" --run b)"
+  printf '%s\n' "$out" | grep -qx 'run b'
+  [ "$(fact_from "$out" 'open item')" = '1. b first.' ]
+  run env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$STATUS" --project "$p" --run c
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'no run named c; runs: a b'
+  ps_ready
+  for args in "" b; do
+    env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$STATUS" --project "$p" ${args:+--run "$args"} |
+      sed -n '/^facts$/,/^resolved policy$/p' | grep -v '^run b armed' >"$p/posix.txt"
+    env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID pwsh -NoProfile -NonInteractive -File "$PS_STATUS" -Project "$p" ${args:+-Run "$args"} |
+      sed -n '/^facts$/,/^resolved policy$/p' | grep -v '^run b armed' >"$p/windows.txt"
+    diff -u <(grep -v '^deadline ' "$p/posix.txt") <(grep -v '^deadline ' "$p/windows.txt")
+  done
+}
+
+@test "with one run, status prints no run lines" {
+  p="$(two_runs status-one-run)"
+  rm -rf "$p/.nightshift/runs/b"
+  out="$(env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID bash "$STATUS" --project "$p")"
+  [ "$(fact_from "$out" 'open item')" = '1. a first.' ]
+  if printf '%s\n' "$out" | grep -q '^run '; then return 1; fi
+}

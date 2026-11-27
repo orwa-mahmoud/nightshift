@@ -76,6 +76,8 @@ if ((Get-NSStateKind $workspace) -in @('malformed', 'future')) {
 }
 
 $ns = Join-Path $workspace '.nightshift'
+# The run this session works on, before any file of one run is resolved.
+Select-NSSessionRun $ns (Get-NSPayloadSessionId $payload)
 $punch = Get-NSLayoutPath $ns 'punch-list'
 $counts = Get-NSBoxCounts $punch
 if (-not (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'armed') -PathType Leaf) `

@@ -16,6 +16,8 @@ ns_copy_serves_host "$_here/../.." cursor || exit 0
 cursor_read_input "$@"
 HOST_DIR="$(cursor_project_dir)"
 PROJECT_DIR="$(ns_workspace_root "$HOST_DIR" 2>/dev/null)" || exit 0
+# The run this session works on, before any file of one run is resolved.
+ns_select_session_run "$PROJECT_DIR/.nightshift" "${CURSOR_SESSION_ID:-}"
 ns_hook_copy_note "$PROJECT_DIR/.nightshift" cursor "${CURSOR_SESSION_ID:-}" "$_here/../.."
 STATE_KIND="$(ns_state_kind "$PROJECT_DIR")"
 case "$STATE_KIND" in

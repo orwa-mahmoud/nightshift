@@ -4,10 +4,12 @@
 #   plan-new.sh --project DIR --name NAME
 #
 # Writes `<plans>/<key>.md`, where <key> is the name lowercased with every other character a
-# hyphen. The file is a copy of the punch list's contract and gates under the title
-# `# Punch List — NAME`, with an empty `## Items` section, so the plan carries the rules it will
-# run under and Start can cut it into the punch list whole. A plan that already has the key is
-# kept exactly as it is.
+# hyphen. The file holds the shipped punch-list contract and its empty gates block, with the
+# workspace's paths written in as Setup writes them, under the title `# Punch List — NAME` and an
+# empty `## Items` section. The live punch list is not read: a new plan never inherits the last
+# shift's branch, scans or permissions. The planning conversation writes the plan's own contract
+# and gates into this file, and Start cuts it into the punch list whole. A plan that already has
+# the key is kept exactly as it is.
 #
 # Prints `wrote <path>` or `kept <path>`, relative to the workspace.
 # Exit: 0 done · 1 usage/resolve · 2 refused
@@ -52,12 +54,8 @@ DIR="$(ns_plans_dir "$NS")" || {
   printf 'plan-new: this workspace keeps plans in its drafting table; ns migrate-state moves it to the layout with plan files\n' >&2
   exit 2
 }
-PUNCH=""
-ns_layout_set PUNCH "$NS" punch-list
-if [ ! -f "$PUNCH" ] || [ -L "$PUNCH" ]; then
-  printf 'plan-new: no %s to copy the contract from — run Setup first\n' "$(ns_layout_name "$NS" punch-list)" >&2
-  exit 1
-fi
+TEMPLATE="$(ns_templates_dir)/punch-list.md"
+[ -f "$TEMPLATE" ] || { printf 'plan-new: no shipped punch-list template at %s\n' "$TEMPLATE" >&2; exit 1; }
 
 KEY="$(ns_receipt_slug "$NAME")"
 [ -n "$KEY" ] || { printf 'plan-new: %s has no letters or digits to name a file by\n' "$NAME" >&2; exit 1; }
@@ -79,15 +77,19 @@ TMP="$DIR/.$KEY.md.tmp.$$"
 written=no
 if {
   printf '# Punch List — %s\n' "$NAME"
-  # The contract and gates: everything after the title line and before `## Items`, without the
-  # `## Plan` notes of a plan the punch list was cut from.
-  awk '
+  # The shipped contract and gates: everything after the template's title line and before
+  # `## Items`.
+  # On a layout with run folders the plan's run does not exist yet: `$RUN` stays for Start to fill
+  # when it places the plan in its run. Earlier layouts keep the shift at the top of the site.
+  if ns_layout_per_run "$NS" punch-list; then
+    ns_owner_template "$TEMPLATE" "$WORKSPACE"
+  else
+    ns_owner_template "$TEMPLATE" "$WORKSPACE" "$NS"
+  fi | awk '
     NR == 1 { next }
     /^## Items[[:space:]]*$/ { exit }
-    /^## Plan[[:space:]]*$/ { skip = 1; next }
-    /^## / { skip = 0 }
-    !skip { print }
-  ' "$PUNCH"
+    { print }
+  '
   printf '## Items\n\n'
 } >"$TMP" 2>/dev/null; then
   mv -f "$TMP" "$FILE" 2>/dev/null && written=yes

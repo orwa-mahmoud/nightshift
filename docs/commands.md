@@ -46,17 +46,19 @@ Windows, `ns.ps1` takes the same verbs.
 
 | Command | What it does |
 | --- | --- |
-| `ns stop-shift` | Pauses the shift now, even if the agent is stuck. Open items and the deadline are kept. |
+| `ns stop-shift [--run <name>]` | Pauses the shift now, even if the agent is stuck. Open items and the deadline are kept. With several runs, stops the run you name and leaves the others working. |
 | `ns reset-shift` | Drops the runtime markers, the deadline and a leftover STOP. Keeps the punch list, the history, and what open items have already spent. |
 | `ns purge-workspace --confirm-path <path to .nightshift>` | Resets, then deletes this project's `.nightshift/`. Does not uninstall the plugin. |
-| `ns plan-new --name <name>` | Starts a plan file from the punch list's contract and checks. Keeps a plan that already has the name. |
+| `ns plan-new --name <name>` | Starts a plan file from the shipped contract with no checks. Keeps a plan that already has the name. |
 | `ns plan-exit` | Leaves the plan room. |
+| `ns start-run --plan <name> --host <host> [--background]` | Starts a waiting plan as a run of its own, in its own folder and git worktree. With `--background`, a headless worker and the run's watchman work it while your conversation stays free. Running it again finishes a run that stopped part way and never starts a second worker. |
 | `ns start-preflight` | Prints the checks Start runs before it arms. |
 | `ns shift-estimate --items 5` | Estimates time and tokens per item from your past receipts, with a suggested deadline and budget. Needs at least three readings. |
 | `ns check-items` | Names drafted items with a missing `Verify:` or `Commit:`, an `Evidence:` that names nothing, or a `Budget:` that does not parse. Refuses nothing. |
 | `ns link-workspace --host-root <path> --workspace <path>` | Points a task folder at the workspace that already holds `.nightshift/`. |
 | `ns export-support` | Writes a local support bundle, with known sensitive fields left out. Never uploaded. |
-| `ns archive-receipts` | Files a finished shift's receipts into its archive folder. |
+| `ns archive-receipts [--run <name>]` | Files a finished shift's receipts into its archive folder. With several runs, files the run you name. |
+| `ns send-message --run <name> --text "<text>"` | Sends a running shift a question or an answer. Its worker sees it at its next tool call and replies in the run's messages file, which the command prints. Without `--text`, reads the message from stdin. |
 | `ns check-report --report <file> --manifest <file>` | Checks a cited research report against its source manifest. |
 
 `touch .nightshift/STOP` also stops the shift, at the agent's next stop. Write it where

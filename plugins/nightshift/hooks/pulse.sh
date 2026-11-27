@@ -377,17 +377,20 @@ ns_pulse_receipts_notice() {
   [ "$first" -eq 0 ]
 }
 
-# ns_pulse_notices <ns> <project> — every notice this pulse has for the agent: the receipt lines,
-# then a budget the item being worked has just spent (ns_budget_check). Nothing when there is none.
+# ns_pulse_notices <ns> <project> — every notice this pulse has for the agent: the owner's new
+# messages (ns_message_notice), the receipt lines, then a budget the item being worked has just spent
+# (ns_budget_check). Nothing when there is none.
 ns_pulse_notices() {
-  local receipts budget
+  local receipts budget messages part out=""
   receipts="$(ns_pulse_receipts_notice "$1" "$2")" || receipts=""
   budget="$(ns_budget_check "$1" "$2")" || budget=""
-  if [ -n "$receipts" ] && [ -n "$budget" ]; then
-    printf '%s\n%s' "$receipts" "$budget"
-  else
-    printf '%s%s' "$receipts" "$budget"
-  fi
+  messages="$(ns_message_notice "$1")" || messages=""
+  for part in "$messages" "$receipts" "$budget"; do
+    [ -n "$part" ] || continue
+    out="${out:+$out
+}$part"
+  done
+  printf '%s' "$out"
 }
 
 # ns_pulse_active_item <project> — the item being worked; see ns_active_item.
@@ -488,6 +491,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   else
     SID="$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
   fi
+  # The run this session works on, before any file of one run is resolved.
+  ns_select_session_run "$NS" "${SID:-}"
   if command -v jq >/dev/null 2>&1; then
     TPATH="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null || true)"
   else

@@ -251,6 +251,42 @@ finally {
     }
 }
 
+# With two runs, Stop acts on the run it is given and leaves the other armed and untouched; an unknown
+# name, or no name, stops nothing and lists the runs.
+$runsRoot = Join-Path ([IO.Path]::GetTempPath()) ('ns-control-runs-' + [guid]::NewGuid().ToString('N'))
+$runsNs = Join-Path $runsRoot '.nightshift'
+$savedRun = $env:NIGHTSHIFT_RUN
+$env:NIGHTSHIFT_RUN = $null
+try {
+    $null = New-Item -ItemType Directory -Path $runsNs -Force
+    [IO.File]::WriteAllText((Join-Path $runsNs 'state-version'), "3`n")
+    foreach ($run in @('a', 'b')) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $runsNs "runs/$run/run") -Force
+        [IO.File]::WriteAllText((Join-Path $runsNs "runs/$run/punch-list.md"), "## Items`n- [ ] **1. $run first.**`n")
+        [IO.File]::WriteAllText((Join-Path $runsNs "runs/$run/run/.shift-armed"), '')
+    }
+    $bBefore = (Get-ChildItem -LiteralPath (Join-Path $runsNs 'runs/b') -Recurse -File | ForEach-Object { $_.FullName + ':' + $_.Length }) -join "`n"
+    $refusal = ''
+    try { $null = Stop-NSShift -Project $runsRoot } catch { $refusal = $_.Exception.Message }
+    Expect-True ($refusal -match 'several runs and none named; name one with --run: a b') "no name stops nothing: $refusal"
+    $refusal = ''
+    try { $null = Stop-NSShift -Project $runsRoot -Run c } catch { $refusal = $_.Exception.Message }
+    Expect-True ($refusal -match 'no run named c; runs: a b') "an unknown run is refused: $refusal"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $runsNs 'runs/a/STOP'))) 'a refused stop writes no STOP'
+    $env:NIGHTSHIFT_RUN = $null
+    $stopped = (@(Stop-NSShift -Project $runsRoot -Run a)) -join "`n"
+    Expect-True ($stopped -match '(?m)^run a$') "stop names its run: $stopped"
+    Expect-True (Test-Path -LiteralPath (Join-Path $runsNs 'runs/a/STOP') -PathType Leaf) 'the named run is stopped'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $runsNs 'runs/b/STOP'))) 'the other run has no STOP'
+    Expect-True (Test-Path -LiteralPath (Join-Path $runsNs 'runs/b/run/.shift-armed') -PathType Leaf) 'the other run stays armed'
+    $bAfter = (Get-ChildItem -LiteralPath (Join-Path $runsNs 'runs/b') -Recurse -File | ForEach-Object { $_.FullName + ':' + $_.Length }) -join "`n"
+    Expect-True ($bAfter -ceq $bBefore) "the other run's files are untouched"
+}
+finally {
+    $env:NIGHTSHIFT_RUN = $savedRun
+    Remove-Item -LiteralPath $runsRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($failures.Count -gt 0) {
     Write-Host ("{0} control-logic failures" -f $failures.Count)
     exit 1

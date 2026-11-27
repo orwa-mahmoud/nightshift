@@ -1,7 +1,8 @@
 param(
     [string]$Project = [Environment]::CurrentDirectory,
     [string]$Date = '',
-    [string[]]$Retire = @()
+    [string[]]$Retire = @(),
+    [string]$Run = ''
 )
 
 # archive-receipts.ps1 - file a shift into its archive folder, laid out the way it was live. The
@@ -46,6 +47,12 @@ if ($kind -eq 'absent') {
 }
 
 $ns = Join-Path $workspace '.nightshift'
+# In a workspace that keeps runs, Archive files one run: the one named, or the only one.
+$choice = Select-NSRunChoice $ns $Run
+if ($choice.Code -ne 0) {
+    Write-NSArchiveReceiptsError ('archive-receipts: ' + $choice.Error)
+    exit 2
+}
 if ([string]::IsNullOrWhiteSpace($Date)) {
     $Date = Get-Date -Format 'yyyy-MM-dd'
 }

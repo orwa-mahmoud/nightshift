@@ -61,7 +61,7 @@ foreach ($record in $records) {
     if ($record.StartsWith("state`t", [StringComparison]::Ordinal)) { $from = $record.Substring(6) }
 }
 Write-Output ('migrate-state: ' + (Join-Path $workspace '.nightshift') + ' is state-version ' + $from + '; version ' +
-    (Get-NSCurrentStateVersion) + ' groups it by purpose')
+    (Get-NSCurrentStateVersion) + ' is the current layout')
 
 $refused = @($records | Where-Object { $_.StartsWith("refuse`t", [StringComparison]::Ordinal) }).Count -gt 0
 $conflicted = @($records | Where-Object { $_.StartsWith("conflict`t", [StringComparison]::Ordinal) }).Count -gt 0
