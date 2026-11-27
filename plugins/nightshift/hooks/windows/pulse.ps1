@@ -19,6 +19,9 @@ if (-not (Test-NSCopyServesHost $pluginRoot $HostName)) { exit 0 }
 
 if (Test-NSHookIdle) { exit 0 }
 
+# The notice can carry any text (an item title, the owner's message), so it goes out as UTF-8.
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+
 $raw = Get-NSStdinText -Piped (($input | ForEach-Object { $_ }) -join "`n")
 if ([string]::IsNullOrWhiteSpace($raw) -and -not [string]::IsNullOrWhiteSpace($HookJson)) {
     $raw = $HookJson
