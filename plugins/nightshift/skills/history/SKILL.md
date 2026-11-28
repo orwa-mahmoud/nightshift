@@ -22,7 +22,14 @@ prints where this workspace keeps a record, and `ns path --list` names every key
 
 **Summary** — the history index Archive already keeps, `history-index.md` at the archive root
 (`ns path archive`). One index, never a second one. Archive's per-shift entries stay as they are;
-the review adds a `## Condensed history` section above them, one short block per subject:
+the review adds a `## Condensed history` section above them. Its first line records what has been
+condensed, so a later review knows where to start:
+
+~~~markdown
+Covers: <every record folder read, relative to the archive root, comma-separated, oldest first>
+~~~
+
+Then one short block per subject:
 
 ~~~markdown
 ### <subject>
@@ -123,6 +130,28 @@ records that remain:
 
 Search for the deleted paths afterwards: no link may still point at one. Report what was deleted,
 what was kept, and every link changed.
+
+## Later reviews
+
+When the index already has a `## Condensed history` section, read only the record folders its
+`Covers:` line does not name, plus closed records of live runs that have closed since. Leave the
+covered originals unread; their facts are already in the two layers.
+
+With nothing new, change nothing: no file is rewritten, not even to refresh a date, and the report
+says the history is up to date.
+
+With new records, merge their facts into the existing subjects, or add a subject when a new topic
+appears:
+
+- a newer decision becomes the summary's `Now:`; the detail file adds it at the top and marks the
+  older one `replaced <date> by <the newer decision>`, which stays;
+- a new rejection, verification, commit or release joins its list in the detail;
+- a new record that settles an `Open:` question moves it to a decision; one that contradicts a
+  decision without settling it becomes an `Open:`;
+- add the new folders to `Covers:`.
+
+Touch only the subjects the new records speak to: every other block and detail file stays byte for
+byte as it was. Then propose deleting the newly condensed originals, as above.
 
 ## Sharing
 
