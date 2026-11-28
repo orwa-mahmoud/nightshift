@@ -182,71 +182,125 @@ function Get-NSPunchItemsDigest {
     return (Get-NSPunchDigest (Get-NSPunchItemsNormalised $PunchList))
 }
 
-# Get-NSGateContractMismatch <workspace> <punch-list> - the sentence to block with, or ''.
-#
-# A file's own editor cannot be its watchman. The gate records the digests at arming, so it checks
-# rather than asking the model to notice. A snapshot written without these fields compares nothing,
-# which is not the same as a mismatch.
-function Get-NSGateContractMismatch {
-    param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
-        [Parameter(Mandatory = $true)][string]$PunchList
-    )
-    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
-    $which = ''
-    $policy = Get-NSShiftPolicy $Workspace
-    if ($null -eq $policy) { return '' }
-    $recorded = Get-NSMapValue $policy 'contractDigest'
-    if (-not [string]::IsNullOrEmpty($recorded)) {
-        if ((Get-NSPunchContractDigest $PunchList) -cne $recorded) { $which = 'contract' }
-    }
-    if ([string]::IsNullOrEmpty($which)) {
-        $recorded = Get-NSMapValue $policy 'itemsDigest'
-        if (-not [string]::IsNullOrEmpty($recorded)) {
-            if ((Get-NSPunchItemsDigest $PunchList) -cne $recorded) { $which = 'items' }
+# Get-NSPunchListView <punch-list> - the list as the clock-out gate records it, so a later reading
+# can name what moved: `contract<TAB><digest>`, then one line per item,
+# `item<TAB><key><TAB><label><TAB><text>`. The key is the item's id, or its label when it has none;
+# the text is the item and its sub-bullets as Get-NSPunchItemsNormalised has them, lines joined by
+# a unit separator and without the blank lines that trail it, so a tick, or the item after it going
+# away, changes nothing. Mirrors ns_punch_list_view, byte for byte.
+function Get-NSPunchListView {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    $out = New-Object Collections.Generic.List[string]
+    $out.Add("contract`t" + (Get-NSPunchContractDigest $PunchList))
+    $key = ''
+    $label = ''
+    $text = ''
+    $unit = [string][char]0x1F
+    $trailing = '(\x1F[ \t\r\n\f\v]*)+$'
+    foreach ($line in (Get-NSPunchItemsNormalised $PunchList)) {
+        if ($line -cmatch '^- \[[ xX-]\]') {
+            if ($key.Length -gt 0) { $out.Add("item`t$key`t$label`t" + ($text -creplace $trailing, '')) }
+            $label = (Get-NSItemLabel $line).Replace("`t", ' ')
+            $key = Get-NSItemId $line
+            if ($key.Length -eq 0) { $key = $label }
+            $text = ($line -creplace $script:NSItemIdPattern, '').Replace("`t", ' ')
+            continue
         }
+        if ($key.Length -gt 0) { $text = $text + $unit + $line.Replace("`t", ' ') }
     }
-    if ([string]::IsNullOrEmpty($which)) { return '' }
-
-    if ($which -ceq 'contract') {
-        return ('DO NOT STOP - the shift contract above the Items heading in ' + $PunchList +
-            ' has changed since this shift armed. It is the agreement the night is working to,' +
-            ' and it is not editable while a shift runs. Restore the punch list from the' +
-            ' work-target history or the receipts, or end the shift and let the owner edit the' +
-            ' contract with nothing armed. Nothing else about the shift has changed: your ticks' +
-            ' stand.')
-    }
-    return ('DO NOT STOP - an item in ' + $PunchList + ' has been reworded, removed or inserted' +
-        ' since this shift armed. Ticking a box is invisible to this check, so something other' +
-        ' than a tick changed. Restore the punch list from the work-target history or the' +
-        ' receipts, or end the shift and let the owner edit the list with nothing armed. Nothing' +
-        ' else about the shift has changed: your ticks stand.')
+    if ($key.Length -gt 0) { $out.Add("item`t$key`t$label`t" + ($text -creplace $trailing, '')) }
+    return $out.ToArray()
 }
 
-# Get-NSGateDoneMismatch <workspace> <punch-list> - the sentence to block a done clock-out with,
-# or ''.
-#
-# Zero open boxes is done only when the list is still the one that armed. Deleting the unfinished
-# items, or editing the contract once every box is ticked, reaches zero open boxes too, so the done
-# path asks the same question the working path asks. A list that has disappeared entirely, from a
-# shift that recorded one at arming, is that case at its limit. A snapshot that predates these
-# fields records nothing, and a shift without one ends as it always has.
-function Get-NSGateDoneMismatch {
+# Get-NSPunchListChanges <earlier-view> <later-view> - what moved between two views, one change per
+# line: `contract`, `added<TAB><label>`, `removed<TAB><label>` or `reworded<TAB><label>`, items in
+# the later list's order, then the removed ones. An item is the same item by its key, or by its
+# label when its id was added or dropped. Mirrors ns_punch_list_changes.
+function Get-NSPunchListChanges {
+    param([AllowEmptyCollection()][string[]]$Before, [AllowEmptyCollection()][string[]]$After)
+    $beforeContract = ''
+    $beforeText = @{}
+    $beforeLabel = @{}
+    $byLabel = @{}
+    $order = New-Object Collections.Generic.List[string]
+    foreach ($row in @($Before)) {
+        $f = $row.Split("`t")
+        if ($f[0] -ceq 'contract') { $beforeContract = $f[1] }
+        elseif ($f[0] -ceq 'item' -and $f.Count -ge 4) {
+            $beforeText[$f[1]] = $f[3]
+            $beforeLabel[$f[1]] = $f[2]
+            $order.Add($f[1])
+            if (-not $byLabel.ContainsKey($f[2])) { $byLabel[$f[2]] = $f[1] }
+        }
+    }
+    $out = New-Object Collections.Generic.List[string]
+    $seen = @{}
+    foreach ($row in @($After)) {
+        $f = $row.Split("`t")
+        if ($f[0] -ceq 'contract') {
+            if ($beforeContract.Length -gt 0 -and $f[1] -cne $beforeContract) { $out.Add('contract') }
+        }
+        elseif ($f[0] -ceq 'item' -and $f.Count -ge 4) {
+            $key = $f[1]
+            if (-not $beforeText.ContainsKey($key) -and $byLabel.ContainsKey($f[2]) -and -not $seen.ContainsKey($byLabel[$f[2]])) {
+                $key = $byLabel[$f[2]]
+            }
+            if (-not $beforeText.ContainsKey($key)) { $out.Add("added`t" + $f[2]); continue }
+            $seen[$key] = $true
+            if ($beforeText[$key] -cne $f[3]) { $out.Add("reworded`t" + $f[2]) }
+        }
+    }
+    foreach ($key in $order) {
+        if (-not $seen.ContainsKey($key)) { $out.Add("removed`t" + $beforeLabel[$key]) }
+    }
+    return $out.ToArray()
+}
+
+# Invoke-NSPunchListNote <nightshift-dir> <punch-list> - the history of the list during a shift. The
+# list is compared with the view last recorded in `list-seen`; every change is named in one
+# shift-log line, and the list as it is now becomes the recorded view. Nothing is refused: the owner
+# reads how the list moved and judges it. With no view recorded yet the list is recorded and nothing
+# is logged. Returns $true when something moved. Mirrors ns_punch_list_note.
+function Invoke-NSPunchListNote {
     param(
-        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
         [Parameter(Mandatory = $true)][string]$PunchList
     )
-    if (Test-Path -LiteralPath $PunchList -PathType Leaf) {
-        return (Get-NSGateContractMismatch $Workspace $PunchList)
+    $seen = Get-NSLayoutPath $NightshiftDir 'list-seen'
+    if (Test-NSReparsePoint $seen) { return $false }
+    $hadSeen = Test-Path -LiteralPath $seen -PathType Leaf
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf) -or (Test-NSReparsePoint $PunchList)) {
+        if (-not $hadSeen) { return $false }
+        Remove-Item -LiteralPath $seen -Force
+        Write-NSShiftEndLog $NightshiftDir 'punch list changed: the punch list is gone'
+        return $true
     }
-    $policy = Get-NSShiftPolicy $Workspace
-    if ($null -eq $policy) { return '' }
-    $recorded = Get-NSMapValue $policy 'itemsDigest'
-    if ([string]::IsNullOrEmpty($recorded)) { $recorded = Get-NSMapValue $policy 'contractDigest' }
-    if ([string]::IsNullOrEmpty($recorded)) { return '' }
-    return ('DO NOT STOP - ' + $PunchList + ' is gone, but this shift armed with a punch list.' +
-        ' Deleting the list does not finish its items. Restore it from the work-target history or' +
-        ' the receipts, or issue a stop-work order to end the shift with its work unfinished.')
+    $now = Get-NSPunchListView $PunchList
+    $changes = @()
+    if ($hadSeen) {
+        $before = [IO.File]::ReadAllLines($seen, $script:NSUtf8NoBom)
+        $changes = @(Get-NSPunchListChanges $before $now)
+    }
+    $dir = Split-Path -Parent $seen
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { $null = New-Item -ItemType Directory -Force -Path $dir }
+    [IO.File]::WriteAllText($seen, (($now -join "`n") + "`n"), $script:NSUtf8NoBom)
+    if ($changes.Count -eq 0) { return $false }
+    $parts = New-Object Collections.Generic.List[string]
+    foreach ($change in $changes) {
+        $f = $change.Split("`t")
+        if ($f[0] -ceq 'contract') { $parts.Add('the contract above ## Items changed') }
+        else { $parts.Add($f[0] + ' "' + $f[1] + '"') }
+    }
+    Write-NSShiftEndLog $NightshiftDir ('punch list changed: ' + ($parts -join '; '))
+    return $true
+}
+
+# Get-NSGateListFingerprint <punch-list> - one digest of the contract and every item, ticks aside.
+# Mirrors ns_gate_list_fingerprint.
+function Get-NSGateListFingerprint {
+    param([Parameter(Mandatory = $true)][string]$PunchList)
+    if (-not (Test-Path -LiteralPath $PunchList -PathType Leaf)) { return '' }
+    return (Get-NSPunchDigest (Get-NSPunchListView $PunchList))
 }
 
 # Invoke-NSPunchListCommand - runtime/windows/punch-list.ps1's whole body.
@@ -3360,7 +3414,15 @@ function Start-NSFileMap {
     try { $mode = Get-NSWorkMode $Workspace } catch { return }
     if ($mode -cne 'repository') { return }
     $sid = Get-NSFileMapShiftId $Workspace
-    if ((Get-NSFileMapField $Workspace 'base').Length -gt 0 -and (Get-NSFileMapField $Workspace 'shift') -ceq $sid) { return }
+    if ((Get-NSFileMapField $Workspace 'base').Length -gt 0) {
+        $recorded = Get-NSFileMapField $Workspace 'shift'
+        if ($recorded -ceq $sid) { return }
+        # A continued shift keeps the commit it started on under its new id.
+        if ($recorded -ceq $script:NSShiftContinued) {
+            Set-NSFileMapField $Workspace 'shift' $sid
+            return
+        }
+    }
     $head = Get-NSFileMapHead $Workspace
     if ($head.Length -eq 0) { return }
     Set-NSFileMapField $Workspace 'shift' $sid
@@ -4034,12 +4096,7 @@ function Invoke-NSWatchmanDirectClockOut {
         return $result
     }
     if ($why -eq 'ticked') {
-        $moved = Get-NSGateDoneMismatch $Workspace $punch
-        if (-not [string]::IsNullOrEmpty([string]$moved)) {
-            $result.Reason = "clock-out refused: $moved"
-            Write-NSShiftEndLog $ns ('watchman: ' + $result.Reason)
-            return $result
-        }
+        $null = Invoke-NSPunchListNote $ns $punch
         $evidenceHold = ''
         try { $evidenceHold = [string](Get-NSEvidenceHold $Workspace $punch) } catch { $evidenceHold = '' }
         if (-not [string]::IsNullOrEmpty($evidenceHold)) {
@@ -4150,42 +4207,8 @@ function Get-NSPlanRecordFile {
     return (Join-Path (Get-NSLayoutPath $NightshiftDir 'plan-records') ($Key + '.md'))
 }
 
-# Get-NSTeamBlock <workspace> - the team block of the team's rules.json, or $null.
-function Get-NSTeamBlock {
-    param([Parameter(Mandatory = $true)][string]$Workspace)
-    $file = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'rules'
-    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $null }
-    try { $data = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
-    catch { return $null }
-    $block = $data.PSObject.Properties['team']
-    if ($null -eq $block -or -not ($block.Value -is [pscustomobject])) { return $null }
-    return $block.Value
-}
-
-# Get-NSTeamList <workspace> <key> - each string of team.<key>. Mirrors ns_team_list.
-function Get-NSTeamList {
-    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
-    $team = Get-NSTeamBlock $Workspace
-    if ($null -eq $team) { return , @() }
-    $field = $team.PSObject.Properties[$Key]
-    if ($null -eq $field -or $null -eq $field.Value) { return , @() }
-    return , @($field.Value | ForEach-Object { [string]$_ })
-}
-
-# Get-NSTeamRole <workspace> <name> - the role team.roles gives <name>, or ''. Mirrors ns_team_role.
-function Get-NSTeamRole {
-    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Name)
-    $team = Get-NSTeamBlock $Workspace
-    if ($null -eq $team) { return '' }
-    $roles = $team.PSObject.Properties['roles']
-    if ($null -eq $roles -or -not ($roles.Value -is [pscustomobject])) { return '' }
-    $role = $roles.Value.PSObject.Properties[$Name]
-    if ($null -eq $role) { return '' }
-    return [string]$role.Value
-}
-
-# Get-NSPlanRecordLines <record-file> - each action line as an object: Action, Name, Role, Revision,
-# Line. A line written before records carried names reads as unknown. Mirrors ns_plan_record_lines.
+# Get-NSPlanRecordLines <record-file> - each action line as an object: Action, Name, Revision, Line.
+# A line written without a name reads as unknown. Mirrors ns_plan_record_lines.
 function Get-NSPlanRecordLines {
     param([AllowEmptyString()][string]$RecordFile)
     $out = New-Object Collections.Generic.List[object]
@@ -4196,78 +4219,13 @@ function Get-NSPlanRecordLines {
         if (-not $line.StartsWith('- ', [StringComparison]::Ordinal)) { continue }
         $fields = $line.Substring(2).Split(@($separator), [StringSplitOptions]::None)
         if ($script:NSPlanActions -cnotcontains $fields[0]) { continue }
-        $name = 'unknown'; $role = '-'; $revision = ''
+        $name = 'unknown'; $revision = ''
         if ($fields.Count -ge 4 -and -not $fields[1].StartsWith('revision ', [StringComparison]::Ordinal) -and
-            -not $fields[2].StartsWith('revision ', [StringComparison]::Ordinal)) {
-            $name = $fields[1]; $role = $fields[2]
-        }
+            -not $fields[2].StartsWith('revision ', [StringComparison]::Ordinal)) { $name = $fields[1] }
         for ($i = 1; $i -lt $fields.Count; $i++) {
             if ($fields[$i].StartsWith('revision ', [StringComparison]::Ordinal)) { $revision = $fields[$i].Substring(9) }
         }
-        $out.Add([pscustomobject]@{ Action = $fields[0]; Name = $name; Role = $role; Revision = $revision; Line = $line })
-    }
-    return , $out.ToArray()
-}
-
-# Test-NSPlanMayApprove <workspace> <name> - true when the team lets <name> approve a plan: their role
-# is one of team.approvers. With no approvers set, anyone may. Mirrors ns_plan_may_approve.
-function Test-NSPlanMayApprove {
-    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$Name)
-    $approvers = Get-NSTeamList $Workspace 'approvers'
-    if ($approvers.Count -eq 0) { return $true }
-    if ($Name -ceq 'unknown') { return $false }
-    $role = Get-NSTeamRole $Workspace $Name
-    return ($role.Length -gt 0 -and ($approvers -ccontains $role))
-}
-
-# Get-NSPlanChangedParts <approved> <revision> <parts> - the named parts that differ between the two
-# revisions. Mirrors _ns_plan_changed_parts.
-function Get-NSPlanChangedParts {
-    param([AllowEmptyString()][string]$Approved, [AllowEmptyString()][string]$Revision, [string[]]$Parts)
-    $a = $Approved.Split('.')
-    $b = $Revision.Split('.')
-    $out = New-Object Collections.Generic.List[string]
-    foreach ($part in $Parts) {
-        $i = [array]::IndexOf(@('contract', 'gates', 'items'), $part)
-        if ($i -lt 0) { continue }
-        $x = $(if ($a.Count -gt $i) { $a[$i] } else { '' })
-        $y = $(if ($b.Count -gt $i) { $b[$i] } else { '' })
-        if ($x -cne $y) { $out.Add($part) }
-    }
-    return ($out.ToArray() -join ' ')
-}
-
-# Get-NSPlanState <workspace> <key> - the plan's approval as "<field> <value>" lines, $null when the
-# plan file is not there. Mirrors ns_plan_state.
-function Get-NSPlanState {
-    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key)
-    $ns = Join-Path $Workspace '.nightshift'
-    if (-not (Test-NSLayoutKey $ns 'plans')) { return $null }
-    $plan = Join-Path (Get-NSLayoutPath $ns 'plans') ($Key + '.md')
-    if (-not [IO.File]::Exists($plan) -or (Test-NSReparsePoint $plan)) { return $null }
-    $revision = Get-NSPlanRevision $plan
-    $parts = @('contract', 'gates', 'items')
-    $approvers = Get-NSTeamList $Workspace 'approvers'
-    $held = ''; $heldRevision = ''; $last = ''; $lastRevision = ''
-    foreach ($entry in (Get-NSPlanRecordLines (Get-NSPlanRecordFile $ns $Key))) {
-        if ($entry.Action -cne 'approved') { continue }
-        if (-not (Test-NSPlanMayApprove $Workspace $entry.Name)) { continue }
-        $last = $entry.Name; $lastRevision = $entry.Revision
-        if ((Get-NSPlanChangedParts $entry.Revision $revision $parts).Length -eq 0) { $held = $entry.Name; $heldRevision = $entry.Revision }
-    }
-    $out = New-Object Collections.Generic.List[string]
-    $out.Add('revision ' + $revision)
-    $out.Add($(if ($approvers.Count -gt 0) { 'approval required' } else { 'approval not-required' }))
-    if ($held.Length -gt 0) {
-        $out.Add('state approved')
-        $out.Add('approved-by ' + $held + ' ' + $heldRevision)
-    }
-    else {
-        $out.Add('state proposed')
-        if ($last.Length -gt 0) {
-            $out.Add('approved-by ' + $last + ' ' + $lastRevision)
-            $out.Add('changed ' + (Get-NSPlanChangedParts $lastRevision $revision $parts))
-        }
+        $out.Add([pscustomobject]@{ Action = $fields[0]; Name = $name; Revision = $revision; Line = $line })
     }
     return , $out.ToArray()
 }
@@ -4285,10 +4243,8 @@ function Add-NSPlanRecord {
     $ns = Join-Path $Workspace '.nightshift'
     $plan = Join-Path (Get-NSLayoutPath $ns 'plans') ($Key + '.md')
     $record = Get-NSPlanRecordFile $ns $Key
-    $role = Get-NSTeamRole $Workspace $Name
-    if ($role.Length -eq 0) { $role = '-' }
     $dot = ' ' + [char]0x00B7 + ' '
-    $line = '- ' + $Action + $dot + $Name + $dot + $role + $dot + (Get-NSLocalNow) + $dot + 'revision ' + (Get-NSPlanRevision $plan)
+    $line = '- ' + $Action + $dot + $Name + $dot + (Get-NSLocalNow) + $dot + 'revision ' + (Get-NSPlanRevision $plan)
     foreach ($field in $Extra) { $line += $dot + $field }
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $record) -Force
     $utf8 = New-Object Text.UTF8Encoding($false)

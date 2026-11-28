@@ -1059,9 +1059,11 @@ exit 0
         $recoveryAcl = Get-Acl -LiteralPath (Get-NSLayoutPath (Join-Path $recoveryWorkspace '.nightshift') 'lease')
         Assert-True $recoveryAcl.AreAccessRulesProtected 'lease takeover preserves the private ACL'
 
+        # The revival child exited cleanly, so its lease went back to the recorded conversation.
         $postRecoveryLease = Read-NSLease (Join-Path $recoveryWorkspace '.nightshift')
-        Assert-True ($null -ne $postRecoveryLease -and -not [string]::IsNullOrEmpty($postRecoveryLease.Nonce)) `
-            "recovery leaves a nonce lease before fencing ($(if ($null -eq $postRecoveryLease) { 'missing' } else { $postRecoveryLease.Nonce }))"
+        Assert-True ($null -ne $postRecoveryLease -and [string]::IsNullOrEmpty($postRecoveryLease.Nonce) -and
+            $postRecoveryLease.Generation -gt [int]$receiptLines[2]) `
+            "a finished revival hands its lease back ($(if ($null -eq $postRecoveryLease) { 'missing' } else { "generation $($postRecoveryLease.Generation) nonce '$($postRecoveryLease.Nonce)'" }))"
         $staleTool = Invoke-Hardhat $recoveryWorkspace $recoverySession 'Bash' @{ command = 'Get-Location' }
         Assert-True ([string]::IsNullOrWhiteSpace($staleTool.Stdout)) `
             "the recorded conversation reclaims a dead recovery holder ($(Format-HookResult $staleTool))"

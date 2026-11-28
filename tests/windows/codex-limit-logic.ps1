@@ -45,7 +45,7 @@ function Start-Process {
     if (-not $test.FailLaunch) {
         [IO.File]::WriteAllText((Get-NSLayoutPath $test.Nightshift 'punch-list'), "## Items`n- [x] Item`n")
     }
-    $child = [pscustomobject]@{ Id = [int]::MaxValue }
+    $child = [pscustomobject]@{ Id = [int]::MaxValue; ExitCode = 0 }
     $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {}
     return $child
 }

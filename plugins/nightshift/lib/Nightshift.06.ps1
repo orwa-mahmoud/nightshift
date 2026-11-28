@@ -295,6 +295,7 @@ $script:NSReceiptLabels['started'] = 'Started'
 $script:NSReceiptLabels['ended'] = 'Ended'
 $script:NSReceiptLabels['ending'] = 'Ending'
 $script:NSReceiptLabels['items'] = 'Items'
+$script:NSReceiptLabels['listChanged'] = 'List changed'
 $script:NSReceiptLabels['commits'] = 'Commits'
 $script:NSReceiptLabels['receipts'] = 'Receipts'
 $script:NSReceiptLabels['files'] = 'Files'
@@ -891,10 +892,11 @@ function Get-NSReceiptScrubbedLines {
     return , $lines.ToArray()
 }
 
-# Get-NSReceiptShiftLogLines <shift-log> interruptions|handover - lines written since the last
-# `shift started`: every interruption the runtime recorded, or the last handover line.
+# Get-NSReceiptShiftLogLines <shift-log> interruptions|handover|listchanges - lines written since
+# the last `shift started`: every interruption the runtime recorded, the last handover line, or
+# every change the clock-out gate recorded to the punch list.
 function Get-NSReceiptShiftLogLines {
-    param([Parameter(Mandatory = $true)][string]$Path, [ValidateSet('interruptions', 'handover')][string]$Want)
+    param([Parameter(Mandatory = $true)][string]$Path, [ValidateSet('interruptions', 'handover', 'listchanges')][string]$Want)
     $out = New-Object Collections.Generic.List[string]
     $all = Get-NSReceiptScrubbedLines $Path
     $start = -1
@@ -908,6 +910,9 @@ function Get-NSReceiptShiftLogLines {
         $lower = $line.ToLowerInvariant()
         if ($Want -ceq 'handover') {
             if ($lower.Contains('handover')) { $last = $line }
+        }
+        elseif ($Want -ceq 'listchanges') {
+            if ($lower.Contains('punch list changed:')) { $out.Add($line) }
         }
         elseif ($lower -cmatch $script:NSReceiptInterruptionPattern) {
             $out.Add($line)
@@ -1457,6 +1462,11 @@ function Get-NSReceiptShiftLines {
         $itemsText = ($script:NSReceiptItemsFormat -f ([int]$Context['ticked']), ([int]$Context['open']))
         if ([int]$Context['stopped'] -gt 0) { $itemsText += (', {0} stopped at their hard budget' -f [int]$Context['stopped']) }
         Add-NSReceiptField $lines 'items' $itemsText
+    }
+    # How the punch list moved during the shift, one line per recorded change.
+    $marker = 'punch list changed: '
+    foreach ($change in (Get-NSReceiptShiftLogLines (Get-NSLayoutPath ([string]$Context['ns']) 'shift-log') 'listchanges')) {
+        Add-NSReceiptField $lines 'listChanged' $change.Substring($change.IndexOf($marker, [StringComparison]::Ordinal) + $marker.Length)
     }
     $artifactView = ([string]$Context['view']) -ceq 'artifact'
     if ($artifactView -or (([string]$Context['workMode']) -ceq 'artifact')) {

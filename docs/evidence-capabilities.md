@@ -52,8 +52,8 @@ See [Archive and continue](archive.md#archive-and-continue), the [Archive contra
 | `ns check-report` | Checks a cited report against its source manifest |
 | `ns continuity-handoff` | Cross-host handoff packages and the on-disk takeover fence |
 
-Every one has a native Windows twin under `runtime/windows/`. The plugin ships no Python. The
-bash helpers use `jq` for the JSON they read and write, and fall back to an inline `python3`
+Every one has a native Windows twin under `runtime/windows/`. The plugin needs no Python. The
+bash helpers use `jq` for the JSON they read and write, and fall back to a bundled `python3`
 program when `jq` is absent; with neither, they say what is missing and stop rather than write a
 half-record. Hooks never depend on either — see
 [the parser rules](how-it-works.md#three-policy-layers-and-one-resolved-view).

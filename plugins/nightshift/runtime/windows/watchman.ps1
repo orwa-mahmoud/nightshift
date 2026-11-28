@@ -496,8 +496,10 @@ function Test-NSCursorRelaunchDue {
     if ($open -le 0 -or $open -ge $OpenBefore) {
         return $false
     }
+    # The worker's own lease, or the one it handed back when it exited: either way no live process
+    # took the site back.
     $lease = Read-NSLease $ns
-    if ($null -eq $lease -or [string]::IsNullOrEmpty($lease.Nonce)) {
+    if ($null -eq $lease -or ([string]::IsNullOrEmpty($lease.Nonce) -and -not [string]::IsNullOrEmpty($lease.ProcessId))) {
         return $false
     }
     return -not (Test-NSLeasePidLive $ns)
@@ -665,6 +667,9 @@ function Start-NSAgent {
         $start = Get-NSProcessStart $process.Id
         $null = Attach-NSLeaseProcess $ns $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start
         $process.WaitForExit()
+        # A revival that finished cleanly leaves a lease that fences nobody: it goes back to the
+        # recorded conversation. A failed attempt leaves it to the restore and the dead-holder reclaim.
+        if ($process.ExitCode -eq 0) { $null = Invoke-NSLeaseHandBack $ns $HostName $lease.Nonce ([string]$lease.Generation) }
         if (-not (Test-NSWatchmanRevivalProved -NightshiftDir $ns -Sentinel '' -IntervalMinutes $IntervalMinutes -OpenBefore $openBefore)) {
             return $false
         }
@@ -703,6 +708,7 @@ function Start-NSAgent {
                 $start = Get-NSProcessStart $process.Id
                 $null = Attach-NSLeaseProcess $ns $HostName $lease.Nonce ([string]$lease.Generation) ([string]$process.Id) $start
                 $process.WaitForExit()
+                if ($process.ExitCode -eq 0) { $null = Invoke-NSLeaseHandBack $ns $HostName $lease.Nonce ([string]$lease.Generation) }
             }
         }
         return $true
@@ -1159,14 +1165,16 @@ try {
                 $downNotified = $false
                 $stamp = Get-NSLocalNow -Seconds
                 $cursorWorker = Get-NSCursorWorkerId
+                # A wedge is a live session stopped at an errored prompt, not a dead one.
+                $how = if ($verdict -eq 'wedge') { 'stopped at an errored prompt' } else { 'died' }
                 $notice = if (-not [string]::IsNullOrEmpty($sessionId) -and $HostName -eq 'claude') {
-                    "- [notice] $stamp - the shift session died and the watchman revived it. One thread: claude --resume $sessionId $([char]0x00B7) cursor://anthropic.claude-code/open?session=$sessionId $([char]0x00B7) vscode://anthropic.claude-code/open?session=$sessionId"
+                    "- [notice] $stamp - the shift session $how and the watchman revived it. One thread: claude --resume $sessionId $([char]0x00B7) cursor://anthropic.claude-code/open?session=$sessionId $([char]0x00B7) vscode://anthropic.claude-code/open?session=$sessionId"
                 }
                 elseif ($HostName -eq 'cursor' -and -not [string]::IsNullOrEmpty($cursorWorker)) {
                     "- [notice] $stamp - the shift session died and the watchman revived it in a CLI worker. To see it, run this in a terminal: agent --resume=`"$cursorWorker`" --workspace `"$workspace`". To stop it, ask Nightshift to stop."
                 }
                 else {
-                    "- [notice] $stamp - the shift session died and the watchman revived it (details in shift-log.md)."
+                    "- [notice] $stamp - the shift session $how and the watchman revived it (details in shift-log.md)."
                 }
                 [IO.File]::AppendAllText((Get-NSLayoutPath $ns 'parking-lot'), $notice + [Environment]::NewLine, $utf8)
                 if (-not [string]::IsNullOrEmpty($sessionId) -and $HostName -eq 'claude') {

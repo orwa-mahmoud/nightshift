@@ -21,10 +21,11 @@ CASES="sample edge broken"
 # its own carries more. all_cases is what every loop over the fixtures reads.
 all_cases() {
   case "$1" in
-    eslint-json) printf '%s strings' "$CASES" ;;
+    eslint-json) printf '%s strings notjson' "$CASES" ;;
     tsc) printf '%s continuation pretty colour summary-only partial watch clean' "$CASES" ;;
-    coverage-summary) printf '%s unmeasured' "$CASES" ;;
-    sarif) printf '%s wide' "$CASES" ;;
+    coverage-summary) printf '%s unmeasured notjson' "$CASES" ;;
+    sarif) printf '%s wide notjson' "$CASES" ;;
+    npm-audit) printf '%s notjson' "$CASES" ;;
     junit) printf '%s nested cdata truncated cut mismatched torn-cdata torn-comment empty-suite no-counts' "$CASES" ;;
     lcov) printf '%s unmeasured' "$CASES" ;;
     *) printf '%s' "$CASES" ;;
@@ -388,6 +389,9 @@ digest_of() {
   [ "$status" -eq 1 ]
   normalize --format tsc --input "$(fixture_input tsc sample)" --top nine
   [ "$status" -eq 1 ]
+  normalize --format tsc --input "$(fixture_input tsc sample)" --colour
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'unknown argument: --colour'
 }
 
 @test "a JSON format needs jq; the awk formats do not" {

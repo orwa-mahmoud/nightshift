@@ -517,3 +517,10 @@ fingerprint() {
   [ "$status" -eq 0 ]
   [ "$output" = '{"detail":"no transaction","ok":true,"recovered":false}' ]
 }
+
+@test "an unknown argument is a usage error" {
+  p="$(new_project recover-usage)"
+  run bash "$RECOVER" --project "$p" --colour
+  [ "$status" -eq 1 ]
+  printf '%s\n' "$output" | grep -qF 'provision-recover: unknown argument: --colour'
+}

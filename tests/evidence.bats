@@ -504,3 +504,21 @@ example_record() {
   run bash "$EV" --project "$p" validate
   [ "$status" -eq 0 ]
 }
+
+@test "a record that is not one JSON object is refused the same way on both runtimes" {
+  p="$(new_project ev-not-object)"
+  bash "$EV" --project "$p" init >/dev/null
+  run bash "$EV" --project "$p" append --record '{"a":1} {"b":2}'
+  [ "$status" -eq 1 ]
+  [ "$output" = 'evidence: --record is not one JSON value' ]
+  run bash "$EV" --project "$p" append --record '[1]'
+  [ "$status" -eq 1 ]
+  [ "$output" = 'evidence: record is not an object' ]
+  [ -n "$PWSH_BIN" ] || return 0
+  run "$PWSH_BIN" -NoProfile -NonInteractive -File "$WIN" -Project "$p" -Command append -Record '{"a":1} {"b":2}'
+  [ "$status" -eq 1 ]
+  [ "$output" = 'evidence: --record is not one JSON value' ]
+  run "$PWSH_BIN" -NoProfile -NonInteractive -File "$WIN" -Project "$p" -Command append -Record '[1]'
+  [ "$status" -eq 1 ]
+  [ "$output" = 'evidence: record is not an object' ]
+}

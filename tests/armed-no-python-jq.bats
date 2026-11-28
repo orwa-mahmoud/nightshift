@@ -15,9 +15,9 @@ ARMED_PATH_TOOLSET="bash sh sed tr sort grep cut awk cat mktemp uname date \
 rm mv cp ln printf head tail wc find test dirname basename cksum env true false \
 chmod git touch mkdir sleep kill ps stat cmp xargs ls readlink"
 
-@test "the plugin ships no Python" {
-  run git -C "$ROOT" ls-files 'plugins/nightshift/**/*.py'
-  [ "$status" -eq 0 ]
+@test "no hook runs a Python program" {
+  run grep -rlE '\.py\b|python3' "$PLUGIN/hooks"
+  [ "$status" -eq 1 ]
   [ -z "$output" ]
 }
 

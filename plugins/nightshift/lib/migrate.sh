@@ -21,6 +21,8 @@ NS_MIGRATE_LINKS_AWK="$_ns_migrate_dir/migrate-links.awk"
 NS_MIGRATE_JSON_AWK="$_ns_migrate_dir/rules-read.awk"
 NS_MIGRATE_SCHEMA_PREVIOUS="$_ns_migrate_dir/rules-schema-previous.txt"
 NS_MIGRATE_RULES_TEMPLATE="$_ns_migrate_dir/../config/nightshift-rules-template.json"
+# The awk programs the migration runs, beside this file.
+NS_MIGRATE_LIB="$_ns_migrate_dir"
 unset _ns_migrate_dir
 
 _NS_MIG_TAB="$(printf '\t')"
@@ -77,9 +79,30 @@ _ns_migrate_keys() {
   printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '$4 != "field" && $4 != "retired" && $4 != "stray" && !seen[$1]++ { print $1 }'
 }
 
+# _ns_migrate_index — every key's paths, oldest first, read from the layout table in one pass and
+# kept in _NSMR_<key> variables (hyphens as underscores), so a lookup reads a variable instead of
+# scanning the table. Rebuilt only when the table changes.
+_ns_migrate_index() {
+  local key path var
+  [ "${_NS_MIGRATE_INDEX_OF-}" != "$NS_LAYOUT_ROWS" ] || return 0
+  for var in ${_NS_MIGRATE_INDEX_VARS-}; do unset "$var"; done
+  _NS_MIGRATE_INDEX_VARS=""
+  while IFS="$_NS_RULES_TAB" read -r key path; do
+    [ -n "$key" ] || continue
+    var="_NSMR_${key//-/_}"
+    case " $_NS_MIGRATE_INDEX_VARS " in *" $var "*) ;; *) _NS_MIGRATE_INDEX_VARS="$_NS_MIGRATE_INDEX_VARS $var" ;; esac
+    printf -v "$var" '%s%s\n' "${!var-}" "$path"
+  done <<ROWS
+$(printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' '{ print $1 "\t" $3 }')
+ROWS
+  _NS_MIGRATE_INDEX_OF="$NS_LAYOUT_ROWS"
+}
+
 # _ns_migrate_rows <key> — every path <key> has had, oldest first.
 _ns_migrate_rows() {
-  printf '%s' "$NS_LAYOUT_ROWS" | awk -F '\t' -v k="$1" '$1 == k { print $3 }'
+  local var="_NSMR_${1//-/_}"
+  _ns_migrate_index
+  printf '%s' "${!var-}"
 }
 
 # _ns_migrate_field_keys <kind> — the field or retired keys, table order.
@@ -274,6 +297,8 @@ ns_migrate_plan() {
   esac
   ver="$(ns_state_version "$ws")"
   printf 'state\t%s\n' "$ver"
+  # Built here, outside the $(...) lookups below, so each of them reads it instead of rebuilding it.
+  _ns_migrate_index
   _NS_MIGRATE_RUN=""
   if ns_layout_rel_at p "$NS_LAYOUT_VERSION" punch-list && case "$p" in 'runs/*/'*) true ;; *) false ;; esac; then
     if ! _NS_MIGRATE_RUN="$(_ns_migrate_run_name "$ws")"; then
@@ -545,35 +570,12 @@ _ns_migrate_links() {
   # What exists once the moves are made: every path now, carried through the moves.
   exists="$(find "$ns" -mindepth 1 -name .git -prune -o -print 2>/dev/null | while IFS= read -r p; do
     printf '%s\n' "${p#"$ns"/}"
-  done | NS_MIG_MOVES="$moves" awk '
-    BEGIN {
-      n = split(ENVIRON["NS_MIG_MOVES"], pairs, "\n")
-      for (k = 1; k <= n; k++) {
-        if (pairs[k] == "") continue
-        split(pairs[k], pr, "\t")
-        moves[pr[1]] = pr[2]
-      }
-    }
-    {
-      p = $0
-      out = p
-      for (src in moves) {
-        if (p == src) { out = moves[src]; break }
-        if (index(p, src "/") == 1) { out = moves[src] substr(p, length(src) + 1); break }
-      }
-      print out
-      while (index(out, "/") > 0) { sub(/\/[^\/]*$/, "", out); print out }
-    }' | sort -u)"
+  done | NS_MIG_MOVES="$moves" awk -f "$NS_MIGRATE_LIB/migrate-paths-after.awk" | sort -u)"
   find "$ns" -name .git -prune -o -type f -name '*.md' -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
     [ -L "$f" ] && continue
     rel="${f#"$ns"/}"
     case "$rel" in *.original.md) continue ;; esac
-    now="$(printf '%s\n' "$rel" | NS_MIG_MOVES="$moves" awk '
-      BEGIN {
-        n = split(ENVIRON["NS_MIG_MOVES"], pairs, "\n")
-        for (k = 1; k <= n; k++) { if (pairs[k] == "") continue; split(pairs[k], pr, "\t"); moves[pr[1]] = pr[2] }
-      }
-      { p = $0; out = p; for (src in moves) { if (p == src) { out = moves[src]; break } if (index(p, src "/") == 1) { out = moves[src] substr(p, length(src) + 1); break } } print out }')"
+    now="$(printf '%s\n' "$rel" | NS_MIG_MOVES="$moves" awk -f "$NS_MIGRATE_LIB/migrate-path-after.awk")"
     [ "$mode" = plan ] || now="$rel"
     dir=""
     case "$now" in */*) dir="${now%/*}" ;; esac
@@ -623,59 +625,14 @@ KEYS
 
 # ns_migrate_render <preview|apply> — the plan records on stdin as lines an owner reads.
 ns_migrate_render() {
-  awk -F '\t' -v mode="$1" '
-    $1 == "state" { next }
-    $1 == "refuse" { printf "  refuse    %s\n", $2; refused = 1; next }
-    $1 == "move" { printf "  move      %s -> %s\n", $2, $3; n++; next }
-    $1 == "leave" && $4 == "same" { printf "  leave     %s (the same content is already at %s)\n", $2, $3; next }
-    $1 == "leave" { printf "  leave     %s/ (empty; %s/ is already there)\n", $2, $3; next }
-    $1 == "conflict" && $4 != "" { printf "  conflict  %s %s\n", $2, $4; conflict = 1; next }
-    $1 == "conflict" { printf "  conflict  %s and %s are both there and differ - keep one by hand\n", $2, $3; conflict = 1; next }
-    $1 == "rename" { printf "  rename    %s: %s -> %s\n", $2, $3, $4; n++; next }
-    $1 == "drop" { printf "  drop      %s: %s (the same value is already under %s)\n", $2, $3, $4; n++; next }
-    $1 == "retire" { printf "  retire    %s: %s (no version reads it)\n", $2, $3; n++; next }
-    $1 == "link" { printf "  link      %s: %s -> %s\n", $2, $3, $4; n++; next }
-    $1 == "ignore" { printf "  ignore    %s: add %s\n", $2, $3; n++; next }
-    $1 == "schema" { printf "  schema    %s: $schema -> %s\n", $2, $4; n++; next }
-    $1 == "unknown" { printf "  unknown   %s (no Nightshift file has this name; left in place)\n", $2; next }
-    $1 == "stray" { printf "  stray     %s (an earlier Setup copied a template here and nothing reads it; left in place, safe to delete)\n", $2; next }
-    $1 == "note" { printf "  note      %s\n", $2; next }
-    $1 == "marker" { printf "  marker    state-version %s -> %s\n", $2, $3; n++; next }
-    END {
-      if (refused || conflict) {
-        print "Refused - nothing was changed."
-      } else if (mode == "apply") {
-        print "Applied. Nothing was deleted or overwritten."
-      } else if (n == 0) {
-        print "Every file is where the current layout keeps it; nothing to do."
-      } else {
-        print "Preview only - nothing was changed. Run it again with --apply to make these changes; nothing is deleted or overwritten."
-      }
-    }'
+  awk -F '\t' -v mode="$1" -f "$NS_MIGRATE_LIB/migrate-render.awk"
 }
 
 # ns_migrate_offer <plan-file> <preview-command> — the move a plan makes, in one line for Doctor
 # and Setup: each file with its old and new path, what else it changes, and the command that
 # previews it. Status 1 when the plan changes nothing.
 ns_migrate_offer() {
-  awk -F '\t' -v cmd="$2" -v version="$NS_STATE_VERSION" '
-    $1 == "move" { moves = moves (moves == "" ? "" : ", ") $2 " -> " $3; n++ }
-    $1 == "rename" { other = other "; " $2 " " $3 " -> " $4; n++ }
-    $1 == "drop" || $1 == "retire" { settings++; n++ }
-    $1 == "link" { links++; n++ }
-    $1 == "ignore" { other = other "; " $2 " leaves " $3 " out"; n++ }
-    $1 == "schema" { other = other "; " $2 " $schema -> " $4; n++ }
-    $1 == "marker" { marker = "; state-version " $2 " -> " $3; n++ }
-    END {
-      if (n == 0) exit 1
-      out = "move the state files into layout " version
-      if (moves != "") out = out ": " moves
-      out = out other
-      if (settings) out = out "; " settings " retired setting" (settings == 1 ? "" : "s") " removed"
-      if (links) out = out "; " links " link" (links == 1 ? "" : "s") " written again so they still resolve"
-      out = out marker "; nothing is deleted or overwritten. Preview it with " cmd ", then run it again with --apply"
-      print out
-    }' "$1"
+  awk -F '\t' -v cmd="$2" -v version="$NS_STATE_VERSION" -f "$NS_MIGRATE_LIB/migrate-offer.awk" "$1"
 }
 
 # ns_migrate_apply <workspace> <plan-file> — perform a plan ns_migrate_plan wrote. The caller has
@@ -726,11 +683,7 @@ ns_migrate_apply() {
     [ "$kind" = schema ] || continue
     # Only the URL changes, in place, so the owner's layout of the file stands.
     tmp="$ns/.${a##*/}.migrate.$$"
-    if ! LC_ALL=C awk -v old="\"$b\"" -v new="\"$c\"" '
-      !done && index($0, "\"$schema\"") && (i = index($0, old)) {
-        $0 = substr($0, 1, i - 1) new substr($0, i + length(old)); done = 1
-      }
-      { print }' "$ns/$a" >"$tmp" || [ ! -s "$tmp" ] || ! mv "$tmp" "$ns/$a"; then
+    if ! LC_ALL=C awk -v old="\"$b\"" -v new="\"$c\"" -f "$NS_MIGRATE_LIB/migrate-apply.awk" "$ns/$a" >"$tmp" || [ ! -s "$tmp" ] || ! mv "$tmp" "$ns/$a"; then
       rm -f "$tmp"
       return 3
     fi

@@ -585,6 +585,38 @@ try {
     Expect-True ($null -ne $liveLeaseUnchanged -and $liveLeaseUnchanged.Generation -eq 10 -and $liveLeaseUnchanged.Nonce -eq 'lease-logic-live-nonce') `
         'checking a live fence never mutates the lease it inspects'
 
+    # A recovery lease that names the recorded conversation's own live process holds nothing
+    # against it: the conversation reclaims it rather than waiting for itself to die.
+    $ownStart = Get-NSProcessStart $PID
+    Expect-True (Write-NSLease -NightshiftDir $leaseNs -SessionId $recordedSession -HostName 'codex' `
+        -Generation 11 -Nonce 'lease-logic-own-nonce' -ProcessId ([string]$PID) -Start $ownStart) `
+        'own-process lease fixture writes'
+    $ownSession = [pscustomobject]@{
+        SessionId = $recordedSession; Transcript = ''; ProcessId = [string]$PID; Start = $ownStart; HostName = 'codex'
+    }
+    $ownDecision = Resolve-NSShiftAuthorize -NightshiftDir $leaseNs -HostName 'codex' `
+        -SessionId $recordedSession -ProcessId ([string]$PID) -ProcessStart $ownStart -Nonce '' -Generation '' `
+        -Revival $false -Mode hardhat -Session $ownSession
+    $ownLease = Read-NSLease $leaseNs
+    Expect-True ($ownDecision.Status -ne 'Fail' -and $ownLease.Generation -eq 12 -and [string]::IsNullOrEmpty($ownLease.Nonce) -and $ownLease.ProcessId -eq [string]$PID) `
+        "a lease naming the caller's own process is reclaimed (status=$($ownDecision.Status) generation=$($ownLease.Generation) nonce='$($ownLease.Nonce)')"
+    $ownLog = [IO.File]::ReadAllText((Join-Path $leaseNs 'shift-log.md'))
+    Expect-True ($ownLog.Contains("lease reclaimed by the recorded conversation from a recovery lease that named its own process (generation 11 $([char]0x2192) 12)")) `
+        "the own-process reclaim is recorded: $ownLog"
+
+    # A finished revival's lease goes back to the recorded conversation; a later revival's stays.
+    Expect-True (Write-NSLease -NightshiftDir $leaseNs -SessionId $recordedSession -HostName 'codex' `
+        -Generation 13 -Nonce 'lease-logic-child-nonce' -ProcessId $deadPid -Start $deadStart) `
+        'revival-child lease fixture writes'
+    Expect-True (Invoke-NSLeaseHandBack $leaseNs 'codex' 'lease-logic-child-nonce' '13') 'the hand-back succeeds for its own child'
+    $handed = Read-NSLease $leaseNs
+    Expect-True ($handed.Generation -eq 14 -and [string]::IsNullOrEmpty($handed.Nonce) -and [string]::IsNullOrEmpty($handed.ProcessId) -and $handed.SessionId -eq $recordedSession) `
+        "a handed-back lease names the recorded conversation with no nonce or pid (generation=$($handed.Generation))"
+    Expect-True (Write-NSLease -NightshiftDir $leaseNs -SessionId $recordedSession -HostName 'codex' `
+        -Generation 16 -Nonce 'lease-logic-newer-nonce' -ProcessId '' -Start '') 'newer-revival lease fixture writes'
+    Expect-True (-not (Invoke-NSLeaseHandBack $leaseNs 'codex' 'lease-logic-child-nonce' '13')) 'an older child cannot hand back a newer lease'
+    Expect-True ((Read-NSLease $leaseNs).Nonce -eq 'lease-logic-newer-nonce') 'the newer revival keeps its lease'
+
     # A caller that is not the conversation named in .shift-session is still refused, never
     # reclaims - direct call, since the full pipeline never routes a stranger this far.
     $strangerNs = Join-Path $leaseRoot 'stranger/.nightshift'

@@ -1,0 +1,10 @@
+{
+  "handoff": {
+    "sections": [
+      "run-only"
+    ]
+  },
+  "shift": {
+    "hours": 7
+  }
+}

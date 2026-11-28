@@ -803,6 +803,68 @@ FOREIGN_NONCE=claude.2.4711.8.9
   wait "$holder" 2>/dev/null || true
 }
 
+# The night a usage limit stopped the shift at an errored prompt: its process stayed alive, a
+# revival attached that same process to its recovery lease and exited, and the conversation was
+# fenced by a lease naming itself.
+@test "a recovery lease that names the recorded conversation's own process is reclaimed, not waited on" {
+  p="$(new_project)"
+  punch_open "$p"
+  session_record "$p" shift-session "" "$$" "$(process_start "$$")" claude
+  lease_record "$p" shift-session claude 2 "$FOREIGN_NONCE" "$$" "$(process_start "$$")"
+
+  run claude_read "$p" shift-session
+  is_allow
+  [ "$(lease_generation "$p")" = "3" ]
+  [ -z "$(lease_nonce "$p")" ]
+  [ "$(lease_holder_pid "$p")" = "$$" ]
+  grep -qF 'lease reclaimed by the recorded conversation from a recovery lease that named its own process (generation 2 → 3)' \
+    "$p/.nightshift/shift-log.md"
+}
+
+@test "a revived worker attaches its own process to the lease, never the recorded one" {
+  p="$(new_project)"
+  punch_open "$p"
+  session_record "$p" shift-session "" "$$" "$(process_start "$$")" claude
+  # The watchman attached the child it started; the recorded process is a different, live one.
+  sleep 300 &
+  child=$!
+  lease_record "$p" shift-session claude 2 "$FOREIGN_NONCE" "$child" "$(process_start "$child")"
+
+  NIGHTSHIFT_REVIVAL=1 NIGHTSHIFT_LEASE_NONCE="$FOREIGN_NONCE" NIGHTSHIFT_LEASE_GENERATION=2 \
+    run claude_read "$p" shift-session
+  is_allow
+  [ "$(lease_nonce "$p")" = "$FOREIGN_NONCE" ]
+  [ "$(lease_holder_pid "$p")" != "$$" ]
+  kill "$child" 2>/dev/null || true
+  wait "$child" 2>/dev/null || true
+}
+
+@test "the watchman hands a finished revival's lease back to the recorded conversation" {
+  p="$(new_project)"
+  punch_open "$p"
+  session_record "$p" shift-session "" "$$" "$(process_start "$$")" claude
+  lease_record "$p" shift-session claude 4 "" "$$" "$(process_start "$$")"
+
+  bash -c '. "$1"; ns_watchman_run_child "$2/.nightshift" claude shift-session "$2" CLAUDE_PROJECT_DIR "$2" true' _ "$LIB" "$p"
+  [ "$(lease_scope "$p")" = "shift-session" ]
+  [ "$(lease_generation "$p")" = "6" ]
+  [ -z "$(lease_nonce "$p")" ]
+  [ -z "$(lease_holder_pid "$p")" ]
+  run claude_read "$p" shift-session
+  is_allow
+
+  # A failed attempt leaves its lease for the watchman's restore and the dead-holder reclaim.
+  bash -c '. "$1"; ns_watchman_run_child "$2/.nightshift" claude shift-session "$2" CLAUDE_PROJECT_DIR "$2" false' _ "$LIB" "$p" || :
+  [ "$(lease_generation "$p")" = "7" ]
+  [ -n "$(lease_nonce "$p")" ]
+
+  # A later revival that took the lease over keeps it: the hand-back is only for its own child.
+  lease_record "$p" shift-session claude 8 "$FOREIGN_NONCE" "" ""
+  bash -c '. "$1"; ns_lease_hand_back "$2/.nightshift" claude claude.7.1.2.3 7' _ "$LIB" "$p" || :
+  [ "$(lease_nonce "$p")" = "$FOREIGN_NONCE" ]
+  [ "$(lease_generation "$p")" = "8" ]
+}
+
 @test "a dead recovery attempt is not reclaimable by a conversation the record no longer names" {
   p="$(new_project)"
   punch_open "$p"

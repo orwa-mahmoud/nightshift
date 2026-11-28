@@ -174,7 +174,10 @@ if ($Phase -eq 'snapshot') {
     # With file maps on, the commit the shift starts on is recorded here too.
     if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'shift-policy')) {
         Write-Ok 'snapshot composed - this shift keeps the policy it was composed with'
-        if (-not $DryRun) { Start-NSFileMap $workspace }
+        if (-not $DryRun) {
+            Start-NSFileMap $workspace
+            $null = Invoke-NSPunchListNote $ns (Get-NSLayoutPath $ns 'punch-list')
+        }
         exit 0
     }
     if ((Get-NSBoxCounts (Get-NSLayoutPath $ns 'punch-list')).Open -eq 0) {
@@ -189,6 +192,7 @@ if ($Phase -eq 'snapshot') {
     if (-not [string]::IsNullOrEmpty($snapshotId)) {
         Write-Ok "snapshot start-defaults recorded for shift $snapshotId"
         Start-NSFileMap $workspace
+        $null = Invoke-NSPunchListNote $ns (Get-NSLayoutPath $ns 'punch-list')
     }
     else {
         Write-Warn 'snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt'
@@ -240,6 +244,14 @@ if ($Phase -eq 'worktree') {
     }
     $kept = Get-NSShiftWorktreeCurrent $workspace
     if ($kept.Length -gt 0) {
+        if (-not $DryRun -and (Test-NSShiftWorktreeContinued $workspace)) {
+            try { Set-NSShiftWorktreeField $workspace 'shift' $shiftId }
+            catch {
+                Write-Refuse "worktree the continued shift's worktree record could not take shift $shiftId"
+                Write-Repair 'check that the shift worktree record is writable, then run Start again'
+                exit 1
+            }
+        }
         Write-Ok ("worktree $kept branch " + (Get-NSShiftWorktreeField $workspace 'branch') + " - this shift's worktree, kept")
         exit 0
     }
@@ -254,9 +266,10 @@ if ($Phase -eq 'worktree') {
     if ($root.Length -eq 0) { $root = '.nightshift/worktrees' }
     if (-not [IO.Path]::IsPathRooted($root)) { $root = Join-Path $workspace $root }
     $worktree = Join-Path $root $shiftId
-    # A run that names its branch works on it: in the checkout itself when the checkout is on it, in
-    # the worktree that already holds it once no other run works there, or in a new worktree of it,
-    # made from the team's base branch when the branch does not exist yet. Mirrors start-preflight.sh.
+    # A run that names its branch works on it: in the checkout itself when the checkout is on it,
+    # otherwise in a new worktree of it, made from the remote's default branch (or HEAD) when the
+    # branch does not exist yet. Git refuses a branch another worktree holds, and its message is the
+    # refusal. Mirrors start-preflight.sh.
     $chosen = ''
     if (Test-NSLayoutKey $ns 'run-branch') {
         $branchRecord = Get-NSLayoutPath $ns 'run-branch'
@@ -272,46 +285,14 @@ if ($Phase -eq 'worktree') {
             Write-Ok "worktree none - the run works on $branch in the checkout itself"
             exit 0
         }
-        $held = Get-NSBranchWorktree $checkout $branch
-        if ($held.Length -gt 0) {
-            $busy = Get-NSWorktreeLiveRun $ns $held
-            if ($busy.Length -gt 0) {
-                Write-Refuse "worktree $branch is in use by run $busy"
-                Write-Repair "runs on one branch go one after another: let $busy finish, then run Start again"
-                exit 1
-            }
-            if ($DryRun) {
-                Write-Ok "worktree dry-run - would continue $held on $branch"
-                exit 0
-            }
-            try { Save-Worktree $held $branch ([string](Invoke-NSGit $held @('rev-parse', 'HEAD'))) }
-            catch {
-                Write-Refuse "worktree could not record $held"
-                Write-Repair 'check that .nightshift/ is writable, then run Start again'
-                exit 1
-            }
-            Write-Ok "worktree $held branch $branch - the run continues the branch's worktree"
-            exit 0
-        }
         if ((Invoke-NSGitCommand $checkout @('show-ref', '--verify', '--quiet', "refs/heads/$branch")).ExitCode -eq 0) {
             $newBranch = $false
             $base = Invoke-NSGit $checkout @('rev-parse', "refs/heads/$branch")
         }
         else {
-            $teamBase = Get-NSBranchRule $workspace 'base'
-            if ($teamBase.Length -eq 0) { $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD') }
-            else {
-                $base = ''
-                foreach ($ref in @("refs/heads/$teamBase", "refs/remotes/origin/$teamBase")) {
-                    $found = Invoke-NSGitCommand $checkout @('rev-parse', '--verify', '--quiet', ($ref + '^{commit}'))
-                    if ($found.ExitCode -eq 0) { $base = ([string]$found.Text).Trim(); break }
-                }
-                if ($base.Length -eq 0) {
-                    Write-Refuse "worktree the team's base branch $teamBase is not in this clone"
-                    Write-Repair "fetch $teamBase from the team's remote, then run Start again"
-                    exit 1
-                }
-            }
+            $found = Invoke-NSGitCommand $checkout @('rev-parse', '--verify', '--quiet', 'refs/remotes/origin/HEAD^{commit}')
+            if ($found.ExitCode -eq 0) { $base = ([string]$found.Text).Trim() }
+            else { $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD') }
         }
         if (Test-Path -LiteralPath $worktree) {
             Write-Refuse "worktree $worktree already exists"
@@ -328,7 +309,7 @@ if ($Phase -eq 'worktree') {
         $branchExists = (Invoke-NSGitCommand $checkout @('show-ref', '--verify', '--quiet', "refs/heads/$branch")).ExitCode -eq 0
         if ($branchExists -or (Test-Path -LiteralPath $worktree)) {
             Write-Refuse "worktree $branch or $worktree already exists"
-            Write-Repair 'merge or remove that branch and folder, or name the shift differently, then run Start again'
+            Write-Repair "that branch may hold another shift's work: name this shift differently on the punch list's title line, then run Start again"
             exit 1
         }
         $base = Invoke-NSGit $checkout @('rev-parse', 'HEAD')
@@ -667,6 +648,29 @@ if (-not $DryRun) {
         try { Invoke-NSGateUsageStart $ns $workspace (Get-NSLayoutPath $ns 'punch-list') $lastPause }
         catch { Write-Warn "usage the accounting baseline for this Start could not be recorded - $_" }
     }
+    # A continued shift resumes with the policy it ran with: clock-out filed it with the ending
+    # marker's shift, and it comes back as the live one before that marker is cleared.
+    if ($continued -and $ended) {
+        $restored = 'failed'
+        $restoreError = ''
+        try { $restored = Restore-NSContinuedShiftPolicy $workspace (Get-NSEndedField $workspace 'shiftId') }
+        catch { $restoreError = " - $_" }
+        if ($restored.StartsWith('restored:')) {
+            $from = $restored.Substring(9)
+            $prefix = $workspace.TrimEnd('/', '\') + [IO.Path]::DirectorySeparatorChar
+            if ($from.StartsWith($prefix, [StringComparison]::Ordinal)) { $from = $from.Substring($prefix.Length).Replace('\', '/') }
+            Write-Ok "policy the continued shift resumes with the policy it ran with, from $from"
+        }
+        elseif ($restored -ceq 'failed') {
+            Write-Warn "policy the continued shift's filed policy could not be brought back; this Start records start-defaults$restoreError"
+        }
+    }
+    # A continued shift keeps the worktree, branch and file map it started; its ending marker, which
+    # named them, is cleared below. Mirrors start-preflight.sh.
+    if ($continued) {
+        try { Invoke-NSShiftCarry $workspace }
+        catch { Write-Warn "worktree the continued shift could not keep its worktree record; the worktree step names what to do - $_" }
+    }
     Remove-NSPath (Get-NSLayoutPath $ns 'stop')
     $deadlinePath = Get-NSLayoutPath $ns 'deadline'
     $deadlineSpent = $false
@@ -728,7 +732,7 @@ if ($null -ne $rules -and (Test-NSLayoutKey $ns 'member-settings')) {
         if ($memberProblems.Count -gt 0) {
             Write-Refuse "settings $memberName cannot be used for this run"
             foreach ($problem in $memberProblems) { Write-Verdict "explain $problem" }
-            Write-Repair "keep team settings in the team's rules.json and fix settings/$memberName.json"
+            Write-Repair "fix settings/$memberName.json"
         }
         else { Write-Ok "settings settings/$memberName.json over the team's rules.json" }
     }
@@ -887,7 +891,7 @@ if ((Test-Path -LiteralPath $deadlinePath -PathType Leaf) -and -not (Test-NSRepa
     if ($raw -match '^[0-9]+$') { $deadlineFile = $raw }
 }
 $policyDeadline = ''
-if ([string]$policyState['state'] -eq 'ok' -and $null -ne $policyState['policy']) {
+if ([string]$policyState['state'] -eq 'valid' -and $null -ne $policyState['policy']) {
     $candidate = Get-NSMapValue $policyState['policy'] 'deadlineEpoch'
     if (Test-NSJsonInteger $candidate) { $policyDeadline = [string][long]$candidate }
 }

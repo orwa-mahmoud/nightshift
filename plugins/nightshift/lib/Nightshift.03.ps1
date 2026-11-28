@@ -700,7 +700,17 @@ function Invoke-NSEvidenceAppend {
     )
     $paths = Get-NSEvidencePaths $Project
     $null = Invoke-NSEvidenceInit -Project $Project -Quiet
-    $record = ConvertFrom-NSJsonText $RecordJson
+    try {
+        $record = ConvertFrom-NSJsonText $RecordJson
+    }
+    catch {
+        Write-NSEvidenceError 'evidence: --record is not one JSON value'
+        return 1
+    }
+    if (-not ($record -is [Collections.IDictionary])) {
+        Write-NSEvidenceError 'evidence: record is not an object'
+        return 1
+    }
     if ($record -is [Collections.IDictionary]) {
         if (-not $record.Contains('schemaVersion')) { $record['schemaVersion'] = 1 }
         if (-not $record.Contains('firstSeen')) { $record['firstSeen'] = Get-NSEvidenceNow }
@@ -1206,8 +1216,8 @@ function Test-NSShiftPolicyDocument {
     if ($Document.Contains('shiftId') -and -not (Test-NSPolicyShiftId $Document['shiftId'])) {
         $errors.Add('shiftId: must be a uuid or 16 lowercase hex characters')
     }
-    if ($Document.Contains('createdAt') -and -not (($Document['createdAt'] -is [string]) -and ($Document['createdAt'] -cmatch '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'))) {
-        $errors.Add('createdAt: must be YYYY-MM-DDTHH:MM:SSZ')
+    if ($Document.Contains('createdAt') -and -not (($Document['createdAt'] -is [string]) -and $Document['createdAt'].Length -gt 0)) {
+        $errors.Add('createdAt: must be a UTC timestamp')
     }
     if ($Document.Contains('source') -and -not (Test-NSEvidenceEnum $Document['source'] $script:NSPolicySources)) {
         $errors.Add('source: must be one of ' + ($script:NSPolicySources -join ', '))
@@ -1354,8 +1364,22 @@ function Test-NSPolicyPlan {
         return , $errors
     }
     foreach ($key in @($Plan.Keys)) {
-        if (-not (@('commands', 'workTarget', 'digest', 'expiry') -ccontains [string]$key)) {
+        if (-not (@('commands', 'workTarget', 'digest', 'writeSurface', 'expiry') -ccontains [string]$key)) {
             $errors.Add($Label + '.' + ([string]$key) + ': unknown field')
+        }
+    }
+    if ($Plan.Contains('writeSurface') -and $null -ne $Plan['writeSurface']) {
+        $surface = $Plan['writeSurface']
+        if (($surface -is [Collections.IDictionary]) -or ($surface -is [string]) -or -not ($surface -is [Collections.IEnumerable])) {
+            $errors.Add($Label + '.writeSurface: must be an array of paths')
+        }
+        else {
+            foreach ($path in @($surface)) {
+                if (-not ($path -is [string])) {
+                    $errors.Add($Label + '.writeSurface: must be an array of paths')
+                    break
+                }
+            }
         }
     }
     $commands = Get-NSPolicyField $Plan 'commands'
@@ -1469,6 +1493,37 @@ function Find-NSReplayedShiftPolicy {
     return (Find-NSArchivedShiftPolicy $Workspace $id)
 }
 
+# Restore-NSContinuedShiftPolicy <workspace> <shift-id> - bring a continued shift's own policy back
+# as the live one: the snapshot clock-out filed for that shift moves back to shift-policy.json. A
+# deadlineEpoch that has already passed comes back as null, every other byte unchanged. Returns
+# 'restored:<file it came from>', 'none' when a policy is already live or nothing is filed for that
+# shift, or 'failed' when the filed policy cannot be brought back; nothing moves then. Mirrors
+# ns_policy_restore_continued.
+function Restore-NSContinuedShiftPolicy {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$ShiftId = '')
+    $paths = Get-NSPolicyPaths $Workspace
+    $policy = [string]$paths['policy']
+    if ((Test-Path -LiteralPath $policy) -or (Test-NSReparsePoint $policy)) { return 'none' }
+    $source = Find-NSArchivedShiftPolicy $Workspace $ShiftId
+    if ([string]::IsNullOrEmpty($source)) { return 'none' }
+    $state = Read-NSShiftPolicyFile $source
+    if ([string]$state['state'] -cne 'valid' -or [string](Get-NSRecordText $state['policy'] 'shiftId') -cne $ShiftId) { return 'failed' }
+    $epoch = Get-NSMapValue $state['policy'] 'deadlineEpoch'
+    $parent = Split-Path -Parent $policy
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) { $null = New-Item -ItemType Directory -Force -Path $parent }
+    if ($null -ne $epoch -and ([string]$epoch) -match '^[0-9]+$' -and [long]$epoch -le (Get-NSUnixTime)) {
+        $text = [IO.File]::ReadAllText($source, $script:NSUtf8NoBom)
+        $pattern = '"deadlineEpoch"([ \t]*):([ \t]*)' + [string]$epoch + '(?![0-9])'
+        $rewritten = ([regex]$pattern).Replace($text, '"deadlineEpoch"$1:$2null', 1)
+        [IO.File]::WriteAllText($policy, $rewritten, $script:NSUtf8NoBom)
+        Remove-Item -LiteralPath $source -Force
+    }
+    else {
+        Move-Item -LiteralPath $source -Destination $policy
+    }
+    return ('restored:' + $source)
+}
+
 # Get-NSReceiptPolicyState <workspace> - the policy the morning receipt reports. It is the live
 # snapshot while one exists, and after clock-out only the copy filed for the shift the ending
 # marker names. Any other archived snapshot is a different night's, and then this one has no
@@ -1507,9 +1562,11 @@ function New-NSShiftId {
         $bytes = New-Object byte[] 8
         [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
         $id = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+        # -Quiet would answer once per file, and an array of False is still true: ask for the first
+        # match instead.
         if ((Test-Path -LiteralPath $archive -PathType Container) -and
-            (Get-ChildItem -LiteralPath $archive -Recurse -File -Force -ErrorAction SilentlyContinue |
-                Select-String -SimpleMatch -Pattern $id -Quiet)) { continue }
+            $null -ne (Get-ChildItem -LiteralPath $archive -Recurse -File -Force -ErrorAction SilentlyContinue |
+                Select-String -SimpleMatch -Pattern $id -List | Select-Object -First 1)) { continue }
         return $id
     }
     return ''
@@ -1837,13 +1894,13 @@ function Get-NSEndedField {
 # way on the same facts, and produce the same fingerprint text byte for byte.
 # ---------------------------------------------------------------------------
 
-# Get-NSGateReminderFingerprint <open> <ticked> <item> <stopped> <deadline> <stall>
+# Get-NSGateReminderFingerprint <open> <ticked> <item> <stopped> <deadline> <stall> <list>
 function Get-NSGateReminderFingerprint {
-    param($Open, $Ticked, $Item, $Stopped, $Deadline, $Stall)
+    param($Open, $Ticked, $Item, $Stopped, $Deadline, $Stall, $List)
     function Fallback($v) { if ($null -eq $v -or "$v" -eq '') { return '?' } return "$v" }
     return ('open=' + (Fallback $Open) + ' ticked=' + (Fallback $Ticked) + ' item=' + (Fallback $Item) +
         ' stopped=' + (Fallback $Stopped) + ' deadline=' + (Fallback $Deadline) +
-        ' stall=' + (Fallback $Stall))
+        ' stall=' + (Fallback $Stall) + ' list=' + (Fallback $List))
 }
 
 # Format-NSGateReminder <short> <item> <open> <ticked> - the owner's own wording with the facts put

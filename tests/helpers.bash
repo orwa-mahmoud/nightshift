@@ -92,10 +92,11 @@ wait_writer() {
 punch_open() { printf '## Items\n- [ ] **1. first.**\n- [x] **2. done.**\n' >"$1/.nightshift/punch-list.md"; }
 punch_done() { printf '## Items\n- [x] **1. first.**\n- [x] **2. done.**\n' >"$1/.nightshift/punch-list.md"; }
 
-# arm_snapshot <project> — record the contract and items digests of the current punch list, as
-# arming records them in the shift policy.
+# arm_snapshot <project> — record the contract and items digests of the current punch list in the
+# shift policy, and the list itself for the clock-out gate's history, as arming records them.
 arm_snapshot() {
   local lib="$_TEST_ROOT/../plugins/nightshift/lib/lib.sh" list="$1/.nightshift/punch-list.md"
+  bash -c '. "$1"; ns_punch_list_note "$2" "$3"' _ "$lib" "$1/.nightshift" "$list" || :
   jq -nc --arg c "$(bash -c '. "$1"; ns_punch_contract_digest "$2"' _ "$lib" "$list")" \
     --arg i "$(bash -c '. "$1"; ns_punch_items_digest "$2"' _ "$lib" "$list")" \
     '{schemaVersion:1,shiftId:"9f2c40ab77e51d63",createdAt:"2026-09-02T02:30:00Z",source:"composition",verificationLevel:"final",toolingPolicy:"existing-tools",contractDigest:$c,itemsDigest:$i}' \

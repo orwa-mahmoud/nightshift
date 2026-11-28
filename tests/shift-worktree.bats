@@ -310,3 +310,56 @@ stop_run_processes() {
   [ ! -e "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
   [ ! -e "$w/.nightshift/runs/dark-mode/run/.watchman" ]
 }
+
+# stop_shift <workspace> — end the shift as clock-out does after a stop-work order: the policy is
+# archived, the ending names the shift, and STOP stays behind.
+stop_shift() {
+  local w="$1" id
+  id="$(lib ns_policy_shift_id "$w")"
+  lib ns_ended_record "$w/.nightshift" "$id" archive date >/dev/null
+  bash "$PLUGIN/runtime/shift-policy.sh" --project "$w" archive >/dev/null
+  : >"$(lib ns_layout_path "$w/.nightshift" stop)"
+}
+
+@test "a stopped shift started again keeps its worktree, its branch, its commits and its file map" {
+  w="$(site resumed '.shift.isolation = "worktree" | .receipts.evidence.fileMap = "on"')"
+  bash "$PREFLIGHT" --project "$w" --phase worktree >/dev/null
+  wt="$(lib ns_shift_worktree_field "$w" path)"
+  branch="$(lib ns_shift_worktree_field "$w" branch)"
+  base="$(lib ns_filemap_field "$w" base)"
+  [ -n "$base" ]
+  printf 'shift change\n' >"$wt/app.txt"
+  git -C "$wt" -c user.name=t -c user.email=t@example.com commit -q -am 'feat: x'
+  work="$(git -C "$wt" rev-parse HEAD)"
+  stop_shift "$w"
+  run bash "$PREFLIGHT" --project "$w" --host claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  bash "$PREFLIGHT" --project "$w" --phase snapshot >/dev/null
+  run bash "$PREFLIGHT" --project "$w" --phase worktree
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  [[ "${lines[2]}" == "ok worktree $wt branch $branch - this shift's worktree, kept" ]] || { echo "$output"; return 1; }
+  # The record and the file map now name the new shift, and the map still starts where the shift did.
+  id="$(lib ns_policy_shift_id "$w")"
+  [ "$(lib ns_shift_worktree_field "$w" shift)" = "$id" ]
+  [ "$(lib ns_filemap_field "$w" shift)" = "$id" ]
+  [ "$(lib ns_filemap_field "$w" base)" = "$base" ]
+  [ "$(git -C "$wt" rev-parse HEAD)" = "$work" ]
+  [ "$(lib ns_work_target "$w")" = "$wt" ]
+}
+
+@test "a run stopped part way is finished by start-run on the same worktree and branch" {
+  w="$(runs_site "resumed run")"
+  run start_run "$w" "Export CSV"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  wt="$(NIGHTSHIFT_RUN=export-csv lib ns_shift_worktree_field "$w" path)"
+  printf 'run change\n' >"$wt/run.txt"
+  git -C "$wt" add run.txt
+  git -C "$wt" -c user.name=t -c user.email=t@example.com commit -q -m 'feat: run'
+  NIGHTSHIFT_RUN=export-csv stop_shift "$w"
+  run start_run "$w" "Export CSV"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qxF "ok worktree $wt branch shift/$(date +%Y-%m-%d)-export-csv - this shift's worktree, kept" ||
+    { echo "$output"; return 1; }
+  [ "$(git -C "$w/repo" worktree list | wc -l | tr -d ' ')" = 2 ]
+  [ -f "$wt/run.txt" ]
+}

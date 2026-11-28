@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# plan-record.sh — who did what to a plan, and whether the revision that would run is approved.
+# plan-record.sh — who did what to a plan, at which revision.
 #
 #   plan-record.sh [--project DIR] --plan NAME
 #   plan-record.sh [--project DIR] --plan NAME --action proposed|approved|reviewed [--by NAME] [--run RUN] [--note TEXT]
 #
-# With no action, prints the plan's revision, whether the team needs an approval, its state, and
-# every line of its record with the name on it (`unknown` for a line written without one). With an
-# action, appends one attributed line to staging/records/<key>.md at the plan's current revision.
-# The name is --by, or the Git user name of the work target. An approval is refused when the team's
-# rules do not let that name's role approve this plan; nothing is written then.
+# With no action, prints the plan's revision and every line of its record with the name on it
+# (`unknown` for a line written without one). With an action, appends one attributed line to
+# staging/records/<key>.md at the plan's current revision. The name is --by, or the Git user name of
+# the work target. A record gates nothing: approving a plan is reviewing it in Git.
 #
 # Prints one verdict per line: `ok`, or `refuse` followed by its `repair`.
 # Exit: 0 printed or recorded · 1 refused · 2 usage
@@ -65,13 +64,15 @@ KEY="$(ns_receipt_slug "$PLAN")"
 [ -n "$KEY" ] || refuse "plan $PLAN has no letters or digits to name it by"
 ns_plan_record_file "$NS" "$KEY" >/dev/null ||
   refuse "layout this workspace keeps no plan records" "preview the move to run folders with ns migrate-state, make it with --apply"
-STATE="$(ns_plan_state "$WORKSPACE" "$KEY")" ||
-  refuse "plan no plan named $PLAN in $(ns_layout_name "$NS" plans)" "list the waiting plans with ns plan-enter"
+PLAN_FILE="$(ns_plans_dir "$NS")/$KEY.md"
+REV=""
+if [ -f "$PLAN_FILE" ] && [ ! -L "$PLAN_FILE" ]; then REV="$(ns_plan_revision "$PLAN_FILE")" || REV=""; fi
+[ -n "$REV" ] || refuse "plan no plan named $PLAN in $(ns_layout_name "$NS" plans)" "list the waiting plans with ns plan-enter"
 
 if [ -z "$ACTION" ]; then
-  printf '%s\n' "$STATE"
+  printf 'revision %s\n' "$REV"
   ns_plan_record_lines "$(ns_plan_record_file "$NS" "$KEY")" |
-    awk -F '\t' '{ printf "record %s by %s at %s\n", $1, $2, ($4 == "" ? "unknown" : $4) }'
+    awk -F '\t' '{ printf "record %s by %s at %s\n", $1, $2, ($3 == "" ? "unknown" : $3) }'
   exit 0
 fi
 
@@ -83,18 +84,10 @@ BY="$(printf '%s' "$BY" | tr -d '\r\n')"
 [ -n "${BY//[[:space:]]/}" ] || refuse "name no --by and no Git user name to record" "pass --by with the name to put on the record"
 case "$BY" in *" · "*) refuse "name $BY holds the record's separator" "pass a name without ' · '" ;; esac
 
-if [ "$ACTION" = approved ]; then
-  if ! ns_plan_may_approve "$WORKSPACE" "$BY"; then
-    ROLE="$(ns_team_role "$WORKSPACE" "$BY")"
-    refuse "approve $BY (${ROLE:-no role}) may not approve this plan; the team's approvers are $(ns_team_list "$WORKSPACE" approvers | paste -sd ',' -)" \
-      "ask one of them to approve it"
-  fi
-fi
-
 EXTRA=()
 [ -z "$RUN_NAME" ] || EXTRA+=("run $RUN_NAME")
 [ -z "$NOTE" ] || EXTRA+=("note $(printf '%s' "$NOTE" | tr -d '\r\n')")
 ns_plan_record_add "$WORKSPACE" "$KEY" "$ACTION" "$BY" ${EXTRA[@]+"${EXTRA[@]}"} ||
   refuse "record could not write $(ns_layout_name "$NS" plan-records)/$KEY.md" "check that .nightshift/ is writable, then run this again"
-ok "record $ACTION by $BY at revision $(printf '%s\n' "$STATE" | sed -n 's/^revision //p')"
+ok "record $ACTION by $BY at revision $REV"
 exit 0

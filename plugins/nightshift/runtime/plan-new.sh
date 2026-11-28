@@ -16,6 +16,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# The programs this script runs sit beside lib.sh.
+PROGRAMS="$_here/../lib"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
@@ -85,11 +87,7 @@ if {
     ns_owner_template "$TEMPLATE" "$WORKSPACE"
   else
     ns_owner_template "$TEMPLATE" "$WORKSPACE" "$NS"
-  fi | awk '
-    NR == 1 { next }
-    /^## Items[[:space:]]*$/ { exit }
-    { print }
-  '
+  fi | awk -f "$PROGRAMS/plan-new-template-head.awk"
   printf '## Items\n\n'
 } >"$TMP" 2>/dev/null; then
   mv -f "$TMP" "$FILE" 2>/dev/null && written=yes

@@ -112,25 +112,27 @@ cursor_gate() {
   [ "$(jq -r '.hook_event_name' "$FIXTURES/stop-aborted.json")" = "stop" ]
 }
 
-# Zero open boxes reached by deleting work, or by editing the contract, is not done.
-@test "cursor gate blocks a done clock-out after the open item was deleted" {
+# Zero open boxes is done, however the list got there; how it moved is recorded, never refused.
+@test "cursor gate releases a done clock-out after the open item was deleted, and records it" {
   p="$(new_project)"
   punch_open "$p"
   arm_snapshot "$p"
   printf '## Items\n- [x] **2. done.**\n' >"$p/.nightshift/punch-list.md"
   run cursor_gate "$p" "$FIXTURES/stop-completed.json"
-  is_cursor_block
-  [ ! -e "$p/.nightshift/.ended" ]
+  is_cursor_release
+  [ -e "$p/.nightshift/.ended" ]
+  grep -qF 'punch list changed: removed "1. first."' "$p/.nightshift/shift-log.md"
 }
 
-@test "cursor gate blocks a done clock-out after the punch list was deleted" {
+@test "cursor gate releases a done clock-out after the punch list was deleted, and records it" {
   p="$(new_project)"
   punch_open "$p"
   arm_snapshot "$p"
   rm "$p/.nightshift/punch-list.md"
   run cursor_gate "$p" "$FIXTURES/stop-completed.json"
-  is_cursor_block
-  [ ! -e "$p/.nightshift/.ended" ]
+  is_cursor_release
+  [ -e "$p/.nightshift/.ended" ]
+  grep -qF 'punch list changed: the punch list is gone' "$p/.nightshift/shift-log.md"
 }
 
 @test "cursor gate releases a list finished by ticks alone" {

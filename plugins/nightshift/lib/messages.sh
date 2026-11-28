@@ -7,6 +7,10 @@
 # next tool call; the owner reads the worker's reply in the same file. The text between headings is
 # kept exactly as written.
 
+# The programs this module runs sit beside it.
+_ns_messages_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_messages_dir" != "${BASH_SOURCE[0]}" ] || _ns_messages_dir=.
+
 NS_MESSAGE_OWNER='## Owner · '
 NS_MESSAGE_WORKER='## Worker · '
 
@@ -49,11 +53,7 @@ ns_message_unseen() {
     [ "$size" -eq "$off" ] || ns_message_mark_seen "$seen" "$size"
     return 0
   }
-  tail -c "+$((off + 1))" "$file" | NS_OWNER="$NS_MESSAGE_OWNER" NS_WORKER="$NS_MESSAGE_WORKER" awk '
-    index($0, ENVIRON["NS_OWNER"]) == 1 { who = "owner"; if (shown++) print ""; print; next }
-    index($0, ENVIRON["NS_WORKER"]) == 1 { who = "worker"; next }
-    who == "owner" { print }
-  '
+  tail -c "+$((off + 1))" "$file" | NS_OWNER="$NS_MESSAGE_OWNER" NS_WORKER="$NS_MESSAGE_WORKER" awk -f "$_ns_messages_dir/messages-message-unseen.awk"
   ns_message_mark_seen "$seen" "$size"
 }
 

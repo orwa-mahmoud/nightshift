@@ -11,6 +11,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# The programs this script runs sit beside lib.sh.
+PROGRAMS="$_here/../lib"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
@@ -106,19 +108,6 @@ fi
 # omitted the same way only past 80 characters. Sources and expiries always ship. The jq half
 # sits next to this file, resolved without dirname so a hostile PATH cannot reach it.
 NS_EXPORT_POLICY_JQ="$_here/export-policy.jq"
-NS_EXPORT_POLICY_PY='
-import json, sys
-
-FREEFORM = {"forbiddenCommands", "protectedDirs", "neverCommitPatterns", "expectedEmail"}
-d = json.load(sys.stdin)["settings"]
-for k in sorted(d):
-    v = d[k]["value"]
-    text = v if isinstance(v, str) else json.dumps(v)
-    shown = text
-    if k in FREEFORM or len(text) > 80:
-        shown = "<redacted %d chars>" % len(text)
-    sys.stdout.write("%s=%s (%s, %s)\n" % (k, shown, d[k]["source"], d[k]["expiry"]))
-'
 
 POLICY_STATE="unreadable"
 ns_policy_read_shift "$WORKSPACE" >/dev/null 2>&1
@@ -167,7 +156,7 @@ if POLICY_JSON="$(ns_policy_resolve "$WORKSPACE" 2>/dev/null)"; then
   if command -v jq >/dev/null 2>&1; then
     POLICY_LINES="$(printf '%s' "$POLICY_JSON" | jq -r -f "$NS_EXPORT_POLICY_JQ" 2>/dev/null)" || POLICY_LINES=""
   elif command -v python3 >/dev/null 2>&1; then
-    POLICY_LINES="$(printf '%s' "$POLICY_JSON" | python3 -c "$NS_EXPORT_POLICY_PY" 2>/dev/null)" || POLICY_LINES=""
+    POLICY_LINES="$(printf '%s' "$POLICY_JSON" | python3 "$(ns_native_display_path "$PROGRAMS/export-support-policy.py")" 2>/dev/null)" || POLICY_LINES=""
   else
     POLICY_LINES="$(_ns_export_policy_table "$WORKSPACE" 2>/dev/null)" || POLICY_LINES=""
   fi

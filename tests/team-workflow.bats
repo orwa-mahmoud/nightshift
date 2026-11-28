@@ -37,8 +37,8 @@ member() {
   printf '%s' "$(cd -P "$m" && pwd)"
 }
 
-# team <name> <team-jq> — the remote and the project the lead sets up: the site inside the
-# repository, shared through the shipped ignore files, and the team block given.
+# team <name> — the remote and the project the lead sets up: the site inside the repository, shared
+# through the shipped ignore files.
 team() {
   local root="$BATS_TEST_TMPDIR/$1" a
   git init -q --bare "$root/remote.git"
@@ -50,7 +50,7 @@ team() {
   printf 'app\n' >"$a/app.txt"
   mkdir -p "$a/.nightshift/staging/plans" "$a/.nightshift/settings" "$a/.nightshift/run"
   printf '3\n' >"$a/.nightshift/state-version"
-  jq '.team.roles = {"Alice": "lead", "Bob": "developer"}'"$2" "$RULES_TEMPLATE" >"$a/.nightshift/rules.json"
+  cp "$RULES_TEMPLATE" "$a/.nightshift/rules.json"
   printf '{\n  "shift": {\n    "hours": 3\n  }\n}\n' >"$a/.nightshift/settings/bob.json"
   printf '%s\n' "$(cd -P "$a" && pwd)" >"$a/.nightshift/run/work-target"
   printf 'repository\n' >"$a/.nightshift/run/work-mode"
@@ -92,7 +92,7 @@ run_and_file() {
 }
 
 @test "a developer's proposal, the lead's answer and approval, a run with one shared screenshot and a review trace in a fresh clone" {
-  a="$(team flow '| .team.approvers = ["lead"]')"
+  a="$(team flow)"
   b="$(member flow Bob)"
   # Bob proposes the work and asks a question.
   plan_text "Export CSV" "Export the table" >"$b/.nightshift/staging/plans/export-csv.md"
@@ -108,8 +108,6 @@ run_and_file() {
   sed -i.bak 's/  - Open: comma or semicolon?/  - Decided: comma — the importer reads RFC 4180/' "$a/.nightshift/staging/decisions/export-csv-separator.md"
   rm "$a/.nightshift/staging/decisions/export-csv-separator.md.bak"
   plan_text "Export CSV" "Export the table as comma-separated values" >"$a/.nightshift/staging/plans/export-csv.md"
-  run start_run_as_is "$a" "Export CSV"
-  printf '%s\n' "$output" | grep -q '^refuse approval Export CSV revision .* is proposed: no approver has approved it$'
   record "$a" "Export CSV" --action approved >/dev/null
   approved="$(lib ns_plan_revision "$a/.nightshift/staging/plans/export-csv.md")"
   save "$a" "approve: export csv"
@@ -128,13 +126,11 @@ run_and_file() {
   c="$(member flow Carol)"
   run record "$c" "Export CSV"
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qx "approved-by Alice $approved"
-  printf '%s\n' "$output" | grep -qx 'state approved'
   [ "$(printf '%s\n' "$output" | sed -n 's/^record \([a-z]*\) by \([A-Za-z]*\) at .*/\1 \2/p')" = "proposed Bob
 approved Alice
 started Bob
 reviewed Alice" ] || { echo "$output"; return 1; }
-  grep -q "^- started · Bob · developer · .* · revision $approved · run $run_name\$" "$c/.nightshift/staging/records/export-csv.md"
+  grep -q "^- started · Bob · .* · revision $approved · run $run_name\$" "$c/.nightshift/staging/records/export-csv.md"
   [ "$(git -C "$c" log --format='%an %s' -- .nightshift/staging/decisions/export-csv-separator.md)" = "Alice approve: export csv
 Bob propose: export csv" ]
   receipts="$c/.nightshift/archive/$folder/runs/$run_name/receipts"
@@ -145,8 +141,8 @@ Bob propose: export csv" ]
   [ -z "$(git -C "$c" ls-files | grep -E '(^|/)(STOP|\.shift-lease|messages\.md)$|/run/')" ]
 }
 
-@test "a lead approves their own plan directly, and a project with other rules runs without approval" {
-  a="$(team lead '| .team.approvers = ["lead"]')"
+@test "a lead approves their own plan in the record, and a teammate's plan runs as its runner starts it" {
+  a="$(team lead)"
   plan_text "Dark mode" "Add a dark theme" >"$a/.nightshift/staging/plans/dark-mode.md"
   record "$a" "Dark mode" --action proposed >/dev/null
   record "$a" "Dark mode" --action approved >/dev/null
@@ -154,14 +150,11 @@ Bob propose: export csv" ]
   b="$(member lead Bob)"
   plan_text "Print view" "Add a print view" >"$b/.nightshift/staging/plans/print-view.md"
   record "$b" "Print view" --action proposed >/dev/null
-  run record "$b" "Print view" --action approved
-  [ "$status" -eq 1 ]
-  run start_run_as_is "$b" "Print view"
-  printf '%s\n' "$output" | grep -q '^refuse approval Print view revision .* is proposed'
+  # No approval gates a run: Bob runs his own proposal and Alice's approved plan alike.
+  filed="$(run_and_file "$b" "Print view")" || { echo "$filed"; return 1; }
   filed="$(run_and_file "$b" "Dark mode")" || { echo "$filed"; return 1; }
-  # A project whose rules need no approval runs a plan as soon as its runner starts it.
-  o="$(team open '| .team.approvers = []')"
-  plan_text "Search" "Add search" >"$o/.nightshift/staging/plans/search.md"
-  filed="$(run_and_file "$o" "Search")" || { echo "$filed"; return 1; }
-  grep -q '^- started · Alice · lead · ' "$o/.nightshift/staging/records/search.md"
+  grep -q '^- started · Bob · ' "$b/.nightshift/staging/records/print-view.md"
+  [ "$(sed -n 's/^- \([a-z]*\) · \([A-Za-z]*\) · .*/\1 \2/p' "$b/.nightshift/staging/records/dark-mode.md")" = "proposed Alice
+approved Alice
+started Bob" ]
 }

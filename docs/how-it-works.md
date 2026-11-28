@@ -122,9 +122,9 @@ authoritative.
 Artifact mode is always `existing-tools`. Start never asks: a composition step records the choice on the policy
 snapshot, and Start works with what it finds.
 
-**Parsers.** The plugin ships no Python. POSIX hooks read `rules.json` with a bundled reader that
+**Parsers.** The plugin needs no Python. POSIX hooks read `rules.json` with a bundled reader that
 needs neither `jq` nor `python3`; an unreadable or unsupported rules file fails closed and does not
-arm. `shift-policy.json` is JSON that the bash helpers read with `jq`, falling back to an inline
+arm. `shift-policy.json` is JSON that the bash helpers read with `jq`, falling back to a bundled
 `python3` program when `jq` is absent — with neither installed, Start says so and arms from
 `rules.json` alone rather than asking the owner to install anything. An MCP payload the hardhat
 cannot decode is treated as if it addressed the process lease, so an opaque call is denied rather

@@ -207,7 +207,7 @@ fi
 if [ "$PHASE" = snapshot ]; then
   if [ -e "$POLICY" ] || [ -L "$POLICY" ]; then
     ok "snapshot composed - this shift keeps the policy it was composed with"
-    [ "$DRY_RUN" -eq 1 ] || ns_filemap_start "$WORKSPACE" || :
+    [ "$DRY_RUN" -eq 1 ] || { ns_filemap_start "$WORKSPACE" || :; ns_punch_list_note "$NS" "$PUNCH" || :; }
     exit 0
   fi
   OPEN="$(ns_open_boxes "$PUNCH" 2>/dev/null)" || OPEN=0
@@ -223,6 +223,7 @@ if [ "$PHASE" = snapshot ]; then
   if SNAPSHOT_ID="$(ns_start_snapshot "$WORKSPACE" "$_here/shift-policy.sh")"; then
     ok "snapshot start-defaults recorded for shift $SNAPSHOT_ID"
     ns_filemap_start "$WORKSPACE" || :
+    ns_punch_list_note "$NS" "$PUNCH" || :
   else
     warn "snapshot none recorded - the gate cannot hold this shift to the list it armed with; Start again, or compose it through Hunt"
   fi
@@ -267,6 +268,12 @@ if [ "$PHASE" = worktree ]; then
     exit 1
   fi
   if KEPT="$(ns_shift_worktree_current "$WORKSPACE")"; then
+    if [ "$DRY_RUN" -eq 0 ] && [ "$(ns_shift_worktree_field "$WORKSPACE" shift)" = "$NS_SHIFT_CONTINUED" ] &&
+      ! ns_record_set "$(ns_layout_path "$NS" shift-worktree)" shift "$SHIFT_ID"; then
+      refuse "worktree the continued shift's worktree record could not take shift $SHIFT_ID"
+      repair "check that $(ns_layout_name "$NS" shift-worktree) is writable, then run Start again"
+      exit 1
+    fi
     ok "worktree $KEPT branch $(ns_shift_worktree_field "$WORKSPACE" branch) - this shift's worktree, kept"
     exit 0
   fi
@@ -282,9 +289,9 @@ if [ "$PHASE" = worktree ]; then
   [ -n "$ROOT" ] || ROOT=.nightshift/worktrees
   case "$ROOT" in /*) ;; *) ROOT="$WORKSPACE/$ROOT" ;; esac
   WT="$ROOT/$SHIFT_ID"
-  # A run that names its branch works on it: in the checkout itself when the checkout is on it, in the
-  # worktree that already holds it once no other run works there, or in a new worktree of it, made
-  # from the team's base branch when the branch does not exist yet.
+  # A run that names its branch works on it: in the checkout itself when the checkout is on it,
+  # otherwise in a new worktree of it, made from the remote's default branch (or HEAD) when the branch
+  # does not exist yet. Git refuses a branch another worktree holds, and its message is the refusal.
   CHOSEN=""
   if ns_layout_set BRANCH_RECORD "$NS" run-branch 2>/dev/null && [ -f "$BRANCH_RECORD" ]; then
     IFS= read -r CHOSEN <"$BRANCH_RECORD" || CHOSEN=""
@@ -296,40 +303,12 @@ if [ "$PHASE" = worktree ]; then
       ok "worktree none - the run works on $BRANCH in the checkout itself"
       exit 0
     fi
-    HELD="$(ns_branch_worktree "$CHECKOUT" "$BRANCH")"
-    if [ -n "$HELD" ]; then
-      BUSY="$(ns_worktree_live_run "$NS" "$HELD")"
-      if [ -n "$BUSY" ]; then
-        refuse "worktree $BRANCH is in use by run $BUSY"
-        repair "runs on one branch go one after another: let $BUSY finish, then run Start again"
-        exit 1
-      fi
-      if [ "$DRY_RUN" -eq 1 ]; then
-        ok "worktree dry-run - would continue $HELD on $BRANCH"
-        exit 0
-      fi
-      if ! record_worktree "$HELD" "$BRANCH" "$(git -C "$HELD" rev-parse HEAD 2>/dev/null)"; then
-        rm -f "$WT_RECORD.$$"
-        refuse "worktree could not record $HELD"
-        repair "check that .nightshift/ is writable, then run Start again"
-        exit 1
-      fi
-      ok "worktree $HELD branch $BRANCH - the run continues the branch's worktree"
-      exit 0
-    fi
     if git -C "$CHECKOUT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
       NEW_BRANCH=0
       BASE="$(git -C "$CHECKOUT" rev-parse "refs/heads/$BRANCH" 2>/dev/null)" || BASE=""
     else
-      TEAM_BASE="$(ns_branch_rule "$WORKSPACE" base)"
-      if [ -z "$TEAM_BASE" ]; then
+      BASE="$(git -C "$CHECKOUT" rev-parse --verify --quiet "refs/remotes/origin/HEAD^{commit}" 2>/dev/null)" ||
         BASE="$(git -C "$CHECKOUT" rev-parse HEAD 2>/dev/null)" || BASE=""
-      elif ! BASE="$(git -C "$CHECKOUT" rev-parse --verify --quiet "refs/heads/$TEAM_BASE^{commit}" 2>/dev/null ||
-        git -C "$CHECKOUT" rev-parse --verify --quiet "refs/remotes/origin/$TEAM_BASE^{commit}" 2>/dev/null)"; then
-        refuse "worktree the team's base branch $TEAM_BASE is not in this clone"
-        repair "fetch $TEAM_BASE from the team's remote, then run Start again"
-        exit 1
-      fi
     fi
     if [ -e "$WT" ]; then
       refuse "worktree $WT already exists"
@@ -341,7 +320,7 @@ if [ "$PHASE" = worktree ]; then
     BRANCH="shift/$(date +%Y-%m-%d)-${NAME:-${SHIFT_ID:0:8}}"
     if git -C "$CHECKOUT" show-ref --verify --quiet "refs/heads/$BRANCH" || [ -e "$WT" ]; then
       refuse "worktree $BRANCH or $WT already exists"
-      repair "merge or remove that branch and folder, or name the shift differently, then run Start again"
+      repair "that branch may hold another shift's work: name this shift differently on the punch list's title line, then run Start again"
       exit 1
     fi
     BASE="$(git -C "$CHECKOUT" rev-parse HEAD 2>/dev/null)" || BASE=""
@@ -686,6 +665,20 @@ if [ "$DRY_RUN" -eq 0 ]; then
     ! { ns_control_load_usage_gate && ns_gate_usage_start "$NS" "$WORKSPACE" "$PUNCH" "$LAST_PAUSE"; }; then
     warn 'usage the accounting baseline for this Start could not be recorded'
   fi
+  # A continued shift resumes with the policy it ran with: clock-out filed it with the ending
+  # marker's shift, and it comes back as the live one before that marker is cleared.
+  if [ "$CONTINUED" -eq 1 ] && [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then
+    RESTORED_FROM="$(ns_policy_restore_continued "$WORKSPACE" "$(ns_ended_field "$WORKSPACE" shiftId)")"
+    case "$?" in
+      0) ok "policy the continued shift resumes with the policy it ran with, from ${RESTORED_FROM#"$WORKSPACE"/}" ;;
+      2) warn "policy the continued shift's filed policy could not be brought back; this Start records start-defaults" ;;
+    esac
+  fi
+  # A continued shift keeps the worktree, branch and file map it started; its ending marker, which
+  # named them, is cleared below.
+  if [ "$CONTINUED" -eq 1 ] && ! ns_shift_carry "$WORKSPACE"; then
+    warn 'worktree the continued shift could not keep its worktree record; the worktree step names what to do'
+  fi
   ns_control_drop "$STOP"
   ns_control_drop_runtime_markers "$NS"
   if ns_control_deadline_passed "$NS"; then
@@ -722,7 +715,7 @@ if [ "$RULES_RC" -eq 0 ] && ns_layout_set MEMBER_RECORD "$NS" member-settings 2>
   if [ -n "$MEMBER_PROBLEMS" ]; then
     refuse "settings $MEMBER_NAME cannot be used for this run"
     printf '%s\n' "$MEMBER_PROBLEMS" | sed 's/^/explain /'
-    repair "keep team settings in the team's rules.json and fix settings/$MEMBER_NAME.json"
+    repair "fix settings/$MEMBER_NAME.json"
   else
     ok "settings settings/$MEMBER_NAME.json over the team's rules.json"
   fi

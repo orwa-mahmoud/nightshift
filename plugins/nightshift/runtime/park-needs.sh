@@ -15,6 +15,8 @@ set -u
 
 _here="${BASH_SOURCE[0]%/*}"
 [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# The programs this script runs sit beside lib.sh.
+PROGRAMS="$_here/../lib"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
@@ -83,17 +85,11 @@ trap 'rm -rf "$TMPD"' EXIT
 
 bash "$PREFLIGHT" --project "$WORKSPACE" --json >"$TMPD/preflight.json" || no_parser
 
-GAPS_PY='
-import json, sys
-
-for gap in json.load(open(sys.argv[1]))["gaps"]:
-    sys.stdout.write("%s\t%s\n" % (gap["category"], gap["title"]))
-'
 
 if [ "$(ns_policy_json_tool)" = jq ]; then
   jq -r '.gaps[] | .category + "\t" + .title' "$TMPD/preflight.json" >"$TMPD/gaps" || no_parser
 else
-  python3 -c "$GAPS_PY" "$TMPD/preflight.json" >"$TMPD/gaps" || no_parser
+  python3 "$(ns_native_display_path "$PROGRAMS/park-needs-gaps.py")" "$TMPD/preflight.json" >"$TMPD/gaps" || no_parser
 fi
 
 # The entry the owner reads over coffee: what is missing, which item it holds, and the default

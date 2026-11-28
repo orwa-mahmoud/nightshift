@@ -11,6 +11,10 @@
 # run/file-map records, one key=value per line, the shift it belongs to (shift), the commit that
 # shift started on (base) and HEAD at the last tick (last).
 
+# The programs this module runs sit beside it.
+_ns_file_map_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_file_map_dir" != "${BASH_SOURCE[0]}" ] || _ns_file_map_dir=.
+
 NS_FILEMAP_COLLAPSE=40
 NS_FILEMAP_FENCE="\`\`\`"
 
@@ -36,8 +40,15 @@ ns_filemap_start() {
   ns_filemap_enabled "$project" || return 0
   [ "$(ns_work_mode "$project" 2>/dev/null)" = repository ] || return 0
   sid="$(ns_policy_shift_id "$project" 2>/dev/null)" || sid=""
-  if [ -n "$(ns_filemap_field "$project" base)" ] && [ "$(ns_filemap_field "$project" shift)" = "$sid" ]; then
-    return 0
+  if [ -n "$(ns_filemap_field "$project" base)" ]; then
+    case "$(ns_filemap_field "$project" shift)" in
+      "$sid") return 0 ;;
+      # A continued shift keeps the commit it started on under its new id.
+      "$NS_SHIFT_CONTINUED")
+        ns_filemap_set "$project" shift "$sid"
+        return
+        ;;
+    esac
   fi
   target="$(ns_work_target "$project" 2>/dev/null)" || return 0
   head="$(git -C "$target" rev-parse --verify --quiet HEAD 2>/dev/null)" || return 0
@@ -81,10 +92,7 @@ ns_filemap_git_rows() {
     fi
     printf '%s\t%s\t%s\n' "$p" "$add" "$del"
   done <"$counts.raw" >"$counts"
-  awk -F '\t' '
-    NR == FNR { add[$1] = $2; del[$1] = $3; next }
-    { a = ($1 in add) ? add[$1] : "0"; d = ($1 in del) ? del[$1] : "0"; print $1 "\t" $2 "\t" $3 "\t" a "\t" d }
-  ' "$counts" "$names"
+  awk -F '\t' -f "$_ns_file_map_dir/file-map-git-rows.awk" "$counts" "$names"
   rm -f "$names" "$counts" "$names.raw" "$counts.raw"
 }
 
@@ -96,31 +104,7 @@ ns_filemap_git_rows() {
 ns_filemap_outputs() {
   local path
   { [ -f "$1" ] && [ ! -L "$1" ]; } || return 0
-  awk '
-    { sub(/\r$/, "") }
-    skip { if ($0 ~ /^<!-- \/(nightshift:[a-z-]+|usage) -->$/) skip = 0; next }
-    /^<!-- (nightshift:[a-z-]+|usage) -->$/ { skip = 1; next }
-    comment { if (index($0, "-->")) comment = 0; next }
-    /^<!--/ { if (!index($0, "-->")) comment = 1; next }
-    {
-      line = $0
-      while (match(line, /\]\([^)]+\)/)) {
-        t = substr(line, RSTART + 2, RLENGTH - 3)
-        line = substr(line, RSTART + RLENGTH)
-        sub(/[ \t].*$/, "", t)
-        if (t ~ /^[a-z][a-z0-9+.-]*:/ || t ~ /^#/ || t ~ /^\//) continue
-        print t
-      }
-      line = $0
-      while (match(line, /`[^`]+`/)) {
-        t = substr(line, RSTART + 1, RLENGTH - 2)
-        line = substr(line, RSTART + RLENGTH)
-        if (t ~ /[ \t]/ || t ~ /^[a-z][a-z0-9+.-]*:/ || t ~ /^\//) continue
-        if (t !~ /\// && t !~ /\.[A-Za-z0-9]+$/) continue
-        print t
-      }
-    }
-  ' "$1" | sed 's#^\./##' | awk 'NF' | LC_ALL=C sort -u | while IFS= read -r path; do
+  awk -f "$_ns_file_map_dir/file-map-outputs.awk" "$1" | sed 's#^\./##' | awk 'NF' | LC_ALL=C sort -u | while IFS= read -r path; do
     case "$path" in .. | ../* | */.. | */../*) continue ;; esac
     if [ -z "${2-}" ]; then
       printf '%s\n' "$path"
@@ -144,69 +128,12 @@ ns_filemap_render() {
     return 0
   fi
   if [ "$n" -le "$NS_FILEMAP_COLLAPSE" ]; then
-    lines="$(awk -F '\t' 'NF {
-        p = $1; d = ""; b = p
-        i = match(p, /\/[^\/]*$/)
-        if (i) { d = substr(p, 1, i - 1); b = substr(p, i + 1) }
-        print d "\t" b "\t" $2 "\t" $3 "\t" $4 "\t" $5
-      }' "$rows" | LC_ALL=C sort -t "$tab" -k1,1 -k2,2 | awk -F '\t' -v kind="$kind" '
-      function counts() { return ($5 == "-") ? "binary" : "+" $5 " -" $6 }
-      {
-        if (NR == 1 || $1 != dir) { dir = $1; print (dir == "" ? "./" : dir "/") }
-        if (kind == "git") {
-          line = "  " $3 " " $2 "  " counts()
-          if ($4 != "") line = line "  (from " $4 ")"
-        } else {
-          line = "  " $2
-        }
-        print line
-      }')"
+    lines="$(awk -F '\t' -f "$_ns_file_map_dir/file-map-split-dir.awk" "$rows" | LC_ALL=C sort -t "$tab" -k1,1 -k2,2 | awk -F '\t' -v kind="$kind" -f "$_ns_file_map_dir/file-map-render-grouped.awk")"
   else
-    lines="$(awk -F '\t' -v kind="$kind" -v limit="$NS_FILEMAP_COLLAPSE" '
-      NF { n++; path[n] = $1; st[n] = $2; old[n] = $3; add[n] = $4; del[n] = $5 }
-      function keyof(p, depth,    parts, c, k, j) {
-        c = split(p, parts, "/")
-        if (c - 1 < depth) return p
-        k = parts[1]
-        for (j = 2; j <= depth; j++) k = k "/" parts[j]
-        return k "/"
-      }
-      END {
-        for (depth = 3; depth >= 1; depth--) {
-          split("", seen); rows = 0
-          for (i = 1; i <= n; i++) { k = keyof(path[i], depth); if (!(k in seen)) { seen[k] = 1; rows++ } }
-          if (rows <= limit || depth == 1) break
-        }
-        for (i = 1; i <= n; i++) {
-          k = keyof(path[i], depth)
-          if (k ~ /\/$/) {
-            files[k]++
-            if (add[i] != "-") { plus[k] += add[i]; minus[k] += del[i] }
-            continue
-          }
-          if (kind == "git") {
-            line = st[i] " " path[i] "  " ((add[i] == "-") ? "binary" : "+" add[i] " -" del[i])
-            if (old[i] != "") line = line "  (from " old[i] ")"
-          } else {
-            line = path[i]
-          }
-          print k "\t" line
-        }
-        for (k in files) {
-          if (kind == "git") line = k "  " files[k] (files[k] == 1 ? " file" : " files") "  +" (plus[k] + 0) " -" (minus[k] + 0)
-          else line = k "  " files[k] (files[k] == 1 ? " output" : " outputs")
-          print k "\t" line
-        }
-      }' "$rows" | LC_ALL=C sort -t "$tab" -k1,1 | cut -f2-)"
+    lines="$(awk -F '\t' -v kind="$kind" -v limit="$NS_FILEMAP_COLLAPSE" -f "$_ns_file_map_dir/file-map-render-collapsed.awk" "$rows" | LC_ALL=C sort -t "$tab" -k1,1 | cut -f2-)"
   fi
   if [ "$kind" = git ]; then
-    awk -F '\t' -v n="$n" -v collapsed="$([ "$n" -gt "$NS_FILEMAP_COLLAPSE" ] && echo 1 || echo 0)" '
-      NF && $4 != "-" { a += $4; d += $5 }
-      END {
-        printf "%d %s changed, +%d -%d", n, (n == 1 ? "file" : "files"), a, d
-        if (collapsed) printf ", folders collapsed"
-        printf "\n"
-      }' "$rows"
+    awk -F '\t' -v n="$n" -v collapsed="$([ "$n" -gt "$NS_FILEMAP_COLLAPSE" ] && echo 1 || echo 0)" -f "$_ns_file_map_dir/file-map-totals.awk" "$rows"
   else
     printf '%s %s declared' "$n" "$([ "$n" -eq 1 ] && echo output || echo outputs)"
     [ "$n" -le "$NS_FILEMAP_COLLAPSE" ] || printf ', folders collapsed'
@@ -219,10 +146,7 @@ ns_filemap_render() {
 # why it is unavailable. Status 1 when there is no page.
 ns_filemap_summary() {
   { [ -f "$1" ] && [ ! -L "$1" ]; } || return 1
-  awk '
-    { sub(/\r$/, "") }
-    /^[0-9]+ (file|files|output|outputs) / || /^No (files changed|outputs declared)\.$/ || /^unavailable — / { print; exit }
-  ' "$1"
+  awk -f "$_ns_file_map_dir/file-map-summary.awk" "$1"
 }
 
 # ns_filemap_tick <nightshift-dir> <project> <item-label> — draw the item's map into its receipt and

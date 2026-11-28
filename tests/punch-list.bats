@@ -207,12 +207,14 @@ LIST
   [ "$(lib ns_punch_items_digest "$p/.nightshift/punch-list.md")" = "$lf_items" ]
 }
 
-# The gate side. A contract that moved is a block in its own right, before any question of
-# shortening the reminder arises.
+# The gate side. A list that moved during a shift is recorded in the shift log and never refused;
+# only open boxes hold the session.
 
-# armed <project> — the same list, with the digests recorded as arming records them.
+# armed <project> — the same list, with the digests and the list view recorded as arming records
+# them.
 armed() {
   a_list "$1"
+  lib ns_punch_list_note "$1/.nightshift" "$1/.nightshift/punch-list.md" || :
   {
     printf '{"schemaVersion":1,"shiftId":"9f2c40ab77e51d63","createdAt":"2026-09-02T02:30:00Z",'
     printf '"source":"composition","verificationLevel":"final","toolingPolicy":"existing-tools",'
@@ -252,30 +254,41 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   ! reason "$output" | grep -qF 'since this shift armed' || false
 }
 
-@test "an edited contract blocks, naming the contract" {
+# changes <project> — the list changes the shift log recorded, one per line.
+changes() {
+  grep -F 'punch list changed:' "$(lib ns_layout_path "$1/.nightshift" shift-log)" 2>/dev/null |
+    sed 's/.*punch list changed: //'
+}
+
+@test "an edited contract is recorded, and the shift goes on with its open work" {
   p="$(new_project pl-gate-contract)"
   armed "$p"
   edit "$p" 's/Nobody edits this while a shift runs./Anyone may edit this./'
   run block "$p"
   printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
-  reason "$output" | grep -qF 'shift contract above the Items heading'
-  reason "$output" | grep -qF 'your ticks stand'
+  ! reason "$output" | grep -qF 'since this shift armed' || false
+  [ "$(changes "$p")" = 'the contract above ## Items changed' ]
 }
 
-@test "a reworded item blocks, naming the item and ruling a tick out as the cause" {
+@test "added, reworded and removed items are each recorded by name, once" {
   p="$(new_project pl-gate-item)"
   armed "$p"
-  edit "$p" 's/P03 - the one after/P03 - something else entirely/'
+  edit "$p" 's/Nothing special/Something special/'
+  awk '/^## Notes/ { print "- [ ] **P09 - a late addition.**"; print "" } { print }' \
+    "$p/.nightshift/punch-list.md" >"$p/added.md"
+  mv "$p/added.md" "$p/.nightshift/punch-list.md"
   run block "$p"
   printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
-  reason "$output" | grep -qF 'reworded, removed or inserted'
-  reason "$output" | grep -qF 'Ticking a box is invisible to this check'
+  ! reason "$output" | grep -qF 'reworded, removed or inserted' || false
+  [ "$(changes "$p")" = 'reworded "P03"; added "P09"' ] || { changes "$p"; return 1; }
+  # Nothing moved since: the next stop records nothing new.
+  run block "$p"
+  [ "$(changes "$p" | wc -l | tr -d ' ')" -eq 1 ]
 }
 
-# Reaching zero open boxes is not the same as finishing the list. A removed item or an edited
-# contract must be caught on the "done" path too, or deleting the unfinished work would clock out.
+# Reaching zero open boxes is done. A list that moved on the way there is recorded, never refused.
 
-@test "removing the last open item blocks instead of clocking out as done" {
+@test "removing the last open item clocks out as done and records the removal" {
   p="$(new_project pl-gate-drop-last)"
   armed "$p"
   edit "$p" 's/- \[ \] \*\*P02/- [x] **P02/'
@@ -283,32 +296,42 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   [ "$(lib ns_open_boxes "$p/.nightshift/punch-list.md")" -eq 0 ]
   run block "$p"
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
-  reason "$output" | grep -qF 'reworded, removed or inserted'
-  [ ! -e "$p/.nightshift/.ended" ]
+  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1 || false
+  [ -e "$p/.nightshift/.ended" ]
+  [ "$(changes "$p")" = 'removed "P03"' ] || { changes "$p"; return 1; }
 }
 
-@test "an edited contract blocks even when every box is ticked" {
+@test "an edited contract with every box ticked clocks out and is recorded" {
   p="$(new_project pl-gate-contract-done)"
   armed "$p"
   edit "$p" 's/- \[ \] \*\*P0/- [x] **P0/'
   edit "$p" 's/Nobody edits this while a shift runs./Anyone may edit this./'
   [ "$(lib ns_open_boxes "$p/.nightshift/punch-list.md")" -eq 0 ]
   run block "$p"
-  printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
-  reason "$output" | grep -qF 'shift contract above the Items heading'
-  [ ! -e "$p/.nightshift/.ended" ]
+  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1 || false
+  [ -e "$p/.nightshift/.ended" ]
+  [ "$(changes "$p")" = 'the contract above ## Items changed' ]
 }
 
-@test "a punch list deleted from an armed shift blocks instead of clocking out" {
+@test "a punch list deleted from an armed shift clocks out and records that it is gone" {
   p="$(new_project pl-gate-list-gone)"
   armed "$p"
   rm "$p/.nightshift/punch-list.md"
   run block "$p"
   [ "$status" -eq 0 ]
-  printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
-  reason "$output" | grep -qF 'Deleting the list does not finish its items'
-  [ ! -e "$p/.nightshift/.ended" ]
+  ! printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null 2>&1 || false
+  [ -e "$p/.nightshift/.ended" ]
+  [ "$(changes "$p")" = 'the punch list is gone' ]
+}
+
+@test "the morning page lists how the punch list moved" {
+  p="$(new_project pl-gate-morning)"
+  armed "$p"
+  edit "$p" 's/Nothing special/Something special/'
+  run block "$p"
+  run bash "$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/morning-receipt.sh" --project "$p"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qxF -- '- List changed: reworded "P03"'
 }
 
 @test "a missing punch list with no recorded snapshot still ends the shift" {
@@ -349,7 +372,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   ! reason "$output" | grep -qF 'since this shift armed' || false
 }
 
-@test "a tampered contract is answered in full, never with the short line" {
+@test "a changed contract is answered in full, never with the short line" {
   p="$(new_project pl-gate-short)"
   armed "$p"
   jq '.clockOutReminderMode = "changed-only"' "$p/.nightshift/rules.json" >"$p/knobs.json"
@@ -357,7 +380,7 @@ reason() { printf '%s' "$1" | jq -r '.reason // empty'; }
   run block "$p" # the first block, after which the model holds the contract
   edit "$p" 's/Nobody edits this while a shift runs./Anyone may edit this./'
   run block "$p"
-  reason "$output" | grep -qF 'shift contract above the Items heading'
+  printf '%s' "$output" | jq -e '.decision == "block"' >/dev/null
   ! reason "$output" | grep -qF 'still binds' || false
 }
 

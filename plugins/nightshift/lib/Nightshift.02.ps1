@@ -160,17 +160,24 @@ function Resolve-NSShiftAuthorize {
             if ($null -ne $held -and -not [string]::IsNullOrEmpty($held.Nonce) `
                 -and -not [string]::IsNullOrEmpty($held.ProcessId)) {
                 $liveness = Test-NSRecordedProcess $held.ProcessId $held.Start
-                if ($liveness -eq 'Alive') {
+                # A recovery lease naming this very process is not another process's hold.
+                $ownProcess = -not [string]::IsNullOrEmpty($ProcessId) -and $held.ProcessId -eq $ProcessId
+                if ($liveness -eq 'Alive' -and -not $ownProcess) {
                     return New-NSShiftDecision -Status Fail -Session $Session -Message 'BLOCKED: this shift is being recovered in another process. Wait or issue STOP from a separate session; reopening the recorded conversation stays blocked while that worker holds the lease.'
                 }
-                if ($liveness -eq 'Dead' -and -not [string]::IsNullOrEmpty($checkSession) `
-                    -and $checkSession -eq $Session.SessionId) {
+                if (($liveness -eq 'Dead' -or $ownProcess) -and [string]::IsNullOrEmpty($Nonce) `
+                    -and -not [string]::IsNullOrEmpty($checkSession) -and $checkSession -eq $Session.SessionId) {
                     $reclaimed = Reclaim-NSLeaseRecorded -NightshiftDir $NightshiftDir -HostName $HostName `
                         -SessionId $Session.SessionId -OldGeneration $held.Generation -OldNonce $held.Nonce `
                         -ProcessId $ProcessId -Start $ProcessStart
                     if ($null -ne $reclaimed) {
-                        Write-NSControlLog -NightshiftDir $NightshiftDir -Line `
+                        $reclaimLine = if ($ownProcess) {
+                            "lease reclaimed by the recorded conversation from a recovery lease that named its own process (generation $($held.Generation) $([char]0x2192) $reclaimed)"
+                        }
+                        else {
                             "lease reclaimed by the recorded conversation after a dead recovery attempt (generation $($held.Generation) $([char]0x2192) $reclaimed)"
+                        }
+                        Write-NSControlLog -NightshiftDir $NightshiftDir -Line $reclaimLine
                         $allow = 'Allow'
                     }
                 }

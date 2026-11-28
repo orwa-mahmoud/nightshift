@@ -88,6 +88,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# The programs this script runs sit beside lib.sh.
+PROGRAMS="$_here/../../lib"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../../lib/lib.sh" # pure-bash path — no dirname dependency
 # shellcheck source=plugins/nightshift/runtime/shared/watchman-core.sh
@@ -368,11 +370,7 @@ owner_paused() {
   local t
   t="$(resolve_transcript)"
   [ -n "$t" ] || return 1
-  tail -n 25 "$t" 2>/dev/null | awk '
-    /[^\\]"type"[[:space:]]*:[[:space:]]*"(user|assistant)"/ {
-      esc = /Request interrupted by user/
-    }
-    END { exit esc ? 0 : 1 }'
+  tail -n 25 "$t" 2>/dev/null | awk -f "$PROGRAMS/claude-watchman-owner-paused.awk"
 }
 
 # The wedge tell: Claude Code records an API failure as its own synthetic assistant event,
@@ -389,11 +387,7 @@ errored_tail() {
   [ -n "$t" ] || return 1
   # Last conversation event in a long enough tail: a chatty failed revival must not
   # push the host's error out of a 25-line window. A later non-error assistant is recovery.
-  tail -n 400 "$t" 2>/dev/null | awk '
-    /[^\\]"type"[[:space:]]*:[[:space:]]*"(user|assistant)"/ {
-      wedge = /[^\\]"isApiErrorMessage"[[:space:]]*:[[:space:]]*true/
-    }
-    END { exit wedge ? 0 : 1 }'
+  tail -n 400 "$t" 2>/dev/null | awk -f "$PROGRAMS/claude-watchman-errored-tail.awk"
 }
 
 # The outage tell, read after a whole ladder of attempts has failed: the last error the host
@@ -410,22 +404,14 @@ usage_limited_tail() {
   local t
   t="$(resolve_transcript)"
   [ -n "$t" ] || return 1
-  tail -n 400 "$t" 2>/dev/null | awk '
-    /[^\\]"isApiErrorMessage"[[:space:]]*:[[:space:]]*true/ { last = tolower($0) }
-    END { exit (last ~ /usage[ _-]?limit/) ? 0 : 1 }'
+  tail -n 400 "$t" 2>/dev/null | awk -f "$PROGRAMS/claude-watchman-usage-limited-tail.awk"
 }
 
 api_limited_tail() {
   local t
   t="$(resolve_transcript)"
   [ -n "$t" ] || return 1
-  tail -n 400 "$t" 2>/dev/null | awk '
-    /[^\\]"isApiErrorMessage"[[:space:]]*:[[:space:]]*true/ { last = tolower($0) }
-    END {
-      exit (last ~ /(rate|usage)[ _-]?limit/ ||
-            last ~ /(^|[^0-9])(429|529)([^0-9]|$)/ ||
-            last ~ /(^|[^a-z])api([^a-z]|$)/) ? 0 : 1
-    }'
+  tail -n 400 "$t" 2>/dev/null | awk -f "$PROGRAMS/claude-watchman-api-limited-tail.awk"
 }
 
 # Primary pulse: a live session streams every turn into its transcript, even when the work
@@ -770,13 +756,16 @@ while :; do
           else
             note revived
           fi
+          # A wedge is a live session stopped at an errored prompt, not a dead one.
+          how="died"
+          [ "$verdict" != "wedge" ] || how="stopped at an errored prompt"
           if [ -n "$sid" ]; then
             log_line "watchman: resumed session returned — the night is one thread: claude --resume $sid · vscode://anthropic.claude-code/open?session=$sid"
-            printf -- '- [notice] %s — the shift session died and the watchman revived it. One thread: claude --resume %s · cursor://anthropic.claude-code/open?session=%s · vscode://anthropic.claude-code/open?session=%s\n' \
-              "$(ts)" "$sid" "$sid" "$sid" >>"$PARKING"
+            printf -- '- [notice] %s — the shift session %s and the watchman revived it. One thread: claude --resume %s · cursor://anthropic.claude-code/open?session=%s · vscode://anthropic.claude-code/open?session=%s\n' \
+              "$(ts)" "$how" "$sid" "$sid" "$sid" >>"$PARKING"
           else
             log_line "watchman: resumed session returned — re-checking next wake"
-            printf -- '- [notice] %s — the shift session died and the watchman revived it (details in shift-log.md).\n' "$(ts)" >>"$PARKING"
+            printf -- '- [notice] %s — the shift session %s and the watchman revived it (details in shift-log.md).\n' "$(ts)" "$how" >>"$PARKING"
           fi
         elif [ "$RECOVERY_REFUSED" -eq 1 ]; then
           # The ladder stopped because a revival was refused, not because its rungs ran out. The

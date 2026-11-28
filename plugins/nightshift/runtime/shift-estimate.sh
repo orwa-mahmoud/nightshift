@@ -14,6 +14,8 @@
 set -u
 
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# The programs this script runs sit beside lib.sh.
+PROGRAMS="$_here/../lib"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
@@ -96,14 +98,7 @@ printf 'estimate from %s ticked items: %s live, %s archived\n' "$TOTAL" "$LIVE" 
 
 # stats <column> — `<count> <median> <min> <max>` over the readings in that column, `0` when none.
 stats() {
-  printf '%s' "$SAMPLES" | awk -v c="$1" '$c != "-" && $c != "" { print $c }' | LC_ALL=C sort -n | awk '
-    { v[++n] = $1 }
-    END {
-      if (n == 0) { print 0; exit }
-      if (n % 2) m = v[(n + 1) / 2]
-      else m = int((v[n / 2] + v[n / 2 + 1]) / 2)
-      print n, m, v[1], v[n]
-    }'
+  printf '%s' "$SAMPLES" | awk -v c="$1" '$c != "-" && $c != "" { print $c }' | LC_ALL=C sort -n | awk -f "$PROGRAMS/shift-estimate-stats.awk"
 }
 
 # ceil_minutes <seconds> — whole minutes up, as the Budget: syntax writes them: `45m`, `1h 30m`.
@@ -119,12 +114,7 @@ ceil_minutes() {
 
 # ceil_tokens <n> — tokens up to one decimal in the unit the Budget: syntax reads: `800k`, `1.3M`.
 ceil_tokens() {
-  awk -v n="$1" 'BEGIN {
-    if (n < 1000000) { k = int((n + 999) / 1000); if (k < 1) k = 1; printf "%dk", k; exit }
-    t = int((n + 99999) / 100000)
-    if (t % 10) printf "%d.%dM", int(t / 10), t % 10
-    else printf "%dM", t / 10
-  }'
+  awk -v n="$1" -f "$PROGRAMS/shift-estimate-ceil-tokens.awk"
 }
 
 read -r TN TMED TMIN TMAX <<<"$(stats 1)"

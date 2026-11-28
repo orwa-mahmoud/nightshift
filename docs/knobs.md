@@ -482,34 +482,23 @@ folder, so teammates' runs of the same plan never meet. Where it shares the plan
 `staging/plans/` after a run starts from it, and the run's punch list names its paths from the
 workspace root (`./.nightshift/...`).
 
-`branches` holds the team's branch workflow.
-
-| Key | Default | Values |
-|---|---|---|
-| `base` | `""` | The branch new work branches start from, such as `develop`. Empty: the checkout's current commit |
-
 A run works on the branch `start-run --branch <name>` names: the checkout's current one, where it
-works in the checkout itself, an existing work branch, or a new one made from `base`. Without
-`--branch` it gets a `shift/<date>-<plan>` branch of its own. Runs on one branch go one after another:
-a second run continues the first run's worktree once that run has ended. Runs at the same time keep
-worktrees of their own. How a branch catches up with its base before a pull request is a line in the
+works in the checkout itself, an existing work branch, or a new one made from the remote's default
+branch (`origin/HEAD`, or the checkout's commit when the clone has none). Without `--branch` it gets a
+`shift/<date>-<plan>` branch of its own. Git refuses a branch another worktree already holds, so two
+runs on one branch go one after another. How a branch catches up with its base before a pull request is a line in the
 plan's contract: a merge as shipped, a rebase if you write so.
-
-`team` holds the team's workflow rules. It is read only from the team's `rules.json`: neither a
-run's own rules file nor a member's settings file changes it.
-
-| Key | Default | Values |
-|---|---|---|
-| `roles` | `{}` | Each member's role, by the name they put on the records: `{"Alice": "lead", "Bob": "developer"}` |
-| `approvers` | `[]` | The roles whose approval a plan revision needs before it runs, their own plans included. A change to the plan's contract, gates or items needs approval again. Empty: the plan's owner approves it |
 
 A member keeps their own overrides in `.nightshift/settings/<name>.json`, a rules file holding only
 what they change, and selects it for one run with `ns start-run --plan <plan> --host <host>
 --settings <name>`. That run reads its own `runs/<run>/rules.json` first, then the member's file,
 then the team's `rules.json`, and every helper the run starts reads the same. Without a selection
-the team's values apply. A member's file may change any setting except the `team` block, which only
-the team's `rules.json` sets. Credentials and anything specific to one machine stay in the runner's
-own environment, never in a settings file.
+the team's values apply. A member's file may change any setting. Credentials and anything specific
+to one machine stay in the runner's own environment, never in a settings file.
+
+A plan is approved the way any change is, in Git: the proposer commits and pushes it, a teammate
+reviews it and merges it or asks for changes. `ns plan-record` keeps who proposed, approved, started
+and reviewed each revision; it gates nothing.
 
 Changing `root` never moves or hides what is already filed: an older history under the previous
 root stays exactly where it is, and stays readable. Filing copies the receipts and leaves the live

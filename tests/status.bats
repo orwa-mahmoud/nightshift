@@ -81,6 +81,17 @@ fact_from() {
   printf '%s\n' "$1" | sed -n '/^facts$/,/^resolved policy$/p' | grep -E "^$2 " | head -1 | cut -d' ' -f"$(($(printf '%s' "$2" | wc -w) + 1))-"
 }
 
+# One report of a freshly set-up site, read by every case that starts from one.
+setup_file() {
+  local BATS_TEST_TMPDIR="$BATS_FILE_TMPDIR" p
+  p="$(new_project fresh)"
+  bash "$STATUS" --project "$p" >"$BATS_FILE_TMPDIR/fresh.out" 2>/dev/null
+}
+
+fresh_fact() { # <label> — a field of the fresh site's report
+  fact_from "$(cat "$BATS_FILE_TMPDIR/fresh.out")" "$1"
+}
+
 @test "the current open item is named, and a ticked list says none" {
   p="$(new_project status-open-item)"
   printf '## Items\n\n- [x] **P01 - done.**\n\n- [ ] **P02 - the live one.**\n\n  Detail.\n' \
@@ -224,8 +235,8 @@ MAP
 }
 
 @test "the deadline is reported as time remaining, passed, or a finite list" {
+  [ "$(fresh_fact 'deadline')" = 'none (finite list)' ]
   p="$(new_project status-deadline)"
-  [ "$(fact_of "$p" 'deadline')" = 'none (finite list)' ]
 
   printf '%s\n' "$(($(date +%s) + 7500))" >"$p/.nightshift/deadline"
   fact_of "$p" 'deadline' | grep -qE '^2h0[0-9]m remaining$'
@@ -235,8 +246,8 @@ MAP
 }
 
 @test "a stop-work order is reported with its reason" {
+  [ "$(fresh_fact 'stop')" = 'absent' ]
   p="$(new_project status-stop)"
-  [ "$(fact_of "$p" 'stop')" = 'absent' ]
   printf 'owner asked for the night to end\n' >"$p/.nightshift/STOP"
   [ "$(fact_of "$p" 'stop')" = 'present (owner asked for the night to end)' ]
 }
@@ -268,8 +279,8 @@ MAP
 }
 
 @test "the watch reason carries its code and the label Doctor prints" {
+  [ "$(fresh_fact 'watch reason')" = 'none' ]
   p="$(new_project status-watch-reason)"
-  [ "$(fact_of "$p" 'watch reason')" = 'none' ]
   printf 'session-died\nnon-sensitive detail\n' >"$p/.nightshift/.watch-reason"
   run bash "$STATUS" --project "$p"
   [ "$status" -eq 0 ]

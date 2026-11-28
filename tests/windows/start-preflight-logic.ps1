@@ -547,6 +547,46 @@ try {
     Expect-True ($composedRun.Stdout.Contains('ok snapshot composed - this shift keeps the policy it was composed with')) `
         'a recorded policy is kept'
 
+    # A shift that ended with items open resumes with the policy clock-out filed for it; a passed
+    # deadline comes back as null; a shift that finished its list leaves its policy filed.
+    function New-EndedComposedSite {
+        param([string]$Name, [string]$Id, [string]$Deadline, [string]$Punch = "## Items`n- [ ] **1. work.**`n")
+        $site = New-Site (Join-Path $root $Name) $Punch
+        $folder = Join-Path $site '.nightshift/archive/2026-09-02'
+        $null = New-Item -ItemType Directory -Force -Path $folder
+        [IO.File]::WriteAllText((Join-Path $folder '.shift-id'), "$Id`n")
+        $doc = '{"schemaVersion":1,"shiftId":"' + $Id + '","createdAt":"2026-09-02T00:00:00Z","source":"composition","deadlineEpoch":' + $Deadline +
+            ',"verificationLevel":"final","toolingPolicy":"existing-tools","allowances":[{"category":"containers","scope":"category","provenance":"one-shift"}]}' + "`n"
+        [IO.File]::WriteAllText((Join-Path $folder 'shift-policy.json'), $doc)
+        [IO.File]::WriteAllText((Join-Path $site '.nightshift/.ended'), "shiftId=$Id`narchiveFolder=2026-09-02`n")
+        return $site
+    }
+    $future = [string]((Get-NSUnixTime) + 7200)
+    $resumed = New-EndedComposedSite 'continued-policy' '7a1c40ab77e51d63' $future
+    $filedText = [IO.File]::ReadAllText((Join-Path $resumed '.nightshift/archive/2026-09-02/shift-policy.json'))
+    $resumedRun = Invoke-Preflight $resumed @('-HostName', 'claude')
+    Expect-True ($resumedRun.ExitCode -eq 0) "a continued composed shift starts: $($resumedRun.Stdout)"
+    Expect-True ($resumedRun.Stdout.Contains('ok policy the continued shift resumes with the policy it ran with, from .nightshift/archive/2026-09-02/shift-policy.json')) `
+        "the continued shift's policy comes back: $($resumedRun.Stdout)"
+    Expect-True (-not $resumedRun.Stdout.Contains('refuse replay')) "a resumed policy is not a replay: $($resumedRun.Stdout)"
+    Expect-True ($resumedRun.Stdout.Contains("ok deadline $future (policy")) "the resumed deadline is the policy's: $($resumedRun.Stdout)"
+    $livePolicy = Join-Path $resumed '.nightshift/shift-policy.json'
+    Expect-True ((Test-Path -LiteralPath $livePolicy) -and [IO.File]::ReadAllText($livePolicy) -ceq $filedText) 'the very file the shift ran with is live again'
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $resumed '.nightshift/archive/2026-09-02/shift-policy.json'))) 'the resumed policy is not left filed twice'
+
+    $spentSite = New-EndedComposedSite 'continued-spent' '7a1c40ab77e51d64' '1000'
+    $spentRun = Invoke-Preflight $spentSite @('-HostName', 'claude')
+    Expect-True ($spentRun.Stdout.Contains('ok policy the continued shift resumes with the policy it ran with')) "a spent policy still comes back: $($spentRun.Stdout)"
+    Expect-True ($spentRun.Stdout.Contains('ok deadline none (finite list')) "a passed deadline is not renewed: $($spentRun.Stdout)"
+    $spentText = [IO.File]::ReadAllText((Join-Path $spentSite '.nightshift/shift-policy.json'))
+    Expect-True ($spentText.Contains('"deadlineEpoch":null,"verificationLevel":"final"') -and $spentText.Contains('"provenance":"one-shift"')) `
+        "only the passed deadline changes: $spentText"
+
+    $finished = New-EndedComposedSite 'finished-policy' '7a1c40ab77e51d65' 'null' "## Items`n- [x] **1. work.**`n"
+    $finishedRun = Invoke-Preflight $finished @('-HostName', 'claude')
+    Expect-True (-not $finishedRun.Stdout.Contains('ok policy the continued shift')) "a finished shift's policy stays filed: $($finishedRun.Stdout)"
+    Expect-True (-not (Test-Path -LiteralPath (Join-Path $finished '.nightshift/shift-policy.json'))) 'a finished shift gets no live policy back'
+
     if ($failures.Count -gt 0) {
         Write-Host "start-preflight logic failed ($($failures.Count)):"
         foreach ($failure in $failures) {

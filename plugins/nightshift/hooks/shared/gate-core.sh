@@ -3,6 +3,8 @@
 
 _ns_gate_core_dir="${BASH_SOURCE[0]%/*}"
 [ "$_ns_gate_core_dir" != "${BASH_SOURCE[0]}" ] || _ns_gate_core_dir=.
+# The awk programs this file runs sit beside lib.sh.
+_ns_gate_core_lib="$_ns_gate_core_dir/../../lib"
 # shellcheck source=plugins/nightshift/lib/evidence-check.sh
 . "$_ns_gate_core_dir/../../lib/evidence-check.sh"
 
@@ -481,41 +483,7 @@ ns_gate_uncharged_labels() {
   {
     ns_item_rows "$2" open | cut -f1 | sed 's/^/+/'
     ns_gate_ticked_labels "$2" | sed 's/^/-/'
-  } | awk -v marks="$marks" -v reopened="$reopened" -v observed="$observed" '
-    BEGIN {
-      while ((getline row < reopened) > 0) {
-        if (split(row, f, "\t") == 2 && f[1] ~ /^[0-9]+$/) ignored[f[2]] = f[1] + 0
-      }
-      close(reopened)
-      while ((getline row < marks) > 0) {
-        rows++
-        n = split(row, f, "\t")
-        # The first mark is the shift arming, not an item, and only a tick closes an item: a switch
-        # or a pause charges a span to an item that is still open.
-        if (rows == 1 && f[2] == "arm") continue
-        if (n >= 4 && f[4] != "" && f[4] != "tick") continue
-        charged[f[2]]++
-      }
-      close(marks)
-    }
-    /^\+/ { open[substr($0, 2)] = 1; next }
-    { label = substr($0, 2); labels[++nlabels] = label; closed[label]++ }
-    END {
-      if (observed != "") {
-        for (label in open) {
-          count = charged[label] - closed[label]
-          if (count <= ignored[label]) continue
-          ignored[label] = count
-          print count "\t" label >> observed
-        }
-      }
-      for (i = 1; i <= nlabels; i++) {
-        label = labels[i]
-        if (charged[label] > ignored[label]) charged[label]--
-        else print label
-      }
-    }
-  '
+  } | awk -v marks="$marks" -v reopened="$reopened" -v observed="$observed" -f "$_ns_gate_core_lib/gate-core-uncharged-labels.awk"
 }
 
 # ns_gate_ticked_labels <punch-list> — every closed item's id, list order, one per line, as the
@@ -523,14 +491,7 @@ ns_gate_uncharged_labels() {
 # is in the counts, and a stopped item (`- [-]`, closed at its hard budget) closes its span too.
 # An item whose id cannot be read is `item <n>`, n its place among the closed.
 ns_gate_ticked_labels() {
-  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[xX-]\]/ {
-      n++
-      line = ns_item_label($0)
-      if (line == "") line = "item " n
-      print line
-    }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -f "$NS_STATE_ITEM_AWK" -f "$_ns_gate_core_lib/gate-core-ticked-labels.awk"
 }
 
 # Which form the block takes: the whole contract, or one line saying nothing has changed.
@@ -543,16 +504,22 @@ ns_gate_ticked_labels() {
 #
 # The gate already knows everything needed to tell "something moved" from "nothing did": the open
 # and ticked counts, which item is open, whether a stop-work order exists, the deadline state, the
-# stall counter. It writes that down after each block and compares on the next.
+# stall counter and the list itself. It writes that down after each block and compares on the
+# next, so a list the owner changed is always answered with the whole reminder.
 #
 # Unknown always means the full text. A missing, empty or malformed comparison file, a context
 # reset, the first block of a shift, and too many short lines in a row all send the whole thing.
 # No branch here may produce an empty reason or no block at all.
 
-# ns_gate_reminder_fingerprint <open> <ticked> <item> <stopped> <deadline> <stall>
+# ns_gate_reminder_fingerprint <open> <ticked> <item> <stopped> <deadline> <stall> <list>
 ns_gate_reminder_fingerprint() {
-  printf 'open=%s ticked=%s item=%s stopped=%s deadline=%s stall=%s' \
-    "${1:-?}" "${2:-?}" "${3:-?}" "${4:-?}" "${5:-?}" "${6:-?}"
+  printf 'open=%s ticked=%s item=%s stopped=%s deadline=%s stall=%s list=%s' \
+    "${1:-?}" "${2:-?}" "${3:-?}" "${4:-?}" "${5:-?}" "${6:-?}" "${7:-?}"
+}
+
+# ns_gate_list_fingerprint <punch-list> — one digest of the contract and every item, ticks aside.
+ns_gate_list_fingerprint() {
+  ns_punch_list_view "$1" 2>/dev/null | ns_punch_digest
 }
 
 # ns_gate_stall_state <stall-file> <warn-every> — `warned` once the stall guard has begun saying
@@ -679,73 +646,7 @@ ns_gate_reminder_fill() {
 
 # ns_gate_open_item <punch-list> — the id of the first still-open item, for the short line.
 ns_gate_open_item() {
-  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[ \]/ { print ns_item_label($0); exit }
-  '
-}
-
-# The contract, held to what it was when the shift armed.
-#
-# A file's own editor cannot police it, and restoring a punch list from git is the editor deciding
-# what the contract said. The gate records digests at arming, so it checks rather than asking the
-# model to notice.
-#
-# Two digests, because two things can move for different reasons. `contractDigest` covers
-# everything above `## Items`: the shift contract, which nobody may edit while a shift runs.
-# itemsDigest covers the items with the checkbox state flattened, so ticking a box is invisible
-# to it and rewording, deleting or inserting an item is not. The `## Gates` block is deliberately
-# outside both — the owner may change it mid-shift by design, and gatesDigest tracks it on its
-# own terms.
-#
-# A mismatch blocks with the repair named. It never restores anything itself, never refuses to end
-# a shift on a tick alone, and never treats a snapshot that predates these fields as a mismatch.
-#
-# ns_gate_contract_mismatch <project-dir> <punch-list> — the sentence to block with, or nothing.
-ns_gate_contract_mismatch() {
-  local project="$1" list="$2" recorded now which=""
-  [ -f "$list" ] && [ ! -L "$list" ] || return 1
-
-  recorded="$(ns_policy_shift_field "$project" contractDigest)" || recorded=""
-  if [ -n "$recorded" ]; then
-    now="$(ns_punch_contract_digest "$list")" || now=""
-    [ -n "$now" ] && [ "$now" != "$recorded" ] && which="contract"
-  fi
-  if [ -z "$which" ]; then
-    recorded="$(ns_policy_shift_field "$project" itemsDigest)" || recorded=""
-    if [ -n "$recorded" ]; then
-      now="$(ns_punch_items_digest "$list")" || now=""
-      [ -n "$now" ] && [ "$now" != "$recorded" ] && which="items"
-    fi
-  fi
-  [ -n "$which" ] || return 1
-
-  if [ "$which" = contract ]; then
-    printf 'DO NOT STOP — the shift contract above the Items heading in %s has changed since this shift armed. It is the agreement the night is working to, and it is not editable while a shift runs. Restore the punch list from the work-target history or the receipts, or end the shift and let the owner edit the contract with nothing armed. Nothing else about the shift has changed: your ticks stand.' "$list"
-  else
-    printf 'DO NOT STOP — an item in %s has been reworded, removed or inserted since this shift armed. Ticking a box is invisible to this check, so something other than a tick changed. Restore the punch list from the work-target history or the receipts, or end the shift and let the owner edit the list with nothing armed. Nothing else about the shift has changed: your ticks stand.' "$list"
-  fi
-}
-
-# Zero open boxes is done only when the list is still the one that armed. Deleting the unfinished
-# items, or editing the contract once every box is ticked, reaches zero open boxes too, so the done
-# path asks the same question the working path asks. A list that has disappeared entirely, from a
-# shift that recorded one at arming, is that case at its limit. A snapshot that predates these
-# fields records nothing, and a shift without one ends as it always has.
-#
-# ns_gate_done_mismatch <project-dir> <punch-list> — the sentence to block a done clock-out with, or
-# nothing.
-ns_gate_done_mismatch() {
-  local project="$1" list="$2" recorded
-  if [ -f "$list" ]; then
-    ns_gate_contract_mismatch "$project" "$list"
-    return
-  fi
-  recorded="$(ns_policy_shift_field "$project" itemsDigest)" || recorded=""
-  if [ -z "$recorded" ]; then
-    recorded="$(ns_policy_shift_field "$project" contractDigest)" || recorded=""
-  fi
-  [ -n "$recorded" ] || return 1
-  printf 'DO NOT STOP — %s is gone, but this shift armed with a punch list. Deleting the list does not finish its items. Restore it from the work-target history or the receipts, or issue a stop-work order to end the shift with its work unfinished.' "$list"
+  ns_items_section "$1" 2>/dev/null | awk -f "$NS_STATE_ITEM_AWK" -f "$_ns_gate_core_lib/gate-core-open-item.awk"
 }
 
 # The one terminal sequence. Every host gate and the Cursor watchman end a shift here:

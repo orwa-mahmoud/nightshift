@@ -22,29 +22,10 @@ _NS_CATALOGS_TSV="$_NS_CATALOGS_TSV/catalogs.tsv"
 # shellcheck source=plugins/nightshift/lib/charsets.sh
 . "${_NS_CATALOGS_TSV%/*}/charsets.sh"
 
-# Shared Markdown preprocessing for catalog validation and evidence rules.
-NS_AWK_CATALOG_TEXT='
-  function ns_catalog_text(raw,    rest, line, i) {
-    rest = raw
-    sub(/\r$/, "", rest)
-    line = ""
-    while (length(rest) > 0) {
-      if (ns_catalog_in_comment) {
-        i = index(rest, "-->")
-        if (i == 0) break
-        rest = substr(rest, i + 3)
-        ns_catalog_in_comment = 0
-        continue
-      }
-      i = index(rest, "<!--")
-      if (i == 0) { line = line rest; break }
-      line = line substr(rest, 1, i - 1)
-      rest = substr(rest, i + 4)
-      ns_catalog_in_comment = 1
-    }
-    return line
-  }
-'
+# The awk programs beside this file. catalog-text.awk is the shared Markdown preprocessing for
+# catalog validation and evidence rules, run as the first -f of each program that reads entries.
+NS_CATALOG_LIB="${_NS_CATALOGS_TSV%/*}"
+NS_CATALOG_TEXT_AWK="$NS_CATALOG_LIB/catalog-text.awk"
 
 ns_catalog_key_valid() {
   ns_ascii_only "$1" lower digit - || return 1
@@ -147,26 +128,7 @@ ns_catalog_template() {
 # ns_catalog_read_heading <file> — the H1 as title and description, separated by a tab.
 # The split is the em dash the catalogs use. No H1 prints nothing.
 ns_catalog_read_heading() {
-  LC_ALL=C awk "$NS_AWK_CATALOG_TEXT"'
-    {
-      $0 = ns_catalog_text($0)
-      if (ns_catalog_in_comment) next
-    }
-    /^# / && !/^## / && !seen {
-      seen = 1
-      line = substr($0, 3)
-      n = split(line, part, " \xe2\x80\x94 ")
-      title = part[1]
-      description = ""
-      for (i = 2; i <= n; i++) {
-        description = description (i == 2 ? "" : " \xe2\x80\x94 ") part[i]
-      }
-      gsub(/\t/, " ", title)
-      gsub(/\t/, " ", description)
-      printf "%s\t%s", title, description
-      exit
-    }
-  ' "$1"
+  LC_ALL=C awk -f "$NS_CATALOG_TEXT_AWK" -f "$NS_CATALOG_LIB/catalog-sources-heading.awk" "$1"
 }
 
 # ns_catalog_entry_problems <file> <rule> [notes] — one reason per line, status 1 when any was
@@ -177,85 +139,7 @@ ns_catalog_read_heading() {
 # starting "note: " also says what the entry leaves to the owner, such as a fence rule with no
 # fence; a note is never a problem and never changes the status.
 ns_catalog_entry_problems() {
-  LC_ALL=C awk -v rule="${2-}" -v notes="${3-}" "$NS_AWK_CATALOG_TEXT"'
-    function fail(msg) { print msg; bad = 1 }
-    function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
-    BEGIN {
-      nkey = split("files min type", allowed, " ")
-      ntype = split("image text json any", allowed_type, " ")
-      fence = (substr(rule, 1, 6) == "fence:") ? substr(rule, 7) : ""
-    }
-    {
-      line = ns_catalog_text($0)
-      if (ns_catalog_in_comment) next
-      if (rule == "shift" && !seen_h1 && line ~ /^# / && line !~ /^## /) {
-        seen_h1 = 1
-        n = split(substr(line, 3), part, " \xe2\x80\x94 ")
-        if (n < 2 || (part[2] != "finite" && part[2] != "open-ended")) fail("H1 must name the ending: finite or open-ended")
-        next
-      }
-      if (line ~ /^```/ && !in_check) {
-        if (fence != "" && line ~ ("^```" fence "[[:space:]]*$")) {
-          in_check = 1
-          seen_fence = 1
-          delete seenk
-          next
-        }
-        in_block = !in_block
-        if (in_block && line ~ /^```text[[:space:]]*$/) { in_text = 1; box = 0; verify = 0 }
-        if (!in_block) {
-          if (in_text && box) { any_box = 1; if (verify) item_ok = 1 }
-          in_text = 0
-        }
-        next
-      }
-      if (in_check && line ~ /^```[[:space:]]*$/) {
-        for (k = 1; k <= nkey; k++) if (!(allowed[k] in seenk)) fail("missing key")
-        in_check = 0
-        next
-      }
-      if (in_check) {
-        if (line !~ /^[a-z]+:[[:space:]]*[^[:space:]].*$/) { fail("unknown key"); next }
-        key = line
-        sub(/:.*/, "", key)
-        ok = 0
-        for (k = 1; k <= nkey; k++) if (allowed[k] == key) ok = 1
-        if (!ok) { fail("unknown key"); next }
-        if (key in seenk) { fail("duplicate key"); next }
-        val = line
-        sub(/^[^:]+:[[:space:]]*/, "", val)
-        if (key == "min" && val !~ /^[1-9][0-9]*$/) fail("invalid min")
-        if (key == "type") {
-          ok = 0
-          for (k = 1; k <= ntype; k++) if (allowed_type[k] == val) ok = 1
-          if (!ok) fail("invalid type")
-        }
-        seenk[key] = val
-        next
-      }
-      if (in_text) {
-        if (line ~ /^- \[ \] \*\*/) box = 1
-        if (index(line, "Verify:")) verify = 1
-        next
-      }
-      if (in_block) next
-      if (rule == "match" && line ~ /^Match:[[:space:]]*/) {
-        val = trim(substr(line, 7))
-        if (val != "stack" && val != "plugin" && val != "fallback") fail("invalid match")
-        if (match_seen) fail("duplicate match")
-        match_seen = 1
-      }
-    }
-    END {
-      if (rule == "shift" && !seen_h1) fail("H1 must name the ending: finite or open-ended")
-      if (rule == "shift" && !any_box) fail("no pasteable item: a text block with a box")
-      if (rule == "shift" && any_box && !item_ok) fail("the item has no Verify line")
-      if (rule == "match" && !match_seen) fail("missing match")
-      if (in_check || in_block) fail("unclosed fence")
-      if (notes != "" && fence != "" && !seen_fence) print "note: no " fence " block, so check: block holds only the files an item names"
-      exit bad ? 1 : 0
-    }
-  ' "$1"
+  LC_ALL=C awk -v rule="${2-}" -v notes="${3-}" -f "$NS_CATALOG_TEXT_AWK" -f "$NS_CATALOG_LIB/catalog-sources-problems.awk" "$1"
 }
 
 # _ns_catalog_ingest <dir> <label> <check: yes|no> <missing: report|quiet>

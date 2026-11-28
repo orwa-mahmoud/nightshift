@@ -5,6 +5,10 @@
 # integers, and string arrays. Comments, trailing commas, unknown types, and
 # unexpected nesting fail closed. Never a second store. Never a general parser.
 
+# The programs this module runs sit beside it.
+_ns_rules_read_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_rules_read_dir" != "${BASH_SOURCE[0]}" ] || _ns_rules_read_dir=.
+
 NS_RULES_ERR=""
 NS_RULES_ROWS=""
 NS_RULES_FILE=""
@@ -81,9 +85,6 @@ _ns_rules_run_file() {
   if [ -f "$f" ] && [ ! -L "$f" ]; then printf '%s' "$f"; fi
 }
 
-# The groups only the team's rules.json sets: a run's or a member's file never changes them.
-NS_RULES_TEAM_GROUPS='team'
-
 # _ns_rules_member_file <var> <file> — sets <var> to the member settings file the run this caller
 # works on selected, to lay over <file> beneath the run's own: settings/<name>.json, named in the
 # run's member-settings record. Empty when the run selected none. Status 1, with NS_RULES_ERR set,
@@ -108,25 +109,8 @@ _ns_rules_member_file() {
   printf -v "$1" '%s' "$dir/$name.json"
 }
 
-# _ns_rules_drop_team <rows> — the rows without the team's own groups.
-_ns_rules_drop_team() {
-  NS_DROP_ROWS="$1" NS_DROP_TEAM="$NS_RULES_TEAM_GROUPS" awk '
-    BEGIN {
-      FS = "\t"
-      nt = split(ENVIRON["NS_DROP_TEAM"], team, " ")
-      for (i = 1; i <= nt; i++) owned[team[i]] = 1
-      nr = split(ENVIRON["NS_DROP_ROWS"], rows, "\n")
-      for (r = 1; r <= nr; r++) {
-        if (rows[r] == "") continue
-        split(rows[r], f, "\t")
-        if (!(f[1] in owned)) print rows[r]
-      }
-    }'
-}
-
 # ns_member_settings_problems <workspace> <name> — why settings/<name>.json cannot be selected for a
-# run, one line each: a name that is not one, a missing or malformed file, or a team block, which
-# only the team's rules.json sets. Nothing when it can be.
+# run, one line each: a name that is not one, or a missing or malformed file. Nothing when it can be.
 ns_member_settings_problems() (
   local ws="$1" name="$2" ns dir="" file
   case "$name" in
@@ -142,35 +126,14 @@ ns_member_settings_problems() (
     printf 'settings/%s.json is not there\n' "$name"
     exit 0
   fi
-  _ns_rules_ingest rules "$file" || { printf 'settings/%s.json: %s\n' "$name" "$NS_RULES_ERR"; exit 0; }
-  printf '%s\n' "$NS_RULES_ROWS" | awk -F '\t' -v owned=" $NS_RULES_TEAM_GROUPS " -v n="$name" '
-    index(owned, " " $1 " ") && !said[$1]++ { printf "settings/%s.json sets %s, which only the team'"'"'s rules.json sets\n", n, $1 }'
+  _ns_rules_ingest rules "$file" || printf 'settings/%s.json: %s\n' "$name" "$NS_RULES_ERR"
 )
 
 # _ns_rules_overlay <run-rows> <shared-rows> — one set of rows where the run's settings replace the
 # shared ones key by key: a value at the same path, or a whole array at the same name. The run's
 # rows come first, so a lookup finds them.
 _ns_rules_overlay() {
-  NS_OVERLAY_RUN="$1" NS_OVERLAY_SHARED="$2" awk '
-    BEGIN {
-      FS = "\t"
-      nr = split(ENVIRON["NS_OVERLAY_RUN"], run, "\n")
-      for (i = 1; i <= nr; i++) {
-        if (run[i] == "") continue
-        print run[i]
-        split(run[i], f, "\t")
-        if (f[4] == "a") arr[f[1] SUBSEP f[2]] = 1
-        else have[f[1] SUBSEP f[2] SUBSEP f[3]] = 1
-      }
-      ns = split(ENVIRON["NS_OVERLAY_SHARED"], shared, "\n")
-      for (i = 1; i <= ns; i++) {
-        if (shared[i] == "") continue
-        split(shared[i], f, "\t")
-        if ((f[1] SUBSEP f[2]) in arr) continue
-        if ((f[1] SUBSEP f[2] SUBSEP f[3]) in have) continue
-        print shared[i]
-      }
-    }'
+  NS_OVERLAY_RUN="$1" NS_OVERLAY_SHARED="$2" awk -f "$_ns_rules_read_dir/rules-read-overlay.awk"
 }
 
 # _ns_rules_stamp <file> — size and checksum, or empty without wc and cksum.
@@ -192,6 +155,9 @@ ns_rules_load() {
     NS_RULES_STAMP=""
     NS_RULES_ROWS=""
     return 1
+  fi
+  if [ "${NS_RULES_HELD-}" = "$f|${NIGHTSHIFT_RUN-}" ] && [ "$NS_RULES_FILE" = "$f" ] && [ -n "$NS_RULES_ROWS" ]; then
+    return 0
   fi
   runf="$(_ns_rules_run_file "$f")"
   if ! _ns_rules_member_file memf "$f"; then
@@ -220,7 +186,6 @@ ns_rules_load() {
     return 1
   }
   # Narrowest first: the run's own file, then the member settings the run selected, then the team's.
-  # Neither the run's file nor a member's changes the team block.
   if [ -n "$memf" ]; then
     shared="$NS_RULES_ROWS"
     NS_RULES_ROWS=""
@@ -231,7 +196,7 @@ ns_rules_load() {
       NS_RULES_ROWS=""
       return 1
     }
-    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_drop_team "$NS_RULES_ROWS")" "$shared")"
+    NS_RULES_ROWS="$(_ns_rules_overlay "$NS_RULES_ROWS" "$shared")"
   fi
   if [ -n "$runf" ]; then
     shared="$NS_RULES_ROWS"
@@ -243,11 +208,24 @@ ns_rules_load() {
       NS_RULES_ROWS=""
       return 1
     }
-    NS_RULES_ROWS="$(_ns_rules_overlay "$(_ns_rules_drop_team "$NS_RULES_ROWS")" "$shared")"
+    NS_RULES_ROWS="$(_ns_rules_overlay "$NS_RULES_ROWS" "$shared")"
   fi
   NS_RULES_FILE="$f"
   NS_RULES_STAMP="$stamp"
   return 0
+}
+
+# ns_rules_hold <nightshift-dir> — load the site's rules for the run in scope and hold them for the
+# rest of this process: a later load of the same file for the same run reads the held rows, in every
+# subshell too, instead of checking and parsing the files again. For a hook call, which is short and
+# never rewrites the rules; a long-running process does not hold them. Nothing is held when the rules
+# cannot be read, so each load reports that itself.
+ns_rules_hold() {
+  local f
+  ns_layout_set f "$1" rules 2>/dev/null || return 0
+  [ -f "$f" ] || return 0
+  ns_rules_load "$f" 2>/dev/null || return 0
+  NS_RULES_HELD="$f|${NIGHTSHIFT_RUN-}"
 }
 
 # ns_rules_check <workspace> — status 0 the file is the accepted shape.
@@ -604,24 +582,6 @@ ns_rules_map_msg() {
   return 1
 }
 
-# ns_rules_facts <file> — the policy fact stream _ns_policy_load_rules consumes.
-# Status 1 when the file is not the accepted shape.
-# _ns_rules_array_json <key> <subkey> — an array of strings rebuilt as compact JSON from the
-# indexed rows the reader records. Any element that is not a string fails the whole array closed,
-# because a half-read list is worse than an absent one.
-_ns_rules_array_json() {
-  local i=0 row typ val out=""
-  while row="$(_ns_rules_row "$1" "$2" "$i")"; do
-    typ="${row%%"$_NS_RULES_TAB"*}"
-    val="${row#*"$_NS_RULES_TAB"}"
-    [ "$typ" = s ] || return 1
-    [ "$i" -eq 0 ] || out="$out,"
-    out="$out$val"
-    i=$((i + 1))
-  done
-  printf '[%s]' "$out"
-}
-
 # The owner preference blocks the resolved view carries, in the byte order it prints them.
 # One list, so the fact stream and the setting names cannot drift apart.
 NS_RULES_GROUP_KEYS='archive.automatic
@@ -666,63 +626,22 @@ shift.toolingPolicy
 shift.verificationProfile
 shift.worktreeRoot'
 
+# The top-level settings the fact stream carries as `r` rows.
+NS_RULES_TOP_FACT_KEYS='forbiddenCommands
+neverCommitPatterns
+expectedEmail
+protectedDirs
+stallMax
+watchMinutes'
+
+# ns_rules_facts <file> — the policy fact stream _ns_policy_load_rules consumes, read from the loaded
+# rows in one awk pass. Status 1 when the file is not the accepted shape.
 ns_rules_facts() {
-  local k c row typ val present pol pat
+  local bin
   ns_rules_load "$1" || return 1
-  for k in forbiddenCommands neverCommitPatterns expectedEmail protectedDirs stallMax watchMinutes; do
-    row="$(_ns_rules_row "$k" "" "")" && present=1 || present=0
-    if [ "$present" -eq 1 ]; then
-      typ="${row%%"$_NS_RULES_TAB"*}"
-      val="${row#*"$_NS_RULES_TAB"}"
-      case "$typ" in
-        s | n | b) ;;
-        *) val=null ;;
-      esac
-    else
-      val=null
-    fi
-    printf 'r\t%s\t%s\t%s\n' "$k" "$present" "$val"
-  done
-  for c in sudo containers global-packages daemons external-services; do
-    if _ns_rules_row elevation "$c" "" >/dev/null; then
-      present=1
-    else
-      present=0
-    fi
-    pol=""
-    row="$(_ns_rules_row elevation "$c" policy)" && {
-      typ="${row%%"$_NS_RULES_TAB"*}"
-      val="${row#*"$_NS_RULES_TAB"}"
-      [ "$typ" = s ] && pol="$(ns_json_text "$val")"
-    }
-    pol="$(printf '%s' "$pol" | tr '\000-\037\177' ' ')"
-    printf 'e\t%s\t%s\t%s\n' "$c" "$present" "$pol"
-    row="$(_ns_rules_row elevation "$c" pattern)" || continue
-    typ="${row%%"$_NS_RULES_TAB"*}"
-    val="${row#*"$_NS_RULES_TAB"}"
-    [ "$typ" = s ] || continue
-    pat="$(ns_json_text "$val")"
-    [ -n "$pat" ] || continue
-    pat="$(printf '%s' "$pat" | tr '\000-\037\177' ' ')"
-    printf 'p\t%s\t%s\n' "$c" "$pat"
-  done
-  # The owner's preference blocks, one fact per key, named the way the resolved view names them.
-  # These are permanent settings rather than tonight's choices, so a `g` row carries the same
-  # three fields an `r` row does and the resolver treats them identically.
-  for k in $NS_RULES_GROUP_KEYS; do
-    c="${k%%.*}"
-    row="$(_ns_rules_row "$c" "${k#*.}" "")" && present=1 || present=0
-    if [ "$present" -eq 1 ]; then
-      typ="${row%%"$_NS_RULES_TAB"*}"
-      val="${row#*"$_NS_RULES_TAB"}"
-      case "$typ" in
-        s | n | b | z) ;;
-        a) val="$(_ns_rules_array_json "$c" "${k#*.}")" || val=null ;;
-        *) val=null ;;
-      esac
-    else
-      val=null
-    fi
-    printf 'g\t%s\t%s\t%s\n' "$k" "$present" "$val"
-  done
+  bin="$(ns_rules_awk_bin)" || return 1
+  # One awk pass over the loaded rows prints every fact.
+  printf '%s\n' "$NS_RULES_ROWS" |
+    NS_FACTS_TOP="$NS_RULES_TOP_FACT_KEYS" NS_FACTS_ELEVATION="$NS_POLICY_CATEGORIES" \
+      NS_FACTS_GROUPS="$NS_RULES_GROUP_KEYS" "$bin" -v mode=facts -f "$_NS_RULES_AWK_FILE"
 }

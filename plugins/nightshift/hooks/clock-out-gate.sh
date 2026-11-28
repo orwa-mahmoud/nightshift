@@ -69,6 +69,7 @@ NS="$PROJECT_DIR/.nightshift"
 declare PUNCH STOP DEADLINE STALL ARMED LOG
 # The run this session works on, before any file of one run is resolved.
 ns_select_session_run "$NS" "${SID:-}"
+ns_rules_hold "$NS"
 ns_layout_set PUNCH "$NS" punch-list
 ns_layout_set STOP "$NS" stop
 ns_layout_set DEADLINE "$NS" deadline
@@ -201,12 +202,8 @@ fi
 # list is not zero open: do not release.
 if [ "$PUNCH_UNREADABLE" -ne 1 ]; then
   if [ ! -f "$PUNCH" ] || [ "$OPEN" -eq 0 ]; then
-    NS_DONE_MOVED="$(ns_gate_done_mismatch "$PROJECT_DIR" "$PUNCH")" || NS_DONE_MOVED=""
-    if [ -n "$NS_DONE_MOVED" ]; then
-      log_line "punch list changed since arming — the done clock-out is blocked until it is restored"
-      _ns_clock_out_block "$NS_DONE_MOVED"
-      exit 0
-    fi
+    # A list that moved on the way to done is recorded, never refused.
+    ns_punch_list_note "$NS" "$PUNCH" || :
     NS_EVIDENCE_HOLD="$(ns_evidence_hold "$PROJECT_DIR" "$PUNCH")" || NS_EVIDENCE_HOLD=""
     if [ -n "$NS_EVIDENCE_HOLD" ]; then
       log_line "evidence missing — the done clock-out stays blocked until the named files are present"
@@ -271,18 +268,12 @@ fi
 # Which form this block takes. The push is unchanged — the turn is still blocked, with a reason
 # the host feeds back — but a block that repeats a message the model read a few calls ago can say
 # so in one line instead. The gate only shortens when it positively knows nothing moved.
-# A contract that moved is answered in full, before any question of shortening arises: the whole
-# point of the short line is that the model already holds the contract, and here it may not.
-NS_CONTRACT_MOVED="$(ns_gate_contract_mismatch "$PROJECT_DIR" "$PUNCH")" || NS_CONTRACT_MOVED=""
-if [ -n "$NS_CONTRACT_MOVED" ]; then
-  log_line "punch list changed since arming — blocking until it is restored"
-  _ns_clock_out_block "$NS_CONTRACT_MOVED"
-  exit 0
-fi
+# A list the owner changed is recorded in the shift log and answered with the whole reminder.
+ns_punch_list_note "$NS" "$PUNCH" || :
 NS_GATE_FP="$(ns_gate_reminder_fingerprint "$OPEN" "$TICKED" "$(ns_gate_open_item "$PUNCH")" \
   "$([ -f "$STOP" ] && printf yes || printf no)" \
   "$(deadline_passed && printf passed || printf pending)" \
-  "$(ns_gate_stall_state "$STALL" "$STALL_WARN")")"
+  "$(ns_gate_stall_state "$STALL" "$STALL_WARN")" "$(ns_gate_list_fingerprint "$PUNCH")")"
 if [ -n "$GATE_MESSAGE" ]; then
   _ns_clock_out_block "$(ns_gate_reminder_text "$PROJECT_DIR" "$GATE_MESSAGE" "$OPEN" "$TICKED" \
     "$(ns_gate_open_item "$PUNCH")" "$NS_GATE_FP")"

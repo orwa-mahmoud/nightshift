@@ -46,8 +46,7 @@ function Get-RunRules {
     try { return (Get-NSRulesObject $Workspace) } finally { $env:NIGHTSHIFT_RUN = $saved }
 }
 
-# New-TeamSite <path> - a run-folder site whose team lets a member change shift.hours and
-# receipts.progressMinutes and needs a lead's approval, with two members' settings files.
+# New-TeamSite <path> - a run-folder site with team defaults and two members' settings files.
 function New-TeamSite {
     param([string]$Path)
     $ns = Join-Path $Path '.nightshift'
@@ -58,8 +57,6 @@ function New-TeamSite {
     $null = & git -C $repo -c user.email=d@example.com -c user.name=d commit -q --allow-empty -m init
     Write-Text (Join-Path $ns 'state-version') "3`n"
     $rules = Get-Content -Raw -LiteralPath $rulesTemplate | ConvertFrom-Json
-    $rules.team.roles = [pscustomobject]@{ Alice = 'lead'; Bob = 'developer' }
-    $rules.team.approvers = @('lead')
     $rules.shift.hours = 2
     $rules.receipts.progressMinutes = 20
     Write-Text (Join-Path $ns 'rules.json') ($rules | ConvertTo-Json -Depth 20)
@@ -71,10 +68,6 @@ function New-TeamSite {
     }
     Write-Text (Join-Path $ns 'settings/alice.json') "{`n  `"shift`": {`n    `"hours`": 3`n  },`n  `"receipts`": {`n    `"progressMinutes`": 5`n  }`n}`n"
     Write-Text (Join-Path $ns 'settings/bob.json') "{`n  `"shift`": {`n    `"hours`": 6`n  }`n}`n"
-    # The lead has approved both plans, as this team requires before a run.
-    foreach ($plan in @('Export CSV', 'Dark mode')) {
-        $null = Invoke-Helper 'plan-record.ps1' @('-Project', $Path, '-Plan', $plan, '-Action', 'approved', '-By', 'Alice')
-    }
     return (Resolve-NSCanonicalPath $Path)
 }
 
@@ -94,15 +87,16 @@ try {
     $record = Join-Path $w '.nightshift/runs/export-csv/run/member-settings'
     Expect-True ([IO.File]::Exists($record) -and [IO.File]::ReadAllText($record) -ceq "alice`n") 'select: the selection sits with the run'
 
-    # Neither a run's file nor a member's changes the team's own rules; an edited file is refused
-    # at the next Start.
-    Write-Text (Join-Path $w '.nightshift/runs/export-csv/rules.json') "{`n  `"shift`": {`n    `"isolation`": `"worktree`"`n  },`n  `"team`": {`n    `"approvers`": []`n  }`n}`n"
-    Write-Text (Join-Path $w '.nightshift/settings/alice.json') "{`n  `"shift`": {`n    `"hours`": 3`n  },`n  `"team`": {`n    `"approvers`": []`n  }`n}`n"
+    # The run's own file is narrowest; a member's file may change any setting.
+    Write-Text (Join-Path $w '.nightshift/runs/export-csv/rules.json') "{`n  `"shift`": {`n    `"isolation`": `"worktree`",`n    `"hours`": 4`n  }`n}`n"
+    Write-Text (Join-Path $w '.nightshift/settings/alice.json') "{`n  `"shift`": {`n    `"hours`": 3`n  },`n  `"watchMinutes`": 0`n}`n"
     $a = Get-RunRules $w 'export-csv'
-    Expect-True ((@($a.team.approvers) -join ',') -ceq 'lead' -and [int]$a.shift.hours -eq 3) 'owned: team.approvers stays the team''s'
+    Expect-True ([int]$a.shift.hours -eq 4 -and [int]$a.watchMinutes -eq 0) 'layers: run over member over team'
+    # An edited selection the reader cannot read is refused at the next Start.
+    Write-Text (Join-Path $w '.nightshift/settings/alice.json') "{`n  `"shift`": {`n    `"hours`": 3`n"
     $preflight = Invoke-Helper 'start-preflight.ps1' @('-Project', $w, '-HostName', 'claude') 'export-csv'
-    Expect-True ($preflight.ExitCode -ne 0 -and ($preflight.Lines -ccontains 'refuse settings alice cannot be used for this run') -and
-        ($preflight.Lines -ccontains "explain settings/alice.json sets team, which only the team's rules.json sets")) "owned: preflight: $($preflight.Text)"
+    Expect-True ($preflight.ExitCode -ne 0) "edited: preflight: $($preflight.Text)"
+    Write-Text (Join-Path $w '.nightshift/settings/alice.json') "{`n  `"shift`": {`n    `"hours`": 3`n  }`n}`n"
 
     # A second selection is refused; a selection whose file is gone fails closed.
     $again = Invoke-Helper 'start-run.ps1' @('-Project', $w, '-Plan', 'Export CSV', '-HostName', 'claude', '-Settings', 'bob')
@@ -110,14 +104,12 @@ try {
     Remove-Item -LiteralPath (Join-Path $w '.nightshift/settings/alice.json') -Force
     Expect-True ($null -eq (Get-RunRules $w 'export-csv')) 'gone: a missing selected file fails closed'
 
-    # A file that relaxes a required approval is refused before anything is placed.
+    # A file that is not JSON is refused before anything is placed.
     $r = New-TeamSite (Join-Path $root 'refuse')
-    Write-Text (Join-Path $r '.nightshift/settings/eve.json') "{`n  `"team`": {`n    `"approvers`": []`n  },`n  `"watchMinutes`": 0`n}`n"
+    Write-Text (Join-Path $r '.nightshift/settings/eve.json') "{`n  `"watchMinutes`": 0,`n"
     $refused = Invoke-Helper 'start-run.ps1' @('-Project', $r, '-Plan', 'Export CSV', '-HostName', 'claude', '-Settings', 'eve')
-    $expected = @('refuse settings eve cannot be selected for this run',
-        "explain settings/eve.json sets team, which only the team's rules.json sets",
-        "repair keep team settings in the team's rules.json and fix the file, then run this again")
-    Expect-True ($refused.ExitCode -eq 1 -and ($refused.Lines -join '|') -ceq ($expected -join '|')) "refuse: $($refused.Text)"
+    Expect-True ($refused.ExitCode -eq 1 -and $refused.Lines[0] -ceq 'refuse settings eve cannot be selected for this run' -and
+        $refused.Lines[-1] -ceq 'repair fix the file, then run this again') "refuse: $($refused.Text)"
     Expect-True (@(Get-ChildItem -LiteralPath (Join-Path $r '.nightshift/runs') -Force).Count -eq 0) 'refuse: no run folder was placed'
 }
 finally {

@@ -763,9 +763,52 @@ function Get-NSShiftWorktreeField {
     return ''
 }
 
+# The shift id a continued shift's records carry from Start's preflight, which decides that the
+# shift goes on, to the snapshot and worktree phases, which give it its new id. Mirrors
+# NS_SHIFT_CONTINUED.
+$script:NSShiftContinued = 'continued'
+
+# Set-NSShiftWorktreeField <workspace> <key> <value> - write one value into the shift worktree
+# record, keeping the others. Mirrors ns_record_set on that record.
+function Set-NSShiftWorktreeField {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [Parameter(Mandatory = $true)][string]$Key,
+          [AllowEmptyString()][string]$Value)
+    $path = Get-NSLayoutPath (Join-Path $Workspace '.nightshift') 'shift-worktree'
+    if (Test-NSReparsePoint $path) { throw "the shift worktree record is a link: $path" }
+    $lines = New-Object Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        foreach ($line in [IO.File]::ReadAllLines($path)) {
+            if (-not $line.StartsWith($Key + '=', [StringComparison]::Ordinal)) { $lines.Add($line.TrimEnd("`r")) }
+        }
+    }
+    $lines.Add($Key + '=' + $Value)
+    [IO.File]::WriteAllText($path, (($lines -join "`n") + "`n"), (New-Object Text.UTF8Encoding($false)))
+}
+
+# Test-NSShiftWorktreeContinued <workspace> - whether the shift worktree record is one Start's
+# preflight carried for a continued shift and no phase has adopted yet.
+function Test-NSShiftWorktreeContinued {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    return ((Get-NSShiftWorktreeField $Workspace 'shift') -ceq $script:NSShiftContinued)
+}
+
+# Invoke-NSShiftCarry <workspace> - a shift that goes on keeps the worktree and the file map it
+# started: both records are marked continued, and the phase that knows the new shift id adopts them.
+# Mirrors ns_shift_carry.
+function Invoke-NSShiftCarry {
+    param([Parameter(Mandatory = $true)][string]$Workspace)
+    if ((Get-NSShiftWorktreeField $Workspace 'path').Length -gt 0) {
+        Set-NSShiftWorktreeField $Workspace 'shift' $script:NSShiftContinued
+    }
+    if ((Get-NSFileMapField $Workspace 'base').Length -gt 0) {
+        Set-NSFileMapField $Workspace 'shift' $script:NSShiftContinued
+    }
+}
+
 # Get-NSShiftWorktreeCurrent <workspace> - the worktree path when the record belongs to the shift on
-# record now (its policy, or its ending once clocked out) and the folder is still a checkout; ''
-# otherwise. A record left by an earlier shift is never followed. Mirrors ns_shift_worktree_current.
+# record now (its policy, its ending once clocked out, or a shift Start is continuing) and the folder
+# is still a checkout; '' otherwise. A record left by an earlier shift is never followed. Mirrors
+# ns_shift_worktree_current.
 function Get-NSShiftWorktreeCurrent {
     param([Parameter(Mandatory = $true)][string]$Workspace)
     $path = Get-NSShiftWorktreeField $Workspace 'path'
@@ -775,7 +818,7 @@ function Get-NSShiftWorktreeCurrent {
     $state = Get-NSShiftPolicyState $Workspace
     if ([string]$state['state'] -ceq 'valid') { $current = [string](Get-NSRecordText $state['policy'] 'shiftId') }
     $ended = Get-NSEndedField $Workspace 'shiftId'
-    if ($shift -cne $current -and $shift -cne $ended) { return '' }
+    if ($shift -cne $current -and $shift -cne $ended -and $shift -cne $script:NSShiftContinued) { return '' }
     if (-not (Test-Path -LiteralPath $path -PathType Container) -or (Test-NSReparsePoint $path)) { return '' }
     if ($null -eq (Invoke-NSGit $path @('rev-parse', '--show-toplevel'))) { return '' }
     return $path
@@ -1216,20 +1259,6 @@ function Merge-NSRulesObject {
     return $Shared
 }
 
-# The groups only the team's rules.json sets: a run's or a member's file never changes them. Mirrors
-# NS_RULES_TEAM_GROUPS.
-$script:NSRulesTeamGroups = @('team')
-
-# Remove-NSRulesTeamGroups <object> - the object without the team's own groups. Mirrors
-# _ns_rules_drop_team.
-function Remove-NSRulesTeamGroups {
-    param($Object)
-    foreach ($name in $script:NSRulesTeamGroups) {
-        if ($null -ne $Object.PSObject.Properties[$name]) { $Object.PSObject.Properties.Remove($name) }
-    }
-    return $Object
-}
-
 # Get-NSMemberSettingsPath <nightshift-dir> - the member settings file the run this caller works on
 # selected, '' when it selected none. Throws when the selection names a file that is not there.
 # Mirrors _ns_rules_member_file.
@@ -1268,10 +1297,7 @@ function Get-NSMemberSettingsProblems {
     }
     try { $member = Get-Content -Raw -LiteralPath $file | ConvertFrom-Json -ErrorAction Stop }
     catch { $out.Add("settings/$Name.json: " + $_.Exception.Message); return , $out.ToArray() }
-    if (-not ($member -is [pscustomobject])) { $out.Add("settings/$Name.json: not a JSON object"); return , $out.ToArray() }
-    foreach ($group in $script:NSRulesTeamGroups) {
-        if ($null -ne $member.PSObject.Properties[$group]) { $out.Add("settings/$Name.json sets $group, which only the team's rules.json sets") }
-    }
+    if (-not ($member -is [pscustomobject])) { $out.Add("settings/$Name.json: not a JSON object") }
     return , $out.ToArray()
 }
 
@@ -1311,14 +1337,14 @@ function Get-NSRulesObject {
         }
         $parsed = Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         # Narrowest first: the run's own file, then the member settings the run selected, then the
-        # team's. Neither the run's file nor a member's changes the team block.
+        # team's.
         if ($memberPath.Length -gt 0) {
             $memberParsed = Get-Content -LiteralPath $memberPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            $parsed = Merge-NSRulesObject $parsed (Remove-NSRulesTeamGroups $memberParsed)
+            $parsed = Merge-NSRulesObject $parsed $memberParsed
         }
         if ($runPath.Length -gt 0) {
             $runParsed = Get-Content -LiteralPath $runPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-            $parsed = Merge-NSRulesObject $parsed (Remove-NSRulesTeamGroups $runParsed)
+            $parsed = Merge-NSRulesObject $parsed $runParsed
         }
         $script:NSRulesCacheStamp = $stamp
         $script:NSRulesCache = $parsed
@@ -2444,6 +2470,35 @@ function Attach-NSLeaseProcess {
     }
 }
 
+# Invoke-NSLeaseHandBack <ns> <host> <nonce> <generation> - return a finished revival's lease to the
+# recorded conversation: the next generation, no nonce and no pid, so that conversation's next
+# process claims it. Only while the lease still carries that revival's nonce and generation.
+# Mirrors ns_lease_hand_back.
+function Invoke-NSLeaseHandBack {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][ValidateSet('claude', 'codex', 'cursor')][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$Nonce,
+        [Parameter(Mandatory = $true)][string]$Generation
+    )
+    $mutex = Enter-NSMutex $NightshiftDir '.lease-lock.d'
+    if ($null -eq $mutex) {
+        return $false
+    }
+    try {
+        if (-not (Test-NSLeaseNonce $NightshiftDir $HostName $Nonce $Generation)) {
+            return $false
+        }
+        $lease = Read-NSLease $NightshiftDir
+        $session = Read-NSSession $NightshiftDir
+        $sessionId = if ($null -ne $session) { $session.SessionId } else { $lease.SessionId }
+        return Write-NSLease $NightshiftDir $sessionId $HostName ($lease.Generation + 1) '' '' ''
+    }
+    finally {
+        Exit-NSMutex $mutex
+    }
+}
+
 function Restore-NSLeaseInteractive {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $mutex = Enter-NSMutex $NightshiftDir '.lease-lock.d'
@@ -2538,8 +2593,9 @@ function Test-NSLeaseAllows {
 # The recorded conversation reclaims a lease a dead revival attempt left behind. The
 # generation and nonce it presented must still be the ones on disk and the recorded pid
 # must still read dead, re-checked under the lock, or a second caller could steal a lease
-# that changed underneath it. Returns the new generation, or $null when the reclaim lost
-# a race.
+# that changed underneath it. A lease that names the caller's own process is reclaimed too:
+# that process is the recorded conversation itself. Returns the new generation, or $null
+# when the reclaim lost a race.
 function Reclaim-NSLeaseRecorded {
     param(
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
@@ -2561,7 +2617,8 @@ function Reclaim-NSLeaseRecorded {
             -or [string]::IsNullOrEmpty($lease.ProcessId)) {
             return $null
         }
-        if ((Test-NSRecordedProcess $lease.ProcessId $lease.Start) -ne 'Dead') {
+        $ownProcess = -not [string]::IsNullOrEmpty($ProcessId) -and $lease.ProcessId -eq $ProcessId -and $lease.Start -eq $Start
+        if (-not $ownProcess -and (Test-NSRecordedProcess $lease.ProcessId $lease.Start) -ne 'Dead') {
             return $null
         }
         $newGeneration = $lease.Generation + 1
@@ -2917,7 +2974,7 @@ function Stop-NSWatchman {
 
 function Clear-NSRuntimeMarkers {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
-    foreach ($key in @('armed', 'ended', 'session-end', 'pulse', 'mint-failed', 'session', 'stall', 'notified', 'watchman-tick', 'mutex-scope', 'idle-watch')) {
+    foreach ($key in @('armed', 'ended', 'session-end', 'pulse', 'mint-failed', 'session', 'stall', 'notified', 'watchman-tick', 'mutex-scope', 'idle-watch', 'list-seen')) {
         Remove-NSPath (Get-NSLayoutPath $NightshiftDir $key)
     }
     foreach ($key in @('session', 'mutex-scope')) {

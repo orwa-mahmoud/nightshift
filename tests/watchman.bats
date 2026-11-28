@@ -1650,9 +1650,12 @@ STUB
   # The shipped tell requires the host's own marker on the line, so the check below is the
   # program that actually runs and not a copy of it that could drift.
   W="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/claude/watchman.sh"
-  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'isApiErrorMessage' \
+  prog="$(awk '/^api_limited_tail\(\)/, /^}/' "$W" | sed -n 's#.*-f "$PROGRAMS/\([^"]*\)".*#\1#p')"
+  [ -n "$prog" ] || { echo "api_limited_tail runs no program file"; return 1; }
+  prog="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/$prog"
+  grep -qF 'isApiErrorMessage' "$prog" \
     || { echo "the outage tell no longer requires the host marker"; return 1; }
-  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'tolower($0) ~ /error' \
+  grep -qF 'tolower($0) ~ /error' "$prog" \
     && { echo "the outage tell still reads any line that mentions an error"; return 1; }
 
   # The same words a person can type, with no marker from the host: the ordinary interval stands.
@@ -2031,9 +2034,12 @@ worker_alive() { kill -0 "$IDLE_WORKER" 2>/dev/null; }
     [ "$(calls)" -eq 1 ] || { echo "$host calls=$(calls)"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
     grep -q 'worker alive but idle' "$P/.nightshift/shift-log.md" \
       || { echo "$host did not log the idle evidence"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+    # The revival took the lease from the idle worker and handed it back to the recorded
+    # conversation when it finished: no nonce, and never the stopped worker's pid.
     lease_pid="$(sed -n 5p "$P/.nightshift/.shift-lease" 2>/dev/null | tr -d '[:space:]')"
-    [ -n "$lease_pid" ] && [ "$lease_pid" != "$IDLE_WORKER" ] \
-      || { echo "$host lease was not transferred (pid '$lease_pid')"; stop_idle_worker; return 1; }
+    lease_nonce="$(sed -n 4p "$P/.nightshift/.shift-lease" 2>/dev/null | tr -d '[:space:]')"
+    [ "$lease_pid" != "$IDLE_WORKER" ] && [ -z "$lease_nonce" ] \
+      || { echo "$host lease was not transferred (pid '$lease_pid' nonce '$lease_nonce')"; stop_idle_worker; return 1; }
     if [ "$IDLE_CHILD" != 0 ] && kill -0 "$IDLE_CHILD" 2>/dev/null; then
       echo "$host left the idle child running"
       stop_idle_worker

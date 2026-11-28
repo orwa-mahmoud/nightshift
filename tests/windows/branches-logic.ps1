@@ -54,7 +54,7 @@ function Add-Plan {
     Write-Text (Join-Path $Site ".nightshift/staging/plans/$key.md") ("# Punch List " + [char]0x2014 + " $Name`n`n## Contract`n`n- Work in the run.`n`n## Gates`n`n## Items`n`n- [ ] **1. Do $Name.**`n  - Verify: true`n  - Commit: ``feat: x```n")
 }
 
-# New-Site <path> - a repository on develop holding a solo site whose new branches start from develop.
+# New-Site <path> - a repository on develop holding a solo site, with no remote.
 function New-Site {
     param([string]$Path)
     $ns = Join-Path $Path '.nightshift'
@@ -68,7 +68,6 @@ function New-Site {
     $null = Invoke-Git $Path @('commit', '-q', '-m', 'app')
     Write-Text (Join-Path $ns 'state-version') "3`n"
     $rules = Get-Content -Raw -LiteralPath $rulesTemplate | ConvertFrom-Json
-    $rules.branches.base = 'develop'
     Write-Text (Join-Path $ns 'rules.json') ($rules | ConvertTo-Json -Depth 20)
     Write-Text (Join-Path $ns 'run/work-target') ((Resolve-NSCanonicalPath $Path) + "`n")
     Write-Text (Join-Path $ns 'run/work-mode') "repository`n"
@@ -78,7 +77,8 @@ function New-Site {
 $root = Join-Path ([IO.Path]::GetTempPath()) ('ns-branches-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $root -Force
 try {
-    # A named branch: a new one from develop; runs on one branch go one after another.
+    # A named branch: a new one from HEAD when the clone has no remote; Git refuses it while another
+    # worktree holds it.
     $s = New-Site (Join-Path $root 'choose')
     Add-Plan $s 'Export CSV'
     Add-Plan $s 'Dark mode'
@@ -86,12 +86,13 @@ try {
     Expect-True ($first.ExitCode -eq 0 -and ($first.Lines -ccontains 'ok branch alice/export')) "choose: first: $($first.Text)"
     $wt = Get-RunTarget $s 'export-csv'
     Expect-True (([string](Invoke-NSGit $wt @('symbolic-ref', '--short', 'HEAD'))) -ceq 'alice/export') 'choose: the run works on alice/export'
+    Expect-True (([string](Invoke-NSGit $wt @('rev-parse', 'HEAD'))) -ceq ([string](Invoke-NSGit $s @('rev-parse', 'develop')))) 'choose: a new branch starts from HEAD'
     $busy = Invoke-Start $s 'Dark mode' @('-Branch', 'alice/export')
-    Expect-True ($busy.ExitCode -eq 1 -and ($busy.Lines -ccontains 'refuse worktree alice/export is in use by run export-csv')) "choose: busy: $($busy.Text)"
-    Write-Text (Join-Path $s '.nightshift/runs/export-csv/run/.ended') ''
+    Expect-True ($busy.ExitCode -eq 1 -and @($busy.Lines | Where-Object { $_ -clike 'refuse worktree git could not add * on alice/export from *' }).Count -eq 1) "choose: busy: $($busy.Text)"
+    $null = Invoke-Git $s @('worktree', 'remove', $wt)
     $second = Invoke-Start $s 'Dark mode' @('-Branch', 'alice/export')
-    Expect-True ($second.ExitCode -eq 0 -and @($second.Lines | Where-Object { $_ -clike "ok worktree * branch alice/export - the run continues the branch's worktree" }).Count -eq 1) "choose: second: $($second.Text)"
-    Expect-True ((Get-Top (Get-RunTarget $s 'dark-mode')) -ceq (Get-Top $wt)) 'choose: the second run works in the same worktree'
+    Expect-True ($second.ExitCode -eq 0) "choose: second: $($second.Text)"
+    Expect-True (([string](Invoke-NSGit (Get-RunTarget $s 'dark-mode') @('symbolic-ref', '--short', 'HEAD'))) -ceq 'alice/export') 'choose: the second run works on alice/export'
 
     # The current branch: the run works on it in the checkout itself.
     $s = New-Site (Join-Path $root 'current')

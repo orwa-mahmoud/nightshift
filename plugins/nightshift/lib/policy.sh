@@ -24,6 +24,10 @@ NS_POLICY_TAB=$(printf '\t')
 NS_POLICY_EMIT_JQ="${BASH_SOURCE[0]%/*}"
 [ "$NS_POLICY_EMIT_JQ" != "${BASH_SOURCE[0]}" ] || NS_POLICY_EMIT_JQ=.
 NS_POLICY_EMIT_JQ="$NS_POLICY_EMIT_JQ/policy-emit.jq"
+# The awk and python programs sit beside it the same way.
+NS_POLICY_LIB="${NS_POLICY_EMIT_JQ%/*}"
+NS_POLICY_SHIFT_PY="$NS_POLICY_LIB/policy-shift.py"
+NS_POLICY_DEFAULTS_PY="$NS_POLICY_LIB/policy-defaults.py"
 
 NS_POLICY_CATEGORIES="sudo
 containers
@@ -131,16 +135,7 @@ ns_policy_refresh_elevation() {
       *"$old"*)
         # A slash in the replacement is data. Parameter expansion would treat a
         # backslash as an escape and produce JSON that does not load.
-        text="$(printf '%s' "$text" | NS_ELEV_OLD="$old" NS_ELEV_NEW="$new" awk '
-          BEGIN { old = ENVIRON["NS_ELEV_OLD"]; new = ENVIRON["NS_ELEV_NEW"] }
-          {
-            rest = $0
-            while ((i = index(rest, old)) > 0) {
-              printf "%s%s", substr(rest, 1, i - 1), new
-              rest = substr(rest, i + length(old))
-            }
-            print rest
-          }')"
+        text="$(printf '%s' "$text" | NS_ELEV_OLD="$old" NS_ELEV_NEW="$new" awk -f "$NS_POLICY_LIB/policy-elevation.awk")"
         changed=0
         ;;
     esac
@@ -300,8 +295,7 @@ ns_policy_json_string() {
   if [ "$tool" = jq ]; then
     printf '%s' "$1" | jq -Rs . 2>/dev/null || return 1
   else
-    printf '%s' "$1" | python3 -c 'import json, sys
-sys.stdout.write(json.dumps(sys.stdin.read(), ensure_ascii=False))' 2>/dev/null || return 1
+    printf '%s' "$1" | python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-string.py")" 2>/dev/null || return 1
   fi
 }
 
@@ -323,157 +317,7 @@ ns_policy_sha256_text() {
   fi
 }
 
-
-NS_POLICY_SHIFT_PY='
-import json, re, sys
-
-SCALARS = ["schemaVersion", "shiftId", "createdAt", "source", "deadlineEpoch",
-           "verificationLevel", "toolingPolicy", "launchScope", "launchProvenance",
-           "completionMode", "gatesDigest", "contractDigest", "itemsDigest"]
-# The owner preference blocks tonight'"'"'s snapshot freezes. A block the snapshot does not carry
-# emits its type and no fields, which is how a policy written before this feature is told apart
-# from one whose owner left a block empty.
-PREF = [("shift", ["copyIn", "execution", "hours", "isolation", "itemBudget", "prepare", "toolingPolicy", "verificationProfile", "worktreeRoot"]),
-        ("recovery", ["launchScope"]),
-        ("handoff", ["detail", "enabled", "language", "sections", "templatePath", "view"]),
-        ("archive", ["automatic", "layout", "root", "templatePath"]),
-        ("receipts", ["duration", "enabled", "evidence.architecture", "evidence.check",
-                    "evidence.default", "evidence.fileMap", "evidence.review", "evidence.unavailable",
-                    "progressMinutes", "progressMode", "progressTokens", "templatePath", "usage"]),
-        ("catalogs", ["edge-cases.paths", "edge-cases.template", "evidence.paths", "evidence.template",
-                      "gates.paths", "gates.template", "shifts.paths", "shifts.template"])]
-out = []
-
-
-def enc(v):
-    return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
-
-
-def scrub(s):
-    return re.sub(r"[\x00-\x1f\x7f]", " ", s)
-
-
-def norm(s):
-    return re.sub(r"[ \t\n\x0b\f\r]+", " ", s).strip(" ")
-
-
-def kind(v):
-    if v is None:
-        return "null"
-    if v is True or v is False:
-        return "boolean"
-    if isinstance(v, (int, float)):
-        return "number"
-    if isinstance(v, str):
-        return "string"
-    if isinstance(v, list):
-        return "array"
-    if isinstance(v, dict):
-        return "object"
-    return "invalid"
-
-
-def obj(v):
-    return v if isinstance(v, dict) else {}
-
-
-def arr(v):
-    return v if isinstance(v, list) else []
-
-
-def jn(p, k):
-    return k if p == "." else p + "." + k
-
-
-def ty(p, v):
-    out.append("ty\t%s\t%s" % (p, kind(v)))
-
-
-def ks(p, v):
-    if isinstance(v, dict):
-        for k in v:
-            out.append("k\t%s\t%s" % (p, scrub(k)))
-
-
-def dig(v, k):
-    for part in k.split("."):
-        v = obj(v).get(part)
-    return v
-
-
-def sc(p, v, names):
-    for k in names:
-        out.append("j\t%s\t%s" % (jn(p, k), enc(dig(v, k))))
-
-
-def cnt(p, v):
-    out.append("n\t%s\t%s" % (p, len(v) if isinstance(v, list) else -1))
-
-
-try:
-    P = json.load(open(sys.argv[1]))
-except (OSError, ValueError):
-    sys.exit(1)
-if not isinstance(P, dict):
-    sys.stdout.write("x\t.\tnotobject\n")
-    sys.exit(0)
-ks(".", P)
-sc(".", P, SCALARS)
-for block, fields in PREF:
-    ty(block, P.get(block))
-    if block in P:
-        sc(block, P.get(block), fields)
-ty("budgets", P.get("budgets"))
-for key, value in obj(P.get("budgets")).items():
-    out.append("b\t%s\t%s" % (scrub(key), enc(value)))
-ty("selectedDebt", P.get("selectedDebt"))
-cnt("selectedDebt", P.get("selectedDebt"))
-for i, one in enumerate(arr(P.get("selectedDebt"))):
-    out.append("s\t%d\t%s\t%s" % (i, "s" if isinstance(one, str) else "x", enc(one)))
-ty("allowances", P.get("allowances"))
-cnt("allowances", P.get("allowances"))
-for i, a in enumerate(arr(P.get("allowances"))):
-    ap = "allowances[%d]" % i
-    ty(ap, a)
-    ks(ap, a)
-    sc(ap, a, ["category", "scope", "provenance"])
-    plan = obj(a).get("plan")
-    ty(jn(ap, "plan"), plan)
-    ks(jn(ap, "plan"), obj(plan))
-    sc(jn(ap, "plan"), obj(plan), ["workTarget", "digest", "expiry"])
-    cs = obj(plan).get("commands")
-    ty(jn(ap, "plan.commands"), cs)
-    cnt(jn(ap, "plan.commands"), cs)
-    for n, one in enumerate(arr(cs)):
-        ok = isinstance(one, str)
-        out.append("c\t%d\t%d\t%s\t%s" % (i, n, "s" if ok else "x", norm(one) if ok else ""))
-        out.append("q\t%d\t%d\t%s" % (i, n, enc(norm(one)) if ok else "null"))
-    ws = obj(plan).get("writeSurface")
-    ty(jn(ap, "plan.writeSurface"), ws)
-    for n, one in enumerate(arr(ws)):
-        out.append("w\t%d\t%d\t%s" % (i, n, "s" if isinstance(one, str) else "x"))
-sys.stdout.write("".join(line + "\n" for line in out))
-'
-
-
-NS_POLICY_DEFAULTS_PY='
-import json, sys
-
-K = ["schemaVersion", "verificationProfile", "hours", "toolingPolicy", "execution", "updatedAt"]
-try:
-    D = json.load(open(sys.argv[1]))
-except (OSError, ValueError):
-    sys.exit(1)
-if not isinstance(D, dict):
-    sys.stdout.write("x\t.\tnotobject\n")
-    sys.exit(0)
-sys.stdout.write("".join(
-    "d\t%s\t%s\t%s\n" % (k, "1" if k in D else "0",
-                         json.dumps(D.get(k), ensure_ascii=False, separators=(",", ":")))
-    for k in K))
-'
-
-# _ns_policy_facts <operation> <python-program> <file> — the fact stream on stdout.
+# _ns_policy_facts <operation> <python-program-file> <file> — the fact stream on stdout.
 # Status 1 when the file is not JSON, 2 when no parser is installed, 3 when a Nightshift
 # program this reader needs is missing. Status 3 prints MISSING<TAB>path and nothing else.
 _ns_policy_missing() {
@@ -518,8 +362,12 @@ _ns_policy_facts() {
     jq -r --arg op "$1" -f "$win" <"$3" 2>/dev/null || return 1
     return 0
   fi
-  python3 -c "$2" "$3" 2>/dev/null && return 0
-  python3 -c "$2" "$(ns_native_display_path "$3")" 2>/dev/null || return 1
+  if [ ! -f "$2" ]; then
+    _ns_policy_missing "$2"
+    return 3
+  fi
+  python3 "$2" "$3" 2>/dev/null && return 0
+  python3 "$(ns_native_display_path "$2")" "$(ns_native_display_path "$3")" 2>/dev/null || return 1
 }
 
 # _ns_policy_awk_json <mode> [file] — the bounded reader as the third engine behind the two
@@ -550,8 +398,7 @@ ns_policy_canon_json() {
   if [ "$tool" = jq ]; then
     jq -caS . <"$1" 2>/dev/null || return 1
   else
-    python3 -c 'import json, sys
-sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",", ":")) + "\n")' \
+    python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-canonical.py")" \
       <"$1" 2>/dev/null || return 1
   fi
 }
@@ -566,8 +413,7 @@ ns_policy_canon_text() {
   if [ "$tool" = jq ]; then
     jq -caS . 2>/dev/null || return 1
   else
-    python3 -c 'import json, sys
-sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",", ":")) + "\n")' \
+    python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-canonical.py")" \
       2>/dev/null || return 1
   fi
 }
@@ -583,8 +429,7 @@ ns_policy_pretty_text() {
   if [ "$tool" = jq ]; then
     jq -S . 2>/dev/null || return 1
   else
-    python3 -c 'import json, sys
-sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, indent=2) + "\n")' \
+    python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-pretty.py")" \
       2>/dev/null || return 1
   fi
 }
@@ -1333,6 +1178,38 @@ ns_policy_replayed() {
   found="$(ns_archived_policy "$1" "$id")"
   [ -n "$found" ] || return 1
   printf '%s' "$found"
+}
+
+# ns_policy_restore_continued <workspace> <shift-id> — bring a continued shift's own policy back as
+# the live one: the snapshot clock-out filed for that shift moves back to shift-policy.json, so the
+# shift resumes with every setting it was composed with, its allowances included. A deadlineEpoch
+# that has already passed comes back as null, every other byte unchanged: a passed deadline is never
+# renewed. Prints the file it came from. Status 1 with nothing printed when nothing should change: a
+# policy is already live, or nothing is filed for that shift. Status 2 when a filed policy exists
+# but cannot be brought back (unreadable, or another shift's); nothing moves.
+ns_policy_restore_continued() {
+  local ws="$1" id="$2" policy src epoch tmp
+  policy="$(ns_layout_path "$ws/.nightshift" shift-policy)"
+  { [ -e "$policy" ] || [ -L "$policy" ]; } && return 1
+  src="$(ns_archived_policy "$ws" "$id")"
+  [ -n "$src" ] || return 1
+  _ns_policy_load_shift_file "$src"
+  [ "$NS_POLICY_SHIFT_STATE" = ok ] && [ "$NS_POLICY_SHIFT_ID" = "$id" ] || return 2
+  epoch="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" deadlineEpoch)" || epoch=""
+  _ns_json_uint "$epoch" || epoch=""
+  mkdir -p "${policy%/*}" || return 2
+  if [ -n "$epoch" ] && [ "$epoch" -le "$(date +%s)" ]; then
+    tmp="$policy.restore.$$"
+    if ! sed -E "s/\"deadlineEpoch\"([[:blank:]]*):([[:blank:]]*)$epoch([^0-9]|$)/\"deadlineEpoch\"\1:\2null\3/" "$src" >"$tmp" ||
+      ! mv "$tmp" "$policy"; then
+      rm -f "$tmp"
+      return 2
+    fi
+    rm -f "$src"
+  else
+    mv "$src" "$policy" || return 2
+  fi
+  printf '%s' "$src"
 }
 
 # ns_policy_completion_mode <workspace>
