@@ -196,6 +196,14 @@ if [ -f "$DEADLINE" ] && deadline_passed; then
   end_and_stop "quitting time: $TICKED/$TOTAL done, items left open"
 fi
 
+# A headless worker that was told to park what blocks it is let go at its next stop. The shift stays
+# open; the watchman holds its revival until Start is run again.
+if ns_gate_worker_release_due; then
+  log_line "blocked worker released — it moved nothing since its launch; no revival until Start is run again"
+  cursor_emit_release
+  exit 0
+fi
+
 # Stall guard — consecutive stop attempts with no progress. Progress = a box ticked OR a
 # commit (repository) / artifact receipt (artifact mode), captured in the fingerprint; either resets the counter. Held by default:
 # warn in the shift log every STALL_WARN stuck attempts and keep blocking. Auto-end only on
@@ -223,6 +231,7 @@ if [ "$STALL_OK" -eq 1 ]; then
   elif [ "$attempts" -ge "$STALL_WARN" ]; then
     log_line "stall warning — session active, no durable checkpoint since the last $attempts stop attempts, $TICKED/$TOTAL done; keeping shift open"
     attempts=0
+    if ns_gate_worker_blocked "$FP"; then BLOCKED_WORKER=1; fi
   fi
   [ -L "$STALL" ] && rm -f "$STALL"
   printf '%s\n%s\n' "$FP" "$attempts" >"$STALL"
@@ -232,6 +241,13 @@ fi
 
 if ns_long_unit_warn_due "$PROJECT_DIR" "$LONG_UNIT_WARN"; then
   log_line "long unit warning — live unit has run ${LONG_UNIT_WARN}m without a durable checkpoint; keeping shift open"
+fi
+
+if [ "${BLOCKED_WORKER:-0}" -eq 1 ]; then
+  ns_gate_hold_worker_revival
+  log_line "blocked worker — nothing moved since its launch; told to park what blocks it, released at its next stop"
+  cursor_emit_block "$(ns_gate_blocked_worker_message)"
+  exit 0
 fi
 
 # 4. Block, and re-inject the contract so the next turn resumes the shift. The reinjection

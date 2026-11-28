@@ -16,6 +16,17 @@ stand_down_disarmed() {
   exit 0
 }
 
+# A worker the clock-out gate let go because nothing it could do moved the shift would only meet the
+# same refusal again, so nobody is revived until Start is run again; Start clears the record.
+stand_down_blocked_worker() {
+  local f
+  f="$(ns_layout_path "$NS" worker-blocked)"
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  note stand-down "the last worker ended blocked"
+  log_line "watchman: the last worker ended blocked and parked why — not reviving until Start is run again"
+  exit 0
+}
+
 # The pidfile is this loop's claim on the site. Reset and purge remove it; a takeover replaces
 # the pid inside it. Either way the watching is somebody else's now, and a pidfile that is no
 # longer ours is never cleaned up on the way out — not here, and not from the exit trap.

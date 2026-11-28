@@ -583,7 +583,7 @@ if [ -n "$CONTROL_REASON" ]; then
 fi
 
 if [ "$DRY_RUN" -eq 0 ]; then
-  if ! ns_control_stop_watchman "$NS"; then
+  if ! ns_control_stop_watchman "$NS" >/dev/null; then
     refuse "watchman a recorded watchman pid could not be verified, so it was left running"
     repair "pause the shift with ns stop-shift, then start again"
     exit 1
@@ -906,15 +906,35 @@ fi
 # ------------------------------------------------- host permission mode
 case "$HOST_NAME" in
   claude)
-    GRANT=0
-    for f in "$HOST_ROOT/.claude/settings.local.json" "$HOST_ROOT/.claude/settings.json"; do
-      [ -f "$f" ] || continue
-      if grep -q 'bypassPermissions\|"allow"' "$f" 2>/dev/null; then GRANT=1; break; fi
-    done
-    if [ "$GRANT" -eq 1 ]; then
-      ok "permissions frictionless permissions are granted at $HOST_ROOT"
+    # A headless worker or revival starts in the work target and reads that folder's project settings
+    # and the owner's user settings. A worktree Start has yet to make holds the checkout's committed
+    # files only, so its project settings are the committed settings.json.
+    USER_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+    READS="$WORK_TARGET/.claude"
+    GRANT_AT=""
+    CHOSEN_BRANCH=""
+    if ns_layout_set BRANCH_RECORD "$NS" run-branch 2>/dev/null && [ -f "$BRANCH_RECORD" ]; then
+      IFS= read -r CHOSEN_BRANCH <"$BRANCH_RECORD" || CHOSEN_BRANCH=""
+    fi
+    if [ "$(ns_policy_pref "$WORKSPACE" shift isolation 2>/dev/null)" = worktree ] &&
+      ! ns_shift_worktree_current "$WORKSPACE" >/dev/null 2>&1 &&
+      { [ -z "$CHOSEN_BRANCH" ] || [ "$(git -C "$WORK_TARGET" symbolic-ref --quiet --short HEAD 2>/dev/null)" != "$CHOSEN_BRANCH" ]; }; then
+      READS="the new worktree's .claude (committed in $WORK_TARGET)"
+      if git -C "$WORK_TARGET" show HEAD:.claude/settings.json 2>/dev/null | grep -q 'bypassPermissions\|"allow"'; then
+        GRANT_AT="$WORK_TARGET/.claude/settings.json as committed"
+      fi
     else
-      warn "permissions no frictionless grant in $HOST_ROOT/.claude - a permission prompt mid-shift freezes the night and a headless revival is denied outright; Setup offers the fix"
+      for f in "$WORK_TARGET/.claude/settings.local.json" "$WORK_TARGET/.claude/settings.json"; do
+        [ -f "$f" ] && grep -q 'bypassPermissions\|"allow"' "$f" 2>/dev/null && { GRANT_AT="$f"; break; }
+      done
+    fi
+    if [ -z "$GRANT_AT" ] && [ -f "$USER_SETTINGS" ] && grep -q 'bypassPermissions\|"allow"' "$USER_SETTINGS" 2>/dev/null; then
+      GRANT_AT="$USER_SETTINGS"
+    fi
+    if [ -n "$GRANT_AT" ]; then
+      ok "permissions frictionless permissions are granted in $GRANT_AT, which a headless worker reads"
+    else
+      warn "permissions no frictionless grant in $READS or $USER_SETTINGS, the settings a headless worker or revival reads - a permission prompt mid-shift freezes the night and a headless revival is denied outright; Setup offers the fix"
     fi
     ;;
   codex)

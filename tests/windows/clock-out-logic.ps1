@@ -113,6 +113,28 @@ $present = Invoke-NSWatchmanDirectClockOut -Workspace $blocked -HostName cursor 
 Expect-True $present.Released 'a present image lets the ticked shift clock out'
 Remove-Item -LiteralPath $blocked -Recurse -Force
 
+# The end of a shift stops its watchman now; a watchman ending the shift itself is left running.
+$watched = New-Workspace "## Items`n- [x] **1.**`n"
+$watchedNs = Join-Path $watched '.nightshift'
+$watchPid = Get-NSLayoutPath $watchedNs 'watchman'
+$sleeper = Start-Process -FilePath (Get-Process -Id $PID).Path `
+    -ArgumentList @('-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep -Seconds 300') -PassThru
+try {
+    [IO.File]::WriteAllText($watchPid, "$($sleeper.Id)`n$(Get-NSProcessStart $sleeper.Id)`n")
+    Expect-True (Invoke-NSShiftEnd -Workspace $watched -Summary 'done') 'the watched shift ends'
+    $sleeper.WaitForExit(5000) | Out-Null
+    Expect-True $sleeper.HasExited 'the end of the shift stops its watchman'
+    Expect-True (-not (Test-Path -LiteralPath $watchPid)) 'the stopped watchman leaves no pid file'
+}
+finally {
+    if (-not $sleeper.HasExited) { Stop-Process -Id $sleeper.Id -Force -ErrorAction SilentlyContinue }
+}
+[IO.File]::WriteAllText((Join-Path $watchedNs '.shift-armed'), '')
+[IO.File]::WriteAllText($watchPid, "$PID`n$(Get-NSProcessStart $PID)`n")
+Expect-True (Invoke-NSShiftEnd -Workspace $watched -Summary 'done') 'a watchman can end the shift itself'
+Expect-True (Test-Path -LiteralPath $watchPid) 'a watchman ending the shift itself keeps its pid file'
+Remove-Item -LiteralPath $watched -Recurse -Force
+
 if ($failures.Count -gt 0) {
     Write-Host ($failures -join [Environment]::NewLine)
     exit 1

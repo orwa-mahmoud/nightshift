@@ -75,6 +75,7 @@ function Invoke-NSRunPhase {
         $out = @(& $shell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $script -Project $workspace -Phase $Name 2>&1)
     }
     $code = $LASTEXITCODE
+    $script:PhaseOut = @($out | ForEach-Object { [string]$_ })
     foreach ($line in $out) {
         $text = [string]$line
         if ($text -cmatch '^(warn|refuse|explain|repair) ' -or ($Name -eq 'worktree' -and $text -cmatch '^ok worktree ')) {
@@ -227,6 +228,9 @@ if ((Get-NSWorkMode $workspace) -ne 'artifact') {
     }
 }
 if (-not (Invoke-NSRunPhase 'preflight')) { Stop-Refused 'preflight the run was not started' 'fix what the preflight named, then run this again' }
+if ($Background -and @($script:PhaseOut | Where-Object { $_ -clike 'warn permissions *' }).Count -gt 0) {
+    Write-Verdict 'warn' 'permissions in the background nobody can answer a prompt: the first one stops the worker at once'
+}
 if (-not (Invoke-NSRunPhase 'snapshot')) { Stop-Refused "snapshot the run's shift policy could not be recorded" 'run ns doctor, then run this again' }
 if (-not (Invoke-NSRunPhase 'worktree')) { Stop-Refused 'worktree the run has no worktree' 'fix what the worktree step named, then run this again' }
 

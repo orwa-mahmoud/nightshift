@@ -253,6 +253,37 @@ stop_run_processes() {
   [ ! -e "$w/.nightshift/staging/plans/export-csv.md" ]
 }
 
+@test "a worktree run's permissions verdict names the settings its worker reads" {
+  w="$(runs_site "permissions")"
+  export CLAUDE_CONFIG_DIR="$BATS_TEST_TMPDIR/claude-config"
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  repo="$(cd -P "$w/repo" && pwd)"
+  # Before the worktree exists, the worker will read the settings committed in the checkout.
+  run start_run "$w" "Export CSV"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "warn permissions no frictionless grant in the new worktree's .claude (committed in $repo) or $CLAUDE_CONFIG_DIR/settings.json" ||
+    { echo "$output"; return 1; }
+  # Started again, the run's worktree is where the worker reads; the workspace's .claude is not.
+  mkdir -p "$w/.claude"
+  printf '{"permissions":{"defaultMode":"bypassPermissions"}}\n' >"$w/.claude/settings.local.json"
+  run start_run "$w" "Export CSV"
+  [ "$status" -eq 0 ]
+  wt="$(NIGHTSHIFT_RUN=export-csv lib ns_work_target "$w")"
+  printf '%s\n' "$output" | grep -qF "warn permissions no frictionless grant in $wt/.claude or" || { echo "$output"; return 1; }
+  mkdir -p "$wt/.claude"
+  printf '{"permissions":{"allow":["Edit"]}}\n' >"$wt/.claude/settings.local.json"
+  run start_run "$w" "Export CSV"
+  ! printf '%s\n' "$output" | grep -q '^warn permissions' || { echo "$output"; return 1; }
+  # A grant committed in the checkout reaches a new worktree.
+  mkdir -p "$w/repo/.claude"
+  printf '{"permissions":{"allow":["Edit"]}}\n' >"$w/repo/.claude/settings.json"
+  git -C "$w/repo" add .claude/settings.json
+  git -C "$w/repo" commit -q -m settings
+  run start_run "$w" "Dark mode"
+  [ "$status" -eq 0 ]
+  ! printf '%s\n' "$output" | grep -q '^warn permissions' || { echo "$output"; return 1; }
+}
+
 # A background start leaves a worker and a watchman running; each call closes Bats's descriptor 3 so
 # those processes do not hold the test open.
 @test "a background start cut short after its run folder exists, then retried, leaves exactly one worker" {
@@ -293,19 +324,43 @@ stop_run_processes() {
   [ ! -e "$w/.nightshift/staging/plans/dark-mode.md" ]
 }
 
+@test "a background worker in a worktree is given the workspace that holds its run folder" {
+  w="$(runs_site "added folder")"
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat >"$BATS_TEST_TMPDIR/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+printf '%s|%s\n' "$PWD" "$*" >>"$FAKE_AGENT_CALLS"
+sleep 30
+STUB
+  chmod +x "$BATS_TEST_TMPDIR/bin/claude"
+  export FAKE_AGENT_CALLS="$BATS_TEST_TMPDIR/agent-calls"
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c '
+    cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID -u NIGHTSHIFT_WATCH_AGENT CLAUDE_PROJECT_DIR="$1" \
+      bash "$2" --project "$1" --plan "Dark mode" --host claude --background' _ "$w" "$START_RUN" 3>&-
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  sleep 1
+  stop_run_processes "$w" dark-mode
+  IFS='|' read -r where args <"$FAKE_AGENT_CALLS"
+  [ "$where" = "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$w")" ]
+  case "$args" in "--add-dir $(cd -P "$w" && pwd) -p "*) ;; *) echo "$args"; return 1 ;; esac
+}
+
 @test "a background worker that exits at once is reported with its own last words, and nothing stays armed" {
   w="$(runs_site "worker exits")"
   mkdir -p "$BATS_TEST_TMPDIR/bin"
   printf '#!/usr/bin/env bash\nprintf "Workspace Trust Required\\nPass --trust if you trust this directory\\n"\nexit 1\n' \
     >"$BATS_TEST_TMPDIR/bin/untrusted-agent"
   chmod +x "$BATS_TEST_TMPDIR/bin/untrusted-agent"
-  run env NIGHTSHIFT_WATCH_AGENT="$BATS_TEST_TMPDIR/bin/untrusted-agent" NIGHTSHIFT_WORKER_SETTLE_SECONDS=2 bash -c '
+  mkdir -p "$BATS_TEST_TMPDIR/claude-config"
+  run env NIGHTSHIFT_WATCH_AGENT="$BATS_TEST_TMPDIR/bin/untrusted-agent" NIGHTSHIFT_WORKER_SETTLE_SECONDS=2 \
+    CLAUDE_CONFIG_DIR="$BATS_TEST_TMPDIR/claude-config" bash -c '
     cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR="$1" \
       bash "$2" --project "$1" --plan "Dark mode" --host claude --background' _ "$w" "$START_RUN" 3>&-
   [ "$status" -eq 1 ]
   printf '%s\n' "$output" | grep -qx 'refuse worker the claude CLI exited at once: Workspace Trust Required Pass --trust if you trust this directory' ||
     { echo "$output"; return 1; }
   printf '%s\n' "$output" | grep -q '^repair run .*untrusted-agent once in .* and settle what it asks, then run this again$'
+  printf '%s\n' "$output" | grep -qx 'warn permissions in the background nobody can answer a prompt: the first one stops the worker at once'
   ! printf '%s\n' "$output" | grep -q '^ok worker started' || false
   [ ! -e "$w/.nightshift/runs/dark-mode/run/.shift-armed" ]
   [ ! -e "$w/.nightshift/runs/dark-mode/run/.watchman" ]

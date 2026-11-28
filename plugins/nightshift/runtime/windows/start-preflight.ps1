@@ -935,16 +935,48 @@ if (-not $DryRun -and (Test-Path -LiteralPath $logPath -PathType Leaf) -and -not
 
 # ------------------------------------------------ host permission mode
 if ($HostName -eq 'claude') {
-    $grant = $false
-    foreach ($settingsFile in @((Join-Path $hostRoot '.claude/settings.local.json'), (Join-Path $hostRoot '.claude/settings.json'))) {
-        if (-not (Test-Path -LiteralPath $settingsFile -PathType Leaf)) { continue }
-        if ([IO.File]::ReadAllText($settingsFile) -match 'bypassPermissions|"allow"') { $grant = $true; break }
+    # A headless worker or revival starts in the work target and reads that folder's project settings
+    # and the owner's user settings. A worktree Start has yet to make holds the checkout's committed
+    # files only, so its project settings are the committed settings.json. Mirrors start-preflight.sh.
+    $readsFrom = if ($workTargetOk) { $workTarget } else { $workspace }
+    $configDir = if ([string]::IsNullOrEmpty($env:CLAUDE_CONFIG_DIR)) { Join-Path $HOME '.claude' } else { $env:CLAUDE_CONFIG_DIR }
+    $userSettings = Join-Path $configDir 'settings.json'
+    $reads = "$readsFrom/.claude"
+    $grantAt = ''
+    $chosenBranch = ''
+    if (Test-NSLayoutKey $ns 'run-branch') {
+        $chosenRecord = Get-NSLayoutPath $ns 'run-branch'
+        if ([IO.File]::Exists($chosenRecord)) {
+            $chosenLines = @([IO.File]::ReadAllLines($chosenRecord))
+            if ($chosenLines.Count -gt 0) { $chosenBranch = $chosenLines[0].TrimEnd("`r") }
+        }
     }
-    if ($grant) {
-        Write-Ok "permissions frictionless permissions are granted at $hostRoot"
+    $isolationNow = [string](Get-NSPolicyGroupSetting $workspace 'shift.isolation')['value']
+    if ($isolationNow -ceq 'worktree' -and (Get-NSShiftWorktreeCurrent $workspace).Length -eq 0 -and
+        ($chosenBranch.Length -eq 0 -or (Invoke-NSGit $readsFrom @('symbolic-ref', '--quiet', '--short', 'HEAD')) -cne $chosenBranch)) {
+        $reads = "the new worktree's .claude (committed in $readsFrom)"
+        $committed = Invoke-NSGitCommand $readsFrom @('show', 'HEAD:.claude/settings.json')
+        if ($committed.ExitCode -eq 0 -and $committed.Text -match 'bypassPermissions|"allow"') {
+            $grantAt = "$readsFrom/.claude/settings.json as committed"
+        }
     }
     else {
-        Write-Warn "permissions no frictionless grant in $hostRoot/.claude - a permission prompt mid-shift freezes the night and a headless revival is denied outright; Setup offers the fix"
+        foreach ($settingsFile in @((Join-Path $readsFrom '.claude/settings.local.json'), (Join-Path $readsFrom '.claude/settings.json'))) {
+            if ((Test-Path -LiteralPath $settingsFile -PathType Leaf) -and [IO.File]::ReadAllText($settingsFile) -match 'bypassPermissions|"allow"') {
+                $grantAt = $settingsFile
+                break
+            }
+        }
+    }
+    if ($grantAt.Length -eq 0 -and (Test-Path -LiteralPath $userSettings -PathType Leaf) -and
+        [IO.File]::ReadAllText($userSettings) -match 'bypassPermissions|"allow"') {
+        $grantAt = $userSettings
+    }
+    if ($grantAt.Length -gt 0) {
+        Write-Ok "permissions frictionless permissions are granted in $grantAt, which a headless worker reads"
+    }
+    else {
+        Write-Warn "permissions no frictionless grant in $reads or $userSettings, the settings a headless worker or revival reads - a permission prompt mid-shift freezes the night and a headless revival is denied outright; Setup offers the fix"
     }
 }
 elseif ($HostName -eq 'codex') {

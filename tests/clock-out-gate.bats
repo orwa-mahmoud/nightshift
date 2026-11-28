@@ -123,6 +123,28 @@ EOF
   is_release
 }
 
+@test "the last tick stops the shift's watchman instead of leaving it to its next wake" {
+  p="$(new_project)"
+  punch_done "$p"
+  wm="$BATS_TEST_TMPDIR/watchman.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" &
+  wpid=$!
+  printf '%s\nscript:%s\n' "$wpid" "$wm" >"$p/.nightshift/.watchman"
+  run gate "$p"
+  is_release
+  gone=0
+  for _ in $(seq 1 50); do
+    case "$(ps -o stat= -p "$wpid" 2>/dev/null | tr -d ' ')" in
+      '' | Z*) gone=1; break ;;
+    esac
+    sleep 0.1
+  done
+  [ "$gone" -eq 1 ] || { echo "watchman $wpid is still running"; kill "$wpid" 2>/dev/null || true; return 1; }
+  [ ! -f "$p/.nightshift/.watchman" ]
+}
+
 @test "releases when there is no punch list" {
   p="$(new_project)"
   run gate "$p"
@@ -823,6 +845,49 @@ EOF
     NIGHTSHIFT_LEASE_GENERATION="${claim%% *}" NIGHTSHIFT_LEASE_NONCE="${claim#* }"
   is_block "$output"
   [ "$(sed -n 1p "$p/.nightshift/.shift-session")" = "test-shift-session" ]
+}
+
+# A headless worker that moved nothing since its launch is told to park what blocks it, then let go.
+@test "a stalled worker that moved nothing is released after the park instruction" {
+  p="$(new_project)"
+  punch_open "$p"
+  lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  claim="$(bash -c '. "$1"; ns_lease_takeover "$2/.nightshift" "" claude' nightshift "$lib" "$p")"
+  mark="$(bash -c '. "$1"; ns_worker_progress_mark "$2/.nightshift" "$2"' nightshift "$lib" "$p")"
+  worker=(NIGHTSHIFT_REVIVAL=1 NIGHTSHIFT_LEASE_GENERATION="${claim%% *}" NIGHTSHIFT_LEASE_NONCE="${claim#* }"
+    NIGHTSHIFT_WORKER_MARK="$mark")
+  run gate "$p" "${worker[@]}"
+  is_block "$output"
+  run gate "$p" "${worker[@]}"
+  is_block "$output"
+  run gate "$p" "${worker[@]}"
+  is_block "$output"
+  printf '%s\n' "$output" | grep -qF 'parking-lot.md' || { echo "$output"; return 1; }
+  [ "$(cat "$p/.nightshift/.worker-blocked")" = "${claim#* }" ]
+  run gate "$p" "${worker[@]}"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ] || { echo "$output"; return 1; }
+  grep -q 'blocked worker released' "$p/.nightshift/shift-log.md"
+  [ ! -f "$p/.nightshift/STOP" ]
+  [ ! -f "$p/.nightshift/.ended" ]
+}
+
+@test "a stalled worker that made progress is still held" {
+  p="$(new_project)"
+  punch_open "$p"
+  printf -- '- [ ] **2. Another.**\n' >>"$p/.nightshift/punch-list.md"
+  lib="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/lib.sh"
+  claim="$(bash -c '. "$1"; ns_lease_takeover "$2/.nightshift" "" claude' nightshift "$lib" "$p")"
+  mark="$(bash -c '. "$1"; ns_worker_progress_mark "$2/.nightshift" "$2"' nightshift "$lib" "$p")"
+  printf '## Items\n- [x] **1. first.**\n- [x] **2. done.**\n- [ ] **2. Another.**\n' >"$p/.nightshift/punch-list.md"
+  worker=(NIGHTSHIFT_REVIVAL=1 NIGHTSHIFT_LEASE_GENERATION="${claim%% *}" NIGHTSHIFT_LEASE_NONCE="${claim#* }"
+    NIGHTSHIFT_WORKER_MARK="$mark")
+  for _ in 1 2 3 4 5; do
+    run gate "$p" "${worker[@]}"
+    is_block "$output"
+  done
+  grep -q 'stall warning' "$p/.nightshift/shift-log.md"
+  [ ! -e "$p/.nightshift/.worker-blocked" ]
 }
 
 # ---- the site lock: two sessions may stop at once; the bookkeeping must not tear ----

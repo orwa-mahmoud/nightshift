@@ -34,31 +34,40 @@ ns_gate_boxes() {
   return 0
 }
 
-ns_gate_project_head() {
-  local r
-  # shellcheck disable=SC2153 # the caller's global; a sourced local named project_dir is a different variable
-  if r="$(ns_work_target "$PROJECT_DIR")"; then
-    git -C "$r" rev-parse HEAD 2>/dev/null || printf 'nohead'
-  else
-    printf 'nohead'
-  fi
+# Stall progress token, read by ns_progress_token. The caller folds the tick count in front.
+# shellcheck disable=SC2153 # the caller's global; a sourced local named project_dir is a different variable
+ns_gate_progress_token() { ns_progress_token "$PROJECT_DIR"; }
+
+# ns_gate_worker_blocked <fingerprint> — true for a headless worker that has moved nothing since its
+# launch: its stall fingerprint still equals the mark its launcher recorded.
+ns_gate_worker_blocked() {
+  [ -n "${NIGHTSHIFT_WORKER_MARK:-}" ] && [ -n "${NIGHTSHIFT_LEASE_NONCE:-}" ] && [ "$1" = "$NIGHTSHIFT_WORKER_MARK" ]
 }
 
-# Stall progress token: repository mode uses the work-target HEAD. Artifact mode has no HEAD to
-# read, and hashing what the shift wrote about itself would make writing about the work look like
-# doing it — a report update, a usage line, a rendered morning page or an archive pass would all
-# read as progress. So artifact mode leans on the two signals that mean work actually moved: the
-# tick count, which the caller already folds into this fingerprint, and a substantive checkpoint.
-ns_gate_progress_token() {
-  local mode mark ckpt
-  mode="$(ns_work_mode "$PROJECT_DIR" 2>/dev/null)" || mode=repository
-  if [ "$mode" = artifact ]; then
-    mark=artifact
-  else
-    mark="$(ns_gate_project_head)"
-  fi
-  ckpt="$(ns_gate_checkpoint_token "$PROJECT_DIR")"
-  printf '%s:%s' "$mark" "${ckpt:-none}"
+# ns_gate_hold_worker_revival — record that this worker is told to park what blocks it and end. The
+# watchman revives nobody while the record stands; Start clears it.
+ns_gate_hold_worker_revival() {
+  local f
+  f="$(ns_layout_path "$NS" worker-blocked)"
+  [ -L "$f" ] && rm -f "$f"
+  printf '%s\n' "$NIGHTSHIFT_LEASE_NONCE" >"$f"
+}
+
+# ns_gate_worker_release_due — true at the next stop of the worker the hold names.
+ns_gate_worker_release_due() {
+  local f held=""
+  [ -n "${NIGHTSHIFT_LEASE_NONCE:-}" ] || return 1
+  f="$(ns_layout_path "$NS" worker-blocked)"
+  [ -f "$f" ] && [ ! -L "$f" ] || return 1
+  IFS= read -r held <"$f" || :
+  [ "$held" = "$NIGHTSHIFT_LEASE_NONCE" ]
+}
+
+# ns_gate_blocked_worker_message — the instruction a worker gets when nothing it could do moved the
+# shift since its launch.
+ns_gate_blocked_worker_message() {
+  printf 'Nothing has moved this shift since this headless session started: no tick, no commit, no checkpoint. Something blocks you that only the owner can clear (a refused folder, a permission prompt nobody can answer, a missing tool). Write it as one entry in %s: what you tried, what was refused, and what would unblock it. Then end your turn: this session will be let go, and the watchman will not start another worker on this run until Start is run again.' \
+    "$(ns_layout_name "$NS" parking-lot)"
 }
 
 # The gate honours the earlier of the projected deadline file and the shift policy's own
@@ -728,6 +737,18 @@ ns_shift_whistle() { # <summary>
   [ "$rc" -eq 0 ] || ns_shift_log "$ns" "whistle: notifyCommand exited $rc"
 }
 
+# ns_shift_end_watchman <nightshift-dir> — an ended shift has nothing left to watch, so its watchman
+# stops now, the way Stop stops it, rather than at its next wake. A watchman that is itself ending the
+# shift is left to its own stand-down.
+ns_shift_end_watchman() {
+  local ns="$1" pidfile fields
+  ns_layout_set pidfile "$ns" watchman
+  fields="$(ns_watchman_pidfile_read "$pidfile" 2>/dev/null)" || return 0
+  [ "${fields%%$'\t'*}" != "$$" ] || return 0
+  ns_control_stop_watchman "$ns" >/dev/null ||
+    ns_shift_log "$ns" "clock-out left the watchman to its next wake: its process could not be verified"
+}
+
 # ns_shift_end <project-dir> <summary>
 ns_shift_end() {
   local project="$1" summary="${2:-}"
@@ -762,6 +783,7 @@ ns_shift_end() {
   if [ -f "$pending" ]; then
     ns_shift_log "$ns" "archive.automatic is on - filing is due for this shift"
   fi
+  ns_shift_end_watchman "$ns"
   ns_shift_whistle "$summary"
   [ -f "$ended" ] && [ ! -L "$ended" ] && [ ! -e "$armed" ]
 }

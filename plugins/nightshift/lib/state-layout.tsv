@@ -142,6 +142,9 @@ pending-filing	3	runs/*/run/.pending-filing	file
 stall	0	.stall	file
 stall	2	run/.stall	file
 stall	3	runs/*/run/.stall	file
+worker-blocked	0	.worker-blocked	file
+worker-blocked	2	run/.worker-blocked	file
+worker-blocked	3	runs/*/run/.worker-blocked	file
 notified	0	.notified	file
 notified	2	run/.notified	file
 notified	3	runs/*/run/.notified	file

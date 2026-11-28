@@ -432,6 +432,7 @@ STUB
   printf 'abc-123\n\n' >"$P/.nightshift/.shift-session"
   cat >"$BIN/claude" <<'STUB'
 #!/usr/bin/env bash
+[[ "$*" == agents* ]] || printf '%s\n' "$*" >>.nightshift/claude-args
 if ! grep -qE '^- \[ \]' .nightshift/punch-list.md && [[ "$*" != agents* ]]; then
   case "$*" in
     *--resume*) echo "resume:$1 $2" >>.nightshift/agent-calls ;;
@@ -458,6 +459,9 @@ STUB
   [ "$status" -eq 0 ]
   grep -q 'resume:--resume abc-123' "$P/.nightshift/agent-calls"
   [ "$(grep -c fresh "$P/.nightshift/agent-calls")" -eq 1 ]
+  # Every rung adds the workspace that holds the run folder as a working folder of the session.
+  [ "$(grep -cvF -- "--add-dir $P -p " "$P/.nightshift/claude-args")" -eq 0 ]
+  grep -qF -- "--resume abc-123 --add-dir $P -p " "$P/.nightshift/claude-args"
 }
 
 @test "session-end writes the marker only for the shift's own session" {
@@ -2222,4 +2226,22 @@ worker_alive() { kill -0 "$IDLE_WORKER" 2>/dev/null; }
     return 1
   fi
   [ "$rc" -eq 0 ]
+}
+
+@test "a run whose last worker ended blocked is not revived until Start" {
+  printf 'abc-123\n\n' >"$P/.nightshift/.shift-session"
+  printf 'nonce\n' >"$P/.nightshift/.worker-blocked"
+  cat >"$BIN/claude" <<'STUB'
+#!/usr/bin/env bash
+[[ "$*" == agents* ]] && { echo "[]"; exit 0; }
+echo called >>.nightshift/agent-calls
+STUB
+  chmod +x "$BIN/claude"
+  run env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    NIGHTSHIFT_WATCH_TRANSCRIPTS=/tmp/nowhere \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 2
+  [ "$status" -eq 0 ]
+  [ ! -f "$P/.nightshift/agent-calls" ]
+  [ "$(reason)" = stand-down ]
+  grep -q 'the last worker ended blocked' "$P/.nightshift/shift-log.md"
 }

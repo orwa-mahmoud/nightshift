@@ -108,6 +108,7 @@ phase() {
     out="$(bash "$_here/start-preflight.sh" --project "$WORKSPACE" --phase "$1" 2>&1)"
   fi
   rc=$?
+  PHASE_OUT="$out"
   printf '%s\n' "$out" | grep -E '^(warn|refuse|explain|repair) ' || :
   [ "$1" != worktree ] || printf '%s\n' "$out" | grep -E '^ok worktree ' || :
   return "$rc"
@@ -242,6 +243,9 @@ if [ "$(ns_work_mode "$WORKSPACE" 2>/dev/null)" != artifact ]; then
   fi
 fi
 phase preflight || refuse "preflight the run was not started" "fix what the preflight named, then run this again"
+if [ "$BACKGROUND" -eq 1 ] && printf '%s\n' "$PHASE_OUT" | grep -q '^warn permissions '; then
+  warn "permissions in the background nobody can answer a prompt: the first one stops the worker at once"
+fi
 phase snapshot || refuse "snapshot the run's shift policy could not be recorded" "run ns doctor, then run this again"
 phase worktree || refuse "worktree the run has no worktree" "fix what the worktree step named, then run this again"
 

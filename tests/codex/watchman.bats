@@ -340,7 +340,7 @@ STUB
   printf '\n%s\n99999\nnever\ncodex\n' "$ROLLOUT" >"$P/.nightshift/.shift-session"
   cat >"$BIN/codex" <<'STUB'
 #!/usr/bin/env bash
-echo "called $NIGHTSHIFT_REVIVAL" >>.nightshift/agent-calls
+echo "called $NIGHTSHIFT_REVIVAL $*" >>.nightshift/agent-calls
 awk 'BEGIN{d=0} !d && /^- \[ \]/{sub(/\[ \]/,"[x]");d=1} {print}' .nightshift/punch-list.md >.nightshift/pl.tmp
 mv .nightshift/pl.tmp .nightshift/punch-list.md
 STUB
@@ -352,6 +352,8 @@ STUB
   if grep -q 'exec resume' "$P/.nightshift/agent-calls"; then
     return 1
   fi
+  # The fresh exec adds the workspace that holds the run folder as a writable folder.
+  grep -qF -- "exec --add-dir $P " "$P/.nightshift/agent-calls"
 }
 
 @test "a resumable UUID is passed to exec resume and not replaced" {
@@ -561,4 +563,19 @@ STUB
   [ "$status" -eq 0 ]
   [ "$(calls)" -ge 1 ]
   grep -qF 'watchman: the watchman pidfile is gone — standing down' "$P/.nightshift/shift-log.md"
+}
+
+@test "a run whose last worker ended blocked is not revived until Start" {
+  printf '\n%s\n99999\nnever\ncodex\n' "$ROLLOUT" >"$P/.nightshift/.shift-session"
+  printf 'nonce\n' >"$P/.nightshift/.worker-blocked"
+  cat >"$BIN/codex" <<'STUB'
+#!/usr/bin/env bash
+echo called >>.nightshift/agent-calls
+STUB
+  chmod +x "$BIN/codex"
+  run env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 2
+  [ "$status" -eq 0 ]
+  [ ! -f "$P/.nightshift/agent-calls" ]
+  [ "$(reason)" = stand-down ]
 }

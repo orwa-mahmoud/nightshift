@@ -315,6 +315,7 @@ if ($owned.Status -eq 'Pass') { Write-Release }
 if ($owned.Status -eq 'Fail') { Write-Block $owned.Message }
 $session = $owned.Session
 
+$blockedWorker = $false
 $mutex = Enter-NSMutex $ns '.lock.d'
 # An unlockable site is decided unlocked: the gate must answer, never queue.
 try {
@@ -355,6 +356,13 @@ try {
         Complete-NSShiftAndStop "quitting time: $($counts.Ticked)/$($counts.Total) done, items left open"
     }
 
+    # A headless worker that was told to park what blocks it is let go at its next stop. The shift
+    # stays open; the watchman holds its revival until Start is run again.
+    if (Test-NSWorkerReleaseDue $ns) {
+        Write-NSLogLine 'blocked worker released - it moved nothing since its launch; no revival until Start is run again'
+        Write-Release
+    }
+
     if ($stallReady) {
         $fingerprint = "$($counts.Ticked):$(Get-NSProgressToken $workspace)"
         $previousFingerprint = ''
@@ -381,6 +389,10 @@ try {
         if ($stallMax -eq 0 -and $attempts -ge $stallWarn) {
             Write-NSLogLine "stall warning - $attempts attempts no progress, $($counts.Ticked)/$($counts.Total) done; keeping shift open"
             $attempts = 0
+            if (Test-NSWorkerBlocked $fingerprint) {
+                Set-NSWorkerRevivalHold $ns
+                $blockedWorker = $true
+            }
         }
         if (Test-NSReparsePoint $stall) {
             Remove-Item -LiteralPath $stall -Force -ErrorAction SilentlyContinue
@@ -397,6 +409,10 @@ finally {
     }
 }
 
+if ($blockedWorker) {
+    Write-NSLogLine 'blocked worker - nothing moved since its launch; told to park what blocks it, released at its next stop'
+    Write-Block (Get-NSBlockedWorkerMessage $ns)
+}
 if (-not [string]::IsNullOrEmpty($gateMessage)) {
     Write-Block (Get-NSGateBlockReason $gateMessage)
 }

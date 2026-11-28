@@ -274,7 +274,7 @@ try {
     $stale = New-Site (Join-Path $root 'stale')
     $staleNs = Join-Path $stale '.nightshift'
     foreach ($marker in @('STOP', '.stall', '.notified', '.ended', '.session-end', '.shift-pulse',
-            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick')) {
+            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.worker-blocked')) {
         [IO.File]::WriteAllText((Join-Path $staleNs $marker), '')
     }
     [IO.File]::WriteAllText((Join-Path $staleNs 'deadline'), "100`n")
@@ -282,7 +282,7 @@ try {
     $staleRun = Invoke-Preflight $stale
     Expect-True ($staleRun.ExitCode -eq 0) "stale leftovers do not refuse: $($staleRun.Stdout)"
     foreach ($marker in @('STOP', '.stall', '.notified', '.ended', '.session-end', '.shift-pulse',
-            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.lock.d', 'deadline')) {
+            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.worker-blocked', '.lock.d', 'deadline')) {
         Expect-True (-not (Test-Path -LiteralPath (Join-Path $staleNs $marker))) "stale $marker is cleared"
     }
 
@@ -356,13 +356,27 @@ try {
 
     # Each host gets its own permission-mode note.
     $perms = New-Site (Join-Path $root 'perms')
-    $permsClaude = Invoke-Preflight $perms @('-HostName', 'claude')
-    Expect-True ($permsClaude.Stdout.Contains('warn permissions no frictionless grant in')) 'Claude with no grant is warned'
-    $null = New-Item -ItemType Directory -Force -Path (Join-Path $perms '.claude')
-    [IO.File]::WriteAllText((Join-Path $perms '.claude/settings.local.json'),
-        '{"permissions":{"defaultMode":"bypassPermissions"}}')
-    $permsGranted = Invoke-Preflight $perms @('-HostName', 'claude')
-    Expect-True ($permsGranted.Stdout.Contains('ok permissions frictionless permissions are granted at')) 'a grant is reported'
+    $oldConfigDir = $env:CLAUDE_CONFIG_DIR
+    $env:CLAUDE_CONFIG_DIR = Join-Path $root 'claude-config'
+    $null = New-Item -ItemType Directory -Force -Path $env:CLAUDE_CONFIG_DIR
+    $userSettings = Join-Path $env:CLAUDE_CONFIG_DIR 'settings.json'
+    try {
+        # A run without a worktree: the worker reads the work target's settings and the user settings.
+        $permsClaude = Invoke-Preflight $perms @('-HostName', 'claude')
+        $permsTarget = ([regex]::Match($permsClaude.Stdout, '(?m)^ok work-target (.+)$')).Groups[1].Value.TrimEnd()
+        Expect-True ($permsTarget.Length -gt 0 -and $permsClaude.Stdout.Contains("warn permissions no frictionless grant in $permsTarget/.claude or $userSettings, the settings a headless worker or revival reads")) `
+            "Claude with no grant is warned with the settings the worker reads: $($permsClaude.Stdout)"
+        [IO.File]::WriteAllText($userSettings, '{"permissions":{"allow":["Bash"]}}')
+        $permsUser = Invoke-Preflight $perms @('-HostName', 'claude')
+        Expect-True ($permsUser.Stdout.Contains("ok permissions frictionless permissions are granted in $userSettings")) 'a user grant is reported'
+        [IO.File]::WriteAllText($userSettings, '{}')
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $perms '.claude')
+        [IO.File]::WriteAllText((Join-Path $perms '.claude/settings.local.json'),
+            '{"permissions":{"defaultMode":"bypassPermissions"}}')
+        $permsGranted = Invoke-Preflight $perms @('-HostName', 'claude')
+        Expect-True ($permsGranted.Stdout.Contains('ok permissions frictionless permissions are granted in ')) "a grant is reported: $($permsGranted.Stdout)"
+    }
+    finally { $env:CLAUDE_CONFIG_DIR = $oldConfigDir }
     $permsCodex = Invoke-Preflight $perms @('-HostName', 'codex')
     Expect-True ($permsCodex.Stdout.Contains('codex -a never -s danger-full-access')) 'Codex gets the unattended spelling'
     $permsCursor = Invoke-Preflight $perms @('-HostName', 'cursor')

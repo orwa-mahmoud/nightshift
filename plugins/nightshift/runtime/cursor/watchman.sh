@@ -484,6 +484,7 @@ while :; do
   wake=$((wake + 1))
 
   armed || stand_down_disarmed
+  stand_down_blocked_worker
   holds_pidfile || stand_down_unclaimed
   if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then note completed; exit 0; fi
   if [ ! -f "$PUNCH" ]; then note stand-down "punch list missing"; exit 0; fi
@@ -642,6 +643,7 @@ while :; do
   total=$(( $# + 1 ))
   for gap in 0 $RETRY_SPACING; do
     [ "$gap" -gt 0 ] && sleep "$gap"
+    stand_down_blocked_worker
     if site_alive; then
       note silent-standby
       log_line "watchman: session activity during retries — holding the remaining attempts"

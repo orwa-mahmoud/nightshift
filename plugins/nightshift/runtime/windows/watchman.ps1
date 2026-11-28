@@ -599,40 +599,19 @@ function Start-NSAgent {
     }
     elseif ($HostName -eq 'claude') {
         $commandName = 'claude'
-        if ($Attempt -eq 1 -and -not [string]::IsNullOrEmpty($sessionId)) {
-            $commandArguments.Add('--resume')
-            $commandArguments.Add($sessionId)
-            $commandArguments.Add('-p')
+        $resume = $Attempt -eq 1 -and -not [string]::IsNullOrEmpty($sessionId)
+        foreach ($argument in (Get-NSDefaultRevivalArguments -HostName claude -SessionId $sessionId -Resume $resume `
+                    -Fresh $fresh -LaunchScope $launchScope -Workspace $workspace -Prompt $prompt)) {
+            $commandArguments.Add($argument)
         }
-        elseif ($fresh) {
-            $commandArguments.Add('-p')
-        }
-        else {
-            $commandArguments.Add('--continue')
-            $commandArguments.Add('-p')
-        }
-        $commandArguments.Add($prompt)
     }
     else {
         $commandName = 'codex'
-        $kind = Get-NSCodexIdentityKind $sessionId
-        if ($Attempt -eq 1 -and $kind -eq 'resumable') {
-            $commandArguments.Add('exec')
-            $commandArguments.Add('resume')
-            if ($launchScope -clike 'recorded:*') {
-                $commandArguments.Add('-c')
-                $commandArguments.Add('sandbox_mode="' + $launchScope.Substring('recorded:'.Length) + '"')
-            }
-            $commandArguments.Add($sessionId)
-            $commandArguments.Add($prompt)
-        }
-        else {
-            $commandArguments.Add('exec')
-            if ($launchScope -clike 'recorded:*') {
-                $commandArguments.Add('-s')
-                $commandArguments.Add($launchScope.Substring('recorded:'.Length))
-            }
-            $commandArguments.Add($freshPrompt)
+        $resume = $Attempt -eq 1 -and (Get-NSCodexIdentityKind $sessionId) -eq 'resumable'
+        $codexPrompt = if ($resume) { $prompt } else { $freshPrompt }
+        foreach ($argument in (Get-NSDefaultRevivalArguments -HostName codex -SessionId $sessionId -Resume $resume `
+                    -Fresh (-not $resume) -LaunchScope $launchScope -Workspace $workspace -Prompt $codexPrompt)) {
+            $commandArguments.Add($argument)
         }
     }
     $fileName = 'powershell.exe'
@@ -641,6 +620,7 @@ function Start-NSAgent {
     $oldRevival = $env:NIGHTSHIFT_REVIVAL
     $oldGeneration = $env:NIGHTSHIFT_LEASE_GENERATION
     $oldNonce = $env:NIGHTSHIFT_LEASE_NONCE
+    $oldMark = $env:NIGHTSHIFT_WORKER_MARK
     try {
         if ($HostName -eq 'claude') {
             $env:CLAUDE_PROJECT_DIR = $workspace
@@ -654,6 +634,7 @@ function Start-NSAgent {
         $env:NIGHTSHIFT_REVIVAL = '1'
         $env:NIGHTSHIFT_LEASE_GENERATION = [string]$lease.Generation
         $env:NIGHTSHIFT_LEASE_NONCE = $lease.Nonce
+        $env:NIGHTSHIFT_WORKER_MARK = Get-NSWorkerProgressMark $ns $workspace
         $argumentLine = Get-NSAgentArgumentLine $commandName $commandArguments
         try {
             $process = Start-Process -FilePath $fileName -ArgumentList $argumentLine `
@@ -726,12 +707,16 @@ function Start-NSAgent {
         $env:NIGHTSHIFT_REVIVAL = $oldRevival
         $env:NIGHTSHIFT_LEASE_GENERATION = $oldGeneration
         $env:NIGHTSHIFT_LEASE_NONCE = $oldNonce
+        $env:NIGHTSHIFT_WORKER_MARK = $oldMark
     }
 }
 
 function Get-NSHoldReason {
     if (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf) {
         return 'stop-work order'
+    }
+    if (Test-NSWorkerRevivalHeld $ns) {
+        return 'blocked worker'
     }
     if ((Test-NSRealEnded) `
         -or -not (Test-Path -LiteralPath $punch -PathType Leaf)) {
@@ -899,6 +884,13 @@ try {
             exit 0
         }
 
+        # A worker the clock-out gate let go because nothing it could do moved the shift would only
+        # meet the same refusal again; Start clears the record. Mirrors stand_down_blocked_worker.
+        if (Test-NSWorkerRevivalHeld $ns) {
+            $null = Write-NSReason $ns 'stand-down' 'the last worker ended blocked'
+            Write-NSLogLine "watchman: the last worker ended blocked and parked why $([char]0x2014) not reviving until Start is run again"
+            exit 0
+        }
         if ($HostName -ne 'cursor' -and (Test-Path -LiteralPath (Get-NSLayoutPath $ns 'stop') -PathType Leaf)) {
             Write-NSReason $ns 'owner-stop'
             Write-NSLogLine 'watchman: stop-work order - standing down'
