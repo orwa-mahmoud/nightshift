@@ -485,3 +485,88 @@ ns_watchman_removed_sentence() { # ns pidfile pid
       "$ver" "$pid" "$cmd"
   fi
 }
+
+# The watchman stop helpers below are shared by Stop, Start and the clock-out gate, so they live
+# with the pid-file reader every hook already loads.
+
+ns_control_drop() { # <path> — unlink a file, symlink, or directory without following
+  local p="$1"
+  [ -e "$p" ] || [ -L "$p" ] || return 0
+  if [ -d "$p" ] && [ ! -L "$p" ]; then
+    rm -rf "$p"
+  else
+    rm -f "$p"
+  fi
+}
+
+ns_control_watchman_command_ok() { # <pid> [script]
+  local args script="${2:-}"
+  ns_have_cmd ps || return 1
+  args="$(ps -ww -o command= -p "$1" 2>/dev/null || ps -ww -o args= -p "$1" 2>/dev/null || true)"
+  [ -n "$args" ] || return 1
+  printf '%s' "$args" | grep -qE 'watchman\.sh|watchman\.ps1|start-watchman' && return 0
+  [ -n "$script" ] || return 1
+  printf '%s' "$args" | grep -qF -- "$script"
+}
+
+# Kill only a verified live Nightshift watchman.
+# Prints stopped or unverified; prints nothing when no watchman was running.
+# 0 killed or absent · 1 unverified (left running)
+ns_control_stop_watchman() { # <ns>
+  local ns="$1" pidfile tick pid start script fields rc
+  ns_layout_set pidfile "$ns" watchman
+  ns_layout_set tick "$ns" watchman-tick
+  if [ -L "$pidfile" ]; then
+    ns_control_drop "$pidfile"
+    ns_control_drop "$tick"
+    printf stopped
+    return 0
+  fi
+  if [ ! -f "$pidfile" ]; then
+    ns_control_drop "$tick"
+    return 0
+  fi
+  fields="$(ns_watchman_pidfile_read "$pidfile" 2>/dev/null || true)"
+  pid="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  start="${fields%%$'\t'*}"
+  fields="${fields#*$'\t'}"
+  script="${fields%%$'\t'*}"
+  case "$pid" in
+    '' | *[!0-9]*)
+      ns_control_drop "$pidfile"
+      ns_control_drop "$tick"
+      return 0
+      ;;
+  esac
+  [ "$pid" -gt 1 ] 2>/dev/null || {
+    ns_control_drop "$pidfile"
+    ns_control_drop "$tick"
+    return 0
+  }
+  ns_recorded_process "$pid" "$start"
+  rc=$?
+  if [ "$rc" -eq 1 ]; then
+    ns_control_drop "$pidfile"
+    ns_control_drop "$tick"
+    return 0
+  fi
+  if [ "$rc" -ne 0 ]; then
+    printf unverified
+    return 1
+  fi
+  if [ -z "$start" ] && ! ns_control_watchman_command_ok "$pid" "$script"; then
+    printf unverified
+    return 1
+  fi
+  if ! kill "$pid" 2>/dev/null; then
+    if kill -0 "$pid" 2>/dev/null; then
+      printf unverified
+      return 1
+    fi
+  fi
+  ns_control_drop "$pidfile"
+  ns_control_drop "$tick"
+  printf stopped
+  return 0
+}

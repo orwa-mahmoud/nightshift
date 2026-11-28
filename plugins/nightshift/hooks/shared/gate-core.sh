@@ -737,6 +737,18 @@ ns_shift_whistle() { # <summary>
   [ "$rc" -eq 0 ] || ns_shift_log "$ns" "whistle: notifyCommand exited $rc"
 }
 
+# ns_shift_end_watchman <nightshift-dir> — an ended shift has nothing left to watch, so its watchman
+# stops now, the way Stop stops it, rather than at its next wake. A watchman that is itself ending the
+# shift is left to its own stand-down.
+ns_shift_end_watchman() {
+  local ns="$1" pidfile fields
+  ns_layout_set pidfile "$ns" watchman
+  fields="$(ns_watchman_pidfile_read "$pidfile" 2>/dev/null)" || return 0
+  [ "${fields%%$'\t'*}" != "$$" ] || return 0
+  ns_control_stop_watchman "$ns" >/dev/null ||
+    ns_shift_log "$ns" "clock-out left the watchman to its next wake: its process could not be verified"
+}
+
 # ns_shift_end <project-dir> <summary>
 ns_shift_end() {
   local project="$1" summary="${2:-}"
@@ -771,6 +783,7 @@ ns_shift_end() {
   if [ -f "$pending" ]; then
     ns_shift_log "$ns" "archive.automatic is on - filing is due for this shift"
   fi
+  ns_shift_end_watchman "$ns"
   ns_shift_whistle "$summary"
   [ -f "$ended" ] && [ ! -L "$ended" ] && [ ! -e "$armed" ]
 }

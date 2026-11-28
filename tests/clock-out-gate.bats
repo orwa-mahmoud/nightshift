@@ -123,6 +123,28 @@ EOF
   is_release
 }
 
+@test "the last tick stops the shift's watchman instead of leaving it to its next wake" {
+  p="$(new_project)"
+  punch_done "$p"
+  wm="$BATS_TEST_TMPDIR/watchman.sh"
+  printf '#!/bin/sh\nsleep 300\n' >"$wm"
+  chmod +x "$wm"
+  "$wm" &
+  wpid=$!
+  printf '%s\nscript:%s\n' "$wpid" "$wm" >"$p/.nightshift/.watchman"
+  run gate "$p"
+  is_release
+  gone=0
+  for _ in $(seq 1 50); do
+    case "$(ps -o stat= -p "$wpid" 2>/dev/null | tr -d ' ')" in
+      '' | Z*) gone=1; break ;;
+    esac
+    sleep 0.1
+  done
+  [ "$gone" -eq 1 ] || { echo "watchman $wpid is still running"; kill "$wpid" 2>/dev/null || true; return 1; }
+  [ ! -f "$p/.nightshift/.watchman" ]
+}
+
 @test "releases when there is no punch list" {
   p="$(new_project)"
   run gate "$p"

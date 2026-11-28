@@ -583,7 +583,7 @@ if [ -n "$CONTROL_REASON" ]; then
 fi
 
 if [ "$DRY_RUN" -eq 0 ]; then
-  if ! ns_control_stop_watchman "$NS"; then
+  if ! ns_control_stop_watchman "$NS" >/dev/null; then
     refuse "watchman a recorded watchman pid could not be verified, so it was left running"
     repair "pause the shift with ns stop-shift, then start again"
     exit 1

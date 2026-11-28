@@ -3997,6 +3997,15 @@ function Invoke-NSShiftEnd {
             }
         }
     }
+    # An ended shift has nothing left to watch, so its watchman stops now, the way Stop stops it,
+    # rather than at its next wake. A watchman that is itself ending the shift is left to its own
+    # stand-down.
+    $watchmanRecord = Read-NSWatchmanPidFile (Get-NSLayoutPath $ns 'watchman')
+    if (-not [string]::IsNullOrEmpty([string]$watchmanRecord.Pid) -and [string]$watchmanRecord.Pid -ne [string]$PID) {
+        if ((Stop-NSWatchman -NightshiftDir $ns) -eq 'unverified') {
+            Write-NSShiftEndLog $ns 'clock-out left the watchman to its next wake: its process could not be verified'
+        }
+    }
     $notify = Get-NSRule $Workspace 'notifyCommand' ([string]$env:NIGHTSHIFT_NOTIFY_CMD)
     if (-not [string]::IsNullOrEmpty([string]$notify)) {
         $notified = Get-NSLayoutPath $ns 'notified'
