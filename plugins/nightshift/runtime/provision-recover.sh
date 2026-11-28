@@ -107,7 +107,7 @@ _facts() {
   if [ "$tool" = jq ]; then
     jq -r -f "$PROGRAMS/provision-recover-facts.jq" "$1" 2>/dev/null || return 1
   else
-    python3 "$PROGRAMS/provision-recover-facts.py" "$1" 2>/dev/null || return 1
+    python3 "$(ns_native_display_path "$PROGRAMS/provision-recover-facts.py")" "$1" 2>/dev/null || return 1
   fi
 }
 
@@ -261,7 +261,7 @@ _content_bytes() {
   local tool
   tool="$(ns_policy_json_tool)" || return 1
   if [ "$tool" = python3 ]; then
-    python3 "$PROGRAMS/provision-recover-content.py" "$TX" "$1" || return 1
+    python3 "$(ns_native_display_path "$PROGRAMS/provision-recover-content.py")" "$TX" "$1" || return 1
   else
     jq -j --arg rel "$1" '.baseline[$rel].content // ""' "$TX" 2>/dev/null | b64_decode
   fi
@@ -607,7 +607,7 @@ _write_inventory() { # <setupCommit>
     out="$(jq -aS --indent 2 -n --arg cap "$CAP" --arg now "$now" --arg setup "$setup" \
       --argjson base "$base" --slurpfile recipe "$RECIPE" -f "$PROGRAMS/provision-recover-inventory.jq")" || return 1
   else
-    out="$(python3 "$PROGRAMS/provision-recover-inventory.py" "$RECIPE" "$now" "$CAP" "$setup" "$base")" || return 1
+    out="$(python3 "$(ns_native_display_path "$PROGRAMS/provision-recover-inventory.py")" "$RECIPE" "$now" "$CAP" "$setup" "$base")" || return 1
   fi
   printf '%s\n' "$out" >"$INV.tmp" || return 1
   mv "$INV.tmp" "$INV" || {
@@ -624,7 +624,7 @@ _advance_stage() {
     out="$(jq -aS --indent 2 --arg now "$now" \
       '.stage = "commit-tooling" | .updatedAt = $now' "$TX")" || return 1
   else
-    out="$(python3 "$PROGRAMS/provision-recover-stage.py" "$TX" "$now")" || return 1
+    out="$(python3 "$(ns_native_display_path "$PROGRAMS/provision-recover-stage.py")" "$TX" "$now")" || return 1
   fi
   printf '%s\n' "$out" >"$TX.tmp" || return 1
   mv "$TX.tmp" "$TX" || {
