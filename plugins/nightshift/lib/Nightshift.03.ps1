@@ -1493,6 +1493,37 @@ function Find-NSReplayedShiftPolicy {
     return (Find-NSArchivedShiftPolicy $Workspace $id)
 }
 
+# Restore-NSContinuedShiftPolicy <workspace> <shift-id> - bring a continued shift's own policy back
+# as the live one: the snapshot clock-out filed for that shift moves back to shift-policy.json. A
+# deadlineEpoch that has already passed comes back as null, every other byte unchanged. Returns
+# 'restored:<file it came from>', 'none' when a policy is already live or nothing is filed for that
+# shift, or 'failed' when the filed policy cannot be brought back; nothing moves then. Mirrors
+# ns_policy_restore_continued.
+function Restore-NSContinuedShiftPolicy {
+    param([Parameter(Mandatory = $true)][string]$Workspace, [AllowEmptyString()][string]$ShiftId = '')
+    $paths = Get-NSPolicyPaths $Workspace
+    $policy = [string]$paths['policy']
+    if ((Test-Path -LiteralPath $policy) -or (Test-NSReparsePoint $policy)) { return 'none' }
+    $source = Find-NSArchivedShiftPolicy $Workspace $ShiftId
+    if ([string]::IsNullOrEmpty($source)) { return 'none' }
+    $state = Read-NSShiftPolicyFile $source
+    if ([string]$state['state'] -cne 'valid' -or [string](Get-NSRecordText $state['policy'] 'shiftId') -cne $ShiftId) { return 'failed' }
+    $epoch = Get-NSMapValue $state['policy'] 'deadlineEpoch'
+    $parent = Split-Path -Parent $policy
+    if (-not (Test-Path -LiteralPath $parent -PathType Container)) { $null = New-Item -ItemType Directory -Force -Path $parent }
+    if ($null -ne $epoch -and ([string]$epoch) -match '^[0-9]+$' -and [long]$epoch -le (Get-NSUnixTime)) {
+        $text = [IO.File]::ReadAllText($source, $script:NSUtf8NoBom)
+        $pattern = '"deadlineEpoch"([ \t]*):([ \t]*)' + [string]$epoch + '(?![0-9])'
+        $rewritten = ([regex]$pattern).Replace($text, '"deadlineEpoch"$1:$2null', 1)
+        [IO.File]::WriteAllText($policy, $rewritten, $script:NSUtf8NoBom)
+        Remove-Item -LiteralPath $source -Force
+    }
+    else {
+        Move-Item -LiteralPath $source -Destination $policy
+    }
+    return ('restored:' + $source)
+}
+
 # Get-NSReceiptPolicyState <workspace> - the policy the morning receipt reports. It is the live
 # snapshot while one exists, and after clock-out only the copy filed for the shift the ending
 # marker names. Any other archived snapshot is a different night's, and then this one has no

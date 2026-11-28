@@ -665,6 +665,15 @@ if [ "$DRY_RUN" -eq 0 ]; then
     ! { ns_control_load_usage_gate && ns_gate_usage_start "$NS" "$WORKSPACE" "$PUNCH" "$LAST_PAUSE"; }; then
     warn 'usage the accounting baseline for this Start could not be recorded'
   fi
+  # A continued shift resumes with the policy it ran with: clock-out filed it with the ending
+  # marker's shift, and it comes back as the live one before that marker is cleared.
+  if [ "$CONTINUED" -eq 1 ] && [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then
+    RESTORED_FROM="$(ns_policy_restore_continued "$WORKSPACE" "$(ns_ended_field "$WORKSPACE" shiftId)")"
+    case "$?" in
+      0) ok "policy the continued shift resumes with the policy it ran with, from ${RESTORED_FROM#"$WORKSPACE"/}" ;;
+      2) warn "policy the continued shift's filed policy could not be brought back; this Start records start-defaults" ;;
+    esac
+  fi
   # A continued shift keeps the worktree, branch and file map it started; its ending marker, which
   # named them, is cleared below.
   if [ "$CONTINUED" -eq 1 ] && ! ns_shift_carry "$WORKSPACE"; then

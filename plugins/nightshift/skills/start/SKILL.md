@@ -172,7 +172,8 @@ gate records every later change to them:
 "$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns" start-preflight --phase snapshot
 ```
 
-Relay a `warn` line once and arm anyway; a composed shift keeps the policy it already has. Then give
+Relay a `warn` line once and arm anyway; a composed shift keeps the policy it already has, and a
+stopped shift started again keeps the one it ran with, which the preflight brought back. Then give
 a shift with `shift.isolation` set to `worktree` its own worktree:
 
 ```bash

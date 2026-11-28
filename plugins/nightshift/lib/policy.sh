@@ -1180,6 +1180,38 @@ ns_policy_replayed() {
   printf '%s' "$found"
 }
 
+# ns_policy_restore_continued <workspace> <shift-id> — bring a continued shift's own policy back as
+# the live one: the snapshot clock-out filed for that shift moves back to shift-policy.json, so the
+# shift resumes with every setting it was composed with, its allowances included. A deadlineEpoch
+# that has already passed comes back as null, every other byte unchanged: a passed deadline is never
+# renewed. Prints the file it came from. Status 1 with nothing printed when nothing should change: a
+# policy is already live, or nothing is filed for that shift. Status 2 when a filed policy exists
+# but cannot be brought back (unreadable, or another shift's); nothing moves.
+ns_policy_restore_continued() {
+  local ws="$1" id="$2" policy src epoch tmp
+  policy="$(ns_layout_path "$ws/.nightshift" shift-policy)"
+  { [ -e "$policy" ] || [ -L "$policy" ]; } && return 1
+  src="$(ns_archived_policy "$ws" "$id")"
+  [ -n "$src" ] || return 1
+  _ns_policy_load_shift_file "$src"
+  [ "$NS_POLICY_SHIFT_STATE" = ok ] && [ "$NS_POLICY_SHIFT_ID" = "$id" ] || return 2
+  epoch="$(_ns_policy_pick "$NS_POLICY_SHIFT_VALS" deadlineEpoch)" || epoch=""
+  _ns_json_uint "$epoch" || epoch=""
+  mkdir -p "${policy%/*}" || return 2
+  if [ -n "$epoch" ] && [ "$epoch" -le "$(date +%s)" ]; then
+    tmp="$policy.restore.$$"
+    if ! sed -E "s/\"deadlineEpoch\"([[:blank:]]*):([[:blank:]]*)$epoch([^0-9]|$)/\"deadlineEpoch\"\1:\2null\3/" "$src" >"$tmp" ||
+      ! mv "$tmp" "$policy"; then
+      rm -f "$tmp"
+      return 2
+    fi
+    rm -f "$src"
+  else
+    mv "$src" "$policy" || return 2
+  fi
+  printf '%s' "$src"
+}
+
 # ns_policy_completion_mode <workspace>
 # How the evidence comparison scores tonight: clear-all, or no-regression-plus-selected-debt.
 # An absent, unreadable or silent policy is clear-all — the strict mode is the floor, and a

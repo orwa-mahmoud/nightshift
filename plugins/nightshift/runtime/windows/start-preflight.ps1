@@ -648,6 +648,23 @@ if (-not $DryRun) {
         try { Invoke-NSGateUsageStart $ns $workspace (Get-NSLayoutPath $ns 'punch-list') $lastPause }
         catch { Write-Warn "usage the accounting baseline for this Start could not be recorded - $_" }
     }
+    # A continued shift resumes with the policy it ran with: clock-out filed it with the ending
+    # marker's shift, and it comes back as the live one before that marker is cleared.
+    if ($continued -and $ended) {
+        $restored = 'failed'
+        $restoreError = ''
+        try { $restored = Restore-NSContinuedShiftPolicy $workspace (Get-NSEndedField $workspace 'shiftId') }
+        catch { $restoreError = " - $_" }
+        if ($restored.StartsWith('restored:')) {
+            $from = $restored.Substring(9)
+            $prefix = $workspace.TrimEnd('/', '\') + [IO.Path]::DirectorySeparatorChar
+            if ($from.StartsWith($prefix, [StringComparison]::Ordinal)) { $from = $from.Substring($prefix.Length).Replace('\', '/') }
+            Write-Ok "policy the continued shift resumes with the policy it ran with, from $from"
+        }
+        elseif ($restored -ceq 'failed') {
+            Write-Warn "policy the continued shift's filed policy could not be brought back; this Start records start-defaults$restoreError"
+        }
+    }
     # A continued shift keeps the worktree, branch and file map it started; its ending marker, which
     # named them, is cleared below. Mirrors start-preflight.sh.
     if ($continued) {

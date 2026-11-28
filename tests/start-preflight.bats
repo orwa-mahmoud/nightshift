@@ -1016,6 +1016,69 @@ verdicts_only() { printf '%s\n' "$1" | grep -E '^(ok|warn|refuse) ' || true; }
   if printf '%s\n' "$output" | grep -q '^refuse replay'; then return 1; fi
 }
 
+# end_with_policy <project> <shift-id> — what clock-out does to the policy: the ending marker claims
+# the shift's folder and the snapshot is filed there.
+end_with_policy() {
+  bash -c '. "$1"; . "$2"; ns_gate_record_ending "$3" "$4" "$5"' _ "$PLUGIN/lib/lib.sh" \
+    "$PLUGIN/hooks/shared/gate-core.sh" "$1/.nightshift" "$1" "$2"
+  bash "$PLUGIN/runtime/shift-policy.sh" --project "$1" archive >/dev/null
+}
+
+# composed_policy <project> <shift-id> <deadline-epoch|null> — a Hunt-composed snapshot with a
+# one-shift allowance and a verification level.
+composed_policy() {
+  jq -nc --arg id "$2" --argjson d "$3" '{schemaVersion:1,shiftId:$id,createdAt:"2026-09-02T00:00:00Z",source:"composition",deadlineEpoch:$d,verificationLevel:"final",toolingPolicy:"existing-tools",allowances:[{category:"containers",scope:"category",provenance:"one-shift"}]}' |
+    bash "$PLUGIN/runtime/shift-policy.sh" --project "$1" set --from-json - >/dev/null
+}
+
+@test "a composed shift stopped with items open resumes with its allowance, verification level and deadline" {
+  p="$(setup_site preflight-continued-policy)"
+  pol="$p/.nightshift/shift-policy.json"
+  future=$(($(date +%s) + 7200))
+  composed_policy "$p" 7a1c40ab77e51d63 "$future"
+  before="$(cksum <"$pol")"
+  end_with_policy "$p" 7a1c40ab77e51d63
+  [ ! -e "$pol" ]
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qE '^ok policy the continued shift resumes with the policy it ran with, from \.nightshift/archive/.+/shift-policy\.json$' \
+    || { echo "$output"; return 1; }
+  if printf '%s\n' "$output" | grep -q '^refuse replay'; then echo "$output"; return 1; fi
+  printf '%s\n' "$output" | grep -qE "^ok deadline $future \(policy - write it to .*/\.nightshift/deadline\)$" \
+    || { echo "$output"; return 1; }
+  # The very file the shift ran with is live again, and it is not left filed twice.
+  [ "$(cksum <"$pol")" = "$before" ]
+  [ -z "$(find "$p/.nightshift/archive" -name shift-policy.json)" ]
+  run bash "$PREFLIGHT" --project "$p" --phase snapshot
+  printf '%s\n' "$output" | grep -qxF 'ok snapshot composed - this shift keeps the policy it was composed with'
+  jq -e '.shiftId == "7a1c40ab77e51d63" and .verificationLevel == "final" and .allowances[0].category == "containers"' "$pol" >/dev/null
+}
+
+@test "a resumed policy whose deadline has passed comes back without it" {
+  p="$(setup_site preflight-continued-spent)"
+  pol="$p/.nightshift/shift-policy.json"
+  composed_policy "$p" 7a1c40ab77e51d64 1000
+  end_with_policy "$p" 7a1c40ab77e51d64
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -q '^ok policy the continued shift resumes with the policy it ran with' || { echo "$output"; return 1; }
+  printf '%s\n' "$output" | grep -qxF 'ok deadline none (finite list - the last tick is the natural end)' || { echo "$output"; return 1; }
+  jq -e '.deadlineEpoch == null and .verificationLevel == "final" and .allowances[0].provenance == "one-shift"' "$pol" >/dev/null
+}
+
+@test "a shift that finished its list starts the next one from the defaults" {
+  p="$(setup_site preflight-finished-policy)"
+  composed_policy "$p" 7a1c40ab77e51d65 null
+  printf '## Items\n- [x] **1. work.**\n' >"$p/.nightshift/punch-list.md"
+  end_with_policy "$p" 7a1c40ab77e51d65
+  # Nothing is open, so the shift is not continued: its policy stays filed.
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  if printf '%s\n' "$output" | grep -q '^ok policy the continued shift'; then echo "$output"; return 1; fi
+  [ ! -e "$p/.nightshift/shift-policy.json" ]
+  [ -n "$(find "$p/.nightshift/archive" -name shift-policy.json)" ]
+}
+
 @test "Start records the snapshot right before it arms" {
   s="$PLUGIN/skills/start/SKILL.md"
   snap="$(grep -n 'start-preflight --phase snapshot' "$s" | head -n1 | cut -d: -f1)"
