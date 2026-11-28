@@ -110,20 +110,7 @@ ns_evidence_kind_file() {
 
 # _ns_evidence_block <kind-file> — `files`, `min`, `type` from the first evidence-check fence.
 _ns_evidence_block() {
-  awk "$NS_AWK_CATALOG_TEXT"'
-    {
-      $0 = ns_catalog_text($0)
-      if (ns_catalog_in_comment) next
-    }
-    /^```evidence-check[[:space:]]*$/ { on = 1; next }
-    on && /^```[[:space:]]*$/ { exit }
-    on && /^files:[[:space:]]*/ { files = $0; sub(/^[^:]+:[[:space:]]*/, "", files) }
-    on && /^min:[[:space:]]*/ { min = $0; sub(/^[^:]+:[[:space:]]*/, "", min) }
-    on && /^type:[[:space:]]*/ { type = $0; sub(/^[^:]+:[[:space:]]*/, "", type) }
-    END {
-      if (files != "" || min != "" || type != "") print files "\t" min "\t" type
-    }
-  ' "$1"
+  awk -f "$NS_CATALOG_TEXT_AWK" -f "$NS_CATALOG_LIB/evidence-check-block.awk" "$1"
 }
 
 _ns_evidence_hex() {

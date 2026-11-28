@@ -112,33 +112,7 @@ fi
 # _shift_line <slug> <file> — slug, ending, title and summary. The summary is the H1's third part
 # onward, or the first line of prose when the H1 has none.
 _shift_line() {
-  LC_ALL=C awk -v slug="$1" "$NS_AWK_CATALOG_TEXT"'
-    {
-      $0 = ns_catalog_text($0)
-      if (ns_catalog_in_comment) next
-    }
-    /^# / && !seen {
-      seen = 1
-      line = substr($0, 3)
-      n = split(line, part, " \xe2\x80\x94 ")
-      title = part[1]
-      ending = (n >= 2) ? part[2] : ""
-      summary = ""
-      for (i = 3; i <= n; i++) {
-        summary = summary (summary == "" ? "" : " - ") part[i]
-      }
-      next
-    }
-    seen && summary == "" && /^[^#[:space:]]/ {
-      summary = $0
-    }
-    END {
-      gsub(/\t/, " ", title)
-      gsub(/\t/, " ", ending)
-      gsub(/\t/, " ", summary)
-      printf "%s\t%s\t%s\t%s\n", slug, ending, title, summary
-    }
-  ' "$2"
+  LC_ALL=C awk -v slug="$1" -f "$NS_CATALOG_TEXT_AWK" -f "$NS_CATALOG_LIB/catalog-index-shift.awk" "$2"
 }
 
 index_lines="$(_ns_catalog_index catalog-index "$PLUGIN_ROOT" "$CATALOG" "$WORKSPACE")"
