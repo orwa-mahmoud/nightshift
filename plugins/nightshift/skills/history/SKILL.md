@@ -37,7 +37,7 @@ Now: <the decision in force, in one or two sentences>
 Why: <the reason that still holds>
 Replaced: <what it superseded, or nothing>
 Open: <the question still undecided, or none>
-Detail: [<subject>](history/<subject>.md)
+Detail: <a markdown link to history/<subject>.md>
 ~~~
 
 A subject is a code area or a topic the owner would recognise (`clock-out gate`, `worktree runs`,
