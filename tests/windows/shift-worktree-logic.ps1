@@ -218,6 +218,28 @@ try {
     Expect-True (@(& git -C $blockedRepo worktree list).Count -eq 1) 'no worktree is left'
     Expect-True ((Get-OwnerState $blockedRepo) -ceq $before) "the owner's checkout is unchanged after the refusal"
 
+    # A worktree run's permissions verdict names the settings its worker reads: the checkout's committed
+    # settings before the worktree exists, the worktree's own once it does, never the workspace's.
+    $permsSite = New-RunsSite (Join-Path $root 'permissions')
+    $oldConfigDir = $env:CLAUDE_CONFIG_DIR
+    $env:CLAUDE_CONFIG_DIR = Join-Path $root 'claude-config'
+    $null = New-Item -ItemType Directory -Force -Path $env:CLAUDE_CONFIG_DIR
+    try {
+        $firstStart = Invoke-StartRun $permsSite 'Export CSV'
+        Expect-True ($firstStart.Text -cmatch "(?m)^warn permissions no frictionless grant in the new worktree's \.claude \(committed in \S*/permissions/repo\)") "a new worktree run names the committed settings: $($firstStart.Text)"
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $permsSite '.claude')
+        [IO.File]::WriteAllText((Join-Path $permsSite '.claude/settings.local.json'), '{"permissions":{"defaultMode":"bypassPermissions"}}')
+        $againStart = Invoke-StartRun $permsSite 'Export CSV'
+        $env:NIGHTSHIFT_RUN = 'export-csv'
+        try { $permsTree = Resolve-NSWorkTarget $permsSite } finally { $env:NIGHTSHIFT_RUN = $null }
+        Expect-True ($againStart.Text.Contains("warn permissions no frictionless grant in $permsTree/.claude or")) "a started worktree run names the worktree's settings: $($againStart.Text)"
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $permsTree '.claude')
+        [IO.File]::WriteAllText((Join-Path $permsTree '.claude/settings.local.json'), '{"permissions":{"allow":["Edit"]}}')
+        $grantedStart = Invoke-StartRun $permsSite 'Export CSV'
+        Expect-True (-not ($grantedStart.Text -cmatch '(?m)^warn permissions')) "a grant in the worktree clears the warning: $($grantedStart.Text)"
+    }
+    finally { $env:CLAUDE_CONFIG_DIR = $oldConfigDir }
+
     # A background start whose worker cannot start arms nothing and leaves the plan staged.
     $background = New-RunsSite (Join-Path $root 'background run')
     $env:NIGHTSHIFT_WATCH_AGENT = Join-Path $root 'missing-agent'

@@ -524,12 +524,21 @@ open_label() { bash -c '. "$1"; ns_item_rows "$2" open | head -n1 | cut -f1' _ "
 
 @test "each host gets its own permission-mode note" {
   p="$(setup_site preflight-perms)"
+  export CLAUDE_CONFIG_DIR="$BATS_TEST_TMPDIR/claude-config"
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  target="$(cd -P "$p" && pwd)"
+  # A run without a worktree: the worker reads the work target's settings and the user settings.
   run bash "$PREFLIGHT" --project "$p" --host claude
-  printf '%s\n' "$output" | grep -qF 'warn permissions no frictionless grant in'
+  printf '%s\n' "$output" | grep -qF "warn permissions no frictionless grant in $target/.claude or $CLAUDE_CONFIG_DIR/settings.json, the settings a headless worker or revival reads" ||
+    { echo "$output"; return 1; }
+  printf '{"permissions":{"allow":["Bash"]}}\n' >"$CLAUDE_CONFIG_DIR/settings.json"
+  run bash "$PREFLIGHT" --project "$p" --host claude
+  printf '%s\n' "$output" | grep -qF "ok permissions frictionless permissions are granted in $CLAUDE_CONFIG_DIR/settings.json"
+  printf '{}\n' >"$CLAUDE_CONFIG_DIR/settings.json"
   mkdir -p "$p/.claude"
   printf '{"permissions":{"defaultMode":"bypassPermissions"}}\n' >"$p/.claude/settings.local.json"
   run bash "$PREFLIGHT" --project "$p" --host claude
-  printf '%s\n' "$output" | grep -qF 'ok permissions frictionless permissions are granted at'
+  printf '%s\n' "$output" | grep -qF "ok permissions frictionless permissions are granted in $target/.claude/settings.local.json"
   run bash "$PREFLIGHT" --project "$p" --host codex
   printf '%s\n' "$output" | grep -qF 'codex -a never -s danger-full-access'
   run bash "$PREFLIGHT" --project "$p" --host cursor
