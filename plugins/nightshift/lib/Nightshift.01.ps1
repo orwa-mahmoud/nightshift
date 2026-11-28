@@ -2470,6 +2470,35 @@ function Attach-NSLeaseProcess {
     }
 }
 
+# Invoke-NSLeaseHandBack <ns> <host> <nonce> <generation> - return a finished revival's lease to the
+# recorded conversation: the next generation, no nonce and no pid, so that conversation's next
+# process claims it. Only while the lease still carries that revival's nonce and generation.
+# Mirrors ns_lease_hand_back.
+function Invoke-NSLeaseHandBack {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][ValidateSet('claude', 'codex', 'cursor')][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$Nonce,
+        [Parameter(Mandatory = $true)][string]$Generation
+    )
+    $mutex = Enter-NSMutex $NightshiftDir '.lease-lock.d'
+    if ($null -eq $mutex) {
+        return $false
+    }
+    try {
+        if (-not (Test-NSLeaseNonce $NightshiftDir $HostName $Nonce $Generation)) {
+            return $false
+        }
+        $lease = Read-NSLease $NightshiftDir
+        $session = Read-NSSession $NightshiftDir
+        $sessionId = if ($null -ne $session) { $session.SessionId } else { $lease.SessionId }
+        return Write-NSLease $NightshiftDir $sessionId $HostName ($lease.Generation + 1) '' '' ''
+    }
+    finally {
+        Exit-NSMutex $mutex
+    }
+}
+
 function Restore-NSLeaseInteractive {
     param([Parameter(Mandatory = $true)][string]$NightshiftDir)
     $mutex = Enter-NSMutex $NightshiftDir '.lease-lock.d'
@@ -2564,8 +2593,9 @@ function Test-NSLeaseAllows {
 # The recorded conversation reclaims a lease a dead revival attempt left behind. The
 # generation and nonce it presented must still be the ones on disk and the recorded pid
 # must still read dead, re-checked under the lock, or a second caller could steal a lease
-# that changed underneath it. Returns the new generation, or $null when the reclaim lost
-# a race.
+# that changed underneath it. A lease that names the caller's own process is reclaimed too:
+# that process is the recorded conversation itself. Returns the new generation, or $null
+# when the reclaim lost a race.
 function Reclaim-NSLeaseRecorded {
     param(
         [Parameter(Mandatory = $true)][string]$NightshiftDir,
@@ -2587,7 +2617,8 @@ function Reclaim-NSLeaseRecorded {
             -or [string]::IsNullOrEmpty($lease.ProcessId)) {
             return $null
         }
-        if ((Test-NSRecordedProcess $lease.ProcessId $lease.Start) -ne 'Dead') {
+        $ownProcess = -not [string]::IsNullOrEmpty($ProcessId) -and $lease.ProcessId -eq $ProcessId -and $lease.Start -eq $Start
+        if (-not $ownProcess -and (Test-NSRecordedProcess $lease.ProcessId $lease.Start) -ne 'Dead') {
             return $null
         }
         $newGeneration = $lease.Generation + 1

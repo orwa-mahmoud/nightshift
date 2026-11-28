@@ -2034,9 +2034,12 @@ worker_alive() { kill -0 "$IDLE_WORKER" 2>/dev/null; }
     [ "$(calls)" -eq 1 ] || { echo "$host calls=$(calls)"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
     grep -q 'worker alive but idle' "$P/.nightshift/shift-log.md" \
       || { echo "$host did not log the idle evidence"; cat "$P/.nightshift/shift-log.md"; stop_idle_worker; return 1; }
+    # The revival took the lease from the idle worker and handed it back to the recorded
+    # conversation when it finished: no nonce, and never the stopped worker's pid.
     lease_pid="$(sed -n 5p "$P/.nightshift/.shift-lease" 2>/dev/null | tr -d '[:space:]')"
-    [ -n "$lease_pid" ] && [ "$lease_pid" != "$IDLE_WORKER" ] \
-      || { echo "$host lease was not transferred (pid '$lease_pid')"; stop_idle_worker; return 1; }
+    lease_nonce="$(sed -n 4p "$P/.nightshift/.shift-lease" 2>/dev/null | tr -d '[:space:]')"
+    [ "$lease_pid" != "$IDLE_WORKER" ] && [ -z "$lease_nonce" ] \
+      || { echo "$host lease was not transferred (pid '$lease_pid' nonce '$lease_nonce')"; stop_idle_worker; return 1; }
     if [ "$IDLE_CHILD" != 0 ] && kill -0 "$IDLE_CHILD" 2>/dev/null; then
       echo "$host left the idle child running"
       stop_idle_worker

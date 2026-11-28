@@ -103,7 +103,10 @@ ns_host_process() { # <host> <ns> <fallback-pid>
   local rec_pid rec_start live
   NS_CURRENT_PID=""
   NS_CURRENT_START=""
-  rec_pid="$(ns_session_line "$2" 3 | tr -d '[:space:]')"
+  # A revival is a second process for the recorded conversation; the recorded pid is the first one,
+  # which may still be alive. It finds its own process.
+  rec_pid=""
+  [ "${NIGHTSHIFT_REVIVAL:-}" = "1" ] || rec_pid="$(ns_session_line "$2" 3 | tr -d '[:space:]')"
   rec_start="$(ns_session_line "$2" 4)"
   case "$rec_pid" in
     '' | *[!0-9]*) ;;
@@ -302,9 +305,11 @@ ns_lease_reclaim_interactive() { # <ns> <sid> <host> <old-generation> <pid> <sta
 # the process it fenced the site for; when that process is provably dead the site has no owner,
 # and the conversation the record names may resume it at the next generation with an empty
 # nonce and its own process. Provable death only, under the lease lock: an unreadable pid, an
-# empty one, or a process the host cannot classify all leave the lease alone.
+# empty one, or a process the host cannot classify all leave the lease alone. A recovery lease
+# that names the caller's own process holds nothing against it either: that is the recorded
+# conversation itself, and waiting for it to die would fence it for good.
 ns_lease_reclaim_recorded() { # <ns> <sid> <host> <pid> <start>
-  local ns="$1" sid="$2" host="$3" pid="$4" start="$5" generation reclaimed rc
+  local ns="$1" sid="$2" host="$3" pid="$4" start="$5" generation reclaimed rc why
   [ -n "$sid" ] || return 1
   ns_lease_lock "$ns" || return 1
   if ! ns_lease_valid "$ns"; then
@@ -315,11 +320,16 @@ ns_lease_reclaim_recorded() { # <ns> <sid> <host> <pid> <start>
     ns_lease_unlock "$ns"
     return 1
   fi
-  ns_recorded_process "$NS_LEASE_PID" "$NS_LEASE_START"
-  rc=$?
-  if [ "$rc" -ne 1 ]; then
-    ns_lease_unlock "$ns"
-    return 1
+  why="after a dead recovery attempt"
+  if [ -n "$pid" ] && [ "$NS_LEASE_PID" = "$pid" ] && [ "$NS_LEASE_START" = "$start" ]; then
+    why="from a recovery lease that named its own process"
+  else
+    ns_recorded_process "$NS_LEASE_PID" "$NS_LEASE_START"
+    rc=$?
+    if [ "$rc" -ne 1 ]; then
+      ns_lease_unlock "$ns"
+      return 1
+    fi
   fi
   generation="$NS_LEASE_GENERATION"
   reclaimed=$((generation + 1))
@@ -327,7 +337,7 @@ ns_lease_reclaim_recorded() { # <ns> <sid> <host> <pid> <start>
   rc=$?
   ns_lease_unlock "$ns"
   [ "$rc" -eq 0 ] || return 1
-  ns_shift_log "$ns" "lease reclaimed by the recorded conversation after a dead recovery attempt (generation $generation → $reclaimed)"
+  ns_shift_log "$ns" "lease reclaimed by the recorded conversation $why (generation $generation → $reclaimed)"
   return 0
 }
 
@@ -553,8 +563,8 @@ ns_shift_authorize() { # <host> <pid> <start> <mode:hardhat|gate>
   fi
   if [ "$lease_rc" -eq 1 ]; then
     if [ "$mode" = hardhat ]; then
-      if ns_lease_load "$NS" && [ -n "$NS_LEASE_NONCE" ] \
-        && [ -n "$NS_LEASE_PID" ] && ns_recorded_process "$NS_LEASE_PID" "$NS_LEASE_START"; then
+      if ns_lease_load "$NS" && [ -n "$NS_LEASE_NONCE" ] && [ -n "$NS_LEASE_PID" ] \
+        && [ "$NS_LEASE_PID" != "$pid" ] && ns_recorded_process "$NS_LEASE_PID" "$NS_LEASE_START"; then
         NS_SHIFT_FAIL="BLOCKED: this shift is being recovered in another process. Wait or issue STOP from a separate session; reopening the recorded conversation stays blocked while that worker holds the lease."
       else
         NS_SHIFT_FAIL="BLOCKED: this shift continued in a recovered process. Reopen the recorded conversation before using tools here."
@@ -641,6 +651,28 @@ ns_watchman_run_child() { # <ns> <host> <sid> <work_target> <project_env> <proje
   ns_lease_attach_process "$ns" "$host" "$nonce" "$generation" "$child" "$start" || true
   wait "$child"
   rc=$?
+  # A revival that finished cleanly leaves a lease that fences nobody: it goes back to the recorded
+  # conversation unless a later revival already took it. A failed attempt leaves it to the
+  # watchman's own restore and to the dead-holder reclaim.
+  [ "$rc" -ne 0 ] || ns_lease_hand_back "$ns" "$host" "$nonce" "$generation" || :
+  return "$rc"
+}
+
+# ns_lease_hand_back <ns> <host> <nonce> <generation> — return a finished revival's lease to the
+# recorded conversation: the next generation, no nonce and no pid, so that conversation's next
+# process claims it. Only while the lease still carries that revival's nonce and generation.
+ns_lease_hand_back() {
+  local ns="$1" host="$2" nonce="$3" generation="$4" sid rc
+  ns_lease_lock "$ns" || return 1
+  if ! ns_lease_nonce_matches "$ns" "$host" "$nonce" "$generation"; then
+    ns_lease_unlock "$ns"
+    return 1
+  fi
+  sid="$(ns_session_line "$ns" 1)"
+  [ -n "$sid" ] || sid="$NS_LEASE_SID"
+  ns_lease_write_unlocked "$ns" "$sid" "$host" "$((generation + 1))" "" "" ""
+  rc=$?
+  ns_lease_unlock "$ns"
   return "$rc"
 }
 

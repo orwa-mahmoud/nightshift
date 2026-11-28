@@ -756,13 +756,16 @@ while :; do
           else
             note revived
           fi
+          # A wedge is a live session stopped at an errored prompt, not a dead one.
+          how="died"
+          [ "$verdict" != "wedge" ] || how="stopped at an errored prompt"
           if [ -n "$sid" ]; then
             log_line "watchman: resumed session returned — the night is one thread: claude --resume $sid · vscode://anthropic.claude-code/open?session=$sid"
-            printf -- '- [notice] %s — the shift session died and the watchman revived it. One thread: claude --resume %s · cursor://anthropic.claude-code/open?session=%s · vscode://anthropic.claude-code/open?session=%s\n' \
-              "$(ts)" "$sid" "$sid" "$sid" >>"$PARKING"
+            printf -- '- [notice] %s — the shift session %s and the watchman revived it. One thread: claude --resume %s · cursor://anthropic.claude-code/open?session=%s · vscode://anthropic.claude-code/open?session=%s\n' \
+              "$(ts)" "$how" "$sid" "$sid" "$sid" >>"$PARKING"
           else
             log_line "watchman: resumed session returned — re-checking next wake"
-            printf -- '- [notice] %s — the shift session died and the watchman revived it (details in shift-log.md).\n' "$(ts)" >>"$PARKING"
+            printf -- '- [notice] %s — the shift session %s and the watchman revived it (details in shift-log.md).\n' "$(ts)" "$how" >>"$PARKING"
           fi
         elif [ "$RECOVERY_REFUSED" -eq 1 ]; then
           # The ladder stopped because a revival was refused, not because its rungs ran out. The

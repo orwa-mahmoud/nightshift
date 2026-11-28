@@ -260,7 +260,9 @@ relaunch_due() { # <open-before-the-run>
   fi
   now="$(ns_open_boxes "$PUNCH")" || return 1
   [ "$now" -gt 0 ] && [ "$now" -lt "$1" ] || return 1
-  ns_lease_valid "$NS" && [ -n "$NS_LEASE_NONCE" ] || return 1
+  # The worker's own lease, or the one it handed back when it exited: either way no live process
+  # took the site back.
+  ns_lease_valid "$NS" && { [ -n "$NS_LEASE_NONCE" ] || [ -z "$NS_LEASE_PID" ]; } || return 1
   ! lease_pid_live
 }
 
