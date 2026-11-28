@@ -297,7 +297,7 @@ try {
     $run = Invoke-Worktree $resumed
     Expect-True ($run.ExitCode -eq 0 -and $run.Text.Contains("ok worktree $resumedTree branch $resumedBranch - this shift's worktree, kept")) "the stopped shift keeps its worktree: $($run.Text)"
     $resumedId = [string](Get-NSShiftPolicyState $resumed)['policy']['shiftId']
-    Expect-True ($resumedId -cne $stoppedId) 'the started shift has a new id'
+    Expect-True ($resumedId -ceq $stoppedId) 'the started shift resumes with the policy, and the id, it ran with'
     Expect-True ((Get-NSShiftWorktreeField $resumed 'shift') -ceq $resumedId) 'the worktree record names the new shift'
     Expect-True ((Get-NSFileMapField $resumed 'shift') -ceq $resumedId) 'the file map names the new shift'
     Expect-True ((Get-NSFileMapField $resumed 'base') -ceq $resumedBase) 'the file map still starts where the shift did'

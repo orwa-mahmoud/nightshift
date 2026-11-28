@@ -131,8 +131,24 @@ Trailing prose that belongs to no item.
 
     # Both runtimes record the same view of the same list, byte for byte, so a shift that moves
     # between hosts keeps one history.
-    if (Get-Command bash -ErrorAction SilentlyContinue) {
-        $posix = (& bash -c '. "$1"; ns_punch_list_view "$2"' _ (Join-Path $repository 'plugins/nightshift/lib/lib.sh') $armedPunch) -join "`n"
+    # Git's own bash, not another one earlier on PATH; Windows paths go in with forward slashes and
+    # MSYS path conversion off.
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($null -ne $git) {
+        $gitBash = Join-Path (Split-Path -Parent (Split-Path -Parent $git.Source)) 'bin/bash.exe'
+        if (Test-Path -LiteralPath $gitBash -PathType Leaf) { $bash = $gitBash }
+    }
+    if ($null -ne $bash) {
+        $savedNoConv = [Environment]::GetEnvironmentVariable('MSYS_NO_PATHCONV', 'Process')
+        [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', '1', 'Process')
+        try {
+            $libPath = (Join-Path $repository 'plugins/nightshift/lib/lib.sh').Replace('\', '/')
+            $posix = (& $bash --noprofile --norc -c '. "$1"; ns_punch_list_view "$2"' _ $libPath $armedPunch.Replace('\', '/')) -join "`n"
+        }
+        finally {
+            [Environment]::SetEnvironmentVariable('MSYS_NO_PATHCONV', $savedNoConv, 'Process')
+        }
         Expect-Equal $posix ((Get-NSPunchListView $armedPunch) -join "`n") 'the Windows list view matches the POSIX one'
     }
 
