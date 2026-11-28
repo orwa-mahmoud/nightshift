@@ -3,6 +3,44 @@
 Installs pin to the `version` in `plugins/nightshift/.claude-plugin/plugin.json`, so every entry here is a
 version users receive. Dates are release dates; the tags carry the exact trees.
 
+## [0.43.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.42.0...v0.43.0) (2026-11-28)
+
+
+### Features
+
+* bind team and runner approvals to reviewed work ([64e7902](https://github.com/orwa-mahmoud/nightshift/commit/64e7902cb2aa910b4886743a1536f9825555a1e3))
+* configure team work branches and base updates ([1150b91](https://github.com/orwa-mahmoud/nightshift/commit/1150b912a7e0e08879beeb02246df159fbcbb115))
+* record punch-list changes instead of refusing the stop ([5ef4590](https://github.com/orwa-mahmoud/nightshift/commit/5ef4590e4b84912b26f7673161408e5ccfa7b608))
+* resolve team defaults and selected member settings ([016cf64](https://github.com/orwa-mahmoud/nightshift/commit/016cf6436b3755032ed2ff593c5cbf12506b678f))
+* select run evidence for shared project history ([68c93f2](https://github.com/orwa-mahmoud/nightshift/commit/68c93f2407e79a1b5400ef0a26d8caa3d00c00b6))
+* share project planning and shift history through git ([a80bea1](https://github.com/orwa-mahmoud/nightshift/commit/a80bea184173d78c360e123a720a23af94c39871))
+
+
+### Bug Fixes
+
+* accept every shift policy the schema allows on Windows ([4a086d5](https://github.com/orwa-mahmoud/nightshift/commit/4a086d58591e6100187ca2873209f3a037ed9cea))
+* check every run when Doctor names none ([e1fe70a](https://github.com/orwa-mahmoud/nightshift/commit/e1fe70a8e48bbbce8971753243bfb496d1ee8726))
+* draw a new shift id on Windows whatever the archive holds ([6bb10fd](https://github.com/orwa-mahmoud/nightshift/commit/6bb10fd568b26efad11b0292a9725360b88b25a5))
+* give a run to its leased host before its worker records a session ([0c66bc9](https://github.com/orwa-mahmoud/nightshift/commit/0c66bc97f079038d9cf6e0a2496d5017e02cb6a9))
+* hand the lease back when a revived worker exits ([1b53a77](https://github.com/orwa-mahmoud/nightshift/commit/1b53a775b82f11ee1b6680cdc064f4e444e67f8d))
+* keep the watchman quiet when the workspace folder is removed mid-write ([8590ba2](https://github.com/orwa-mahmoud/nightshift/commit/8590ba229c61aad4c773292b36366821bf5ad040))
+* let a background run's worker reach its shift from its worktree ([f0d77a8](https://github.com/orwa-mahmoud/nightshift/commit/f0d77a86509657c6fe673d30deaf6debca5e7e3d))
+* name the real reason when the rules file cannot be read ([b7badb2](https://github.com/orwa-mahmoud/nightshift/commit/b7badb26343d6808793c7a6900259452e381e4bd))
+* open the plan room on Windows when no run is chosen ([19bf52c](https://github.com/orwa-mahmoud/nightshift/commit/19bf52c7302fe3b3058fd550c8b859aa28c8db59))
+* refuse a malformed evidence record the same way on Windows ([176efb5](https://github.com/orwa-mahmoud/nightshift/commit/176efb56efad0c87cee2dbc2939f2c7dd24a50be))
+* report a background worker that exits at once ([e64978b](https://github.com/orwa-mahmoud/nightshift/commit/e64978b357da6683a5923cd6cf0472d116c4a1cb))
+* report a composed policy's deadline when Start runs on Windows ([88df95b](https://github.com/orwa-mahmoud/nightshift/commit/88df95ba98612191f83b5000076a01d8eca42146))
+* resume a stopped run on its own worktree and branch ([81fe960](https://github.com/orwa-mahmoud/nightshift/commit/81fe960ab133a3797bc0b9c7513f63f35efe6d71))
+* resume a stopped shift with the policy it was composed with ([8c609d4](https://github.com/orwa-mahmoud/nightshift/commit/8c609d4fe4fd08eff1e881a627593617870f38a5))
+* tell a working shift about a stop-work order at its next tool call ([86cb60e](https://github.com/orwa-mahmoud/nightshift/commit/86cb60ea33805af754cf0adf83cadb948b2a16ee))
+
+
+### Performance Improvements
+
+* index the layout table once per migrate plan ([9a23d7e](https://github.com/orwa-mahmoud/nightshift/commit/9a23d7e0f5142c8b52b7fb5c45408d19e2ab8645))
+* load the rules once per hook call ([cbd909d](https://github.com/orwa-mahmoud/nightshift/commit/cbd909d5bc8b5a83d54bb4607106a07494a04e26))
+* read every rules fact in one awk pass ([c28223e](https://github.com/orwa-mahmoud/nightshift/commit/c28223e9f436b280c085f49fbb964acbb4ef3f69))
+
 ## [0.42.0](https://github.com/orwa-mahmoud/nightshift/compare/v0.41.0...v0.42.0) (2026-11-27)
 
 
