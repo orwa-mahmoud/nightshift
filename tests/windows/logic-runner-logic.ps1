@@ -44,20 +44,26 @@ try {
     Expect-True ($serialRows[0].Stdout.Contains('suite-a') -and $parallelRows[0].Stdout.Contains('suite-a')) 'suite a keeps its output'
     Expect-True ($serialRows[1].Stdout.Contains('suite-b') -and $parallelRows[1].Stdout.Contains('suite-b')) 'suite b keeps its output'
 
-    $sleeps = @(
-        @{ Name = 'sleep-a.ps1'; Path = (Join-Path $root 'sleep-a.ps1'); Label = 'sleep a' }
-        @{ Name = 'sleep-b.ps1'; Path = (Join-Path $root 'sleep-b.ps1'); Label = 'sleep b' }
+    # Each suite marks that it started, then waits for the other's mark: both pass only
+    # when the runner had them running at the same time.
+    $meet = @(
+        @{ Name = 'meet-a.ps1'; Path = (Join-Path $root 'meet-a.ps1'); Label = 'meet a' }
+        @{ Name = 'meet-b.ps1'; Path = (Join-Path $root 'meet-b.ps1'); Label = 'meet b' }
     )
-    [IO.File]::WriteAllText($sleeps[0].Path, "Start-Sleep -Seconds 2`nWrite-Host 'slept-a'`nexit 0`n")
-    [IO.File]::WriteAllText($sleeps[1].Path, "Start-Sleep -Seconds 2`nWrite-Host 'slept-b'`nexit 0`n")
-    $serialSleepRun = Invoke-NSLogicSuites -Engine $engine -Suites $sleeps -Degree 1
-    $parallelSleepRun = Invoke-NSLogicSuites -Engine $engine -Suites $sleeps -Degree 2
-    $serialSleepRows = @($serialSleepRun.Results)
-    $parallelSleepRows = @($parallelSleepRun.Results)
-    Expect-True ($serialSleepRows[0].Status -eq 'pass' -and $serialSleepRows[1].Status -eq 'pass') 'serial sleeps pass'
-    Expect-True ($parallelSleepRows[0].Status -eq 'pass' -and $parallelSleepRows[1].Status -eq 'pass') 'parallel sleeps pass'
-    Expect-True ($parallelSleepRun.WallMilliseconds -lt ($serialSleepRun.WallMilliseconds * 0.75)) `
-        "degree 2 overlaps the two sleeps (serial $($serialSleepRun.WallMilliseconds)ms, parallel $($parallelSleepRun.WallMilliseconds)ms)"
+    foreach ($pairing in @(@('a', 'b'), @('b', 'a'))) {
+        $own = Join-Path $root ('started-' + $pairing[0])
+        $other = Join-Path $root ('started-' + $pairing[1])
+        $body = "[IO.File]::WriteAllText('$own', '')`n" +
+            "`$until = [DateTime]::UtcNow.AddSeconds(60)`n" +
+            "while (-not (Test-Path -LiteralPath '$other')) {`n" +
+            "    if ([DateTime]::UtcNow -gt `$until) { Write-Host 'alone-$($pairing[0])'; exit 1 }`n" +
+            "    Start-Sleep -Milliseconds 50`n" +
+            "}`nWrite-Host 'met-$($pairing[0])'`nexit 0`n"
+        [IO.File]::WriteAllText((Join-Path $root ('meet-' + $pairing[0] + '.ps1')), $body)
+    }
+    $meetRows = @((Invoke-NSLogicSuites -Engine $engine -Suites $meet -Degree 2 -TimeoutSeconds 120).Results)
+    Expect-True ($meetRows[0].Status -eq 'pass' -and $meetRows[1].Status -eq 'pass') `
+        "degree 2 runs the two suites at the same time (got $($meetRows[0].Status) $($meetRows[1].Status))"
 
     $broken = @(
         @{ Name = 'pass-a.ps1'; Path = $passA; Label = 'suite a' }
