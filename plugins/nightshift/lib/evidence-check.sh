@@ -13,58 +13,22 @@ _ns_evidence_here="${BASH_SOURCE[0]%/*}"
 
 # ns_evidence_item_line <punch-list> <label> — the item's Evidence: text, after the marker.
 ns_evidence_item_line() {
-  ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
-    /^- \[[ xX-]\]/ { inside = (ns_item_label($0) == want); next }
-    /^[^[:space:]]/ { inside = 0 }
-    inside && /^[[:space:]]+-[[:space:]]+Evidence:/ {
-      sub(/^[[:space:]]+-[[:space:]]+Evidence:[[:space:]]*/, "")
-      print
-      exit
-    }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -v want="$2" -f "$NS_STATE_ITEM_AWK" -f "$_ns_evidence_here/evidence-check-item-line.awk"
 }
 
 # ns_evidence_line_value <line> <key> — the value after `key:` when it is one this setting allows.
 ns_evidence_line_value() {
-  printf '%s\n' "$1" | awk -v key="$2" '
-    {
-      n = split($0, w, /[[:space:]]+/)
-      for (i = 1; i <= n; i++) {
-        if (w[i] == key ":") { print w[i + 1]; exit }
-        if (index(w[i], key ":") == 1) { print substr(w[i], length(key) + 2); exit }
-      }
-    }
-  '
+  printf '%s\n' "$1" | awk -v key="$2" -f "$_ns_evidence_here/evidence-check-line-value.awk"
 }
 
 # ns_evidence_kinds <line> — each `kind:` key, one per line.
 ns_evidence_kinds() {
-  printf '%s\n' "$1" | awk '
-    {
-      n = split($0, w, /[[:space:]]+/)
-      for (i = 1; i <= n; i++) {
-        v = ""
-        if (w[i] == "kind:") v = w[i + 1]
-        else if (index(w[i], "kind:") == 1) v = substr(w[i], 6)
-        if (v ~ /^[a-z0-9]+(-[a-z0-9]+)*$/) print v
-      }
-    }
-  '
+  printf '%s\n' "$1" | awk -f "$_ns_evidence_here/evidence-check-kinds.awk"
 }
 
 # ns_evidence_files <line> — each closed backtick span that is a single path segment.
 ns_evidence_files() {
-  printf '%s\n' "$1" | awk '
-    {
-      s = $0
-      while (match(s, /`[^`]*`/)) {
-        name = substr(s, RSTART + 1, RLENGTH - 2)
-        s = substr(s, RSTART + RLENGTH)
-        if (name == "" || name ~ /\// || name ~ /\\/ || name == "." || name == "..") continue
-        print name
-      }
-    }
-  '
+  printf '%s\n' "$1" | awk -f "$_ns_evidence_here/evidence-check-files.awk"
 }
 
 # ns_evidence_shift_value <project> <field> — the shift value, or empty when nothing is set.
@@ -110,7 +74,7 @@ ns_evidence_kind_file() {
 
 # _ns_evidence_block <kind-file> — `files`, `min`, `type` from the first evidence-check fence.
 _ns_evidence_block() {
-  awk -f "$NS_CATALOG_TEXT_AWK" -f "$NS_CATALOG_LIB/evidence-check-block.awk" "$1"
+  awk -f "$NS_CATALOG_TEXT_AWK" -f "$_ns_evidence_here/evidence-check-block.awk" "$1"
 }
 
 _ns_evidence_hex() {
@@ -320,12 +284,7 @@ ns_evidence_set_box() {
   local punch="$1" label="$2" mark="$3" tmp
   [ -f "$punch" ] && [ ! -L "$punch" ] || return 1
   tmp="$punch.box.$$"
-  awk -v want="$label" -v mark="$mark" "$NS_AWK_ITEM"'
-    /^- \[[ xX-]\]/ {
-      if (ns_item_label($0) == want) sub(/^- \[[ xX-]\]/, "- [" mark "]")
-    }
-    { print }
-  ' "$punch" >"$tmp" && mv "$tmp" "$punch"
+  awk -v want="$label" -v mark="$mark" -f "$NS_STATE_ITEM_AWK" -f "$_ns_evidence_here/evidence-check-set-box.awk" "$punch" >"$tmp" && mv "$tmp" "$punch"
 }
 
 # ns_evidence_unavailable_text <line> <reason> — which named evidence could not be made, and why.

@@ -32,35 +32,12 @@ ns_receipts_dir() {
 
 # ns_receipt_slug <title> — title lowercased, non-alphanumerics collapsed to one -, trimmed, 60.
 ns_receipt_slug() {
-  printf '%s' "$1" | LC_ALL=C awk '
-    {
-      s = ""
-      for (i = 1; i <= length($0); i++) {
-        c = substr($0, i, 1)
-        o = index("ABCDEFGHIJKLMNOPQRSTUVWXYZ", c)
-        if (o) c = substr("abcdefghijklmnopqrstuvwxyz", o, 1)
-        if (c ~ /[a-z0-9]/) s = s c
-        else s = s "-"
-      }
-      gsub(/-+/, "-", s)
-      gsub(/^-|-$/, "", s)
-      if (length(s) > 60) {
-        s = substr(s, 1, 60)
-        gsub(/-$/, "", s)
-      }
-      print s
-    }
-  '
+  printf '%s' "$1" | LC_ALL=C awk -f "$NS_STATE_LIB/state-receipt-slug.awk"
 }
 
 # ns_receipt_nn <label> — the item number as written: leading digits, or a letter+digits id.
 ns_receipt_nn() {
-  printf '%s' "$1" | LC_ALL=C awk '
-    {
-      if (match($0, /^[0-9]+/)) { print substr($0, RSTART, RLENGTH); exit }
-      if (match($0, /^[A-Za-z]+[0-9]+/)) { print substr($0, RSTART, RLENGTH); exit }
-    }
-  '
+  printf '%s' "$1" | LC_ALL=C awk -f "$NS_STATE_LIB/state-receipt-nn.awk"
 }
 
 # ns_receipt_title <label> — the words after the written number, for the slug. The number may be
@@ -107,68 +84,32 @@ ns_receipt_basename() {
 # shift policy is recorded, every item without an id gets one as a trailing comment on its own
 # line: `- [ ] **3. Fix the resolver.** <!-- id: k7q2 -->`. The owner may renumber, reorder or
 # retitle items between shifts; the receipt and its history follow the id. Every reader of an
-# item's label goes through NS_AWK_ITEM, so the comment is never part of a label.
+# item's label goes through state-item.awk, so the comment is never part of a label.
 
-# The awk functions every item reader shares, prepended to the program text.
-NS_AWK_ITEM='
-function ns_item_id(line,    s) {
-  sub(/\r$/, "", line)
-  if (!match(line, /<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/)) return ""
-  s = substr(line, RSTART, RLENGTH)
-  sub(/^<!--[[:space:]]*id:[[:space:]]*/, "", s)
-  sub(/[[:space:]]*-->[[:space:]]*$/, "", s)
-  return s
-}
-function ns_item_label(line,    lead) {
-  sub(/\r$/, "", line)
-  sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "", line)
-  sub(/^- \[[ xX-]\][[:space:]]*\*\*/, "", line)
-  sub(/^- \[[ xX-]\][[:space:]]*/, "", line)
-  # A dash right after a bare number numbers the item, as in "1 — Fix it": a number alone is no
-  # label, so only a later dash ends the title. A code such as P03 before a dash is the label.
-  lead = ""
-  if (match(line, /^[0-9]+[[:space:]]*(—|–)[[:space:]]*/) || match(line, /^[0-9]+[[:space:]]+-[[:space:]]+/)) {
-    lead = substr(line, 1, RLENGTH)
-    line = substr(line, RLENGTH + 1)
-  }
-  sub(/[[:space:]]+—.*$/, "", line)
-  sub(/[[:space:]]+-[[:space:]].*$/, "", line)
-  sub(/\*\*.*$/, "", line)
-  gsub(/[[:space:]]+$/, "", line)
-  return lead line
-}
-'
+# The awk programs beside this file, one per reader. state-item.awk holds the functions every item
+# reader shares, and state-order-key.awk the item-order key of one name as four tab-separated
+# fields for the receipt orderings; each runs as the first -f of the programs that use it.
+NS_STATE_LIB="${BASH_SOURCE[0]%/*}"
+[ "$NS_STATE_LIB" != "${BASH_SOURCE[0]}" ] || NS_STATE_LIB=.
+NS_STATE_ITEM_AWK="$NS_STATE_LIB/state-item.awk"
+NS_STATE_ORDER_KEY_AWK="$NS_STATE_LIB/state-order-key.awk"
 
 # ns_item_rows <punch-list> [open|ticked|stopped|all] — `<label>\t<id>` for each top-level item
 # under `## Items` that has a label, list order. The id is empty for an item that has none. A ticked
 # item is `[x]`; a stopped one, closed at its hard budget without being done, is `[-]`.
 ns_item_rows() {
-  ns_items_section "$1" 2>/dev/null | awk -v want="${2:-all}" "$NS_AWK_ITEM"'
-    /^- \[[ xX-]\]/ {
-      state = ($0 ~ /^- \[ \]/) ? "open" : ($0 ~ /^- \[-\]/) ? "stopped" : "ticked"
-      if (want != "all" && want != state) next
-      label = ns_item_label($0)
-      if (label != "") print label "\t" ns_item_id($0)
-    }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -v want="${2:-all}" -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-item-rows.awk"
 }
 
 # ns_item_states <punch-list> — `<open|ticked|stopped>\t<label>\t<id>` for each top-level item under
 # `## Items` that has a label, list order.
 ns_item_states() {
-  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[ xX-]\]/ {
-      label = ns_item_label($0)
-      if (label != "") print (($0 ~ /^- \[ \]/) ? "open" : ($0 ~ /^- \[-\]/) ? "stopped" : "ticked") "\t" label "\t" ns_item_id($0)
-    }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-item-states.awk"
 }
 
 # ns_item_ids <punch-list> — every id the list's items carry, one per line.
 ns_item_ids() {
-  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[ xX-]\]/ { id = ns_item_id($0); if (id != "") print id }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-item-ids.awk"
 }
 
 # ns_item_title_for <punch-list> <id> — the whole title of the item carrying that id: its bold text,
@@ -194,19 +135,12 @@ EOF
 
 # ns_item_evidence_asked <punch-list> <label> — status 0 when that item carries an `Evidence:` line.
 ns_item_evidence_asked() {
-  ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
-    /^- \[[ xX-]\]/ { inside = (ns_item_label($0) == want); next }
-    /^[^[:space:]]/ { inside = 0 }
-    inside && /^[[:space:]]+-[[:space:]]+Evidence:/ { found = 1; exit }
-    END { exit !found }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -v want="$2" -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-item-evidence-asked.awk"
 }
 
 # ns_item_id_for <punch-list> <label> — the id of the first item with that label, or nothing.
 ns_item_id_for() {
-  ns_items_section "$1" 2>/dev/null | awk -v want="$2" "$NS_AWK_ITEM"'
-    /^- \[[ xX-]\]/ && ns_item_label($0) == want { print ns_item_id($0); exit }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -v want="$2" -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-item-id-for.awk"
 }
 
 # ns_item_id_used <nightshift-dir> <id> [taken] — status 0 when the id is in `taken`, is carried by
@@ -227,12 +161,7 @@ ns_item_new_id() {
   local ns="$1" taken="${2:-}" id tries=0
   while [ "$tries" -lt 64 ]; do
     tries=$((tries + 1))
-    id="$(od -An -N4 -tu1 /dev/urandom 2>/dev/null | awk '
-      NF >= 4 {
-        a = "abcdefghijklmnopqrstuvwxyz"; b = a "0123456789"
-        printf "%s%s%s%s", substr(a, $1 % 26 + 1, 1), substr(b, $2 % 36 + 1, 1),
-          substr(b, $3 % 36 + 1, 1), substr(b, $4 % 36 + 1, 1)
-      }')" || return 1
+    id="$(od -An -N4 -tu1 /dev/urandom 2>/dev/null | awk -f "$NS_STATE_LIB/state-item-new-id.awk")" || return 1
     [ "${#id}" -eq 4 ] || return 1
     ns_item_id_used "$ns" "$id" "$taken" && continue
     printf '%s' "$id"
@@ -246,13 +175,7 @@ ns_item_new_id() {
 ns_punch_assign_ids() {
   local list="$1" ns="$2" need taken ids="" id tmp
   [ -f "$list" ] && [ ! -L "$list" ] || return 0
-  need="$(awk "$NS_AWK_ITEM"'
-    { line = $0; sub(/\r$/, "", line) }
-    !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; next }
-    line ~ /^## / { exit }
-    line ~ /^- \[[ xX-]\]/ && ns_item_id(line) == "" { n++ }
-    END { print n + 0 }
-  ' "$list")" || return 1
+  need="$(awk -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-punch-assign-ids-1.awk" "$list")" || return 1
   [ "$need" -gt 0 ] || return 0
   taken="$(ns_item_ids "$list" | paste -sd' ' -)"
   while [ "$need" -gt 0 ]; do
@@ -261,18 +184,7 @@ ns_punch_assign_ids() {
     need=$((need - 1))
   done
   tmp="$list.ids.$$"
-  awk -v ids="$ids" "$NS_AWK_ITEM"'
-    BEGIN { split(ids, pool, " "); k = 0 }
-    { line = $0; cr = ""; if (sub(/\r$/, "", line)) cr = "\r" }
-    !on { if (line ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; print; next }
-    line ~ /^## / { on = 0; done = 1 }
-    !done && line ~ /^- \[[ xX-]\]/ && ns_item_id(line) == "" {
-      k++
-      print line " <!-- id: " pool[k] " -->" cr
-      next
-    }
-    { print }
-  ' "$list" >"$tmp" || { rm -f "$tmp"; return 1; }
+  awk -v ids="$ids" -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-punch-assign-ids-2.awk" "$list" >"$tmp" || { rm -f "$tmp"; return 1; }
   mv "$tmp" "$list" || { rm -f "$tmp"; return 1; }
 }
 
@@ -416,9 +328,7 @@ _ns_replace_links() {
   tmp="$1.$$"
   ref="$1.mtime.$$"
   touch -r "$1" "$ref" 2>/dev/null || return 1
-  if awk -v old="$2" -v new="$3" '
-    { out = ""; while ((i = index($0, old)) > 0) { out = out substr($0, 1, i - 1) new; $0 = substr($0, i + length(old)) } print out $0 }
-  ' "$1" >"$tmp" && mv "$tmp" "$1"; then
+  if awk -v old="$2" -v new="$3" -f "$NS_STATE_LIB/state-replace-links.awk" "$1" >"$tmp" && mv "$tmp" "$1"; then
     touch -r "$ref" "$1" 2>/dev/null
     rm -f "$ref"
     return 0
@@ -464,21 +374,7 @@ ns_receipt_write_block() {
   ref="$f.mtime.$$"
   touch -r "$f" "$ref" 2>/dev/null || return 1
   tmp="$f.block.$$"
-  if awk -v first="$first" -v last="$last" -v bodyfile="$body" -v present="$present" '
-    function block(   l) { print first; while ((getline l < bodyfile) > 0) print l; close(bodyfile); print last }
-    { line = $0; sub(/\r$/, "", line) }
-    line == first { if (!done) block(); done = 1; skip = 1; next }
-    skip && line == last { skip = 0; next }
-    skip { next }
-    present { print; next }
-    { kept[++n] = $0 }
-    END {
-      if (present) exit
-      while (n > 0 && kept[n] ~ /^[[:space:]]*\r?$/) n--
-      for (i = 1; i <= n; i++) print kept[i]
-      if (n > 0) print ""
-      block()
-    }' "$f" >"$tmp" && mv "$tmp" "$f"; then
+  if awk -v first="$first" -v last="$last" -v bodyfile="$body" -v present="$present" -f "$NS_STATE_LIB/state-receipt-write-block.awk" "$f" >"$tmp" && mv "$tmp" "$f"; then
     :
   else
     rm -f "$tmp"
@@ -597,19 +493,7 @@ ns_receipt_track_label() {
     printf '\n<!-- item: %s -->\n' "$2" >>"$f" || rc=1
   else
     tmp="$f.track.$$"
-    if NS_WAS="$was" NS_NOW="$2" NS_DAY="$(date +%Y-%m-%d)" awk '
-      BEGIN { was = ENVIRON["NS_WAS"]; now = ENVIRON["NS_NOW"]; day = ENVIRON["NS_DAY"] }
-      { line = $0; sub(/\r$/, "", line) }
-      !headed && line ~ /^# / {
-        headed = 1
-        print (line == "# " was) ? "# " now : $0
-        print ""
-        print "Renamed from " was " on " day "."
-        next
-      }
-      line ~ /^<!-- item: .* -->[[:space:]]*$/ { print "<!-- item: " now " -->"; next }
-      { print }
-    ' "$f" >"$tmp"; then
+    if NS_WAS="$was" NS_NOW="$2" NS_DAY="$(date +%Y-%m-%d)" awk -f "$NS_STATE_LIB/state-receipt-track-label.awk" "$f" >"$tmp"; then
       mv "$tmp" "$f" || rc=1
     else
       rm -f "$tmp"
@@ -701,11 +585,7 @@ _ns_turn_items_words() {
 # ns_session_host_words <host/model+host/model> — the hosts a session ran on, as a person reads
 # them: `claude · claude-opus-5 + codex · gpt-5.5`.
 ns_session_host_words() {
-  printf '%s' "$1" | awk -v RS='+' '
-    { sub(/\n$/, ""); if ($0 == "") next
-      n = index($0, "/"); h = n ? substr($0, 1, n - 1) : $0; m = n ? substr($0, n + 1) : ""
-      out = out (out == "" ? "" : " + ") h ((m != "" && m != "-") ? " · " m : "") }
-    END { printf "%s", out }'
+  printf '%s' "$1" | awk -v RS='+' -f "$NS_STATE_LIB/state-session-host-words.awk"
 }
 
 # ns_receipt_session_file <receipt> — the runtime's session ledger for a live item.
@@ -727,13 +607,7 @@ ns_receipt_session_data() {
     if [ -f "$file" ]; then cat "$file"; return; fi
   fi
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
-  awk '
-    /^<!-- usage -->$/ { if (seen++) exit; usage = 1; next }
-    /^<!-- \/usage -->$/ { if (usage) exit }
-    usage && /^<!-- session-data$/ { on = 1; next }
-    on && /^-->$/ { exit }
-    on && NF { print }
-  ' "$1"
+  awk -f "$NS_STATE_LIB/state-receipt-session-data.awk" "$1"
 }
 
 # Existing legacy receipts repositories predate the session ledger's ignore entry.
@@ -760,11 +634,7 @@ ns_receipt_anchor_run_ignore() {
   [ -f "$ignore" ] && grep -qxF "$run/" "$ignore" || return 0
   tmp="$(mktemp "$ns/.gitignore.XXXXXX")" || return 1
   if cp -p "$ignore" "$tmp" \
-    && awk -v old="$run/" -v new="/$run/" '
-      NR == FNR { if ($0 == new) has = 1; next }
-      $0 == old { if (has) next; $0 = new; has = 1 }
-      { print }
-    ' "$ignore" "$ignore" >"$tmp" \
+    && awk -v old="$run/" -v new="/$run/" -f "$NS_STATE_LIB/state-receipt-anchor-run-ignore.awk" "$ignore" "$ignore" >"$tmp" \
     && mv "$tmp" "$ignore"; then
     return 0
   fi
@@ -1149,17 +1019,7 @@ ns_receipt_set_turns() {
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
   data="$(ns_receipt_session_data "$f")" || return 1
   [ -n "$data" ] || return 0
-  new="$(printf '%s\n' "$data" | awk -v cp="checkpoint=$3" -v turns="$(printf '%s' "$4" | tr '\n' ' ')" '
-    {
-      n = split($0, f, " "); hit = 0
-      for (i = 8; i <= n; i++) if (f[i] == cp) hit = 1
-      if (!hit) { print; next }
-      out = f[1]
-      for (i = 2; i <= n; i++) if (i < 8 || f[i] !~ /^(turn|with)=/) out = out " " f[i]
-      m = split(turns, t, " ")
-      for (i = 1; i <= m; i++) out = out " turn=" t[i]
-      print out
-    }')"
+  new="$(printf '%s\n' "$data" | awk -v cp="checkpoint=$3" -v turns="$(printf '%s' "$4" | tr '\n' ' ')" -f "$NS_STATE_LIB/state-receipt-set-turns.awk")"
   [ "$new" != "$data" ] || return 0
   ns_receipt_ignore_sessions "$f" || return 1
   file="$(ns_receipt_session_file "$f")" || file=""
@@ -1182,28 +1042,7 @@ ns_receipt_redraw() {
   ref="$f.mtime.$$"
   [ "$fresh" -eq 1 ] || touch -r "$f" "$ref" 2>/dev/null || { rm -f "$block"; return 1; }
   tmp="$f.sessions.$$"
-  if awk -v blockfile="$block" '
-    function emit(   l) { while ((getline l < blockfile) > 0) print l; close(blockfile); done = 1 }
-    function out(l) { while (pend > 0) { print ""; pend-- } print l }
-    function runtime(l) {
-      return l ~ /^\*\*Usage:\*\*/ || l ~ /^\*\*Duration:\*\*/ || l ~ /^\*\*Tokens:\*\* off$/ ||
-        l ~ /^\*\*Time:\*\* off$/ || l ~ /^  (Source:|Cache reads|The input figure|Cached input|Overlap between)/ ||
-        l ~ /^\| (Tokens|Time) \|/ || l ~ /^\| ---/ ||
-        l ~ /^\| (input|cache [a-z]+|output|reasoning|working|paused|wall|span) \|/ ||
-        l ~ /^<!-- tokens / || l ~ / · [0-9]+ segments?\./
-    }
-    { line = $0; sub(/\r$/, "", line) }
-    /^<!-- usage -->/ || /^<!-- sessions -->/ { skip = 1; next }
-    skip && (/^<!-- \/usage -->/ || /^<!-- \/sessions -->/) { skip = 0; next }
-    skip { next }
-    !headed && line ~ /^# / { headed = 1; top = 1; print; print ""; emit(); pend = 0; next }
-    top && (line ~ /^[[:space:]]*$/ || runtime(line)) { next }
-    top && line ~ /^Renamed from .* on [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.$/ { print ""; print; next }
-    top { top = 0; pend = 1 }
-    /^[[:space:]]*$/ { pend++; next }
-    { out($0) }
-    END { if (!done) { print ""; emit() } }
-  ' "$f" >"$tmp"; then
+  if awk -v blockfile="$block" -f "$NS_STATE_LIB/state-receipt-redraw.awk" "$f" >"$tmp"; then
     mv "$tmp" "$f" || rc=1
   else
     rm -f "$tmp"
@@ -1222,44 +1061,7 @@ ns_receipt_redraw() {
 ns_receipt_model_lines() {
   local f="$1"
   { [ -f "$f" ] && [ ! -L "$f" ]; } || return 1
-  awk '
-    /^<!-- usage -->/ { usage = 1; next }
-    /^<!-- \/usage -->/ { usage = 0; next }
-    usage { next }
-    /^<!-- nightshift:[a-z-]+ -->/ { generated = 1; next }
-    /^<!-- \/nightshift:[a-z-]+ -->/ { generated = 0; next }
-    generated { next }
-    /^[[:space:]]*$/ { next }
-    /^# / { next }
-    /^\*\*Usage:\*\*/ { next }
-    /^\*\*Duration:\*\*/ { next }
-    /^\*\*Tokens:\*\* off$/ { next }
-    /^\*\*Time:\*\* off$/ { next }
-    /^  Source:/ { next }
-    /^  Cache reads/ { next }
-    /^  The input figure/ { next }
-    /^  Cached input/ { next }
-    /^  Overlap between/ { next }
-    /^\| Tokens \|/ { next }
-    /^\| Time \|/ { next }
-    /^\| ---/ { next }
-    /^\| input \|/ { next }
-    /^\| cache / { next }
-    /^\| output \|/ { next }
-    /^\| reasoning \|/ { next }
-    /^\| working \|/ { next }
-    /^\| paused \|/ { next }
-    /^\| wall \|/ { next }
-    /^\| span \|/ { next }
-    /^<!-- sessions -->/ { sessions = 1; next }
-    /^<!-- \/sessions -->/ { sessions = 0; next }
-    sessions { next }
-    /^<!-- tokens / { next }
-    /^<!-- item: / { next }
-    /^Renamed from .* on [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\.$/ { next }
-    / · [0-9]+ segments?\./ { next }
-    { print }
-  ' "$f"
+  awk -f "$NS_STATE_LIB/state-receipt-model-lines.awk" "$f"
 }
 
 # ns_receipt_has_model_text <file> — status 0 when a line exists outside the runtime section and
@@ -1651,35 +1453,14 @@ ns_receipts_ticked_names() { ns_receipts_item_names "$1" ticked; }
 # (1, 2, 10), then letter-and-number ids by letters and value (A1, A2, A10, B1), then the rest by
 # name. Keys are tab-separated and compared bytewise, so tab ends a shorter field first.
 ns_receipts_item_order() {
-  LC_ALL=C awk "$NS_AWK_ORDER_KEY"'
-    { n = $0; sub(/.*\//, "", n); print ns_order_key(n) "\t" $0 }
-  ' | LC_ALL=C sort | cut -f5-
+  LC_ALL=C awk -f "$NS_STATE_ORDER_KEY_AWK" -f "$NS_STATE_LIB/state-receipts-item-order.awk" | LC_ALL=C sort | cut -f5-
 }
 
 # ns_receipts_heading_order — `<heading>\t<path>` lines on stdin, printed in the item order of the
 # headings. A receipt named for its item's id sorts by the number and title its heading shows.
 ns_receipts_heading_order() {
-  LC_ALL=C awk -F'\t' "$NS_AWK_ORDER_KEY"'
-    { print ns_order_key($1) "\t" $0 }
-  ' | LC_ALL=C sort | cut -f5-
+  LC_ALL=C awk -F'\t' -f "$NS_STATE_ORDER_KEY_AWK" -f "$NS_STATE_LIB/state-receipts-heading-order.awk" | LC_ALL=C sort | cut -f5-
 }
-
-# The item-order key of one name, as four tab-separated fields, for the two orderings above.
-NS_AWK_ORDER_KEY='
-function ns_order_key(n,    cls, pre, num, id) {
-  cls = 2; pre = ""; num = ""
-  if (match(n, /^[0-9]+/)) {
-    cls = 0; num = substr(n, 1, RLENGTH)
-  } else if (match(n, /^[A-Za-z]+[0-9]+/)) {
-    id = substr(n, 1, RLENGTH)
-    match(id, /[0-9]+$/)
-    cls = 1; pre = tolower(substr(id, 1, RSTART - 1)); num = substr(id, RSTART)
-  }
-  sub(/^0+/, "", num)
-  if (cls < 2 && num == "") num = "0"
-  return sprintf("%d\t%s\t%04d%s\t%s", cls, pre, length(num), num, n)
-}
-'
 
 # _ns_archive_receipt_headings <dir> — `<heading>\t<path>` for each item receipt filed in <dir>.
 _ns_archive_receipt_headings() {
@@ -2213,61 +1994,19 @@ ns_archive_same() {
 # `Default:` and `Rollback:` lines included; trailing blank lines are not part of it. Prints
 # nothing when every entry is already filed; given /dev/null, prints every entry.
 _ns_archive_missing_blocks() {
-  awk -v filed="$1" '
-    BEGIN {
-      have = "\n"
-      while ((getline l <filed) > 0) { sub(/\r$/, "", l); have = have l "\n" }
-      close(filed)
-    }
-    function flush(   b) {
-      if (buf == "") return
-      b = buf
-      sub(/\n+$/, "", b)
-      if (index(have, "\n" b "\n") == 0) printf "%s\n", b
-      buf = ""
-    }
-    { l = $0; sub(/\r$/, "", l) }
-    buf != "" && l ~ /^ *(- )?(\*\*)?(Default|Rollback):/ { buf = buf l "\n"; next }
-    l ~ /^- / { flush(); buf = l "\n"; next }
-    buf != "" { buf = buf l "\n"; next }
-    END { flush() }
-  ' "$2"
+  awk -v filed="$1" -f "$NS_STATE_LIB/state-archive-missing-blocks.awk" "$2"
 }
 
 # _ns_archive_items <mode> <list> — the punch list, read by item. `closed` prints the list less its
 # open items; `ticked` prints only the ticked items, each with the lines under it.
 _ns_archive_items() {
-  awk -v mode="$1" '
-    { line = $0; sub(/\r$/, "", line) }
-    !items { if (mode == "closed") print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
-    done { if (mode == "closed") print; next }
-    line ~ /^## / { if (mode == "closed") { printf "%s", blanks; print } blanks = ""; done = 1; next }
-    line == "" { blanks = blanks $0 "\n"; next }
-    line ~ /^- \[[ xX-]\]/ {
-      take = (line ~ /^- \[[xX]\]/)
-      if (take) { if (mode == "closed") printf "%s", blanks; print }
-      blanks = ""
-      next
-    }
-    line ~ /^[[:space:]]/ { if (take) { printf "%s", blanks; print } blanks = ""; next }
-    { take = 0; if (mode == "closed") { printf "%s", blanks; print } blanks = "" }
-    END { if (mode == "closed") printf "%s", blanks }
-  ' "$2"
+  awk -v mode="$1" -f "$NS_STATE_LIB/state-archive-items.awk" "$2"
 }
 
 # _ns_archive_insert_items <filed> <items> — <filed> with <items> added at the end of its
 # `## Items` section.
 _ns_archive_insert_items() {
-  awk -v add="$2" '
-    function put(   l) { while ((getline l <add) > 0) print l; close(add); added = 1 }
-    { line = $0; sub(/\r$/, "", line) }
-    !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
-    added { print; next }
-    line ~ /^## / { put(); printf "%s", blanks; blanks = ""; print; next }
-    line == "" { blanks = blanks $0 "\n"; next }
-    { printf "%s", blanks; blanks = ""; print }
-    END { if (!added) put(); printf "%s", blanks }
-  ' "$1"
+  awk -v add="$2" -f "$NS_STATE_LIB/state-archive-insert-items.awk" "$1"
 }
 
 # ns_archive_punch_list <project-dir> <folder> <shift-id> <date> — file the ended shift's ticked
@@ -2334,17 +2073,7 @@ ns_archive_punch_list() {
   fi
   rm -f "$view" "$chunk" "$missing"
   tmp="$live.tmp.$$"
-  awk '
-    { line = $0; sub(/\r$/, "", line) }
-    !items { print; if (line ~ /^## Items[[:space:]]*$/) items = 1; next }
-    done { print; next }
-    line ~ /^## / { printf "%s", blanks; blanks = ""; done = 1; print; next }
-    line == "" { blanks = blanks $0 "\n"; next }
-    line ~ /^- \[[xX]\]/ { drop = 1; blanks = ""; next }
-    line ~ /^[[:space:]]/ { if (!drop) { printf "%s", blanks; print } blanks = ""; next }
-    { drop = 0; printf "%s", blanks; blanks = ""; print }
-    END { if (!drop) printf "%s", blanks }
-  ' "$live" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
+  awk -f "$NS_STATE_LIB/state-archive-punch-list.awk" "$live" >"$tmp" 2>/dev/null || { rm -f "$tmp"; return 2; }
   mv "$tmp" "$live" || { rm -f "$tmp"; return 2; }
   printf '%s' "$dest"
 }
@@ -2416,16 +2145,7 @@ _ns_inbox_unseen_keys() {
   local seen
   seen="$(ns_usage_dir "$1")/inbox-seen"
   [ -f "$seen" ] && [ ! -L "$seen" ] || return 0
-  ns_inbox_keys "$1" "$2" | awk -v kind="$2" -v seen="$seen" '
-    BEGIN {
-      while ((getline line < seen) > 0) {
-        n = index(line, "\t")
-        if (n > 0 && substr(line, 1, n - 1) == kind) known[substr(line, n + 1)] = 1
-      }
-      close(seen)
-    }
-    $0 != "" && !($0 in known) && !printed[$0]++ { print }
-  '
+  ns_inbox_keys "$1" "$2" | awk -v kind="$2" -v seen="$seen" -f "$NS_STATE_LIB/state-inbox-unseen-keys.awk"
 }
 
 # _ns_inbox_remember <nightshift-dir> <kind> <keys-file> — append those keys to inbox-seen.
@@ -2516,14 +2236,7 @@ ns_archive_file_review_source() {
   else
     # A first filing carries the file's heading, down to its `---` rule, above the entries.
     if ! { {
-      awk '
-        { l = $0; sub(/\r$/, "", l) }
-        l ~ /^--- *$/ { printf "%s%s", head, blanks; print; done = 1; exit }
-        l ~ /^- / { exit }
-        l == "" { blanks = blanks $0 "\n"; next }
-        { head = head blanks $0 "\n"; blanks = "" }
-        END { if (!done) printf "%s", head }
-      ' "$live"
+      awk -f "$NS_STATE_LIB/state-archive-file-review-source.awk" "$live"
       printf '\n'
       _ns_archive_missing_blocks /dev/null "$filed"
     } >"$view" && ns_archive_relocate "$view" "$dest" "$group" "$ns" >"$missing" 2>/dev/null &&
@@ -2972,11 +2685,7 @@ ns_open_boxes_file() {
 # Drafting table: the fenced item-shape example sits above the first --- rule.
 ns_open_drafts() {
   [ -f "$1" ] || { printf '0'; return 0; }
-  awk '
-    /^---[[:space:]]*$/ { seen=1; next }
-    seen && /^[[:space:]]*-[[:space:]]*\[[[:space:]]\]/ { n++ }
-    END { print n+0 }
-  ' "$1"
+  awk -f "$NS_STATE_LIB/state-open-drafts.awk" "$1"
 }
 
 # Watchman reason codes — one token, no transcript. Written to .nightshift/run/.watch-reason
@@ -3376,11 +3085,7 @@ ns_latest_receipt() {
 # ns_punch_gates <punch-list> — the gates block verbatim, heading included, or nothing.
 # The owner may change it mid-shift by design, so it is never digested and always reprinted.
 ns_punch_gates() {
-  awk '
-    /^## Gates[[:space:]]*$/ { on = 1; print; next }
-    on && /^## / { exit }
-    on { print }
-  ' "$1" 2>/dev/null
+  awk -f "$NS_STATE_LIB/state-punch-gates.awk" "$1" 2>/dev/null
 }
 
 # ns_punch_gate_commands <punch-list> — the gates block's commands, one per line, from its
@@ -3396,48 +3101,14 @@ ns_punch_gate_commands() {
 # boxes and the wrong one for a digest, because it would put a `## Notes` section the owner is free
 # to edit inside the thing the gate holds still.
 ns_punch_items() {
-  awk '
-    { sub(/\r$/, "") }
-    !on { if ($0 ~ /^##[[:space:]]*Items[[:space:]]*$/) on = 1; next }
-    /^## / { exit }
-    { print }
-  ' "$1" 2>/dev/null
+  awk -f "$NS_STATE_LIB/state-punch-items.awk" "$1" 2>/dev/null
 }
 
 # ns_punch_item <punch-list> <item> — one item with its sub-bullets, exactly as written. The item is
 # named by its whole label, its number (`5`, `P03`), or its id; empty means the first still-open
 # one. The first item that matches wins. Prints nothing when there is no such item.
 ns_punch_item() {
-  ns_punch_items "$1" | awk -v want="$2" "$NS_AWK_ITEM"'
-    function starts_item(line) { return line ~ /^- \[[ xX-]\]/ }
-    # A top-level line is anything not indented: the next item, a heading, a note. Either way this
-    # item has ended.
-    function top_level(line) { return line !~ /^[[:space:]]/ && line != "" }
-    function number(label) {
-      if (match(label, /^[0-9]+/)) return substr(label, RSTART, RLENGTH)
-      if (match(label, /^[A-Za-z]+[0-9]+/)) return substr(label, RSTART, RLENGTH)
-      return ""
-    }
-    {
-      if (!on && starts_item($0)) {
-        if (want == "") {
-          if ($0 !~ /^- \[ \]/) next
-          on = 1
-          print
-          next
-        }
-        label = ns_item_label($0)
-        if (label != want && ns_item_id($0) != want && number(label) != want) next
-        on = 1
-        print
-        next
-      }
-      if (on) {
-        if (top_level($0)) exit
-        print
-      }
-    }
-  '
+  ns_punch_items "$1" | awk -v want="$2" -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-punch-item.awk"
 }
 
 # ns_punch_contract <punch-list> — everything above `## Items` except the gates block: the shift
@@ -3448,14 +3119,7 @@ ns_punch_item() {
 # near miss, relaxing one that is costing more than it catches — and `gatesDigest` already tracks
 # it on its own terms.
 ns_punch_contract() {
-  awk '
-    { sub(/\r$/, "") }
-    /^## Items[[:space:]]*$/ { exit }
-    /^## Gates[[:space:]]*$/ { skip = 1; next }
-    skip && /^## / { skip = 0 }
-    skip { next }
-    { print }
-  ' "$1" 2>/dev/null
+  awk -f "$NS_STATE_LIB/state-punch-contract.awk" "$1" 2>/dev/null
 }
 
 # ns_punch_items_normalised <punch-list> — every item line and sub-bullet with the checkbox state
@@ -3496,26 +3160,7 @@ ns_punch_items_digest() { ns_punch_items_normalised "$1" | ns_punch_digest; }
 ns_punch_list_view() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 1
   printf 'contract\t%s\n' "$(ns_punch_contract_digest "$1")"
-  ns_punch_items_normalised "$1" | awk "$NS_AWK_ITEM"'
-    function flush() {
-      if (key == "") return
-      sub(/(\037[[:space:]]*)+$/, "", text)
-      printf "item\t%s\t%s\t%s\n", key, label, text
-    }
-    /^- \[[ xX-]\]/ {
-      flush()
-      label = ns_item_label($0)
-      key = ns_item_id($0)
-      if (key == "") key = label
-      gsub(/\t/, " ", label)
-      text = $0
-      sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "", text)
-      gsub(/\t/, " ", text)
-      next
-    }
-    key != "" { line = $0; gsub(/\t/, " ", line); text = text "\037" line }
-    END { flush() }
-  '
+  ns_punch_items_normalised "$1" | awk -f "$NS_STATE_ITEM_AWK" -f "$NS_STATE_LIB/state-punch-list-view.awk"
 }
 
 # ns_punch_list_changes <earlier-view-file> <later-view-file> — what moved between two views, one
@@ -3524,25 +3169,7 @@ ns_punch_list_view() {
 # same item by its key, or by its label when its id was added or dropped. Nothing when the two lists
 # say the same.
 ns_punch_list_changes() {
-  awk -F '\t' '
-    FNR == NR {
-      if ($1 == "contract") before_contract = $2
-      else if ($1 == "item") {
-        before[$2] = $4; before_label[$2] = $3; order[++n] = $2
-        if (!($3 in by_label)) by_label[$3] = $2
-      }
-      next
-    }
-    $1 == "contract" { if (before_contract != "" && $2 != before_contract) print "contract"; next }
-    $1 == "item" {
-      key = $2
-      if (!(key in before) && ($3 in by_label) && !(by_label[$3] in seen)) key = by_label[$3]
-      if (!(key in before)) { print "added\t" $3; next }
-      seen[key] = 1
-      if (before[key] != $4) print "reworded\t" $3
-    }
-    END { for (i = 1; i <= n; i++) if (!(order[i] in seen)) print "removed\t" before_label[order[i]] }
-  ' "$1" "$2"
+  awk -F '\t' -f "$NS_STATE_LIB/state-punch-list-changes.awk" "$1" "$2"
 }
 
 # ns_punch_list_note <nightshift-dir> <punch-list> — the history of the list during a shift. The
@@ -3595,10 +3222,7 @@ ns_explain_lines() {
   file="${NS_EXPLAIN_FILE:-}"
   [ -n "$file" ] || return 0
   [ -f "$file" ] || return 0
-  awk -F '\t' -v kind="$1" -v topic="$2" '
-    /^#/ || NF < 3 { next }
-    $1 == kind && $2 == topic { print $3 }
-  ' "$file" 2>/dev/null
+  awk -F '\t' -v kind="$1" -v topic="$2" -f "$NS_STATE_LIB/state-explain-lines.awk" "$file" 2>/dev/null
 }
 
 # ns_explain_emit <topic> — the explanation for a topic, then any repairs the table carries for it.
@@ -3633,39 +3257,14 @@ ns_explain_topic() {
 # ns_status_open_title <punch-list> — the title line of the first still-open item, without its
 # checkbox or bold markers. Empty when nothing is open.
 ns_status_open_title() {
-  ns_punch_item "$1" "" 2>/dev/null | awk '
-    NR == 1 {
-      sub(/[[:space:]]*<!--[[:space:]]*id:[[:space:]]*[a-z0-9]+[[:space:]]*-->[[:space:]]*$/, "")
-      sub(/^- \[[ xX-]\][[:space:]]*/, "")
-      gsub(/\*\*/, "")
-      sub(/[[:space:]]+$/, "")
-      print
-      exit
-    }
-  '
+  ns_punch_item "$1" "" 2>/dev/null | awk -f "$NS_STATE_LIB/state-status-open-title.awk"
 }
 
 # ns_status_entry_titles <file> <max> — the first line of each top-level `- ` entry, trimmed.
 # Used for the parking lot and the snag log, which share that shape.
 ns_status_entry_titles() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
-  awk -v max="${2:-0}" '
-    /^Filed:/ { next }
-    /^- Filed:/ { next }
-    /^- / {
-      line = $0
-      sub(/^- /, "", line)
-      gsub(/\*\*/, "", line)
-      sub(/[[:space:]]+$/, "", line)
-      if (length(line) > 100) line = substr(line, 1, 97) "..."
-      out[++n] = line
-    }
-    END {
-      first = 1
-      if (max > 0 && n > max) first = n - max + 1
-      for (i = first; i <= n; i++) print out[i]
-    }
-  ' "$1" 2>/dev/null
+  awk -v max="${2:-0}" -f "$NS_STATE_LIB/state-status-entry-titles.awk" "$1" 2>/dev/null
 }
 
 # ns_status_entry_count <file> — how many such entries the file holds.
@@ -3678,22 +3277,7 @@ ns_status_entry_count() {
 # parked=N` from the `Status:` lines the map already carries.
 ns_status_opportunity_counts() {
   if ! { [ -f "$1" ] && [ ! -L "$1" ]; }; then printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'; return 0; fi
-  awk '
-    /<!--/ { comment = 1 }
-    /-->/  { comment = 0; next }
-    comment { next }
-    /^[[:space:]]*Status:[[:space:]]*/ {
-      s = $0
-      sub(/^[[:space:]]*Status:[[:space:]]*/, "", s)
-      sub(/[[:space:]].*$/, "", s)
-      gsub(/[^a-zA-Z]/, "", s)
-      if (s != "") c[tolower(s)]++
-    }
-    END {
-      printf "candidate=%d building=%d shipped=%d rejected=%d parked=%d",
-        c["candidate"] + 0, c["building"] + 0, c["shipped"] + 0, c["rejected"] + 0, c["parked"] + 0
-    }
-  ' "$1" 2>/dev/null || printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'
+  awk -f "$NS_STATE_LIB/state-status-opportunity-counts.awk" "$1" 2>/dev/null || printf 'candidate=0 building=0 shipped=0 rejected=0 parked=0'
 }
 
 # ns_status_building <opportunity-map> — the building entry's title, then its `Phase:`, `Next:` and
@@ -3703,33 +3287,7 @@ ns_status_opportunity_counts() {
 # state the model reports without changing; this prints the first, and the count says there is more.
 ns_status_building() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
-  awk '
-    /<!--/ { comment = 1 }
-    /-->/  { comment = 0; next }
-    comment { next }
-    /^#{2,}[[:space:]]/ {
-      if (found) exit
-      title = $0
-      sub(/^#+[[:space:]]*/, "", title)
-      gsub(/\*\*/, "", title)
-      building = 0
-      next
-    }
-    /^[[:space:]]*Status:[[:space:]]*building/ {
-      building = 1
-      found = 1
-      print "title\t" title
-      next
-    }
-    building && /^[[:space:]]*(Phase|Next|Verify remaining):/ {
-      line = $0
-      sub(/^[[:space:]]*/, "", line)
-      key = line
-      sub(/:.*$/, "", key)
-      sub(/^[^:]*:[[:space:]]*/, "", line)
-      print tolower(key) "\t" line
-    }
-  ' "$1" 2>/dev/null
+  awk -f "$NS_STATE_LIB/state-status-building.awk" "$1" 2>/dev/null
 }
 
 # ns_status_stop_reason <ns> — the first line of the stop-work marker, or nothing.
@@ -3745,27 +3303,7 @@ ns_status_stop_reason() {
 # a stand-down, a revival, a host change. Compacted to their first sentence.
 ns_status_transitions() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
-  awk -v max="${2:-3}" '
-    {
-      line = $0
-      # Both writers lead with a dash, a timestamp and a separator before the message. Everything up
-      # to the first letter is that preamble, in any locale and with any separator byte.
-      sub(/^[^A-Za-z]*/, "", line)
-      # A local stamp carries its UTC offset in words; it is part of the preamble too.
-      if (sub(/^UTC[+-][0-9][0-9]:[0-9][0-9]\)/, "", line)) sub(/^[^A-Za-z]*/, "", line)
-    }
-    # A transition is a line whose SUBJECT is the shift changing hands. Matching the words anywhere
-    # would catch an item summary that merely mentions one.
-    tolower(line) ~ /^(watchman|the watchman|shift started|shift ended|the session ended|revived|host change)/ {
-      if (length(line) > 120) line = substr(line, 1, 117) "..."
-      out[++n] = line
-    }
-    END {
-      first = 1
-      if (max > 0 && n > max) first = n - max + 1
-      for (i = first; i <= n; i++) print out[i]
-    }
-  ' "$1" 2>/dev/null
+  awk -v max="${2:-3}" -f "$NS_STATE_LIB/state-status-transitions.awk" "$1" 2>/dev/null
 }
 
 # ns_status_run_summary <ns> <run> — one run at a glance: its state (ended, stopped, armed or not

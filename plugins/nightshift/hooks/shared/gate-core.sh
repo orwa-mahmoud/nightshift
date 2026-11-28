@@ -3,6 +3,8 @@
 
 _ns_gate_core_dir="${BASH_SOURCE[0]%/*}"
 [ "$_ns_gate_core_dir" != "${BASH_SOURCE[0]}" ] || _ns_gate_core_dir=.
+# The awk programs this file runs sit beside lib.sh.
+_ns_gate_core_lib="$_ns_gate_core_dir/../../lib"
 # shellcheck source=plugins/nightshift/lib/evidence-check.sh
 . "$_ns_gate_core_dir/../../lib/evidence-check.sh"
 
@@ -481,41 +483,7 @@ ns_gate_uncharged_labels() {
   {
     ns_item_rows "$2" open | cut -f1 | sed 's/^/+/'
     ns_gate_ticked_labels "$2" | sed 's/^/-/'
-  } | awk -v marks="$marks" -v reopened="$reopened" -v observed="$observed" '
-    BEGIN {
-      while ((getline row < reopened) > 0) {
-        if (split(row, f, "\t") == 2 && f[1] ~ /^[0-9]+$/) ignored[f[2]] = f[1] + 0
-      }
-      close(reopened)
-      while ((getline row < marks) > 0) {
-        rows++
-        n = split(row, f, "\t")
-        # The first mark is the shift arming, not an item, and only a tick closes an item: a switch
-        # or a pause charges a span to an item that is still open.
-        if (rows == 1 && f[2] == "arm") continue
-        if (n >= 4 && f[4] != "" && f[4] != "tick") continue
-        charged[f[2]]++
-      }
-      close(marks)
-    }
-    /^\+/ { open[substr($0, 2)] = 1; next }
-    { label = substr($0, 2); labels[++nlabels] = label; closed[label]++ }
-    END {
-      if (observed != "") {
-        for (label in open) {
-          count = charged[label] - closed[label]
-          if (count <= ignored[label]) continue
-          ignored[label] = count
-          print count "\t" label >> observed
-        }
-      }
-      for (i = 1; i <= nlabels; i++) {
-        label = labels[i]
-        if (charged[label] > ignored[label]) charged[label]--
-        else print label
-      }
-    }
-  '
+  } | awk -v marks="$marks" -v reopened="$reopened" -v observed="$observed" -f "$_ns_gate_core_lib/gate-core-uncharged-labels.awk"
 }
 
 # ns_gate_ticked_labels <punch-list> — every closed item's id, list order, one per line, as the
@@ -523,14 +491,7 @@ ns_gate_uncharged_labels() {
 # is in the counts, and a stopped item (`- [-]`, closed at its hard budget) closes its span too.
 # An item whose id cannot be read is `item <n>`, n its place among the closed.
 ns_gate_ticked_labels() {
-  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[[xX-]\]/ {
-      n++
-      line = ns_item_label($0)
-      if (line == "") line = "item " n
-      print line
-    }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -f "$NS_STATE_ITEM_AWK" -f "$_ns_gate_core_lib/gate-core-ticked-labels.awk"
 }
 
 # Which form the block takes: the whole contract, or one line saying nothing has changed.
@@ -685,9 +646,7 @@ ns_gate_reminder_fill() {
 
 # ns_gate_open_item <punch-list> — the id of the first still-open item, for the short line.
 ns_gate_open_item() {
-  ns_items_section "$1" 2>/dev/null | awk "$NS_AWK_ITEM"'
-    /^- \[ \]/ { print ns_item_label($0); exit }
-  '
+  ns_items_section "$1" 2>/dev/null | awk -f "$NS_STATE_ITEM_AWK" -f "$_ns_gate_core_lib/gate-core-open-item.awk"
 }
 
 # The one terminal sequence. Every host gate and the Cursor watchman end a shift here:
