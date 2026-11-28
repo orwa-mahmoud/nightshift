@@ -559,6 +559,7 @@ while :; do
   wake=$((wake + 1))
 
   armed || stand_down_disarmed
+  stand_down_blocked_worker
   holds_pidfile || stand_down_unclaimed
   if [ -f "$STOP" ]; then note owner-stop; log_line "watchman: stop-work order — standing down"; exit 0; fi
   if [ -f "$ENDED" ] && [ ! -L "$ENDED" ]; then note completed; exit 0; fi
@@ -716,6 +717,7 @@ while :; do
           # Disarming mid-ladder ends it here: the fresh-session rung, which starts a worker on
           # nothing but the punch list, must never fire at a site the owner just stood down.
           armed || stand_down_disarmed
+          stand_down_blocked_worker
           if [ "$attempt" -gt 1 ]; then
             # Re-check the whole ladder: a site that came back to life mid-wake — or an owner
             # who acted — cancels the remaining attempts.

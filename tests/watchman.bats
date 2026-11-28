@@ -2227,3 +2227,21 @@ worker_alive() { kill -0 "$IDLE_WORKER" 2>/dev/null; }
   fi
   [ "$rc" -eq 0 ]
 }
+
+@test "a run whose last worker ended blocked is not revived until Start" {
+  printf 'abc-123\n\n' >"$P/.nightshift/.shift-session"
+  printf 'nonce\n' >"$P/.nightshift/.worker-blocked"
+  cat >"$BIN/claude" <<'STUB'
+#!/usr/bin/env bash
+[[ "$*" == agents* ]] && { echo "[]"; exit 0; }
+echo called >>.nightshift/agent-calls
+STUB
+  chmod +x "$BIN/claude"
+  run env PATH="$BIN:$PATH" NIGHTSHIFT_WATCH_SLEEP=0 NIGHTSHIFT_WATCH_RETRY="0 0" \
+    NIGHTSHIFT_WATCH_TRANSCRIPTS=/tmp/nowhere \
+    "$WATCHMAN" --project "$P" --interval 20 --max-wakes 2
+  [ "$status" -eq 0 ]
+  [ ! -f "$P/.nightshift/agent-calls" ]
+  [ "$(reason)" = stand-down ]
+  grep -q 'the last worker ended blocked' "$P/.nightshift/shift-log.md"
+}

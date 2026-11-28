@@ -619,11 +619,12 @@ ns_shift_ownership() { # <host> <pid> <start> <mode:hardhat|gate>
 # Remaining arguments are the command line. Returns 3 when takeover fails.
 ns_watchman_run_child() { # <ns> <host> <sid> <work_target> <project_env> <project> <cmd...>
   local ns="$1" host="$2" sid="$3" work="$4" env_name="$5" project="$6"
-  local lease generation nonce child start rc child_log
+  local lease generation nonce child start rc child_log mark
   shift 6
   lease="$(ns_lease_takeover "$ns" "$sid" "$host")" || return 3
   generation="${lease%% *}"
   nonce="${lease#* }"
+  mark="$(ns_worker_progress_mark "$ns" "$project")"
   child_log=""
   if [ "$host" = cursor ]; then
     child_log="$(ns_layout_path "$ns" shift-log)"
@@ -637,12 +638,14 @@ ns_watchman_run_child() { # <ns> <host> <sid> <work_target> <project_env> <proje
         NIGHTSHIFT_REVIVAL=1 \
         NIGHTSHIFT_LEASE_GENERATION="$generation" \
         NIGHTSHIFT_LEASE_NONCE="$nonce" \
+        NIGHTSHIFT_WORKER_MARK="$mark" \
         "$@" >>"$child_log" 2>&1
     else
       env "${env_name}=${project}" \
         NIGHTSHIFT_REVIVAL=1 \
         NIGHTSHIFT_LEASE_GENERATION="$generation" \
         NIGHTSHIFT_LEASE_NONCE="$nonce" \
+        NIGHTSHIFT_WORKER_MARK="$mark" \
         "$@" >/dev/null 2>&1
     fi
   ) &
@@ -726,6 +729,34 @@ ns_background_worker_program() {
   esac
 }
 
+# ns_progress_token <workspace> — what moves when work moves, after the tick count: the work target's
+# HEAD in repository mode, and the last substantive checkpoint. Artifact mode has no HEAD to read,
+# and hashing what the shift wrote about itself would make writing about the work look like doing
+# it — a report update, a usage line, a rendered morning page or an archive pass would all read as
+# progress. So artifact mode leans on the tick count and the checkpoint alone.
+ns_progress_token() {
+  local ws="$1" mode mark r ckpt
+  mode="$(ns_work_mode "$ws" 2>/dev/null)" || mode=repository
+  if [ "$mode" = artifact ]; then
+    mark=artifact
+  elif r="$(ns_work_target "$ws")"; then
+    mark="$(git -C "$r" rev-parse HEAD 2>/dev/null || printf 'nohead')"
+  else
+    mark=nohead
+  fi
+  ckpt="$(ns_gate_checkpoint_token "$ws")"
+  printf '%s:%s' "$mark" "${ckpt:-none}"
+}
+
+# ns_worker_progress_mark <ns> <workspace> — the clock-out gate's stall fingerprint as it stands at a
+# headless worker's launch. The launcher hands it to the worker as NIGHTSHIFT_WORKER_MARK, so the gate
+# can tell a worker that moved nothing from one that worked and then stalled.
+ns_worker_progress_mark() {
+  local ticked
+  ticked="$(ns_ticked_boxes "$(ns_layout_path "$1" punch-list)" 2>/dev/null)" || ticked=0
+  printf '%s:%s' "${ticked:-0}" "$(ns_progress_token "$2")"
+}
+
 # ns_start_background_worker <ns> <host> <work_target> <project_env> <project> <output> <scope> <prompt>
 # — start a headless worker on a run nobody works yet, the way a revival starts one: the command each
 # host's watchman uses for a fresh revival at the same launch scope (or the owner's watchAgent), with
@@ -739,7 +770,7 @@ ns_background_worker_program() {
 # 3 when the lease cannot be taken, 1 when the worker does not start.
 ns_start_background_worker() {
   local ns="$1" host="$2" work="$3" env_name="$4" project="$5" out="$6" scope="$7" prompt="$8"
-  local agent minted lease generation nonce pid start
+  local agent minted lease generation nonce pid start mark
   ns_background_worker_program "$project" "$host" "$scope" >/dev/null || return 4
   agent="$(rule "$project" watchAgent "${NIGHTSHIFT_WATCH_AGENT:-}")"
   if [ -n "$agent" ]; then
@@ -765,6 +796,7 @@ ns_start_background_worker() {
   lease="$(ns_lease_takeover "$ns" "" "$host")" || return 3
   generation="${lease%% *}"
   nonce="${lease#* }"
+  mark="$(ns_worker_progress_mark "$ns" "$project")"
   mkdir -p "${out%/*}" 2>/dev/null || :
   pid="$(
     cd "$work" || exit 1
@@ -773,6 +805,7 @@ ns_start_background_worker() {
       NIGHTSHIFT_REVIVAL=1 \
       NIGHTSHIFT_LEASE_GENERATION="$generation" \
       NIGHTSHIFT_LEASE_NONCE="$nonce" \
+      NIGHTSHIFT_WORKER_MARK="$mark" \
       "$@"
     printf '%s' "$NS_DETACHED_PID"
   )" || return 1

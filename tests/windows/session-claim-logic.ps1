@@ -33,7 +33,8 @@ function Invoke-Hook {
         [Parameter(Mandatory = $true)][string]$Script,
         [AllowEmptyString()][string]$Payload,
         [Parameter(Mandatory = $true)][string]$Workspace,
-        [string[]]$Arguments = @('-HostName', 'claude')
+        [string[]]$Arguments = @('-HostName', 'claude'),
+        [hashtable]$Environment = @{}
     )
     $saved = @{}
     foreach ($item in @(Get-ChildItem Env: | Where-Object {
@@ -41,6 +42,10 @@ function Invoke-Hook {
             })) {
         $saved[$item.Name] = $item.Value
         [Environment]::SetEnvironmentVariable($item.Name, $null, 'Process')
+    }
+    foreach ($key in $Environment.Keys) {
+        if (-not $saved.ContainsKey($key)) { $saved[$key] = $null }
+        [Environment]::SetEnvironmentVariable($key, [string]$Environment[$key], 'Process')
     }
     $env:CLAUDE_PROJECT_DIR = $Workspace
     $previous = $ErrorActionPreference
@@ -143,6 +148,41 @@ try {
     Expect-True ($ownerBash.Stdout -match 'control files') "the leased conversation stays under the site rules: $($ownerBash.Stdout)"
     $session = Read-NSSession $ns
     Expect-True ($null -ne $session -and $session.SessionId -eq 'shift-session') 'the leased conversation records itself again'
+
+    # A headless worker that moved nothing since its launch is told to park what blocks it at the
+    # stall warning, then let go at its next stop; one that made progress is still held.
+    $blockedWorkspace = Join-Path $root 'blocked worker'
+    $blockedNs = New-ArmedWorkspace $blockedWorkspace
+    $workerLease = Takeover-NSLease $blockedNs '' 'claude'
+    $workerEnv = @{
+        NIGHTSHIFT_REVIVAL = '1'
+        NIGHTSHIFT_LEASE_GENERATION = [string]$workerLease.Generation
+        NIGHTSHIFT_LEASE_NONCE = $workerLease.Nonce
+        NIGHTSHIFT_WORKER_MARK = (Get-NSWorkerProgressMark $blockedNs $blockedWorkspace)
+    }
+    $workerPayload = @{ hook_event_name = 'Stop'; session_id = 'worker-session'; transcript_path = '' } | ConvertTo-Json -Compress
+    $workerStops = @(1..3 | ForEach-Object { Invoke-Hook $gate $workerPayload $blockedWorkspace -Environment $workerEnv })
+    Expect-True (@($workerStops | Where-Object { $_.Stdout -notmatch $blockPattern }).Count -eq 0) "a blocked worker is held until the instruction: $($workerStops.Stdout -join ' | ')"
+    Expect-True ($workerStops[2].Stdout.Contains('parking-lot')) "the third stop tells the worker to park what blocks it: $($workerStops[2].Stdout)"
+    Expect-True (Test-NSWorkerRevivalHeld $blockedNs) 'the revival hold is recorded'
+    $released = Invoke-Hook $gate $workerPayload $blockedWorkspace -Environment $workerEnv
+    Expect-True ($released.ExitCode -eq 0 -and $released.Stdout -notmatch $blockPattern) "the blocked worker is let go at its next stop: $($released.Stdout) $($released.Stderr)"
+    Expect-True (-not (Test-Path -LiteralPath (Get-NSLayoutPath $blockedNs 'stop'))) 'letting the worker go writes no stop-work order'
+
+    $progressWorkspace = Join-Path $root 'progress worker'
+    $progressNs = New-ArmedWorkspace $progressWorkspace
+    $progressLease = Takeover-NSLease $progressNs '' 'claude'
+    $progressEnv = @{
+        NIGHTSHIFT_REVIVAL = '1'
+        NIGHTSHIFT_LEASE_GENERATION = [string]$progressLease.Generation
+        NIGHTSHIFT_LEASE_NONCE = $progressLease.Nonce
+        NIGHTSHIFT_WORKER_MARK = (Get-NSWorkerProgressMark $progressNs $progressWorkspace)
+    }
+    [IO.File]::WriteAllText((Get-NSLayoutPath $progressNs 'punch-list'),
+        "# Contract`n`n## Items`n- [x] **1. first.**`n- [ ] **2. second.**`n", (New-Object Text.UTF8Encoding($false)))
+    $progressStops = @(1..5 | ForEach-Object { Invoke-Hook $gate $workerPayload $progressWorkspace -Environment $progressEnv })
+    Expect-True (@($progressStops | Where-Object { $_.Stdout -notmatch $blockPattern }).Count -eq 0) "a worker that made progress is still held: $($progressStops.Stdout -join ' | ')"
+    Expect-True (-not (Test-NSWorkerRevivalHeld $progressNs)) 'a worker that made progress leaves no revival hold'
 
     # A background worker's run is leased to its host before any conversation records itself.
     $leasedOnly = Join-Path $root 'leased only/.nightshift'

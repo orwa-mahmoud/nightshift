@@ -611,6 +611,65 @@ function Get-NSDefaultRevivalArguments {
     return , $arguments.ToArray()
 }
 
+# Get-NSWorkerProgressMark <nightshift-dir> <workspace> - the clock-out gate's stall fingerprint as it
+# stands at a headless worker's launch. The launcher hands it to the worker as NIGHTSHIFT_WORKER_MARK,
+# so the gate can tell a worker that moved nothing from one that worked and then stalled.
+# Mirrors ns_worker_progress_mark.
+function Get-NSWorkerProgressMark {
+    param(
+        [Parameter(Mandatory = $true)][string]$NightshiftDir,
+        [Parameter(Mandatory = $true)][string]$Workspace
+    )
+    $ticked = 0
+    try { $ticked = [int](Get-NSBoxCounts (Get-NSLayoutPath $NightshiftDir 'punch-list')).Ticked } catch { $ticked = 0 }
+    return ([string]$ticked + ':' + (Get-NSProgressToken $Workspace))
+}
+
+# Test-NSWorkerBlocked <fingerprint> - true for a headless worker that has moved nothing since its
+# launch: its stall fingerprint still equals the mark its launcher recorded. Mirrors ns_gate_worker_blocked.
+function Test-NSWorkerBlocked {
+    param([Parameter(Mandatory = $true)][string]$Fingerprint)
+    return (-not [string]::IsNullOrEmpty($env:NIGHTSHIFT_WORKER_MARK) -and
+        -not [string]::IsNullOrEmpty($env:NIGHTSHIFT_LEASE_NONCE) -and $Fingerprint -ceq $env:NIGHTSHIFT_WORKER_MARK)
+}
+
+# Set-NSWorkerRevivalHold <nightshift-dir> - record that this worker is told to park what blocks it
+# and end. The watchman revives nobody while the record stands; Start clears it.
+# Mirrors ns_gate_hold_worker_revival.
+function Set-NSWorkerRevivalHold {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $path = Get-NSLayoutPath $NightshiftDir 'worker-blocked'
+    if (Test-NSReparsePoint $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+    $null = Write-NSAtomicLines -Path $path -Lines @([string]$env:NIGHTSHIFT_LEASE_NONCE)
+}
+
+# Test-NSWorkerReleaseDue <nightshift-dir> - true at the next stop of the worker the hold names.
+# Mirrors ns_gate_worker_release_due.
+function Test-NSWorkerReleaseDue {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    if ([string]::IsNullOrEmpty($env:NIGHTSHIFT_LEASE_NONCE)) { return $false }
+    $path = Get-NSLayoutPath $NightshiftDir 'worker-blocked'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Test-NSReparsePoint $path)) { return $false }
+    $lines = @([IO.File]::ReadAllLines($path))
+    return ($lines.Count -gt 0 -and $lines[0].TrimEnd("`r") -ceq $env:NIGHTSHIFT_LEASE_NONCE)
+}
+
+# Test-NSWorkerRevivalHeld <nightshift-dir> - true while a released blocked worker's hold stands.
+function Test-NSWorkerRevivalHeld {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    $path = Get-NSLayoutPath $NightshiftDir 'worker-blocked'
+    return ((Test-Path -LiteralPath $path -PathType Leaf) -and -not (Test-NSReparsePoint $path))
+}
+
+# Get-NSBlockedWorkerMessage <nightshift-dir> - the instruction a worker gets when nothing it could do
+# moved the shift since its launch. Mirrors ns_gate_blocked_worker_message.
+function Get-NSBlockedWorkerMessage {
+    param([Parameter(Mandatory = $true)][string]$NightshiftDir)
+    return ('Nothing has moved this shift since this headless session started: no tick, no commit, no checkpoint. Something blocks you that only the owner can clear (a refused folder, a permission prompt nobody can answer, a missing tool). Write it as one entry in ' +
+        (Get-NSLayoutName $NightshiftDir 'parking-lot') +
+        ': what you tried, what was refused, and what would unblock it. Then end your turn: this session will be let go, and the watchman will not start another worker on this run until Start is run again.')
+}
+
 # Start-NSBackgroundWorker - start a headless worker on a run nobody works yet, the way a revival
 # starts one: the lease is taken for it first and its process attached, so the worker's hooks bind it
 # to the run and anything that asks finds it alive. Hidden and not waited on, so it outlives the
@@ -632,7 +691,7 @@ function Start-NSBackgroundWorker {
     if ($null -eq $lease) { return 0 }
     $projectVariable = @{ claude = 'CLAUDE_PROJECT_DIR'; codex = 'CODEX_PROJECT_DIR'; cursor = 'CURSOR_PROJECT_DIR' }[$HostName]
     $saved = @{}
-    foreach ($name in @($projectVariable, 'NIGHTSHIFT_REVIVAL', 'NIGHTSHIFT_LEASE_GENERATION', 'NIGHTSHIFT_LEASE_NONCE')) {
+    foreach ($name in @($projectVariable, 'NIGHTSHIFT_REVIVAL', 'NIGHTSHIFT_LEASE_GENERATION', 'NIGHTSHIFT_LEASE_NONCE', 'NIGHTSHIFT_WORKER_MARK')) {
         $saved[$name] = [Environment]::GetEnvironmentVariable($name)
     }
     try {
@@ -640,6 +699,7 @@ function Start-NSBackgroundWorker {
         $env:NIGHTSHIFT_REVIVAL = '1'
         $env:NIGHTSHIFT_LEASE_GENERATION = [string]$lease.Generation
         $env:NIGHTSHIFT_LEASE_NONCE = $lease.Nonce
+        $env:NIGHTSHIFT_WORKER_MARK = Get-NSWorkerProgressMark $NightshiftDir $Workspace
         $argumentLine = Get-NSAgentArgumentLine $CommandName $CommandArguments
         try {
             $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentLine `

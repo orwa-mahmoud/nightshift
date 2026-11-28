@@ -274,7 +274,7 @@ try {
     $stale = New-Site (Join-Path $root 'stale')
     $staleNs = Join-Path $stale '.nightshift'
     foreach ($marker in @('STOP', '.stall', '.notified', '.ended', '.session-end', '.shift-pulse',
-            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick')) {
+            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.worker-blocked')) {
         [IO.File]::WriteAllText((Join-Path $staleNs $marker), '')
     }
     [IO.File]::WriteAllText((Join-Path $staleNs 'deadline'), "100`n")
@@ -282,7 +282,7 @@ try {
     $staleRun = Invoke-Preflight $stale
     Expect-True ($staleRun.ExitCode -eq 0) "stale leftovers do not refuse: $($staleRun.Stdout)"
     foreach ($marker in @('STOP', '.stall', '.notified', '.ended', '.session-end', '.shift-pulse',
-            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.lock.d', 'deadline')) {
+            '.mint-failed', '.shift-session', '.shift-armed', '.watchman-tick', '.worker-blocked', '.lock.d', 'deadline')) {
         Expect-True (-not (Test-Path -LiteralPath (Join-Path $staleNs $marker))) "stale $marker is cleared"
     }
 

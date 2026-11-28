@@ -251,7 +251,7 @@ setup_site() { # <name> [punch-body]
 @test "every stale run-control marker is cleared before anything writes a new one" {
   p="$(setup_site preflight-markers)"
   for m in STOP .stall .notified .ended .session-end .shift-pulse .mint-failed .shift-session \
-    .shift-armed .watchman-tick; do
+    .shift-armed .watchman-tick .worker-blocked; do
     : >"$p/.nightshift/$m"
   done
   mkdir -p "$p/.nightshift/.lock.d"
@@ -263,7 +263,7 @@ setup_site() { # <name> [punch-body]
   run bash "$PREFLIGHT" --project "$p"
   [ "$status" -eq 0 ]
   for m in STOP .stall .notified .ended .session-end .shift-pulse .mint-failed .shift-session \
-    .shift-armed .watchman-tick .lock.d .shift-lease; do
+    .shift-armed .watchman-tick .worker-blocked .lock.d .shift-lease; do
     [ ! -e "$p/.nightshift/$m" ] || { echo "left behind: $m"; return 1; }
   done
 }
