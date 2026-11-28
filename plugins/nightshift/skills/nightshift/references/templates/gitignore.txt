@@ -31,9 +31,11 @@
 /runs/*/inbox/messages.md
 
 # Filed shifts, with the same parts private. Evidence the team chose to share is filed in each
-# shift's evidence/ folder. The history index stays each clone's own.
+# shift's evidence/ folder. The history index and the condensed history stay each clone's own;
+# delete these two lines to share them.
 !/archive/
 /archive/history-index.md
+/archive/history/
 /archive/*/run/
 /archive/*/receipts/*/
 /archive/*/inbox/messages.md

@@ -21,6 +21,7 @@ or [archive finished shifts](archive.md#archive-and-continue). The commands belo
 | `/nightshift:stop` | Pauses now. Open boxes stay open and the deadline is kept. |
 | **After the shift** | |
 | `/nightshift:archive` | Files the shift into its own folder, `.nightshift/archive/<YYYY-MM-DD>/` by default, laid out like the live site. Open work and the contract stay live. |
+| `/nightshift:history` | Condenses the filed records into a short summary in the history index and one detail file per subject under `.nightshift/archive/history/`. Keeps every decision, rejected option and open question still in force; deletes nothing. |
 | `/nightshift:reset` | Drops the runtime markers and the deadline; keeps the punch list and history. |
 | `/nightshift:purge` | Deletes this project's `.nightshift/`. Does not uninstall the plugin. |
 

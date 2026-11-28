@@ -1,0 +1,110 @@
+---
+name: history
+description: Condense the project's Nightshift history into a short summary and detail files that keep every decision, rejection and open question still in force.
+license: MIT
+metadata:
+  internal: true
+---
+
+Review the history of the host-opened project. Old shifts leave many records behind: filed punch
+lists, receipts, parking lots, snag logs, plan records, shift logs and morning pages. Read them,
+decide what still matters, and write it down once, in two layers: a summary a person reads in a
+few minutes, and detail files an agent opens when it works on that subject again.
+
+Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
+on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
+attached from (`skills/history/SKILL.md`). Run every command below through
+`"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
+in the PowerShell tool, same verbs. `ns bind` prints the resolved workspace and `NS`; `ns path <key>`
+prints where this workspace keeps a record, and `ns path --list` names every key.
+
+## The two layers
+
+**Summary** — the history index Archive already keeps, `history-index.md` at the archive root
+(`ns path archive`). One index, never a second one. Archive's per-shift entries stay as they are;
+the review adds a `## Condensed history` section above them, one short block per subject:
+
+~~~markdown
+### <subject>
+Now: <the decision in force, in one or two sentences>
+Why: <the reason that still holds>
+Replaced: <what it superseded, or nothing>
+Open: <the question still undecided, or none>
+Detail: [<subject>](history/<subject>.md)
+~~~
+
+A subject is a code area or a topic the owner would recognise (`clock-out gate`, `worktree runs`,
+`release process`), named in lower-case words; its file name is that name with spaces as hyphens.
+Pick subjects from the records, not from a fixed list.
+
+**Detail** — `history/<subject>.md` beside the index. What an agent needs to act on the subject
+later, and nothing else:
+
+- each decision, newest first, with the date and the record it came from; a replaced decision stays,
+  marked `replaced <date> by <the newer decision>`;
+- options tried or rejected, each with the reason;
+- what was verified and how (the command, the test, the evidence file);
+- the commits, pull requests and releases that carry it;
+- disagreements between records that nothing settled, quoting both sides in a line each.
+
+Write facts, not narration. One fact appears once: the summary points at the detail, the detail
+does not repeat the summary. Link each fact to its source record with a link relative to the detail
+file (`../<folder>/receipts/…`), so the agent can open the original while it still exists.
+
+## Find the records
+
+Records live in more than one layout, depending on the workspace's age. Look in all of them and do
+not stop at the first that exists:
+
+- shift folders filed by Archive, laid out like the live site: `archive/<folder>/` and, in a
+  workspace that keeps runs, `archive/<folder>/runs/<run>/` — punch list, `receipts/` (with the
+  morning page), `inbox/` (parking lot, snag log), `run/` (shift log, shift policy);
+- live runs: `runs/<run>/` — read their closed records only; open items, unanswered parking-lot
+  entries and open snags stay live and are not condensed;
+- single-shift folders from older layouts: `archive/<YYYY-MM-DD>/` and `archive/<YYYY-MM-DD>/run/`,
+  which may hold `shipped.md`, `shift-log.md`, `parking-lot.md`, `snag-log.md`, the opportunity map
+  and product research;
+- plan records and planning decisions: `ns path plan-records`, `ns path decisions`;
+- the history index itself, for the per-shift entries Archive wrote.
+
+List what you found with a count and total size per kind before reading, so the receipt can state
+the size before. Records the review does not reach this time stay where they are, untouched.
+
+## Decide what stays
+
+Keep, for every subject:
+
+- every decision still in force, and every decision a later one replaced (in the detail, marked);
+- every rejected option and its reason, so nobody proposes it again;
+- every verification that a later change could break;
+- every question no record answers, and every disagreement no record settles.
+
+Drop: intermediate states a later record superseded within the same shift, text repeated across
+records, progress chatter, usage tables, timestamps that carry no decision, and anything already
+true of the code that the code or Git history shows plainly.
+
+Where two records disagree and neither settles it, the summary says `Open:` and names both; never
+pick one silently. Where a record is unreadable or a link inside it is broken, say so in the detail
+and keep going; never guess what it said.
+
+## Write
+
+Write the detail files first, then the `## Condensed history` section of the index. When a subject's
+file or block already exists, update it in place rather than adding a second.
+
+This review changes and deletes no original record. Deleting what was condensed is a separate step
+that waits for the owner.
+
+## Sharing
+
+Whether the condensed history is shared follows Git, not a setting. The shipped
+`.nightshift/.gitignore` keeps `archive/history-index.md` and `archive/history/` private to each
+clone; a team that wants to share them deletes those lines. Read `ns path gitignore` and say which
+applies.
+
+## Report
+
+Print, in a few lines: the subjects written, the open questions and disagreements, and the size of
+the records read against the size of the summary and detail files together (`wc -c` on POSIX,
+`(Get-Item).Length` on native Windows). The two layers should be much smaller than what they
+replace; when they are not, condense again before reporting.
