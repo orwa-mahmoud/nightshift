@@ -36,6 +36,8 @@ esac
 _here="$(cd -P -- "$(dirname -- "$_ns_src")" && pwd)" || exit 2
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
+# The awk and python programs beside lib.sh, resolved from this script's own path.
+PROGRAMS="$_here/../lib"
 
 EMIT_JQ="$_here/morning-receipt-emit.jq"
 # Native Windows jq.exe cannot open a /d/... program path. The display form is
@@ -330,118 +332,6 @@ _policy_profile() {
 
 # ---------------------------------------------------------------- JSON bridge
 
-PY='
-import json, re, sys
-
-OP = sys.argv[1]
-
-
-def scrub(s):
-    return re.sub(r"[\x00-\x1f\x7f]", " ", s)
-
-
-def canon(v):
-    return json.dumps(v, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def cell(v):
-    if v is None:
-        text = ""
-    elif isinstance(v, str):
-        text = v
-    elif v is True:
-        text = "true"
-    elif v is False:
-        text = "false"
-    else:
-        text = canon(v)
-    return scrub(text)
-
-
-def field(rec, key):
-    return rec.get(key) if isinstance(rec, dict) else None
-
-
-def firstof(rec, keys):
-    for key in keys:
-        value = field(rec, key)
-        if value is not None:
-            return value
-    return None
-
-
-def parse(line):
-    try:
-        return json.loads(line)
-    except ValueError:
-        return None
-
-
-text = sys.stdin.buffer.read().decode("utf-8", "surrogateescape")
-out = sys.stdout
-
-if OP == "recs":
-    fields = [x for x in sys.argv[2].split("\n") if x]
-    FS, RS = sys.argv[3], sys.argv[4]
-    for i, line in enumerate([x for x in text.split("\n") if x]):
-        rec = parse(line)
-        if isinstance(rec, dict):
-            out.write("r" + FS + "".join(cell(field(rec, k)) + FS for k in fields))
-        else:
-            out.write("u" + FS + "".join("" + FS for k in fields))
-        out.write(str(i) + RS)
-elif OP == "details":
-    FS, RS = sys.argv[2], sys.argv[3]
-    for i, line in enumerate([x for x in text.split("\n") if x]):
-        d = field(parse(line), "details")
-        if not isinstance(d, dict):
-            continue
-        for key in sorted(d):
-            out.write("%d%s%s%s%s%s" % (i, FS, scrub(key), FS, cell(d[key]), RS))
-elif OP == "policy":
-    FS, RS = sys.argv[2], sys.argv[3]
-    doc = json.loads(text)
-    if not isinstance(doc, dict):
-        doc = {}
-    head = ["shiftId", "createdAt", "source", "verificationLevel", "toolingPolicy",
-            "completionMode"]
-    debt = field(doc, "selectedDebt")
-    if not isinstance(debt, list):
-        debt = []
-    out.write("h" + FS + "".join(cell(field(doc, k)) + FS for k in head))
-    out.write(", ".join(cell(x) for x in debt) + RS)
-    allowances = field(doc, "allowances")
-    if not isinstance(allowances, list):
-        allowances = []
-    for one in allowances:
-        if not isinstance(one, dict):
-            continue
-        out.write("a" + FS + cell(field(one, "category")) + FS + cell(field(one, "scope"))
-                  + FS + cell(field(one, "provenance")) + RS)
-elif OP == "compare":
-    FS, RS = sys.argv[2], sys.argv[3]
-    doc = json.loads(text)
-    rows = None
-    if isinstance(doc, list):
-        rows = doc
-    elif isinstance(doc, dict):
-        for key in ("rows", "findings", "comparison", "entries"):
-            if isinstance(doc.get(key), list):
-                rows = doc[key]
-                break
-    for row in rows or []:
-        if not isinstance(row, dict):
-            continue
-        sources = firstof(row, ["sources", "sourceClass", "source"])
-        if isinstance(sources, list):
-            sources = ", ".join(cell(x) for x in sources)
-        else:
-            sources = cell(sources)
-        out.write(cell(firstof(row, ["id", "finding", "recordId"])) + FS
-                  + cell(firstof(row, ["class", "classification", "state"])) + FS
-                  + cell(firstof(row, ["digest"])) + FS + sources + FS
-                  + cell(firstof(row, ["locator", "at"])) + RS)
-'
 
 # jq resolves every $name at compile time, so one program file means one argument set whichever
 # operation is being asked for.
@@ -455,7 +345,7 @@ _emit_recs() {
     _jq_args recs
     jq -Rsj -f "$EMIT_JQ" "${JQARGS[@]}" <"$1"
   else
-    python3 -c "$PY" recs "$RFIELDS" "$FS" "$RS" <"$1"
+    python3 "$(ns_native_display_path "$PROGRAMS/morning-receipt-json.py")" recs "$RFIELDS" "$FS" "$RS" <"$1"
   fi
 }
 
@@ -465,7 +355,7 @@ _emit_details() {
     _jq_args details
     jq -Rsj -f "$EMIT_JQ" "${JQARGS[@]}" <"$1"
   else
-    python3 -c "$PY" details "$FS" "$RS" <"$1"
+    python3 "$(ns_native_display_path "$PROGRAMS/morning-receipt-json.py")" details "$FS" "$RS" <"$1"
   fi
 }
 
@@ -475,7 +365,7 @@ _emit_policy() {
     _jq_args policy
     jq -j -f "$EMIT_JQ" "${JQARGS[@]}" <"$1"
   else
-    python3 -c "$PY" policy "$FS" "$RS" <"$1"
+    python3 "$(ns_native_display_path "$PROGRAMS/morning-receipt-json.py")" policy "$FS" "$RS" <"$1"
   fi
 }
 
@@ -485,7 +375,7 @@ _emit_compare() {
     _jq_args compare
     jq -j -f "$EMIT_JQ" "${JQARGS[@]}" <"$1"
   else
-    python3 -c "$PY" compare "$FS" "$RS" <"$1"
+    python3 "$(ns_native_display_path "$PROGRAMS/morning-receipt-json.py")" compare "$FS" "$RS" <"$1"
   fi
 }
 
@@ -714,36 +604,7 @@ _building() {
   BUILD_PHASE=""
   BUILD_NEXT=""
   [ -f "$MAP" ] && [ ! -L "$MAP" ] || return 0
-  sed 's/[[:cntrl:]]/ /g' "$MAP" | awk -v tab="$(printf '\t')" '
-    /<!--/ { comment = 1 }
-    /-->/ { comment = 0; next }
-    comment { next }
-    /^###[[:space:]]+/ {
-      title = $0
-      sub(/^###[[:space:]]+/, "", title)
-      sub(/[[:space:]]*$/, "", title)
-      tline = NR
-      building = 0
-      next
-    }
-    /^Status:[[:space:]]*building[[:space:]]*$/ {
-      building = 1
-      print "T" tab tline tab title
-      next
-    }
-    building && /^Current phase:[[:space:]]*/ {
-      value = $0
-      sub(/^Current phase:[[:space:]]*/, "", value)
-      print "P" tab NR tab value
-      next
-    }
-    building && /^Next:[[:space:]]*/ {
-      value = $0
-      sub(/^Next:[[:space:]]*/, "", value)
-      print "N" tab NR tab value
-      next
-    }
-  ' >"$TMPD/building"
+  sed 's/[[:cntrl:]]/ /g' "$MAP" | awk -v tab="$(printf '\t')" -f "$PROGRAMS/morning-receipt-build-next.awk" >"$TMPD/building"
   while IFS="$(printf '\t')" read -r kind _ value; do
     case "$kind" in
       T)
@@ -1329,23 +1190,7 @@ EOF
 # `<first stamp> to <last stamp> · <message> (<n> times)`, the last stamp without its date when the
 # day is the same.
 _collapse_repeats() {
-  awk -v sep=" $(printf '\302\267') " '
-    function flush() {
-      if (n == 0) return
-      if (n == 1) { print first_line; n = 0; return }
-      last = last_stamp
-      if (substr(last_stamp, 1, 10) == substr(first_stamp, 1, 10)) last = substr(last_stamp, 12)
-      print first_stamp " to " last sep msg " (" n " times)"
-      n = 0
-    }
-    {
-      i = index($0, sep)
-      if (i > 0) { stamp = substr($0, 1, i - 1); m = substr($0, i + length(sep)) } else { stamp = ""; m = $0 }
-      if (n > 0 && stamp != "" && first_stamp != "" && m == msg) { n++; last_stamp = stamp; next }
-      flush()
-      n = 1; msg = m; first_stamp = stamp; last_stamp = stamp; first_line = $0
-    }
-    END { flush() }'
+  awk -v sep=" $(printf '\302\267') " -f "$PROGRAMS/morning-receipt-collapse.awk"
 }
 
 _lines_baseline() {
