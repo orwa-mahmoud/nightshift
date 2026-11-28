@@ -258,7 +258,7 @@ record gaps: <what is missing or corrupt, or none>
 ~~~
 
 Filing a shift again updates its entry instead of adding a second. A `## Condensed history` section
-belongs to the History skill: leave it as it is. Corrupt or missing fields are
+belongs to the History cleanup skill: leave it as it is. Corrupt or missing fields are
 recorded — never invented. Compare prior shifts from that index to reuse evidence locators and
 plans only; never replay side effects. Render audience-specific handoffs from one evidence truth.
 

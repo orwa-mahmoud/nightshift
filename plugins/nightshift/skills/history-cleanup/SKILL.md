@@ -1,6 +1,6 @@
 ---
-name: history
-description: Condense the project's Nightshift history into a short summary and detail files that keep every decision, rejection and open question still in force.
+name: history-cleanup
+description: Condense the project's Nightshift history into a short summary and detail files that keep every decision, rejection and open question still in force, then delete the condensed originals on the owner's yes.
 license: MIT
 metadata:
   internal: true
@@ -9,11 +9,29 @@ metadata:
 Review the history of the host-opened project. Old shifts leave many records behind: filed punch
 lists, receipts, parking lots, snag logs, plan records, shift logs and morning pages. Read them,
 decide what still matters, and write it down once, in two layers: a summary a person reads in a
-few minutes, and detail files an agent opens when it works on that subject again.
+few minutes, and detail files an agent opens when it works on that subject again. Then delete the
+originals whose facts now live there.
+
+## What the owner asks for
+
+The owner says what they want in their own words, with the command or without it. Read the request;
+there are no flags to parse.
+
+- **Which records.** With no age given, the review covers every record on file. An age limits it to
+  older records: "older than 10 days", "older than two months", "before March". Turn it into a date
+  (today minus the age, or the date named), say that date in the report, and read only the shift
+  folders and records from before it. Date each one by what it shows: the folder's date, the last
+  line of its shift log, or the date Git recorded for the file when it is tracked. Newer records stay
+  untouched and are not condensed.
+- **Whether to ask before deleting.** By default the review proposes what can go and waits for the
+  owner's answer. When the owner asks to apply it directly ("apply directly", "apply direct", "don't
+  ask, just delete", or `--apply-direct` written after the command), that is the yes in advance for
+  the originals this review condenses: delete them without proposing first, under the same rules
+  below, and report what went.
 
 Resolve the installed plugin root to an absolute `$NIGHTSHIFT_PLUGIN_ROOT` — `${CLAUDE_PLUGIN_ROOT}`
 on Claude Code, `$PLUGIN_ROOT` on Codex when set, otherwise the absolute path this skill was
-attached from (`skills/history/SKILL.md`). Run every command below through
+attached from (`skills/history-cleanup/SKILL.md`). Run every command below through
 `"$NIGHTSHIFT_PLUGIN_ROOT/runtime/ns"` — native Windows: `& "$NIGHTSHIFT_PLUGIN_ROOT\runtime\windows\ns.ps1"`
 in the PowerShell tool, same verbs. `ns bind` prints the resolved workspace and `NS`; `ns path <key>`
 prints where this workspace keeps a record, and `ns path --list` names every key.
@@ -115,7 +133,10 @@ When it is, say that Git's history is the undo. When it is not, say plainly that
 be undone.
 
 Then ask the owner, and wait: all, some (named), or none. Silence or an unclear answer is none.
-An unattended run never deletes: it writes the proposal into the report and stops there.
+When the owner asked to apply directly, skip the question: every record you would have proposed is
+approved, and the report lists each deleted path with whether Git can bring it back. An unattended
+run deletes only when its order says to apply directly; otherwise it writes the proposal into the
+report and stops there.
 
 Delete exactly the approved paths and nothing else, and only while no shift is armed in this
 workspace. Where the owner approved a whole shift folder, run `ns retain-history` first: when its
@@ -162,7 +183,7 @@ applies.
 
 ## Report
 
-Print, in a few lines: the subjects written, the open questions and disagreements, and the size of
+Print, in a few lines: the age limit and its date when the owner gave one, the subjects written, the open questions and disagreements, and the size of
 the records read against the size of the summary and detail files together (`wc -c` on POSIX,
 `(Get-Item).Length` on native Windows). The two layers should be much smaller than what they
 replace; when they are not, condense again before reporting.
