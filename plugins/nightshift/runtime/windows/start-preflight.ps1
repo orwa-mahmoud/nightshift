@@ -874,7 +874,7 @@ if ((Test-Path -LiteralPath $deadlinePath -PathType Leaf) -and -not (Test-NSRepa
     if ($raw -match '^[0-9]+$') { $deadlineFile = $raw }
 }
 $policyDeadline = ''
-if ([string]$policyState['state'] -eq 'ok' -and $null -ne $policyState['policy']) {
+if ([string]$policyState['state'] -eq 'valid' -and $null -ne $policyState['policy']) {
     $candidate = Get-NSMapValue $policyState['policy'] 'deadlineEpoch'
     if (Test-NSJsonInteger $candidate) { $policyDeadline = [string][long]$candidate }
 }
