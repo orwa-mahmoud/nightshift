@@ -226,7 +226,7 @@ try {
     $null = New-Item -ItemType Directory -Force -Path $env:CLAUDE_CONFIG_DIR
     try {
         $firstStart = Invoke-StartRun $permsSite 'Export CSV'
-        Expect-True ($firstStart.Text -cmatch "(?m)^warn permissions no frictionless grant in the new worktree's \.claude \(committed in \S*/permissions/repo\)") "a new worktree run names the committed settings: $($firstStart.Text)"
+        Expect-True ($firstStart.Text -cmatch "(?m)^warn permissions no frictionless grant in the new worktree's \.claude \(committed in \S*[\\/]permissions[\\/]repo\)") "a new worktree run names the committed settings: $($firstStart.Text)"
         $null = New-Item -ItemType Directory -Force -Path (Join-Path $permsSite '.claude')
         [IO.File]::WriteAllText((Join-Path $permsSite '.claude/settings.local.json'), '{"permissions":{"defaultMode":"bypassPermissions"}}')
         $againStart = Invoke-StartRun $permsSite 'Export CSV'
