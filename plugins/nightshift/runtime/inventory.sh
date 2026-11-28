@@ -25,6 +25,8 @@ set -u
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
+# The awk and jq programs beside lib.sh, resolved from this script's own path.
+PROGRAMS="$_here/../lib"
 
 PROJECT="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
 MODE=md
@@ -164,33 +166,13 @@ _section() {
 # `ruff`, so a neighbouring name character rules the hit out and only a delimiter — an
 # end of line, a version operator, an extras bracket, a quote or a comma — lets it
 # through. Status 0 when the file names the token that way.
-# shellcheck disable=SC2016 # awk program; $0 is an awk field
-AWK_MENTIONS='
-function edge(c) { return (c == "") ? 1 : (index(DELIM, c) > 0) }
-BEGIN { DELIM = " \t\r=<>[~!\"," sprintf("%c", 39); n = length(tok); ok = 0 }
-{
-  s = $0
-  p = 0
-  while (1) {
-    i = index(substr(s, p + 1), tok)
-    if (i == 0) break
-    i = p + i
-    if (edge(i == 1 ? "" : substr(s, i - 1, 1)) && edge(substr(s, i + n, 1))) {
-      ok = 1
-      exit
-    }
-    p = i
-  }
-}
-END { exit ok ? 0 : 1 }
-'
 
 # _mentions DIR NAME -> 0 when a manifest in DIR names NAME as a package of its own.
 _mentions() {
   local dir="$1" mention="$2" f
   for f in package.json Cargo.toml go.mod pyproject.toml setup.cfg requirements.txt tox.ini; do
     [ -f "$TARGET/$dir/$f" ] || continue
-    LC_ALL=C awk -v tok="$mention" "$AWK_MENTIONS" "$TARGET/$dir/$f" && return 0
+    LC_ALL=C awk -v tok="$mention" -f "$PROGRAMS/inventory-mentions.awk" "$TARGET/$dir/$f" && return 0
   done
   return 1
 }
@@ -256,12 +238,6 @@ _lockfile() {
 
 # One script name per line, because a name may hold spaces: `npm run "lint all"` is
 # one script, and a list joined by spaces would report it as two that do not exist.
-JQ_PACKAGE='
-def cl: gsub("[[:cntrl:]]"; " ");
-( ["workspaces\t" + (if (.workspaces == null) then "no" else "yes" end)]
-+ ((.scripts // {}) | keys | map("script-key\t" + (. | cl)))
-) | .[]
-'
 
 STREAM="$TMPD/stream"
 : >"$STREAM"
@@ -288,7 +264,7 @@ while IFS= read -r dir; do
   if [ -f "$TARGET/$dir/package.json" ]; then
     command -v jq >/dev/null 2>&1 ||
       unavail 'jq is required to read package.json and is not on PATH'
-    jq -r "$JQ_PACKAGE" <"$TARGET/$dir/package.json" >"$TMPD/pkg" 2>/dev/null ||
+    jq -r -f "$(ns_native_display_path "$PROGRAMS/inventory-package.jq")" <"$TARGET/$dir/package.json" >"$TMPD/pkg" 2>/dev/null ||
       unavail "$dir/package.json is not readable JSON"
     LC_ALL=C awk -F'\t' '$1 == "script-key" { print $2 }' <"$TMPD/pkg" >"$TMPD/scriptkeys"
     WORKSPACES="$(LC_ALL=C awk -F'\t' '$1 == "workspaces" { print $2; exit }' <"$TMPD/pkg")"
@@ -421,104 +397,6 @@ done <"$TMPD/pkgdirs"
 
 # ------------------------------------------------------------------ rendering
 
-# shellcheck disable=SC2016 # awk program; $1..$4 are awk fields
-AWK_RENDER='
-function san(s) {
-  gsub(/[^ -~]/, " ", s)
-  gsub(/  +/, " ", s)
-  sub(/^ +/, "", s)
-  sub(/ +$/, "", s)
-  if (s == "") s = "-"
-  return s
-}
-function jesc(s,   i, c, o) {
-  o = ""
-  for (i = 1; i <= length(s); i++) {
-    c = substr(s, i, 1)
-    if (c == "\"") o = o "\\\""
-    else if (c == "\\") o = o "\\\\"
-    else o = o c
-  }
-  return o
-}
-function cell(s,   i, c, o) {
-  o = ""
-  for (i = 1; i <= length(s); i++) {
-    c = substr(s, i, 1)
-    if (c == "|") o = o "\\|"
-    else o = o c
-  }
-  return o
-}
-BEGIN {
-  FS = "\t"
-  target = "-"; vcs = "none"; nci = 0; npkg = 0; nrow = 0
-}
-$1 == "target" { target = san($2); next }
-$1 == "vcs" { vcs = san($2); next }
-$1 == "ci" { nci++; ci[nci] = san($2); next }
-$1 == "pkg" { npkg++; pkg[npkg] = san($2); kind[npkg] = san($3); next }
-$1 == "field" || $1 == "script" || $1 == "config" || $1 == "tool" {
-  nrow++
-  rk[nrow] = $1; rp[nrow] = san($2); rn[nrow] = san($3); rv[nrow] = san($4)
-  next
-}
-END {
-  if (MODE == "json") {
-    printf "{\"ci\":["
-    for (i = 1; i <= nci; i++) printf "%s\"%s\"", (i > 1 ? "," : ""), jesc(ci[i])
-    printf "],\"packages\":["
-    for (p = 1; p <= npkg; p++) {
-      printf "%s{", (p > 1 ? "," : "")
-      group(p, "config", "configs")
-      printf ",\"kind\":\"%s\"", jesc(kind[p])
-      printf ",\"lockfile\":\"%s\"", jesc(one(p, "lockfile"))
-      printf ",\"manager\":\"%s\"", jesc(one(p, "manager"))
-      printf ",\"path\":\"%s\",", jesc(pkg[p])
-      group(p, "script", "scripts")
-      printf ","
-      group(p, "tool", "tools")
-      printf ",\"workspaces\":\"%s\"}", jesc(one(p, "workspaces"))
-    }
-    printf "],\"target\":\"%s\",\"vcs\":\"%s\",\"version\":1}\n", jesc(target), jesc(vcs)
-    exit
-  }
-  printf "inventory: %d %s in %s (%s)\n", npkg, (npkg == 1 ? "package" : "packages"), target, vcs
-  printf "ci:"
-  if (nci == 0) printf " none"
-  for (i = 1; i <= nci; i++) printf " %s", ci[i]
-  printf "\n"
-  for (p = 1; p <= npkg; p++) {
-    printf "\n## %s (%s)\n\n", pkg[p], kind[p]
-    print "| field | value |"
-    print "| --- | --- |"
-    for (i = 1; i <= nrow; i++) {
-      if (rp[i] != pkg[p]) continue
-      label = rn[i]
-      if (rk[i] == "script") label = "script " rn[i]
-      else if (rk[i] == "config") label = "config " rn[i]
-      else if (rk[i] == "tool") label = "tool " rn[i]
-      printf "| %s | %s |\n", cell(label), cell(rv[i])
-    }
-  }
-}
-function one(p, name,   i) {
-  for (i = 1; i <= nrow; i++) {
-    if (rk[i] == "field" && rp[i] == pkg[p] && rn[i] == name) return rv[i]
-  }
-  return "-"
-}
-function group(p, kindName, label,   i, first) {
-  printf "\"%s\":{", label
-  first = 1
-  for (i = 1; i <= nrow; i++) {
-    if (rk[i] != kindName || rp[i] != pkg[p]) continue
-    printf "%s\"%s\":\"%s\"", (first ? "" : ","), jesc(rn[i]), jesc(rv[i])
-    first = 0
-  }
-  printf "}"
-}
-'
 
-LC_ALL=C awk -v MODE="$MODE" "$AWK_RENDER" "$STREAM"
+LC_ALL=C awk -v MODE="$MODE" -f "$PROGRAMS/inventory-render.awk" "$STREAM"
 exit 0
