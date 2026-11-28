@@ -8,11 +8,8 @@ version users receive. Dates are release dates; the tags carry the exact trees.
 
 ### Features
 
-* bind team and runner approvals to reviewed work ([64e7902](https://github.com/orwa-mahmoud/nightshift/commit/64e7902cb2aa910b4886743a1536f9825555a1e3))
-* configure team work branches and base updates ([1150b91](https://github.com/orwa-mahmoud/nightshift/commit/1150b912a7e0e08879beeb02246df159fbcbb115))
+* apply a member's own settings file over the shared rules ([016cf64](https://github.com/orwa-mahmoud/nightshift/commit/016cf6436b3755032ed2ff593c5cbf12506b678f))
 * record punch-list changes instead of refusing the stop ([5ef4590](https://github.com/orwa-mahmoud/nightshift/commit/5ef4590e4b84912b26f7673161408e5ccfa7b608))
-* resolve team defaults and selected member settings ([016cf64](https://github.com/orwa-mahmoud/nightshift/commit/016cf6436b3755032ed2ff593c5cbf12506b678f))
-* select run evidence for shared project history ([68c93f2](https://github.com/orwa-mahmoud/nightshift/commit/68c93f2407e79a1b5400ef0a26d8caa3d00c00b6))
 * share project planning and shift history through git ([a80bea1](https://github.com/orwa-mahmoud/nightshift/commit/a80bea184173d78c360e123a720a23af94c39871))
 
 
