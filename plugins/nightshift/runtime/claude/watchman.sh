@@ -282,8 +282,12 @@ spawn() { # $1 optionally overrides the agent for this one attempt; $2 the order
   # under the recorded id and stand the watchman down mid-outage.
   # The owner-provided $a command line is intentionally word-split below.
   # shellcheck disable=SC2086
+  set -- $a
+  # Every default rung ends in -p. The workspace that holds the run folder goes in before it as a
+  # working folder of the session, so a worker started in a worktree can still open its run folder.
+  if [ "$AGENT_IS_DEFAULT" -eq 1 ]; then set -- "${@:1:$#-1}" --add-dir "$PROJECT" -p; fi
   ns_watchman_run_child "$NS" claude "$(shift_session_id)" "$WORK_TARGET" \
-    CLAUDE_PROJECT_DIR "$PROJECT" $a "$p"
+    CLAUDE_PROJECT_DIR "$PROJECT" "$@" "$p"
   rc=$?
   if [ "$rc" -eq 3 ]; then
     log_line "watchman: process lease transfer failed — not spawning beside an unfenced session"

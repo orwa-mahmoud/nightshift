@@ -340,7 +340,7 @@ STUB
   printf '\n%s\n99999\nnever\ncodex\n' "$ROLLOUT" >"$P/.nightshift/.shift-session"
   cat >"$BIN/codex" <<'STUB'
 #!/usr/bin/env bash
-echo "called $NIGHTSHIFT_REVIVAL" >>.nightshift/agent-calls
+echo "called $NIGHTSHIFT_REVIVAL $*" >>.nightshift/agent-calls
 awk 'BEGIN{d=0} !d && /^- \[ \]/{sub(/\[ \]/,"[x]");d=1} {print}' .nightshift/punch-list.md >.nightshift/pl.tmp
 mv .nightshift/pl.tmp .nightshift/punch-list.md
 STUB
@@ -352,6 +352,8 @@ STUB
   if grep -q 'exec resume' "$P/.nightshift/agent-calls"; then
     return 1
   fi
+  # The fresh exec adds the workspace that holds the run folder as a writable folder.
+  grep -qF -- "exec --add-dir $P " "$P/.nightshift/agent-calls"
 }
 
 @test "a resumable UUID is passed to exec resume and not replaced" {

@@ -190,7 +190,8 @@ rollout_grew() {
 # A non-resumable recorded id is never passed to `codex exec resume` and never treated as a
 # successful resume of that thread.
 # A fresh headless run at the resolved scope. The scope never widens between rungs: a revival that
-# failed is retried at the same permissions, never at broader ones.
+# failed is retried at the same permissions, never at broader ones. The workspace that holds the run
+# folder is added as a writable folder beside the work target; `codex exec resume` has no such option.
 spawn_fresh() {
   local mode
   log_line "watchman: reviving under launch scope $1"
@@ -198,14 +199,14 @@ spawn_fresh() {
     host-default)
       ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
         CODEX_PROJECT_DIR "$PROJECT" \
-        codex exec "$PROMPT_FRESH"
+        codex exec --add-dir "$PROJECT" "$PROMPT_FRESH"
       return $?
       ;;
     recorded:*)
       mode="${1#recorded:}"
       ns_watchman_run_child "$NS" codex "$(sid)" "$WORK_TARGET" \
         CODEX_PROJECT_DIR "$PROJECT" \
-        codex exec -s "$mode" "$PROMPT_FRESH"
+        codex exec -s "$mode" --add-dir "$PROJECT" "$PROMPT_FRESH"
       return $?
       ;;
   esac

@@ -732,7 +732,9 @@ ns_background_worker_program() {
 # the lease taken for it first and its pid attached, so the worker's hooks bind it to the run and
 # anything that asks finds it alive. Cursor gets a CLI chat minted first, recorded where its watchman
 # resumes it. A run working in its own worktree gets the link there that leads the worker's hooks
-# back to the workspace. Detached, so it outlives the conversation that started it. Prints the pid. Status 4
+# back to the workspace, and the workspace that holds the run folder is added as a working folder of
+# the session on each host whose CLI has the option (Cursor's --workspace already is the workspace).
+# Detached, so it outlives the conversation that started it. Prints the pid. Status 4
 # when there is no command to run (ns_background_worker_program says why, or Cursor minted no chat),
 # 3 when the lease cannot be taken, 1 when the worker does not start.
 ns_start_background_worker() {
@@ -746,9 +748,9 @@ ns_start_background_worker() {
     set -- $agent "$prompt"
   else
     case "$host:$scope" in
-      claude:host-default) set -- claude -p "$prompt" ;;
-      codex:host-default) set -- codex exec "$prompt" ;;
-      codex:recorded:*) set -- codex exec -s "${scope#recorded:}" "$prompt" ;;
+      claude:host-default) set -- claude --add-dir "$project" -p "$prompt" ;;
+      codex:host-default) set -- codex exec --add-dir "$project" "$prompt" ;;
+      codex:recorded:*) set -- codex exec -s "${scope#recorded:}" --add-dir "$project" "$prompt" ;;
       cursor:host-default)
         minted="$(agent create-chat 2>/dev/null | tr -d '[:space:]')"
         # No CLI chat to start the worker in.

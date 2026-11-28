@@ -599,40 +599,19 @@ function Start-NSAgent {
     }
     elseif ($HostName -eq 'claude') {
         $commandName = 'claude'
-        if ($Attempt -eq 1 -and -not [string]::IsNullOrEmpty($sessionId)) {
-            $commandArguments.Add('--resume')
-            $commandArguments.Add($sessionId)
-            $commandArguments.Add('-p')
+        $resume = $Attempt -eq 1 -and -not [string]::IsNullOrEmpty($sessionId)
+        foreach ($argument in (Get-NSDefaultRevivalArguments -HostName claude -SessionId $sessionId -Resume $resume `
+                    -Fresh $fresh -LaunchScope $launchScope -Workspace $workspace -Prompt $prompt)) {
+            $commandArguments.Add($argument)
         }
-        elseif ($fresh) {
-            $commandArguments.Add('-p')
-        }
-        else {
-            $commandArguments.Add('--continue')
-            $commandArguments.Add('-p')
-        }
-        $commandArguments.Add($prompt)
     }
     else {
         $commandName = 'codex'
-        $kind = Get-NSCodexIdentityKind $sessionId
-        if ($Attempt -eq 1 -and $kind -eq 'resumable') {
-            $commandArguments.Add('exec')
-            $commandArguments.Add('resume')
-            if ($launchScope -clike 'recorded:*') {
-                $commandArguments.Add('-c')
-                $commandArguments.Add('sandbox_mode="' + $launchScope.Substring('recorded:'.Length) + '"')
-            }
-            $commandArguments.Add($sessionId)
-            $commandArguments.Add($prompt)
-        }
-        else {
-            $commandArguments.Add('exec')
-            if ($launchScope -clike 'recorded:*') {
-                $commandArguments.Add('-s')
-                $commandArguments.Add($launchScope.Substring('recorded:'.Length))
-            }
-            $commandArguments.Add($freshPrompt)
+        $resume = $Attempt -eq 1 -and (Get-NSCodexIdentityKind $sessionId) -eq 'resumable'
+        $codexPrompt = if ($resume) { $prompt } else { $freshPrompt }
+        foreach ($argument in (Get-NSDefaultRevivalArguments -HostName codex -SessionId $sessionId -Resume $resume `
+                    -Fresh (-not $resume) -LaunchScope $launchScope -Workspace $workspace -Prompt $codexPrompt)) {
+            $commandArguments.Add($argument)
         }
     }
     $fileName = 'powershell.exe'

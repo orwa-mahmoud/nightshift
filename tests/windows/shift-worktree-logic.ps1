@@ -252,11 +252,23 @@ try {
         Expect-True (-not (Test-Path -LiteralPath (Join-Path $quick '.nightshift/runs/dark-mode/run/.shift-armed'))) 'quick exit: nothing is armed'
     }
 
-    # Each host's headless launch, at the watchman's launch scope.
+    # Each host's headless launch, at the watchman's launch scope. The workspace that holds the run
+    # folder is a working folder of the session, so a worker started in a worktree can open it.
     $claude = Get-NSBackgroundWorkerCommand -Workspace $runs -HostName claude -Scope 'host-default' -Prompt 'go'
-    Expect-True ($claude.Name -ceq 'claude' -and ($claude.Arguments -join ' ') -ceq '-p go') "claude launch: $($claude.Arguments -join ' ')"
+    Expect-True ($claude.Name -ceq 'claude' -and ($claude.Arguments -join '|') -ceq "--add-dir|$runs|-p|go") "claude launch: $($claude.Arguments -join ' ')"
     $codex = Get-NSBackgroundWorkerCommand -Workspace $runs -HostName codex -Scope 'recorded:workspace-write' -Prompt 'go'
-    Expect-True ($codex.Name -ceq 'codex' -and ($codex.Arguments -join ' ') -ceq 'exec -s workspace-write go') "codex launch: $($codex.Arguments -join ' ')"
+    Expect-True ($codex.Name -ceq 'codex' -and ($codex.Arguments -join '|') -ceq "exec|-s|workspace-write|--add-dir|$runs|go") "codex launch: $($codex.Arguments -join ' ')"
+    $codexDefault = Get-NSBackgroundWorkerCommand -Workspace $runs -HostName codex -Scope 'host-default' -Prompt 'go'
+    Expect-True (($codexDefault.Arguments -join '|') -ceq "exec|--add-dir|$runs|go") "codex default launch: $($codexDefault.Arguments -join ' ')"
+
+    # Each default revival rung adds the workspace too, except codex exec resume, which has no option.
+    $spaced = Join-Path $root 'work space'
+    $rung = { param($h, $sid, $resume, $fresh, $scope) (Get-NSDefaultRevivalArguments -HostName $h -SessionId $sid -Resume $resume -Fresh $fresh -LaunchScope $scope -Workspace $spaced -Prompt 'go') -join '|' }
+    Expect-True ((& $rung claude 'sid-1' $true $false 'host-default') -ceq "--resume|sid-1|--add-dir|$spaced|-p|go") 'claude resumes the recorded conversation with the workspace added'
+    Expect-True ((& $rung claude '' $false $false 'host-default') -ceq "--continue|--add-dir|$spaced|-p|go") 'claude continues with the workspace added'
+    Expect-True ((& $rung claude 'sid-1' $false $true 'host-default') -ceq "--add-dir|$spaced|-p|go") 'claude starts fresh with the workspace added'
+    Expect-True ((& $rung codex 'sid-1' $true $false 'recorded:workspace-write') -ceq 'exec|resume|-c|sandbox_mode="workspace-write"|sid-1|go') 'codex resume is unchanged'
+    Expect-True ((& $rung codex '' $false $true 'recorded:workspace-write') -ceq "exec|-s|workspace-write|--add-dir|$spaced|go") 'codex fresh exec adds the workspace'
     $refusedScope = Get-NSBackgroundWorkerCommand -Workspace $runs -HostName claude -Scope 'unavailable:host-grant' -Prompt 'go'
     Expect-True ($refusedScope.Error.Length -gt 0 -and $refusedScope.Name -ceq '') 'an unavailable scope starts nothing'
     $env:NIGHTSHIFT_WATCH_AGENT = 'my-agent --flag'

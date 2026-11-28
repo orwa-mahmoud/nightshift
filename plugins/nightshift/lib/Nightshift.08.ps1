@@ -488,7 +488,9 @@ function Get-NSAgentArgumentLine {
 # Get-NSBackgroundWorkerCommand <workspace> <host> <scope> <prompt> - the headless command that starts
 # a fresh worker on <host> with <prompt>: the command each host's watchman uses for a fresh revival,
 # at the same launch scope. An owner's watchAgent replaces it, as it does for the watchman. Cursor
-# gets a CLI chat minted first, recorded where its watchman resumes it. Returns Name and Arguments,
+# gets a CLI chat minted first, recorded where its watchman resumes it. The workspace that holds the
+# run folder is added as a working folder of the session on each host whose CLI has the option
+# (Cursor's --workspace already is the workspace). Returns Name and Arguments,
 # or Error naming why there is none. Mirrors ns_background_worker_program and ns_start_background_worker.
 function Get-NSBackgroundWorkerCommand {
     param(
@@ -515,11 +517,15 @@ function Get-NSBackgroundWorkerCommand {
     switch -CaseSensitive ($HostName + ':' + $Scope) {
         'claude:host-default' {
             $result.Name = 'claude'
+            $arguments.Add('--add-dir')
+            $arguments.Add($Workspace)
             $arguments.Add('-p')
         }
         'codex:host-default' {
             $result.Name = 'codex'
             $arguments.Add('exec')
+            $arguments.Add('--add-dir')
+            $arguments.Add($Workspace)
         }
         'cursor:host-default' {
             $minted = ''
@@ -541,6 +547,8 @@ function Get-NSBackgroundWorkerCommand {
                 $arguments.Add('exec')
                 $arguments.Add('-s')
                 $arguments.Add($Scope.Substring('recorded:'.Length))
+                $arguments.Add('--add-dir')
+                $arguments.Add($Workspace)
             }
             else {
                 $result.Error = "$HostName has no headless launch at launch scope $Scope"
@@ -550,6 +558,57 @@ function Get-NSBackgroundWorkerCommand {
     }
     $arguments.Add($Prompt)
     return $result
+}
+
+# Get-NSDefaultRevivalArguments - the arguments of a default Claude or Codex revival, after the
+# program name. Resume continues the recorded conversation; otherwise Claude continues the latest
+# one, or starts fresh when Fresh is set, and Codex starts a fresh exec. The workspace that holds the
+# run folder is added as a working folder of the session, so a worker started in a worktree can still
+# open its run folder; `codex exec resume` has no option for it. Mirrors the watchmen's rungs.
+function Get-NSDefaultRevivalArguments {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('claude', 'codex')][string]$HostName,
+        [AllowEmptyString()][string]$SessionId,
+        [bool]$Resume,
+        [bool]$Fresh,
+        [Parameter(Mandatory = $true)][string]$LaunchScope,
+        [Parameter(Mandatory = $true)][string]$Workspace,
+        [Parameter(Mandatory = $true)][string]$Prompt
+    )
+    $arguments = New-Object Collections.Generic.List[string]
+    $recorded = if ($LaunchScope -clike 'recorded:*') { $LaunchScope.Substring('recorded:'.Length) } else { '' }
+    if ($HostName -eq 'claude') {
+        if ($Resume) {
+            $arguments.Add('--resume')
+            $arguments.Add($SessionId)
+        }
+        elseif (-not $Fresh) {
+            $arguments.Add('--continue')
+        }
+        $arguments.Add('--add-dir')
+        $arguments.Add($Workspace)
+        $arguments.Add('-p')
+    }
+    elseif ($Resume) {
+        $arguments.Add('exec')
+        $arguments.Add('resume')
+        if ($recorded.Length -gt 0) {
+            $arguments.Add('-c')
+            $arguments.Add('sandbox_mode="' + $recorded + '"')
+        }
+        $arguments.Add($SessionId)
+    }
+    else {
+        $arguments.Add('exec')
+        if ($recorded.Length -gt 0) {
+            $arguments.Add('-s')
+            $arguments.Add($recorded)
+        }
+        $arguments.Add('--add-dir')
+        $arguments.Add($Workspace)
+    }
+    $arguments.Add($Prompt)
+    return , $arguments.ToArray()
 }
 
 # Start-NSBackgroundWorker - start a headless worker on a run nobody works yet, the way a revival

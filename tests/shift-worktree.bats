@@ -293,6 +293,27 @@ stop_run_processes() {
   [ ! -e "$w/.nightshift/staging/plans/dark-mode.md" ]
 }
 
+@test "a background worker in a worktree is given the workspace that holds its run folder" {
+  w="$(runs_site "added folder")"
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  cat >"$BATS_TEST_TMPDIR/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+printf '%s|%s\n' "$PWD" "$*" >>"$FAKE_AGENT_CALLS"
+sleep 30
+STUB
+  chmod +x "$BATS_TEST_TMPDIR/bin/claude"
+  export FAKE_AGENT_CALLS="$BATS_TEST_TMPDIR/agent-calls"
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" bash -c '
+    cd "$1" && env -u NIGHTSHIFT_RUN -u CLAUDE_CODE_SESSION_ID -u NIGHTSHIFT_WATCH_AGENT CLAUDE_PROJECT_DIR="$1" \
+      bash "$2" --project "$1" --plan "Dark mode" --host claude --background' _ "$w" "$START_RUN" 3>&-
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+  sleep 1
+  stop_run_processes "$w" dark-mode
+  IFS='|' read -r where args <"$FAKE_AGENT_CALLS"
+  [ "$where" = "$(NIGHTSHIFT_RUN=dark-mode lib ns_work_target "$w")" ]
+  case "$args" in "--add-dir $(cd -P "$w" && pwd) -p "*) ;; *) echo "$args"; return 1 ;; esac
+}
+
 @test "a background worker that exits at once is reported with its own last words, and nothing stays armed" {
   w="$(runs_site "worker exits")"
   mkdir -p "$BATS_TEST_TMPDIR/bin"
