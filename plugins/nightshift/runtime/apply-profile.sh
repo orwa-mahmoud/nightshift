@@ -19,6 +19,8 @@ set -u
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
+# The jq programs beside lib.sh, resolved from this script's own path.
+PROGRAMS="$_here/../lib"
 
 PROFILES="$_here/../config/profiles"
 SCHEMA="$_here/../config/nightshift-rules.schema.json"
@@ -99,11 +101,7 @@ if ! jq -e '.name and (.version == 1 or .version == 2) and .rules and (.rules | 
 fi
 VERSION="$(jq -r '.version' "$SRC")"
 
-unknown="$(jq -r --slurpfile s "$SCHEMA" '
-  .rules | keys[] as $k
-  | select(($s[0].properties | has($k) | not) or $k == "$schema")
-  | $k
-' "$SRC")"
+unknown="$(jq -r --slurpfile s "$SCHEMA" -f "$(ns_native_display_path "$PROGRAMS/apply-profile-unknown-rules.jq")" "$SRC")"
 if [ -n "$unknown" ]; then
   printf 'apply-profile: profile has unsupported keys: %s\n' "$unknown" >&2
   exit 2
@@ -124,11 +122,7 @@ if [ "$VERSION" = "2" ]; then
   esac
 
   if [ "$SD_TYPE" = "object" ]; then
-    unknown_sd="$(jq -r '
-      .shiftDefaults | keys[] as $k
-      | select((["verificationProfile","hours","toolingPolicy","execution"] | index($k)) == null)
-      | $k
-    ' "$SRC")"
+    unknown_sd="$(jq -r -f "$(ns_native_display_path "$PROGRAMS/apply-profile-unknown-shift-defaults.jq")" "$SRC")"
     [ -z "$unknown_sd" ] || {
       printf 'apply-profile: profile shiftDefaults has unsupported keys: %s\n' "$unknown_sd" >&2
       exit 2
@@ -255,15 +249,7 @@ proposed="$(PROFILE_MODE="$MODE" jq -n --argjson cur "$current" \
   if env.PROFILE_MODE == "fill" then fill else replace end
 ')"
 
-if ! printf '%s' "$proposed" | jq -e '
-  (.toolDeny | type) == "object"
-  and (.toolDeny | has("AskUserQuestion"))
-  and (.toolDeny | has("request_user_input"))
-  and (.toolDeny | has("AskQuestion"))
-  and (.toolDeny.AskUserQuestion | type) == "string"
-  and (.toolDeny.request_user_input | type) == "string"
-  and (.toolDeny.AskQuestion | type) == "string"
-' >/dev/null 2>&1; then
+if ! printf '%s' "$proposed" | jq -e -f "$(ns_native_display_path "$PROGRAMS/apply-profile-deny-shape.jq")" >/dev/null 2>&1; then
   printf 'apply-profile: proposed rules lack an explicit native question policy — re-run setup first\n' >&2
   exit 2
 fi
@@ -283,14 +269,7 @@ shift_defaults_base() {
     printf '%s' "$builtin" | jq -c --argjson over "$block" '. + $over'
     return 0
   fi
-  if [ -f "$DEFAULTS_PATH" ] && jq -e '
-      type == "object"
-      and .schemaVersion == 1
-      and (.verificationProfile as $v | (["fast","balanced","strict","custom"] | index($v)) != null)
-      and (.hours == null or (.hours | type == "number"))
-      and (.toolingPolicy as $t | (["existing-tools","review-missing","auto-add"] | index($t)) != null)
-      and (.execution as $e | (["review-first","run-direct"] | index($e)) != null)
-    ' "$DEFAULTS_PATH" >/dev/null 2>&1
+  if [ -f "$DEFAULTS_PATH" ] && jq -e -f "$(ns_native_display_path "$PROGRAMS/apply-profile-defaults-shape.jq")" "$DEFAULTS_PATH" >/dev/null 2>&1
   then
     cat "$DEFAULTS_PATH"
   else
@@ -302,15 +281,7 @@ shift_defaults_base() {
 merged_shift_defaults() {
   base="$1"
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  jq -n --argjson base "$base" --slurpfile p "$SRC" --arg now "$now" '
-    ($p[0].shiftDefaults // {}) as $sd
-    | $base
-    + (if ($sd | has("verificationProfile")) then {verificationProfile: $sd.verificationProfile} else {} end)
-    + (if ($sd | has("hours")) then {hours: $sd.hours} else {} end)
-    + (if ($sd | has("toolingPolicy")) then {toolingPolicy: $sd.toolingPolicy} else {} end)
-    + (if ($sd | has("execution")) then {execution: $sd.execution} else {} end)
-    + {schemaVersion: 1, updatedAt: $now}
-  '
+  jq -n --argjson base "$base" --slurpfile p "$SRC" --arg now "$now" -f "$(ns_native_display_path "$PROGRAMS/apply-profile-merge.jq")"
 }
 
 # The rendered `## Gates` block body: the placeholder for an empty itemGate, else the item gate
