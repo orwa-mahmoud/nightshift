@@ -92,8 +92,37 @@ and keep going; never guess what it said.
 Write the detail files first, then the `## Condensed history` section of the index. When a subject's
 file or block already exists, update it in place rather than adding a second.
 
-This review changes and deletes no original record. Deleting what was condensed is a separate step
-that waits for the owner.
+Writing changes and deletes no original record. Deleting what was condensed is the next step, and
+it waits for the owner.
+
+## Delete what was condensed — only on the owner's yes
+
+Once the two layers are written, propose the originals that can go. List each one by path with
+one line: why it can go, and where its useful facts now live (`history/<subject>.md`, or "nothing
+in it still applies"). Never propose a record of a live run, an unanswered parking-lot entry, a
+snag with no disposition, or a record the review did not read.
+
+Before asking, check whether each proposed record is tracked in Git (`git -C <its folder> ls-files
+--error-unmatch <file>`, in the project repository or the receipts repository `ns path receipts-repo`).
+When it is, say that Git's history is the undo. When it is not, say plainly that deleting it cannot
+be undone.
+
+Then ask the owner, and wait: all, some (named), or none. Silence or an unclear answer is none.
+An unattended run never deletes: it writes the proposal into the report and stops there.
+
+Delete exactly the approved paths and nothing else, and only while no shift is armed in this
+workspace. Where the owner approved a whole shift folder, run `ns retain-history` first: when its
+preview lists only approved folders, `ns retain-history --apply` deletes them; otherwise delete each
+approved path by name. Never delete by pattern or loop over a listing; name each path.
+
+Then repoint every link that pointed at a deleted record, in the index, the detail files and the
+records that remain:
+
+- in the index or a remaining record, point it at the detail file that now holds the facts;
+- in a detail file, replace the link with the source's name as plain text and `(deleted <date>)`.
+
+Search for the deleted paths afterwards: no link may still point at one. Report what was deleted,
+what was kept, and every link changed.
 
 ## Sharing
 
