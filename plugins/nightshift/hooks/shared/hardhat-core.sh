@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Shared hardhat decisions. Host wrappers own payload parsing and deny response emission.
 
+# The programs this file runs sit beside lib.sh.
+_ns_hardhat_core_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_hardhat_core_dir" != "${BASH_SOURCE[0]}" ] || _ns_hardhat_core_dir=.
+_ns_hardhat_core_lib="$_ns_hardhat_core_dir/../../lib"
+
 # Armed site rules apply until clock-out writes ENDED. STOP is a stop-work order, not
 # the ending — open boxes stay as the record and do not stand the hardhat down. Reset
 # is the manual escape. A punch list that exists but will not count keeps the site armed:
@@ -170,39 +175,7 @@ ns_hardhat_payload_targets() { # $1 = tool, $2 = raw payload, $3 = command/patch
         targets="${NS_HARDHAT_TARGETS:-}"
         decoder="${NS_HARDHAT_TARGETS_DECODER:-}"
       elif command -v jq >/dev/null 2>&1; then
-        targets="$(printf '%s' "$2" | jq -r '
-          def string_values: .. | strings;
-          .tool_input
-          | ..
-          | objects
-          | . as $object
-          | (
-              (
-                $object
-                | to_entries[]
-                | select(.key | test("((^|_)(path|filepath|file|filename|directory|dir|uri|name)$|^(target|destination|dest|source|src)$)"; "i"))
-                | .value
-                | string_values
-                | if contains("\n") then @base64 | "P\t\(.)" else "p\t\(.)" end
-              ),
-              (
-                $object
-                | to_entries[]
-                | select(.key | test("(^|_)(command|cmd|script)$"; "i"))
-                | .value
-                | string_values
-                | if contains("\n") then @base64 | "C\t\(.)" else "c\t\(.)" end
-              ),
-              (
-                [$object | to_entries[] | select(.key | test("^(directory|dir)$"; "i")) | .value | string_values] as $dirs
-                | [$object | to_entries[] | select(.key | test("^(name|filename|file)$"; "i")) | .value | string_values] as $names
-                | $dirs[] as $dir
-                | $names[] as $name
-                | "\($dir)/\($name)"
-                | if contains("\n") then @base64 | "P\t\(.)" else "p\t\(.)" end
-              )
-            )
-        ' 2>/dev/null)" || return 2
+        targets="$(printf '%s' "$2" | jq -r -f "$_ns_hardhat_core_lib/hardhat-core-payload-targets.jq" 2>/dev/null)" || return 2
         decoder=jq
       else
         # No general Bash JSON parser. Missing jq fails closed.

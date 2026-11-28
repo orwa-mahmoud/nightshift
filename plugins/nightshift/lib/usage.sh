@@ -21,6 +21,10 @@
 # Nothing here reads a host's storage at large: only the transcript the hook was handed and the
 # payload the host delivered. No network, no credentials, no tokenizer, no estimate.
 
+# The programs this module runs sit beside it.
+_ns_usage_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_usage_dir" != "${BASH_SOURCE[0]}" ] || _ns_usage_dir=.
+
 # The awk half sits next to this file, resolved without dirname so a hostile PATH cannot reach it.
 _NS_USAGE_CLAUDE_AWK="${BASH_SOURCE[0]%/*}"
 [ "$_NS_USAGE_CLAUDE_AWK" != "${BASH_SOURCE[0]}" ] || _NS_USAGE_CLAUDE_AWK=.
@@ -389,14 +393,7 @@ ns_usage_bound_source() {
     id="$(ns_session_line "$ns" 2)"
     [ -n "$id" ] || return 0
   fi
-  NS_USAGE_BOUND_ID="$id" awk -F '\t' -v host="$host" '
-    BEGIN { id = ENVIRON["NS_USAGE_BOUND_ID"] }
-    $2 == host && ($1 == id || index($1, id "#") == 1 ||
-      (host == "cursor" && index($1, id ":") == 1)) && $7 != "" {
-      source = host "/" ($3 == "" ? "-" : $3)
-    }
-    END { printf "%s", source }
-  ' "$file"
+  NS_USAGE_BOUND_ID="$id" awk -F '\t' -v host="$host" -f "$_ns_usage_dir/usage-bound-source.awk" "$file"
 }
 
 # ns_usage_mark <nightshift-dir> <label> [kind] [epoch] — the running total and the clock at
@@ -703,16 +700,7 @@ ns_usage_turn_resolve() {
   local file
   file="$(_ns_usage_turns "$1")"
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
-  awk -F '\t' -v OFS='\t' -v nr="$3" -v open="$(ns_usage_turn_enc "$2")@open" -v entry="$(ns_usage_turn_enc "$2")@$3" '
-    {
-      if ($4 == "" && $2 < nr) $4 = entry
-      else {
-        n = split($4, c, ";"); out = ""
-        for (i = 1; i <= n; i++) out = out (out == "" ? "" : ";") (c[i] == open ? entry : c[i])
-        $4 = out
-      }
-      print
-    }' "$file" | _ns_usage_turns_replace "$1"
+  awk -F '\t' -v OFS='\t' -v nr="$3" -v open="$(ns_usage_turn_enc "$2")@open" -v entry="$(ns_usage_turn_enc "$2")@$3" -f "$_ns_usage_dir/usage-turn-resolve.awk" "$file" | _ns_usage_turns_replace "$1"
 }
 
 # ns_usage_turns_for <nightshift-dir> <label> <mark-number> — the turns covering the session of
@@ -723,17 +711,7 @@ ns_usage_turns_for() {
   local file
   file="$(_ns_usage_turns "$1")"
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
-  awk -F '\t' -v entry="$(ns_usage_turn_enc "$2")@$3" '
-    {
-      n = split($4, c, ";"); hit = 0; items = ""
-      for (i = 1; i <= n; i++) {
-        if (c[i] == entry) hit = 1
-        l = c[i]; sub(/@[^@]*$/, "", l)
-        if (!(l in seen)) { seen[l] = 1; items = items (items == "" ? "" : ";") l }
-      }
-      delete seen
-      if (hit) print $1 "\t" $3 "\t" items
-    }' "$file" | while IFS=$'\t' read -r id fields items; do
+  awk -F '\t' -v entry="$(ns_usage_turn_enc "$2")@$3" -f "$_ns_usage_dir/usage-turns-for.awk" "$file" | while IFS=$'\t' read -r id fields items; do
     printf '%s/%s/%s\n' "$(ns_usage_turn_enc "$id")" "$fields" "$items"
   done
 }

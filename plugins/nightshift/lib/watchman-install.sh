@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # A long-lived watchman loads its libraries once. When the host replaces that install, later
 # reads of those paths fail and a revival is refused for the rest of the night. Each wake
-# re-runs from the copy the hooks are on, or from the install the host itself records.
+# re-runs from the copy the hooks are on, or from the install the host itself records. The awk,
+# jq and python programs below stay in this file for the same reason: they find the new install
+# after the one that holds this file is gone.
 
 # ns_plugin_install_usable <root> <host> — the directory can still run this host's watchman.
 ns_plugin_install_usable() {

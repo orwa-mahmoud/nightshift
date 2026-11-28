@@ -1650,9 +1650,12 @@ STUB
   # The shipped tell requires the host's own marker on the line, so the check below is the
   # program that actually runs and not a copy of it that could drift.
   W="$BATS_TEST_DIRNAME/../plugins/nightshift/runtime/claude/watchman.sh"
-  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'isApiErrorMessage' \
+  prog="$(awk '/^api_limited_tail\(\)/, /^}/' "$W" | sed -n 's#.*-f "$PROGRAMS/\([^"]*\)".*#\1#p')"
+  [ -n "$prog" ] || { echo "api_limited_tail runs no program file"; return 1; }
+  prog="$BATS_TEST_DIRNAME/../plugins/nightshift/lib/$prog"
+  grep -qF 'isApiErrorMessage' "$prog" \
     || { echo "the outage tell no longer requires the host marker"; return 1; }
-  awk '/^api_limited_tail\(\)/, /^}/' "$W" | grep -qF 'tolower($0) ~ /error' \
+  grep -qF 'tolower($0) ~ /error' "$prog" \
     && { echo "the outage tell still reads any line that mentions an error"; return 1; }
 
   # The same words a person can type, with no marker from the host: the ordinary interval stands.

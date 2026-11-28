@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Generic shell helpers shared by Nightshift hooks and runtime.
 
+# The programs this module runs sit beside it.
+_ns_common_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_common_dir" != "${BASH_SOURCE[0]}" ] || _ns_common_dir=.
+
 # valid_ere <pattern> — true when grep -E accepts the pattern.
 # An invalid pattern makes grep exit 2, which reads exactly like "no match" to a plain `if`,
 # so a typo in an owner's guard pattern would silently disable the guard.
@@ -91,22 +95,7 @@ ns_templates_dir() {
 ns_owner_template() {
   local ws="${2%/}"
   NS_TEMPLATE_WS="$ws" NS_TEMPLATE_NS="$ws/.nightshift" NS_TEMPLATE_RUN="${3-}" \
-    NS_TEMPLATE_HAS_RUN="${3+1}" awk '
-    function literal(s, from, to,    out, i) {
-      out = ""
-      while ((i = index(s, from)) > 0) {
-        out = out substr(s, 1, i - 1) to
-        s = substr(s, i + length(from))
-      }
-      return out s
-    }
-    {
-      line = $0
-      if (ENVIRON["NS_TEMPLATE_HAS_RUN"] == "1") line = literal(line, "$RUN", ENVIRON["NS_TEMPLATE_RUN"])
-      line = literal(line, "$NIGHTSHIFT_WORKSPACE", ENVIRON["NS_TEMPLATE_WS"])
-      print literal(line, "$NS", ENVIRON["NS_TEMPLATE_NS"])
-    }
-  ' "$1"
+    NS_TEMPLATE_HAS_RUN="${3+1}" awk -f "$_ns_common_dir/common-owner-template.awk" "$1"
 }
 
 # ns_tokenize_text <text> <home> <workspace> <work-target>

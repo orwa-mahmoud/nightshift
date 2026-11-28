@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # evidence-lifecycle.sh — read-only evidence ledger and shift-progress helpers.
 
+# The programs this module runs sit beside it.
+_ns_evidence_lifecycle_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_evidence_lifecycle_dir" != "${BASH_SOURCE[0]}" ] || _ns_evidence_lifecycle_dir=.
+
 # ns_evidence_jsonl <workspace> — absolute path to the live findings ledger.
 ns_evidence_jsonl() {
   local dir
@@ -19,23 +23,7 @@ ns_gate_checkpoint_token() {
   if command -v jq >/dev/null 2>&1; then
     id="$(jq -r 'select(.domain == "checkpoint") | .id' "$jsonl" 2>/dev/null | tail -n1)"
   elif command -v python3 >/dev/null 2>&1; then
-    id="$(python3 - "$jsonl" <<'PY'
-import json, sys
-last = ""
-with open(sys.argv[1], encoding="utf-8") as fh:
-    for line in fh:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if rec.get("domain") == "checkpoint" and rec.get("id"):
-            last = rec["id"]
-print(last)
-PY
-)"
+    id="$(python3 "$(ns_native_display_path "$_ns_evidence_lifecycle_dir/evidence-lifecycle-checkpoint.py")" "$jsonl")"
   fi
   [ -n "$id" ] || id=none
   printf '%s' "$id"
@@ -62,28 +50,7 @@ ns_evidence_counts() {
       esac
     done <"$jsonl"
   elif command -v python3 >/dev/null 2>&1; then
-    counts="$(python3 - "$jsonl" <<'PY'
-import json, sys
-f = o = b = c = 0
-with open(sys.argv[1], encoding="utf-8") as fh:
-    for line in fh:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        f += 1
-        if rec.get("domain") == "baseline":
-            b += 1
-        elif rec.get("domain") == "checkpoint":
-            c += 1
-        if rec.get("status") == "open":
-            o += 1
-print(f"{f} {o} {b} {c}")
-PY
-)"
+    counts="$(python3 "$(ns_native_display_path "$_ns_evidence_lifecycle_dir/evidence-lifecycle-counts.py")" "$jsonl")"
     read -r f o b c <<COUNTS
 $counts
 COUNTS

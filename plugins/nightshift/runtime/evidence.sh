@@ -415,12 +415,7 @@ LADD_LIST=""
 _load_schema() {
   local line kind rest
   if [ "$JSON_TOOL" = jq ]; then
-    jq -r '(.required[] | "R\t" + .),
-           (.severity[] | "S\t" + tojson),
-           (.confidence[] | "C\t" + tojson),
-           (.impact[] | "I\t" + tojson),
-           (.status[] | "T\t" + tojson),
-           (.ladder[] | "L\t" + tojson)' "$SCHEMA_PATH" >"$TMPD/schema" 2>/dev/null
+    jq -r -f "$PROGRAMS/evidence-schema.jq" "$SCHEMA_PATH" >"$TMPD/schema" 2>/dev/null
   else
     python3 "$PROGRAMS/evidence-json.py" schema <"$SCHEMA_PATH" >"$TMPD/schema" 2>/dev/null
   fi || {

@@ -1256,10 +1256,7 @@ _load_comparison_merged() {
       jq -r '.summary.selectedDebtOutstanding[]? // empty' <"$TMPD/cmp.json" >>"$TMPD/cmp-debt" 2>/dev/null ||
         :
     else
-      python3 -c 'import json,sys
-doc=json.load(open(sys.argv[1]))
-for x in (doc.get("summary") or {}).get("selectedDebtOutstanding") or []:
-    print(x)' "$TMPD/cmp.json" >>"$TMPD/cmp-debt" 2>/dev/null || :
+      python3 "$(ns_native_display_path "$PROGRAMS/morning-receipt-comparison-merged.py")" "$TMPD/cmp.json" >>"$TMPD/cmp-debt" 2>/dev/null || :
     fi
     _emit_compare "$TMPD/cmp.json" >"$TMPD/cmp.rows" 2>/dev/null || continue
     while IFS="$FS" read -r -d "$RS" cid cclass cdig csrc cloc; do

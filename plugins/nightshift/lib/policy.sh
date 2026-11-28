@@ -295,8 +295,7 @@ ns_policy_json_string() {
   if [ "$tool" = jq ]; then
     printf '%s' "$1" | jq -Rs . 2>/dev/null || return 1
   else
-    printf '%s' "$1" | python3 -c 'import json, sys
-sys.stdout.write(json.dumps(sys.stdin.read(), ensure_ascii=False))' 2>/dev/null || return 1
+    printf '%s' "$1" | python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-string.py")" 2>/dev/null || return 1
   fi
 }
 
@@ -399,8 +398,7 @@ ns_policy_canon_json() {
   if [ "$tool" = jq ]; then
     jq -caS . <"$1" 2>/dev/null || return 1
   else
-    python3 -c 'import json, sys
-sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",", ":")) + "\n")' \
+    python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-canonical.py")" \
       <"$1" 2>/dev/null || return 1
   fi
 }
@@ -415,8 +413,7 @@ ns_policy_canon_text() {
   if [ "$tool" = jq ]; then
     jq -caS . 2>/dev/null || return 1
   else
-    python3 -c 'import json, sys
-sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, separators=(",", ":")) + "\n")' \
+    python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-canonical.py")" \
       2>/dev/null || return 1
   fi
 }
@@ -432,8 +429,7 @@ ns_policy_pretty_text() {
   if [ "$tool" = jq ]; then
     jq -S . 2>/dev/null || return 1
   else
-    python3 -c 'import json, sys
-sys.stdout.write(json.dumps(json.load(sys.stdin), sort_keys=True, indent=2) + "\n")' \
+    python3 "$(ns_native_display_path "$NS_POLICY_LIB/policy-json-pretty.py")" \
       2>/dev/null || return 1
   fi
 }

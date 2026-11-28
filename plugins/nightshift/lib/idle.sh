@@ -7,6 +7,10 @@
 # one parking-lot notice and stop retrying until the worker is busy again or
 # Start clears this file.
 
+# The programs this module runs sit beside it.
+_ns_idle_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_idle_dir" != "${BASH_SOURCE[0]}" ] || _ns_idle_dir=.
+
 # Work a child is doing. The worker's own shell waiting on a read is not in
 # this list: that is the stall this rule exists to end.
 NS_IDLE_WORK_RE='^(make|gmake|ninja|cmake|xcodebuild|gradle|mvn|mvnw|tsc|webpack|esbuild|rollup|vite|cargo|go|docker|podman|npm|pnpm|yarn|bun|bats|pytest|py\.test|jest|vitest|mocha|phpunit|rspec|ctest|playwright|chrome|chromium|firefox|safari|msedge|google-chrome|chromium-browser)$'
@@ -82,56 +86,7 @@ ns_idle_tree_sample() { # <pid>...
     return 0
   }
   [ -n "$snap" ] || { printf '0\t0\t0'; return 0; }
-  printf '%s\n' "$snap" | awk -v roots="$roots" -v work="$NS_IDLE_WORK_RE" '
-    function centi(raw,   t, n, a, h, m, rest, s, frac) {
-      t = raw
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-      sub(/^[0-9]+-/, "", t)
-      if (t !~ /^[0-9][0-9:.]*$/) return -1
-      n = split(t, a, ":")
-      h = 0; m = 0
-      if (n == 3) { h = a[1]; m = a[2]; rest = a[3] }
-      else if (n == 2) { m = a[1]; rest = a[2] }
-      else rest = a[1]
-      s = rest; sub(/\..*/, "", s)
-      frac = 0
-      if (rest ~ /\./) {
-        frac = rest; sub(/.*\./, "", frac); frac = substr(frac "00", 1, 2) + 0
-      }
-      return h * 360000 + m * 6000 + s * 100 + frac
-    }
-    {
-      pid = $1 + 0; ppid = $2 + 0
-      parent[pid] = ppid
-      cpus[pid] = centi($3)
-      base = $4
-      sub(/.*\//, "", base)
-      name[pid] = base
-      seen[pid] = 1
-    }
-    END {
-      nroots = split(roots, r, " ")
-      cpu = 0; busy = 0; known = 1; qn = 0
-      for (k = 1; k <= nroots; k++) {
-        root = r[k] + 0
-        if (root == 0) continue
-        if (!seen[root]) { known = 0; continue }
-        if (walk[root]) continue
-        q[++qn] = root; walk[root] = 1
-      }
-      if (qn == 0) { print "0\t0\t0"; exit }
-      for (i = 1; i <= qn; i++) {
-        p = q[i]
-        if (cpus[p] < 0) known = 0
-        else cpu += cpus[p]
-        if (name[p] ~ work) busy = 1
-        for (c in parent) if (parent[c] == p && !walk[c]) {
-          walk[c] = 1; q[++qn] = c
-        }
-      }
-      print cpu "\t" known "\t" busy
-    }
-  '
+  printf '%s\n' "$snap" | awk -v roots="$roots" -v work="$NS_IDLE_WORK_RE" -f "$_ns_idle_dir/idle-tree-sample.awk"
 }
 
 # ns_idle_verdict <pulse stale|fresh> <bytes-changed 0|1> <cpu-known 0|1> <cpu-delta> <busy 0|1> <since> <now> <window-min> <stuck 0|1>
@@ -289,17 +244,7 @@ ns_idle_protected() { # <pid>
 }
 
 ns_idle_collect() { # <pid> — prints the live tree, root first
-  ps -ax -o pid= -o ppid= 2>/dev/null | awk -v root="$1" '
-    { pid = $1 + 0; ppid = $2 + 0; parent[pid] = ppid; seen[pid] = 1 }
-    END {
-      if (!seen[root]) exit
-      q[1] = root; n = 1; walk[root] = 1
-      for (i = 1; i <= n; i++) {
-        print q[i]
-        for (c in parent) if (parent[c] == q[i] && !walk[c]) { walk[c] = 1; q[++n] = c }
-      }
-    }
-  '
+  ps -ax -o pid= -o ppid= 2>/dev/null | awk -v root="$1" -f "$_ns_idle_dir/idle-collect.awk"
 }
 
 # SIGTERM the tree, then SIGKILL after the grace. 0 when every pid is gone.

@@ -1100,16 +1100,7 @@ ns_receipts_missing_count() {
 ns_usage_scale() {
   local n="$1"
   case "$n" in '' | *[!0-9]*) printf '%s' "$n"; return 0 ;; esac
-  awk -v n="$n" 'BEGIN {
-    if (n < 1000) { printf "%d", n; exit }
-    split("1000 1000000 1000000000", unit, " ")
-    split("k M B", suffix, " ")
-    i = 1
-    while (i < 3 && n >= unit[i + 1]) i++
-    tenths = int((n * 10 + unit[i] / 2) / unit[i])
-    if (tenths >= 10000 && i < 3) { i++; tenths = int((n * 10 + unit[i] / 2) / unit[i]) }
-    printf "%d.%d%s", int(tenths / 10), tenths % 10, suffix[i]
-  }'
+  awk -v n="$n" -f "$NS_STATE_LIB/state-usage-scale.awk"
 }
 
 # ns_receipts_shift_date <project-dir> — Date: on the punch list, else the policy day, else today.
@@ -1206,8 +1197,7 @@ ns_receipt_usage_cells() {
     if [ -n "$comment" ]; then
       read -r in cw cr out rea _ <<<"$comment"
       usage="$(_ns_receipt_usage_words "$in" "$cw" "$cr" "$out" "$rea" \
-        "$(ns_receipt_shared_readings "$f" | awk '{ for (i = 2; i <= 6; i++) if ($i ~ /^[0-9]+$/) s[i] = 1 }
-          END { for (i = 2; i <= 6; i++) printf "%s", (s[i] ? 1 : 0) }')")"
+        "$(ns_receipt_shared_readings "$f" | awk -f "$NS_STATE_LIB/state-receipt-usage-cells.awk")")"
       measured="${usage##*$'\t'}"
       usage="${usage%$'\t'*}"
       case "$in" in '' | *[!0-9]*) in=0 ;; esac
@@ -1310,10 +1300,7 @@ _ns_receipt_usage_words() {
 ns_receipt_shared_readings() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
   # A file holding only the section, as ns_receipt_usage_cells reads it, is read whole.
-  awk 'FNR == NR { if (/^<!-- usage -->/) gated = 1; next }
-    FNR == 1 { on = !gated }
-    /^<!-- usage -->/ { on = 1; next } /^<!-- \/usage -->/ { on = 0 }
-    on && /^<!-- shared [^ ]+( [0-9-]+)+ -->$/ && NF == 9 { print $3, $4, $5, $6, $7, $8 }' "$1" "$1"
+  awk -f "$NS_STATE_LIB/state-receipt-shared-readings.awk" "$1" "$1"
 }
 
 # ns_usage_parse_seconds <1h 25m|11m 35s|45s> — integer seconds, or 0.

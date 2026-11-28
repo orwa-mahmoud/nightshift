@@ -963,18 +963,14 @@ ns_hook_copy_note() {
 # hooks in its most recent session within the window, one `root<TAB>version` per line. Nothing when
 # no session answered in that time.
 ns_hook_copies() {
-  local f now
+  local f now dir
   ns_layout_set f "$1" hook-copies || return 0
+  # Resolved here, not at load: the /bin/sh dispatchers source this file and only bash calls this.
+  dir="${BASH_SOURCE[0]%/*}"
+  [ "$dir" != "${BASH_SOURCE[0]}" ] || dir=.
   [ -f "$f" ] && [ ! -L "$f" ] || return 0
   now="$(date +%s)"
-  awk -F '\t' -v h="$2" -v cut="$((now - $3))" '
-    $2 == h && $1 >= cut { line[NR] = $0; if ($1 >= latest) { latest = $1; session = $3 } }
-    END {
-      for (n in line) {
-        split(line[n], f, "\t")
-        if (f[3] == session && !((f[4]) in seen)) { seen[f[4]] = 1; print f[4] "\t" f[5] }
-      }
-    }' "$f" 2>/dev/null | LC_ALL=C sort
+  awk -F '\t' -v h="$2" -v cut="$((now - $3))" -f "$dir/ownership-hook-copies.awk" "$f" 2>/dev/null | LC_ALL=C sort
 }
 
 # True when .shift-session is a real file, not a planted symlink.

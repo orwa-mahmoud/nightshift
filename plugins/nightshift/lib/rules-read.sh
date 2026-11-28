@@ -5,6 +5,10 @@
 # integers, and string arrays. Comments, trailing commas, unknown types, and
 # unexpected nesting fail closed. Never a second store. Never a general parser.
 
+# The programs this module runs sit beside it.
+_ns_rules_read_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_rules_read_dir" != "${BASH_SOURCE[0]}" ] || _ns_rules_read_dir=.
+
 NS_RULES_ERR=""
 NS_RULES_ROWS=""
 NS_RULES_FILE=""
@@ -129,26 +133,7 @@ ns_member_settings_problems() (
 # shared ones key by key: a value at the same path, or a whole array at the same name. The run's
 # rows come first, so a lookup finds them.
 _ns_rules_overlay() {
-  NS_OVERLAY_RUN="$1" NS_OVERLAY_SHARED="$2" awk '
-    BEGIN {
-      FS = "\t"
-      nr = split(ENVIRON["NS_OVERLAY_RUN"], run, "\n")
-      for (i = 1; i <= nr; i++) {
-        if (run[i] == "") continue
-        print run[i]
-        split(run[i], f, "\t")
-        if (f[4] == "a") arr[f[1] SUBSEP f[2]] = 1
-        else have[f[1] SUBSEP f[2] SUBSEP f[3]] = 1
-      }
-      ns = split(ENVIRON["NS_OVERLAY_SHARED"], shared, "\n")
-      for (i = 1; i <= ns; i++) {
-        if (shared[i] == "") continue
-        split(shared[i], f, "\t")
-        if ((f[1] SUBSEP f[2]) in arr) continue
-        if ((f[1] SUBSEP f[2] SUBSEP f[3]) in have) continue
-        print shared[i]
-      }
-    }'
+  NS_OVERLAY_RUN="$1" NS_OVERLAY_SHARED="$2" awk -f "$_ns_rules_read_dir/rules-read-overlay.awk"
 }
 
 # _ns_rules_stamp <file> — size and checksum, or empty without wc and cksum.

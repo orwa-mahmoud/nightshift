@@ -222,32 +222,7 @@ if [ -f "$RULES" ] && jq -e 'type == "object"' "$RULES" >/dev/null 2>&1; then
 fi
 
 proposed="$(PROFILE_MODE="$MODE" jq -n --argjson cur "$current" \
-  --slurpfile p "$SRC" --slurpfile t "$TEMPLATE" '
-  def fill:
-    ($cur)
-    + (
-        $p[0].rules
-        | to_entries
-        | map(select(.key as $k | $cur | has($k) | not))
-        | from_entries
-      );
-  # Replace rebuilds the guards from the shipped template: the top-level settings and the toolDeny
-  # and elevation blocks. Every other block is an owner preference no guard profile is asking
-  # about (shift defaults, receipts, catalogs, retention and the rest), so it is kept as it is.
-  def replace:
-    $t[0]
-    + ($cur | to_entries
-       | map(select((.value | type) == "object" and .key != "toolDeny" and .key != "elevation"))
-       | from_entries)
-    + $p[0].rules
-    + (
-        if ($cur["$schema"] | type) == "string" and ($cur["$schema"] | length) > 0
-        then {"$schema": $cur["$schema"]}
-        else {}
-        end
-      );
-  if env.PROFILE_MODE == "fill" then fill else replace end
-')"
+  --slurpfile p "$SRC" --slurpfile t "$TEMPLATE" -f "$(ns_native_display_path "$PROGRAMS/apply-profile-proposed.jq")")"
 
 if ! printf '%s' "$proposed" | jq -e -f "$(ns_native_display_path "$PROGRAMS/apply-profile-deny-shape.jq")" >/dev/null 2>&1; then
   printf 'apply-profile: proposed rules lack an explicit native question policy — re-run setup first\n' >&2

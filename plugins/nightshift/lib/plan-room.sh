@@ -9,6 +9,10 @@
 # The marker is three lines: the bound conversation (empty until the probe), its host, and when the
 # room was entered.
 
+# The programs this module runs sit beside it.
+_ns_plan_room_dir="${BASH_SOURCE[0]%/*}"
+[ "$_ns_plan_room_dir" != "${BASH_SOURCE[0]}" ] || _ns_plan_room_dir=.
+
 ns_plan_room_file() { ns_layout_path "$1" plan-room; }
 
 # ns_plan_room_open <nightshift-dir> — status 0 while the plan room is open.
@@ -309,15 +313,7 @@ ns_plan_review() {
       [ -n "$line" ] || continue
       printf 'review %s\n' "$line"
       any=1
-    done < <(ns_punch_items "$punch" | awk '
-      /^- \[ \]/ { kind = "open" }
-      /^- \[-\]/ { kind = "stopped" }
-      /^- \[( |-)\]/ {
-        line = $0
-        sub(/^- \[.\][[:space:]]*/, "", line)
-        sub(/[[:space:]]*<!--.*-->[[:space:]]*$/, "", line)
-        print kind " " line
-      }')
+    done < <(ns_punch_items "$punch" | awk -f "$_ns_plan_room_dir/plan-room-review.awk")
   fi
   [ "$any" -eq 1 ] || printf 'review none\n'
 }
@@ -333,12 +329,7 @@ ns_plans_dir() {
 
 # ns_plan_open_count <plan-file> — the open `- [ ]` boxes under its `## Items` heading.
 ns_plan_open_count() {
-  awk '
-    /^## Items[[:space:]]*$/ { items = 1; next }
-    /^## / { items = 0 }
-    items && /^- \[ \]/ { n++ }
-    END { print n + 0 }
-  ' "$1" 2>/dev/null || printf '0\n'
+  awk -f "$_ns_plan_room_dir/plan-room-open-count.awk" "$1" 2>/dev/null || printf '0\n'
 }
 
 # ns_plan_list <nightshift-dir> — one line per plan, `<key>\t<name>\t<open items>`, in key order.
@@ -397,17 +388,7 @@ ns_plan_record_file() {
 # along untouched.
 ns_plan_record_lines() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
-  awk -v actions=" $NS_PLAN_ACTIONS " '
-    { sub(/\r$/, "") }
-    /^- / {
-      n = split(substr($0, 3), f, / · /)
-      action = f[1]
-      if (index(actions, " " action " ") == 0) next
-      name = "unknown"; rev = ""
-      if (n >= 4 && f[2] !~ /^revision / && f[3] !~ /^revision /) name = f[2]
-      for (i = 2; i <= n; i++) if (f[i] ~ /^revision /) rev = substr(f[i], 10)
-      printf "%s\t%s\t%s\t%s\n", action, name, rev, $0
-    }' "$1"
+  awk -v actions=" $NS_PLAN_ACTIONS " -f "$_ns_plan_room_dir/plan-room-record-lines.awk" "$1"
 }
 
 # ns_plan_record_add <workspace> <key> <action> <name> [<extra>...] — append one attributed line

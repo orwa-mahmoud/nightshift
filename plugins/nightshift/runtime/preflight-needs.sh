@@ -17,6 +17,8 @@ set -u
 
 _here="${BASH_SOURCE[0]%/*}"
 [ "$_here" != "${BASH_SOURCE[0]}" ] || _here=.
+# The programs this script runs sit beside lib.sh.
+PROGRAMS="$_here/../lib"
 # shellcheck source=plugins/nightshift/lib/lib.sh
 . "$_here/../lib/lib.sh"
 
@@ -84,34 +86,7 @@ trap 'rm -rf "$TMPD"' EXIT
 # become spaces, so one item line stays one line of the scan stream.
 scan() { # <source-label> <file>
   [ -f "$2" ] || return 0
-  awk -v src="$1" '
-    function emit(text,   t) {
-      t = text
-      gsub(/[\001-\010\013\014\016-\037\177]/, " ", t)
-      gsub(/\t/, " ", t)
-      gsub(/[*`]/, " ", t)
-      printf "L\t%s\t%d\t%s\n", src, idx, t
-    }
-    /^[[:space:]]*-[[:space:]]*\[[[:space:]xX-]\]/ {
-      n++
-      idx = n
-      open = ($0 ~ /^[[:space:]]*-[[:space:]]*\[[[:space:]]\]/)
-      if (open) {
-        title = $0
-        sub(/^[[:space:]]*-[[:space:]]*\[[[:space:]xX-]\][[:space:]]*/, "", title)
-        gsub(/[*`]/, "", title)
-        gsub(/[\001-\037\177]/, " ", title)
-        gsub(/[[:space:]]+/, " ", title)
-        sub(/^ /, "", title)
-        sub(/ $/, "", title)
-        printf "T\t%s\t%d\t%s\n", src, idx, title
-        emit($0)
-      }
-      next
-    }
-    /^##[[:space:]]/ { open = 0; next }
-    open { emit($0) }
-  ' "$2"
+  awk -v src="$1" -f "$PROGRAMS/preflight-needs-scan.awk" "$2"
 }
 
 declare PUNCH WORK_ORDERS
@@ -151,23 +126,12 @@ $NS_POLICY_CATEGORIES
 EOF
 LC_ALL=C sort -u "$TMPD/needs" -o "$TMPD/needs"
 
-NS_POLICY_VERDICT_PY='
-import json, sys
-
-d = json.load(sys.stdin)["settings"]
-for k in sorted(d):
-    if k.startswith("elevation."):
-        v = d[k]["value"]
-        sys.stdout.write("%s\t%s\n" % (k[len("elevation."):], v))
-'
 
 # The verdicts come from the one resolver, read once.
 if [ "$(ns_policy_json_tool)" = jq ]; then
-  ns_policy_resolve "$WORKSPACE" | jq -r '.settings | to_entries[]
-    | select(.key | startswith("elevation."))
-    | (.key | ltrimstr("elevation.")) + "\t" + .value.value' >"$TMPD/verdict" || no_parser
+  ns_policy_resolve "$WORKSPACE" | jq -r -f "$(ns_native_display_path "$PROGRAMS/preflight-needs-elevation.jq")" >"$TMPD/verdict" || no_parser
 else
-  ns_policy_resolve "$WORKSPACE" | python3 -c "$NS_POLICY_VERDICT_PY" >"$TMPD/verdict" || no_parser
+  ns_policy_resolve "$WORKSPACE" | python3 "$(ns_native_display_path "$PROGRAMS/preflight-needs-verdict.py")" >"$TMPD/verdict" || no_parser
 fi
 
 verdict_of() {
@@ -181,9 +145,7 @@ json_strings() { # one JSON string per input line, on stdin
   if [ "$(ns_policy_json_tool)" = jq ]; then
     jq -R .
   else
-    python3 -c 'import json, sys
-for line in sys.stdin.read().split("\n")[:-1]:
-    sys.stdout.write(json.dumps(line, ensure_ascii=False) + "\n")'
+    python3 "$(ns_native_display_path "$PROGRAMS/preflight-needs-elevation.py")"
   fi
 }
 
